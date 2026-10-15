@@ -1,10 +1,11 @@
+-- Run with sqlcmd -v SA_PASSWORD="..." (the development sa password from .env); no password is stored here.
 -- P0-T08 (ADR-0001 AI 54): linked-server implications for extraction (loopback linked server stands in for the source instance).
 SET NOCOUNT ON;
 USE yojana_verify;
 GO
 IF EXISTS (SELECT 1 FROM sys.servers WHERE name = 'SOURCE_LOOPBACK') EXEC sp_dropserver 'SOURCE_LOOPBACK', 'droplogins';
 EXEC sp_addlinkedserver @server = 'SOURCE_LOOPBACK', @srvproduct = '', @provider = 'MSOLEDBSQL', @datasrc = 'localhost', @provstr = 'Encrypt=no;TrustServerCertificate=yes';
-EXEC sp_addlinkedsrvlogin @rmtsrvname = 'SOURCE_LOOPBACK', @useself = 'false', @rmtuser = 'sa', @rmtpassword = 'REDACTED-dev-password';
+EXEC sp_addlinkedsrvlogin @rmtsrvname = 'SOURCE_LOOPBACK', @useself = 'false', @rmtuser = 'sa', @rmtpassword = '$(SA_PASSWORD)';
 EXEC sp_serveroption 'SOURCE_LOOPBACK', 'rpc out', 'true';
 GO
 IF OBJECT_ID('dbo.legacy_serials') IS NOT NULL DROP TABLE dbo.legacy_serials;

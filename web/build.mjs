@@ -28,11 +28,11 @@ export const buildOptions = {
   logLevel: "warning",
 };
 
-export function writeIndex(metafile, { dev = false } = {}) {
+export function writeIndex(metafile, { dev = false, outdir = dist } = {}) {
   const outputs = metafile.outputs;
   const entryPath = Object.keys(outputs).find((f) => outputs[f].entryPoint && outputs[f].entryPoint.endsWith("src/main.tsx"));
   if (!entryPath) throw new Error("entry output not found in metafile");
-  const url = (f) => "/" + relative(dist, join(here, f));
+  const url = (f) => "/" + relative(outdir, join(here, f));
   // Chunks the entry imports statically load before first paint, so they are preloaded here and counted by the
   // budget gate; dynamic imports (lazy routes) are neither.
   const eager = [];
@@ -52,7 +52,7 @@ export function writeIndex(metafile, { dev = false } = {}) {
     dev ? `<script>new EventSource('/esbuild').addEventListener('change', () => location.reload());</script>` : "",
   ].filter(Boolean).join("\n");
   const html = readFileSync(join(here, "index.html"), "utf8").replace("<!--@assets-->", tags);
-  writeFileSync(join(dist, "index.html"), html);
+  writeFileSync(join(outdir, "index.html"), html);
   return { js: url(entryPath), css: cssFile, eager: eager.map(url) };
 }
 

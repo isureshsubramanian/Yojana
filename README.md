@@ -25,17 +25,23 @@ are not part of the repository history).
 Prerequisites: .NET SDK 10.0.3xx (see `global.json`), Node.js 22 or later with npm, Docker, GNU make.
 
 ```
+make env            # writes .env with generated development passwords (git-ignored; see .env.example)
 make restore        # packages and local tools (dotnet-ef)
 make web-install    # web client packages, exactly as locked
 make web            # type-check and build the web client into web/dist
-make db-up db-wait  # SQL Server 2022 Express in Docker on localhost:1433 (password REDACTED-dev-password, development only)
+make db-up db-wait  # SQL Server 2022 Express in Docker on localhost:1433, sa password from .env
 make seed           # migrate and seed tenant DEV with one user per role
 make run            # http://localhost:5080 serves the client and the API
-make web-dev        # optional: client with live reload on http://localhost:5173, API proxied to 5080
+make web-dev        # optional: client with live reload on http://localhost:5173 (builds into web/.dev), API proxied to 5080
 ```
 
+No password is built into the repository. The host's development connection string carries the login only;
+`YOJANA_SQL_PASSWORD` completes it (a string with no SQL login, or with its own password, is used as is), and
+the container, `make db-wait` and the seed read the same `.env`. Changing the sa password after the container
+exists needs `make db-reset` (drops the development data volume) before `make db-up`.
+
 Seeded users are `<role>@dev.yojana.local` (for example `serial_administrator@dev.yojana.local`) and
-`admin@dev.yojana.local`, password `REDACTED-dev-password` unless `YOJANA_SEED_PASSWORD` is set. Sign in with
+`admin@dev.yojana.local`, password `YOJANA_SEED_PASSWORD` from `.env`. Sign in with
 `POST /api/auth/sign-in {"email","password"}`; with one membership the tenant is selected automatically,
 otherwise `POST /api/auth/select-tenant {"tenantCode"}`. `POST /api/smoke/ping {"note"}` publishes a
 message through the outbox; `GET /api/smoke` shows the request, handler and job rows for the tenant.

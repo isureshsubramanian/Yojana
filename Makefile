@@ -1,15 +1,23 @@
 # Developer entry points (MOD-01). Every target is also what CI runs.
 SHELL := /bin/bash
+# Local secrets live in .env (git-ignored), written once by `make env`; every target below inherits them.
+-include .env
+export YOJANA_SQL_PASSWORD YOJANA_SEED_PASSWORD
 SLN := Yojana.slnx
 WEB := src/Web/Yojana.Web
 CLIENT := web
 GATES := dotnet run --project tools/Yojana.Gates --
 CONFIG ?= Debug
 
-.PHONY: help build test test-db gate licences notices names budget self-test db-up db-down db-wait migrate seed run restore clean web-install web-check web-test web web-dev web-lcp
+.PHONY: help env build test test-db gate licences notices names budget self-test db-up db-down db-wait migrate seed run restore clean db-reset web-install web-check web-test web web-dev web-lcp
 
 help:
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
+
+env: ## Write .env with generated development passwords (SQL sa login, seeded users) unless it exists
+	@if [ -f .env ]; then echo ".env exists; leaving it alone"; else \
+	  printf 'YOJANA_SQL_PASSWORD=%s\nYOJANA_SEED_PASSWORD=%s\n' "Yj$$(openssl rand -hex 10)!A1" "Dev$$(openssl rand -hex 8)!a1" > .env; \
+	  echo "wrote .env (development passwords; never committed)"; fi
 
 restore: ## Restore packages and local tools
 	dotnet restore $(SLN) && dotnet tool restore
@@ -60,11 +68,15 @@ self-test: ## Prove every gate fails on a planted violation
 gate: build ## All gates, as CI runs them (notices in check mode; needs `make web-install web`)
 	$(GATES) all
 
-db-up: ## Start the development SQL Server container
+db-up: ## Start the development SQL Server container (password from .env)
+	@test -n "$(YOJANA_SQL_PASSWORD)" || { echo "YOJANA_SQL_PASSWORD is not set; run: make env"; exit 1; }
 	docker compose up -d sql
 
 db-wait: ## Block until the development database answers
-	@for i in $$(seq 1 60); do docker compose exec -T sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$${YOJANA_SQL_PASSWORD:-REDACTED-dev-password}" -C -Q "SELECT 1" >/dev/null 2>&1 && exit 0; sleep 2; done; echo "database not ready" && exit 1
+	@for i in $$(seq 1 60); do docker compose exec -T sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$(YOJANA_SQL_PASSWORD)" -C -Q "SELECT 1" >/dev/null 2>&1 && exit 0; sleep 2; done; echo "database not ready" && exit 1
+
+db-reset: ## Remove the development database container and its data volume (needed after changing the sa password)
+	docker compose down -v
 
 db-down: ## Stop the development database (data volume kept)
 	docker compose down

@@ -9,6 +9,7 @@ TestResults/
 artifacts/
 web/node_modules/
 web/dist/
+web/.dev/
 
 # Local secrets and tooling
 .env

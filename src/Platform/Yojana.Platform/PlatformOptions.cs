@@ -1,11 +1,43 @@
+using Microsoft.Data.SqlClient;
+
 namespace Yojana.Platform;
 
 public sealed class PlatformOptions
 {
     public const string SectionName = "Platform";
 
-    /// <summary>SQL Server or Azure SQL connection string shared by every module, Wolverine and Quartz.</summary>
+    /// <summary>Environment variable that supplies the SQL login password when the configured connection string carries none.</summary>
+    public const string PasswordVariable = "YOJANA_SQL_PASSWORD";
+
+    /// <summary>
+    /// SQL Server or Azure SQL connection string shared by every module, Wolverine and Quartz. Configuration
+    /// files never carry the password: a string with a user id and no password is completed from
+    /// <see cref="PasswordVariable"/> by <see cref="Resolve"/>; integrated or token authentication needs neither.
+    /// </summary>
     public required string ConnectionString { get; set; }
+
+    /// <summary>
+    /// Applies the environment password to a password-less SQL login string. Fails loudly when a login needs a
+    /// password and none is available, so a misconfigured host never falls back to a built-in default.
+    /// </summary>
+    public static string Resolve(string connectionString, Func<string, string?> environment)
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString);
+        var usesLogin = !string.IsNullOrEmpty(builder.UserID) && !builder.IntegratedSecurity && builder.Authentication == SqlAuthenticationMethod.NotSpecified;
+        if (!usesLogin || !string.IsNullOrEmpty(builder.Password))
+        {
+            return connectionString;
+        }
+
+        var password = environment(PasswordVariable);
+        if (string.IsNullOrEmpty(password))
+        {
+            throw new InvalidOperationException($"The connection string uses SQL login '{builder.UserID}' without a password and {PasswordVariable} is not set. Run `make env` (development) or set the variable.");
+        }
+
+        builder.Password = password;
+        return builder.ConnectionString;
+    }
 
     /// <summary>Apply pending migrations at start (development and test only; production runs `--migrate` explicitly).</summary>
     public bool MigrateOnStartup { get; set; }

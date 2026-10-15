@@ -11,13 +11,14 @@ services:
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_PID: Express
-      MSSQL_SA_PASSWORD: ${YOJANA_SQL_PASSWORD:-REDACTED-dev-password}
+      # From .env (written by `make env`); there is no default on purpose.
+      MSSQL_SA_PASSWORD: ${YOJANA_SQL_PASSWORD:?YOJANA_SQL_PASSWORD is not set; run `make env`}
     ports:
       - "${YOJANA_SQL_PORT:-1433}:1433"
     volumes:
       - yojana-sql-data:/var/opt/mssql
     healthcheck:
-      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "${YOJANA_SQL_PASSWORD:-REDACTED-dev-password}", "-C", "-Q", "SELECT 1"]
+      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "${YOJANA_SQL_PASSWORD}", "-C", "-Q", "SELECT 1"]
       interval: 10s
       timeout: 5s
       retries: 12

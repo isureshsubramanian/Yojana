@@ -38,9 +38,17 @@ if (args.Contains("--migrate") || args.Contains("--seed"))
     await PlatformSetup.MigrateAsync(app.Services, CancellationToken.None);
     if (args.Contains("--seed"))
     {
-        var password = Environment.GetEnvironmentVariable("YOJANA_SEED_PASSWORD") ?? "REDACTED-dev-password";
+        // No built-in default: the development users' password comes from the environment (`make env` writes .env).
+        var password = Environment.GetEnvironmentVariable("YOJANA_SEED_PASSWORD");
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            app.Logger.LogError("YOJANA_SEED_PASSWORD is not set; nothing seeded. Run `make env` or set the variable.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
         await DevelopmentSeeder.SeedAsync(app.Services, password, CancellationToken.None);
-        app.Logger.LogInformation("Seeded tenant {Code} with one user per role (password from YOJANA_SEED_PASSWORD or the development default)", DevelopmentSeeder.DevTenantCode);
+        app.Logger.LogInformation("Seeded tenant {Code} with one user per role (password from YOJANA_SEED_PASSWORD)", DevelopmentSeeder.DevTenantCode);
     }
 
     return;

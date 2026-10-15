@@ -5,16 +5,20 @@ on:
 jobs:
   build-test-gate:
     runs-on: ubuntu-latest
+    env:
+      # Throwaway credentials for the job's own ephemeral container and seeded users; defined once, used below.
+      YOJANA_SQL_PASSWORD: Yojana!Ci2026
+      YOJANA_SEED_PASSWORD: Yojana!Ci2026
     services:
       sql:
         image: mcr.microsoft.com/mssql/server:2022-latest
         env:
           ACCEPT_EULA: "Y"
           MSSQL_PID: Express
-          MSSQL_SA_PASSWORD: Yojana!Ci2026
+          MSSQL_SA_PASSWORD: ${{ env.YOJANA_SQL_PASSWORD }}
         ports: ["1433:1433"]
         options: >-
-          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Yojana!Ci2026' -C -Q 'SELECT 1'"
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '${{ env.YOJANA_SQL_PASSWORD }}' -C -Q 'SELECT 1'"
           --health-interval 10s --health-timeout 5s --health-retries 12
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +37,7 @@ jobs:
       - run: make test
       - name: Database tests
         env:
-          YOJANA_TEST_SQL: "Server=localhost,1433;Database=yojana_ci;User Id=sa;Password=Yojana!Ci2026;Encrypt=True;TrustServerCertificate=True"
+          YOJANA_TEST_SQL: "Server=localhost,1433;Database=yojana_ci;User Id=sa;Password=${{ env.YOJANA_SQL_PASSWORD }};Encrypt=True;TrustServerCertificate=True"
         run: make test-db
       - name: Gates (licence policy, notices up to date, name audit, bundle budget)
         run: make gate
@@ -41,8 +45,7 @@ jobs:
         run: make self-test
       - name: Largest contentful paint budget (real browser, 10 Mbit link)
         env:
-          YOJANA_TEST_SQL: "Server=localhost,1433;Database=yojana_ci;User Id=sa;Password=Yojana!Ci2026;Encrypt=True;TrustServerCertificate=True"
-          Platform__ConnectionString: "Server=localhost,1433;Database=yojana_ci;User Id=sa;Password=Yojana!Ci2026;Encrypt=True;TrustServerCertificate=True"
+          Platform__ConnectionString: "Server=localhost,1433;Database=yojana_ci;User Id=sa;Encrypt=True;TrustServerCertificate=True"
           Platform__MigrateOnStartup: "true"
           Platform__AutoBuildMessageStorage: "true"
           ASPNETCORE_URLS: http://localhost:5080

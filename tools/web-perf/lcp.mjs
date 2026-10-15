@@ -17,7 +17,7 @@ const base = (args.base ?? "http://localhost:5080").replace(/\/$/, "");
 const budget = Number(args["budget-ms"] ?? 2000);
 const pages = (args.pages ?? "/sign-in,/tenants,/").split(",").filter(Boolean);
 const email = args.email ?? process.env.YOJANA_LCP_EMAIL ?? "admin@dev.yojana.local";
-const password = args.password ?? process.env.YOJANA_SEED_PASSWORD ?? "REDACTED-dev-password";
+const password = args.password ?? process.env.YOJANA_SEED_PASSWORD ?? "";
 const throttle = args["no-throttle"] !== "true";
 const shots = args.screenshots;
 
@@ -69,6 +69,7 @@ await send("Page.addScriptToEvaluateOnNewDocument", { source: `
 
 // Sign in once over HTTP and hand the session cookie to the browser, so authenticated pages are measured too.
 let signedIn = false;
+if (!password) console.warn("no password (--password or YOJANA_SEED_PASSWORD); only anonymous pages are meaningful");
 try {
   const r = await fetch(`${base}/api/auth/sign-in`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password }) });
   const cookies = r.headers.getSetCookie?.() ?? [];
