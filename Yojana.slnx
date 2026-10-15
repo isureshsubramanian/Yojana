@@ -1,0 +1,29 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Integration/">
+    <Project Path="src/Integration/Yojana.Integration.Contracts/Yojana.Integration.Contracts.csproj" />
+    <Project Path="src/Integration/Yojana.Integration/Yojana.Integration.csproj" />
+  </Folder>
+  <Folder Name="/src/Platform/">
+    <Project Path="src/Platform/Yojana.Platform.Contracts/Yojana.Platform.Contracts.csproj" />
+    <Project Path="src/Platform/Yojana.Platform/Yojana.Platform.csproj" />
+  </Folder>
+  <Folder Name="/src/Serialisation/">
+    <Project Path="src/Serialisation/Yojana.Serialisation.Contracts/Yojana.Serialisation.Contracts.csproj" />
+    <Project Path="src/Serialisation/Yojana.Serialisation/Yojana.Serialisation.csproj" />
+  </Folder>
+  <Folder Name="/src/Web/">
+    <Project Path="src/Web/Yojana.Web/Yojana.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Yojana.Architecture.Tests/Yojana.Architecture.Tests.csproj" />
+    <Project Path="tests/Yojana.Platform.DatabaseTests/Yojana.Platform.DatabaseTests.csproj" />
+    <Project Path="tests/Yojana.Platform.Tests/Yojana.Platform.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Yojana.Gates/Yojana.Gates.csproj" />
+  </Folder>
+  <Folder Name="/tools/sqlserver-verification/">
+    <Project Path="tools/sqlserver-verification/Yojana.SqlVerification/Yojana.SqlVerification.csproj" />
+  </Folder>
+</Solution>

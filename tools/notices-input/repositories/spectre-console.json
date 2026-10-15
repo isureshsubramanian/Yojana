@@ -1,0 +1,7 @@
+{
+  "name": "Spectre.Console",
+  "matchRepositoryUrls": ["https://github.com/spectreconsole/spectre.console"],
+  "licenceFile": "texts/spectre-console-LICENSE.md",
+  "sourceUrl": "https://raw.githubusercontent.com/spectreconsole/spectre.console/main/LICENSE.md",
+  "takenOn": "2026-10-15"
+}

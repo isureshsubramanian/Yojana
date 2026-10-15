@@ -1,0 +1,7 @@
+{
+  "name": "Microsoft IdentityModel extensions for .NET",
+  "matchRepositoryUrls": ["https://github.com/AzureAD/azure-activedirectory-identitymodel-extensions-for-dotnet"],
+  "licenceFile": "texts/azuread-identitymodel-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/AzureAD/azure-activedirectory-identitymodel-extensions-for-dotnet/dev/LICENSE.txt",
+  "takenOn": "2026-10-15"
+}

@@ -1,0 +1,25 @@
+# Development database only (MOD-01 developer environment). SQL Server Express is free and has the full
+# feature set the platform relies on (partitioning, temporal tables, row-level security, columnstore);
+# its 50 GB cap makes it unfit for anything beyond development. The 2022 image is used because the 2025
+# image does not start under amd64 emulation on Apple Silicon (P0-T08 note); on an x64 host you may set
+# YOJANA_SQL_IMAGE=mcr.microsoft.com/mssql/server:2025-latest.
+services:
+  sql:
+    image: ${YOJANA_SQL_IMAGE:-mcr.microsoft.com/mssql/server:2022-latest}
+    platform: linux/amd64
+    container_name: yojana-sql
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Express
+      MSSQL_SA_PASSWORD: ${YOJANA_SQL_PASSWORD:-REDACTED-dev-password}
+    ports:
+      - "${YOJANA_SQL_PORT:-1433}:1433"
+    volumes:
+      - yojana-sql-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "${YOJANA_SQL_PASSWORD:-REDACTED-dev-password}", "-C", "-Q", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+volumes:
+  yojana-sql-data:

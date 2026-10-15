@@ -1,0 +1,7 @@
+{
+  "name": "System.Linq.Dynamic.Core",
+  "matchRepositoryUrls": ["https://github.com/zzzprojects/System.Linq.Dynamic.Core"],
+  "licenceFile": "texts/system-linq-dynamic-core-LICENSE",
+  "sourceUrl": "https://raw.githubusercontent.com/zzzprojects/System.Linq.Dynamic.Core/master/LICENSE",
+  "takenOn": "2026-10-15"
+}

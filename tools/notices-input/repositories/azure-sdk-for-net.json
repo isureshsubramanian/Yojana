@@ -1,0 +1,7 @@
+{
+  "name": "Azure SDK for .NET",
+  "matchRepositoryUrls": ["https://github.com/Azure/azure-sdk-for-net"],
+  "licenceFile": "texts/azure-sdk-for-net-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/Azure/azure-sdk-for-net/main/LICENSE.txt",
+  "takenOn": "2026-10-15"
+}

@@ -1,0 +1,27 @@
+<Project>
+  <!--
+    Central package versions. Every package here has its licence named in tools/gates/licence-policy.json
+    and its notice generated into src/Web/Yojana.Web/Notices/THIRD-PARTY-NOTICES.txt in the same change
+    that adds it (standing rule). Adding a line here without those two edits fails `make gate`.
+  -->
+  <ItemGroup>
+    <!-- Data: MIT (dotnet/efcore, dotnet/SqlClient) -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.7" />
+    <!-- Pinned above the vulnerable 9.0.x that Microsoft.Data.SqlClient pulls on its own (NU1902/NU1903); MIT (dotnet/dotnet) -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <!-- Messaging: MIT (JasperFx/wolverine) -->
+    <PackageVersion Include="WolverineFx" Version="6.50.2" />
+    <PackageVersion Include="WolverineFx.SqlServer" Version="6.50.2" />
+    <PackageVersion Include="WolverineFx.EntityFrameworkCore" Version="6.50.2" />
+    <!-- Runtime handler compilation (Roslyn, MIT dotnet/roslyn); production may switch to pre-generated code (TypeLoadMode.Static) later -->
+    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.50.2" />
+    <!-- Scheduling: Apache-2.0 (quartznet/quartznet) -->
+    <PackageVersion Include="Quartz" Version="4.5.0" />
+    <!-- Tests only (not shipped): Apache-2.0 (xunit), MIT (Microsoft test platform) -->
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+  </ItemGroup>
+</Project>

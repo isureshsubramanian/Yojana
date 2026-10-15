@@ -1,0 +1,7 @@
+{
+  "name": "Wolverine",
+  "matchRepositoryUrls": ["https://github.com/jasperfx/wolverine", "http://github.com/jasperfx/wolverine"],
+  "licenceFile": "texts/jasperfx-wolverine-LICENSE",
+  "sourceUrl": "https://raw.githubusercontent.com/JasperFx/wolverine/main/LICENSE",
+  "takenOn": "2026-10-15"
+}

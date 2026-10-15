@@ -1,0 +1,9 @@
+{
+  "$comment": "MOD-02 performance rules (MOCKUP-PROCESS section 4): initial JS 250 KB gzipped and CSS 60 KB gzipped, measured on what web/dist/index.html loads before first paint (entry script, module preloads, stylesheets); plus the source rules: no CSS-in-JS runtime, and the theme/mode attributes touched only by web/src/theme/. LCP is measured by `make web-lcp` against a running host.",
+  "distDirectory": "web/dist",
+  "initialJsGzipBytes": 256000,
+  "cssGzipBytes": 61440,
+  "sourceDirectory": "web/src",
+  "forbiddenImports": ["styled-components", "@emotion", "@stitches", "goober", "@vanilla-extract", "@linaria", "jss", "styletron", "aphrodite", "radium", "@mui/styled-engine"],
+  "themeModuleDirectory": "web/src/theme/"
+}

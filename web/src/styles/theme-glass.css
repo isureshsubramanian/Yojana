@@ -1,0 +1,48 @@
+/* Glass: the house theme (OD-03, vetted 2026-10-15). Tokens only; no selectors beyond the two attribute states.
+   Carried over from the approved PHASE-00 mockup token file; semantic status colours are the same in every theme.
+   Mode: html[data-mode="dark"|"light"] is an explicit override set by src/theme/mode.ts; without it the OS preference applies. */
+html[data-theme="glass"] {
+  --font-body: -apple-system, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: -apple-system, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --display-weight: 600; --display-tracking: -0.02em;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --fs-0: 11px; --fs-1: 13px; --fs-2: 14px; --fs-3: 15px; --fs-4: 20px; --fs-5: 26px;
+  --radius-s: 8px; --radius: 12px;
+  --row-h: 44px;
+  --surface-0: #f3f5f8; --surface-1: #ffffff; --surface-2: #f6f8fb; --surface-3: #eef1f6;
+  --text-1: #0f172a; --text-2: #475569; --text-3: #94a3b8;
+  --border: #e2e8f0; --border-strong: #cbd5e1; --rule: #eef2f7; --row-hover: #f8fafc; --row-selected: #eef4ff;
+  --input-bg: #ffffff; --rail-bg: #f8fafc;
+  --accent: #2250d9; --accent-hover: #1b41b0; --accent-contrast: #ffffff; --accent-soft: #e4ebff;
+  --focus: #2250d9;
+  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 8px rgba(15, 23, 42, 0.04);
+  --chrome-bg: #ffffff; --chrome-text: #0f172a; --chrome-text-2: #64748b; --chrome-border: #e2e8f0; --chrome-pill: #f1f5f9;
+  --nav-bg: #ffffff; --nav-border: #e2e8f0; --nav-text: #334155; --nav-text-2: #94a3b8; --nav-hover: #f1f5f9; --nav-active-bg: #e4ebff; --nav-active-text: #2250d9; --nav-count-bg: #2250d9; --nav-count-text: #ffffff;
+  --success: #15803d; --success-soft: #dcfce7; --warning: #b45309; --warning-soft: #fef3c7; --danger: #b91c1c; --danger-soft: #fee2e2; --info: #1d4ed8; --info-soft: #dbeafe;
+}
+html[data-theme="glass"][data-mode="dark"] {
+  --surface-0: #0b0f19; --surface-1: #111827; --surface-2: #161e2e; --surface-3: #1c2637;
+  --text-1: #f1f5f9; --text-2: #a5b1c4; --text-3: #6b7a90;
+  --border: #212c40; --border-strong: #2f3c55; --rule: #1b2537; --row-hover: #141c2b; --row-selected: #182542;
+  --input-bg: #0b0f19; --rail-bg: #0e1422;
+  --accent: #7c9cff; --accent-hover: #97b1ff; --accent-contrast: #0a1238; --accent-soft: rgba(124, 156, 255, 0.16);
+  --focus: #7c9cff;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --chrome-bg: #111827; --chrome-text: #f1f5f9; --chrome-text-2: #94a3b8; --chrome-border: #212c40; --chrome-pill: #1a2334;
+  --nav-bg: #111827; --nav-border: #212c40; --nav-text: #cbd5e1; --nav-text-2: #6b7a90; --nav-hover: #161e2e; --nav-active-bg: #1d2b4f; --nav-active-text: #a9bfff; --nav-count-bg: #7c9cff; --nav-count-text: #0a1238;
+  --success: #4ade80; --success-soft: rgba(74, 222, 128, 0.14); --warning: #fbbf24; --warning-soft: rgba(251, 191, 36, 0.14); --danger: #f87171; --danger-soft: rgba(248, 113, 113, 0.14); --info: #60a5fa; --info-soft: rgba(96, 165, 250, 0.16);
+}
+@media (prefers-color-scheme: dark) {
+  html[data-theme="glass"]:not([data-mode="light"]) {
+  --surface-0: #0b0f19; --surface-1: #111827; --surface-2: #161e2e; --surface-3: #1c2637;
+  --text-1: #f1f5f9; --text-2: #a5b1c4; --text-3: #6b7a90;
+  --border: #212c40; --border-strong: #2f3c55; --rule: #1b2537; --row-hover: #141c2b; --row-selected: #182542;
+  --input-bg: #0b0f19; --rail-bg: #0e1422;
+  --accent: #7c9cff; --accent-hover: #97b1ff; --accent-contrast: #0a1238; --accent-soft: rgba(124, 156, 255, 0.16);
+  --focus: #7c9cff;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --chrome-bg: #111827; --chrome-text: #f1f5f9; --chrome-text-2: #94a3b8; --chrome-border: #212c40; --chrome-pill: #1a2334;
+  --nav-bg: #111827; --nav-border: #212c40; --nav-text: #cbd5e1; --nav-text-2: #6b7a90; --nav-hover: #161e2e; --nav-active-bg: #1d2b4f; --nav-active-text: #a9bfff; --nav-count-bg: #7c9cff; --nav-count-text: #0a1238;
+  --success: #4ade80; --success-soft: rgba(74, 222, 128, 0.14); --warning: #fbbf24; --warning-soft: rgba(251, 191, 36, 0.14); --danger: #f87171; --danger-soft: rgba(248, 113, 113, 0.14); --info: #60a5fa; --info-soft: rgba(96, 165, 250, 0.16);
+  }
+}

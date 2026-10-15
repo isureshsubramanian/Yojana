@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Throwaway verification harness for P0-T08; never shipped. -->
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Platform/Yojana.Platform.Contracts/Yojana.Platform.Contracts.csproj" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+  </ItemGroup>
+</Project>

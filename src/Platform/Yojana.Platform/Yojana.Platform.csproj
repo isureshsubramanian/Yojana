@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Yojana.Platform.Contracts/Yojana.Platform.Contracts.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="WolverineFx" />
+    <PackageReference Include="WolverineFx.SqlServer" />
+    <PackageReference Include="WolverineFx.EntityFrameworkCore" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
+    <PackageReference Include="Quartz" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Scheduling/quartz_tables_sqlServer.sql" LogicalName="quartz_tables_sqlServer.sql" />
+  </ItemGroup>
+</Project>

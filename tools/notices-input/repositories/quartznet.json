@@ -1,0 +1,7 @@
+{
+  "name": "Quartz.NET",
+  "matchRepositoryUrls": ["https://github.com/quartznet/quartznet"],
+  "licenceFile": "texts/quartznet-license.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/quartznet/quartznet/main/license.txt",
+  "takenOn": "2026-10-15"
+}

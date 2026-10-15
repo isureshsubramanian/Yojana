@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../Platform/Yojana.Platform.Contracts/Yojana.Platform.Contracts.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,7 @@
+{
+  "name": "Microsoft Authentication Library for .NET",
+  "matchRepositoryUrls": ["https://github.com/AzureAD/microsoft-authentication-library-for-dotnet"],
+  "licenceFile": "texts/azuread-msal-LICENSE",
+  "sourceUrl": "https://raw.githubusercontent.com/AzureAD/microsoft-authentication-library-for-dotnet/main/LICENSE",
+  "takenOn": "2026-10-15"
+}

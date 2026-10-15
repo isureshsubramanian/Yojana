@@ -1,0 +1,12 @@
+{
+  "name": "Microsoft .NET Runtime (shared framework Microsoft.NETCore.App)",
+  "licence": "MIT",
+  "copyright": "Copyright (c) .NET Foundation and Contributors",
+  "projectUrl": "https://github.com/dotnet/runtime",
+  "licenceFile": "texts/dotnet-runtime-LICENSE.TXT",
+  "noticeFile": "texts/dotnet-runtime-THIRD-PARTY-NOTICES.TXT",
+  "sourceUrl": "https://raw.githubusercontent.com/dotnet/runtime/main/LICENSE.TXT",
+  "noticeSourceUrl": "https://raw.githubusercontent.com/dotnet/runtime/main/THIRD-PARTY-NOTICES.TXT",
+  "takenOn": "2026-10-15",
+  "why": "The host runs on the .NET runtime; a self-contained publish redistributes it, so its licence and third-party notices are reproduced."
+}

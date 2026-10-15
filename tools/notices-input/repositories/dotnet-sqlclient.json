@@ -1,0 +1,7 @@
+{
+  "name": "dotnet/SqlClient",
+  "matchRepositoryUrls": ["https://github.com/dotnet/sqlclient"],
+  "licenceFile": "texts/dotnet-sqlclient-LICENSE",
+  "sourceUrl": "https://raw.githubusercontent.com/dotnet/SqlClient/main/LICENSE",
+  "takenOn": "2026-10-15"
+}

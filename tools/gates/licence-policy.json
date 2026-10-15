@@ -1,0 +1,48 @@
+{
+  "$comment": "Answers 'may we use this'. Every restored package must carry an allow-listed SPDX expression, or an exception the owner has decided on. Pending exceptions fail the gate on purpose (standing rule: stop and ask). Permissive still means attribution: see tools/notices-input and the notices gate. npm packages (web/package-lock.json, development tooling included) are under the same policy; their notices cover the production closure only.",
+  "allowedExpressions": [
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "Apache-2.0",
+    "0BSD",
+    "Unlicense",
+    "CC0-1.0"
+  ],
+  "scanDirectories": [
+    "src",
+    "tests",
+    "tools"
+  ],
+  "npmLockFiles": [
+    "web/package-lock.json"
+  ],
+  "knownLicenceUrls": {
+    "https://raw.githubusercontent.com/xunit/xunit/master/license.txt": {
+      "spdx": "Apache-2.0",
+      "readOn": "2026-10-15"
+    }
+  },
+  "exceptions": [
+    {
+      "package": "Microsoft.Data.SqlClient.SNI.runtime",
+      "licence": "Microsoft Software License Terms for the MICROSOFT.DATA.SQLCLIENT.SNI library (LICENSE.txt inside the package; proprietary, distributable as part of applications, carries an indemnification clause and a no-Excluded-License clause)",
+      "why": "Transitive dependency of Microsoft.Data.SqlClient; Windows-only native network layer. It is not used on Linux hosts but is present in a portable (RID-less) publish.",
+      "decision": "approved",
+      "decisionRef": "OD-02",
+      "raised": "2026-10-15",
+      "approvedBy": "owner (chat message, product to be released as open source; the component is fetched from the package feed at build time and is never stored in the repository)",
+      "approvedOn": "2026-10-15"
+    },
+    {
+      "package": "Microsoft.Identity.Client.NativeInterop",
+      "licence": "Microsoft Software License Terms (LICENSE inside the package; proprietary, includes a binding-arbitration clause for US users)",
+      "why": "Transitive dependency of Microsoft.Data.SqlClient through Azure.Identity and the MSAL broker; Windows-only native binaries for desktop broker sign-in. Not used by the server; present in a portable publish.",
+      "decision": "approved",
+      "decisionRef": "OD-02",
+      "raised": "2026-10-15",
+      "approvedBy": "owner (chat message, product to be released as open source; the component is fetched from the package feed at build time and is never stored in the repository)",
+      "approvedOn": "2026-10-15"
+    }
+  ]
+}

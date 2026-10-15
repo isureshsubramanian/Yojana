@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <!-- Contracts only: no packages, no project references. -->
+  </ItemGroup>
+</Project>

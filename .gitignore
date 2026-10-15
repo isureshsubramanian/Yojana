@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.idea/
+TestResults/
+artifacts/
+web/node_modules/
+web/dist/
+
+# Local secrets and tooling
+.env
+*.local.json
+.DS_Store
+
+# Internal design documents are deliberately not committed (owner direction):
+# ADRs, research, reports and plan live beside the code but outside the repository history.
+docs/
+reports/
+research_notes/

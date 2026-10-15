@@ -1,0 +1,10 @@
+{
+  "name": "Quartz.NET SQL Server table script (vendored, modified)",
+  "licence": "Apache-2.0",
+  "copyright": "Copyright Marko Lahma",
+  "projectUrl": "https://www.quartz-scheduler.net/",
+  "licenceFile": "texts/quartznet-license.txt",
+  "sourceUrl": "https://github.com/quartznet/quartznet/blob/main/database/tables/tables_sqlServer.sql",
+  "takenOn": "2026-10-15",
+  "why": "src/Platform/Yojana.Platform/Scheduling/quartz_tables_sqlServer.sql is a copy of the Quartz.NET job-store DDL with the schema changed to [quartz] and the drop section disabled; the modification notice is in the file header (Apache-2.0 section 4(b))."
+}

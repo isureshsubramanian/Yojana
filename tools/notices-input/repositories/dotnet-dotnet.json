@@ -1,0 +1,7 @@
+{
+  "name": ".NET (dotnet/dotnet, the source build of EF Core and the base libraries)",
+  "matchRepositoryUrls": ["https://github.com/dotnet/dotnet"],
+  "licenceFile": "texts/dotnet-dotnet-LICENSE.TXT",
+  "sourceUrl": "https://raw.githubusercontent.com/dotnet/dotnet/main/LICENSE.TXT",
+  "takenOn": "2026-10-15"
+}

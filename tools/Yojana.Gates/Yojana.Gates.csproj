@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- No package references on purpose: the gate that checks dependencies must not have any. -->
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,7 @@
+{
+  "name": "Roslyn (.NET Compiler Platform)",
+  "matchRepositoryUrls": ["https://github.com/dotnet/roslyn"],
+  "licenceFile": "texts/dotnet-roslyn-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/dotnet/roslyn/main/License.txt",
+  "takenOn": "2026-10-15"
+}

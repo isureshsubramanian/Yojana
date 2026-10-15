@@ -1,0 +1,45 @@
+import { createBrowserRouter, type RouteObject } from "react-router";
+import { ErrorPage } from "./pages/ErrorPage";
+import { ROOT_ROUTE_ID, requireSession } from "./session/session";
+import { Frame } from "./shell/Frame";
+import { navigation } from "./shell/navigation";
+
+// Every route is lazy (per-route code splitting, MOD-02). Module placeholders come from the navigation
+// registry, so a later phase replaces one line here with its own lazy route and touches nothing else.
+const placeholders: RouteObject[] = navigation
+  .filter((e) => e.placeholder)
+  .map((e) => ({ path: e.path.slice(1) + "/*", lazy: () => import("./pages/Placeholder") }));
+
+// The pattern gallery (shared components on fixture data) exists in development builds only; the production
+// define removes this branch and its chunks.
+const patterns: RouteObject[] = process.env.NODE_ENV === "production" ? [] : [
+  { path: "patterns", lazy: () => import("./patterns/PatternsIndex") },
+  { path: "patterns/list", lazy: () => import("./patterns/ListPattern") },
+  { path: "patterns/detail", lazy: () => import("./patterns/DetailPattern") },
+  { path: "patterns/form", lazy: () => import("./patterns/FormPattern") },
+  { path: "patterns/document", lazy: () => import("./patterns/DocumentPattern") },
+];
+
+export const router = createBrowserRouter([
+  { path: "/sign-in", lazy: () => import("./pages/SignIn"), errorElement: <ErrorPage /> },
+  {
+    id: ROOT_ROUTE_ID,
+    path: "/",
+    loader: requireSession,
+    errorElement: <ErrorPage />,
+    children: [
+      { path: "tenants", lazy: () => import("./pages/ChooseTenant") },
+      {
+        Component: Frame,
+        errorElement: <ErrorPage />,
+        children: [
+          { index: true, lazy: () => import("./pages/Overview") },
+          { path: "search", lazy: () => import("./pages/Search") },
+          ...patterns,
+          ...placeholders,
+          { path: "*", lazy: () => import("./pages/Placeholder") },
+        ],
+      },
+    ],
+  },
+]);

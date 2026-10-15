@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Yojana.Integration.Contracts/Yojana.Integration.Contracts.csproj" />
+    <ProjectReference Include="../../Platform/Yojana.Platform/Yojana.Platform.csproj" />
+    <ProjectReference Include="../../Serialisation/Yojana.Serialisation.Contracts/Yojana.Serialisation.Contracts.csproj" />
+  </ItemGroup>
+</Project>

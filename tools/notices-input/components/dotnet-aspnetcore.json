@@ -1,0 +1,12 @@
+{
+  "name": "ASP.NET Core (shared framework Microsoft.AspNetCore.App)",
+  "licence": "MIT",
+  "copyright": "Copyright (c) .NET Foundation and Contributors",
+  "projectUrl": "https://github.com/dotnet/aspnetcore",
+  "licenceFile": "texts/dotnet-aspnetcore-LICENSE.txt",
+  "noticeFile": "texts/dotnet-aspnetcore-THIRD-PARTY-NOTICES.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/dotnet/aspnetcore/main/LICENSE.txt",
+  "noticeSourceUrl": "https://raw.githubusercontent.com/dotnet/aspnetcore/main/THIRD-PARTY-NOTICES.txt",
+  "takenOn": "2026-10-15",
+  "why": "The web host is built on ASP.NET Core; a self-contained publish redistributes it, so its licence and third-party notices are reproduced."
+}

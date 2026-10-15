@@ -1,0 +1,7 @@
+{
+  "name": "dotnet/runtime",
+  "matchRepositoryUrls": ["https://github.com/dotnet/runtime"],
+  "licenceFile": "texts/dotnet-runtime-LICENSE.TXT",
+  "sourceUrl": "https://raw.githubusercontent.com/dotnet/runtime/main/LICENSE.TXT",
+  "takenOn": "2026-10-15"
+}
