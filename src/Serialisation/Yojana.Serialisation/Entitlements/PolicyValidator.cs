@@ -67,7 +67,7 @@ public static partial class PolicyValidator
         var late = seen.Any(t => LateTriggers.Contains(t));
         if (start.CapDays is null && late) Error("start_cap_missing", "start.cap_days", "A start from delivery, installation or registration can arrive months later; set a cap so the start is never later than invoice plus N days.");
         if (start.CapDays is <= 0) Error("start_cap_not_positive", "start.cap_days", "The cap must be at least one day.");
-        if (start.Trigger == StartTrigger.BaseExpiry && context.CoverageFamily == "base_warranty") Error("base_expiry_on_base", "start.trigger", "The base warranty cannot start at its own expiry.");
+        if (start.Trigger == StartTrigger.BaseExpiry && context.CoverageFamily == CoverageFamilyCode.Base) Error("base_expiry_on_base", "start.trigger", "The base warranty cannot start at its own expiry.");
 
         // A plan sold after the sale (P2-T07): base_expiry follows the eligibility rule's base family, so it needs one.
         if (start.Trigger == StartTrigger.BaseExpiry && terms.Eligibility is null) Error("base_family_missing", "eligibility", "A plan that starts at the base warranty's expiry must name the base family in its eligibility rule.");
@@ -99,7 +99,7 @@ public static partial class PolicyValidator
         if (terms.Transferable is not (Transferability.Yes or Transferability.No or Transferability.Fee or Transferability.RegistrationRequired)) Error("transferable_unknown", "transferable", $"'{terms.Transferable}' is not a transferability value.");
         if (!SettlementFormula().IsMatch(terms.SettlementFormula)) Error("settlement_formula_unknown", "settlement_formula", $"'{terms.SettlementFormula}' is not full or pro_rata(measure).");
         if (terms.ReplacementPolicyCode is { } rp && !context.ReplacementPolicyCodes.Contains(rp)) Error("replacement_policy_unknown", "replacement_policy", $"Replacement policy '{rp}' is not defined for this tenant.");
-        if (terms.ReplacementPolicyCode is null && context.CoverageFamily == "base_warranty") Warn("replacement_policy_missing", "replacement_policy", "No replacement policy: a replaced unit's entitlement will need the tenant default.");
+        if (terms.ReplacementPolicyCode is null && context.CoverageFamily == CoverageFamilyCode.Base) Warn("replacement_policy_missing", "replacement_policy", "No replacement policy: a replaced unit's entitlement will need the tenant default.");
 
         foreach (var dup in terms.Refurbished.GroupBy(r => (r.ItemId, r.Grade, r.Channel, r.Region)).Where(g => g.Count() > 1))
         {

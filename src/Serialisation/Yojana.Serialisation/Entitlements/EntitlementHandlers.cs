@@ -18,6 +18,10 @@ namespace Yojana.Serialisation.Entitlements;
 public static class CreateEntitlementHandler
 {
     public static async Task<CreateEntitlementResult> Handle(CreateEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        => await CreateAsync(command, db, ledger, resolver, store, zones, tenant, clock, null, [], false, null, null, cancellationToken);
+
+    internal static async Task<CreateEntitlementResult> CreateAsync(CreateEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, ITenantContext tenant, IClock clock,
+        string? startBasisOverride, IReadOnlyList<string> evidenceRefs, bool financeReviewRequired, string? reasonCode, string? financeReviewRef, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var key = EntitlementLedger.Key(command.CommandId, command.UnitId, EntitlementEventType.Created, command.EventTime);
@@ -92,7 +96,7 @@ public static class CreateEntitlementHandler
         {
             TenantId = tenantId, EntitlementId = TimeOrderedId.New(command.EventTime), UnitId = command.UnitId, Scope = EntitlementScope.Unit, Type = version.EntitlementType, CoverageFamily = command.CoverageFamily,
             Direction = EntitlementDirection.Outbound, OwnerPartyRef = command.OwnerPartyRef, OwnerPartyType = command.OwnerPartyType, ObligorEntityId = command.ObligorEntityId, PayerPartyRef = command.PayerPartyRef,
-            PayerPartyType = command.PayerPartyType, PolicyVersionId = version.PolicyVersionId, StartTrigger = terms.Start.Trigger, StartBasis = start.Basis, StartEvidenceRef = start.Basis is null ? null : command.StartEvidenceRef,
+            PayerPartyType = command.PayerPartyType, PolicyVersionId = version.PolicyVersionId, StartTrigger = terms.Start.Trigger, StartBasis = start.Start is null ? null : startBasisOverride ?? start.Basis, StartEvidenceRef = start.Basis is null ? null : command.StartEvidenceRef,
             StartDate = start.Start, StartTimeZone = zone, EndDate = end, ComputedByRuleVersion = version.RuleVersion, StartLatest = startLatest, DurationValue = duration.Duration.Value, DurationUnit = duration.Duration.Unit,
             EndOfMonthRule = duration.Duration.EndOfMonth, EndInclusive = duration.Duration.EndInclusive, DurationBasis = terms.DurationBasis, Coverage = JsonSerializer.Serialize(terms.Coverage, LedgerJson.Options),
             RegionScope = JsonSerializer.Serialize(terms.RegionScope, LedgerJson.Options), Transferable = terms.Transferable, ConditionAtCreation = command.ConditionGrade ?? "new", AccrualCohortId = cohortId,
@@ -109,11 +113,12 @@ public static class CreateEntitlementHandler
         await ledger.AppendAsync(entitlement, EntitlementEventType.Created, key, command.EventTime, command.ActorRef, new
         {
             entitlement_id = entitlement.EntitlementId, item_id = unit.ItemId, coverage_family = entitlement.CoverageFamily, entitlement_type = entitlement.Type, policy_level = level, policy_code = version.PolicyCode, policy_version = version.Version, policy_version_id = version.PolicyVersionId,
-            status = entitlement.Status, start_basis = start.Basis, start = start.Explanation, start_date = entitlement.StartDate, end_date = entitlement.EndDate, cap_applied = start.CapApplied, floor_applied = duration.FloorApplied,
+            status = entitlement.Status, start_basis = entitlement.StartBasis, start = start.Explanation, start_date = entitlement.StartDate, end_date = entitlement.EndDate, cap_applied = start.CapApplied, floor_applied = duration.FloorApplied,
             time_zone = zone, accrual_cohort_id = cohortId, assurance_or_service = entitlement.AssuranceOrService,
             accrual_suppressed = entitlement.AssuranceOrService == AssuranceOrService.Assurance && cohortId is null, provenance = command.Provenance, owner_party_ref = command.OwnerPartyRef, rule_version = version.RuleVersion, trail,
+            evidence_refs = evidenceRefs, finance_review_required = financeReviewRequired, reason_code = reasonCode, finance_review_ref = financeReviewRef,
         }, command.SourceDocument, cancellationToken, eventId);
-        return new CreateEntitlementResult(entitlement.EntitlementId, entitlement.Status, level, version.PolicyCode, version.Version, entitlement.StartDate, entitlement.EndDate, start.Basis, start.CapApplied, duration.FloorApplied, zone, cohortId, trail);
+        return new CreateEntitlementResult(entitlement.EntitlementId, entitlement.Status, level, version.PolicyCode, version.Version, entitlement.StartDate, entitlement.EndDate, entitlement.StartBasis, start.CapApplied, duration.FloorApplied, zone, cohortId, trail);
     }
 
     /// <summary>The reference zone by the policy's rule, falling back to the obligor's zone and then UTC, so a start is never read in an unknown calendar.</summary>

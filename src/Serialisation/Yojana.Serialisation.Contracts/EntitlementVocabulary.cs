@@ -16,6 +16,15 @@ public static class EntitlementType
 }
 
 /// <summary>Outbound: we owe the customer. Inbound: the vendor owes us (case 70).</summary>
+/// <summary>
+/// Coverage families are tenant reference data, but one code is structural: the base warranty every sold unit should
+/// carry, which the gap report, backfill and creation on sale look for. A tenant defines it under this code.
+/// </summary>
+public static class CoverageFamilyCode
+{
+    public const string Base = "base_warranty";
+}
+
 public static class EntitlementDirection
 {
     public const string Outbound = "outbound";
@@ -134,6 +143,21 @@ public static class AmendmentValueSource
 {
     public const string Policy = "policy";
     public const string Entered = "entered";
+}
+
+public static class BackfillReason
+{
+    public const string HistoricalGap = "historical_gap";
+    public const string DropShipGap = "drop_ship_gap";
+    public const string MigrationGap = "migration_gap";
+
+    public static readonly IReadOnlyList<string> All = [HistoricalGap, DropShipGap, MigrationGap];
+}
+
+public static class BackfillStartBasis
+{
+    public const string DeliveryDocument = "delivery_document";
+    public const string VendorShipConfirmation = "vendor_ship_confirmation";
 }
 
 /// <summary>The fields AmendEntitlement changes, as named on EntitlementAmendment rows and in Entitlement.Amended.</summary>

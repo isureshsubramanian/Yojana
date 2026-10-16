@@ -84,6 +84,13 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant)
             }
 
             case EntitlementEventType.Created:
+                if (Str(a, "provenance") == EntitlementProvenance.Backfilled)
+                {
+                    return new EntitlementBackfilled(Header(EntitlementBackfilled.Schema, EntitlementBackfilled.Version), GuidOrNull(a, "entitlement_id") ?? Guid.Empty,
+                        Str(a, "start_basis") ?? "", Date(a, "start_date") ?? default, Date(a, "end_date") ?? default,
+                        a?.TryGetProperty("evidence_refs", out var evidence) == true ? evidence.Deserialize<List<string>>(LedgerJson.Options) ?? [] : [],
+                        GuidOrNull(a, "accrual_cohort_id"), a?.TryGetProperty("finance_review_required", out var review) == true && review.ValueKind == JsonValueKind.True, document);
+                }
                 return new EntitlementCreated(Header(EntitlementCreated.Schema, EntitlementCreated.Version), GuidOrNull(a, "entitlement_id") ?? Guid.Empty, GuidOrNull(a, "item_id") ?? Guid.Empty,
                     Str(a, "coverage_family") ?? "", Str(a, "entitlement_type") ?? "", e.LegalEntityId, GuidOrNull(a, "owner_party_ref"), GuidOrNull(a, "policy_version_id") ?? Guid.Empty, Str(a, "policy_code") ?? "",
                     Int(a, "policy_version") ?? 0, Date(a, "start_date"), Date(a, "end_date"), Str(a, "status") ?? "", GuidOrNull(a, "accrual_cohort_id"), Str(a, "assurance_or_service") ?? "",
