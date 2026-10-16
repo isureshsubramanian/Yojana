@@ -312,8 +312,10 @@ public static class TransferEntitlementHandler
         return new(source.EntitlementId, target.EntitlementId, rootId, policy.Code, computedEnd, chainLength, eventId, false);
     }
 
+    // A superseding row (P2-T09) shares the root but replaces cover on the same unit; it is not a replacement, so it is
+    // not counted. Coupled to SupersedeEntitlementHandler, which keeps the root on the successor.
     private static Task<int> ChainLengthAsync(SerialisationDbContext db, Yojana.Platform.Contracts.Tenancy.TenantId tenantId, Guid rootId, CancellationToken cancellationToken) =>
-        db.Entitlements.CountAsync(e => e.TenantId == tenantId && (e.EntitlementId == rootId || e.RootEntitlementId == rootId), cancellationToken);
+        db.Entitlements.CountAsync(e => e.TenantId == tenantId && (e.EntitlementId == rootId || e.RootEntitlementId == rootId) && e.SupersedesEntitlementId == null, cancellationToken);
 }
 
 public static class VoidEntitlementHandler

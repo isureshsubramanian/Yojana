@@ -135,6 +135,26 @@ public sealed record AmendmentCommitter(string UserRef, IReadOnlyList<string> Ro
 public sealed record AmendEntitlementResult(Guid EntitlementId, DateOnly? StartDate, DateOnly? EndDate, int DaysChanged, bool Reduction, string ApprovalLevel, string ApprovedBy, IReadOnlyList<EntitlementFieldChange> Changes, Guid EventId, bool Replayed, decimal? Value = null, string? ValueSource = null);
 
 /// <summary>
+/// Replaces a live entitlement with a published policy version in the same coverage family. The successor starts on
+/// <see cref="EffectiveDate"/> and retains the sale's accrual cohort; it is therefore published as superseded, never as
+/// a newly sold entitlement. Give either the version id or policy code (whose latest applicable version is selected).
+/// </summary>
+public sealed record SupersedeEntitlement(
+    Guid CommandId,
+    Guid EntitlementId,
+    DateOnly EffectiveDate,
+    string ReasonCode,
+    DateTime EventTime,
+    string ActorRef,
+    Guid? NewPolicyVersionId = null,
+    string? NewPolicyCode = null,
+    DocumentRef? SourceDocument = null,
+    string? CustomerNotificationRef = null,
+    AmendmentCommitter? CommittedBy = null);
+
+public sealed record SupersedeEntitlementResult(Guid SupersededEntitlementId, Guid NewEntitlementId, Guid RootEntitlementId, DateOnly StartDate, DateOnly EndDate, bool Reduction, string ApprovalLevel, string ApprovedBy, Guid EventId, bool Replayed);
+
+/// <summary>
 /// Creates the missing base entitlement for each named unit as one atomic command. Validation refuses the whole list by
 /// default; <see cref="SkipInvalid"/> explicitly permits valid units to be created while invalid ones are reported.
 /// Selection-set expansion supplies <see cref="UnitIds"/> in P2-T11; the per-unit operation is reusable independently.
