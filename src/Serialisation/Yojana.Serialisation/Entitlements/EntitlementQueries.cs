@@ -71,7 +71,9 @@ public sealed class EntitlementQueries(SerialisationDbContext db, ITenantContext
             .Select(e => new EntitlementLedgerEventRow(e.EventId, e.EventType, e.EventTime, e.ActorRef, e.DocumentType, e.DocumentId, e.DocumentLine, e.Attributes ?? "{}"));
         var archivedEvents = db.ArchivedEvents.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == unitId && eventTypes.Contains(e.EventType))
             .Select(e => new EntitlementLedgerEventRow(e.EventId, e.EventType, e.EventTime, e.ActorRef, e.DocumentType, e.DocumentId, e.DocumentLine, e.Attributes ?? "{}"));
-        var lineage = await liveEvents.Concat(archivedEvents).OrderByDescending(e => e.At).ToListAsync(cancellationToken);
+        // Two reads merged here: EF cannot translate a set operation over rows built by a record constructor. A unit's
+        // entitlement events are few, and archived partitions hold only the oldest of them.
+        var lineage = (await liveEvents.ToListAsync(cancellationToken)).Concat(await archivedEvents.ToListAsync(cancellationToken)).OrderByDescending(e => e.At).ToList();
         var amendments = await db.EntitlementAmendments.AsNoTracking().Where(a => a.TenantId == tenantId && ids.Contains(a.EntitlementId)).OrderByDescending(a => a.At)
             .Select(a => new EntitlementAmendmentRow(a.AmendmentId, a.EntitlementId, a.Field, a.BeforeValue, a.AfterValue, a.ReasonCode, a.ApprovedBy, a.ActorRef, a.At)).ToListAsync(cancellationToken);
         var suspensions = await db.EntitlementSuspensions.AsNoTracking().Where(s => s.TenantId == tenantId && ids.Contains(s.EntitlementId)).OrderByDescending(s => s.FromDate)
