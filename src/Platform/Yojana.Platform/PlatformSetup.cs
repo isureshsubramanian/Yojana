@@ -56,7 +56,7 @@ public static class PlatformSetup
         builder.Services.AddScoped<ITenantSettings, TenantSettings>();
 
         builder.Services.AddDbContextWithWolverineIntegration<PlatformDbContext>(
-            db => db.UseSqlServer(options.ConnectionString, sql => sql.MigrationsHistoryTable("__migrations", PlatformDbContext.SchemaName)),
+            db => db.UseSqlServer(options.ConnectionString, sql => SqlServerConventions(sql, PlatformDbContext.SchemaName)),
             options.WolverineSchema);
         ModuleContexts.Insert(0, typeof(PlatformDbContext));
         HandlerAssemblies.Add(typeof(PlatformSetup).Assembly);
@@ -140,11 +140,19 @@ public static class PlatformSetup
         var options = builder.Services.Single(d => d.ServiceType == typeof(PlatformOptions)).ImplementationInstance as PlatformOptions
             ?? throw new InvalidOperationException("Call AddYojanaPlatform before AddModuleDbContext.");
         builder.Services.AddDbContextWithWolverineIntegration<TContext>(
-            db => db.UseSqlServer(options.ConnectionString, sql => sql.MigrationsHistoryTable("__migrations", schema)),
+            db => db.UseSqlServer(options.ConnectionString, sql => SqlServerConventions(sql, schema)),
             options.WolverineSchema);
         ModuleContexts.Add(typeof(TContext));
         return builder;
     }
+
+    // Collections in LINQ (ids.Contains(x)) go to the server as ONE json parameter read with OPENJSON, not one
+    // parameter per element. With one parameter per element a 500-serial document compiled 1–3 s per query on every run
+    // (Query Store, bench run 2026-10-16 10:53) — more than the queries took to execute; one parameter gives one small
+    // plan per query shape whatever the list length.
+    private static void SqlServerConventions(Microsoft.EntityFrameworkCore.Infrastructure.SqlServerDbContextOptionsBuilder sql, string schema) => sql
+        .MigrationsHistoryTable("__migrations", schema)
+        .UseParameterizedCollectionMode(ParameterTranslationMode.Parameter);
 
     /// <summary>Includes a module assembly in Wolverine handler discovery. Call before AddYojanaPlatform.</summary>
     public static void IncludeHandlers(Assembly assembly) => HandlerAssemblies.Add(assembly);
