@@ -17,7 +17,10 @@ public static class SupersessionRules
     {
         if (!Reasons.Contains(reason))
             throw new CommandRefusedException("reason_unknown", $"'{reason}' is not a supersession reason ({string.Join(", ", Reasons)}).");
-        return new(YojanaRole.ServiceManager, reason == AmendmentReason.Purchase, reduction && certificateIssued);
+        // A purchase is backed by its source document (an upgrade sold on an invoice): the desk commits it, as a purchase
+        // amendment; every other reason, and any supersession that reduces cover, needs the service manager.
+        var role = reason == AmendmentReason.Purchase && !reduction ? YojanaRole.ServiceDesk : YojanaRole.ServiceManager;
+        return new(role, reason == AmendmentReason.Purchase, reduction && certificateIssued);
     }
 
     public static bool CoverageReduced(DateOnly oldEnd, CoverageTerms oldCoverage, DateOnly newEnd, CoverageTerms newCoverage) =>

@@ -2539,6 +2539,96 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToView("warranty_current", "serialisation");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.WarrantyLineException", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ExceptionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("exception_id");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("detail");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("document_id");
+
+                    b.Property<int>("DocumentLine")
+                        .HasColumnType("int")
+                        .HasColumnName("document_line");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("document_type");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("item_id");
+
+                    b.Property<string>("MissingInput")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("missing_input");
+
+                    b.Property<DateTime>("RaisedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("raised_at");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<string>("ResolvedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("resolved_by");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid?>("TargetDocumentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("target_document_id");
+
+                    b.Property<string>("TargetDocumentType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("target_document_type");
+
+                    b.Property<DateTime>("TriggerAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("trigger_at");
+
+                    b.HasKey("TenantId", "ExceptionId")
+                        .HasName("pk_warranty_line_exception");
+
+                    b.HasIndex("TenantId", "Status", "RaisedAt")
+                        .HasDatabaseName("ix_warranty_line_exception_tenant_id_status_raised_at");
+
+                    b.HasIndex("TenantId", "DocumentType", "DocumentId", "DocumentLine")
+                        .IsUnique()
+                        .HasDatabaseName("ux_warranty_line_exception_tenant_id_document_type_document_id_document_line");
+
+                    b.HasIndex("TenantId", "TargetDocumentType", "TargetDocumentId", "Status")
+                        .HasDatabaseName("ix_warranty_line_exception_tenant_id_target_document_type_target_document_id_status");
+
+                    b.ToTable("warranty_line_exception", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_warranty_line_exception_status", "status IN ('open', 'resolved', 'waived')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.WarrantyPolicyVersion", b =>
                 {
                     b.Property<Guid>("TenantId")

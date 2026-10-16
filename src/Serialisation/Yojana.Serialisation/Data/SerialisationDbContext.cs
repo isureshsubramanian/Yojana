@@ -75,6 +75,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<EntitlementGapRun> EntitlementGapRuns => Set<EntitlementGapRun>();
 
+    public DbSet<WarrantyLineException> WarrantyLineExceptions => Set<WarrantyLineException>();
+
     public DbSet<EntitlementSuspension> EntitlementSuspensions => Set<EntitlementSuspension>();
 
     public DbSet<EntitlementRebase> EntitlementRebases => Set<EntitlementRebase>();
@@ -459,6 +461,21 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasKey(r => new { r.TenantId, r.RunId });
             b.Property(r => r.RunTrigger).HasMaxLength(20);
             b.HasIndex(r => new { r.TenantId, r.RunAt });
+        });
+
+        modelBuilder.Entity<WarrantyLineException>(b =>
+        {
+            b.ToTable("warranty_line_exception", t => t.HasCheckConstraint("ck_warranty_line_exception_status", "status IN ('open', 'resolved', 'waived')"));
+            b.HasKey(e => new { e.TenantId, e.ExceptionId });
+            b.Property(e => e.DocumentType).HasMaxLength(40);
+            b.Property(e => e.TargetDocumentType).HasMaxLength(40);
+            b.Property(e => e.Status).HasMaxLength(20);
+            b.Property(e => e.MissingInput).HasMaxLength(40);
+            b.Property(e => e.Detail).HasMaxLength(1000);
+            b.Property(e => e.ResolvedBy).HasMaxLength(200);
+            b.HasIndex(e => new { e.TenantId, e.DocumentType, e.DocumentId, e.DocumentLine }).IsUnique();
+            b.HasIndex(e => new { e.TenantId, e.Status, e.RaisedAt });
+            b.HasIndex(e => new { e.TenantId, e.TargetDocumentType, e.TargetDocumentId, e.Status });
         });
 
         modelBuilder.Entity<EntitlementSuspension>(b =>

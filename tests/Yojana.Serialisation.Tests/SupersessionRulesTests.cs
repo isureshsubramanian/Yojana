@@ -8,14 +8,20 @@ namespace Yojana.Serialisation.Tests;
 public sealed class SupersessionRulesTests
 {
     [Theory]
-    [InlineData(AmendmentReason.Purchase, true)]
-    [InlineData(AmendmentReason.Correction, false)]
-    [InlineData(AmendmentReason.SellerError, false)]
-    [InlineData(AmendmentReason.Goodwill, false)]
-    public void Known_reasons_need_manager_and_purchase_needs_its_document(string reason, bool document)
+    [InlineData(AmendmentReason.Purchase, YojanaRole.ServiceDesk, true)]
+    [InlineData(AmendmentReason.Correction, YojanaRole.ServiceManager, false)]
+    [InlineData(AmendmentReason.SellerError, YojanaRole.ServiceManager, false)]
+    [InlineData(AmendmentReason.Goodwill, YojanaRole.ServiceManager, false)]
+    public void A_purchase_is_the_desk_with_its_document_and_other_reasons_need_the_manager(string reason, string role, bool document)
     {
         var required = SupersessionRules.Required(reason, false, false);
-        Assert.Equal((YojanaRole.ServiceManager, document, false), (required.Role, required.SourceDocument, required.CustomerNotification));
+        Assert.Equal((role, document, false), (required.Role, required.SourceDocument, required.CustomerNotification));
+    }
+
+    [Fact]
+    public void A_purchase_that_reduces_cover_needs_the_manager()
+    {
+        Assert.Equal(YojanaRole.ServiceManager, SupersessionRules.Required(AmendmentReason.Purchase, reduction: true, certificateIssued: false).Role);
     }
 
     [Fact]

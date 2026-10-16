@@ -86,6 +86,56 @@ public sealed class EntitlementRequirementTests(SerialisationHostFixture fixture
         Assert.Equal(EntitlementMissingInput.NoStartEvidence, row.MissingInput);
     }
 
+    [DatabaseFact]
+    public async Task Drop_ship_without_serials_persists_a_line_blocker_and_the_asn_resolves_it_and_creates_cover()
+    {
+        var tenant = await fixture.NewTenantAsync("rd");
+        var item = Guid.NewGuid();
+        var code = "RD-" + Guid.NewGuid().ToString("N")[..6];
+        await InvokeAsync<CoverageFamilyRow>(tenant, new DefineCoverageFamily(CoverageFamilyCode.Base, "Base warranty", false, AssuranceOrService.Assurance));
+        await InvokeAsync<ReplacementPolicyRow>(tenant, new DefineReplacementPolicy("RD-90", ReplacementRule.MaxRemainingOrMinDays, 90, null, null));
+        var draft = await InvokeAsync<PolicyDraftResult>(tenant, new CreatePolicyDraft(Guid.NewGuid(), code, code, CoverageFamilyCode.Base, EntitlementType.Manufacturer,
+            new DateOnly(2020, 1, 1), PolicyValidatorTestsTerms.Standard24() with { ReplacementPolicyCode = "RD-90" }, "test"));
+        await InvokeAsync<PolicyDraftResult>(tenant, new PublishPolicyVersion(draft.PolicyVersionId, "test"));
+        Ports.Register(new ItemWarrantyPolicy(item, CoverageFamilyCode.Base, code, true));
+
+        var shipmentRef = new DocumentRef("vendor_shipment", Guid.NewGuid());
+        var asnRef = new DocumentRef("asn", Guid.NewGuid());
+        var shippedAt = new DateTime(2026, 10, 4, 9, 0, 0, DateTimeKind.Utc);
+        var documents = fixture.Services.GetRequiredService<InMemoryDocumentPorts>();
+        documents.Add(new VendorShipment(shipmentRef, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), shippedAt,
+            [new DocumentLine(1, item, 1, [])]));
+        documents.Add(new ReceiptDocument(asnRef, Guid.NewGuid(), shippedAt.AddDays(2),
+            [new DocumentLine(1, item, 1, [new DocumentSerial("RD-" + Guid.NewGuid().ToString("N"))])], IsAsn: true, VendorShipment: shipmentRef));
+
+        await InvokeAsync<ConsumedEventResult>(tenant, new PurchasingVendorShipConfirmed(new ThinEnvelope(Guid.NewGuid(), Obligor, shippedAt, "purchasing"), shipmentRef));
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var blocker = await db.WarrantyLineExceptions.AsNoTracking().SingleAsync(e => e.DocumentId == shipmentRef.Id);
+            Assert.Equal((WarrantyLineExceptionStatus.Open, WarrantyLineMissingInput.SerialsPendingAsn), (blocker.Status, blocker.MissingInput));
+            var check = await scope.ServiceProvider.GetRequiredService<EntitlementRequirementQueries>().CheckAsync(shipmentRef.Type, shipmentRef.Id, CancellationToken.None);
+            Assert.False(check.CanComplete);
+        }
+
+        await InvokeAsync<ConsumedEventResult>(tenant, new PurchasingAsnReceived(new ThinEnvelope(Guid.NewGuid(), Obligor, shippedAt.AddDays(2), "purchasing"), asnRef));
+        Yojana.Serialisation.Data.Entities.EntitlementRequirement? requirement = null;
+        for (var i = 0; i < 100 && requirement is null; i++)
+        {
+            using var scope = fixture.ScopeFor(tenant);
+            requirement = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().EntitlementRequirements.AsNoTracking()
+                .SingleOrDefaultAsync(r => r.SourceDocumentId == shipmentRef.Id && r.Status == EntitlementRequirementStatus.Satisfied);
+            if (requirement is null) await Task.Delay(100);
+        }
+        Assert.NotNull(requirement);
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            Assert.Equal(WarrantyLineExceptionStatus.Resolved, (await db.WarrantyLineExceptions.AsNoTracking().SingleAsync(e => e.DocumentId == shipmentRef.Id)).Status);
+            Assert.Equal(shippedAt.Date, (await db.Entitlements.AsNoTracking().SingleAsync(e => e.EntitlementId == requirement!.EntitlementId)).StartDate!.Value.ToDateTime(TimeOnly.MinValue).Date);
+        }
+    }
+
     private async Task<Yojana.Serialisation.Data.Entities.EntitlementRequirement> WaitAsync(TenantId tenant, Guid unit, string status)
     {
         for (var i = 0; i < 100; i++)

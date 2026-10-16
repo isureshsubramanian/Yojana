@@ -59,6 +59,24 @@ public static class EntitlementRequirementStatus
     public const string Waived = "waived";
 }
 
+public static class WarrantyLineExceptionStatus
+{
+    public const string Open = "open";
+    public const string Resolved = "resolved";
+    public const string Waived = "waived";
+}
+
+public static class WarrantyLineMissingInput
+{
+    public const string SerialsNotCaptured = "serials_not_captured";
+    public const string ReferencedDocumentNotPosted = "referenced_document_not_posted";
+    public const string TargetNotSerialised = "target_not_serialised";
+    public const string NoPolicy = "no_policy";
+    public const string SerialsPendingAsn = "serials_pending_asn";
+    public const string RegulatedJurisdiction = "regulated_jurisdiction";
+    public const string CreationFailed = "creation_failed";
+}
+
 public static class EntitlementMissingInput
 {
     public const string NoPolicy = "no_policy";

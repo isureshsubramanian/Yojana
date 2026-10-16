@@ -14,6 +14,23 @@ public sealed record EntitlementRequirementPage(IReadOnlyList<EntitlementRequire
 
 public sealed record EntitlementRequirementCheck(bool CanComplete, IReadOnlyList<EntitlementRequirementRow> Blocking, IReadOnlyList<string> DocumentProblems);
 
+public sealed record ResolveWarrantyLineException(Guid ExceptionId, IReadOnlyList<string> Serials, string ActorRef);
+
+public sealed record WarrantyLineExceptionRow(Guid ExceptionId, DocumentRef Document, Guid ItemId, string Status, string MissingInput, string? Detail,
+    DateTime TriggerAt, DateTime RaisedAt, DateTime? ResolvedAt);
+
+public sealed record WarrantyLineExceptionPage(IReadOnlyList<WarrantyLineExceptionRow> Items, int Total, int Skip, int Take);
+
+public sealed record WarrantyJurisdictionRule(string CountryOrRegionGroup, bool Allowed, bool DisclosureRequired = false, bool LicensedObligorRequired = false);
+
+public sealed record WarrantyReferencePolicy(IReadOnlyList<WarrantyJurisdictionRule> Jurisdictions);
+
+public sealed record WarrantyLineValidation(Guid ItemId, string? PolicyCode, Guid? PolicyVersionId, WarrantyLineTarget Target, string? Country = null,
+    string? RegionGroup = null, bool HasLicensedObligor = false, DocumentRef? SourceDocument = null);
+
+public sealed record WarrantyLineValidationResult(bool Ok, IReadOnlyList<string> Reasons, IReadOnlyList<string>? UnknownUnits = null,
+    IReadOnlyList<string>? NonSerialTrackedUnits = null);
+
 // Entitlement commands of P2-T05 (ADR-0001 "Core model: WarrantyEntitlement", state machine). Each is a fact on the
 // unit's ledger with a deterministic idempotency key from the command id; a replay returns the same result. Times are
 // UTC instants; the calendar days they fall on are read in the entitlement's reference time zone.
