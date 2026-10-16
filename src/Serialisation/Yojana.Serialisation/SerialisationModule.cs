@@ -63,7 +63,7 @@ public static class SerialisationModule
         // PlatformDbContext behind ITenantSettings stays out of the handler's generated graph and the handler keeps the
         // default transaction on SerialisationDbContext, opened after the tenant middleware. A plain registration makes
         // the host refuse to start ("multiple DbContext types detected").
-        builder.Services.AddScoped(sp => new Entitlements.AmendmentApprovalSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped(sp => new Entitlements.AmendmentApprovalSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>(), sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantCurrency>()));
         builder.Services.AddScoped<Entitlements.EntitlementLedger>();
         builder.Services.AddScoped<Entitlements.EntitlementQueries>();
 

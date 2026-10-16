@@ -6,8 +6,11 @@ using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation.Entitlements;
 
-/// <summary>What an amendment needs before it may be committed: the role, and the references that must accompany it.</summary>
-public sealed record AmendmentRequirement(string Role, bool SystemOnly, bool SourceDocument, bool FinanceReview, bool CustomerNotification);
+/// <summary>
+/// What an amendment needs before it may be committed: the role, and the references that must accompany it. When
+/// <see cref="FinanceReviewAboveAmount"/> is set the amendment's value decides the finance review as well (P2-T08b).
+/// </summary>
+public sealed record AmendmentRequirement(string Role, bool SystemOnly, bool SourceDocument, bool FinanceReview, bool CustomerNotification, decimal? FinanceReviewAboveAmount = null);
 
 /// <summary>
 /// The approval rules of <c>AmendEntitlement</c> (ADR-0001 correction table, cases 129 and 140) as pure functions over the
@@ -21,7 +24,8 @@ public static class AmendmentRules
 
     /// <summary>
     /// The ADR's proposed values. The finance-review bound for goodwill and dispute settlement is not given there ("a
-    /// configurable value"); 90 days is a placeholder until OD-06 is decided.
+    /// configurable value"); OD-06 (decided 2026-10-17) keeps it tenant data with 90 days as the shipped default. No
+    /// amount bound is shipped: amounts need the tenant's currency, so a tenant adds them once that is set up.
     /// </summary>
     public static readonly AmendmentApprovalPolicy DefaultPolicy = new(
     [
@@ -42,8 +46,24 @@ public static class AmendmentRules
         var tier = rule.Tiers.FirstOrDefault(t => t.UpToDays is not { } bound || days <= bound) ?? rule.Tiers[^1];
         var role = tier.Role;
         if (reduction && Rank(policy.ReductionRole) > Rank(role)) role = policy.ReductionRole;
-        return new(role, rule.SystemOnly, rule.SourceDocumentRequired, tier.FinanceReview, reduction && certificateIssued);
+        return new(role, rule.SystemOnly, rule.SourceDocumentRequired, tier.FinanceReview, reduction && certificateIssued, tier.FinanceReviewAboveAmount);
     }
+
+    /// <summary>
+    /// The amendment's value from the policy's value per unit of term (P2-T08b): per day, the days the end moves (either
+    /// way); per month, the months the term changes when only a term in months changes, and otherwise the days moved read
+    /// as months of 365.25 / 12 days. Rounded to two decimals, away from zero.
+    /// </summary>
+    public static decimal Value(AmendmentValueTerm value, int daysChanged, int? monthsChanged)
+    {
+        var units = value.Per == AmendmentValueTerm.PerMonth
+            ? monthsChanged is { } months ? Math.Abs(months) : Math.Abs(daysChanged) * 12m / 365.25m
+            : Math.Abs(daysChanged);
+        return Math.Round(value.Amount * units, 2, MidpointRounding.AwayFromZero);
+    }
+
+    /// <summary>Whether the amount bound calls for finance review: only a value strictly above it does.</summary>
+    public static bool AboveAmount(AmendmentRequirement required, decimal value) => required.FinanceReviewAboveAmount is { } bound && value > bound;
 
     /// <summary>Whether someone holding <paramref name="held"/> may commit at <paramref name="required"/>: the role itself, or a higher one on the ladder.</summary>
     public static bool Satisfies(IReadOnlyList<string> held, string required) =>
@@ -61,9 +81,12 @@ public static class AmendmentRules
         || !string.Equals(before.CoverageHours, after.CoverageHours, StringComparison.Ordinal);
 
     /// <summary>The policy's problems, empty when it may be stored: every reason known and present once, tiers ascending and ending unbounded, roles known.</summary>
-    public static IReadOnlyList<string> Validate(AmendmentApprovalPolicy policy)
+    public static IReadOnlyList<string> Validate(AmendmentApprovalPolicy policy, string? tenantCurrency = null)
     {
         var problems = new List<string>();
+        var amounts = policy.Reasons.SelectMany(r => r.Tiers).Where(t => t.FinanceReviewAboveAmount is not null).ToList();
+        if (amounts.Count > 0 && tenantCurrency is null) problems.Add("an amount bound needs the tenant currency: set it up first");
+        if (amounts.Any(t => t.FinanceReviewAboveAmount < 0)) problems.Add("an amount bound cannot be negative");
         if (!YojanaRole.IsKnown(policy.ReductionRole)) problems.Add($"reduction role '{policy.ReductionRole}' is not a role");
         foreach (var missing in AmendmentReason.All.Except(policy.Reasons.Select(r => r.ReasonCode))) problems.Add($"reason '{missing}' has no rule");
         foreach (var rule in policy.Reasons)
@@ -82,7 +105,7 @@ public static class AmendmentRules
 }
 
 /// <summary>The tenant's amendment approval policy, stored as tenant data under <see cref="Key"/>; the default when none is set.</summary>
-public sealed class AmendmentApprovalSettings(ITenantSettings settings)
+public sealed class AmendmentApprovalSettings(ITenantSettings settings, ITenantCurrency currency)
 {
     public const string Key = "entitlements.amendment_approval";
 
@@ -91,7 +114,7 @@ public sealed class AmendmentApprovalSettings(ITenantSettings settings)
 
     public async Task SetAsync(AmendmentApprovalPolicy policy, CancellationToken cancellationToken)
     {
-        if (AmendmentRules.Validate(policy) is { Count: > 0 } problems) throw new CommandRefusedException("approval_policy_invalid", string.Join("; ", problems));
+        if (AmendmentRules.Validate(policy, await currency.GetAsync(cancellationToken)) is { Count: > 0 } problems) throw new CommandRefusedException("approval_policy_invalid", string.Join("; ", problems));
         await settings.SetAsync(Key, JsonSerializer.Serialize(policy, LedgerJson.Options), cancellationToken);
     }
 }

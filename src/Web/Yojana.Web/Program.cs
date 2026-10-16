@@ -129,6 +129,19 @@ app.MapGet("/api/auth/me", async (SignInService signIn, PlatformDbContext db, Ht
 
 app.MapPost("/api/auth/sign-out", async (HttpContext http) => { await http.SignOutAsync(); return Results.NoContent(); }).RequireAuthorization();
 
+// The tenant's working currency: every configured amount (approval thresholds, policy values) is in it.
+app.MapGet("/api/tenant/currency", async (ITenantCurrency currency, CancellationToken ct) => Results.Ok(new { currency = await currency.GetAsync(ct) }))
+    .RequireAuthorization(YojanaPolicy.TenantMember);
+app.MapPut("/api/tenant/currency", async (TenantCurrencyRequest request, ITenantCurrency currency, CancellationToken ct) =>
+{
+    if (ITenantCurrency.Normalise(request.Currency) is null)
+    {
+        return Results.Problem(title: "currency_invalid", detail: $"'{request.Currency}' is not an ISO 4217 currency code (three letters).", statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    return Results.Ok(new { currency = await currency.SetAsync(request.Currency, ct) });
+}).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+
 // Shell: the overview page and the header's connection health, assembled from every module's contributions.
 app.MapGet("/api/shell/overview", async (ShellOverviewService shell, HttpContext http, IClock clock, CancellationToken ct) =>
 {
@@ -171,6 +184,8 @@ namespace Yojana.Web
     public sealed record SelectTenantRequest(string TenantCode);
 
     public sealed record PingRequest(string Note);
+
+    public sealed record TenantCurrencyRequest(string Currency);
 
     /// <summary>Wire shape of the signed-in session for the web shell (web/src/api/types.ts mirrors it).</summary>
     public sealed record SessionView(SessionUserView User, SessionTenantView? Tenant, IReadOnlyList<string> Roles, IReadOnlyList<TenantChoiceView> Tenants)

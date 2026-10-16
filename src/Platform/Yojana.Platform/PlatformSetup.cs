@@ -54,6 +54,11 @@ public static class PlatformSetup
         builder.Services.AddScoped<ITenantContextSetter>(sp => sp.GetRequiredService<TenantContext>());
         builder.Services.AddSingleton<IClock, SystemClock>();
         builder.Services.AddScoped<ITenantSettings, TenantSettings>();
+        // A factory on purpose: Wolverine does not look inside one, so a module handler that takes ITenantCurrency does not
+        // get PlatformDbContext (behind ITenantSettings) in its generated graph, which makes the host refuse to start
+        // ("multiple DbContext types detected"). Coupled to the module handlers that read the currency (Serialisation
+        // PolicyStore and AmendEntitlementHandler); a plain AddScoped<ITenantCurrency, TenantCurrency>() breaks them.
+        builder.Services.AddScoped<ITenantCurrency>(sp => new TenantCurrency(sp.GetRequiredService<ITenantSettings>()));
 
         builder.Services.AddDbContextWithWolverineIntegration<PlatformDbContext>(
             db => db.UseSqlServer(options.ConnectionString, sql => SqlServerConventions(sql, PlatformDbContext.SchemaName)),

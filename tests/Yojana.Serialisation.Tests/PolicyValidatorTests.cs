@@ -115,4 +115,16 @@ public sealed class PolicyValidatorTests
         var zero = Standard24() with { Refurbished = [new RefurbishedTerm(null, "B", "direct", "EU", 0, null)] };
         Assert.Contains("refurbished_duration_not_positive", Errors(PolicyValidator.Validate(zero, Context())));
     }
+
+    [Fact]
+    public void A_policy_value_needs_the_tenant_currency_a_positive_amount_and_a_day_or_month()
+    {
+        var valued = Standard24() with { AmendmentValue = new AmendmentValueTerm(2.5m, "EUR", AmendmentValueTerm.PerDay) };
+        Assert.Contains("currency_not_configured", Errors(PolicyValidator.Validate(valued, Context())));
+        Assert.Empty(Errors(PolicyValidator.Validate(valued, Context() with { TenantCurrency = "EUR" })));
+        Assert.Contains("amendment_value_currency_differs", Errors(PolicyValidator.Validate(valued, Context() with { TenantCurrency = "INR" })));
+        var broken = Standard24() with { AmendmentValue = new AmendmentValueTerm(0m, "EUR", "week") };
+        Assert.Equal(["amendment_value_not_positive", "amendment_value_per_unknown"], Errors(PolicyValidator.Validate(broken, Context() with { TenantCurrency = "EUR" })));
+        Assert.Empty(Errors(PolicyValidator.Validate(Standard24(), Context())));
+    }
 }

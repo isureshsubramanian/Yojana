@@ -9,7 +9,7 @@ using Yojana.Serialisation.Ledger;
 namespace Yojana.Serialisation.Entitlements;
 
 /// <summary>Maps <see cref="PolicyTerms"/> to and from the version row's columns and reads what the validator needs.</summary>
-public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant)
+public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant, ITenantCurrency currency)
 {
     /// <summary>
     /// The version of the duration arithmetic (P2-T04). An entitlement records the policy version and this number as
@@ -45,6 +45,7 @@ public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant
         row.ReferenceTimeZoneRule = terms.ReferenceTimeZoneRule;
         row.ServiceContractRegulated = terms.ServiceContractRegulated;
         row.Eligibility = terms.Eligibility is null ? null : Json(terms.Eligibility);
+        row.AmendmentValue = terms.AmendmentValue is null ? null : Json(terms.AmendmentValue);
     }
 
     public async Task<PolicyTerms> ReadTermsAsync(WarrantyPolicyVersion row, CancellationToken cancellationToken)
@@ -57,7 +58,8 @@ public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant
             new DurationRule(row.DurationValue, row.DurationUnit, row.EndOfMonthRule, row.EndInclusive), row.DurationBasis, Read<List<UsageLimitTerm>>(row.UsageLimits),
             new StartRule(row.StartTrigger, Read<List<StartFallback>>(row.FallbackChain), row.StartCapDays), Read<CoverageTerms>(row.Coverage), Read<List<string>>(row.Exclusions), Read<List<string>>(row.RegionScope),
             row.Transferable, row.SettlementFormula, replacement, Read<List<RefurbishedTerm>>(row.RefurbishedPolicies), row.DoaWindowDays, row.AssuranceOrService, row.ReferenceTimeZoneRule, row.ServiceContractRegulated,
-            row.Eligibility is null ? null : Read<EligibilityRule>(row.Eligibility));
+            row.Eligibility is null ? null : Read<EligibilityRule>(row.Eligibility),
+            row.AmendmentValue is null ? null : Read<AmendmentValueTerm>(row.AmendmentValue));
     }
 
     public async Task<PolicyValidation> ValidateAsync(WarrantyPolicyVersion row, PolicyTerms terms, CancellationToken cancellationToken)
@@ -69,7 +71,10 @@ public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant
         var previous = await db.PolicyVersions.AsNoTracking()
             .Where(v => v.TenantId == tenantId && v.PolicyCode == row.PolicyCode && v.Version < row.Version && v.Status != PolicyVersionStatus.Draft)
             .OrderByDescending(v => v.Version).Select(v => (DateOnly?)v.AppliesToContractsFrom).FirstOrDefaultAsync(cancellationToken);
-        return PolicyValidator.Validate(terms, new PolicyValidationContext(row.CoverageFamily, families, replacements, row.AppliesToContractsFrom, previous));
+        // ITenantCurrency is registered through a factory in PlatformSetup so this store keeps PlatformDbContext out of the
+        // generated graph of every policy and entitlement handler that takes it (see the comment there).
+        var tenantCurrency = terms.AmendmentValue is null ? null : await currency.GetAsync(cancellationToken);
+        return PolicyValidator.Validate(terms, new PolicyValidationContext(row.CoverageFamily, families, replacements, row.AppliesToContractsFrom, previous, tenantCurrency));
     }
 
     private static string Json<T>(T value) => JsonSerializer.Serialize(value, LedgerJson.Options);

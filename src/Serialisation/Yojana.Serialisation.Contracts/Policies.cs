@@ -45,7 +45,8 @@ public sealed record PolicyTerms(
     string AssuranceOrService,
     string ReferenceTimeZoneRule,
     bool ServiceContractRegulated = false,
-    EligibilityRule? Eligibility = null)
+    EligibilityRule? Eligibility = null,
+    AmendmentValueTerm? AmendmentValue = null)
 {
     public const string TimeZoneCustomerSite = "customer_site";
     public const string TimeZoneObligorEntity = "obligor_entity";
@@ -61,6 +62,16 @@ public sealed record EligibilityRule(string Kind, string BaseFamily, int? Within
 {
     public const string WithinBaseCoverage = "within_base_coverage";
     public const string WithinDaysOfBaseStart = "within_days_of_base_start";
+}
+
+/// <summary>
+/// What one unit of term under this policy is worth (P2-T08b), so an amendment's value is derived rather than typed:
+/// <see cref="Amount"/> per day or per month changed, in <see cref="Currency"/>, which must be the tenant's currency.
+/// </summary>
+public sealed record AmendmentValueTerm(decimal Amount, string Currency, string Per)
+{
+    public const string PerDay = "day";
+    public const string PerMonth = "month";
 }
 
 public sealed record PolicyIssue(string Severity, string Code, string Field, string Message)

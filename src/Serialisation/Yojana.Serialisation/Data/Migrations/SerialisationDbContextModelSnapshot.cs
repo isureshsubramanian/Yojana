@@ -2313,6 +2313,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("policy_version_id");
 
+                    b.Property<string>("AmendmentValue")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("amendment_value");
+
                     b.Property<DateOnly>("AppliesToContractsFrom")
                         .HasColumnType("date")
                         .HasColumnName("applies_to_contracts_from");
@@ -2507,6 +2511,8 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.ToTable("warranty_policy_version", "serialisation", t =>
                         {
+                            t.HasCheckConstraint("ck_warranty_policy_version_amendment_value_json", "amendment_value IS NULL OR ISJSON(amendment_value) = 1");
+
                             t.HasCheckConstraint("ck_warranty_policy_version_coverage_json", "ISJSON(coverage) = 1");
 
                             t.HasCheckConstraint("ck_warranty_policy_version_eligibility_json", "eligibility IS NULL OR ISJSON(eligibility) = 1");

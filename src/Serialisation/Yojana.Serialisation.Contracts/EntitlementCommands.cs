@@ -99,7 +99,9 @@ public sealed record AttachExtendedWarrantyResult(Guid EntitlementId, string Pol
 /// new end or a new term, not both: a new start or term recomputes the end and keeps any earlier adjustment, a new end
 /// sets it outright. A coverage change keeps the service mode; a change of service mode is SupersedeEntitlement.
 /// <see cref="CommittedBy"/> is who commits it and the roles they hold, which the approval policy is checked against;
-/// the HTTP endpoint always sets it from the signed-in user, whatever the body says.
+/// the HTTP endpoint always sets it from the signed-in user, whatever the body says. <see cref="EnteredValue"/> is the
+/// amendment's value in the tenant's currency, asked for only when the approval tier has an amount bound and the
+/// entitlement's policy carries no value of its own (P2-T08b); a policy value always wins over an entered one.
 /// </summary>
 public sealed record AmendEntitlement(
     Guid CommandId,
@@ -115,7 +117,8 @@ public sealed record AmendEntitlement(
     string? CustomerNotificationRef = null,
     string? FinanceReviewRef = null,
     string? Note = null,
-    AmendmentCommitter? CommittedBy = null);
+    AmendmentCommitter? CommittedBy = null,
+    decimal? EnteredValue = null);
 
 /// <summary>A new term length; the entitlement keeps its end-of-month rule and whether the term counts its start day.</summary>
 public sealed record AmendedTerm(int Value, string Unit);
@@ -128,7 +131,8 @@ public sealed record AmendmentCommitter(string UserRef, IReadOnlyList<string> Ro
     public bool IsSystem => UserRef == System.UserRef && Roles.Count == 0;
 }
 
-public sealed record AmendEntitlementResult(Guid EntitlementId, DateOnly? StartDate, DateOnly? EndDate, int DaysChanged, bool Reduction, string ApprovalLevel, string ApprovedBy, IReadOnlyList<EntitlementFieldChange> Changes, Guid EventId, bool Replayed);
+/// <summary>The amendment as committed; <see cref="Value"/> and <see cref="ValueSource"/> (<c>policy</c> or <c>entered</c>) are null when no value was known or asked for.</summary>
+public sealed record AmendEntitlementResult(Guid EntitlementId, DateOnly? StartDate, DateOnly? EndDate, int DaysChanged, bool Reduction, string ApprovalLevel, string ApprovedBy, IReadOnlyList<EntitlementFieldChange> Changes, Guid EventId, bool Replayed, decimal? Value = null, string? ValueSource = null);
 
 /// <summary>
 /// The tenant's approval policy for AmendEntitlement (OD-06, Action Item 33b): per reason, whether a source document is
@@ -140,8 +144,12 @@ public sealed record AmendmentApprovalPolicy(IReadOnlyList<AmendmentReasonRule> 
 
 public sealed record AmendmentReasonRule(string ReasonCode, bool SourceDocumentRequired, bool SystemOnly, IReadOnlyList<AmendmentApprovalTier> Tiers);
 
-/// <summary>Up to <see cref="UpToDays"/> days changed (either way; null: any), <see cref="Role"/> commits it, with a finance review reference when <see cref="FinanceReview"/>.</summary>
-public sealed record AmendmentApprovalTier(int? UpToDays, string Role, bool FinanceReview = false);
+/// <summary>
+/// Up to <see cref="UpToDays"/> days changed (either way; null: any), <see cref="Role"/> commits it, with a finance review
+/// reference when <see cref="FinanceReview"/>, or when the amendment's value exceeds <see cref="FinanceReviewAboveAmount"/>
+/// (P2-T08b, in the tenant's currency; such a tier cannot be saved or applied until the tenant currency is set up).
+/// </summary>
+public sealed record AmendmentApprovalTier(int? UpToDays, string Role, bool FinanceReview = false, decimal? FinanceReviewAboveAmount = null);
 
 /// <summary>An entitlement as a reader sees it today: the stored status and the effective one (lazy expiry, never written at read).</summary>
 public sealed record EntitlementView(Guid EntitlementId, Guid UnitId, string CoverageFamily, string Type, string StoredStatus, string EffectiveStatus, string? ClosedReason, DateOnly? StartDate, DateOnly? EndDate, int? DaysRemaining, Guid PolicyVersionId, string? StartBasis, string StartTimeZone, Guid? ParentEntitlementId, Guid? RootEntitlementId, Guid? SupersedesEntitlementId);

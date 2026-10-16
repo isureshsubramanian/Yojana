@@ -129,6 +129,13 @@ public static class AmendmentReason
     public static readonly IReadOnlyList<string> All = [Purchase, Goodwill, Correction, StatutoryExtension, DisputeSettlement, SellerError];
 }
 
+/// <summary>Where an amendment's value came from (P2-T08b): the policy's value per unit of term, or the user.</summary>
+public static class AmendmentValueSource
+{
+    public const string Policy = "policy";
+    public const string Entered = "entered";
+}
+
 /// <summary>The fields AmendEntitlement changes, as named on EntitlementAmendment rows and in Entitlement.Amended.</summary>
 public static class AmendedField
 {

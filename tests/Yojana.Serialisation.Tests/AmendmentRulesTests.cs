@@ -88,4 +88,36 @@ public sealed class AmendmentRulesTests
         Assert.Null(EntitlementStateMachine.Next(EntitlementStatus.PendingEvidence, EntitlementEventType.Amended));
         Assert.Null(EntitlementStateMachine.Next(EntitlementStatus.Closed, EntitlementEventType.Amended));
     }
+
+    [Fact]
+    public void The_value_is_the_days_or_months_changed_times_the_policy_value_rounded_to_cents()
+    {
+        var perDay = new AmendmentValueTerm(2.5m, "EUR", AmendmentValueTerm.PerDay);
+        Assert.Equal(75m, AmendmentRules.Value(perDay, 30, null));
+        Assert.Equal(75m, AmendmentRules.Value(perDay, -30, null));
+        var perMonth = new AmendmentValueTerm(40m, "EUR", AmendmentValueTerm.PerMonth);
+        Assert.Equal(480m, AmendmentRules.Value(perMonth, 365, 12));
+        // without a pure term change the days are read as months of 365.25 / 12 days: 30 days = 0.9856 months
+        Assert.Equal(39.43m, AmendmentRules.Value(perMonth, 30, null));
+        Assert.Equal(0.01m, AmendmentRules.Value(new AmendmentValueTerm(0.005m, "EUR", AmendmentValueTerm.PerDay), 1, null));
+    }
+
+    [Fact]
+    public void Only_a_value_strictly_above_the_amount_bound_calls_for_finance_review()
+    {
+        var bounded = Default with
+        {
+            Reasons = Default.Reasons.Select(r => r.ReasonCode == AmendmentReason.Goodwill ? r with { Tiers = [new(90, YojanaRole.ServiceManager, FinanceReviewAboveAmount: 100m), new(null, YojanaRole.ServiceManager, FinanceReview: true)] } : r).ToList(),
+        };
+        var required = AmendmentRules.Required(bounded, AmendmentReason.Goodwill, 30, false, false);
+        Assert.Equal((false, 100m), (required.FinanceReview, required.FinanceReviewAboveAmount));
+        Assert.False(AmendmentRules.AboveAmount(required, 100m));
+        Assert.True(AmendmentRules.AboveAmount(required, 100.01m));
+        Assert.False(AmendmentRules.AboveAmount(AmendmentRules.Required(Default, AmendmentReason.Goodwill, 30, false, false), 1_000_000m));
+
+        Assert.Contains(AmendmentRules.Validate(bounded), p => p.Contains("tenant currency"));
+        Assert.Empty(AmendmentRules.Validate(bounded, "EUR"));
+        var negative = bounded with { Reasons = bounded.Reasons.Select(r => r.ReasonCode == AmendmentReason.Correction ? r with { Tiers = [new(null, YojanaRole.ServiceManager, FinanceReviewAboveAmount: -1m)] } : r).ToList() };
+        Assert.Contains(AmendmentRules.Validate(negative, "EUR"), p => p.Contains("cannot be negative"));
+    }
 }

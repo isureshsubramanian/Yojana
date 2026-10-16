@@ -15,7 +15,9 @@ namespace Yojana.Serialisation.Entitlements;
 /// coverage changed under a reason code, approved by reason and days changed, with before and after on one
 /// EntitlementAmendment row per field and one <c>entitlement.amended</c> fact published as <c>Entitlement.Amended</c>.
 /// A reduction is raised to the tenant's reduction role, needs a customer notification once a certificate was issued,
-/// and is refused while claims are open. The certificate's new version is the certificate module's answer to the
+/// and is refused while claims are open. A tier with an amount bound (P2-T08b) also asks finance review when the
+/// amendment's value exceeds it: the value comes from the policy's value per unit of term, or, when the policy states
+/// none, from the user (refused with <c>value_required</c> until given; the check is never skipped). The certificate's new version is the certificate module's answer to the
 /// published event (P6); this command never touches a certificate.
 /// </summary>
 public static class AmendEntitlementHandler
@@ -24,7 +26,8 @@ public static class AmendEntitlementHandler
     // through PlatformDbContext, and were Wolverine to see that context in this handler's graph it would refuse to pick
     // the transactional one. Naming it with [Transactional] instead opens the connection before the tenant middleware
     // runs, so row-level security hides every row. The factory keeps the platform context out of the generated code.
-    public static async Task<AmendEntitlementResult> Handle(AmendEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates, ITenantContext tenant, CancellationToken cancellationToken)
+    // ITenantCurrency is coupled the same way, through its factory registration in PlatformSetup.
+    public static async Task<AmendEntitlementResult> Handle(AmendEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates, ITenantCurrency currency, ITenantContext tenant, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var entitlement = await ledger.LoadAsync(command.EntitlementId, cancellationToken);
@@ -99,9 +102,18 @@ public static class AmendEntitlementHandler
             throw new CommandRefusedException("approval_required", $"A '{command.ReasonCode}' amendment of {Math.Abs(daysChanged)} days{(reduction ? " that reduces cover" : "")} is committed by {required.Role}.", $"route it to a {required.Role} to commit");
         }
 
+        var monthsChanged = command.NewTerm is { Unit: DurationRule.Months } monthTerm && entitlement.DurationUnit == DurationRule.Months && command.NewStart is null && command.NewEnd is null
+            ? monthTerm.Value - entitlement.DurationValue
+            : (int?)null;
+        var (value, valueSource, valueCurrency) = await ValueAsync(command, entitlement, required, daysChanged, monthsChanged, db, currency, tenantId, cancellationToken);
         if (required.FinanceReview && string.IsNullOrWhiteSpace(command.FinanceReviewRef))
         {
             throw new CommandRefusedException("finance_review_required", $"A '{command.ReasonCode}' amendment of {Math.Abs(daysChanged)} days needs finance review.", "record the finance review reference");
+        }
+
+        if (value is { } worth && AmendmentRules.AboveAmount(required, worth) && string.IsNullOrWhiteSpace(command.FinanceReviewRef))
+        {
+            throw new CommandRefusedException("finance_review_required", $"A '{command.ReasonCode}' amendment worth {worth} {valueCurrency} is above {required.FinanceReviewAboveAmount} {valueCurrency} and needs finance review.", "record the finance review reference");
         }
 
         if (required.CustomerNotification && string.IsNullOrWhiteSpace(command.CustomerNotificationRef))
@@ -139,9 +151,45 @@ public static class AmendEntitlementHandler
         {
             entitlement_id = entitlement.EntitlementId, coverage_family = entitlement.CoverageFamily, reason_code = command.ReasonCode, days_changed = daysChanged, reduction,
             approval_level = required.Role, approved_by = approvedBy, finance_review_ref = command.FinanceReviewRef, customer_notification_ref = command.CustomerNotificationRef,
-            certificate_issued = certificateIssued, note = command.Note, changes,
+            certificate_issued = certificateIssued, note = command.Note, changes, value, value_source = valueSource, value_currency = valueCurrency,
         }, command.SourceDocument, cancellationToken, eventId);
-        return new(entitlement.EntitlementId, newStart, newEnd, daysChanged, reduction, required.Role, approvedBy, changes, eventId, false);
+        return new(entitlement.EntitlementId, newStart, newEnd, daysChanged, reduction, required.Role, approvedBy, changes, eventId, false, value, valueSource);
+    }
+
+    /// <summary>
+    /// The amendment's value (P2-T08b): from the entitlement's policy version when it states one, else what the user
+    /// entered. An amount bound on the tier makes the value mandatory and needs the tenant currency; a policy value in
+    /// another currency (the tenant's changed after it was published) is never converted, the amendment is refused.
+    /// </summary>
+    private static async Task<(decimal? Value, string? Source, string? Currency)> ValueAsync(AmendEntitlement command, Entitlement entitlement, AmendmentRequirement required, int daysChanged, int? monthsChanged,
+        SerialisationDbContext db, ITenantCurrency currency, TenantId tenantId, CancellationToken cancellationToken)
+    {
+        var bounded = required.FinanceReviewAboveAmount is not null;
+        var json = await db.PolicyVersions.AsNoTracking().Where(v => v.TenantId == tenantId && v.PolicyVersionId == entitlement.PolicyVersionId).Select(v => v.AmendmentValue).FirstOrDefaultAsync(cancellationToken);
+        var term = json is null ? null : JsonSerializer.Deserialize<AmendmentValueTerm>(json, LedgerJson.Options);
+        if (term is null && command.EnteredValue is null && !bounded) return (null, null, null);
+
+        var tenantCurrency = await currency.GetAsync(cancellationToken);
+        if (tenantCurrency is null)
+        {
+            if (bounded) throw new CommandRefusedException("currency_not_configured", "The approval tier has an amount bound but the tenant currency is not set up.", "set up the tenant currency");
+            return (null, null, null);
+        }
+
+        if (term is not null)
+        {
+            if (string.Equals(term.Currency, tenantCurrency, StringComparison.Ordinal)) return (AmendmentRules.Value(term, daysChanged, monthsChanged), AmendmentValueSource.Policy, tenantCurrency);
+            if (bounded) throw new CommandRefusedException("value_currency_differs", $"The policy values its term in {term.Currency}; the tenant works in {tenantCurrency}.", "publish a policy version valued in the tenant currency");
+        }
+
+        if (command.EnteredValue is { } entered)
+        {
+            if (entered < 0) throw new CommandRefusedException("value_negative", "An amendment's value cannot be negative.");
+            return (Math.Round(entered, 2, MidpointRounding.AwayFromZero), AmendmentValueSource.Entered, tenantCurrency);
+        }
+
+        if (bounded) throw new CommandRefusedException("value_required", $"The policy states no value for its term; enter the value of this amendment in {tenantCurrency}.", "enter the amendment's value");
+        return (null, null, null);
     }
 
     private static string Day(DateOnly day) => day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -153,6 +201,8 @@ public static class AmendEntitlementHandler
         var changes = a.TryGetProperty("changes", out var c) ? c.Deserialize<List<EntitlementFieldChange>>(LedgerJson.Options) ?? [] : [];
         var after = (string field) => changes.FirstOrDefault(ch => ch.Field == field)?.After is { } text ? DateOnly.ParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture) : (DateOnly?)null;
         return new(entitlement.EntitlementId, after(AmendedField.StartDate) ?? entitlement.StartDate, after(AmendedField.EndDate) ?? entitlement.EndDate, a.GetProperty("days_changed").GetInt32(),
-            a.GetProperty("reduction").GetBoolean(), a.GetProperty("approval_level").GetString() ?? "", a.GetProperty("approved_by").GetString() ?? "", changes, replayed.EventId, true);
+            a.GetProperty("reduction").GetBoolean(), a.GetProperty("approval_level").GetString() ?? "", a.GetProperty("approved_by").GetString() ?? "", changes, replayed.EventId, true,
+            a.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDecimal() : null,
+            a.TryGetProperty("value_source", out var vs) && vs.ValueKind == JsonValueKind.String ? vs.GetString() : null);
     }
 }

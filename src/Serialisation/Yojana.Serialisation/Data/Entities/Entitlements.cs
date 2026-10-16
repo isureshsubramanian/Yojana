@@ -124,6 +124,9 @@ public sealed class WarrantyPolicyVersion : ITenantScoped
     /// <summary>JSON <see cref="Contracts.EligibilityRule"/>, null when anyone may buy the plan (P2-T07).</summary>
     public string? Eligibility { get; set; }
 
+    /// <summary>JSON <see cref="Contracts.AmendmentValueTerm"/>: what a day or month of this term is worth, null when the policy states no value (P2-T08b).</summary>
+    public string? AmendmentValue { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public required string CreatedBy { get; set; }

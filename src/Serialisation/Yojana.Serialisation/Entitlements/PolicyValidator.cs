@@ -10,7 +10,8 @@ public sealed record PolicyValidationContext(
     IReadOnlyDictionary<string, (string AccountingTag, bool Active)> Families,
     IReadOnlySet<string> ReplacementPolicyCodes,
     DateOnly AppliesToContractsFrom,
-    DateOnly? PreviousVersionFrom);
+    DateOnly? PreviousVersionFrom,
+    string? TenantCurrency = null);
 
 /// <summary>
 /// The rules a policy version must satisfy before it can be published (P2-T03; the Validation card of the policy editor).
@@ -119,6 +120,15 @@ public static partial class PolicyValidator
         if (terms.AssuranceOrService is not (AssuranceOrService.Assurance or AssuranceOrService.Service)) Error("accounting_tag_unknown", "assurance_or_service", $"'{terms.AssuranceOrService}' is not assurance or service.");
         if (terms.ReferenceTimeZoneRule is not (PolicyTerms.TimeZoneCustomerSite or PolicyTerms.TimeZoneObligorEntity or PolicyTerms.TimeZoneUtc)) Error("time_zone_rule_unknown", "reference_time_zone_rule", $"'{terms.ReferenceTimeZoneRule}' is not customer_site, obligor_entity or utc.");
         if (terms.ServiceContractRegulated && terms.AssuranceOrService == AssuranceOrService.Assurance) Warn("regulated_assurance", "service_contract_regulated", "Service-contract regulation applies to separately priced plans; this policy is an assurance warranty.");
+
+        // P2-T08b: the value is in the tenant's currency, so it cannot be checked, or used, before that is set up.
+        if (terms.AmendmentValue is { } value)
+        {
+            if (value.Amount <= 0) Error("amendment_value_not_positive", "amendment_value.amount", "A day or month of term must be worth more than zero.");
+            if (value.Per is not (AmendmentValueTerm.PerDay or AmendmentValueTerm.PerMonth)) Error("amendment_value_per_unknown", "amendment_value.per", $"'{value.Per}' is not day or month.");
+            if (context.TenantCurrency is null) Error("currency_not_configured", "amendment_value.currency", "Set up the tenant currency before giving the policy a value.");
+            else if (!string.Equals(value.Currency, context.TenantCurrency, StringComparison.Ordinal)) Error("amendment_value_currency_differs", "amendment_value.currency", $"The value is in {value.Currency}; the tenant works in {context.TenantCurrency}.");
+        }
 
         return new PolicyValidation(issues);
     }
