@@ -23,6 +23,22 @@
       "readOn": "2026-10-15"
     }
   },
+  "knownLicenceFiles": {
+    "Solidsoft.Reply.Parsers.Gs1Ai/2.0.0": {
+      "file": "LICENSE.txt",
+      "sha256": "69890b9c25825b7fdbc0c3c4a74c04179d8f52e25284400616ee4d118bb709fd",
+      "spdx": "Apache-2.0",
+      "copyright": "Copyright 2018-2025 Solidsoft Reply Ltd. (appendix of the bundled LICENSE.txt); no NOTICE file in the package",
+      "readOn": "2026-10-15"
+    },
+    "Solidsoft.Reply.Parsers.Common/1.0.3": {
+      "file": "LICENSE.txt",
+      "sha256": "939eaad557ee19eebc62e9383fc9bbccd17e8810b45b23f5d13940d1d4ff407a",
+      "spdx": "Apache-2.0",
+      "copyright": "Copyright 2018-2024 Solidsoft Reply Ltd. (appendix of the bundled LICENSE.txt); manifest copyright '©2025 Solidsoft Reply'; no NOTICE file in the package",
+      "readOn": "2026-10-15"
+    }
+  },
   "exceptions": [
     {
       "package": "Microsoft.Data.SqlClient.SNI.runtime",

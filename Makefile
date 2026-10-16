@@ -9,7 +9,7 @@ CLIENT := web
 GATES := dotnet run --project tools/Yojana.Gates --
 CONFIG ?= Debug
 
-.PHONY: help env build test test-db gate licences notices names budget self-test db-up db-down db-wait migrate seed run restore clean db-reset web-install web-check web-test web web-dev web-lcp
+.PHONY: help env build test test-db gate bench licences notices names budget self-test db-up db-down db-wait migrate seed run restore clean db-reset web-install web-check web-test web web-dev web-lcp
 
 help:
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -46,9 +46,11 @@ web-lcp: ## Measure largest contentful paint of the shell against a running host
 test: build ## Unit and architecture tests (no database)
 	dotnet test tests/Yojana.Architecture.Tests -c $(CONFIG) --no-build
 	dotnet test tests/Yojana.Platform.Tests -c $(CONFIG) --no-build
+	dotnet test tests/Yojana.Serialisation.Tests -c $(CONFIG) --no-build
 
 test-db: build ## Database tests; need YOJANA_TEST_SQL (a SQL Server connection string to a disposable database)
 	dotnet test tests/Yojana.Platform.DatabaseTests -c $(CONFIG) --no-build
+	dotnet test tests/Yojana.Serialisation.DatabaseTests -c $(CONFIG) --no-build
 
 licences: ## Gate 1: every package carries an allow-listed licence or an approved exception
 	$(GATES) licences
@@ -86,6 +88,10 @@ migrate: build ## Apply migrations to the development database
 
 seed: build ## Migrate and seed the DEV tenant and its users
 	dotnet run --project $(WEB) -c $(CONFIG) --no-build -- --seed
+
+bench: build ## P1-T21 storage benchmark against YOJANA_BENCH_SQL_HOST / YOJANA_BENCH_SQL_PASSWORD (BENCH_ARGS="measure --samples 500 ...")
+	@test -n "$(YOJANA_BENCH_SQL_HOST)" || { echo "YOJANA_BENCH_SQL_HOST is not set (see .env.example)"; exit 1; }
+	DOTNET_SYSTEM_NET_SECURITY_DISABLETLSRESUME=1 DOTNET_SYSTEM_NET_SECURITY_TLS13_DISABLE=1 dotnet run --project tools/Yojana.Bench -c $(CONFIG) --no-build -- $(BENCH_ARGS)
 
 run: build ## Run the web host on http://localhost:5080
 	ASPNETCORE_ENVIRONMENT=Development dotnet run --project $(WEB) -c $(CONFIG) --no-build

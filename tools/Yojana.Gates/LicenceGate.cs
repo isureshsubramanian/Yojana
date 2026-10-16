@@ -22,6 +22,15 @@ public sealed class LicencePolicy
     [JsonPropertyName("knownLicenceUrls")]
     public Dictionary<string, KnownLicenceUrl> KnownLicenceUrls { get; set; } = [];
 
+    /// <summary>
+    /// Packages that declare their licence only as a bundled file (<c>&lt;license type="file"&gt;</c>). Keyed by
+    /// "Id/Version"; each entry records the file that was read, the SHA-256 of its bytes and the SPDX id of the text
+    /// found in it. The gate recomputes the hash from the cached package, so the record is evidence of what was
+    /// read, not an assertion; a new version of the package needs a new reading.
+    /// </summary>
+    [JsonPropertyName("knownLicenceFiles")]
+    public Dictionary<string, KnownLicenceFile> KnownLicenceFiles { get; set; } = [];
+
     public static LicencePolicy Load(string root)
     {
         var path = Path.Combine(root, "tools", "gates", "licence-policy.json");
@@ -33,6 +42,24 @@ public sealed class KnownLicenceUrl
 {
     [JsonPropertyName("spdx")]
     public string Spdx { get; set; } = "";
+
+    [JsonPropertyName("readOn")]
+    public string ReadOn { get; set; } = "";
+}
+
+public sealed class KnownLicenceFile
+{
+    [JsonPropertyName("file")]
+    public string File { get; set; } = "";
+
+    [JsonPropertyName("sha256")]
+    public string Sha256 { get; set; } = "";
+
+    [JsonPropertyName("spdx")]
+    public string Spdx { get; set; } = "";
+
+    [JsonPropertyName("copyright")]
+    public string? Copyright { get; set; }
 
     [JsonPropertyName("readOn")]
     public string ReadOn { get; set; } = "";
@@ -119,6 +146,27 @@ public static class LicenceGate
                 expression = known.Spdx;
             }
 
+            if (expression is null && package.LicenseFile is not null && policy.KnownLicenceFiles.TryGetValue(package.Key, out var knownFile))
+            {
+                var path = Path.Combine(package.Folder, package.LicenseFile);
+                if (!string.Equals(knownFile.File, package.LicenseFile, StringComparison.OrdinalIgnoreCase) || !File.Exists(path))
+                {
+                    failures++;
+                    details.Add($"FAIL     {package.Key}: knownLicenceFiles names '{knownFile.File}' but the package declares '{package.LicenseFile}'" + (File.Exists(path) ? "" : " (file missing)"));
+                    continue;
+                }
+
+                var actual = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path)));
+                if (!string.Equals(actual, knownFile.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    failures++;
+                    details.Add($"FAIL     {package.Key}: bundled {package.LicenseFile} has changed since it was read on {knownFile.ReadOn} (sha256 {actual}); read it again and update knownLicenceFiles");
+                    continue;
+                }
+
+                expression = knownFile.Spdx;
+            }
+
             if (expression is null && package.Ecosystem == "npm" && package.LicenseFile is null && package.Folder.Length == 0)
             {
                 failures++;
@@ -130,7 +178,7 @@ public static class LicenceGate
             {
                 failures++;
                 var what = package.LicenseFile is not null ? $"licence is a file ({package.LicenseFile}), not an SPDX expression" : $"no licence expression in the manifest (licenseUrl: {package.LicenseUrl ?? "none"})";
-                details.Add($"FAIL     {package.Key}: {what}; read it and add an exception with the owner's decision");
+                details.Add($"FAIL     {package.Key}: {what}; read it and record it under knownLicenceFiles (allow-listed text) or add an exception with the owner's decision");
                 continue;
             }
 

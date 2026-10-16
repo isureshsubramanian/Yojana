@@ -17,6 +17,10 @@
     <PackageVersion Include="WolverineFx.EntityFrameworkCore" Version="6.50.2" />
     <!-- Runtime handler compilation (Roslyn, MIT dotnet/roslyn); production may switch to pre-generated code (TypeLoadMode.Static) later -->
     <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.50.2" />
+    <!-- GS1 Application Identifier validating parser (MOD-03, P1-T07): Apache-2.0, bundled LICENSE.txt read 2026-10-15
+         ("Copyright 2018-2025 Solidsoft Reply Ltd."); its dependency Solidsoft.Reply.Parsers.Common 1.0.3 is Apache-2.0 too
+         ("Copyright 2018-2024 Solidsoft Reply Ltd."). Neither ships a NOTICE file. Recorded in tools/gates/licence-policy.json knownLicenceFiles. -->
+    <PackageVersion Include="Solidsoft.Reply.Parsers.Gs1Ai" Version="2.0.0" />
     <!-- Scheduling: Apache-2.0 (quartznet/quartznet) -->
     <PackageVersion Include="Quartz" Version="4.5.0" />
     <!-- Tests only (not shipped): Apache-2.0 (xunit), MIT (Microsoft test platform) -->

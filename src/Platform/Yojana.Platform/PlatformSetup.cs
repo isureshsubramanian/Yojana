@@ -53,6 +53,7 @@ public static class PlatformSetup
         builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
         builder.Services.AddScoped<ITenantContextSetter>(sp => sp.GetRequiredService<TenantContext>());
         builder.Services.AddSingleton<IClock, SystemClock>();
+        builder.Services.AddScoped<ITenantSettings, TenantSettings>();
 
         builder.Services.AddDbContextWithWolverineIntegration<PlatformDbContext>(
             db => db.UseSqlServer(options.ConnectionString, sql => sql.MigrationsHistoryTable("__migrations", PlatformDbContext.SchemaName)),
@@ -171,6 +172,9 @@ public static class PlatformSetup
             }
 
             logger.LogInformation("Migrating {Context} (schema {Schema})", contextType.Name, db.Schema);
+            // A migration may build an index over a ledger of a hundred million rows (P1-T21: minutes on a laptop, far past the
+            // 30 s default that made the first attempt fail); migrations get the time they need, requests keep the default.
+            db.Database.SetCommandTimeout(TimeSpan.FromHours(4));
             await db.Database.MigrateAsync(cancellationToken);
         }
     }
