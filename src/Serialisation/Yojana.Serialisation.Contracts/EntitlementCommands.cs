@@ -131,6 +131,30 @@ public sealed record AmendmentCommitter(string UserRef, IReadOnlyList<string> Ro
 public sealed record AmendEntitlementResult(Guid EntitlementId, DateOnly? StartDate, DateOnly? EndDate, int DaysChanged, bool Reduction, string ApprovalLevel, string ApprovedBy, IReadOnlyList<EntitlementFieldChange> Changes, Guid EventId, bool Replayed);
 
 /// <summary>
+/// Creates the missing base entitlement for each named unit as one atomic command. Validation refuses the whole list by
+/// default; <see cref="SkipInvalid"/> explicitly permits valid units to be created while invalid ones are reported.
+/// Selection-set expansion supplies <see cref="UnitIds"/> in P2-T11; the per-unit operation is reusable independently.
+/// </summary>
+public sealed record BackfillEntitlements(
+    Guid CommandId,
+    IReadOnlyList<Guid> UnitIds,
+    string ReasonCode,
+    IReadOnlyList<string> EvidenceRefs,
+    DocumentRef SourceDocument,
+    Guid ObligorEntityId,
+    DateTime EventTime,
+    string ActorRef,
+    AmendmentCommitter? CommittedBy = null,
+    bool SkipInvalid = false,
+    string? FinanceReviewRef = null,
+    string? Country = null,
+    Guid? SiteLocationId = null);
+
+public sealed record BackfillEntitlementsResult(IReadOnlyList<BackfillUnitResult> Units, bool Replayed);
+
+public sealed record BackfillUnitResult(Guid UnitId, string Outcome, string? Reason, Guid? EntitlementId, DateOnly? StartDate, DateOnly? EndDate);
+
+/// <summary>
 /// The tenant's approval policy for AmendEntitlement (OD-06, Action Item 33b): per reason, whether a source document is
 /// required, whether only the system applies it, and tiers by days changed, the first tier whose bound holds deciding.
 /// A reduction is raised to <see cref="ReductionRole"/> at least, and needs a customer notification once a certificate
