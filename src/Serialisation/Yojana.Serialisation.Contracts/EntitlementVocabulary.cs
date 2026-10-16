@@ -137,4 +137,5 @@ public static class EntitlementEventType
     public const string Resumed = "entitlement.resumed";
     public const string Voided = "entitlement.voided";
     public const string Closed = "entitlement.closed";
+    public const string Transferred = "entitlement.transferred";
 }

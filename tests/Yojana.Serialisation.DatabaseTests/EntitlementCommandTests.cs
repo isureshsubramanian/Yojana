@@ -173,4 +173,53 @@ public sealed class EntitlementCommandTests(SerialisationHostFixture fixture)
         Assert.True(refurbished.FloorApplied);
         Assert.Equal(new DateOnly(2027, 9, 1), refurbished.EndDate);
     }
+
+    [DatabaseFact]
+    public async Task Transfer_closes_the_source_builds_one_rooted_chain_and_suppresses_the_second_accrual()
+    {
+        var (tenant, _, units) = await SetUpAsync("et", 3);
+        var source = await InvokeAsync<CreateEntitlementResult>(tenant, Create(units[0], new Dictionary<string, DateTime> { [StartTrigger.Deliver] = Invoice }));
+        var firstCommand = new TransferEntitlement(Guid.NewGuid(), source.EntitlementId, units[1], Guid.NewGuid(), new DateOnly(2028, 8, 1), Invoice.AddDays(2), "service.desk");
+        var first = await InvokeAsync<TransferEntitlementResult>(tenant, firstCommand);
+        // max_remaining_or_min_days(90): the source ends 2028-09-01, the replacement on 2028-08-01 is owed 90 days, so 2028-10-30
+        Assert.Equal((source.EntitlementId, "STD-90", new DateOnly(2028, 10, 30), 1), (first.RootEntitlementId, first.PolicyApplied, first.ComputedEnd, first.ChainLength));
+        Assert.Equal(new DateOnly(2028, 9, 1), source.EndDate);
+        Assert.Equal(first.TargetEntitlementId, (await InvokeAsync<TransferEntitlementResult>(tenant, firstCommand)).TargetEntitlementId);
+
+        var second = await InvokeAsync<TransferEntitlementResult>(tenant, new TransferEntitlement(Guid.NewGuid(), first.TargetEntitlementId, units[2], Guid.NewGuid(), new DateOnly(2028, 9, 1), Invoice.AddDays(3), "service.desk"));
+        Assert.Equal((source.EntitlementId, 2, new DateOnly(2028, 11, 30)), (second.RootEntitlementId, second.ChainLength, second.ComputedEnd));
+
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var rows = await db.Entitlements.Where(e => e.EntitlementId == source.EntitlementId || e.RootEntitlementId == source.EntitlementId).OrderBy(e => e.CreatedAt).ToListAsync();
+        Assert.Equal(3, rows.Count);
+        Assert.Equal((EntitlementStatus.Closed, EntitlementClosedReason.Replaced, units[1], first.TargetEntitlementId), (rows[0].Status, rows[0].ClosedReason, rows[0].SuccessorUnitId, rows[0].SuccessorEntitlementId));
+        Assert.Equal((source.EntitlementId, source.EntitlementId, (Guid?)null), (rows[1].ParentEntitlementId, rows[1].RootEntitlementId, rows[1].AccrualCohortId));
+        Assert.Equal((first.TargetEntitlementId, source.EntitlementId, (Guid?)null), (rows[2].ParentEntitlementId, rows[2].RootEntitlementId, rows[2].AccrualCohortId));
+
+        var published = Assert.Single(await PublishedEventSink.WaitForAsync<EntitlementTransferred>(e => e.TargetEntitlementId == second.TargetEntitlementId, 1, TimeSpan.FromSeconds(20)));
+        Assert.Equal((source.EntitlementId, 2, true), (published.RootEntitlementId, published.ChainLength, published.AccrualSuppressed));
+    }
+
+    [DatabaseFact]
+    public async Task Statutory_extension_is_only_once_and_only_for_an_eligible_EU_repair()
+    {
+        var (tenant, item, units) = await SetUpAsync("es", 3);
+        await InvokeAsync<ReplacementPolicyRow>(tenant, new DefineReplacementPolicy("EU-REPAIR", ReplacementRule.StatutoryExtensionOnce, null, 12, null));
+        await InvokeAsync<CoverageFamilyRow>(tenant, new DefineCoverageFamily("statutory", "Statutory warranty", false, AssuranceOrService.Assurance));
+        var code = "ES-" + Guid.NewGuid().ToString("N")[..6];
+        var terms = PolicyValidatorTestsTerms.Standard24() with { ReplacementPolicyCode = "EU-REPAIR" };
+        var draft = await InvokeAsync<PolicyDraftResult>(tenant, new CreatePolicyDraft(Guid.NewGuid(), code, code, "statutory", EntitlementType.Statutory, new DateOnly(2026, 7, 31), terms, "test"));
+        await InvokeAsync<PolicyDraftResult>(tenant, new PublishPolicyVersion(draft.PolicyVersionId, "test"));
+        Ports.Register(new ItemWarrantyPolicy(item, "statutory", code, true));
+        var source = await InvokeAsync<CreateEntitlementResult>(tenant, new CreateEntitlement(Guid.NewGuid(), units[0], "statutory", new DateOnly(2026, 7, 31), Obligor, Invoice, "service.desk",
+            new Dictionary<string, DateTime> { [StartTrigger.Deliver] = Invoice }, PolicyVersionId: draft.PolicyVersionId, OwnerPartyRef: Guid.NewGuid(), OwnerPartyType: PartyType.Customer, Country: "DE", SiteLocationId: Site));
+        var ineligible = new TransferEntitlement(Guid.NewGuid(), source.EntitlementId, units[1], null, new DateOnly(2027, 1, 1), Invoice.AddDays(2), "service.desk", "EU-REPAIR", new DateOnly(2026, 7, 30), "DE", true, "repair");
+        Assert.Equal("statutory_extension_not_applicable", (await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<TransferEntitlementResult>(tenant, ineligible))).Rule);
+
+        var first = await InvokeAsync<TransferEntitlementResult>(tenant, ineligible with { CommandId = Guid.NewGuid(), ContractDate = new DateOnly(2026, 7, 31) });
+        Assert.Equal(source.EndDate!.Value.AddMonths(12), first.ComputedEnd);
+        var repeated = ineligible with { CommandId = Guid.NewGuid(), SourceEntitlementId = first.TargetEntitlementId, TargetUnitId = units[2], ContractDate = new DateOnly(2026, 7, 31), EventTime = Invoice.AddDays(3) };
+        Assert.Equal("statutory_extension_already_applied", (await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<TransferEntitlementResult>(tenant, repeated))).Rule);
+    }
 }

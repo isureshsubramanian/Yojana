@@ -48,5 +48,22 @@ public sealed record CloseEntitlement(Guid CommandId, Guid EntitlementId, string
 
 public sealed record EntitlementChangeResult(Guid EntitlementId, string Status, string? ClosedReason, DateOnly? StartDate, DateOnly? EndDate, Guid EventId, bool Replayed);
 
+/// <summary>Moves a live entitlement to a replacement unit under a named rule, or the source policy's rule when omitted.</summary>
+public sealed record TransferEntitlement(
+    Guid CommandId,
+    Guid SourceEntitlementId,
+    Guid TargetUnitId,
+    Guid? ReplacementLinkId,
+    DateOnly ReplacementDate,
+    DateTime EventTime,
+    string ActorRef,
+    string? ReplacementPolicyCode = null,
+    DateOnly? ContractDate = null,
+    string? Country = null,
+    bool ConsumerContract = false,
+    string Remedy = "replacement");
+
+public sealed record TransferEntitlementResult(Guid SourceEntitlementId, Guid TargetEntitlementId, Guid RootEntitlementId, string PolicyApplied, DateOnly ComputedEnd, int ChainLength, Guid EventId, bool Replayed);
+
 /// <summary>An entitlement as a reader sees it today: the stored status and the effective one (lazy expiry, never written at read).</summary>
 public sealed record EntitlementView(Guid EntitlementId, Guid UnitId, string CoverageFamily, string Type, string StoredStatus, string EffectiveStatus, string? ClosedReason, DateOnly? StartDate, DateOnly? EndDate, int? DaysRemaining, Guid PolicyVersionId, string? StartBasis, string StartTimeZone, Guid? ParentEntitlementId, Guid? RootEntitlementId, Guid? SupersedesEntitlementId);
