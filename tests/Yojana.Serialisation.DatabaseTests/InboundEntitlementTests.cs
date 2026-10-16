@@ -21,6 +21,12 @@ public sealed class InboundEntitlementTests(SerialisationHostFixture fixture)
         return await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<T>(message, new DeliveryOptions { TenantId = tenant.ToString() }, CancellationToken.None);
     }
 
+    private async Task<int> InboundCountAsync(TenantId tenant, Guid receiptId)
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        return await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Entitlements.CountAsync(e => e.SourceDocumentId == receiptId);
+    }
+
     [DatabaseFact]
     public async Task Vendor_terms_create_one_inbound_entitlement_per_received_serial_and_replay_creates_none()
     {
@@ -45,6 +51,9 @@ public sealed class InboundEntitlementTests(SerialisationHostFixture fixture)
         fixture.Services.GetRequiredService<InMemoryDocumentPorts>().Add(receipt);
         var envelope = new ThinEnvelope(Guid.NewGuid(), Guid.NewGuid(), Received, "test");
         await InvokeAsync<ConsumedEventResult>(tenant, new PurchasingReceiptPosted(envelope, receipt.Document));
+        // Let the receipt's own follow-on finish first: run side by side, the second insert is refused by the one-live-per-family
+        // index and the message retried, which is the protection working but not what this test is about.
+        for (var waited = 0; waited < 200 && await InboundCountAsync(tenant, receipt.Document.Id) < 2; waited++) await Task.Delay(100);
         var first = await InvokeAsync<CreateInboundEntitlementsResult>(tenant, new CreateInboundEntitlements(envelope, receipt.Document));
         var replay = await InvokeAsync<CreateInboundEntitlementsResult>(tenant, new CreateInboundEntitlements(envelope, receipt.Document));
         Assert.Contains(first.Created, new[] { 0, 2 }); // the durable local queue may have handled it before this explicit replay

@@ -187,6 +187,13 @@ public static class PurchasingAsnReceivedHandler
             exceptions.AddRange(result.Lines.Where(l => l.Outcome == CommissionLineResult.Refused).Select(l => $"line {line.LineNo}: serial '{l.ClientReference}' refused: {string.Join(", ", l.Reasons)}"));
         }
 
+        // ASN is the second half of the drop-ship entitlement contract: requirements held for this source document
+        // are retried only after its serial announcement has been accepted in the same transaction.
+        var retry = await ctx.Db.EntitlementRequirements.AsNoTracking()
+            .Where(r => r.SourceDocumentType == message.Document.Type && r.SourceDocumentId == message.Document.Id && r.Status == EntitlementRequirementStatus.Exception && r.MissingInput == EntitlementMissingInput.SerialsPendingAsn)
+            .Select(r => r.RequirementId).ToListAsync(ct);
+        if (retry.Count > 0) await ctx.Bus.PublishAsync(new ResolveEntitlementRequirements(retry), new Wolverine.DeliveryOptions { TenantId = ctx.Tenant.TenantId.ToString() });
+
         return new ConsumedEventResult("Purchasing.AsnReceived", doc.Document, affected, 0, exceptions, affected == 0 && exceptions.Count == 0);
     }, ct);
 }
