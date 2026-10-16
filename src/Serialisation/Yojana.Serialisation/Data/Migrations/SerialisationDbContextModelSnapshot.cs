@@ -2229,6 +2229,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "NormalisedValue"), new[] { "UnitId", "Type", "ScopeKey", "ValidTo" });
 
+                    b.HasIndex("TenantId", "UnitId")
+                        .HasDatabaseName("ix_unit_identifier_tenant_id_unit_id");
+
                     b.HasIndex("TenantId", "UnitId", "Type")
                         .IsUnique()
                         .HasDatabaseName("ux_unit_identifier_tenant_id_unit_id_type")

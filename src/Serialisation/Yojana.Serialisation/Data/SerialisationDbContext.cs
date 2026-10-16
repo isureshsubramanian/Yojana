@@ -121,6 +121,10 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             // Invariant 2: at most one open identifier per (unit, type).
             b.HasIndex(i => new { i.TenantId, i.UnitId, i.Type })
                 .IsUnique().HasFilter("[valid_to] IS NULL");
+            // All identifiers of a unit, open or superseded (search re-index, history). The filtered index above cannot
+            // answer it, so without this the read range-scanned the tenant: 2.5 s per 100-unit chunk at 1 M units (bench
+            // 2026-10-16), starving the receipt it ran beside.
+            b.HasIndex(i => new { i.TenantId, i.UnitId });
             // Lookup by any identifier, open or superseded; prefix search uses LIKE 'value%' on it.
             b.HasIndex(i => new { i.TenantId, i.NormalisedValue })
                 .IncludeProperties(i => new { i.UnitId, i.Type, i.ScopeKey, i.ValidTo });
