@@ -245,3 +245,58 @@ public sealed record AmendmentApprovalTier(int? UpToDays, string Role, bool Fina
 
 /// <summary>An entitlement as a reader sees it today: the stored status and the effective one (lazy expiry, never written at read).</summary>
 public sealed record EntitlementView(Guid EntitlementId, Guid UnitId, string CoverageFamily, string Direction, string Type, string StoredStatus, string EffectiveStatus, string? ClosedReason, DateOnly? StartDate, DateOnly? EndDate, int? DaysRemaining, Guid PolicyVersionId, string? StartBasis, string StartTimeZone, Guid? ParentEntitlementId, Guid? RootEntitlementId, Guid? SupersedesEntitlementId);
+
+/// <summary>The complete entitlement tab read model. It is additive to <see cref="EntitlementView"/> so existing operational readers stay small.</summary>
+public sealed record UnitEntitlementDetail(
+    Guid UnitId,
+    DateOnly AsOf,
+    bool HasOpenClaims,
+    IReadOnlyList<UnitEntitlementDetailRow> Entitlements,
+    IReadOnlyList<EntitlementLedgerEventRow> Lineage,
+    IReadOnlyList<EntitlementAmendmentRow> Amendments,
+    IReadOnlyList<EntitlementSuspensionRow> Suspensions,
+    IReadOnlyList<EntitlementUsageLimitRow> UsageLimits);
+
+public sealed record UnitEntitlementDetailRow(
+    Guid EntitlementId,
+    string CoverageFamily,
+    string CoverageFamilyName,
+    string AccountingTag,
+    string Direction,
+    string Type,
+    string StoredStatus,
+    string EffectiveStatus,
+    bool Future,
+    string? ClosedReason,
+    DateOnly? ClosedEffective,
+    Guid? OwnerPartyRef,
+    string? OwnerPartyType,
+    string PolicyCode,
+    string PolicyName,
+    int PolicyVersion,
+    CoverageTerms Terms,
+    IReadOnlyList<string> RegionScope,
+    string Transferable,
+    string? SourceDocumentType,
+    Guid? SourceDocumentId,
+    int? SourceDocumentLine,
+    string? AccrualCohort,
+    DateOnly? StartDate,
+    string? StartBasis,
+    string? StartExplanation,
+    DateOnly? EndDate,
+    bool EndInclusive,
+    string? ComputedByRuleVersion,
+    int? DaysRemaining,
+    Guid? ParentEntitlementId,
+    Guid? RootEntitlementId,
+    Guid? SupersedesEntitlementId,
+    Guid? SuccessorEntitlementId);
+
+public sealed record EntitlementLedgerEventRow(Guid EventId, string Type, DateTime At, string Actor, string? DocumentType, Guid? DocumentId, int? DocumentLine, string Attributes);
+
+public sealed record EntitlementAmendmentRow(Guid AmendmentId, Guid EntitlementId, string Field, string? Before, string? After, string ReasonCode, string? ApprovedBy, string Actor, DateTime At);
+
+public sealed record EntitlementSuspensionRow(Guid SuspensionId, Guid EntitlementId, DateOnly From, DateOnly? To, string Reason, bool ClockPaused, string Actor);
+
+public sealed record EntitlementUsageLimitRow(Guid EntitlementId, string CoverageFamily, string MeterType, decimal Limit, decimal Used, decimal Left, string Period, DateOnly? ResetsOn);

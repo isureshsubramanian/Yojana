@@ -82,6 +82,18 @@ public sealed class SupersedeEntitlementTests(SerialisationHostFixture fixture)
                 (rows[1].SupersedesEntitlementId, rows[1].RootEntitlementId, rows[1].OwnerPartyRef, rows[1].ObligorEntityId, rows[1].PayerPartyRef, rows[1].AccrualCohortId));
             Assert.Equal(1, await db.Events.CountAsync(e => e.UnitId == unit && e.EventType == EntitlementEventType.Superseded));
             Assert.Equal(1, await db.Events.CountAsync(e => e.UnitId == unit && e.EventType == EntitlementEventType.Created));
+
+            var detail = await scope.ServiceProvider.GetRequiredService<EntitlementQueries>().DetailForUnitAsync(unit, new DateOnly(2026, 12, 2), CancellationToken.None);
+            Assert.NotNull(detail);
+            Assert.Equal(2, detail.Entitlements.Count);
+            var current = Assert.Single(detail.Entitlements, row => row.StoredStatus == EntitlementStatus.Active);
+            Assert.Equal((express.PolicyVersionId, "service_level", "Service level", AssuranceOrService.Assurance, old.EntitlementId, result.EndDate, false),
+                (rows[1].PolicyVersionId, current.CoverageFamily, current.CoverageFamilyName, current.AccountingTag, current.SupersedesEntitlementId, current.EndDate, current.Future));
+            var previous = Assert.Single(detail.Entitlements, row => row.StoredStatus == EntitlementStatus.Closed);
+            Assert.Equal((EntitlementClosedReason.ReplacedByChange, command.EffectiveDate, result.NewEntitlementId),
+                (previous.ClosedReason, previous.ClosedEffective, previous.SuccessorEntitlementId));
+            Assert.Contains(detail.Lineage, row => row.Type == EntitlementEventType.Created);
+            Assert.Contains(detail.Lineage, row => row.Type == EntitlementEventType.Superseded && row.Actor == "manager-user");
         }
 
         var published = Assert.Single(await PublishedEventSink.WaitForAsync<EntitlementSuperseded>(e => e.Header.UnitId == unit, 1, TimeSpan.FromSeconds(20)));

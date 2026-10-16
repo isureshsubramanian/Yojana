@@ -130,14 +130,16 @@ export function Component() {
   };
 
   const openOutcome = (row: UnitOutcome) => {
+    const detail = previewDetail(row.detail);
     setActive(row.unitId);
-    openDrawer({ eyebrow: `Selected unit · ${humanise(row.outcome)}`, title: row.serial ?? shortId(row.unitId), mono: true }, <><h3>Outcome</h3><Kv rows={[["Operation", operation], ["Outcome", humanise(row.outcome)], ["Rule", row.reason ?? "—"], ["Detail", row.detail ?? "—"], ["Unit", shortId(row.unitId, 12)]]} /><div className="act"><Link className="btn primary block" to={`/units/${row.unitId}`}>Open unit</Link></div></>);
+    openDrawer({ eyebrow: `Selected unit · ${humanise(row.outcome)}`, title: row.serial ?? shortId(row.unitId), mono: true }, <><h3>Outcome</h3><Kv rows={[["Operation", operation], ["Outcome", humanise(row.outcome)], ["Rule", row.reason ?? "—"], ["Detail", detail?.summary ?? row.detail ?? "—"], ["Now", detail?.now ?? "—"], ["After", detail?.after ?? "unchanged"], ["Days", detail?.days == null ? "—" : signed(detail.days)], ["Unit", shortId(row.unitId, 12)]]} /><div className="act"><Link className="btn primary block" to={`/units/${row.unitId}`}>Open unit</Link></div></>);
   };
   const columns: GridColumn<UnitOutcome>[] = [
-    { key: "serial", label: "Serial · unit", width: 22, mono: true, render: (row) => <>{row.serial ?? shortId(row.unitId)}<span className="sub" style={{ fontFamily: "var(--font-body)" }}>{shortId(row.unitId, 12)}</span></> },
-    { key: "outcome", label: "Outcome", width: 14, render: (row) => <StatusBadge tone={outcomeTone(row.outcome)}>{humanise(row.outcome)}</StatusBadge> },
-    { key: "reason", label: "Rule", width: 24, mono: true, render: (row) => row.reason ?? "—" },
-    { key: "detail", label: "What will happen", width: 40, render: (row) => row.detail ?? (row.outcome === "change" ? "Command will be applied." : "No change.") },
+    { key: "serial", label: "Serial", width: 17, mono: true, render: (row) => row.serial ?? shortId(row.unitId) },
+    { key: "now", label: `Now in ${family}`, width: 25, render: (row) => { const value = previewDetail(row.detail); return <>{value?.now ?? (row.outcome === "skip" ? "none live" : "—")}<span className="sub">{value?.nowEnd ? `ends ${value.nowEnd}` : shortId(row.unitId, 12)}</span></>; } },
+    { key: "after", label: "After", width: 20, render: (row) => { const value = previewDetail(row.detail); return <>{value?.after ?? "unchanged"}<span className="sub">{value?.afterEnd ? `ends ${value.afterEnd}` : ""}</span></>; } },
+    { key: "days", label: "Days", width: 10, numeric: true, render: (row) => { const days = previewDetail(row.detail)?.days; return days == null ? "—" : signed(days); } },
+    { key: "outcome", label: "Outcome", width: 28, render: (row) => { const value = previewDetail(row.detail); return <><StatusBadge tone={outcomeTone(row.outcome)}>{row.outcome === "change" ? "Will change" : `${humanise(row.outcome)}${row.reason ? ` · ${humanise(row.reason)}` : ""}`}</StatusBadge>{value?.summary && <span className="sub">{value.summary}</span>}</>; } },
   ];
 
   return <>
@@ -174,8 +176,9 @@ export function Component() {
           <ErrorNote error={error} />
         </div></div></section>
         <section className="card" aria-labelledby="bulk-preview"><div className="card-header"><h2 id="bulk-preview">Preview <span className="meta">computed by the command, not the screen</span></h2><span className="meta">Step 2 of 2</span></div>
-          <div className="findbar compact"><input className="input" aria-label="Find within preview" placeholder="Find serial" value={find} onChange={(event) => { setFind(event.target.value); setPage(1); }} /><select className="chip-select" aria-label="Outcome" value={outcome ?? ""} onChange={(event) => { setOutcome(event.target.value || null); setPage(1); }}><option value="">All outcomes</option><option value="change">Change</option><option value="skip">Skip</option><option value="block">Block</option></select></div>
           <div className="preview-summary"><Figure label="Resolved" value={preview?.total ?? resolvedCount} /><Figure label="Will change" value={preview?.change ?? 0} tone="ok" /><Figure label="Will skip" value={preview?.skip ?? 0} tone="warn" /><Figure label="Blocked" value={preview?.block ?? 0} tone="bad" /></div>
+          <div className="findbar compact"><input className="input" aria-label="Find within preview" placeholder="Find serial" value={find} onChange={(event) => { setFind(event.target.value); setPage(1); }} />{[[null, `All ${preview?.total ?? resolvedCount}`], ["change", `Change ${preview?.change ?? 0}`], ["skip", `Skip ${preview?.skip ?? 0}`], ["block", `Block ${preview?.block ?? 0}`]].map(([value, label]) => <button type="button" className={`chip${outcome === value ? " on" : ""}`} key={value ?? "all"} onClick={() => { setOutcome(value ?? null); setPage(1); }}>{label}</button>)}</div>
+          {preview?.page.some((row) => row.outcome === "block" && row.reason === "approval_required") && <div className="note warn bulk-approval"><strong>Approval required.</strong>&nbsp;One or more changing units need a higher role. The exact rehearsal and refusal rule have been saved for the approval inbox.</div>}
           <DataGrid columns={columns} page={{ rows: preview?.page ?? [], total: preview?.total ?? 0, page, pageSize: PAGE, continuation: null }} rowId={(row) => row.unitId} onPage={setPage} onRowClick={openOutcome} activeRowId={active} loading={loading} emptyText={selectionId ? "No units match this preview filter." : "Resolve a selection to preview every unit."} viewportHeight={520} />
         </section>
       </div>
@@ -189,3 +192,8 @@ function Field({ label, id, value, onChange, type = "text", mono, placeholder, s
 }
 
 function Figure({ label, value, tone }: { label: string; value: number; tone?: "ok" | "warn" | "bad" }) { return <div className="figure"><span className="k">{label}</span><span className={`v${tone ? ` ${tone}-text` : ""}`}>{value.toLocaleString()}</span></div>; }
+
+interface PreviewDetail { now: string | null; nowEnd: string | null; after: string | null; afterEnd: string | null; days: number | null; summary: string | null }
+function previewDetail(value: string | null): PreviewDetail | null { if (!value?.startsWith("{")) return null; try { const raw = JSON.parse(value) as Record<string, unknown>; return { now: text(raw.now), nowEnd: text(raw.now_end ?? raw.nowEnd), after: text(raw.after), afterEnd: text(raw.after_end ?? raw.afterEnd), days: typeof raw.days === "number" ? raw.days : null, summary: text(raw.summary) }; } catch { return null; } }
+function text(value: unknown): string | null { return typeof value === "string" ? value : null; }
+function signed(value: number): string { return value > 0 ? `+${value.toLocaleString()}` : value.toLocaleString(); }

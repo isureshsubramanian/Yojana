@@ -1,6 +1,6 @@
 import { api } from "../api/client";
 import type { BulkExecutionResult, BulkOperationArguments, BulkPreviewResult, ResolveSelectionSetResult, SelectionSource } from "../api/units";
-import type { AmendmentApprovalPolicy, CoverageFamily, EntitlementRequirement, EntitlementRequirementPage, EntitlementView, GapPage, GapRun, PolicyDetail, PolicyDraftResult, PolicySummary, PolicyValidation, PolicyVersion, RefurbishedGoodsPolicy, ReplacementPolicy, TenantCurrency, WarrantyCheck, WarrantyLineException, WarrantyLineExceptionPage, WarrantyReferencePolicy } from "./types";
+import type { AmendmentApprovalPolicy, CoverageFamily, EntitlementRequirement, EntitlementRequirementPage, EntitlementView, GapPage, GapRun, PolicyDetail, PolicyDraftResult, PolicySummary, PolicyValidation, PolicyVersion, RefurbishedGoodsPolicy, ReplacementPolicy, TenantCurrency, UnitEntitlementDetail, WarrantyCheck, WarrantyLineException, WarrantyLineExceptionPage, WarrantyReferencePolicy } from "./types";
 
 function query(values: Record<string, string | number | boolean | undefined | null>): string {
   const result = new URLSearchParams();
@@ -11,6 +11,9 @@ function query(values: Record<string, string | number | boolean | undefined | nu
 
 export const entitlementApi = {
   forUnit: (unitId: string, signal?: AbortSignal) => api<EntitlementView[]>(`/api/units/${unitId}/entitlements`, { signal }),
+  detailForUnit: (unitId: string, signal?: AbortSignal) => api<UnitEntitlementDetail>(`/api/units/${unitId}/entitlements/detail`, { signal }),
+  attachExtended: (body: unknown) => api<unknown>("/api/entitlements/extended", { method: "POST", body }),
+  amend: (entitlementId: string, body: unknown) => api<unknown>(`/api/entitlements/${entitlementId}/amend`, { method: "POST", body }),
   warrantyCheck: (unitId: string, signal?: AbortSignal) => api<WarrantyCheck>(`/api/units/${unitId}/warranty-check`, { signal }),
   policies: (family?: string, signal?: AbortSignal) => api<PolicySummary[]>(`/api/warranty-policies/${query({ family })}`, { signal }),
   policyVersions: (code: string, signal?: AbortSignal) => api<PolicyVersion[]>(`/api/warranty-policies/${encodeURIComponent(code)}/versions`, { signal }),

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Yojana.Platform.Tenancy;
@@ -61,7 +62,7 @@ public abstract class EntitlementBulkOperation(SerialisationDbContext db, ITenan
         }
         catch (CommandRefusedException ex)
         {
-            return Block(unitId, serial, ex.Rule, ex.Message);
+            return Block(unitId, serial, ex.Rule, MergeDetail(pre.Detail, ex.Message));
         }
         catch (DbUpdateException ex)
         {
@@ -79,6 +80,21 @@ public abstract class EntitlementBulkOperation(SerialisationDbContext db, ITenan
     protected static UnitOutcome Change(Guid unitId, string? serial, string detail) => new(unitId, serial, UnitOutcome.Outcomes.Change, null, detail);
     protected static UnitOutcome Skip(Guid unitId, string? serial, string reason) => new(unitId, serial, UnitOutcome.Outcomes.Skip, reason);
     protected static UnitOutcome Block(Guid unitId, string? serial, string reason, string? detail = null) => new(unitId, serial, UnitOutcome.Outcomes.Block, reason, detail);
+    protected static string PreviewDetail(string? now, DateOnly? nowEnd, string? after, DateOnly? afterEnd, int? days, string? summary = null) =>
+        JsonSerializer.Serialize(new { now, nowEnd, after, afterEnd, days, summary }, LedgerJson.Options);
+    private static string MergeDetail(string? detail, string message)
+    {
+        if (string.IsNullOrWhiteSpace(detail) || detail[0] != '{') return message;
+        using var document = JsonDocument.Parse(detail);
+        var root = document.RootElement;
+        return PreviewDetail(
+            root.TryGetProperty("now", out var now) ? now.GetString() : null,
+            root.TryGetProperty("now_end", out var nowEnd) && nowEnd.ValueKind == JsonValueKind.String && DateOnly.TryParse(nowEnd.GetString(), out var parsedNowEnd) ? parsedNowEnd : null,
+            root.TryGetProperty("after", out var after) ? after.GetString() : null,
+            root.TryGetProperty("after_end", out var afterEnd) && afterEnd.ValueKind == JsonValueKind.String && DateOnly.TryParse(afterEnd.GetString(), out var parsedAfterEnd) ? parsedAfterEnd : null,
+            root.TryGetProperty("days", out var days) && days.ValueKind == JsonValueKind.Number ? days.GetInt32() : null,
+            message);
+    }
     protected static AmendmentCommitter Committer(BulkOperationArguments arguments) => new(
         arguments.Extra?.GetValueOrDefault(BulkApprovalArguments.ApproverRef) ?? arguments.ActorRef,
         (arguments.Extra?.GetValueOrDefault(BulkApprovalArguments.ApproverRoles) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
@@ -154,10 +170,22 @@ public sealed class BulkSupersedeEntitlementOperation(SerialisationDbContext db,
     protected override async Task<UnitOutcome> PrecheckAsync(Guid unitId, string? serial, BulkOperationArguments arguments, CancellationToken cancellationToken)
     {
         var x = EntitlementBulkArguments.Parse(arguments); var entitlement = await Live(unitId, x.Family, cancellationToken);
-        if (entitlement is null) return Skip(unitId, serial, "no_live_entitlement_in_family");
-        if (x.PolicyVersionId == entitlement.PolicyVersionId) return Skip(unitId, serial, "already_at_target");
+        if (entitlement is null) return new(unitId, serial, UnitOutcome.Outcomes.Skip, "no_live_entitlement_in_family", PreviewDetail("none live", null, "unchanged", null, null, $"No live {x.Family} entitlement."));
         if (x.EffectiveDate is null || (x.PolicyVersionId is null && x.PolicyCode is null)) return Block(unitId, serial, "bulk_arguments_invalid", "effective_date and arguments target policy are required");
-        return Change(unitId, serial, $"supersede {x.Family} entitlement");
+        var oldPolicy = await Db.PolicyVersions.AsNoTracking().SingleAsync(v => v.TenantId == TenantId && v.PolicyVersionId == entitlement.PolicyVersionId, cancellationToken);
+        var oldLabel = $"{oldPolicy.Name} · v{oldPolicy.Version}";
+        if (x.PolicyVersionId == entitlement.PolicyVersionId) return new(unitId, serial, UnitOutcome.Outcomes.Skip, "already_at_target", PreviewDetail(oldLabel, entitlement.EndDate, "unchanged", entitlement.EndDate, 0, "The target policy is already in force."));
+        var target = x.PolicyVersionId is { } versionId
+            ? await Db.PolicyVersions.AsNoTracking().FirstOrDefaultAsync(v => v.TenantId == TenantId && v.PolicyVersionId == versionId, cancellationToken)
+            : await Db.PolicyVersions.AsNoTracking().Where(v => v.TenantId == TenantId && v.PolicyCode == x.PolicyCode && v.Status == PolicyVersionStatus.Published && v.AppliesToContractsFrom <= x.EffectiveDate)
+                .OrderByDescending(v => v.Version).FirstOrDefaultAsync(cancellationToken);
+        if (target is null) return Block(unitId, serial, "policy_version_unknown", PreviewDetail(oldLabel, entitlement.EndDate, "unchanged", entitlement.EndDate, null, "No published target policy applies on the effective date."));
+        var terms = await store.ReadTermsAsync(target, cancellationToken);
+        var itemId = await Db.Current.AsNoTracking().Where(c => c.TenantId == TenantId && c.UnitId == unitId).Select(c => c.ItemId).SingleAsync(cancellationToken);
+        var duration = TermArithmetic.ForCondition(terms, itemId, entitlement.ConditionAtCreation, null, null).Duration;
+        var afterEnd = TermArithmetic.EndDate(x.EffectiveDate.Value, duration);
+        int? days = entitlement.EndDate is { } oldEnd ? afterEnd.DayNumber - oldEnd.DayNumber : null;
+        return new(unitId, serial, UnitOutcome.Outcomes.Change, null, PreviewDetail(oldLabel, entitlement.EndDate, $"{target.Name} · v{target.Version}", afterEnd, days, $"Supersede {x.Family} entitlement."));
     }
     public override async Task ApplyAsync(Guid unitId, Guid commandId, BulkOperationArguments arguments, CancellationToken cancellationToken)
     {

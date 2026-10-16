@@ -228,6 +228,38 @@ svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-wid
 .tabs a { padding: 10px 12px; margin-bottom: -1px; font-size: 14px; font-weight: 500; color: var(--text-2); border-bottom: 2px solid transparent; }
 .tabs a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
 .tabs a:hover { text-decoration: none; color: var(--text-1); }
+.tabs button { padding: 10px 12px; margin-bottom: -1px; font: inherit; font-size: 14px; font-weight: 500; color: var(--text-2); background: transparent; border: 0; border-bottom: 2px solid transparent; cursor: pointer; }
+.tabs button[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
+.tabs button:hover { color: var(--text-1); }
+.unit-tabs { margin-bottom: var(--gap); }
+.unit-tab-content { grid-template-columns: minmax(0, 1fr); }
+.unit-tab-content .unit-secondary { display: contents; }
+.unit-tab-content.tab-history .unit-secondary,
+.unit-tab-content.tab-identifiers .unit-history,
+.unit-tab-content.tab-custody .unit-history,
+.unit-tab-content.tab-asbuilt .unit-history { display: none; }
+.unit-tab-content.tab-history .unit-history { display: block; }
+.unit-tab-content.tab-identifiers .unit-custody,
+.unit-tab-content.tab-identifiers .unit-asbuilt,
+.unit-tab-content.tab-custody .unit-identifiers,
+.unit-tab-content.tab-custody .unit-asbuilt,
+.unit-tab-content.tab-asbuilt .unit-identifiers,
+.unit-tab-content.tab-asbuilt .unit-custody { display: none; }
+.entitlement-detail { margin-bottom: var(--gap); }
+.entitlement-live td { line-height: 1.25; }
+.lineage-list { padding-top: 12px; padding-bottom: 12px; }
+.lineage-event { position: relative; display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; padding: 8px 0; font-size: 13px; }
+.lineage-event::before { content: ""; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px; background: var(--rule); }
+.lineage-event .dot { position: relative; z-index: 1; width: 9px; height: 9px; margin-top: 4px; border-radius: 50%; background: var(--surface-1); border: 2px solid var(--text-3); }
+.lineage-event .dot.key { border-color: var(--accent); background: var(--accent); }
+.lineage-event .dot.bad { border-color: var(--danger); }
+.lineage-event code { margin-left: 6px; color: var(--text-2); }
+.lineage-event .sub { display: block; margin-top: 3px; color: var(--text-3); }
+.lineage-heading { margin: 12px 0 4px 28px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.lineage-group + .lineage-group { margin-top: 8px; }
+.empty-cell { height: 64px !important; text-align: center !important; }
+.form-grid.one { grid-template-columns: 1fr; }
+.bulk-approval { margin: 12px 16px; }
 .center { min-height: calc(100vh - 56px); display: grid; place-items: center; padding: 48px 24px; }
 .auth { width: 100%; max-width: 420px; }
 .auth .card-body { padding: 32px; }
