@@ -182,4 +182,5 @@ public static class EntitlementEventType
     public const string Transferred = "entitlement.transferred";
     public const string ExtendedSold = "entitlement.extended_sold";
     public const string Amended = "entitlement.amended";
+    public const string Superseded = "entitlement.superseded";
 }

@@ -97,6 +97,8 @@ public static class SerialisationEndpoints
         entitlements.MapPost("/{entitlementId:guid}/close", (Guid entitlementId, CloseEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
         entitlements.MapPost("/{entitlementId:guid}/amend", (Guid entitlementId, AmendEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<AmendEntitlementResult>(bus, tenant, command with { EntitlementId = entitlementId, CommittedBy = Committer(user) }, ct));
+        entitlements.MapPost("/{entitlementId:guid}/supersede", (Guid entitlementId, SupersedeEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<SupersedeEntitlementResult>(bus, tenant, command with { EntitlementId = entitlementId, CommittedBy = Committer(user) }, ct));
         entitlements.MapPost("/{entitlementId:guid}/transfer", (Guid entitlementId, TransferEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<TransferEntitlementResult>(bus, tenant, command with { SourceEntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
 
         var reference = app.MapGroup("/api/warranty-reference").RequireAuthorization(YojanaPolicy.TenantMember);
