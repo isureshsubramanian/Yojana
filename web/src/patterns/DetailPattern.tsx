@@ -3,6 +3,7 @@ import { StatusBadge, TimelineRail } from "../components";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { timeline } from "./fixtures";
+import { Rail } from "../shell/Drawer";
 
 /** Detail pattern: print-ready record with the timeline rail on the left and the current-state inspector on the right. */
 export function Component() {
@@ -67,11 +68,11 @@ export function Component() {
           </div>
         </div>
       </main>
-      <aside className="rail" aria-label="Current state">
+      <Rail label="Current state">
         <div className="section"><h3>Current state</h3><div className="kv"><span className="k">Lifecycle</span><span className="v">in_service</span><span className="k">Disposition</span><span className="v">active</span><span className="k">Condition</span><span className="v">grade A</span><span className="k">Custody</span><span className="v">customer site</span><span className="k">Owner</span><span className="v">Brightwater</span><span className="k">Warranty end (max)</span><span className="v">2029-09-02</span><span className="k">Last event seq</span><span className="v">148,201,977</span></div></div>
         <div className="section"><h3>Lineage</h3><div className="kv"><span className="k">Replaced by</span><span className="v serial">2506-498770</span><span className="k">Derived from</span><span className="v muted">—</span><span className="k">Parent assembly</span><span className="v muted">—</span><span className="k">Components</span><span className="v">4 as built</span></div></div>
         <div className="section"><h3>Open work</h3><div className="job"><div><div className="t">RMA-2026-1183</div><div className="s">Closed 2026-08-14</div></div><StatusBadge tone="neutral">Closed</StatusBadge></div><div className="job"><div><div className="t">Return overdue</div><div className="s">Not applicable</div></div><StatusBadge tone="ok">OK</StatusBadge></div></div>
-      </aside>
+      </Rail>
     </>
   );
 }

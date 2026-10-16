@@ -4,6 +4,7 @@ import { ScanInput, SelectionPreview, StatusBadge, type PreviewOutcome } from ".
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { previewPage } from "./fixtures";
+import { Rail } from "../shell/Drawer";
 
 /** Form pattern: change on the left, the command's own preview on the right with find-within, routing in the rail. */
 export function Component() {
@@ -70,11 +71,11 @@ export function Component() {
           />
         </div>
       </main>
-      <aside className="rail" aria-label="Approval routing">
+      <Rail label="Approval routing">
         <div className="section"><h3>Routing</h3><div className="kv"><span className="k">Initiator</span><span className="v">R. Okafor</span><span className="k">Role</span><span className="v">Service manager</span><span className="k">Approver</span><span className="v">Service manager</span><span className="k">Finance review</span><span className="v muted">Not required</span><span className="k">Days changed</span><span className="v">31</span><span className="k">Threshold</span><span className="v">30 · service desk</span></div></div>
         <div className="section"><h3>What will be recorded</h3><div className="job"><div><div className="t">entitlement.amended</div><div className="s">{preview.summary.change} events · before and after</div></div><StatusBadge tone="neutral">{preview.summary.change}</StatusBadge></div><div className="job"><div><div className="t">Warranty certificate</div><div className="s">New version, reason entitlement_change</div></div><StatusBadge tone="neutral">3</StatusBadge></div><div className="job"><div><div className="t">Approval record</div><div className="s">Initiator, approver, reason, evidence</div></div><StatusBadge tone="neutral">1</StatusBadge></div></div>
         <div className="section"><h3>Rules applied</h3><p className="muted">Reductions after a certificate need a customer notification; units with open claims are blocked until closed; skipped units keep their current entitlement unchanged.</p></div>
-      </aside>
+      </Rail>
     </>
   );
 }

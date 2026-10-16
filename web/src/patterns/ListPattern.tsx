@@ -4,6 +4,7 @@ import { DataGrid, KpiStrip, ScanInput, StatusBadge, openSearch, type GridColumn
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { unitKpis, unitsPage, type UnitRow } from "./fixtures";
+import { Rail } from "../shell/Drawer";
 
 const columns: GridColumn<UnitRow>[] = [
   { key: "serial", label: "Serial", width: 15, render: (r) => <Link className="serial" to="/patterns/detail">{r.serial}</Link> },
@@ -45,7 +46,7 @@ export function Component() {
           </section>
         </div>
       </main>
-      <aside className="rail" aria-label="Selection">
+      <Rail label="Selection">
         <div className="section">
           <h3>Selection</h3>
           <p className="muted">{selected.size === 0 ? "No units selected. Select rows, or address a selection set by document, item, date range or pasted list." : `${selected.size.toLocaleString()} units selected on this page.`}</p>
@@ -66,7 +67,7 @@ export function Component() {
           <h3>Scale</h3>
           <div className="kv"><span className="k">Units</span><span className="v">1,496,765</span><span className="k">Events</span><span className="v">148.2 M</span><span className="k">Partitions</span><span className="v">118</span><span className="k">Lookup p99</span><span className="v">6 ms</span></div>
         </div>
-      </aside>
+      </Rail>
     </>
   );
 }

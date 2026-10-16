@@ -35,6 +35,12 @@ export const router = createBrowserRouter([
         children: [
           { index: true, lazy: () => import("./pages/Overview") },
           { path: "search", lazy: () => import("./pages/Search") },
+          { path: "units", lazy: () => import("./units/UnitSearch") },
+          { path: "units/receive", lazy: () => import("./units/Receive") },
+          { path: "units/ranges", lazy: () => import("./units/SerialRanges") },
+          { path: "units/completeness", lazy: () => import("./units/Completeness") },
+          { path: "units/release", lazy: () => import("./units/Release") },
+          { path: "units/:unitId", lazy: () => import("./units/UnitDetail") },
           ...patterns,
           ...placeholders,
           { path: "*", lazy: () => import("./pages/Placeholder") },

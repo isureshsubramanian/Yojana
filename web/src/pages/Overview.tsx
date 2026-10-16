@@ -5,6 +5,7 @@ import { useSession } from "../session/session";
 import { Icon } from "../shell/Icons";
 import { KpiStrip, ScanInput, openSearch } from "../components";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
+import { Rail } from "../shell/Drawer";
 
 export function loader({ request }: { request: Request }) {
   return api<Overview>("/api/shell/overview", { signal: request.signal });
@@ -43,7 +44,7 @@ export function Component() {
           <FindUnit />
         </div>
       </main>
-      <aside className="rail" aria-label="Inspector">
+      <Rail label="Inspector">
         {overview.rail.map((s) => <RailBlock key={s.title} section={s} />)}
         <div className="section">
           <h3>Shortcuts</h3>
@@ -52,7 +53,7 @@ export function Component() {
           <div className="shortcut"><span>New correction</span><span className="keys"><kbd className="key">N</kbd></span></div>
           <div className="shortcut"><span>Go to units</span><span className="keys"><kbd className="key">G</kbd><kbd className="key">U</kbd></span></div>
         </div>
-      </aside>
+      </Rail>
     </>
   );
 }

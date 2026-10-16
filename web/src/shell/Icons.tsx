@@ -1,7 +1,7 @@
 // One inline SVG sprite for the whole product (MOD-02 invariant 2). Symbols are the vetted mockup set.
 export type IconName =
   | "units" | "ent" | "corr" | "claim" | "rma" | "cert" | "import" | "int" | "set" | "scan" | "chev" | "bell"
-  | "home" | "plus" | "filter" | "print" | "x" | "down" | "search";
+  | "home" | "plus" | "filter" | "print" | "x" | "down" | "search" | "range" | "tree" | "check" | "panel";
 
 export function IconSprite() {
   return (
@@ -25,6 +25,10 @@ export function IconSprite() {
       <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 8V3h10v5" /><path d="M5 8h14a2 2 0 0 1 2 2v6h-4v5H7v-5H3v-6a2 2 0 0 1 2-2z" /></symbol>
       <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></symbol>
       <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v16M5 13l7 7 7-7" /></symbol>
+      <symbol id="i-range" viewBox="0 0 24 24"><path d="M4 12h16" /><path d="M4 8v8M20 8v8" /><path d="M9 10v4M15 10v4" /></symbol>
+      <symbol id="i-tree" viewBox="0 0 24 24"><rect x="3" y="3" width="6" height="5" rx="1" /><rect x="15" y="10" width="6" height="5" rx="1" /><rect x="15" y="17" width="6" height="4" rx="1" /><path d="M6 8v11h9M6 12.5h9" /></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7" /></symbol>
+      <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></symbol>
     </svg>
   );
 }

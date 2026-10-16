@@ -6,11 +6,13 @@ import { ROOT_ROUTE_ID, initials, roleLabel } from "../session/session";
 import { ModeMenuItems } from "../theme/ModeMenuItems";
 import { openSearch } from "../components/search/searchStore";
 import { Icon } from "./Icons";
+import { toggleDrawer, useDrawer } from "./drawerStore";
 
 const HEALTH_REFRESH_MS = 60_000;
 
 export function TopBar({ bare = false }: { bare?: boolean }) {
   const session = useRouteLoaderData(ROOT_ROUTE_ID) as Session | undefined;
+  const drawer = useDrawer();
   return (
     <header className="topbar" role="banner">
       <Link className="brand" to="/"><span className="mark" aria-hidden="true">Y</span>Yojana<span className="product-sub">Serial &amp; Warranty</span></Link>
@@ -26,6 +28,7 @@ export function TopBar({ bare = false }: { bare?: boolean }) {
         <>
           <button type="button" className="pill quiet" onClick={() => openSearch()} aria-label="Search everything" aria-haspopup="dialog"><Icon name="search" />Search<kbd className="key">⌘K</kbd></button>
           <Link className="icon-btn" to="/corrections" aria-label="Approvals"><Icon name="bell" /></Link>
+          <button type="button" className="icon-btn" onClick={toggleDrawer} aria-label="Details panel" aria-pressed={drawer.open} title="Details panel"><Icon name="panel" /></button>
         </>
       )}
       {session && <UserMenu session={session} />}

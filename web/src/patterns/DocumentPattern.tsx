@@ -4,6 +4,7 @@ import { DataGrid, FindBar, KpiStrip, StatusBadge, type GridColumn } from "../co
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { DOCUMENT_TOTAL, documentPage, type DocumentSerialRow } from "./fixtures";
+import { Rail } from "../shell/Drawer";
 
 function Highlight({ text, prefix }: { text: string; prefix: string }) {
   return prefix && text.startsWith(prefix) ? <><mark>{prefix}</mark>{text.slice(prefix.length)}</> : <>{text}</>;
@@ -66,11 +67,11 @@ export function Component() {
           </section>
         </div>
       </main>
-      <aside className="rail" aria-label="Document">
+      <Rail label="Document">
         <div className="section"><h3>Document</h3><div className="kv"><span className="k">Source</span><span className="v">CX01 · DocEntry 184320</span><span className="k">Posted</span><span className="v">2026-09-01 14:12</span><span className="k">Customer</span><span className="v">Brightwater Analytics</span><span className="k">Ship to</span><span className="v">Lab 2, Freiburg</span><span className="k">Carrier</span><span className="v">Harbourline</span><span className="k">POD</span><span className="v">2026-10-02</span></div></div>
         <div className="section"><h3>Lines</h3><div className="job"><div><div className="t">1 · VX-220</div><div className="s">250 serials</div></div><StatusBadge tone="ok">OK</StatusBadge></div><div className="job"><div><div className="t">2 · VX-220</div><div className="s">250 serials</div></div><StatusBadge tone="ok">OK</StatusBadge></div><div className="job"><div><div className="t">3 · PM-41</div><div className="s">250 serials</div></div><StatusBadge tone="ok">OK</StatusBadge></div><div className="job"><div><div className="t">4 · VX-220</div><div className="s">250 serials</div></div><StatusBadge tone="bad">4 exceptions</StatusBadge></div></div>
         <div className="section"><h3>Find tips</h3><p className="muted">Type a serial, a prefix, a range (2506-493445 → 2506-493468) or paste a list; the find runs server-side over this document's 1,000 units and never loads them all into the page.</p></div>
-      </aside>
+      </Rail>
     </>
   );
 }

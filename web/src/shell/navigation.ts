@@ -16,7 +16,10 @@ export interface NavEntry {
 
 export const navigation: NavEntry[] = [
   { path: "/", label: "Overview", icon: "home" },
-  { path: "/units", label: "Units", icon: "units", section: "Work", placeholder: "Unit identity, ledger and custody" },
+  { path: "/units", label: "Units", icon: "units", section: "Work" },
+  { path: "/units/receive", label: "Receive and commission", icon: "import", section: "Work" },
+  { path: "/units/ranges", label: "Serial ranges", icon: "range", section: "Work" },
+  { path: "/units/completeness", label: "As-built completeness", icon: "tree", section: "Work" },
   { path: "/entitlements", label: "Entitlements", icon: "ent", section: "Work", placeholder: "Warranty entitlements and policies" },
   { path: "/corrections", label: "Corrections", icon: "corr", section: "Work", placeholder: "Corrections and the serial workbench" },
   { path: "/claims", label: "Claims", icon: "claim", section: "Work", placeholder: "Claims, campaigns and supplier recovery" },
@@ -32,5 +35,6 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export function entryFor(pathname: string): NavEntry | undefined {
-  return navigation.find((e) => e.path !== "/" && (pathname === e.path || pathname.startsWith(e.path + "/"))) ?? (pathname === "/" ? navigation[0] : undefined);
+  const matches = navigation.filter((e) => e.path !== "/" && (pathname === e.path || pathname.startsWith(e.path + "/")));
+  return matches.sort((a, b) => b.path.length - a.path.length)[0] ?? (pathname === "/" ? navigation[0] : undefined);
 }

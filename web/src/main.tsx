@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router";
 import "./styles/theme-glass.css";
 import "./styles/base.css";
+import "./styles/layout.css";
 import { IconSprite } from "./shell/Icons";
 import { router } from "./routes";
 

@@ -19,7 +19,7 @@ export function SideNav() {
         return (
           <FragmentWithKey key={e.path}>
             {heading}
-            <NavLink className="item" to={e.path} end={e.path === "/"}>
+            <NavLink className="item" to={e.path} title={e.label} end={e.path === "/" || entries.some((o) => o !== e && o.path.startsWith(e.path + "/"))}>
               <Icon name={e.icon} /><span>{e.label}</span>
             </NavLink>
           </FragmentWithKey>

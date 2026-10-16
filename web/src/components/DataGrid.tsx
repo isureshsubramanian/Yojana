@@ -35,6 +35,10 @@ export interface DataGridProps<TRow> {
   emptyText?: string;
   loading?: boolean | undefined;
   describedBy?: string;
+  /** House layout E: a row click opens the drawer for that row; links, inputs and buttons inside the row keep their own behaviour. */
+  onRowClick?: ((row: TRow) => void) | undefined;
+  /** The row the drawer currently shows, highlighted. */
+  activeRowId?: string | null | undefined;
 }
 
 const ROW_HEIGHT = 44;
@@ -45,7 +49,7 @@ const DENSE_ROW_HEIGHT = 36;
  * paging controls; never asks for "all". Rows beyond the viewport are windowed so even a 500-row page keeps
  * the DOM small. Selection is reported outward as ids; totals come from the page result.
  */
-export function DataGrid<TRow>({ columns, page, rowId, onPage, selection, dense, isHit, viewportHeight = 640, footerNote, emptyText = "Nothing matches.", loading, describedBy }: DataGridProps<TRow>) {
+export function DataGrid<TRow>({ columns, page, rowId, onPage, selection, dense, isHit, viewportHeight = 640, footerNote, emptyText = "Nothing matches.", loading, describedBy, onRowClick, activeRowId }: DataGridProps<TRow>) {
   const rowHeight = dense ? DENSE_ROW_HEIGHT : ROW_HEIGHT;
   const viewport = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -95,8 +99,10 @@ export function DataGrid<TRow>({ columns, page, rowId, onPage, selection, dense,
             {slice.map((row) => {
               const id = rowId(row);
               const selected = selection?.selected.has(id) ?? false;
+              const classes = [isHit?.(row) ? "hit" : "", onRowClick ? "clickable" : "", activeRowId === id ? "sel" : ""].filter(Boolean).join(" ");
               return (
-                <tr key={id} aria-selected={selection ? selected : undefined} className={isHit?.(row) ? "hit" : undefined}>
+                <tr key={id} aria-selected={selection ? selected : undefined} className={classes || undefined}
+                  onClick={onRowClick ? (e) => { if (!(e.target instanceof HTMLElement && e.target.closest("a, input, button, select, textarea"))) onRowClick(row); } : undefined}>
                   {selection && <td className="check"><input type="checkbox" aria-label={`Select ${selection.label(row)}`} checked={selected} onChange={() => toggle(id)} /></td>}
                   {columns.map((c) => (
                     <td key={c.key} className={[c.numeric ? "num" : "", c.mono ? "serial" : "", c.muted ? "muted" : ""].filter(Boolean).join(" ") || undefined}>{c.render(row)}</td>
