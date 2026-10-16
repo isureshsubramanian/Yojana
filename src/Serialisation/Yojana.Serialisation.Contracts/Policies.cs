@@ -1,0 +1,91 @@
+namespace Yojana.Serialisation.Contracts;
+
+// Warranty policy model and editor API (MOD-06, P2-T03; ADR-0001 "Warranty entitlement engine", Terms). A policy is a
+// series of versions effective by contract date; a version is edited only while it is a draft and is never changed once
+// published (a change is a new version). Live entitlements keep the version they were created with.
+
+/// <summary>Term length and how its end is read: months or days, the end-of-month rule, and whether the end day is covered.</summary>
+public sealed record DurationRule(int Value, string Unit, string EndOfMonth = DurationRule.Clamp, bool EndInclusive = true)
+{
+    public const string Months = "months";
+    public const string Days = "days";
+    public const string Clamp = "clamp";
+    public const string Roll = "roll";
+}
+
+/// <summary>One step of the start fallback chain: the trigger, plus days after it (for example invoice + 14).</summary>
+public sealed record StartFallback(string Trigger, int OffsetDays = 0);
+
+/// <summary>
+/// The start trigger, the fallbacks tried in order when its evidence is missing, and the cap: the start is never later
+/// than invoice + <see cref="CapDays"/>, whatever evidence arrives afterwards.
+/// </summary>
+public sealed record StartRule(string Trigger, IReadOnlyList<StartFallback> Fallbacks, int? CapDays);
+
+public sealed record UsageLimitTerm(string MeterType, decimal Limit, string Period = "term");
+
+public sealed record CoverageTerms(decimal PartsPct, decimal LabourPct, decimal TravelPct, string ServiceMode, int? ResponseHours = null, string? CoverageHours = null);
+
+/// <summary>A refurbished-goods term keyed by (item, grade, channel, region); the statutory floor wins over a shorter term.</summary>
+public sealed record RefurbishedTerm(Guid? ItemId, string Grade, string Channel, string Region, int DurationMonths, int? StatutoryFloorMonths);
+
+public sealed record PolicyTerms(
+    DurationRule Duration,
+    string DurationBasis,
+    IReadOnlyList<UsageLimitTerm> UsageLimits,
+    StartRule Start,
+    CoverageTerms Coverage,
+    IReadOnlyList<string> Exclusions,
+    IReadOnlyList<string> RegionScope,
+    string Transferable,
+    string SettlementFormula,
+    string? ReplacementPolicyCode,
+    IReadOnlyList<RefurbishedTerm> Refurbished,
+    int? DoaWindowDays,
+    string AssuranceOrService,
+    string ReferenceTimeZoneRule,
+    bool ServiceContractRegulated = false)
+{
+    public const string TimeZoneCustomerSite = "customer_site";
+    public const string TimeZoneObligorEntity = "obligor_entity";
+    public const string TimeZoneUtc = "utc";
+}
+
+public sealed record PolicyIssue(string Severity, string Code, string Field, string Message)
+{
+    public const string Error = "error";
+    public const string Warning = "warning";
+}
+
+public sealed record PolicyValidation(IReadOnlyList<PolicyIssue> Issues)
+{
+    public bool CanPublish => Issues.All(i => i.Severity != PolicyIssue.Error);
+}
+
+/// <summary>Opens the next version of a policy as a draft; without terms it copies the newest version's terms.</summary>
+public sealed record CreatePolicyDraft(Guid CommandId, string PolicyCode, string Name, string CoverageFamily, string EntitlementType, DateOnly AppliesToContractsFrom, PolicyTerms? Terms, string ActorRef);
+
+public sealed record UpdatePolicyDraft(Guid PolicyVersionId, string Name, DateOnly AppliesToContractsFrom, PolicyTerms Terms, string ActorRef);
+
+public sealed record ValidatePolicyDraft(Guid PolicyVersionId);
+
+public sealed record PublishPolicyVersion(Guid PolicyVersionId, string ActorRef);
+
+public sealed record DiscardPolicyDraft(Guid PolicyVersionId, string ActorRef);
+
+public sealed record PolicyDraftResult(Guid PolicyVersionId, string PolicyCode, int Version, string Status, PolicyValidation Validation);
+
+public sealed record DefineCoverageFamily(string FamilyCode, string Name, bool Stacking, string AccountingTag, bool Active = true);
+
+public sealed record DefineReplacementPolicy(string Code, string Rule, int? MinDays, int? ExtensionMonths, string? Description);
+
+public sealed record CoverageFamilyRow(string FamilyCode, string Name, bool Stacking, string AccountingTag, bool Active);
+
+public sealed record ReplacementPolicyRow(Guid ReplacementPolicyId, string Code, string Rule, int? MinDays, int? ExtensionMonths, string? Description);
+
+/// <summary>One policy as the editor's list shows it: the newest version and how many entitlements each version carries.</summary>
+public sealed record PolicySummary(string PolicyCode, string Name, string CoverageFamily, int Versions, int? InForceVersion, DateOnly? InForceFrom, int? DraftVersion, long LiveEntitlements);
+
+public sealed record PolicyVersionRow(Guid PolicyVersionId, int Version, DateOnly AppliesToContractsFrom, string Status, string RuleVersion, long LiveEntitlements, DateTime CreatedAt, string CreatedBy, DateTime? PublishedAt, string? PublishedBy);
+
+public sealed record PolicyVersionDetail(Guid PolicyVersionId, string PolicyCode, int Version, string Name, string CoverageFamily, string EntitlementType, DateOnly AppliesToContractsFrom, string Status, string RuleVersion, PolicyTerms Terms, PolicyValidation Validation);

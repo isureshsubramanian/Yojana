@@ -54,6 +54,10 @@ public static class SerialisationModule
         builder.Services.AddScoped<BulkExecutor>();
 
         // Global search (MOD-13, P1-T23): the index table and its maintenance handlers live here; other modules index through ISearchIndex.
+        // Warranty policies (MOD-06, P2-T03).
+        builder.Services.AddScoped<Entitlements.PolicyStore>();
+        builder.Services.AddScoped<Entitlements.PolicyQueries>();
+
         builder.Services.AddScoped<SearchIndexer>();
         builder.Services.AddScoped<SearchBackfill>();
         builder.Services.AddScoped<ISearchIndex>(sp => sp.GetRequiredService<SearchIndexer>());
