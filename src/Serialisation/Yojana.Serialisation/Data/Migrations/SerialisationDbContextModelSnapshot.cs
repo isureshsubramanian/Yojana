@@ -25,6 +25,52 @@ namespace Yojana.Serialisation.Data.Migrations
 
             modelBuilder.HasSequence("seq_unit_event", "serialisation");
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.AccrualCohort", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CohortId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("cohort_id");
+
+                    b.Property<string>("AssuranceOrService")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("assurance_or_service");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("item_id");
+
+                    b.Property<Guid>("ObligorEntityId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("obligor_entity_id");
+
+                    b.Property<string>("Period")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .IsUnicode(false)
+                        .HasColumnType("char(7)")
+                        .HasColumnName("period")
+                        .IsFixedLength();
+
+                    b.HasKey("TenantId", "CohortId")
+                        .HasName("pk_accrual_cohort");
+
+                    b.HasIndex("TenantId", "ObligorEntityId", "ItemId", "Period", "AssuranceOrService")
+                        .IsUnique()
+                        .HasDatabaseName("ux_accrual_cohort_tenant_id_obligor_entity_id_item_id_period_assurance_or_service");
+
+                    b.ToTable("accrual_cohort", "serialisation");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.AssemblyLink", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -185,6 +231,47 @@ namespace Yojana.Serialisation.Data.Migrations
                         {
                             t.HasCheckConstraint("ck_build_record_payload_json", "ISJSON(payload) = 1");
                         });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CoverageFamily", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("FamilyCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("family_code");
+
+                    b.Property<string>("AccountingTag")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("accounting_tag");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit")
+                        .HasColumnName("active");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("name");
+
+                    b.Property<bool>("Stacking")
+                        .HasColumnType("bit")
+                        .HasColumnName("stacking");
+
+                    b.HasKey("TenantId", "FamilyCode")
+                        .HasName("pk_coverage_family");
+
+                    b.ToTable("coverage_family", "serialisation");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CustodyEpisode", b =>
@@ -350,6 +437,548 @@ namespace Yojana.Serialisation.Data.Migrations
                             }));
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.Entitlement", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("EntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entitlement_id");
+
+                    b.Property<Guid?>("AccrualCohortId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("accrual_cohort_id");
+
+                    b.Property<string>("AssuranceOrService")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("assurance_or_service");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("closed_at");
+
+                    b.Property<DateOnly?>("ClosedEffective")
+                        .HasColumnType("date")
+                        .HasColumnName("closed_effective");
+
+                    b.Property<string>("ClosedReason")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("closed_reason");
+
+                    b.Property<string>("ComputedByRuleVersion")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("computed_by_rule_version");
+
+                    b.Property<string>("ConditionAtCreation")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("condition_at_creation");
+
+                    b.Property<string>("Confidence")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("confidence");
+
+                    b.Property<string>("Coverage")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("coverage");
+
+                    b.Property<string>("CoverageFamily")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("coverage_family");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("created_event_id");
+
+                    b.Property<string>("CustomerPoRef")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("customer_po_ref");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("direction");
+
+                    b.Property<string>("DurationBasis")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("duration_basis");
+
+                    b.Property<DateOnly?>("EndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("end_date");
+
+                    b.Property<Guid>("ObligorEntityId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("obligor_entity_id");
+
+                    b.Property<Guid?>("OwnerPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("owner_party_ref");
+
+                    b.Property<string>("OwnerPartyType")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("owner_party_type");
+
+                    b.Property<Guid?>("ParentEntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parent_entitlement_id");
+
+                    b.Property<Guid?>("PayerPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("payer_party_ref");
+
+                    b.Property<string>("PayerPartyType")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("payer_party_type");
+
+                    b.Property<DateTime>("PeriodEnd")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("sys_end");
+
+                    b.Property<DateTime>("PeriodStart")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("sys_start");
+
+                    b.Property<Guid>("PolicyVersionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("policy_version_id");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("provenance");
+
+                    b.Property<string>("RegionScope")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("region_scope");
+
+                    b.Property<Guid?>("ReplacementLinkId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("replacement_link_id");
+
+                    b.Property<string>("RevenueScheduleRef")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("revenue_schedule_ref");
+
+                    b.Property<Guid?>("RootEntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("root_entitlement_id");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("scope");
+
+                    b.Property<Guid?>("ScopeChildUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("scope_child_unit_id");
+
+                    b.Property<string>("ScopeItemClass")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("scope_item_class");
+
+                    b.Property<Guid?>("SourceDocumentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_document_id");
+
+                    b.Property<int?>("SourceDocumentLine")
+                        .HasColumnType("int")
+                        .HasColumnName("source_document_line");
+
+                    b.Property<string>("SourceDocumentType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_document_type");
+
+                    b.Property<string>("StartBasis")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("start_basis");
+
+                    b.Property<DateOnly?>("StartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("start_date");
+
+                    b.Property<string>("StartEvidenceRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("start_evidence_ref");
+
+                    b.Property<string>("StartTimeZone")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("start_time_zone");
+
+                    b.Property<string>("StartTrigger")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("start_trigger");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<bool>("StatutoryExtensionApplied")
+                        .HasColumnType("bit")
+                        .HasColumnName("statutory_extension_applied");
+
+                    b.Property<Guid?>("SuccessorEntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("successor_entitlement_id");
+
+                    b.Property<Guid?>("SuccessorUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("successor_unit_id");
+
+                    b.Property<Guid?>("SupersedesEntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("supersedes_entitlement_id");
+
+                    b.Property<string>("Transferable")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("transferable");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("type");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("TenantId", "EntitlementId")
+                        .HasName("pk_entitlement");
+
+                    b.HasIndex("TenantId", "PolicyVersionId")
+                        .HasDatabaseName("ix_entitlement_tenant_id_policy_version_id");
+
+                    b.HasIndex("TenantId", "RootEntitlementId")
+                        .HasDatabaseName("ix_entitlement_tenant_id_root_entitlement_id");
+
+                    b.HasIndex("TenantId", "OwnerPartyRef", "Status")
+                        .HasDatabaseName("ix_entitlement_tenant_id_owner_party_ref_status");
+
+                    b.HasIndex("TenantId", "SourceDocumentType", "SourceDocumentId")
+                        .HasDatabaseName("ix_entitlement_tenant_id_source_document_type_source_document_id");
+
+                    b.HasIndex("TenantId", "UnitId", "CoverageFamily")
+                        .IsUnique()
+                        .HasDatabaseName("ux_entitlement_tenant_id_unit_id_coverage_family")
+                        .HasFilter("[status] <> 'closed'");
+
+                    b.HasIndex("TenantId", "UnitId", "CreatedAt")
+                        .HasDatabaseName("ix_entitlement_tenant_id_unit_id_created_at");
+
+                    b.ToTable("entitlement", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_entitlement_closed_reason", "(status = 'closed' AND closed_reason IS NOT NULL) OR (status <> 'closed' AND closed_reason IS NULL)");
+
+                            t.HasCheckConstraint("ck_entitlement_coverage_json", "ISJSON(coverage) = 1");
+
+                            t.HasCheckConstraint("ck_entitlement_region_scope_json", "ISJSON(region_scope) = 1");
+
+                            t.HasCheckConstraint("ck_entitlement_term", "end_date IS NULL OR (start_date IS NOT NULL AND end_date >= start_date)");
+                        });
+
+                    b.ToTable(tb => tb.IsTemporal(ttb =>
+                            {
+                                ttb.UseHistoryTable("entitlement_history");
+                                ttb
+                                    .HasPeriodStart("PeriodStart")
+                                    .HasColumnName("sys_start");
+                                ttb
+                                    .HasPeriodEnd("PeriodEnd")
+                                    .HasColumnName("sys_end");
+                            }));
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.EntitlementAmendment", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("AmendmentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("amendment_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<string>("AfterValue")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)")
+                        .HasColumnName("after_value");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("approved_by");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("at");
+
+                    b.Property<string>("BeforeValue")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)")
+                        .HasColumnName("before_value");
+
+                    b.Property<string>("CustomerNotificationRef")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("customer_notification_ref");
+
+                    b.Property<int?>("DaysChanged")
+                        .HasColumnType("int")
+                        .HasColumnName("days_changed");
+
+                    b.Property<Guid>("EntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entitlement_id");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("Field")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("field");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("reason_code");
+
+                    b.Property<Guid?>("SourceDocumentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_document_id");
+
+                    b.Property<string>("SourceDocumentType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_document_type");
+
+                    b.HasKey("TenantId", "AmendmentId")
+                        .HasName("pk_entitlement_amendment");
+
+                    b.HasIndex("TenantId", "EntitlementId", "At")
+                        .HasDatabaseName("ix_entitlement_amendment_tenant_id_entitlement_id_at");
+
+                    b.ToTable("entitlement_amendment", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.EntitlementRebase", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RebaseId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("rebase_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("at");
+
+                    b.Property<Guid>("EntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entitlement_id");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("EvidenceRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("evidence_ref");
+
+                    b.Property<DateOnly>("NewEnd")
+                        .HasColumnType("date")
+                        .HasColumnName("new_end");
+
+                    b.Property<DateOnly>("NewStart")
+                        .HasColumnType("date")
+                        .HasColumnName("new_start");
+
+                    b.Property<DateOnly?>("OldEnd")
+                        .HasColumnType("date")
+                        .HasColumnName("old_end");
+
+                    b.Property<DateOnly?>("OldStart")
+                        .HasColumnType("date")
+                        .HasColumnName("old_start");
+
+                    b.Property<bool>("PolicyCapApplied")
+                        .HasColumnType("bit")
+                        .HasColumnName("policy_cap_applied");
+
+                    b.HasKey("TenantId", "RebaseId")
+                        .HasName("pk_entitlement_rebase");
+
+                    b.HasIndex("TenantId", "EntitlementId", "At")
+                        .HasDatabaseName("ix_entitlement_rebase_tenant_id_entitlement_id_at");
+
+                    b.ToTable("entitlement_rebase", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.EntitlementSuspension", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("SuspensionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("suspension_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<bool>("ClockPaused")
+                        .HasColumnType("bit")
+                        .HasColumnName("clock_paused");
+
+                    b.Property<Guid>("EntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entitlement_id");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<DateOnly>("FromDate")
+                        .HasColumnType("date")
+                        .HasColumnName("from_date");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid?>("ResumedEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("resumed_event_id");
+
+                    b.Property<DateOnly?>("ToDate")
+                        .HasColumnType("date")
+                        .HasColumnName("to_date");
+
+                    b.HasKey("TenantId", "SuspensionId")
+                        .HasName("pk_entitlement_suspension");
+
+                    b.HasIndex("TenantId", "EntitlementId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_entitlement_suspension_tenant_id_entitlement_id")
+                        .HasFilter("[to_date] IS NULL");
+
+                    b.HasIndex("TenantId", "EntitlementId", "FromDate")
+                        .HasDatabaseName("ix_entitlement_suspension_tenant_id_entitlement_id_from_date");
+
+                    b.ToTable("entitlement_suspension", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_entitlement_suspension_dates", "to_date IS NULL OR to_date >= from_date");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.EntitlementUsageLimit", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("EntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entitlement_id");
+
+                    b.Property<string>("MeterType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("meter_type");
+
+                    b.Property<decimal>("LimitValue")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)")
+                        .HasColumnName("limit_value");
+
+                    b.Property<string>("Period")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("period");
+
+                    b.Property<DateOnly?>("ResetsOn")
+                        .HasColumnType("date")
+                        .HasColumnName("resets_on");
+
+                    b.Property<decimal>("UsedValue")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)")
+                        .HasColumnName("used_value");
+
+                    b.HasKey("TenantId", "EntitlementId", "MeterType")
+                        .HasName("pk_entitlement_usage_limit");
+
+                    b.ToTable("entitlement_usage_limit", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_entitlement_usage_limit_values", "limit_value >= 0 AND used_value >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.FinancePeriod", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -460,6 +1089,55 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ux_pending_shipment_line_tenant_id_document_type_document_id_document_line");
 
                     b.ToTable("pending_shipment_line", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReplacementPolicy", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ReplacementPolicyId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("replacement_policy_id");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)")
+                        .HasColumnName("description");
+
+                    b.Property<int?>("ExtensionMonths")
+                        .HasColumnType("int")
+                        .HasColumnName("extension_months");
+
+                    b.Property<int?>("MinDays")
+                        .HasColumnType("int")
+                        .HasColumnName("min_days");
+
+                    b.Property<string>("Rule")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("rule");
+
+                    b.HasKey("TenantId", "ReplacementPolicyId")
+                        .HasName("pk_replacement_policy");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("ux_replacement_policy_tenant_id_code");
+
+                    b.ToTable("replacement_policy", "serialisation");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.SearchEntry", b =>
@@ -1592,6 +2270,231 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ix_unit_item_assignment_tenant_id_item_id_valid_to");
 
                     b.ToTable("unit_item_assignment", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.WarrantyPolicyVersion", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PolicyVersionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("policy_version_id");
+
+                    b.Property<DateOnly>("AppliesToContractsFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("applies_to_contracts_from");
+
+                    b.Property<string>("AssuranceOrService")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("assurance_or_service");
+
+                    b.Property<string>("Coverage")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("coverage");
+
+                    b.Property<string>("CoverageFamily")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("coverage_family");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("created_by");
+
+                    b.Property<int?>("DoaWindowDays")
+                        .HasColumnType("int")
+                        .HasColumnName("doa_window_days");
+
+                    b.Property<string>("DurationBasis")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("duration_basis");
+
+                    b.Property<string>("DurationUnit")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("duration_unit");
+
+                    b.Property<int>("DurationValue")
+                        .HasColumnType("int")
+                        .HasColumnName("duration_value");
+
+                    b.Property<bool>("EndInclusive")
+                        .HasColumnType("bit")
+                        .HasColumnName("end_inclusive");
+
+                    b.Property<string>("EndOfMonthRule")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("end_of_month_rule");
+
+                    b.Property<string>("EntitlementType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("entitlement_type");
+
+                    b.Property<string>("Exclusions")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("exclusions");
+
+                    b.Property<string>("FallbackChain")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("fallback_chain");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("name");
+
+                    b.Property<DateTime>("PeriodEnd")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("sys_end");
+
+                    b.Property<DateTime>("PeriodStart")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("sys_start");
+
+                    b.Property<string>("PolicyCode")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("policy_code");
+
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("published_at");
+
+                    b.Property<string>("PublishedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("published_by");
+
+                    b.Property<string>("ReferenceTimeZoneRule")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("reference_time_zone_rule");
+
+                    b.Property<string>("RefurbishedPolicies")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("refurbished_policies");
+
+                    b.Property<string>("RegionScope")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("region_scope");
+
+                    b.Property<Guid?>("ReplacementPolicyId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("replacement_policy_id");
+
+                    b.Property<string>("RuleVersion")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("rule_version");
+
+                    b.Property<bool>("ServiceContractRegulated")
+                        .HasColumnType("bit")
+                        .HasColumnName("service_contract_regulated");
+
+                    b.Property<string>("SettlementFormula")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("settlement_formula");
+
+                    b.Property<int?>("StartCapDays")
+                        .HasColumnType("int")
+                        .HasColumnName("start_cap_days");
+
+                    b.Property<string>("StartTrigger")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("start_trigger");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Transferable")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("transferable");
+
+                    b.Property<string>("UsageLimits")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("usage_limits");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int")
+                        .HasColumnName("version");
+
+                    b.HasKey("TenantId", "PolicyVersionId")
+                        .HasName("pk_warranty_policy_version");
+
+                    b.HasIndex("TenantId", "CoverageFamily", "Status")
+                        .HasDatabaseName("ix_warranty_policy_version_tenant_id_coverage_family_status");
+
+                    b.HasIndex("TenantId", "PolicyCode", "AppliesToContractsFrom")
+                        .HasDatabaseName("ix_warranty_policy_version_tenant_id_policy_code_applies_to_contracts_from");
+
+                    b.HasIndex("TenantId", "PolicyCode", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("ux_warranty_policy_version_tenant_id_policy_code_version");
+
+                    b.ToTable("warranty_policy_version", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_warranty_policy_version_coverage_json", "ISJSON(coverage) = 1");
+
+                            t.HasCheckConstraint("ck_warranty_policy_version_exclusions_json", "ISJSON(exclusions) = 1");
+
+                            t.HasCheckConstraint("ck_warranty_policy_version_fallback_chain_json", "ISJSON(fallback_chain) = 1");
+
+                            t.HasCheckConstraint("ck_warranty_policy_version_refurbished_policies_json", "ISJSON(refurbished_policies) = 1");
+
+                            t.HasCheckConstraint("ck_warranty_policy_version_region_scope_json", "ISJSON(region_scope) = 1");
+
+                            t.HasCheckConstraint("ck_warranty_policy_version_usage_limits_json", "ISJSON(usage_limits) = 1");
+                        });
+
+                    b.ToTable(tb => tb.IsTemporal(ttb =>
+                            {
+                                ttb.UseHistoryTable("warranty_policy_version_history");
+                                ttb
+                                    .HasPeriodStart("PeriodStart")
+                                    .HasColumnName("sys_start");
+                                ttb
+                                    .HasPeriodEnd("PeriodEnd")
+                                    .HasColumnName("sys_end");
+                            }));
                 });
 #pragma warning restore 612, 618
         }

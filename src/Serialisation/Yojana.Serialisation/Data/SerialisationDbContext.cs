@@ -61,6 +61,24 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<SearchTerm> SearchTerms => Set<SearchTerm>();
 
+    public DbSet<CoverageFamily> CoverageFamilies => Set<CoverageFamily>();
+
+    public DbSet<ReplacementPolicy> ReplacementPolicies => Set<ReplacementPolicy>();
+
+    public DbSet<WarrantyPolicyVersion> PolicyVersions => Set<WarrantyPolicyVersion>();
+
+    public DbSet<AccrualCohort> AccrualCohorts => Set<AccrualCohort>();
+
+    public DbSet<Entitlement> Entitlements => Set<Entitlement>();
+
+    public DbSet<EntitlementSuspension> EntitlementSuspensions => Set<EntitlementSuspension>();
+
+    public DbSet<EntitlementRebase> EntitlementRebases => Set<EntitlementRebase>();
+
+    public DbSet<EntitlementAmendment> EntitlementAmendments => Set<EntitlementAmendment>();
+
+    public DbSet<EntitlementUsageLimit> EntitlementUsageLimits => Set<EntitlementUsageLimit>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasSequence<long>(EventSequence, SchemaName).StartsAt(1).IncrementsBy(1);
@@ -285,6 +303,158 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(t => t.Kind).HasMaxLength(20);
             b.Property(t => t.Detail).HasMaxLength(60);
             b.HasIndex(t => new { t.TenantId, t.EntityType, t.EntityId });
+        });
+
+        // MOD-06 (P2-T02).
+        modelBuilder.Entity<CoverageFamily>(b =>
+        {
+            b.ToTable("coverage_family");
+            b.HasKey(f => new { f.TenantId, f.FamilyCode });
+            b.Property(f => f.FamilyCode).HasMaxLength(40);
+            b.Property(f => f.Name).HasMaxLength(100);
+            b.Property(f => f.AccountingTag).HasMaxLength(20);
+        });
+
+        modelBuilder.Entity<ReplacementPolicy>(b =>
+        {
+            b.ToTable("replacement_policy");
+            b.HasKey(r => new { r.TenantId, r.ReplacementPolicyId });
+            b.Property(r => r.Code).HasMaxLength(60);
+            b.Property(r => r.Rule).HasMaxLength(40);
+            b.Property(r => r.Description).HasMaxLength(400);
+            b.HasIndex(r => new { r.TenantId, r.Code }).IsUnique();
+        });
+
+        modelBuilder.Entity<WarrantyPolicyVersion>(b =>
+        {
+            b.ToTable("warranty_policy_version", t =>
+            {
+                t.IsTemporal(h => h.UseHistoryTable("warranty_policy_version_history"));
+                foreach (var column in new[] { "usage_limits", "fallback_chain", "coverage", "exclusions", "region_scope", "refurbished_policies" })
+                {
+                    t.HasCheckConstraint($"ck_warranty_policy_version_{column}_json", $"ISJSON({column}) = 1");
+                }
+            });
+            b.HasKey(v => new { v.TenantId, v.PolicyVersionId });
+            b.Property(v => v.PolicyCode).HasMaxLength(60);
+            b.Property(v => v.Name).HasMaxLength(200);
+            b.Property(v => v.CoverageFamily).HasMaxLength(40);
+            b.Property(v => v.EntitlementType).HasMaxLength(30);
+            b.Property(v => v.Status).HasMaxLength(20);
+            b.Property(v => v.RuleVersion).HasMaxLength(20);
+            b.Property(v => v.DurationUnit).HasMaxLength(10);
+            b.Property(v => v.EndOfMonthRule).HasMaxLength(10);
+            b.Property(v => v.DurationBasis).HasMaxLength(10);
+            b.Property(v => v.StartTrigger).HasMaxLength(40);
+            b.Property(v => v.Transferable).HasMaxLength(30);
+            b.Property(v => v.SettlementFormula).HasMaxLength(60);
+            b.Property(v => v.AssuranceOrService).HasMaxLength(20);
+            b.Property(v => v.ReferenceTimeZoneRule).HasMaxLength(20);
+            b.Property(v => v.CreatedBy).HasMaxLength(200);
+            b.Property(v => v.PublishedBy).HasMaxLength(200);
+            // A policy's versions are numbered once; resolution by contract date walks (code, applies_to_contracts_from).
+            b.HasIndex(v => new { v.TenantId, v.PolicyCode, v.Version }).IsUnique();
+            b.HasIndex(v => new { v.TenantId, v.PolicyCode, v.AppliesToContractsFrom });
+            b.HasIndex(v => new { v.TenantId, v.CoverageFamily, v.Status });
+        });
+
+        modelBuilder.Entity<AccrualCohort>(b =>
+        {
+            b.ToTable("accrual_cohort");
+            b.HasKey(c => new { c.TenantId, c.CohortId });
+            b.Property(c => c.Period).HasMaxLength(7).IsFixedLength().IsUnicode(false);
+            b.Property(c => c.AssuranceOrService).HasMaxLength(20);
+            b.HasIndex(c => new { c.TenantId, c.ObligorEntityId, c.ItemId, c.Period, c.AssuranceOrService }).IsUnique();
+        });
+
+        modelBuilder.Entity<Entitlement>(b =>
+        {
+            b.ToTable("entitlement", t =>
+            {
+                t.IsTemporal(h => h.UseHistoryTable("entitlement_history"));
+                t.HasCheckConstraint("ck_entitlement_coverage_json", "ISJSON(coverage) = 1");
+                t.HasCheckConstraint("ck_entitlement_region_scope_json", "ISJSON(region_scope) = 1");
+                // A closed entitlement names why; a live one names nothing (MOD-06 state machine).
+                t.HasCheckConstraint("ck_entitlement_closed_reason", "(status = 'closed' AND closed_reason IS NOT NULL) OR (status <> 'closed' AND closed_reason IS NULL)");
+                t.HasCheckConstraint("ck_entitlement_term", "end_date IS NULL OR (start_date IS NOT NULL AND end_date >= start_date)");
+            });
+            b.HasKey(e => new { e.TenantId, e.EntitlementId });
+            b.Property(e => e.Scope).HasMaxLength(20);
+            b.Property(e => e.ScopeItemClass).HasMaxLength(60);
+            b.Property(e => e.Type).HasMaxLength(30);
+            b.Property(e => e.CoverageFamily).HasMaxLength(40);
+            b.Property(e => e.Direction).HasMaxLength(20);
+            b.Property(e => e.OwnerPartyType).HasMaxLength(30);
+            b.Property(e => e.PayerPartyType).HasMaxLength(30);
+            b.Property(e => e.StartTrigger).HasMaxLength(40);
+            b.Property(e => e.StartBasis).HasMaxLength(40);
+            b.Property(e => e.StartEvidenceRef).HasMaxLength(200);
+            b.Property(e => e.StartTimeZone).HasMaxLength(64);
+            b.Property(e => e.ComputedByRuleVersion).HasMaxLength(20);
+            b.Property(e => e.DurationBasis).HasMaxLength(10);
+            b.Property(e => e.Transferable).HasMaxLength(30);
+            b.Property(e => e.ConditionAtCreation).HasMaxLength(20);
+            b.Property(e => e.RevenueScheduleRef).HasMaxLength(100);
+            b.Property(e => e.AssuranceOrService).HasMaxLength(20);
+            b.Property(e => e.Status).HasMaxLength(20);
+            b.Property(e => e.ClosedReason).HasMaxLength(40);
+            b.Property(e => e.Confidence).HasMaxLength(10);
+            b.Property(e => e.Provenance).HasMaxLength(20);
+            b.Property(e => e.SourceDocumentType).HasMaxLength(40);
+            b.Property(e => e.CustomerPoRef).HasMaxLength(100);
+            // Invariant 1: at most one live (not closed) entitlement per unit and coverage family; families stack beside each other.
+            b.HasIndex(e => new { e.TenantId, e.UnitId, e.CoverageFamily }).IsUnique().HasFilter("[status] <> 'closed'");
+            // Every entitlement a unit has carried, newest first, for the Entitlements panel and the policy stack.
+            b.HasIndex(e => new { e.TenantId, e.UnitId, e.CreatedAt });
+            b.HasIndex(e => new { e.TenantId, e.RootEntitlementId });
+            b.HasIndex(e => new { e.TenantId, e.OwnerPartyRef, e.Status });
+            b.HasIndex(e => new { e.TenantId, e.PolicyVersionId });
+            b.HasIndex(e => new { e.TenantId, e.SourceDocumentType, e.SourceDocumentId });
+        });
+
+        modelBuilder.Entity<EntitlementSuspension>(b =>
+        {
+            b.ToTable("entitlement_suspension", t => t.HasCheckConstraint("ck_entitlement_suspension_dates", "to_date IS NULL OR to_date >= from_date"));
+            b.HasKey(s => new { s.TenantId, s.SuspensionId });
+            b.Property(s => s.Reason).HasMaxLength(60);
+            b.Property(s => s.ActorRef).HasMaxLength(200);
+            // One open suspension per entitlement at a time.
+            b.HasIndex(s => new { s.TenantId, s.EntitlementId }).IsUnique().HasFilter("[to_date] IS NULL");
+            b.HasIndex(s => new { s.TenantId, s.EntitlementId, s.FromDate });
+        });
+
+        modelBuilder.Entity<EntitlementRebase>(b =>
+        {
+            b.ToTable("entitlement_rebase");
+            b.HasKey(r => new { r.TenantId, r.RebaseId });
+            b.Property(r => r.EvidenceRef).HasMaxLength(200);
+            b.Property(r => r.ActorRef).HasMaxLength(200);
+            b.HasIndex(r => new { r.TenantId, r.EntitlementId, r.At });
+        });
+
+        modelBuilder.Entity<EntitlementAmendment>(b =>
+        {
+            b.ToTable("entitlement_amendment");
+            b.HasKey(a => new { a.TenantId, a.AmendmentId });
+            b.Property(a => a.Field).HasMaxLength(40);
+            b.Property(a => a.BeforeValue).HasMaxLength(400);
+            b.Property(a => a.AfterValue).HasMaxLength(400);
+            b.Property(a => a.ReasonCode).HasMaxLength(30);
+            b.Property(a => a.SourceDocumentType).HasMaxLength(40);
+            b.Property(a => a.ApprovedBy).HasMaxLength(200);
+            b.Property(a => a.CustomerNotificationRef).HasMaxLength(100);
+            b.Property(a => a.ActorRef).HasMaxLength(200);
+            b.HasIndex(a => new { a.TenantId, a.EntitlementId, a.At });
+        });
+
+        modelBuilder.Entity<EntitlementUsageLimit>(b =>
+        {
+            b.ToTable("entitlement_usage_limit", t => t.HasCheckConstraint("ck_entitlement_usage_limit_values", "limit_value >= 0 AND used_value >= 0"));
+            b.HasKey(u => new { u.TenantId, u.EntitlementId, u.MeterType });
+            b.Property(u => u.MeterType).HasMaxLength(40);
+            b.Property(u => u.Period).HasMaxLength(20);
+            b.Property(u => u.LimitValue).HasPrecision(18, 3);
+            b.Property(u => u.UsedValue).HasPrecision(18, 3);
         });
 
         base.OnModelCreating(modelBuilder);

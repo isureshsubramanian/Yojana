@@ -1,0 +1,128 @@
+namespace Yojana.Serialisation.Contracts;
+
+// Entitlement vocabularies (MOD-06, ADR-0001 "Core model: WarrantyEntitlement" and "Warranty entitlement engine"). Stored
+// as strings like the unit vocabularies in Vocabulary.cs. Coverage families are not here: they are tenant reference
+// data (table coverage_family), and a tenant adds one without a code change.
+
+public static class EntitlementType
+{
+    public const string Manufacturer = "manufacturer";
+    public const string Dealer = "dealer";
+    public const string Extended = "extended";
+    public const string Contract = "contract";
+    public const string Statutory = "statutory";
+    public const string RecallCampaign = "recall_campaign";
+    public const string Goodwill = "goodwill";
+}
+
+/// <summary>Outbound: we owe the customer. Inbound: the vendor owes us (case 70).</summary>
+public static class EntitlementDirection
+{
+    public const string Outbound = "outbound";
+    public const string Inbound = "inbound";
+    public const string VendorFacing = "vendor_facing";
+}
+
+public static class EntitlementScope
+{
+    public const string Unit = "unit";
+    public const string Component = "component";
+    public const string Kit = "kit";
+}
+
+/// <summary>Live means any status but closed; the one-live-per-family index is filtered on it.</summary>
+public static class EntitlementStatus
+{
+    public const string PendingEvidence = "pending_evidence";
+    public const string Active = "active";
+    public const string Suspended = "suspended";
+    public const string Closed = "closed";
+}
+
+public static class EntitlementClosedReason
+{
+    public const string Expired = "expired";
+    public const string Replaced = "replaced";
+    public const string Refunded = "refunded";
+    public const string TransferredOut = "transferred_out";
+    public const string Voided = "voided";
+    public const string TerminatedTotalLoss = "terminated_total_loss";
+    public const string Superseded = "superseded";
+    public const string ReplacedByChange = "replaced_by_change";
+    public const string ReturnedToStock = "returned_to_stock";
+    public const string VoidedShippingError = "voided_shipping_error";
+    public const string VoidedDocumentCorrection = "voided_document_correction";
+    public const string SourceDocumentCorrected = "source_document_corrected";
+    public const string IncludedInError = "included_in_error";
+}
+
+public static class StartTrigger
+{
+    public const string Ship = "ship";
+    public const string Deliver = "deliver";
+    public const string Install = "install";
+    public const string Register = "register";
+    public const string Invoice = "invoice";
+    public const string ConsumptionFromConsignment = "consumption_from_consignment";
+    public const string FirstExternalSale = "first_external_sale";
+    public const string PlanPurchase = "plan_purchase";
+    public const string BaseExpiry = "base_expiry";
+}
+
+public static class DurationBasis
+{
+    public const string Time = "time";
+    public const string Usage = "usage";
+    public const string Both = "both";
+}
+
+public static class Transferability
+{
+    public const string Yes = "yes";
+    public const string No = "no";
+    public const string Fee = "fee";
+    public const string RegistrationRequired = "registration_required";
+}
+
+/// <summary>The accounting tag: an assurance warranty comes with the sale (reserve); a service warranty is sold separately (deferred revenue).</summary>
+public static class AssuranceOrService
+{
+    public const string Assurance = "assurance";
+    public const string Service = "service";
+}
+
+/// <summary>How the entitlement came to exist; backfilled and migrated rows carry their evidence list.</summary>
+public static class EntitlementProvenance
+{
+    public const string Created = "created";
+    public const string Transferred = "transferred";
+    public const string Superseding = "superseding";
+    public const string Backfilled = "backfilled";
+    public const string Migrated = "migrated";
+}
+
+public static class ReplacementRule
+{
+    public const string CarryRemaining = "carry_remaining";
+    public const string MaxRemainingOrMinDays = "max_remaining_or_min_days";
+    public const string RestartFull = "restart_full";
+    public const string StatutoryExtensionOnce = "statutory_extension_once";
+}
+
+public static class PolicyVersionStatus
+{
+    public const string Draft = "draft";
+    public const string Published = "published";
+    public const string Closed = "closed";
+    public const string Retired = "retired";
+}
+
+public static class AmendmentReason
+{
+    public const string Purchase = "purchase";
+    public const string Goodwill = "goodwill";
+    public const string Correction = "correction";
+    public const string StatutoryExtension = "statutory_extension";
+    public const string DisputeSettlement = "dispute_settlement";
+    public const string SellerError = "seller_error";
+}
