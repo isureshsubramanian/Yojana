@@ -104,6 +104,11 @@ try
         report.Measure("Partition lifecycle run (split ahead, switch cold partitions, merge up to four boundaries)", "informative", BenchReport.Ms(sw.Elapsed.TotalMilliseconds), "INFO", $"{r.BoundariesAdded.Count} boundaries added, {r.PartitionsArchived.Count} partitions archived, {r.BoundariesMerged.Count} merged ({string.Join(", ", r.BoundariesMerged.Select(b => b.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)))})");
     }
 
+    if (options.Command == "writes")
+    {
+        await new Measurer(host.Services, options, report).WritesOnlyAsync();
+    }
+
     if (options.Command == "seek")
     {
         await new Measurer(host.Services, options, report).SeeksOnlyAsync();
