@@ -55,15 +55,20 @@ public sealed record UnitOutcome(Guid UnitId, string? Serial, string Outcome, st
 }
 
 /// <summary>Run the named bulk operation over a stored selection without writing; the outcomes are the command's own.</summary>
-public sealed record PreviewBulkOperation(Guid SelectionId, string Operation, BulkOperationArguments Arguments, int Skip = 0, int Take = 50, string? Find = null, string? OutcomeFilter = null);
+/// <see cref="Approval"/> is who previews and the roles they hold (the endpoint sets it from the claims), so the preview judges the set as that person would commit it.
+public sealed record PreviewBulkOperation(Guid SelectionId, string Operation, BulkOperationArguments Arguments, int Skip = 0, int Take = 50, string? Find = null, string? OutcomeFilter = null, BulkApproval? Approval = null);
 
 public sealed record BulkPreviewResult(Guid SelectionId, string Operation, int Total, int Change, int Skip, int Block, IReadOnlyList<UnitOutcome> Page, int PageSkip, int PageTake);
 
 /// <summary>Arguments every bulk operation shares; operation-specific ones travel in <see cref="Extra"/>.</summary>
 public sealed record BulkOperationArguments(DateTime EventTime, string ActorRef, Guid LegalEntityId, DocumentRef SourceDocument, string? Reason = null, string? Note = null, IReadOnlyDictionary<string, string>? Extra = null);
 
-/// <summary>Approval of a bulk execution: who approved, or that the policy needed none (the policy as tenant data is P3; P1 records what was given).</summary>
-public sealed record BulkApproval(string? ApproverRef, bool Required = false);
+/// <summary>
+/// Approval of a bulk execution: who approved, or that the policy needed none (the policy as tenant data is P3; P1 records
+/// what was given). <see cref="Roles"/> are the approver's roles in the tenant; the HTTP endpoints always set approver and
+/// roles from the signed-in user's claims, whatever the body says.
+/// </summary>
+public sealed record BulkApproval(string? ApproverRef, bool Required = false, IReadOnlyList<string>? Roles = null);
 
 /// <summary>Execute the operation over the selection in one transaction, one source document, one approval. Blocked and skipped units stay as they are; the report lists every unit.</summary>
 public sealed record ExecuteBulkOperation(Guid CommandId, Guid SelectionId, string Operation, BulkOperationArguments Arguments, BulkApproval Approval);

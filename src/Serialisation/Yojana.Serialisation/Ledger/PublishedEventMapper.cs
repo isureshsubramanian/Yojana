@@ -12,10 +12,13 @@ namespace Yojana.Serialisation.Ledger;
 /// transactional outbox: the messages leave only when the handler's unit of work commits. The mapping reads the event's
 /// attributes (what the command recorded) and never a table, so publishing cannot see uncommitted state of another unit.
 /// </summary>
-public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant)
+public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant, LedgerPublication publication)
 {
     public async Task PublishAsync(IReadOnlyList<UnitEvent> written, CancellationToken cancellationToken)
     {
+        // Coupled to EntitlementBulkOperation's dry run: it applies a command in a scope of its own, whose bus is not the
+        // transactional outbox, and rolls the transaction back; publishing there would announce facts that never happened.
+        if (publication.Suppressed) return;
         foreach (var @event in written)
         {
             foreach (var message in new[] { Map(@event), CoverageChanged(@event) }.OfType<IPublishedUnitEvent>())
@@ -172,4 +175,13 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant)
         if (element is not { ValueKind: JsonValueKind.Object } el || !el.TryGetProperty("identifiers", out var ids) || ids.ValueKind != JsonValueKind.Array) return [];
         return ids.EnumerateArray().Select(i => new PublishedIdentifier(Str(i, "type") ?? "", Str(i, "scheme") ?? "", Str(i, "value") ?? "", GuidOrNull(i, "issuer_party_ref"))).ToList();
     }
+}
+
+/// <summary>
+/// Scoped switch for <see cref="PublishedEventMapper"/>: a scope that only rehearses a command (the bulk preview's dry run,
+/// rolled back) turns publication off. Every other scope publishes.
+/// </summary>
+public sealed class LedgerPublication
+{
+    public bool Suppressed { get; set; }
 }
