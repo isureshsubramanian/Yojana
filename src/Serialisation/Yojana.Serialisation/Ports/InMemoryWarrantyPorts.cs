@@ -13,13 +13,14 @@ namespace Yojana.Serialisation.Ports;
 /// Claims (P4) default to none open, which is true while no claim can exist.
 /// </para>
 /// </summary>
-public sealed class InMemoryWarrantyPorts : IItemPolicyPort, ICustomerContractPort, ITimeZonePort, IWarrantyClaimsPort, IWarrantyCertificatePort
+public sealed class InMemoryWarrantyPorts : IItemPolicyPort, ICustomerContractPort, IVendorWarrantyTermsPort, ITimeZonePort, IWarrantyClaimsPort, IWarrantyCertificatePort
 {
     private readonly ConcurrentDictionary<Guid, List<ItemWarrantyPolicy>> policies = new();
     private readonly ConcurrentDictionary<Guid, List<(Guid ItemId, CustomerContractTerm Term)>> contracts = new();
     private readonly ConcurrentDictionary<Guid, string> zones = new();
     private readonly ConcurrentDictionary<Guid, bool> openClaims = new();
     private readonly ConcurrentDictionary<Guid, bool> certificateIssued = new();
+    private readonly ConcurrentDictionary<(Guid Vendor, Guid Item), Guid> vendorTerms = new();
 
     public void Register(ItemWarrantyPolicy policy) => policies.AddOrUpdate(policy.ItemId, _ => [policy], (_, list) => { lock (list) { list.RemoveAll(p => p.CoverageFamily == policy.CoverageFamily); list.Add(policy); } return list; });
 
@@ -31,6 +32,8 @@ public sealed class InMemoryWarrantyPorts : IItemPolicyPort, ICustomerContractPo
 
     public void RegisterCertificateIssued(Guid entitlementId, bool issued) => certificateIssued[entitlementId] = issued;
 
+    public void Register(VendorWarrantyTerm term) => vendorTerms[(term.VendorPartyRef, term.ItemId)] = term.PolicyVersionId;
+
     public Task<IReadOnlyList<ItemWarrantyPolicy>> PoliciesForAsync(Guid itemId, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<ItemWarrantyPolicy>>(policies.TryGetValue(itemId, out var list) ? [.. list] : []);
 
@@ -38,6 +41,9 @@ public sealed class InMemoryWarrantyPorts : IItemPolicyPort, ICustomerContractPo
         Task.FromResult<IReadOnlyList<CustomerContractTerm>>(contracts.TryGetValue(partyRef, out var list)
             ? list.Where(c => c.ItemId == itemId && c.Term.ValidFrom <= contractDate && (c.Term.ValidTo is null || contractDate <= c.Term.ValidTo)).Select(c => c.Term).ToList()
             : []);
+
+    public Task<VendorWarrantyTerm?> TermsForAsync(Guid vendorPartyRef, Guid itemId, DateOnly receiptDate, CancellationToken cancellationToken) =>
+        Task.FromResult(vendorTerms.TryGetValue((vendorPartyRef, itemId), out var version) ? new VendorWarrantyTerm(vendorPartyRef, itemId, version) : null);
 
     public Task<string?> ForLocationAsync(Guid locationId, CancellationToken cancellationToken) => Task.FromResult(zones.TryGetValue(locationId, out var z) ? z : null);
 

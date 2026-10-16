@@ -233,6 +233,7 @@ public static class TransferEntitlementHandler
     {
         var tenantId = tenant.TenantId;
         var source = await ledger.LoadAsync(command.SourceEntitlementId, cancellationToken);
+        if (source.Direction != EntitlementDirection.Outbound) throw new CommandRefusedException("outbound_entitlement_required", "Replacement transfer applies only to customer cover.");
         var transferKey = EntitlementLedger.Key(command.CommandId, command.TargetUnitId, EntitlementEventType.Transferred, command.EventTime);
         if (await ledger.ReplayedAsync(transferKey, command.EventTime, cancellationToken) is { } replayed)
         {

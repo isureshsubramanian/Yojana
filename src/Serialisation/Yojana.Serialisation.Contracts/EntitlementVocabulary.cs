@@ -23,6 +23,9 @@ public static class EntitlementType
 public static class CoverageFamilyCode
 {
     public const string Base = "base_warranty";
+
+    /// <summary>Supplier cover (direction inbound, P2-T16): its own family, so it never meets the customer's base cover under the one-live-per-family rule.</summary>
+    public const string Supplier = "supplier_warranty";
 }
 
 public static class EntitlementDirection
@@ -67,6 +70,7 @@ public static class EntitlementClosedReason
 
 public static class StartTrigger
 {
+    public const string Receipt = "receipt";
     public const string Ship = "ship";
     public const string Deliver = "deliver";
     public const string Install = "install";

@@ -48,6 +48,7 @@ public sealed class WarrantyCheckTests
             new(first, EntitlementStatus.Active, new DateOnly(2026, 12, 31)),
             new(Guid.NewGuid(), EntitlementStatus.Closed, new DateOnly(2030, 1, 1)),
             new(second, EntitlementStatus.PendingEvidence, null),
+            new(Guid.NewGuid(), EntitlementStatus.Active, new DateOnly(2031, 1, 1), EntitlementDirection.Inbound),
         ]);
 
         Assert.Equal(new[] { first, second }.Order(), coverage.LiveEntitlementIds);

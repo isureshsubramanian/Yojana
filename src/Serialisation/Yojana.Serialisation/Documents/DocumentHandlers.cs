@@ -5,6 +5,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Ledger;
+using Wolverine;
 
 namespace Yojana.Serialisation.Documents;
 
@@ -102,7 +103,7 @@ internal static class Documents
 
 public static class PurchasingReceiptPostedHandler
 {
-    public static Task<ConsumedEventResult> Handle(PurchasingReceiptPosted message, DocumentContext ctx, CancellationToken ct) => ctx.InTransactionAsync(async () =>
+    public static Task<ConsumedEventResult> Handle(PurchasingReceiptPosted message, DocumentContext ctx, IMessageBus bus, CancellationToken ct) => ctx.InTransactionAsync(async () =>
     {
         var doc = await ctx.Purchasing.GetReceiptAsync(message.Document, ct) ?? throw new CommandRefusedException("document_unavailable", $"Receipt {message.Document.Id:N} could not be read through the purchasing port.");
         var exceptions = new List<string>();
@@ -161,6 +162,9 @@ public static class PurchasingReceiptPostedHandler
         }
 
         var report = await Documents.ReportAsync(ctx, "Purchasing.ReceiptPosted", doc.Document, drafts, exceptions, 0, ct);
+        // Published while the receipt transaction is open: Wolverine holds this follow-on in the transactional outbox,
+        // so supplier-term work cannot lengthen the receipt's 5 s path and cannot be lost after a successful commit.
+        await bus.PublishAsync(new CreateInboundEntitlements(message.Envelope, doc.Document), new DeliveryOptions { TenantId = ctx.Tenant.TenantId.ToString() });
         return report with { UnitsAffected = affected, Duplicate = affected == 0 && exceptions.Count == 0 };
     }, ct);
 }

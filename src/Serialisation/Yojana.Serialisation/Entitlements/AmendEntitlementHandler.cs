@@ -31,6 +31,7 @@ public static class AmendEntitlementHandler
     {
         var tenantId = tenant.TenantId;
         var entitlement = await ledger.LoadAsync(command.EntitlementId, cancellationToken);
+        if (entitlement.Direction != EntitlementDirection.Outbound) throw new CommandRefusedException("outbound_entitlement_required", "Customer entitlement amendments do not apply to supplier cover.");
         var key = EntitlementLedger.Key(command.CommandId, entitlement.UnitId, EntitlementEventType.Amended, command.EventTime);
         if (await ledger.ReplayedAsync(key, command.EventTime, cancellationToken) is { } replayed) return Replay(entitlement, replayed);
 

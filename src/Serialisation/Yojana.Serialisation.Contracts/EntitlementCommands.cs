@@ -196,4 +196,4 @@ public sealed record AmendmentReasonRule(string ReasonCode, bool SourceDocumentR
 public sealed record AmendmentApprovalTier(int? UpToDays, string Role, bool FinanceReview = false, decimal? FinanceReviewAboveAmount = null);
 
 /// <summary>An entitlement as a reader sees it today: the stored status and the effective one (lazy expiry, never written at read).</summary>
-public sealed record EntitlementView(Guid EntitlementId, Guid UnitId, string CoverageFamily, string Type, string StoredStatus, string EffectiveStatus, string? ClosedReason, DateOnly? StartDate, DateOnly? EndDate, int? DaysRemaining, Guid PolicyVersionId, string? StartBasis, string StartTimeZone, Guid? ParentEntitlementId, Guid? RootEntitlementId, Guid? SupersedesEntitlementId);
+public sealed record EntitlementView(Guid EntitlementId, Guid UnitId, string CoverageFamily, string Direction, string Type, string StoredStatus, string EffectiveStatus, string? ClosedReason, DateOnly? StartDate, DateOnly? EndDate, int? DaysRemaining, Guid PolicyVersionId, string? StartBasis, string StartTimeZone, Guid? ParentEntitlementId, Guid? RootEntitlementId, Guid? SupersedesEntitlementId);
