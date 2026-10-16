@@ -50,8 +50,9 @@ public sealed class EntitlementLedger(SerialisationDbContext db, IUnitEventWrite
         // Saved first, so the coverage read below sees this entitlement's new state together with the unit's others.
         await db.SaveChangesAsync(cancellationToken);
         var tenantId = tenant.TenantId;
-        var live = await db.Entitlements.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == entitlement.UnitId && e.Status != EntitlementStatus.Closed)
-            .Select(e => new { e.EntitlementId, e.EndDate }).ToListAsync(cancellationToken);
+        var unitEntitlements = await db.Entitlements.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == entitlement.UnitId)
+            .Select(e => new EntitlementCoverageEntry(e.EntitlementId, e.Status, e.EndDate)).ToListAsync(cancellationToken);
+        var coverage = EntitlementCoverage.From(unitEntitlements);
         // Tracked, so a row this unit of work already changed answers with its in-memory coverage.
         var current = await db.Current.FirstOrDefaultAsync(c => c.TenantId == tenantId && c.UnitId == entitlement.UnitId, cancellationToken);
         var recorded = JsonSerializer.SerializeToNode(attributes, LedgerJson.Options)!.AsObject();
@@ -67,7 +68,7 @@ public sealed class EntitlementLedger(SerialisationDbContext db, IUnitEventWrite
             {
                 UnitId = entitlement.UnitId, EventTime = at, EventType = eventType, PresetEventId = eventId, LegalEntityId = entitlement.ObligorEntityId, ActorRef = actorRef,
                 DocumentType = document?.Type, DocumentId = document?.Id, DocumentLine = document?.Line, IdempotencyKey = key, Attributes = JsonObjectText.Parse(recorded.ToJsonString()),
-                Delta = new CurrentStateDelta { LiveEntitlementIds = live.Select(l => l.EntitlementId).Order().ToList(), WarrantyEndMax = new Optional<DateOnly?>(live.Max(l => l.EndDate)) },
+                Delta = new CurrentStateDelta { LiveEntitlementIds = coverage.LiveEntitlementIds, WarrantyEndMax = new Optional<DateOnly?>(coverage.WarrantyEndMax) },
             },
         ], cancellationToken);
         return eventId;

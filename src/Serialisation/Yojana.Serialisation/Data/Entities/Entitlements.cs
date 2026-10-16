@@ -280,6 +280,31 @@ public sealed class Entitlement : ITenantScoped
     public DateTime CreatedAt { get; set; }
 }
 
+/// <summary>One live entitlement exposed by the narrow operational warranty view.</summary>
+public sealed class WarrantyCurrent
+{
+    public TenantId TenantId { get; set; }
+
+    public Guid UnitId { get; set; }
+
+    public Guid EntitlementId { get; set; }
+
+    public required string CoverageFamily { get; set; }
+
+    public required string Type { get; set; }
+
+    public required string Status { get; set; }
+
+    public DateOnly? StartDate { get; set; }
+
+    public DateOnly? EndDate { get; set; }
+
+    public required string DurationBasis { get; set; }
+
+    /// <summary>JSON coverage summary copied from the entitlement.</summary>
+    public string Coverage { get; set; } = "{}";
+}
+
 public sealed class EntitlementSuspension : ITenantScoped
 {
     public TenantId TenantId { get; set; }

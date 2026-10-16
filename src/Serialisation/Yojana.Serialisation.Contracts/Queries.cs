@@ -82,6 +82,10 @@ public sealed record SerialRangeList(Page<SerialRangeRow> Page, string Scheme, i
 
 public sealed record SerialSchemeRow(string Code, string IdentifierType, string Prefix, string? BlockFormat, string Separator, int CounterDigits, string Example);
 
+public sealed record WarrantyCoveringEntitlement(Guid EntitlementId, string Family, string Type, string StoredStatus, string EffectiveStatus, DateOnly? Start, DateOnly? End, int? DaysRemaining, string Coverage);
+
+public sealed record WarrantyCheckResult(Guid UnitId, DateOnly On, string? Family, bool Covered, IReadOnlyList<WarrantyCoveringEntitlement> CoveringEntitlements, DateOnly? EndDate, int? DaysRemaining, string? Reason);
+
 /// <summary>Completeness for a list of serials or a selection set (the As-built completeness screen).</summary>
 public sealed record CompletenessQuery(IReadOnlyList<string>? Serials = null, Guid? SelectionId = null, DocumentRef? Document = null, DateOnly? EffectiveAt = null, int Skip = 0, int Take = 50);
 

@@ -5,6 +5,7 @@ using Xunit;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Ports;
 
 namespace Yojana.Serialisation.DatabaseTests;
@@ -98,6 +99,30 @@ public sealed class ExtendedWarrantyTests(SerialisationHostFixture fixture)
             Assert.Contains(sold.EntitlementId.ToString(), current.LiveEntitlementIds, StringComparison.OrdinalIgnoreCase);
             Assert.Contains(baseEntitlement.EntitlementId.ToString(), current.LiveEntitlementIds, StringComparison.OrdinalIgnoreCase);
             Assert.Equal(1, await db.Events.CountAsync(e => e.UnitId == unit && e.EventType == EntitlementEventType.ExtendedSold));
+
+            var view = await db.WarrantyCurrent.AsNoTracking().Where(w => w.UnitId == unit).OrderBy(w => w.CoverageFamily).ToListAsync();
+            Assert.Equal(["base_warranty", "extended_term"], view.Select(w => w.CoverageFamily));
+            Assert.Equal([baseEntitlement.EntitlementId, sold.EntitlementId], view.Select(w => w.EntitlementId));
+            var check = await scope.ServiceProvider.GetRequiredService<EntitlementQueries>().WarrantyCheckAsync(unit, new DateOnly(2028, 10, 1), null, CancellationToken.None);
+            Assert.NotNull(check);
+            Assert.True(check.Covered);
+            Assert.Equal([sold.EntitlementId], check.CoveringEntitlements.Select(e => e.EntitlementId));
+            Assert.Equal(new DateOnly(2029, 9, 15), check.EndDate);
+        }
+
+        var other = await SetUpAsync("xz", 1);
+        await CreateBaseAsync(other.Tenant, other.Units[0]);
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            Assert.False(await db.WarrantyCurrent.AnyAsync(w => w.UnitId == other.Units[0]));
+        }
+
+        await InvokeAsync<EntitlementChangeResult>(tenant, new CloseEntitlement(Guid.NewGuid(), sold.EntitlementId, EntitlementClosedReason.Refunded, new DateOnly(2028, 10, 2), Invoice.AddYears(2), "test"));
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var rows = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().WarrantyCurrent.AsNoTracking().Where(w => w.UnitId == unit).ToListAsync();
+            Assert.Equal([baseEntitlement.EntitlementId], rows.Select(w => w.EntitlementId));
         }
 
         var timeout = TimeSpan.FromSeconds(20);

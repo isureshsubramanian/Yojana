@@ -2303,6 +2303,63 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("unit_item_assignment", "serialisation");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.WarrantyCurrent", b =>
+                {
+                    b.Property<string>("Coverage")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("coverage");
+
+                    b.Property<string>("CoverageFamily")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("coverage_family");
+
+                    b.Property<string>("DurationBasis")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("duration_basis");
+
+                    b.Property<DateOnly?>("EndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("end_date");
+
+                    b.Property<Guid>("EntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entitlement_id");
+
+                    b.Property<DateOnly?>("StartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("start_date");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("type");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.ToTable("warranty_current", "serialisation", t =>
+                        t.ExcludeFromMigrations());
+
+                    b.ToView("warranty_current", "serialisation");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.WarrantyPolicyVersion", b =>
                 {
                     b.Property<Guid>("TenantId")

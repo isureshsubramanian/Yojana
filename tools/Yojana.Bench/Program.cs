@@ -1,7 +1,7 @@
 // P1-T21 storage benchmark (ADR-0001 AI 1, 53). Loads the reference layout at scale on a named SQL Server through the
 // real schema (migrations), with row-level security on, then measures the SLO table through the module's own
 // services and through server-side timing loops. Usage:
-//   dotnet run --project tools/Yojana.Bench -- prepare|load|measure|backfill|all [--units N] [--events N] [--tenants N]
+//   dotnet run --project tools/Yojana.Bench -- prepare|load|measure|backfill|warranty|all [--units N] [--events N] [--tenants N]
 //        [--small-units N] [--small-events N] [--samples N] [--out dir] [--database name] [--skip-lifecycle]
 // Connection: YOJANA_BENCH_SQL_HOST and YOJANA_BENCH_SQL_PASSWORD (sa), or YOJANA_BENCH_SQL as a full connection string.
 using System.Globalization;
@@ -112,6 +112,11 @@ try
     if (options.Command == "seek")
     {
         await new Measurer(host.Services, options, report).SeeksOnlyAsync();
+    }
+
+    if (options.Command == "warranty")
+    {
+        await new Measurer(host.Services, options, report).WarrantyOnlyAsync();
     }
 
     await report.WriteAsync();

@@ -79,6 +79,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<EntitlementUsageLimit> EntitlementUsageLimits => Set<EntitlementUsageLimit>();
 
+    public DbSet<WarrantyCurrent> WarrantyCurrent => Set<WarrantyCurrent>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasSequence<long>(EventSequence, SchemaName).StartsAt(1).IncrementsBy(1);
@@ -463,6 +465,21 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(u => u.Period).HasMaxLength(20);
             b.Property(u => u.LimitValue).HasPrecision(18, 3);
             b.Property(u => u.UsedValue).HasPrecision(18, 3);
+        });
+
+        // The view reads only RLS-protected unit_current and entitlement rows. SQL Server applies those tables'
+        // tenant predicates while expanding the view; the explicit tenant key remains leading for query plans.
+        modelBuilder.Entity<WarrantyCurrent>(b =>
+        {
+            b.HasNoKey();
+            // YojanaDbContext applies the schema's table convention before this configuration. Keep that mapping out
+            // of migrations: the object is created explicitly as a view in WarrantyCurrent.
+            b.ToTable("warranty_current", t => t.ExcludeFromMigrations());
+            b.ToView("warranty_current");
+            b.Property(w => w.CoverageFamily).HasMaxLength(40);
+            b.Property(w => w.Type).HasMaxLength(30);
+            b.Property(w => w.Status).HasMaxLength(20);
+            b.Property(w => w.DurationBasis).HasMaxLength(10);
         });
 
         base.OnModelCreating(modelBuilder);
