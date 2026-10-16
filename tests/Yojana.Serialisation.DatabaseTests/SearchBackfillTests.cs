@@ -48,6 +48,11 @@ public sealed class SearchBackfillTests(SerialisationHostFixture fixture)
         db.ChangeTracker.Clear();
         var before = await SnapshotAsync(db, tenant, [.. ids]);
         var backfill = scope.ServiceProvider.GetRequiredService<SearchBackfill>();
+        await db.SearchTerms.Where(t => t.TenantId == tenant && t.EntityType == SearchEntityType.Unit && ids.Contains(t.EntityId)).ExecuteDeleteAsync();
+        await db.SearchEntries.Where(e => e.TenantId == tenant && e.EntityType == SearchEntityType.Unit && ids.Contains(e.EntityId)).ExecuteDeleteAsync();
+        await backfill.ReindexUnitsAsync(ids, CancellationToken.None);
+        db.ChangeTracker.Clear();
+        Assert.Equal(before, await SnapshotAsync(db, tenant, [.. ids]));
         var result = await backfill.BackfillUnitsAsync(CancellationToken.None);
         Assert.Equal(3, result.Units);
         db.ChangeTracker.Clear();
