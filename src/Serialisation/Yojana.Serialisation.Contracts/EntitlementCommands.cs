@@ -44,9 +44,26 @@ public sealed record CreateEntitlement(
     DocumentRef? SourceDocument = null,
     string? CustomerPoRef = null,
     string Provenance = EntitlementProvenance.Created,
-    string Confidence = "high");
+    string Confidence = "high",
+    // Consumer unless the sale says otherwise: an unknown buyer gets the statutory second-hand floor (more cover, never
+    // less than the law asks); a business sale passes Business explicitly.
+    string BuyerKind = RefurbishedBuyerKind.Consumer,
+    Guid? RefurbisherPartyRef = null);
 
-public sealed record CreateEntitlementResult(Guid EntitlementId, string Status, string PolicyLevel, string? PolicyCode, int? PolicyVersion, DateOnly? StartDate, DateOnly? EndDate, string? StartBasis, bool CapApplied, bool FloorApplied, string TimeZone, Guid? AccrualCohortId, IReadOnlyList<string> Trail);
+public sealed record CreateEntitlementResult(Guid EntitlementId, string Status, string PolicyLevel, string? PolicyCode, int? PolicyVersion, DateOnly? StartDate, DateOnly? EndDate, string? StartBasis, bool CapApplied, bool FloorApplied, string TimeZone, Guid? AccrualCohortId, IReadOnlyList<string> Trail, RefurbishedEntitlementDisclosure? Disclosure = null);
+
+public sealed record RefurbishedJurisdictionFloor(string Jurisdiction, string BuyerKind, int MinimumMonths);
+
+public sealed record RefurbishedGoodsPolicy(IReadOnlyList<RefurbishedJurisdictionFloor> Floors);
+
+public static class RefurbishedBuyerKind
+{
+    public const string Consumer = "consumer";
+    public const string Business = "business";
+    public static readonly IReadOnlySet<string> All = new HashSet<string>([Consumer, Business], StringComparer.Ordinal);
+}
+
+public sealed record RefurbishedEntitlementDisclosure(int TermMonths, bool FloorApplied, int? FloorMonths, string? FloorSource, Guid? RefurbisherPartyRef, string StatementKind, RefurbishedTerm MatchedRow);
 
 /// <summary>New start evidence: attaches the first evidence to a pending entitlement, or moves an active one's start (held to the cap).</summary>
 public sealed record RebaseEntitlementStart(Guid CommandId, Guid EntitlementId, string Trigger, DateTime EvidenceAt, string? EvidenceRef, DateTime EventTime, string ActorRef);

@@ -8,6 +8,12 @@ namespace Yojana.Serialisation.Entitlements;
 /// <summary>A unit's entitlements as the Entitlements panel reads them: every one it has carried, live first, with today's effective status.</summary>
 public sealed class EntitlementQueries(SerialisationDbContext db, ITenantContext tenant)
 {
+    public async Task<RefurbishedEntitlementDisclosure?> DisclosureAsync(Guid entitlementId, CancellationToken cancellationToken)
+    {
+        var row = await db.Entitlements.AsNoTracking().FirstOrDefaultAsync(e => e.TenantId == tenant.TenantId && e.EntitlementId == entitlementId, cancellationToken);
+        return row is null ? null : CreateEntitlementHandler.Disclosure(row);
+    }
+
     public async Task<IReadOnlyList<EntitlementView>> ForUnitAsync(Guid unitId, DateOnly today, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;

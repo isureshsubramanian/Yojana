@@ -114,6 +114,7 @@ public static partial class PolicyValidator
             {
                 Warn("refurbished_below_floor", "refurbished", $"Grade {r.Grade}, {r.Channel}, {r.Region}: {r.DurationMonths} months is below the statutory floor of {floor} months; the floor will apply.");
             }
+            if (!RefurbishedWarrantyStatement.All.Contains(r.StatementKind)) Error("refurbished_statement_unknown", "refurbished", $"Grade {r.Grade}: '{r.StatementKind}' is not a warranty statement kind.");
         }
 
         if (terms.DoaWindowDays is < 0) Error("doa_window_negative", "doa_window_days", "The dead-on-arrival window cannot be negative.");

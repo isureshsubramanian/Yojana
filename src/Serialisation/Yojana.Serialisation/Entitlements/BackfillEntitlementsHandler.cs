@@ -33,8 +33,10 @@ public static class BackfillEntitlementsHandler
 {
     private sealed record Plan(Guid UnitId, CustodyEpisode Ownership, string StartBasis, DateOnly ContractDate, Guid PolicyVersionId, bool FinanceReviewRequired);
 
+    // Coupled to the RefurbishedGoodsSettings factory in SerialisationModule: exposing ITenantSettings directly makes
+    // Wolverine include PlatformDbContext beside SerialisationDbContext and refuse this handler's transaction graph.
     public static async Task<BackfillEntitlementsResult> Handle(BackfillEntitlements command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store,
-        ITimeZonePort zones, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         if (BackfillRules.CommandProblem(command) is { } problem)
         {
@@ -113,7 +115,7 @@ public static class BackfillEntitlementsHandler
                 new Dictionary<string, DateTime> { [StartTrigger.Deliver] = evidenceAt }, plan.PolicyVersionId, plan.Ownership.PartyRef, plan.Ownership.PartyType,
                 Country: command.Country, SiteLocationId: command.SiteLocationId, StartEvidenceRef: command.EvidenceRefs[0], SourceDocument: command.SourceDocument,
                 CustomerPoRef: plan.Ownership.CustomerPoRef, Provenance: EntitlementProvenance.Backfilled);
-            var created = await CreateEntitlementHandler.CreateAsync(creation, db, ledger, resolver, store, zones, tenant, clock, plan.StartBasis, command.EvidenceRefs, plan.FinanceReviewRequired, command.ReasonCode, command.FinanceReviewRef, cancellationToken);
+            var created = await CreateEntitlementHandler.CreateAsync(creation, db, ledger, resolver, store, zones, refurbishedSettings, tenant, clock, plan.StartBasis, command.EvidenceRefs, plan.FinanceReviewRequired, command.ReasonCode, command.FinanceReviewRef, cancellationToken);
             outcomes.Add(new(plan.UnitId, "created", null, created.EntitlementId, created.StartDate, created.EndDate));
         }
 

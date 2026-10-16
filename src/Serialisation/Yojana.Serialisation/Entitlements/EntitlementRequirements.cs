@@ -82,8 +82,9 @@ public sealed class EntitlementRequirementWriter(SerialisationDbContext db, IIte
 
 public static class ResolveEntitlementRequirementsHandler
 {
+    // RefurbishedGoodsSettings is registered through a factory (SerialisationModule) so PlatformDbContext stays out of this graph.
     public static async Task Handle(ResolveEntitlementRequirements message, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store,
-        ITimeZonePort zones, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var ids = message.RequirementIds.ToList();
@@ -127,7 +128,7 @@ public static class ResolveEntitlementRequirementsHandler
                 var command = new CreateEntitlement(row.RequirementId, row.UnitId, CoverageFamilyCode.Base, DateOnly.FromDateTime(episode.ValidFrom), obligor,
                     clock.UtcNow, "entitlement-requirement", evidence, OwnerPartyRef: episode.PartyRef, OwnerPartyType: episode.PartyType,
                     StartEvidenceRef: $"{document.Type}:{document.Id:N}", SourceDocument: document, CustomerPoRef: episode.CustomerPoRef);
-                var created = await CreateEntitlementHandler.CreateAsync(command, db, ledger, resolver, store, zones, tenant, clock, null, [], false, null, null, cancellationToken);
+                var created = await CreateEntitlementHandler.CreateAsync(command, db, ledger, resolver, store, zones, refurbishedSettings, tenant, clock, null, [], false, null, null, cancellationToken);
                 if (created.StartDate is null) Except(row, EntitlementMissingInput.NoStartEvidence, "The policy start chain does not accept the ownership evidence.");
                 else Satisfy(row, created.EntitlementId, clock.UtcNow);
             }

@@ -6,10 +6,10 @@ namespace Yojana.Serialisation.Contracts;
 // over the schedule published by ExtendedSold, not an accrual. Finance's ledgers remain the system of record for amounts;
 // this module retains only posting references received in its reply event. Consumers are idempotent on Header.EventId.
 
-public sealed record EntitlementCreated(PublishedEventHeader Header, Guid EntitlementId, Guid ItemId, string CoverageFamily, string EntitlementType, Guid ObligorEntityId, Guid? OwnerPartyRef, Guid PolicyVersionId, string PolicyCode, int PolicyVersion, DateOnly? StartDate, DateOnly? EndDate, string Status, Guid? AccrualCohortId, string AssuranceOrService, bool AccrualSuppressed, string Provenance, DocumentRef? SourceDocument) : IPublishedUnitEvent
+public sealed record EntitlementCreated(PublishedEventHeader Header, Guid EntitlementId, Guid ItemId, string CoverageFamily, string EntitlementType, Guid ObligorEntityId, Guid? OwnerPartyRef, Guid PolicyVersionId, string PolicyCode, int PolicyVersion, DateOnly? StartDate, DateOnly? EndDate, string Status, Guid? AccrualCohortId, string AssuranceOrService, bool AccrualSuppressed, string Provenance, DocumentRef? SourceDocument, RefurbishedEntitlementDisclosure? Disclosure = null) : IPublishedUnitEvent
 {
     public const string Schema = "Entitlement.Created";
-    public const string Version = "1.0";
+    public const string Version = "1.1";
 }
 
 public sealed record EntitlementExtendedSold(PublishedEventHeader Header, Guid EntitlementId, Guid ItemId, string CoverageFamily, Guid ObligorEntityId, Guid? PayerPartyRef, decimal Price, string Currency, int TermMonths, DateOnly StartDate, DateOnly EndDate, IReadOnlyList<EntitlementRevenueSchedulePeriod> RevenueSchedule, DocumentRef SourceDocument) : IPublishedUnitEvent
