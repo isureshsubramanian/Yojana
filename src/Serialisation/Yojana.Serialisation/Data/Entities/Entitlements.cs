@@ -344,6 +344,32 @@ public sealed class EntitlementRequirement : ITenantScoped
     public string? WaiverReason { get; set; }
 }
 
+/// <summary>
+/// A sales line whose target or policy could not be resolved without failing invoice posting. HIDDEN COUPLING with
+/// SalesDeliveryConfirmedHandler and PurchasingAsnReceivedHandler: target document columns are their durable retry
+/// contract; removing them prevents an arriving delivery or ASN from finding and resolving the persisted blocker.
+/// </summary>
+public sealed class WarrantyLineException : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ExceptionId { get; set; }
+    public required string DocumentType { get; set; }
+    public Guid DocumentId { get; set; }
+    public int DocumentLine { get; set; }
+
+    public string? TargetDocumentType { get; set; }
+
+    public Guid? TargetDocumentId { get; set; }
+    public Guid ItemId { get; set; }
+    public required string Status { get; set; }
+    public required string MissingInput { get; set; }
+    public string? Detail { get; set; }
+    public DateTime TriggerAt { get; set; }
+    public DateTime RaisedAt { get; set; }
+    public DateTime? ResolvedAt { get; set; }
+    public string? ResolvedBy { get; set; }
+}
+
 public sealed class EntitlementSuspension : ITenantScoped
 {
     public TenantId TenantId { get; set; }

@@ -12,7 +12,7 @@ using Yojana.Serialisation.Data.Entities;
 
 namespace Yojana.Serialisation.Entitlements;
 
-public sealed class EntitlementRequirementQueries(SerialisationDbContext db, ITenantContext tenant, IPurchasingDocumentQueryPort purchasing, IItemPolicyPort policies)
+public sealed class EntitlementRequirementQueries(SerialisationDbContext db, ITenantContext tenant)
 {
     public async Task<EntitlementRequirementPage> PageAsync(string? status, string? documentType, Guid? documentId, int skip, int take, CancellationToken cancellationToken)
     {
@@ -31,16 +31,9 @@ public sealed class EntitlementRequirementQueries(SerialisationDbContext db, ITe
         var entities = await db.EntitlementRequirements.AsNoTracking().Where(r => r.TenantId == tenant.TenantId && r.SourceDocumentType == documentType && r.SourceDocumentId == documentId
             && (r.Status == EntitlementRequirementStatus.Open || r.Status == EntitlementRequirementStatus.Exception)).OrderBy(r => r.UnitId).ToListAsync(cancellationToken);
         var rows = entities.Select(Row).ToList();
-        var problems = new List<string>();
-        var reference = new DocumentRef(documentType, documentId);
-        if (await purchasing.GetVendorShipmentAsync(reference, cancellationToken) is { } shipment)
-        {
-            foreach (var line in shipment.Lines.Where(l => l.Serials.Count == 0))
-            {
-                if ((await policies.PoliciesForAsync(line.ItemId, cancellationToken)).Any(p => p.CoverageFamily == CoverageFamilyCode.Base && p.EntitlementRequiredOnSale))
-                    problems.Add($"line {line.LineNo}: {EntitlementMissingInput.SerialsPendingAsn}");
-            }
-        }
+        var problems = await db.WarrantyLineExceptions.AsNoTracking()
+            .Where(e => e.TenantId == tenant.TenantId && e.DocumentType == documentType && e.DocumentId == documentId && e.Status == WarrantyLineExceptionStatus.Open)
+            .OrderBy(e => e.DocumentLine).Select(e => $"line {e.DocumentLine}: {e.MissingInput}").ToListAsync(cancellationToken);
         return new(rows.Count == 0 && problems.Count == 0, rows, problems);
     }
 

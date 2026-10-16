@@ -21,7 +21,8 @@ public sealed record DocumentLine(
     Guid? PartyRef = null,
     string? ErpLineId = null);
 
-public sealed record ReceiptDocument(DocumentRef Document, Guid VendorPartyRef, DateTime PostedAt, IReadOnlyList<DocumentLine> Lines, DocumentRef? BaseOrder = null, bool IsAsn = false);
+/// <summary>A goods receipt or, with <see cref="IsAsn"/>, a vendor's advance shipping notice; an ASN for a drop-ship names the vendor shipment confirmation it carries the serials for in <see cref="VendorShipment"/>.</summary>
+public sealed record ReceiptDocument(DocumentRef Document, Guid VendorPartyRef, DateTime PostedAt, IReadOnlyList<DocumentLine> Lines, DocumentRef? BaseOrder = null, bool IsAsn = false, DocumentRef? VendorShipment = null);
 
 /// <summary>Drop-ship confirmation: what the vendor shipped to which customer, with carrier evidence.</summary>
 public sealed record VendorShipment(DocumentRef Document, Guid VendorPartyRef, Guid CustomerPartyRef, Guid? ShipToLocationId, DateTime ShippedAt, IReadOnlyList<DocumentLine> Lines, string? CarrierRef = null, DateTime? DeliveredAt = null);
@@ -52,6 +53,28 @@ public sealed record ShipmentDocument(DocumentRef Document, Guid CustomerPartyRe
 
 public sealed record DeliveryConfirmation(DocumentRef Document, DocumentRef Shipment, DateTime DeliveredAt, Guid? ShipToLocationId, string Evidence = "carrier_pod", IReadOnlyList<DocumentSerial>? Serials = null);
 
+public static class WarrantyTargetRule
+{
+    public const string SameOrder = "same_order";
+    public const string ReferencedDocument = "referenced_document";
+    public const string AttachedList = "attached_list";
+    public static readonly IReadOnlySet<string> All = new HashSet<string>([SameOrder, ReferencedDocument, AttachedList], StringComparer.Ordinal);
+}
+
+public sealed record WarrantyLineTarget(string Rule, DocumentRef? Document = null, IReadOnlyList<string>? Serials = null, string? Scheme = null, string? RangeStart = null, string? RangeEnd = null);
+
+public sealed record InvoiceLine(int LineNo, Guid ItemId, decimal Quantity, decimal Price, string Currency, string ItemType = "goods", string? PolicyCode = null,
+    Guid? PolicyVersionId = null, WarrantyLineTarget? Target = null);
+
+/// <summary>The immutable sales facts needed to apply warranty-service invoice lines.</summary>
+public sealed record InvoiceDocument(DocumentRef Document, DocumentRef Order, Guid CustomerPartyRef, Guid ObligorEntityId, DateTime PostedAt,
+    IReadOnlyList<InvoiceLine> Lines, string? CustomerPoRef = null, string? Country = null, string? RegionGroup = null, Guid? SiteLocationId = null, bool HasLicensedObligor = false);
+
+/// <summary>Order-entry view of a sales document's targetable goods lines; the sales module remains authoritative for whether each item is serial-tracked.</summary>
+public sealed record WarrantyTargetDocument(DocumentRef Document, IReadOnlyList<WarrantyTargetDocumentLine> Lines);
+
+public sealed record WarrantyTargetDocumentLine(int LineNo, Guid ItemId, bool SerialTracked, IReadOnlyList<string> Serials);
+
 public sealed record ReturnDocument(DocumentRef Document, Guid CustomerPartyRef, DateTime ReceivedAt, Guid ReceivingLocationId, IReadOnlyList<DocumentLine> Lines, DocumentRef? BaseDelivery = null, string? ReturnReasonCode = null, string? RmaExternalRef = null);
 
 public sealed record LoanerIssue(DocumentRef Document, Guid CustomerPartyRef, DateTime IssuedAt, Guid? SiteLocationId, DateOnly? DueBack, IReadOnlyList<DocumentLine> Lines, string Reason = "loan");
@@ -79,6 +102,10 @@ public interface IInventoryDocumentQueryPort
 
 public interface ISalesDocumentQueryPort
 {
+    Task<WarrantyTargetDocument?> GetWarrantyTargetAsync(DocumentRef document, CancellationToken cancellationToken);
+
+    Task<InvoiceDocument?> GetInvoiceAsync(DocumentRef document, CancellationToken cancellationToken);
+
     Task<ShipmentDocument?> GetShipmentAsync(DocumentRef document, CancellationToken cancellationToken);
 
     Task<DeliveryConfirmation?> GetDeliveryConfirmationAsync(DocumentRef document, CancellationToken cancellationToken);

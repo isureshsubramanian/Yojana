@@ -15,7 +15,8 @@ namespace Yojana.Serialisation.Documents;
 public sealed class DocumentContext(
     SerialisationDbContext db, IUnitEventWriter writer, BulkIngestion bulk, IdentifierService identifiers, IItemQueryPort items, SerialRangeService ranges, ITenantContext tenant, IClock clock,
     EpisodeService episodes, UnitResolver resolver, DocumentOptions options, PostingPeriods periods, AsBuiltCompleteness completeness,
-    IPurchasingDocumentQueryPort purchasing, IManufacturingDocumentQueryPort manufacturing, IInventoryDocumentQueryPort inventory, ISalesDocumentQueryPort sales, IServiceDocumentQueryPort service, IMessageBus bus)
+    IPurchasingDocumentQueryPort purchasing, IManufacturingDocumentQueryPort manufacturing, IInventoryDocumentQueryPort inventory, ISalesDocumentQueryPort sales, IServiceDocumentQueryPort service,
+    IItemPolicyPort itemPolicies, IMessageBus bus)
 {
     public SerialisationDbContext Db => db;
     public IUnitEventWriter Writer => writer;
@@ -32,6 +33,7 @@ public sealed class DocumentContext(
     public IInventoryDocumentQueryPort Inventory => inventory;
     public ISalesDocumentQueryPort Sales => sales;
     public IServiceDocumentQueryPort Service => service;
+    public IItemPolicyPort ItemPolicies => itemPolicies;
     public IMessageBus Bus => bus;
 
     /// <summary>

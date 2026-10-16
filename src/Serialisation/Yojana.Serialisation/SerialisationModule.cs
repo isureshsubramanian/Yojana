@@ -64,11 +64,16 @@ public static class SerialisationModule
         // default transaction on SerialisationDbContext, opened after the tenant middleware. A plain registration makes
         // the host refuse to start ("multiple DbContext types detected").
         builder.Services.AddScoped(sp => new Entitlements.AmendmentApprovalSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>(), sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantCurrency>()));
+        // Coupled to WarrantyReferenceSettings: as with amendment settings, this factory keeps PlatformDbContext out of
+        // Wolverine's handler graph; replacing it with a plain registration makes transaction discovery ambiguous.
+        builder.Services.AddScoped(sp => new Entitlements.WarrantyReferenceSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped<Entitlements.EntitlementLedger>();
         builder.Services.AddScoped<Entitlements.EntitlementQueries>();
         builder.Services.AddScoped<Entitlements.EntitlementRequirementWriter>();
         builder.Services.AddScoped<Entitlements.EntitlementRequirementQueries>();
         builder.Services.AddScoped<Entitlements.EntitlementRequirementSweep>();
+        builder.Services.AddScoped<Entitlements.WarrantyLineExceptionQueries>();
+        builder.Services.AddScoped<Entitlements.WarrantyLineValidationService>();
 
         builder.Services.AddScoped<SearchIndexer>();
         builder.Services.AddScoped<SearchBackfill>();

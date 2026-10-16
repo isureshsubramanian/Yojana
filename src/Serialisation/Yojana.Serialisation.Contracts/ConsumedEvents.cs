@@ -48,6 +48,8 @@ public sealed record SalesShipmentPosted(ThinEnvelope Envelope, DocumentRef Docu
 
 public sealed record SalesDeliveryConfirmed(ThinEnvelope Envelope, DocumentRef Document);
 
+public sealed record SalesInvoicePosted(ThinEnvelope Envelope, DocumentRef Document);
+
 /// <summary>Custody to quarantine only in P1; RMA matching and ownership effects arrive with P5.</summary>
 public sealed record SalesReturnPosted(ThinEnvelope Envelope, DocumentRef Document);
 

@@ -2,11 +2,13 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
 using Wolverine;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Queries;
@@ -123,8 +125,22 @@ public static class SerialisationEndpoints
                 return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest, extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
             }
         }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+        reference.MapGet("/service-contract-rules", async (WarrantyReferenceSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
+        reference.MapPut("/service-contract-rules", async (WarrantyReferencePolicy policy, WarrantyReferenceSettings settings, CancellationToken ct) =>
+        {
+            try { await settings.SetAsync(policy, ct); return Results.Ok(policy); }
+            catch (CommandRefusedException ex) { return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest); }
+        }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         reference.MapGet("/replacement-policies", async (PolicyQueries queries, CancellationToken ct) => Results.Ok(await queries.ReplacementPoliciesAsync(ct)));
         reference.MapPost("/replacement-policies", (DefineReplacementPolicy command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ReplacementPolicyRow>(bus, tenant, command, ct)).RequireAuthorization(editor);
+
+        var warrantyLines = app.MapGroup("/api/warranty-lines").RequireAuthorization(YojanaPolicy.TenantMember);
+        warrantyLines.MapPost("/validate", async (WarrantyLineValidation request, WarrantyLineValidationService validation, CancellationToken ct) =>
+            Results.Ok(await validation.ValidateAsync(request, ct)));
+        warrantyLines.MapGet("/exceptions", async (string? status, int? skip, int? take, WarrantyLineExceptionQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.PageAsync(status, skip ?? 0, take ?? 50, ct)));
+        warrantyLines.MapPost("/exceptions/{exceptionId:guid}/resolve", (Guid exceptionId, ResolveWarrantyLineException command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<WarrantyLineExceptionRow>(bus, tenant, command with { ExceptionId = exceptionId }, ct)).RequireAuthorization(desk);
 
         var selections = app.MapGroup("/api/selections").RequireAuthorization(YojanaPolicy.TenantMember);
         selections.MapPost("/", (ResolveSelectionSet command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ResolveSelectionSetResult>(bus, tenant, command, ct));

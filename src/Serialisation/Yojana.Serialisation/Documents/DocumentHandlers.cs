@@ -176,15 +176,40 @@ public static class PurchasingAsnReceivedHandler
         var doc = await ctx.Purchasing.GetReceiptAsync(message.Document, ct) ?? throw new CommandRefusedException("document_unavailable", $"ASN {message.Document.Id:N} could not be read through the purchasing port.");
         var exceptions = new List<string>();
         var affected = 0;
+        var dropShip = doc.VendorShipment is { } shipmentRef ? await ctx.Purchasing.GetVendorShipmentAsync(shipmentRef, ct) : null;
+        var resolvedDropShipLines = new HashSet<int>();
         foreach (var line in doc.Lines)
         {
             var known = await ctx.Resolver.ResolveManyAsync(line.Serials, line.ItemId, ct);
             var fresh = line.Serials.Where(s => known[s] is null).ToList();
-            if (fresh.Count == 0) continue;
-            // Units the vendor announced: they exist from now with custody in transit under the vendor (case 26 starts here).
-            var result = await ctx.CommissionAsync(Documents.CommissionFor(message.Envelope, doc.Document, line, UnitOrigin.VendorAsn, doc.PostedAt, null, LocationKind.InTransit, EpisodeSource.Receipt, fresh), ct);
-            affected += result.Commissioned;
-            exceptions.AddRange(result.Lines.Where(l => l.Outcome == CommissionLineResult.Refused).Select(l => $"line {line.LineNo}: serial '{l.ClientReference}' refused: {string.Join(", ", l.Reasons)}"));
+            if (fresh.Count > 0)
+            {
+                // Units the vendor announced: they exist from now with custody in transit under the vendor (case 26 starts here).
+                var result = await ctx.CommissionAsync(Documents.CommissionFor(message.Envelope, doc.Document, line, UnitOrigin.VendorAsn, doc.PostedAt, null, LocationKind.InTransit, EpisodeSource.Receipt, fresh), ct);
+                affected += result.Commissioned;
+                exceptions.AddRange(result.Lines.Where(l => l.Outcome == CommissionLineResult.Refused).Select(l => $"line {line.LineNo}: serial '{l.ClientReference}' refused: {string.Join(", ", l.Reasons)}"));
+            }
+
+            if (dropShip is not null)
+            {
+                await ctx.Db.SaveChangesAsync(ct);
+                var announced = await ctx.Resolver.ResolveManyAsync(line.Serials, line.ItemId, ct);
+                var sourceLine = dropShip.Lines.FirstOrDefault(l => l.LineNo == line.LineNo && l.ItemId == line.ItemId)
+                    ?? dropShip.Lines.FirstOrDefault(l => l.ItemId == line.ItemId);
+                if (sourceLine is null) continue;
+                var accepted = announced.Values.OfType<ResolvedUnit>().ToList();
+                if (accepted.Count > 0) resolvedDropShipLines.Add(sourceLine.LineNo);
+                foreach (var unit in accepted)
+                {
+                    var key = Documents.Key(message.Envelope, dropShip.Document, sourceLine.LineNo, unit.UnitId, UnitEventType.OwnershipOpened, dropShip.ShippedAt);
+                    if (await ctx.SeenAsync(key, dropShip.ShippedAt, ct)) continue;
+                    var owner = await ctx.Episodes.PrepareOwnershipOpenAsync(unit.UnitId,
+                        new OwnershipTarget(dropShip.CustomerPartyRef, PartyType.Customer, EpisodeReason.Sale, EpisodeSource.CarrierPod), key, dropShip.ShippedAt,
+                        message.Envelope.Source, message.Envelope.LegalEntityId, Documents.Line(dropShip.Document, sourceLine.LineNo), null, ct);
+                    if (owner.CloseDraft is not null) await ctx.Writer.AppendAsync([owner.CloseDraft], ct);
+                    await ctx.Writer.AppendAsync([owner.Draft], ct);
+                }
+            }
         }
 
         // ASN is the second half of the drop-ship entitlement contract: requirements held for this source document
@@ -193,6 +218,25 @@ public static class PurchasingAsnReceivedHandler
             .Where(r => r.SourceDocumentType == message.Document.Type && r.SourceDocumentId == message.Document.Id && r.Status == EntitlementRequirementStatus.Exception && r.MissingInput == EntitlementMissingInput.SerialsPendingAsn)
             .Select(r => r.RequirementId).ToListAsync(ct);
         if (retry.Count > 0) await ctx.Bus.PublishAsync(new ResolveEntitlementRequirements(retry), new Wolverine.DeliveryOptions { TenantId = ctx.Tenant.TenantId.ToString() });
+
+        if (dropShip is not null)
+        {
+            // The ownership opens above raised its P2-T13 rows in this unit of work. The source-document form lets the
+            // outbox resolver find those rows after commit without depending on their generated identifiers here.
+            await ctx.Bus.PublishAsync(new ResolveEntitlementRequirements([], dropShip.Document), new Wolverine.DeliveryOptions { TenantId = ctx.Tenant.TenantId.ToString() });
+            // HIDDEN COUPLING with WarrantyLineException.TargetDocument*: the vendor-shipment handler persists the
+            // line blocker against that document, and this ASN closes it only after its serials were accepted.
+            var resolved = await ctx.Db.WarrantyLineExceptions.Where(e => e.TargetDocumentType == dropShip.Document.Type && e.TargetDocumentId == dropShip.Document.Id
+                && resolvedDropShipLines.Contains(e.DocumentLine)
+                && e.Status == WarrantyLineExceptionStatus.Open && e.MissingInput == WarrantyLineMissingInput.SerialsPendingAsn).ToListAsync(ct);
+            foreach (var row in resolved)
+            {
+                row.Status = WarrantyLineExceptionStatus.Resolved;
+                row.ResolvedAt = ctx.Clock.UtcNow;
+                row.ResolvedBy = message.Envelope.Source;
+                row.Detail = null;
+            }
+        }
 
         return new ConsumedEventResult("Purchasing.AsnReceived", doc.Document, affected, 0, exceptions, affected == 0 && exceptions.Count == 0);
     }, ct);
@@ -209,6 +253,32 @@ public static class PurchasingVendorShipConfirmedHandler
         var delivered = doc.DeliveredAt is not null;
         foreach (var line in doc.Lines)
         {
+            if (line.Serials.Count == 0 && (await ctx.ItemPolicies.PoliciesForAsync(line.ItemId, ct)).Any(p => p.CoverageFamily == CoverageFamilyCode.Base && p.EntitlementRequiredOnSale))
+            {
+                // HIDDEN COUPLING with PurchasingAsnReceivedHandler: TargetDocument* is the durable join by which the
+                // later ASN closes this blocker. Changing it to the ASN document would leave the vendor line open.
+                var existing = await ctx.Db.WarrantyLineExceptions.SingleOrDefaultAsync(e => e.DocumentType == doc.Document.Type && e.DocumentId == doc.Document.Id && e.DocumentLine == line.LineNo, ct);
+                if (existing is null)
+                {
+                    ctx.Db.WarrantyLineExceptions.Add(new WarrantyLineException
+                    {
+                        TenantId = ctx.Tenant.TenantId,
+                        ExceptionId = Yojana.Platform.Contracts.Identifiers.TimeOrderedId.New(doc.ShippedAt),
+                        DocumentType = doc.Document.Type,
+                        DocumentId = doc.Document.Id,
+                        DocumentLine = line.LineNo,
+                        TargetDocumentType = doc.Document.Type,
+                        TargetDocumentId = doc.Document.Id,
+                        ItemId = line.ItemId,
+                        Status = WarrantyLineExceptionStatus.Open,
+                        MissingInput = WarrantyLineMissingInput.SerialsPendingAsn,
+                        Detail = "The entitlement-required drop-ship line is waiting for vendor ASN serials.",
+                        TriggerAt = doc.ShippedAt,
+                        RaisedAt = ctx.Clock.UtcNow,
+                    });
+                }
+                continue;
+            }
             var fresh = line.Serials.ToList();
             var units = new List<ResolvedUnit>();
             var known = await ctx.Resolver.ResolveManyAsync(line.Serials, line.ItemId, ct);
@@ -609,7 +679,17 @@ public static class SalesDeliveryConfirmedHandler
             }
         }
 
-        return await Documents.ReportAsync(ctx, "Sales.DeliveryConfirmed", confirmation.Document, drafts, exceptions, 0, ct);
+        var report = await Documents.ReportAsync(ctx, "Sales.DeliveryConfirmed", confirmation.Document, drafts, exceptions, 0, ct);
+        // The exception row is the narrow contract between delivery posting and warranty-line retry. It stores the
+        // referenced document explicitly; relying on handler order would leave invoice cover unresolved after replay.
+        var retries = await ctx.Db.WarrantyLineExceptions.AsNoTracking()
+            .Where(e => e.Status == WarrantyLineExceptionStatus.Open &&
+                ((e.TargetDocumentType == confirmation.Document.Type && e.TargetDocumentId == confirmation.Document.Id)
+                 || (e.TargetDocumentType == shipment.Document.Type && e.TargetDocumentId == shipment.Document.Id)))
+            .Select(e => e.ExceptionId).ToListAsync(ct);
+        foreach (var retry in retries)
+            await ctx.Bus.PublishAsync(new ResolveWarrantyLineException(retry, [], "delivery-posting"), new DeliveryOptions { TenantId = ctx.Tenant.TenantId.ToString() });
+        return report;
     }, ct);
 }
 

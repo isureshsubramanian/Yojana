@@ -18,6 +18,8 @@ public sealed class InMemoryDocumentPorts : IPurchasingDocumentQueryPort, IManuf
     public void Add(TransferDocument d) => documents[(d.Document.Type, d.Document.Id)] = d;
     public void Add(AdjustmentDocument d) => documents[(d.Document.Type, d.Document.Id)] = d;
     public void Add(ShipmentDocument d) => documents[(d.Document.Type, d.Document.Id)] = d;
+    public void Add(InvoiceDocument d) => documents[(d.Document.Type, d.Document.Id)] = d;
+    public void Add(WarrantyTargetDocument d) => documents[(d.Document.Type, d.Document.Id)] = d;
     public void Add(DeliveryConfirmation d) => documents[(d.Document.Type, d.Document.Id)] = d;
     public void Add(ReturnDocument d) => documents[(d.Document.Type, d.Document.Id)] = d;
     public void Add(LoanerIssue d) => documents[(d.Document.Type, d.Document.Id)] = d;
@@ -31,6 +33,8 @@ public sealed class InMemoryDocumentPorts : IPurchasingDocumentQueryPort, IManuf
     public Task<TransferDocument?> GetTransferAsync(DocumentRef document, CancellationToken cancellationToken) => Get<TransferDocument>(document);
     public Task<AdjustmentDocument?> GetAdjustmentAsync(DocumentRef document, CancellationToken cancellationToken) => Get<AdjustmentDocument>(document);
     public Task<ShipmentDocument?> GetShipmentAsync(DocumentRef document, CancellationToken cancellationToken) => Get<ShipmentDocument>(document);
+    public Task<InvoiceDocument?> GetInvoiceAsync(DocumentRef document, CancellationToken cancellationToken) => Get<InvoiceDocument>(document);
+    public Task<WarrantyTargetDocument?> GetWarrantyTargetAsync(DocumentRef document, CancellationToken cancellationToken) => Get<WarrantyTargetDocument>(document);
     public Task<DeliveryConfirmation?> GetDeliveryConfirmationAsync(DocumentRef document, CancellationToken cancellationToken) => Get<DeliveryConfirmation>(document);
     public Task<ReturnDocument?> GetReturnAsync(DocumentRef document, CancellationToken cancellationToken) => Get<ReturnDocument>(document);
     public Task<LoanerIssue?> GetLoanerIssueAsync(DocumentRef document, CancellationToken cancellationToken) => Get<LoanerIssue>(document);
