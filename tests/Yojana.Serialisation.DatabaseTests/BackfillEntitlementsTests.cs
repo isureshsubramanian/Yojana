@@ -34,7 +34,8 @@ public sealed class BackfillEntitlementsTests(SerialisationHostFixture fixture)
         var draft = await InvokeAsync<PolicyDraftResult>(tenant, new CreatePolicyDraft(Guid.NewGuid(), code, code, CoverageFamilyCode.Base, EntitlementType.Manufacturer, new DateOnly(2020, 1, 1), terms, "test"));
         await InvokeAsync<PolicyDraftResult>(tenant, new PublishPolicyVersion(draft.PolicyVersionId, "test"));
         var item = Guid.NewGuid();
-        Ports.Register(new ItemWarrantyPolicy(item, CoverageFamilyCode.Base, code, true));
+        // These are deliberately historical gaps; automatic sale creation is exercised by EntitlementRequirementTests.
+        Ports.Register(new ItemWarrantyPolicy(item, CoverageFamilyCode.Base, code, false));
         var units = new List<Guid>();
         foreach (var origin in new[] { UnitOrigin.Purchased, UnitOrigin.VendorAsn, UnitOrigin.Purchased })
         {

@@ -66,6 +66,9 @@ public static class SerialisationModule
         builder.Services.AddScoped(sp => new Entitlements.AmendmentApprovalSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>(), sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantCurrency>()));
         builder.Services.AddScoped<Entitlements.EntitlementLedger>();
         builder.Services.AddScoped<Entitlements.EntitlementQueries>();
+        builder.Services.AddScoped<Entitlements.EntitlementRequirementWriter>();
+        builder.Services.AddScoped<Entitlements.EntitlementRequirementQueries>();
+        builder.Services.AddScoped<Entitlements.EntitlementRequirementSweep>();
 
         builder.Services.AddScoped<SearchIndexer>();
         builder.Services.AddScoped<SearchBackfill>();
@@ -108,6 +111,7 @@ public static class SerialisationModule
         // Replay-and-diff healer (P1-T05): per tenant, nightly, through the platform's recurring tenant jobs.
         builder.Services.AddScoped<UnitCurrentHealer>();
         builder.Services.AddSingleton(RecurringTenantJob.For<UnitCurrentHealerJob>(UnitCurrentHealerJob.JobName, UnitCurrentHealerJob.Cron));
+        builder.Services.AddSingleton(RecurringTenantJob.For<Entitlements.EntitlementRequirementJob>(Entitlements.EntitlementRequirementJob.JobName, Entitlements.EntitlementRequirementJob.Cron));
 
         // Ledger partition lifecycle (MOD-04, P1-T03): options from configuration, the service per scope, one
         // database-wide Quartz job scheduled after the platform has migrated and started its scheduler.

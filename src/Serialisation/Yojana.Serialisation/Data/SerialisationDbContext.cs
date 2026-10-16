@@ -71,6 +71,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<Entitlement> Entitlements => Set<Entitlement>();
 
+    public DbSet<EntitlementRequirement> EntitlementRequirements => Set<EntitlementRequirement>();
+
     public DbSet<EntitlementSuspension> EntitlementSuspensions => Set<EntitlementSuspension>();
 
     public DbSet<EntitlementRebase> EntitlementRebases => Set<EntitlementRebase>();
@@ -419,6 +421,21 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(e => new { e.TenantId, e.OwnerPartyRef, e.Status });
             b.HasIndex(e => new { e.TenantId, e.PolicyVersionId });
             b.HasIndex(e => new { e.TenantId, e.SourceDocumentType, e.SourceDocumentId });
+        });
+
+        modelBuilder.Entity<EntitlementRequirement>(b =>
+        {
+            b.ToTable("entitlement_requirement", t => t.HasCheckConstraint("ck_entitlement_requirement_status", "status IN ('open', 'satisfied', 'exception', 'waived')"));
+            b.HasKey(r => new { r.TenantId, r.RequirementId });
+            b.Property(r => r.SourceDocumentType).HasMaxLength(40);
+            b.Property(r => r.Status).HasMaxLength(20);
+            b.Property(r => r.MissingInput).HasMaxLength(40);
+            b.Property(r => r.Detail).HasMaxLength(1000);
+            b.Property(r => r.WaivedBy).HasMaxLength(200);
+            b.Property(r => r.WaiverReason).HasMaxLength(500);
+            b.HasIndex(r => new { r.TenantId, r.UnitId, r.OwnershipEpisodeId }).IsUnique();
+            b.HasIndex(r => new { r.TenantId, r.Status, r.RaisedAt });
+            b.HasIndex(r => new { r.TenantId, r.SourceDocumentType, r.SourceDocumentId, r.Status });
         });
 
         modelBuilder.Entity<EntitlementSuspension>(b =>

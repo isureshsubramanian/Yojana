@@ -5,6 +5,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
+using Yojana.Serialisation.Entitlements;
 
 namespace Yojana.Serialisation.Commands;
 
@@ -22,7 +23,7 @@ public sealed record PreparedOwnershipOpen(UnitEventDraft Draft, UnitEventDraft?
 /// Enforces the one-open-row invariant and the transition tables; the caller chooses the event type (<c>custody.changed</c>,
 /// <c>unit.shipped</c>, <c>unit.delivered</c> …) and may add attributes and delta fields.
 /// </summary>
-public sealed class EpisodeService(SerialisationDbContext db, ITenantContext tenant)
+public sealed class EpisodeService(SerialisationDbContext db, ITenantContext tenant, EntitlementRequirementWriter entitlementRequirements)
 {
     // Filled by PreloadOpenAsync (P1-T24): the open custody and ownership row of each preloaded unit (null when it has
     // none) and, for the stock check of invariant 3, the shipped parent it is still installed in. HIDDEN COUPLING: the
@@ -40,6 +41,7 @@ public sealed class EpisodeService(SerialisationDbContext db, ITenantContext ten
     /// </summary>
     public async Task PreloadOpenAsync(IReadOnlyCollection<Guid> unitIds, CancellationToken cancellationToken)
     {
+        await entitlementRequirements.PreloadAsync(unitIds, cancellationToken);
         var tenantId = tenant.TenantId;
         foreach (var ids in unitIds.Where(u => !installedInShippedParent.ContainsKey(u)).Distinct().Chunk(2000))
         {
@@ -192,6 +194,9 @@ public sealed class EpisodeService(SerialisationDbContext db, ITenantContext ten
 
         db.Episodes.Add(episode);
         Track(unitId, EpisodeKind.Ownership, episode);
+        // HIDDEN COUPLING with EntitlementRequirementWriter: this call must remain in the ownership-opening unit of
+        // work. Moving it after commit permits a required entitlement to disappear without either cover or an exception.
+        await entitlementRequirements.RaiseForAsync(episode, cancellationToken);
         var draft = new UnitEventDraft
         {
             UnitId = unitId, EventTime = at, EventType = open is null ? UnitEventType.OwnershipOpened : UnitEventType.OwnershipTransferred, PresetEventId = eventId, LegalEntityId = legalEntityId, ActorRef = actorRef,

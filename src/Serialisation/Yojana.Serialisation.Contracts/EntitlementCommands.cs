@@ -1,5 +1,19 @@
 namespace Yojana.Serialisation.Contracts;
 
+/// <summary>
+/// Resolves entitlement requirements after the transaction that raised them (P2-T13): the named rows, and every open row
+/// raised from <see cref="SourceDocument"/>, so a 500-line shipment sends one message rather than one per unit.
+/// </summary>
+public sealed record ResolveEntitlementRequirements(IReadOnlyList<Guid> RequirementIds, DocumentRef? SourceDocument = null);
+
+public sealed record WaiveEntitlementRequirement(Guid RequirementId, string Reason, string ActorRef);
+
+public sealed record EntitlementRequirementRow(Guid RequirementId, Guid UnitId, Guid OwnershipEpisodeId, Guid ItemId, DocumentRef? SourceDocument, string Status, string? MissingInput, string? Detail, DateTime RaisedAt, DateTime? ResolvedAt, Guid? EntitlementId);
+
+public sealed record EntitlementRequirementPage(IReadOnlyList<EntitlementRequirementRow> Items, int Total, int Skip, int Take);
+
+public sealed record EntitlementRequirementCheck(bool CanComplete, IReadOnlyList<EntitlementRequirementRow> Blocking, IReadOnlyList<string> DocumentProblems);
+
 // Entitlement commands of P2-T05 (ADR-0001 "Core model: WarrantyEntitlement", state machine). Each is a fact on the
 // unit's ledger with a deterministic idempotency key from the command id; a replay returns the same result. Times are
 // UTC instants; the calendar days they fall on are read in the entitlement's reference time zone.

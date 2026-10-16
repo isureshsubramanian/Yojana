@@ -7,6 +7,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Ledger;
+using Wolverine;
 
 namespace Yojana.Serialisation.Documents;
 
@@ -14,7 +15,7 @@ namespace Yojana.Serialisation.Documents;
 public sealed class DocumentContext(
     SerialisationDbContext db, IUnitEventWriter writer, BulkIngestion bulk, IdentifierService identifiers, IItemQueryPort items, SerialRangeService ranges, ITenantContext tenant, IClock clock,
     EpisodeService episodes, UnitResolver resolver, DocumentOptions options, PostingPeriods periods, AsBuiltCompleteness completeness,
-    IPurchasingDocumentQueryPort purchasing, IManufacturingDocumentQueryPort manufacturing, IInventoryDocumentQueryPort inventory, ISalesDocumentQueryPort sales, IServiceDocumentQueryPort service)
+    IPurchasingDocumentQueryPort purchasing, IManufacturingDocumentQueryPort manufacturing, IInventoryDocumentQueryPort inventory, ISalesDocumentQueryPort sales, IServiceDocumentQueryPort service, IMessageBus bus)
 {
     public SerialisationDbContext Db => db;
     public IUnitEventWriter Writer => writer;
@@ -31,6 +32,7 @@ public sealed class DocumentContext(
     public IInventoryDocumentQueryPort Inventory => inventory;
     public ISalesDocumentQueryPort Sales => sales;
     public IServiceDocumentQueryPort Service => service;
+    public IMessageBus Bus => bus;
 
     /// <summary>
     /// Runs a document under one transaction (the caller's when open). Handlers may call SaveChanges inside so that rows

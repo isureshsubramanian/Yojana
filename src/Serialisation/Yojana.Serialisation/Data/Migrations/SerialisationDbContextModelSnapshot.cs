@@ -900,6 +900,98 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("entitlement_rebase", "serialisation");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.EntitlementRequirement", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RequirementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("requirement_id");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("detail");
+
+                    b.Property<Guid?>("EntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entitlement_id");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("item_id");
+
+                    b.Property<string>("MissingInput")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("missing_input");
+
+                    b.Property<Guid>("OwnershipEpisodeId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("ownership_episode_id");
+
+                    b.Property<DateTime>("RaisedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("raised_at");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<Guid?>("SourceDocumentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_document_id");
+
+                    b.Property<int?>("SourceDocumentLine")
+                        .HasColumnType("int")
+                        .HasColumnName("source_document_line");
+
+                    b.Property<string>("SourceDocumentType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_document_type");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<string>("WaivedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("waived_by");
+
+                    b.Property<string>("WaiverReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("waiver_reason");
+
+                    b.HasKey("TenantId", "RequirementId")
+                        .HasName("pk_entitlement_requirement");
+
+                    b.HasIndex("TenantId", "Status", "RaisedAt")
+                        .HasDatabaseName("ix_entitlement_requirement_tenant_id_status_raised_at");
+
+                    b.HasIndex("TenantId", "UnitId", "OwnershipEpisodeId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_entitlement_requirement_tenant_id_unit_id_ownership_episode_id");
+
+                    b.HasIndex("TenantId", "SourceDocumentType", "SourceDocumentId", "Status")
+                        .HasDatabaseName("ix_entitlement_requirement_tenant_id_source_document_type_source_document_id_status");
+
+                    b.ToTable("entitlement_requirement", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_entitlement_requirement_status", "status IN ('open', 'satisfied', 'exception', 'waived')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.EntitlementSuspension", b =>
                 {
                     b.Property<Guid>("TenantId")

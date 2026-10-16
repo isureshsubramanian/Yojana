@@ -283,6 +283,27 @@ public sealed class Entitlement : ITenantScoped
     public DateTime CreatedAt { get; set; }
 }
 
+/// <summary>The durable proof that a sale which requires base cover was not allowed to fail silently.</summary>
+public sealed class EntitlementRequirement : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid RequirementId { get; set; }
+    public Guid UnitId { get; set; }
+    public Guid OwnershipEpisodeId { get; set; }
+    public Guid ItemId { get; set; }
+    public string? SourceDocumentType { get; set; }
+    public Guid? SourceDocumentId { get; set; }
+    public int? SourceDocumentLine { get; set; }
+    public required string Status { get; set; }
+    public string? MissingInput { get; set; }
+    public string? Detail { get; set; }
+    public DateTime RaisedAt { get; set; }
+    public DateTime? ResolvedAt { get; set; }
+    public Guid? EntitlementId { get; set; }
+    public string? WaivedBy { get; set; }
+    public string? WaiverReason { get; set; }
+}
+
 public sealed class EntitlementSuspension : ITenantScoped
 {
     public TenantId TenantId { get; set; }

@@ -48,6 +48,22 @@ public static class EntitlementStatus
     public const string Closed = "closed";
 }
 
+public static class EntitlementRequirementStatus
+{
+    public const string Open = "open";
+    public const string Satisfied = "satisfied";
+    public const string Exception = "exception";
+    public const string Waived = "waived";
+}
+
+public static class EntitlementMissingInput
+{
+    public const string NoPolicy = "no_policy";
+    public const string NoStartEvidence = "no_start_evidence";
+    public const string SerialsPendingAsn = "serials_pending_asn";
+    public const string CreationFailed = "creation_failed";
+}
+
 public static class EntitlementClosedReason
 {
     public const string Expired = "expired";
