@@ -22,6 +22,14 @@ public interface ICustomerContractPort
     Task<IReadOnlyList<CustomerContractTerm>> ContractsForAsync(Guid partyRef, Guid itemId, DateOnly contractDate, CancellationToken cancellationToken);
 }
 
+/// <summary>A vendor's published warranty policy for an item on the day we received it; null means no supplier cover.</summary>
+public sealed record VendorWarrantyTerm(Guid VendorPartyRef, Guid ItemId, Guid PolicyVersionId);
+
+public interface IVendorWarrantyTermsPort
+{
+    Task<VendorWarrantyTerm?> TermsForAsync(Guid vendorPartyRef, Guid itemId, DateOnly receiptDate, CancellationToken cancellationToken);
+}
+
 /// <summary>IANA zone of a customer site or of the obligor legal entity, for the reference time-zone rule (case 112); null when unknown.</summary>
 public interface ITimeZonePort
 {

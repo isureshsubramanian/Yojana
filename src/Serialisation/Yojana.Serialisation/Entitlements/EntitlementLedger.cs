@@ -50,7 +50,7 @@ public sealed class EntitlementLedger(SerialisationDbContext db, IUnitEventWrite
         // Saved first, so the coverage read below sees this entitlement's new state together with the unit's others.
         await db.SaveChangesAsync(cancellationToken);
         var tenantId = tenant.TenantId;
-        var live = await db.Entitlements.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == entitlement.UnitId && e.Status != EntitlementStatus.Closed)
+        var live = await db.Entitlements.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == entitlement.UnitId && e.Direction == EntitlementDirection.Outbound && e.Status != EntitlementStatus.Closed)
             .Select(e => new { e.EntitlementId, e.EndDate }).ToListAsync(cancellationToken);
         // Tracked, so a row this unit of work already changed answers with its in-memory coverage.
         var current = await db.Current.FirstOrDefaultAsync(c => c.TenantId == tenantId && c.UnitId == entitlement.UnitId, cancellationToken);

@@ -35,6 +35,7 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant)
         if (e.Attributes is null || !e.EventType.StartsWith("entitlement.", StringComparison.Ordinal)) return null;
         using var doc = JsonDocument.Parse(e.Attributes);
         var a = doc.RootElement;
+        if (Str(a, "direction") == EntitlementDirection.Inbound) return null;
         if (!a.TryGetProperty("coverage_before", out var before) || !a.TryGetProperty("_state", out var state) || !state.TryGetProperty("live_entitlement_ids", out var afterIds)) return null;
         var idsBefore = Guids(before, "live_entitlement_ids");
         var idsAfter = afterIds.EnumerateArray().Select(i => i.GetGuid()).Order().ToList();
@@ -84,6 +85,7 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant)
             }
 
             case EntitlementEventType.Created:
+                if (Str(a, "direction") == EntitlementDirection.Inbound) return null;
                 return new EntitlementCreated(Header(EntitlementCreated.Schema, EntitlementCreated.Version), GuidOrNull(a, "entitlement_id") ?? Guid.Empty, GuidOrNull(a, "item_id") ?? Guid.Empty,
                     Str(a, "coverage_family") ?? "", Str(a, "entitlement_type") ?? "", e.LegalEntityId, GuidOrNull(a, "owner_party_ref"), GuidOrNull(a, "policy_version_id") ?? Guid.Empty, Str(a, "policy_code") ?? "",
                     Int(a, "policy_version") ?? 0, Date(a, "start_date"), Date(a, "end_date"), Str(a, "status") ?? "", GuidOrNull(a, "accrual_cohort_id"), Str(a, "assurance_or_service") ?? "",

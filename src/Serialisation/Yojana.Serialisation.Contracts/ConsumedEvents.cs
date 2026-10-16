@@ -26,6 +26,11 @@ public sealed record ThinEnvelope(
 
 public sealed record PurchasingReceiptPosted(ThinEnvelope Envelope, DocumentRef Document);
 
+/// <summary>Receipt follow-on: supplier cover is created after the receipt transaction, through the durable outbox.</summary>
+public sealed record CreateInboundEntitlements(ThinEnvelope Envelope, DocumentRef Receipt);
+
+public sealed record CreateInboundEntitlementsResult(DocumentRef Receipt, int Created, bool Duplicate);
+
 public sealed record PurchasingAsnReceived(ThinEnvelope Envelope, DocumentRef Document);
 
 /// <summary>Drop-ship: the vendor shipped straight to the customer (case 26).</summary>

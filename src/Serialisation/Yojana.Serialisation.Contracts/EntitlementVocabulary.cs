@@ -58,6 +58,7 @@ public static class EntitlementClosedReason
 
 public static class StartTrigger
 {
+    public const string Receipt = "receipt";
     public const string Ship = "ship";
     public const string Deliver = "deliver";
     public const string Install = "install";

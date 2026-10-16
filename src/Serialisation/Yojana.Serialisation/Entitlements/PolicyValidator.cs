@@ -18,7 +18,7 @@ public sealed record PolicyValidationContext(
 /// </summary>
 public static partial class PolicyValidator
 {
-    private static readonly string[] Triggers = [StartTrigger.Ship, StartTrigger.Deliver, StartTrigger.Install, StartTrigger.Register, StartTrigger.Invoice, StartTrigger.ConsumptionFromConsignment, StartTrigger.FirstExternalSale, StartTrigger.PlanPurchase, StartTrigger.BaseExpiry];
+    private static readonly string[] Triggers = [StartTrigger.Receipt, StartTrigger.Ship, StartTrigger.Deliver, StartTrigger.Install, StartTrigger.Register, StartTrigger.Invoice, StartTrigger.ConsumptionFromConsignment, StartTrigger.FirstExternalSale, StartTrigger.PlanPurchase, StartTrigger.BaseExpiry];
 
     // Triggers whose evidence can arrive long after the sale: a start from them needs a cap (ADR-0001 Terms, start_cap).
     private static readonly string[] LateTriggers = [StartTrigger.Install, StartTrigger.Register, StartTrigger.Deliver, StartTrigger.FirstExternalSale, StartTrigger.ConsumptionFromConsignment];

@@ -19,7 +19,7 @@ public sealed class EntitlementQueries(SerialisationDbContext db, ITenantContext
         {
             var effective = EntitlementStateMachine.Effective(e.Status, e.EndDate, e.DurationBasis, exhausted.Contains(e.EntitlementId), today);
             int? remaining = EntitlementStateMachine.IsLive(e.Status) && e.EndDate is { } end ? Math.Max(0, end.DayNumber - today.DayNumber) : null;
-            return new EntitlementView(e.EntitlementId, e.UnitId, e.CoverageFamily, e.Type, e.Status, effective, e.ClosedReason, e.StartDate, e.EndDate, remaining, e.PolicyVersionId, e.StartBasis, e.StartTimeZone, e.ParentEntitlementId, e.RootEntitlementId, e.SupersedesEntitlementId);
+            return new EntitlementView(e.EntitlementId, e.UnitId, e.CoverageFamily, e.Direction, e.Type, e.Status, effective, e.ClosedReason, e.StartDate, e.EndDate, remaining, e.PolicyVersionId, e.StartBasis, e.StartTimeZone, e.ParentEntitlementId, e.RootEntitlementId, e.SupersedesEntitlementId);
         }).OrderBy(v => EntitlementStateMachine.IsLive(v.StoredStatus) ? 0 : 1).ToList();
     }
 }

@@ -7,6 +7,13 @@ namespace Yojana.Serialisation.Tests;
 /// <summary>P2-T04: the term arithmetic, by example and as properties over every start day of thirteen years (cases 112, 113).</summary>
 public sealed class TermArithmeticTests
 {
+    [Fact]
+    public void Supplier_term_can_start_on_the_receipt_day()
+    {
+        var at = new DateTime(2026, 10, 10, 23, 30, 0, DateTimeKind.Utc);
+        var start = TermArithmetic.ResolveStart(new StartRule(StartTrigger.Receipt, [], null), new Dictionary<string, DateTime> { [StartTrigger.Receipt] = at }, "Asia/Kolkata");
+        Assert.Equal((StartTrigger.Receipt, new DateOnly(2026, 10, 11)), (start.Basis, start.Start));
+    }
     private static readonly int[] Terms = [1, 3, 6, 12, 18, 24, 36, 60];
 
     private static IEnumerable<DateOnly> EveryDay(int fromYear = 2020, int toYear = 2032)
