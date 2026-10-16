@@ -38,6 +38,7 @@
 .table td.cell-bad { background: color-mix(in srgb, var(--danger-soft) 70%, transparent); }
 .table td.cell-warn { background: color-mix(in srgb, var(--warning-soft) 70%, transparent); }
 .table tbody tr.clickable { cursor: pointer; }
+.table tbody tr.clickable:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
 .ok-text { color: var(--success); } .warn-text { color: var(--warning); } .bad-text { color: var(--danger); }
 .btn { height: 34px; }
 .scanbox.lg .input { height: 44px; font-size: 15px; padding-left: 46px; }

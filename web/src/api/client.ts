@@ -6,7 +6,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, init?: { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal | undefined }): Promise<T> {
+export async function api<T>(path: string, init?: { method?: "GET" | "POST" | "PUT"; body?: unknown; signal?: AbortSignal | undefined }): Promise<T> {
   const response = await fetch(path, {
     method: init?.method ?? "GET",
     credentials: "same-origin",

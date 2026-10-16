@@ -1,0 +1,81 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
+import { DataGrid, KpiStrip, StatusBadge, type GridColumn } from "../components";
+import { openDrawer, updateDrawer } from "../shell/drawerStore";
+import { Rail } from "../shell/Drawer";
+import { Breadcrumbs } from "../shell/PageHeader";
+import { ErrorNote, Kv, Section, useActor } from "../units/common";
+import { documentLabel, fmtDateTime, humanise, shortId } from "../units/format";
+import { entitlementApi } from "./api";
+import { loadApprovals } from "./approvalStore";
+import { daysOld } from "./format";
+import type { EntitlementRequirement, StoredApproval, WarrantyLineException } from "./types";
+
+type InboxRow =
+  | { id: string; kind: "bulk"; title: string; subject: string; reason: string; units: number; raisedAt: string; status: string; bulk: StoredApproval }
+  | { id: string; kind: "requirement"; title: string; subject: string; reason: string; units: number; raisedAt: string; status: string; requirement: EntitlementRequirement }
+  | { id: string; kind: "exception"; title: string; subject: string; reason: string; units: number; raisedAt: string; status: string; exception: WarrantyLineException };
+
+export function Component() {
+  const actor = useActor();
+  const [requirements, setRequirements] = useState<EntitlementRequirement[]>([]);
+  const [exceptions, setExceptions] = useState<WarrantyLineException[]>([]);
+  const [approvals, setApprovals] = useState<StoredApproval[]>(() => loadApprovals());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<unknown>(null);
+  const [active, setActive] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController(); setLoading(true); setError(null);
+    Promise.all([entitlementApi.requirements("exception", 0, 100, controller.signal), entitlementApi.exceptions("open", 0, 100, controller.signal)])
+      .then(([requirementPage, exceptionPage]) => { setRequirements(requirementPage.items); setExceptions(exceptionPage.items); setApprovals(loadApprovals()); setLoading(false); })
+      .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) { setError(reason); setLoading(false); } });
+    return () => controller.abort();
+  }, [version]);
+  useEffect(() => { const refresh = () => setApprovals(loadApprovals()); window.addEventListener("yojana:entitlement-approvals", refresh); window.addEventListener("storage", refresh); return () => { window.removeEventListener("yojana:entitlement-approvals", refresh); window.removeEventListener("storage", refresh); }; }, []);
+
+  const rows = useMemo<InboxRow[]>(() => [
+    ...approvals.map((bulk): InboxRow => ({ id: `bulk:${bulk.id}`, kind: "bulk", title: humanise(bulk.operation), subject: `Selection ${shortId(bulk.selectionId)} · ${bulk.total} units`, reason: "approval_required", units: bulk.total, raisedAt: bulk.createdAt, status: "Needs approval", bulk })),
+    ...requirements.map((requirement): InboxRow => ({ id: `requirement:${requirement.requirementId}`, kind: "requirement", title: "Entitlement requirement", subject: `Unit ${shortId(requirement.unitId)}${requirement.sourceDocument ? ` · ${documentLabel(requirement.sourceDocument)}` : ""}`, reason: requirement.missingInput ?? "creation_failed", units: 1, raisedAt: requirement.raisedAt, status: "Manager decision", requirement })),
+    ...exceptions.map((exception): InboxRow => ({ id: `exception:${exception.exceptionId}`, kind: "exception", title: "Warranty-line exception", subject: documentLabel(exception.document), reason: exception.missingInput, units: 1, raisedAt: exception.raisedAt, status: "Resolve targets", exception })),
+  ].sort((left, right) => left.raisedAt.localeCompare(right.raisedAt)), [approvals, requirements, exceptions]);
+  const oldest = rows[0] ? daysOld(rows[0].raisedAt) : 0;
+  const columns: GridColumn<InboxRow>[] = [
+    { key: "request", label: "Request · subject", width: 34, render: (row) => <>{row.title}<span className="sub">{row.subject}</span></> },
+    { key: "source", label: "Source", width: 15, render: (row) => <StatusBadge tone={row.kind === "bulk" ? "info" : row.kind === "requirement" ? "bad" : "warn"}>{humanise(row.kind)}</StatusBadge> },
+    { key: "reason", label: "Why this needs attention", width: 24, mono: true, render: (row) => row.reason },
+    { key: "units", label: "Units", width: 8, numeric: true, render: (row) => row.units.toLocaleString() },
+    { key: "status", label: "Status · age", width: 19, render: (row) => <><StatusBadge tone={row.kind === "requirement" ? "bad" : "warn"}>{row.status}</StatusBadge><span className="sub">{daysOld(row.raisedAt)} d · {fmtDateTime(row.raisedAt)}</span></> },
+  ];
+  const open = (row: InboxRow) => {
+    setActive(row.id);
+    if (row.kind === "bulk") {
+      openDrawer({ eyebrow: `Client-side approval · ${humanise(row.bulk.operation)}`, title: shortId(row.bulk.selectionId, 12), mono: true }, <><h3>Refused preview</h3><Kv rows={[["Operation", row.bulk.operation], ["Selection", shortId(row.bulk.selectionId, 12)], ["Units", row.bulk.total.toLocaleString()], ["Blocked on page", row.bulk.blocked.length.toLocaleString()], ["Reason", "approval_required"], ["Captured", fmtDateTime(row.bulk.createdAt)]]} /><div className="act"><Link className="btn primary block" to={`/entitlements/bulk?approval=${encodeURIComponent(row.bulk.id)}`}>Open and execute as manager</Link></div><div className="note warn" style={{ marginTop: 12 }}>This item exists only in this browser. The backend does not yet persist an approval request or decision workflow.</div></>);
+    } else if (row.kind === "requirement") {
+      openDrawer({ eyebrow: "Entitlement requirement · manager action", title: shortId(row.requirement.requirementId, 12), mono: true }, <RequirementDecision row={row.requirement} actor={actor} onDone={() => setVersion((value) => value + 1)} />);
+    } else {
+      openDrawer({ eyebrow: "Warranty-line exception · target resolution", title: shortId(row.exception.document.id, 12), mono: true }, <><h3>Exception</h3><Kv rows={[["Document", documentLabel(row.exception.document)], ["Item", shortId(row.exception.itemId, 12)], ["Missing input", humanise(row.exception.missingInput)], ["Detail", row.exception.detail ?? "—"], ["Original trigger", fmtDateTime(row.exception.triggerAt)]]} /><div className="act"><Link className="btn primary block" to="/entitlements/exceptions">Open exception queue</Link></div></>);
+    }
+  };
+
+  return <>
+    <main className="content" id="main" tabIndex={-1}>
+      <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Approvals" }]} />
+      <div className="page-header"><div><h1>Approvals</h1><p className="sub">Entitlement requirements and warranty-line exceptions needing manager attention, plus approval-refused bulk previews saved in this browser</p></div><div className="actions"><Link className="btn" to="/entitlements/exceptions">Exception queue</Link><Link className="btn primary" to="/entitlements/bulk">New bulk operation</Link></div></div>
+      <ErrorNote error={error} />
+      <div className="stack">
+        <KpiStrip kpis={[{ label: "Waiting for attention", value: rows.length.toLocaleString(), detail: `${approvals.length} bulk · ${requirements.length} requirements · ${exceptions.length} warranty lines`, trend: null }, { label: "Oldest on page", value: `${oldest} d`, detail: rows[0]?.title ?? "Nothing waiting", trend: null }, { label: "Approval-refused previews", value: approvals.length.toLocaleString(), detail: "browser-side until a server queue exists", trend: null }, { label: "Manager requirements", value: requirements.length.toLocaleString(), detail: "resolve upstream or waive with reason", trend: null }]} />
+        <section className="card" aria-labelledby="approval-list"><div className="card-header"><h2 id="approval-list">Requests <span className="meta">{rows.length} waiting · sorted oldest first</span></h2><span className="meta">No backend approval queue yet</span></div><DataGrid columns={columns} page={{ rows, total: rows.length, page: 1, pageSize: Math.max(rows.length, 1), continuation: null }} rowId={(row) => row.id} onPage={() => undefined} onRowClick={open} activeRowId={active} loading={loading} emptyText="Nothing needs manager attention." viewportHeight={620} /></section>
+      </div>
+    </main>
+    <Rail label="Approval sources"><Section title="What appears here"><div className="job"><div><div className="t">Entitlement requirements</div><div className="s">backend · exception status</div></div><StatusBadge tone="bad">{requirements.length}</StatusBadge></div><div className="job"><div><div className="t">Warranty-line exceptions</div><div className="s">backend · open status</div></div><StatusBadge tone="warn">{exceptions.length}</StatusBadge></div><div className="job"><div><div className="t">Bulk previews</div><div className="s">this browser · approval_required</div></div><StatusBadge tone="info">{approvals.length}</StatusBadge></div></Section><Section title="Boundary"><p className="muted">The screen does not invent approval state. Requirements and exceptions are persisted backend work. Bulk approval rows are explicitly local and execute the stored selection through the normal signed-in-role check.</p></Section></Rail>
+  </>;
+}
+
+function RequirementDecision({ row, actor, onDone }: { row: EntitlementRequirement; actor: string; onDone: () => void }) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const waive = async () => { setBusy(true); setError(null); try { const result = await entitlementApi.waiveRequirement(row.requirementId, reason, actor); updateDrawer({ eyebrow: "Requirement waived", title: shortId(result.requirementId, 12), mono: true }, <><h3>Decision recorded</h3><Kv rows={[["Status", humanise(result.status)], ["Reason", reason], ["Unit", shortId(result.unitId, 12)]]} /></>); onDone(); } catch (problem) { setError(problem); } finally { setBusy(false); } };
+  return <><h3>Requirement</h3><Kv rows={[["Unit", shortId(row.unitId, 12)], ["Item", shortId(row.itemId, 12)], ["Source", row.sourceDocument ? documentLabel(row.sourceDocument) : "—"], ["Missing input", humanise(row.missingInput)], ["Detail", row.detail ?? "—"], ["Raised", fmtDateTime(row.raisedAt)]]} /><div className="act"><Link className="btn block" to={`/units/${row.unitId}`}>Open unit</Link></div><h3 style={{ marginTop: 16 }}>Waive</h3><label className="lbl" htmlFor={`waive-${row.requirementId}`}>Reason</label><textarea id={`waive-${row.requirementId}`} className="textarea" value={reason} onChange={(event) => setReason(event.target.value)} /><ErrorNote error={error} /><div className="act"><button type="button" className="btn primary block" disabled={!reason.trim() || busy} aria-busy={busy} onClick={waive}>Waive requirement</button></div><p className="hint">Waiving is an audited manager decision. Resolve the missing policy or evidence instead when coverage is still owed.</p></>;
+}

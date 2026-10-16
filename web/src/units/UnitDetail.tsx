@@ -8,6 +8,7 @@ import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink, useActor } from "./common";
 import { documentLabel, fmtDate, fmtDateTime, humanise, shortId, statusLabel, statusTone } from "./format";
+import { EntitlementPanel } from "../entitlements/EntitlementPanel";
 
 const HISTORY_PAGE = 20;
 const FLAGS = ["lost", "stolen", "written_off", "clone_seen", "recalled", "authenticity_failed"];
@@ -126,6 +127,8 @@ export function Component() {
           </div>
         )}
 
+        <EntitlementPanel unitId={unitId} />
+
         <div className="cols-2">
           <section className="card" aria-labelledby="h-tl">
             <div className="card-header"><h2 id="h-tl">History <span className="meta">{detail?.eventCount.toLocaleString() ?? "…"} events</span></h2><span className="meta">Business time · recorded time on hover · click for the attributes</span></div>
@@ -204,7 +207,7 @@ export function Component() {
           {history?.items.slice(0, 3).map((e) => <div className="job" key={e.eventId}><div><div className="t">{e.eventType}</div><div className="s">{fmtDateTime(e.eventTime)} · recorded {fmtDateTime(e.recordedTime).slice(11)}</div></div><StatusBadge tone="neutral">seq …{String(e.seq).slice(-4)}</StatusBadge></div>)}
         </Section>
         <Section title="Later phases add here">
-          <p className="muted">Entitlements (P2), workbench entry (P3), RMA and refurbishment (P5), certificates (P6). The panels above are the P1 record.</p>
+          <p className="muted">Workbench entry (P3), RMA and refurbishment (P5), and certificates (P6). Entitlements are now part of the unit record above.</p>
         </Section>
       </Rail>
     </>
