@@ -31,6 +31,7 @@ public static class SerialisationModule
         // Ledger writer and inline projector (MOD-04, coupling 2, P1-T04): scoped, sharing the module's DbContext.
         builder.Services.AddScoped<UnitCurrentStateProjector>();
         builder.Services.AddScoped<PublishedEventMapper>();
+        builder.Services.AddScoped<LedgerPublication>();
         builder.Services.AddScoped<IUnitEventWriter, UnitEventWriter>();
         builder.Services.AddScoped<UnitHistoryQuery>();
         builder.Services.AddScoped<BulkIngestion>();
@@ -81,6 +82,13 @@ public static class SerialisationModule
         builder.Services.AddScoped<SearchMetadataProfiles>();
         builder.Services.AddScoped<SearchQueries>();
         builder.Services.AddScoped<IBulkOperation, ReleaseUnitsOperation>();
+        builder.Services.AddScoped<IBulkOperation, Entitlements.BulkCreateEntitlementOperation>();
+        builder.Services.AddScoped<IBulkOperation, Entitlements.BulkAmendEntitlementOperation>();
+        builder.Services.AddScoped<IBulkOperation, Entitlements.BulkAttachExtendedOperation>();
+        builder.Services.AddScoped<IBulkOperation, Entitlements.BulkSupersedeEntitlementOperation>();
+        builder.Services.AddScoped<IBulkOperation, Entitlements.BulkVoidEntitlementOperation>();
+        builder.Services.AddScoped<IBulkOperation, Entitlements.BulkCloseEntitlementOperation>();
+        builder.Services.AddScoped<IBulkOperation, Entitlements.BulkBackfillOperation>();
         var search = builder.Configuration.GetSection(SearchIndexOptions.SectionName).Get<SearchIndexOptions>() ?? new SearchIndexOptions();
         if (search.MaximumParallelReindexMessages < 1) throw new InvalidOperationException($"{SearchIndexOptions.SectionName}:MaximumParallelReindexMessages must be at least 1.");
         builder.Services.AddSingleton(search);

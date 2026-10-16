@@ -24,6 +24,29 @@ public interface IBulkOperation
     Task<UnitOutcome> PreviewAsync(Guid unitId, string? serial, BulkOperationArguments arguments, CancellationToken cancellationToken);
 
     Task ApplyAsync(Guid unitId, Guid commandId, BulkOperationArguments arguments, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The check the executor makes before applying inside its transaction. By default the preview; an operation whose
+    /// preview is a dry run (P2-T11 entitlement operations) answers with its skip rules only, because a refusal during
+    /// apply fails the whole execution anyway (one transaction, nothing half done).
+    /// </summary>
+    Task<UnitOutcome> CheckBeforeApplyAsync(Guid unitId, string? serial, BulkOperationArguments arguments, CancellationToken cancellationToken) =>
+        PreviewAsync(unitId, serial, arguments, cancellationToken);
+}
+
+/// <summary>The approver and roles travel to the operations in reserved <c>__</c> keys of <see cref="BulkOperationArguments.Extra"/>; a caller's own <c>__</c> keys are dropped.</summary>
+public static class BulkApprovalArguments
+{
+    public const string ApproverRef = "__approver_ref";
+    public const string ApproverRoles = "__approver_roles";
+
+    public static BulkOperationArguments With(BulkOperationArguments arguments, BulkApproval? approval)
+    {
+        var extra = (arguments.Extra ?? new Dictionary<string, string>()).Where(kv => !kv.Key.StartsWith("__", StringComparison.Ordinal)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+        if (approval?.ApproverRef is { } approver) extra[ApproverRef] = approver;
+        if (approval?.Roles is { Count: > 0 } roles) extra[ApproverRoles] = string.Join(',', roles);
+        return arguments with { Extra = extra };
+    }
 }
 
 /// <summary>P1's bulk operation: release every pre-release unit of the set (the completeness guard decides block or change).</summary>
@@ -77,9 +100,10 @@ public sealed class BulkExecutor(SerialisationDbContext db, IServiceProvider ser
         var operation = Operation(command.Operation);
         var members = await db.SelectionSetMembers.Where(m => m.TenantId == tenantId && m.SelectionId == selection.SelectionId).OrderBy(m => m.Serial).ToListAsync(cancellationToken);
         var outcomes = new List<UnitOutcome>(members.Count);
+        var arguments = BulkApprovalArguments.With(command.Arguments, command.Approval);
         foreach (var member in members)
         {
-            var outcome = await operation.PreviewAsync(member.UnitId, member.Serial, command.Arguments, cancellationToken);
+            var outcome = await operation.PreviewAsync(member.UnitId, member.Serial, arguments, cancellationToken);
             member.Outcome = outcome.Outcome;
             member.Reason = outcome.Reason;
             member.Detail = outcome.Detail?.Length > 400 ? outcome.Detail[..400] : outcome.Detail;
@@ -111,6 +135,7 @@ public sealed class BulkExecutor(SerialisationDbContext db, IServiceProvider ser
         }
 
         var operation = Operation(command.Operation);
+        var executionArguments = BulkApprovalArguments.With(command.Arguments, command.Approval);
         var owned = db.Database.CurrentTransaction is null;
         var transaction = owned ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
         try
@@ -118,10 +143,10 @@ public sealed class BulkExecutor(SerialisationDbContext db, IServiceProvider ser
             var done = 0;
             foreach (var member in members)
             {
-                var outcome = await operation.PreviewAsync(member.UnitId, member.Serial, command.Arguments, cancellationToken);
+                var outcome = await operation.CheckBeforeApplyAsync(member.UnitId, member.Serial, executionArguments, cancellationToken);
                 if (outcome.Outcome == UnitOutcome.Outcomes.Change)
                 {
-                    await operation.ApplyAsync(member.UnitId, command.CommandId, command.Arguments, cancellationToken);
+                    await operation.ApplyAsync(member.UnitId, command.CommandId, executionArguments, cancellationToken);
                     member.Outcome = UnitOutcome.Outcomes.Done;
                     member.Reason = null;
                     member.Detail = outcome.Detail;

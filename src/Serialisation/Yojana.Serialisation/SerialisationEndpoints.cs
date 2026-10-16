@@ -180,8 +180,11 @@ public static class SerialisationEndpoints
 
         var selections = app.MapGroup("/api/selections").RequireAuthorization(YojanaPolicy.TenantMember);
         selections.MapPost("/", (ResolveSelectionSet command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ResolveSelectionSetResult>(bus, tenant, command, ct));
-        selections.MapPost("/{selectionId:guid}/preview", (Guid selectionId, PreviewBulkOperation command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<BulkPreviewResult>(bus, tenant, command with { SelectionId = selectionId }, ct));
-        selections.MapPost("/{selectionId:guid}/execute", (Guid selectionId, ExecuteBulkOperation command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<BulkExecutionResult>(bus, tenant, command with { SelectionId = selectionId }, ct));
+        // Approver and roles come from the claims, never the body: the operations judge approval tiers on them.
+        selections.MapPost("/{selectionId:guid}/preview", (Guid selectionId, PreviewBulkOperation command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<BulkPreviewResult>(bus, tenant, command with { SelectionId = selectionId, Approval = Approver(user, command.Approval) }, ct));
+        selections.MapPost("/{selectionId:guid}/execute", (Guid selectionId, ExecuteBulkOperation command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<BulkExecutionResult>(bus, tenant, command with { SelectionId = selectionId, Approval = Approver(user, command.Approval)! }, ct));
         selections.MapGet("/{selectionId:guid}/find", async (Guid selectionId, string q, int? skip, int? take, BulkExecutor executor, CancellationToken ct) =>
             Results.Ok(await executor.FindAsync(new FindInSelection(selectionId, q, Math.Max(0, skip ?? 0), take ?? 50), ct)));
         return app;
@@ -202,6 +205,12 @@ public static class SerialisationEndpoints
     /// <summary>The signed-in user and their roles in the selected tenant, from the claims; never what a request body claims.</summary>
     private static AmendmentCommitter Committer(ClaimsPrincipal user) =>
         new(user.FindFirstValue(YojanaClaim.UserId) ?? throw new InvalidOperationException("A signed-in user carries a user id claim."), user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToList());
+
+    private static BulkApproval Approver(ClaimsPrincipal user, BulkApproval? given)
+    {
+        var committer = Committer(user);
+        return new BulkApproval(committer.UserRef, given?.Required ?? false, committer.Roles);
+    }
 
     /// <summary>"type:guid" as the search result href carries it; null when absent or malformed.</summary>
     private static DocumentRef? ParseDocument(string? value)
