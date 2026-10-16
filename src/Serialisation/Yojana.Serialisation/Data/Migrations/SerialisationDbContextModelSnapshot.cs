@@ -897,15 +897,15 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("run_at");
 
-                    b.Property<int>("Total")
-                        .HasColumnType("int")
-                        .HasColumnName("total");
-
-                    b.Property<string>("Trigger")
+                    b.Property<string>("RunTrigger")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)")
-                        .HasColumnName("trigger");
+                        .HasColumnName("run_trigger");
+
+                    b.Property<int>("Total")
+                        .HasColumnType("int")
+                        .HasColumnName("total");
 
                     b.HasKey("TenantId", "RunId")
                         .HasName("pk_entitlement_gap_run");
@@ -919,7 +919,7 @@ namespace Yojana.Serialisation.Data.Migrations
 
                             t.HasCheckConstraint("ck_entitlement_gap_run_filters_json", "ISJSON(filters_json) = 1");
 
-                            t.HasCheckConstraint("ck_entitlement_gap_run_trigger", "trigger IN ('migration_load', 'on_demand', 'daily_job')");
+                            t.HasCheckConstraint("ck_entitlement_gap_run_trigger", "run_trigger IN ('migration_load', 'on_demand', 'daily_job')");
                         });
                 });
 

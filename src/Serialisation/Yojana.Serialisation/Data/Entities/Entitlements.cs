@@ -362,7 +362,7 @@ public sealed class EntitlementGapRun : ITenantScoped
     public TenantId TenantId { get; set; }
     public Guid RunId { get; set; }
     public DateTime RunAt { get; set; }
-    public required string Trigger { get; set; }
+    public required string RunTrigger { get; set; }
     public required string FiltersJson { get; set; }
     public int Total { get; set; }
     public required string CountsJson { get; set; }

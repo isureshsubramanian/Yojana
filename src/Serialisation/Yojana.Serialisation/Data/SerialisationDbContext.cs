@@ -454,10 +454,10 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             {
                 t.HasCheckConstraint("ck_entitlement_gap_run_filters_json", "ISJSON(filters_json) = 1");
                 t.HasCheckConstraint("ck_entitlement_gap_run_counts_json", "ISJSON(counts_json) = 1");
-                t.HasCheckConstraint("ck_entitlement_gap_run_trigger", "trigger IN ('migration_load', 'on_demand', 'daily_job')");
+                t.HasCheckConstraint("ck_entitlement_gap_run_trigger", "run_trigger IN ('migration_load', 'on_demand', 'daily_job')");
             });
             b.HasKey(r => new { r.TenantId, r.RunId });
-            b.Property(r => r.Trigger).HasMaxLength(20);
+            b.Property(r => r.RunTrigger).HasMaxLength(20);
             b.HasIndex(r => new { r.TenantId, r.RunAt });
         });
 

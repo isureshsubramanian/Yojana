@@ -12,8 +12,8 @@ using Yojana.Serialisation.Data;
 namespace Yojana.Serialisation.Data.Migrations
 {
     [DbContext(typeof(SerialisationDbContext))]
-    [Migration("20261016213619_EntitlementGapReportIndexes")]
-    partial class EntitlementGapReportIndexes
+    [Migration("20261016214136_EntitlementGapReport")]
+    partial class EntitlementGapReport
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -604,6 +604,33 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(20)")
                         .HasColumnName("provenance");
 
+                    b.Property<bool>("RefurbishedFloorApplied")
+                        .HasColumnType("bit")
+                        .HasColumnName("refurbished_floor_applied");
+
+                    b.Property<int?>("RefurbishedFloorMonths")
+                        .HasColumnType("int")
+                        .HasColumnName("refurbished_floor_months");
+
+                    b.Property<string>("RefurbishedFloorSource")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("refurbished_floor_source");
+
+                    b.Property<string>("RefurbishedMatchedRow")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("refurbished_matched_row");
+
+                    b.Property<string>("RefurbishedStatementKind")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("refurbished_statement_kind");
+
+                    b.Property<Guid?>("RefurbisherPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("refurbisher_party_ref");
+
                     b.Property<string>("RegionScope")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
@@ -873,15 +900,15 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("run_at");
 
-                    b.Property<int>("Total")
-                        .HasColumnType("int")
-                        .HasColumnName("total");
-
-                    b.Property<string>("Trigger")
+                    b.Property<string>("RunTrigger")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)")
-                        .HasColumnName("trigger");
+                        .HasColumnName("run_trigger");
+
+                    b.Property<int>("Total")
+                        .HasColumnType("int")
+                        .HasColumnName("total");
 
                     b.HasKey("TenantId", "RunId")
                         .HasName("pk_entitlement_gap_run");
@@ -895,7 +922,7 @@ namespace Yojana.Serialisation.Data.Migrations
 
                             t.HasCheckConstraint("ck_entitlement_gap_run_filters_json", "ISJSON(filters_json) = 1");
 
-                            t.HasCheckConstraint("ck_entitlement_gap_run_trigger", "trigger IN ('migration_load', 'on_demand', 'daily_job')");
+                            t.HasCheckConstraint("ck_entitlement_gap_run_trigger", "run_trigger IN ('migration_load', 'on_demand', 'daily_job')");
                         });
                 });
 

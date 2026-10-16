@@ -54,40 +54,51 @@ public static class EntitlementGapCsv
 
 public sealed class EntitlementGapQueries(SerialisationDbContext db, ITenantContext tenant)
 {
-    private sealed record Gap(Guid UnitId, string? Serial, Guid ItemId, DateTime SaleDate, Guid CustomerPartyRef,
-        string Channel, bool DropShip, string? RequirementStatus, string? MissingInput);
-    private sealed record PagedGap(Gap Row, int Total);
+    // Built by member initialisation, not a constructor: EF translates filters and ordering on members it assigned itself.
+    private sealed class Gap
+    {
+        public Guid UnitId { get; init; }
+        public string? Serial { get; init; }
+        public Guid ItemId { get; init; }
+        public DateTime SaleDate { get; init; }
+        public Guid CustomerPartyRef { get; init; }
+        public required string Channel { get; init; }
+        public bool DropShip { get; init; }
+        public string? RequirementStatus { get; init; }
+        public string? MissingInput { get; init; }
+    }
 
     public async Task<EntitlementGapPage> PageAsync(EntitlementGapFilters filters, int skip, int take, CancellationToken cancellationToken)
     {
         skip = Math.Max(0, skip); take = Math.Clamp(take, 1, 500);
         var query = ApplyFilters(Query(), filters);
-        // Grouping keeps COUNT and the requested page in one SQL statement; no per-unit query or separate count trip.
-        var grouped = query.GroupBy(_ => 1);
-        var pageQuery = filters.Sort switch
+        // Two statements: the count, then the page. Both are set-based; there is no per-unit query.
+        var total = await query.CountAsync(cancellationToken);
+        IOrderedQueryable<Gap> ordered = filters.Sort switch
         {
-            "sale_date_asc" => grouped.SelectMany(g => g.OrderBy(x => x.SaleDate).ThenBy(x => x.UnitId).Skip(skip).Take(take).Select(x => new PagedGap(x, g.Count()))),
-            "item" => grouped.SelectMany(g => g.OrderBy(x => x.ItemId).ThenByDescending(x => x.SaleDate).ThenBy(x => x.UnitId).Skip(skip).Take(take).Select(x => new PagedGap(x, g.Count()))),
-            "serial" => grouped.SelectMany(g => g.OrderBy(x => x.Serial).ThenBy(x => x.UnitId).Skip(skip).Take(take).Select(x => new PagedGap(x, g.Count()))),
-            "channel" => grouped.SelectMany(g => g.OrderBy(x => x.Channel).ThenByDescending(x => x.SaleDate).ThenBy(x => x.UnitId).Skip(skip).Take(take).Select(x => new PagedGap(x, g.Count()))),
-            _ => grouped.SelectMany(g => g.OrderByDescending(x => x.SaleDate).ThenBy(x => x.UnitId).Skip(skip).Take(take).Select(x => new PagedGap(x, g.Count()))),
+            "sale_date_asc" => query.OrderBy(x => x.SaleDate).ThenBy(x => x.UnitId),
+            "item" => query.OrderBy(x => x.ItemId).ThenByDescending(x => x.SaleDate).ThenBy(x => x.UnitId),
+            "serial" => query.OrderBy(x => x.Serial).ThenBy(x => x.UnitId),
+            "channel" => query.OrderBy(x => x.Channel).ThenByDescending(x => x.SaleDate).ThenBy(x => x.UnitId),
+            _ => query.OrderByDescending(x => x.SaleDate).ThenBy(x => x.UnitId),
         };
-        var page = await pageQuery.ToListAsync(cancellationToken);
-        var rows = page.Select(x => new EntitlementGapRow(x.Row.UnitId, x.Row.Serial, x.Row.ItemId, x.Row.SaleDate,
-            x.Row.CustomerPartyRef, x.Row.Channel, x.Row.DropShip, x.Row.RequirementStatus, x.Row.MissingInput)).ToList();
-        return new(rows, page.FirstOrDefault()?.Total ?? 0, skip, take);
+        var page = await ordered.Skip(skip).Take(take).ToListAsync(cancellationToken);
+        var rows = page.Select(x => new EntitlementGapRow(x.UnitId, x.Serial, x.ItemId, x.SaleDate,
+            x.CustomerPartyRef, x.Channel, x.DropShip, x.RequirementStatus, x.MissingInput)).ToList();
+        return new(rows, total, skip, take);
     }
 
     public async Task<IReadOnlyList<EntitlementGapCount>> CountsAsync(EntitlementGapFilters filters, CancellationToken cancellationToken) =>
-        await ApplyFilters(Query(), filters).GroupBy(x => new { x.ItemId, x.Channel, x.DropShip })
-            .Select(g => new EntitlementGapCount(g.Key.ItemId, g.Key.Channel, g.Key.DropShip, g.Count()))
-            .OrderBy(x => x.ItemId).ThenBy(x => x.Channel).ThenBy(x => x.DropShip).ToListAsync(cancellationToken);
+        (await ApplyFilters(Query(), filters).GroupBy(x => new { x.ItemId, x.Channel, x.DropShip })
+            .Select(g => new { g.Key.ItemId, g.Key.Channel, g.Key.DropShip, Count = g.Count() })
+            .OrderBy(x => x.ItemId).ThenBy(x => x.Channel).ThenBy(x => x.DropShip).ToListAsync(cancellationToken))
+        .Select(x => new EntitlementGapCount(x.ItemId, x.Channel, x.DropShip, x.Count)).ToList();
 
     public async Task<EntitlementGapRunResult?> LastRunAsync(CancellationToken cancellationToken)
     {
         var row = await db.EntitlementGapRuns.AsNoTracking().Where(r => r.TenantId == tenant.TenantId)
             .OrderByDescending(r => r.RunAt).ThenByDescending(r => r.RunId).FirstOrDefaultAsync(cancellationToken);
-        return row is null ? null : new(row.RunId, row.RunAt, row.Trigger, row.Total,
+        return row is null ? null : new(row.RunId, row.RunAt, row.RunTrigger, row.Total,
             JsonSerializer.Deserialize<List<EntitlementGapCount>>(row.CountsJson, LedgerJson.Options) ?? []);
     }
 
@@ -99,7 +110,7 @@ public sealed class EntitlementGapQueries(SerialisationDbContext db, ITenantCont
                join unit in db.Units.AsNoTracking() on new { episode.TenantId, episode.UnitId } equals new { unit.TenantId, unit.UnitId }
                where episode.TenantId == tenantId && episode.Kind == EpisodeKind.Ownership && episode.PartyType == PartyType.Customer && episode.PartyRef != null
                    && !db.Episodes.Any(later => later.TenantId == tenantId && later.UnitId == episode.UnitId && later.Kind == EpisodeKind.Ownership
-                       && later.PartyType == PartyType.Customer && (later.ValidFrom > episode.ValidFrom || later.ValidFrom == episode.ValidFrom && later.EpisodeId.CompareTo(episode.EpisodeId) > 0))
+                       && later.PartyType == PartyType.Customer && later.ValidFrom > episode.ValidFrom)
                    // The ADR says live or expired cover. Void/correction/included-in-error closures never establish valid cover.
                    && !db.Entitlements.Any(e => e.TenantId == tenantId && e.UnitId == episode.UnitId && e.CoverageFamily == CoverageFamilyCode.Base
                        && (e.Status != EntitlementStatus.Closed || e.ClosedReason == EntitlementClosedReason.Expired))
@@ -109,8 +120,11 @@ public sealed class EntitlementGapQueries(SerialisationDbContext db, ITenantCont
                    .OrderByDescending(r => r.RaisedAt).FirstOrDefault()
                let channel = episode.Source ?? episode.OpeningDocumentType ?? "unknown"
                let dropShip = unit.Origin == UnitOrigin.VendorAsn || episode.OpeningDocumentType == BackfillStartBasis.VendorShipConfirmation
-               select new Gap(episode.UnitId, serial, current.ItemId, episode.ValidFrom, episode.PartyRef!.Value, channel, dropShip,
-                   requirement == null ? null : requirement.Status, requirement == null ? null : requirement.MissingInput);
+               select new Gap
+               {
+                   UnitId = episode.UnitId, Serial = serial, ItemId = current.ItemId, SaleDate = episode.ValidFrom, CustomerPartyRef = episode.PartyRef!.Value, Channel = channel, DropShip = dropShip,
+                   RequirementStatus = requirement == null ? null : requirement.Status, MissingInput = requirement == null ? null : requirement.MissingInput,
+               };
     }
 
     private static IQueryable<Gap> ApplyFilters(IQueryable<Gap> query, EntitlementGapFilters filters)
@@ -137,12 +151,12 @@ public static class RunEntitlementGapReportHandler
         var existing = await db.EntitlementGapRuns.AsNoTracking().SingleOrDefaultAsync(r => r.TenantId == tenant.TenantId && r.RunId == command.CommandId, cancellationToken);
         if (existing is not null) return Result(existing);
         var counts = await queries.CountsAsync(command.Filters, cancellationToken);
-        var row = new EntitlementGapRun { TenantId = tenant.TenantId, RunId = command.CommandId, RunAt = clock.UtcNow, Trigger = command.Trigger,
+        var row = new EntitlementGapRun { TenantId = tenant.TenantId, RunId = command.CommandId, RunAt = clock.UtcNow, RunTrigger = command.Trigger,
             FiltersJson = JsonSerializer.Serialize(command.Filters, LedgerJson.Options), Total = counts.Sum(x => x.Count), CountsJson = JsonSerializer.Serialize(counts, LedgerJson.Options) };
         db.EntitlementGapRuns.Add(row);
-        return new(row.RunId, row.RunAt, row.Trigger, row.Total, counts);
+        return new(row.RunId, row.RunAt, row.RunTrigger, row.Total, counts);
     }
 
-    private static EntitlementGapRunResult Result(EntitlementGapRun row) => new(row.RunId, row.RunAt, row.Trigger, row.Total,
+    private static EntitlementGapRunResult Result(EntitlementGapRun row) => new(row.RunId, row.RunAt, row.RunTrigger, row.Total,
         JsonSerializer.Deserialize<List<EntitlementGapCount>>(row.CountsJson, LedgerJson.Options) ?? []);
 }
