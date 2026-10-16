@@ -30,6 +30,41 @@ public sealed class DocumentPostingScaleTests(SerialisationHostFixture fixture)
         return await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<T>(message, new DeliveryOptions { TenantId = tenant.ToString() }, CancellationToken.None);
     }
 
+    private async Task<int> ShipmentStatementsAsync(string prefix, bool requiresCover)
+    {
+        const int n = 500;
+        var tenant = await fixture.NewTenantAsync(prefix);
+        var p = prefix.ToUpperInvariant() + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
+        var item = Guid.NewGuid();
+        if (requiresCover) fixture.Services.GetRequiredService<InMemoryWarrantyPorts>().Register(new ItemWarrantyPolicy(item, CoverageFamilyCode.Base, "NONE-" + p, true));
+        var serials = Enumerable.Range(1, n).Select(i => $"{p}-{i:D4}").ToList();
+        var receipt = new ReceiptDocument(new DocumentRef("receipt", Guid.NewGuid()), Guid.NewGuid(), T0, [new DocumentLine(1, item, n, serials.Select(s => new DocumentSerial(s)).ToList(), Guid.NewGuid(), LocationKind.Warehouse)]);
+        Ports.Add(receipt);
+        await InvokeAsync<ConsumedEventResult>(tenant, new PurchasingReceiptPosted(Env(T0), receipt.Document));
+        var shipment = new ShipmentDocument(new DocumentRef("delivery", Guid.NewGuid()), Guid.NewGuid(), T0.AddDays(1), serials.Select((s, i) => new DocumentLine(i + 1, item, 1, [new DocumentSerial(s)], null, null)).ToList(), Guid.NewGuid(), null);
+        Ports.Add(shipment);
+        Assert.Equal(n, (await InvokeAsync<ConsumedEventResult>(tenant, new SalesShipmentPosted(Env(T0.AddDays(1)), shipment.Document))).UnitsAffected);
+        // ownership opens at delivery (the default trigger), so that is where the requirement rows are written
+        var confirmation = new DeliveryConfirmation(new DocumentRef("pod", Guid.NewGuid()), shipment.Document, T0.AddDays(3), null);
+        Ports.Add(confirmation);
+        var (delivered, statements) = await StatementCounter.CountAsync(() => InvokeAsync<ConsumedEventResult>(tenant, new SalesDeliveryConfirmed(Env(T0.AddDays(3)), confirmation.Document)));
+        Assert.Equal(n, delivered.UnitsAffected);
+        using var scope = fixture.ScopeFor(tenant);
+        Assert.Equal(requiresCover ? n : 0, await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().EntitlementRequirements.CountAsync());
+        return statements;
+    }
+
+    // P2-T13: a sale of an item that requires cover writes one entitlement_requirement row per unit in the delivery posting
+    // transaction (the resolver runs after commit). The rows ride EF's batches; they must not bring back per-unit trips.
+    [DatabaseFact]
+    public async Task Requirement_rows_for_a_500_line_delivery_cost_batched_writes_not_round_trips_per_unit()
+    {
+        var plain = await ShipmentStatementsAsync("dq", requiresCover: false);
+        var required = await ShipmentStatementsAsync("dr", requiresCover: true);
+        // measured 2026-10-17: 39 → 51 statements (twelve 42-row batches)
+        Assert.True(required - plain <= 25, $"requirement rows added {required - plain} statements ({plain} → {required})");
+    }
+
     [DatabaseFact]
     public async Task A_500_line_shipment_and_its_delivery_post_in_a_bounded_number_of_statements()
     {

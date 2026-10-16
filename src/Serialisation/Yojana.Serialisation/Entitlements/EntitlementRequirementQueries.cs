@@ -37,6 +37,8 @@ public sealed class EntitlementRequirementQueries(SerialisationDbContext db, ITe
         return new(rows.Count == 0 && problems.Count == 0, rows, problems);
     }
 
+    internal static EntitlementRequirementRow ToRow(EntitlementRequirement r) => Row(r);
+
     private static EntitlementRequirementRow Row(EntitlementRequirement r) => new(r.RequirementId, r.UnitId, r.OwnershipEpisodeId, r.ItemId,
         r.SourceDocumentId is { } id && r.SourceDocumentType is { } type ? new DocumentRef(type, id, r.SourceDocumentLine) : null,
         r.Status, r.MissingInput, r.Detail, r.RaisedAt, r.ResolvedAt, r.EntitlementId);
@@ -55,7 +57,7 @@ public sealed class EntitlementRequirementSweep(SerialisationDbContext db, ITena
         var tenantId = tenant.TenantId;
         var gaps = await (from e in db.Episodes.AsNoTracking()
                           join c in db.Current.AsNoTracking() on new { e.TenantId, e.UnitId } equals new { c.TenantId, c.UnitId }
-                          where e.TenantId == tenantId && e.Kind == EpisodeKind.Ownership && e.PartyType == PartyType.Customer && e.ValidFrom >= watermark && e.ValidFrom < to
+                          where e.TenantId == tenantId && e.Kind == EpisodeKind.Ownership && e.PartyType == PartyType.Customer && !e.PartyIsGroupMember && e.ValidFrom >= watermark && e.ValidFrom < to
                                 && !db.Entitlements.Any(x => x.TenantId == tenantId && x.UnitId == e.UnitId && x.CoverageFamily == CoverageFamilyCode.Base && x.Status != EntitlementStatus.Closed)
                                 && !db.EntitlementRequirements.Any(x => x.TenantId == tenantId && x.UnitId == e.UnitId && x.OwnershipEpisodeId == e.EpisodeId)
                           select new { Episode = e, c.ItemId }).ToListAsync(cancellationToken);

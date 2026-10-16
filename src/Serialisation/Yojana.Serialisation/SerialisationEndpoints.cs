@@ -147,6 +147,8 @@ public static class SerialisationEndpoints
         });
         entitlements.MapPost("/requirements/{requirementId:guid}/waive", (Guid requirementId, WaiveEntitlementRequirement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<EntitlementRequirementRow>(bus, tenant, command with { RequirementId = requirementId }, ct)).RequireAuthorization(editor);
+        entitlements.MapPost("/requirements/{requirementId:guid}/complete-transfer", (Guid requirementId, CompleteEntitlementTransfer command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<EntitlementRequirementRow>(bus, tenant, command with { RequirementId = requirementId }, ct)).RequireAuthorization(desk);
         entitlements.MapGet("/{entitlementId:guid}/disclosure", async (Guid entitlementId, EntitlementQueries queries, CancellationToken ct) =>
             await queries.DisclosureAsync(entitlementId, ct) is { } disclosure ? Results.Ok(disclosure) : Results.NotFound()).RequireAuthorization(YojanaPolicy.TenantMember);
 

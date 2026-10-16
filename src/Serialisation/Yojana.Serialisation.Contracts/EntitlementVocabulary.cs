@@ -83,6 +83,9 @@ public static class EntitlementMissingInput
     public const string NoStartEvidence = "no_start_evidence";
     public const string SerialsPendingAsn = "serials_pending_asn";
     public const string CreationFailed = "creation_failed";
+    // Resale by the customer (case 45): the policy's transferability decides whether cover follows the unit.
+    public const string TransferRegistrationRequired = "transfer_registration_required";
+    public const string TransferFeeRequired = "transfer_fee_required";
 }
 
 public static class EntitlementClosedReason
@@ -100,6 +103,8 @@ public static class EntitlementClosedReason
     public const string VoidedDocumentCorrection = "voided_document_correction";
     public const string SourceDocumentCorrected = "source_document_corrected";
     public const string IncludedInError = "included_in_error";
+    /// <summary>The unit was resold and the policy does not let cover follow it (case 45).</summary>
+    public const string NotTransferable = "not_transferable";
 }
 
 public static class StartTrigger
@@ -221,4 +226,6 @@ public static class EntitlementEventType
     public const string ExtendedSold = "entitlement.extended_sold";
     public const string Amended = "entitlement.amended";
     public const string Superseded = "entitlement.superseded";
+    /// <summary>The unit was resold and its cover followed it to the new owner (case 45); the previous owner stays in the ledger only.</summary>
+    public const string OwnerTransferred = "entitlement.owner_transferred";
 }
