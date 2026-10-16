@@ -49,7 +49,8 @@ public sealed class EntitlementRequirementQueries(SerialisationDbContext db, ITe
         r.Status, r.MissingInput, r.Detail, r.RaisedAt, r.ResolvedAt, r.EntitlementId);
 }
 
-public sealed class EntitlementRequirementSweep(SerialisationDbContext db, ITenantSettings settings, ITenantContext tenant, IClock clock, IMessageBus bus)
+public sealed class EntitlementRequirementSweep(SerialisationDbContext db, ITenantSettings settings, ITenantContext tenant, IClock clock, IMessageBus bus,
+    EntitlementGapQueries gapQueries)
 {
     internal const string WatermarkKey = "entitlements.requirement-sweep.watermark";
 
@@ -81,6 +82,9 @@ public sealed class EntitlementRequirementSweep(SerialisationDbContext db, ITena
         var retry = await db.EntitlementRequirements.AsNoTracking().Where(r => r.TenantId == tenantId && r.Status == EntitlementRequirementStatus.Exception).Select(r => r.RequirementId).ToListAsync(cancellationToken);
         foreach (var ids in retry.Chunk(500)) await bus.PublishAsync(new ResolveEntitlementRequirements(ids), new DeliveryOptions { TenantId = tenantId.ToString() });
         await settings.SetAsync(WatermarkKey, to.ToString("O"), cancellationToken);
+        await RunEntitlementGapReportHandler.Handle(new RunEntitlementGapReport(TimeOrderedId.New(to), EntitlementGapTrigger.DailyJob, new()),
+            gapQueries, db, tenant, clock, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
     }
 }
 

@@ -420,6 +420,11 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "UnitId", "ValidFrom")
                         .HasDatabaseName("ix_custody_episode_tenant_id_unit_id_valid_from");
 
+                    b.HasIndex("TenantId", "Kind", "PartyType", "ValidFrom")
+                        .HasDatabaseName("ix_custody_episode_tenant_id_kind_party_type_valid_from");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "Kind", "PartyType", "ValidFrom"), new[] { "UnitId", "EpisodeId", "PartyRef", "Source", "OpeningDocumentType" });
+
                     b.HasIndex("TenantId", "PartyRef", "Kind", "ValidTo")
                         .HasDatabaseName("ix_custody_episode_tenant_id_party_ref_kind_valid_to");
 
@@ -760,6 +765,9 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "UnitId", "CreatedAt")
                         .HasDatabaseName("ix_entitlement_tenant_id_unit_id_created_at");
 
+                    b.HasIndex("TenantId", "UnitId", "CoverageFamily", "Status", "ClosedReason")
+                        .HasDatabaseName("ix_entitlement_tenant_id_unit_id_coverage_family_status_closed_reason");
+
                     b.ToTable("entitlement", "serialisation", t =>
                         {
                             t.HasCheckConstraint("ck_entitlement_closed_reason", "(status = 'closed' AND closed_reason IS NOT NULL) OR (status <> 'closed' AND closed_reason IS NULL)");
@@ -863,6 +871,56 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ix_entitlement_amendment_tenant_id_entitlement_id_at");
 
                     b.ToTable("entitlement_amendment", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.EntitlementGapRun", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<string>("CountsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("counts_json");
+
+                    b.Property<string>("FiltersJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("filters_json");
+
+                    b.Property<DateTime>("RunAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("run_at");
+
+                    b.Property<int>("Total")
+                        .HasColumnType("int")
+                        .HasColumnName("total");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("trigger");
+
+                    b.HasKey("TenantId", "RunId")
+                        .HasName("pk_entitlement_gap_run");
+
+                    b.HasIndex("TenantId", "RunAt")
+                        .HasDatabaseName("ix_entitlement_gap_run_tenant_id_run_at");
+
+                    b.ToTable("entitlement_gap_run", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_entitlement_gap_run_counts_json", "ISJSON(counts_json) = 1");
+
+                            t.HasCheckConstraint("ck_entitlement_gap_run_filters_json", "ISJSON(filters_json) = 1");
+
+                            t.HasCheckConstraint("ck_entitlement_gap_run_trigger", "trigger IN ('migration_load', 'on_demand', 'daily_job')");
+                        });
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.EntitlementRebase", b =>
