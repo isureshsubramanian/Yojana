@@ -13,4 +13,7 @@ public sealed class DocumentOptions
 
     /// <summary>True when a delivery confirmation follows the shipment; false moves custody straight to the customer site on shipment.</summary>
     public bool ConfirmDeliverySeparately { get; set; } = true;
+
+    /// <summary>Documents that append at least this many events write them through the bulk path (P1-T26) instead of SaveChanges batches.</summary>
+    public int BulkWriteThreshold { get; set; } = 100;
 }

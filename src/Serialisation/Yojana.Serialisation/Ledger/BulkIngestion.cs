@@ -2,6 +2,7 @@ using System.Data;
 using System.Globalization;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
 using Wolverine;
 using Yojana.Platform.Contracts.Identifiers;
@@ -199,6 +200,100 @@ public sealed class BulkIngestion(SerialisationDbContext db, ITenantContext tena
             eventsInserted == 0 ? null : firstSeq, eventsInserted == 0 ? null : seq - 1);
     }
 
+    /// <summary>What <see cref="FlushTrackedAsync"/> wrote; zero everywhere when it left the unit of work to SaveChanges.</summary>
+    public sealed record FlushResult(int Events, int EpisodesOpened, int EpisodesClosed, int CurrentUpdated);
+
+    private static readonly HashSet<string> ClosingProperties =
+        [nameof(CustodyEpisode.ValidTo), nameof(CustodyEpisode.ClosingEventId), nameof(CustodyEpisode.ClosingDocumentType), nameof(CustodyEpisode.ClosingDocumentId), nameof(CustodyEpisode.ClosingDocumentLine)];
+
+    /// <summary>
+    /// The bulk write path for documents (P1-T26). A document handler prepares its moves through the per-unit rules
+    /// (<see cref="Commands.EpisodeService"/>, <see cref="IUnitEventWriter"/>), which leave new events, new episodes,
+    /// episode closures and <c>unit_current</c> changes tracked by the DbContext. EF Core would send those as batches of
+    /// 42 rows each, and on a large ledger each batch costs 100–230 ms of server time. This writes the same rows from
+    /// staging in one statement per table, with the same guards: the closures only close rows still open, the current
+    /// rows only update where the <c>rowversion</c> is the one read (a race fails with
+    /// <see cref="DbUpdateConcurrencyException"/>, as SaveChanges would). The written entries are then marked unchanged,
+    /// so SaveChanges sends only what is left (outbox messages, pending lines); later changes to them are tracked as usual.
+    /// Must run inside the document's transaction, after its last append.
+    /// </summary>
+    public async Task<FlushResult> FlushTrackedAsync(CancellationToken cancellationToken)
+    {
+        var tracker = db.ChangeTracker;
+        var events = tracker.Entries<UnitEvent>().Where(e => e.State == EntityState.Added).ToList();
+        if (events.Count == 0)
+        {
+            return new FlushResult(0, 0, 0, 0);
+        }
+
+        var opened = tracker.Entries<CustodyEpisode>().Where(e => e.State == EntityState.Added).ToList();
+        // a closure only: anything else changed on an episode is left to SaveChanges, which knows how to write it
+        var closed = tracker.Entries<CustodyEpisode>().Where(e => e.State == EntityState.Modified && e.Properties.Where(p => p.IsModified).All(p => ClosingProperties.Contains(p.Metadata.Name))).ToList();
+        var current = tracker.Entries<UnitCurrent>().Where(e => e.State == EntityState.Modified).ToList();
+
+        await using var session = await SessionAsync(cancellationToken);
+        await session.ExecuteAsync(StagingDdl + FlushDdl, cancellationToken);
+        await session.BulkCopyAsync("#ev", EventTable(events.Select(e => e.Entity)), cancellationToken);
+        await session.BulkCopyAsync("#ep", EpisodeTable(opened.Select(e => e.Entity)), cancellationToken);
+        await session.BulkCopyAsync("#close", CloseTable(closed.Select(e => e.Entity)), cancellationToken);
+        await session.BulkCopyAsync("#curv", CurrentVersionTable(current.Select(e => (e.Entity, (byte[])e.OriginalValues[nameof(UnitCurrent.RowVersion)]!))), cancellationToken);
+
+        // Closures before openings: the filtered unique index allows one open row per (unit, kind) at any moment.
+        await using var command = session.Command($"""
+            INSERT INTO [{S}].[unit_event] ({EventColumns}) SELECT {EventColumns} FROM #ev;
+            UPDATE e SET valid_to = c.valid_to, closing_event_id = c.closing_event_id, closing_document_type = c.closing_document_type, closing_document_id = c.closing_document_id, closing_document_line = c.closing_document_line
+            FROM [{S}].[custody_episode] e JOIN #close c ON e.tenant_id = c.tenant_id AND e.episode_id = c.episode_id
+            WHERE e.valid_to IS NULL;
+            DECLARE @closed int = @@ROWCOUNT;
+            INSERT INTO [{S}].[custody_episode] ({EpisodeColumns}) SELECT {EpisodeColumns} FROM #ep;
+            UPDATE t SET
+                item_id = s.item_id, model_version_id = s.model_version_id, lot_id = s.lot_id, lifecycle_status = s.lifecycle_status, disposition = s.disposition,
+                condition_grade = s.condition_grade, location_id = s.location_id, location_kind = s.location_kind, custody_party_ref = s.custody_party_ref, custody_kind = s.custody_kind,
+                owner_party_ref = s.owner_party_ref, open_ownership_episode_id = s.open_ownership_episode_id, open_custody_episode_id = s.open_custody_episode_id,
+                live_entitlement_ids = s.live_entitlement_ids, warranty_end_max = s.warranty_end_max, overlay_flags = s.overlay_flags,
+                last_event_seq = s.last_event_seq, last_event_time = s.last_event_time, attributes = s.attributes
+            OUTPUT inserted.unit_id, inserted.row_version
+            FROM [{S}].[unit_current] t JOIN #curv s ON t.tenant_id = s.tenant_id AND t.unit_id = s.unit_id AND t.row_version = s.row_version;
+            SELECT @closed;
+            """);
+        var versions = new Dictionary<Guid, byte[]>();
+        var closedCount = 0;
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                versions[reader.GetGuid(0)] = (byte[])reader[1];
+            }
+
+            await reader.NextResultAsync(cancellationToken);
+            await reader.ReadAsync(cancellationToken);
+            closedCount = reader.GetInt32(0);
+        }
+
+        if (closedCount != closed.Count)
+        {
+            throw new DbUpdateConcurrencyException($"{closed.Count - closedCount} of {closed.Count} custody episodes were closed by another unit of work.");
+        }
+
+        if (versions.Count != current.Count)
+        {
+            throw new DbUpdateConcurrencyException($"{current.Count - versions.Count} of {current.Count} current rows changed since they were read.");
+        }
+
+        foreach (var entry in current)
+        {
+            entry.Entity.RowVersion = versions[entry.Entity.UnitId];
+        }
+
+        foreach (var entry in events.Cast<EntityEntry>().Concat(opened).Concat(closed).Concat(current))
+        {
+            entry.OriginalValues.SetValues(entry.CurrentValues);
+            entry.State = EntityState.Unchanged;
+        }
+
+        return new FlushResult(events.Count, opened.Count, closed.Count, current.Count);
+    }
+
     private static UnitCurrent Clone(UnitCurrent c) => new()
     {
         TenantId = c.TenantId, UnitId = c.UnitId, ItemId = c.ItemId, ModelVersionId = c.ModelVersionId, LotId = c.LotId, LifecycleStatus = c.LifecycleStatus, Disposition = c.Disposition,
@@ -324,7 +419,7 @@ public sealed class BulkIngestion(SerialisationDbContext db, ITenantContext tena
             else
             {
                 // Inside the caller's transaction the temp tables must not leak into its next statement batch.
-                try { await ExecuteAsync("DROP TABLE IF EXISTS #ev, #unit, #ident, #assign, #ep, #cur, #inserted, #ids;", CancellationToken.None); } catch (SqlException) { }
+                try { await ExecuteAsync("DROP TABLE IF EXISTS #ev, #unit, #ident, #assign, #ep, #cur, #inserted, #ids, #close, #curv;", CancellationToken.None); } catch (SqlException) { }
             }
         }
     }
@@ -347,6 +442,12 @@ public sealed class BulkIngestion(SerialisationDbContext db, ITenantContext tena
         CREATE TABLE #ep (tenant_id uniqueidentifier NOT NULL, episode_id uniqueidentifier NOT NULL, unit_id uniqueidentifier NOT NULL, kind nvarchar(20) NOT NULL, party_ref uniqueidentifier NULL, party_type nvarchar(30) NULL, legal_entity_id uniqueidentifier NULL, location_id uniqueidentifier NULL, location_kind nvarchar(30) NULL, reason nvarchar(40) NULL, due_back date NULL, source nvarchar(40) NULL, confidence nvarchar(20) NULL, valid_from datetime2(3) NOT NULL, valid_to datetime2(3) NULL, opening_document_type nvarchar(40) NULL, opening_document_id uniqueidentifier NULL, opening_document_line int NULL, opening_event_id uniqueidentifier NOT NULL, closing_document_type nvarchar(40) NULL, closing_document_id uniqueidentifier NULL, closing_document_line int NULL, closing_event_id uniqueidentifier NULL, party_is_group_member bit NOT NULL, external_order_ref nvarchar(100) NULL, customer_po_ref nvarchar(100) NULL, customer_item_ref nvarchar(100) NULL);
         CREATE TABLE #cur (tenant_id uniqueidentifier NOT NULL, unit_id uniqueidentifier NOT NULL, item_id uniqueidentifier NOT NULL, model_version_id uniqueidentifier NULL, lot_id uniqueidentifier NULL, lifecycle_status nvarchar(40) NOT NULL, disposition nvarchar(40) NOT NULL, condition_grade nvarchar(40) NULL, location_id uniqueidentifier NULL, location_kind nvarchar(30) NULL, custody_party_ref uniqueidentifier NULL, custody_kind nvarchar(20) NULL, owner_party_ref uniqueidentifier NULL, open_ownership_episode_id uniqueidentifier NULL, open_custody_episode_id uniqueidentifier NULL, live_entitlement_ids nvarchar(max) NOT NULL, warranty_end_max date NULL, overlay_flags nvarchar(max) NOT NULL, last_event_seq bigint NOT NULL, last_event_time datetime2(3) NOT NULL, attributes nvarchar(max) NULL);
         CREATE TABLE #inserted (event_id uniqueidentifier NOT NULL PRIMARY KEY);
+        """;
+
+    // FlushTrackedAsync: an episode closure, and a current row with the rowversion it was read at.
+    private const string FlushDdl = """
+        CREATE TABLE #close (tenant_id uniqueidentifier NOT NULL, episode_id uniqueidentifier NOT NULL, valid_to datetime2(3) NOT NULL, closing_event_id uniqueidentifier NULL, closing_document_type nvarchar(40) NULL, closing_document_id uniqueidentifier NULL, closing_document_line int NULL, PRIMARY KEY (tenant_id, episode_id));
+        CREATE TABLE #curv (tenant_id uniqueidentifier NOT NULL, unit_id uniqueidentifier NOT NULL, item_id uniqueidentifier NOT NULL, model_version_id uniqueidentifier NULL, lot_id uniqueidentifier NULL, lifecycle_status nvarchar(40) NOT NULL, disposition nvarchar(40) NOT NULL, condition_grade nvarchar(40) NULL, location_id uniqueidentifier NULL, location_kind nvarchar(30) NULL, custody_party_ref uniqueidentifier NULL, custody_kind nvarchar(20) NULL, owner_party_ref uniqueidentifier NULL, open_ownership_episode_id uniqueidentifier NULL, open_custody_episode_id uniqueidentifier NULL, live_entitlement_ids nvarchar(max) NOT NULL, warranty_end_max date NULL, overlay_flags nvarchar(max) NOT NULL, last_event_seq bigint NOT NULL, last_event_time datetime2(3) NOT NULL, attributes nvarchar(max) NULL, row_version binary(8) NOT NULL, PRIMARY KEY (tenant_id, unit_id));
         """;
 
     private static DataTable Table(params (string Name, Type Type)[] columns)
@@ -416,6 +517,30 @@ public sealed class BulkIngestion(SerialisationDbContext db, ITenantContext tena
         foreach (var e in rows)
         {
             t.Rows.Add(e.TenantId.Value, e.EpisodeId, e.UnitId, e.Kind, V(e.PartyRef), V(e.PartyType), V(e.LegalEntityId), V(e.LocationId), V(e.LocationKind), V(e.Reason), D(e.DueBack), V(e.Source), V(e.Confidence), e.ValidFrom, V(e.ValidTo), V(e.OpeningDocumentType), V(e.OpeningDocumentId), V(e.OpeningDocumentLine), e.OpeningEventId, V(e.ClosingDocumentType), V(e.ClosingDocumentId), V(e.ClosingDocumentLine), V(e.ClosingEventId), e.PartyIsGroupMember, V(e.ExternalOrderRef), V(e.CustomerPoRef), V(e.CustomerItemRef));
+        }
+
+        return t;
+    }
+
+    private static DataTable CloseTable(IEnumerable<CustodyEpisode> rows)
+    {
+        var t = Table(("tenant_id", typeof(Guid)), ("episode_id", typeof(Guid)), ("valid_to", typeof(DateTime)), ("closing_event_id", typeof(Guid)), ("closing_document_type", typeof(string)), ("closing_document_id", typeof(Guid)), ("closing_document_line", typeof(int)));
+        foreach (var e in rows)
+        {
+            t.Rows.Add(e.TenantId.Value, e.EpisodeId, e.ValidTo!.Value, V(e.ClosingEventId), V(e.ClosingDocumentType), V(e.ClosingDocumentId), V(e.ClosingDocumentLine));
+        }
+
+        return t;
+    }
+
+    private static DataTable CurrentVersionTable(IEnumerable<(UnitCurrent Row, byte[] RowVersion)> rows)
+    {
+        var t = CurrentTable(rows.Select(r => r.Row));
+        t.Columns.Add("row_version", typeof(byte[]));
+        var i = 0;
+        foreach (var (_, version) in rows)
+        {
+            t.Rows[i++]["row_version"] = version;
         }
 
         return t;

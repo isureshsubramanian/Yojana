@@ -18,6 +18,7 @@ public sealed class DocumentContext(
 {
     public SerialisationDbContext Db => db;
     public IUnitEventWriter Writer => writer;
+    public BulkIngestion Bulk => bulk;
     public ITenantContext Tenant => tenant;
     public IClock Clock => clock;
     public EpisodeService Episodes => episodes;

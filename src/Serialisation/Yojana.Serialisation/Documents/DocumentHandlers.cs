@@ -86,9 +86,16 @@ internal static class Documents
         return new Guid(hash.AsSpan(0, 16));
     }
 
+    /// <summary>A large document's rows go through the bulk write path (P1-T26); a small one is cheaper through SaveChanges.</summary>
+    public static async Task FlushIfLargeAsync(DocumentContext ctx, AppendResult appended, CancellationToken ct)
+    {
+        if (appended.Written.Count >= ctx.Options.BulkWriteThreshold) await ctx.Bulk.FlushTrackedAsync(ct);
+    }
+
     public static async Task<ConsumedEventResult> ReportAsync(DocumentContext ctx, string eventType, DocumentRef? doc, List<UnitEventDraft> drafts, List<string> exceptions, int pending, CancellationToken ct)
     {
         var appended = drafts.Count == 0 ? new AppendResult([], []) : await ctx.Writer.AppendAsync(drafts, ct);
+        await FlushIfLargeAsync(ctx, appended, ct);
         return new ConsumedEventResult(eventType, doc, appended.Written.Select(e => e.UnitId).Distinct().Count(), pending, exceptions, drafts.Count > 0 && appended.Written.Count == 0);
     }
 }
@@ -544,7 +551,7 @@ public static class ConfirmShipmentSerialsHandler
             if (drafts.Count > before) shipped++;
         }
 
-        if (drafts.Count > 0) await ctx.Writer.AppendAsync(drafts, ct);
+        if (drafts.Count > 0) await Documents.FlushIfLargeAsync(ctx, await ctx.Writer.AppendAsync(drafts, ct), ct);
         pending.ResolvedCount += shipped;
         if (pending.ResolvedCount >= pending.Quantity)
         {
