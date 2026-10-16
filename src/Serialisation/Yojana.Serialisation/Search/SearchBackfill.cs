@@ -34,13 +34,26 @@ public sealed class SearchBackfill(SerialisationDbContext db, ITenantContext ten
                 .OrderBy(u => u.UnitId).Select(u => u.UnitId).Take(batchSize).ToArrayAsync(cancellationToken);
             if (ids.Length == 0) break;
             after = ids[^1];
-            await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+            await ReindexUnitsAsync(ids, cancellationToken);
+            count += ids.Length;
+            batches++;
+        }
+        return new SearchBackfillResult(count, batches, started.Elapsed);
+    }
+
+    /// <summary>Replaces an explicit unit set with the same staged, set-based path used by the full backfill.</summary>
+    public async Task ReindexUnitsAsync(IReadOnlyCollection<Guid> unitIds, CancellationToken cancellationToken)
+    {
+        foreach (var ids in unitIds.Distinct().Order().Chunk(DefaultBatchSize))
+        {
+            var ownTransaction = db.Database.CurrentTransaction is null;
+            await using var transactionScope = ownTransaction ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
             // SearchIndexer holds the same tenant gate in Shared mode while writing. Exclusive here covers the
             // source read, delete and insert, so a live handler cannot write stale rows into this batch.
             await LockTenantAsync(db, tenant.TenantId, "Exclusive", cancellationToken);
-            var drafts = await indexer.BuildUnitDraftsAsync(ids, batchSize, cancellationToken);
+            var drafts = await indexer.BuildUnitDraftsAsync(ids, ids.Length, cancellationToken);
             var connection = (SqlConnection)db.Database.GetDbConnection();
-            var transaction = (SqlTransaction)tx.GetDbTransaction();
+            var transaction = (SqlTransaction)db.Database.CurrentTransaction!.GetDbTransaction();
             await ExecuteAsync(connection, transaction, "DROP TABLE IF EXISTS #entry, #term; CREATE TABLE #entry (tenant_id uniqueidentifier, entity_type nvarchar(40), entity_id uniqueidentifier, entry_id uniqueidentifier, title nvarchar(200), title_mono bit, subtitle nvarchar(400), search_text nvarchar(max), type_weight int, updated_at datetime2, metadata nvarchar(max), href nvarchar(200)); CREATE TABLE #term (tenant_id uniqueidentifier, term nvarchar(200), entity_type nvarchar(40), entity_id uniqueidentifier, kind nvarchar(20), detail nvarchar(60));", cancellationToken);
             var entries = Table(("tenant_id", typeof(Guid)), ("entity_type", typeof(string)), ("entity_id", typeof(Guid)), ("entry_id", typeof(Guid)), ("title", typeof(string)), ("title_mono", typeof(bool)), ("subtitle", typeof(string)), ("search_text", typeof(string)), ("type_weight", typeof(int)), ("updated_at", typeof(DateTime)), ("metadata", typeof(string)), ("href", typeof(string)));
             var terms = Table(("tenant_id", typeof(Guid)), ("term", typeof(string)), ("entity_type", typeof(string)), ("entity_id", typeof(Guid)), ("kind", typeof(string)), ("detail", typeof(string)));
@@ -55,11 +68,9 @@ public sealed class SearchBackfill(SerialisationDbContext db, ITenantContext ten
             await BulkAsync(connection, transaction, "#term", terms, cancellationToken);
             // Both predicates carry tenant and type; the joined ids only restrict the batch inside that key space.
             await ExecuteAsync(connection, transaction, "DELETE t FROM serialisation.search_term t JOIN #entry e ON e.tenant_id=t.tenant_id AND e.entity_type=t.entity_type AND e.entity_id=t.entity_id WHERE t.tenant_id=@tenant AND t.entity_type=N'unit'; DELETE s FROM serialisation.search_entry s JOIN #entry e ON e.tenant_id=s.tenant_id AND e.entity_type=s.entity_type AND e.entity_id=s.entity_id WHERE s.tenant_id=@tenant AND s.entity_type=N'unit'; INSERT serialisation.search_entry (tenant_id,entity_type,entity_id,entry_id,title,title_mono,subtitle,search_text,type_weight,updated_at,metadata,href) SELECT tenant_id,entity_type,entity_id,entry_id,title,title_mono,subtitle,search_text,type_weight,updated_at,metadata,href FROM #entry; INSERT serialisation.search_term (tenant_id,term,entity_type,entity_id,kind,detail) SELECT tenant_id,term,entity_type,entity_id,kind,detail FROM #term;", cancellationToken, tenant.TenantId.Value);
-            await tx.CommitAsync(cancellationToken);
-            count += ids.Length;
-            batches++;
+            await ExecuteAsync(connection, transaction, "DROP TABLE #entry, #term;", cancellationToken);
+            if (transactionScope is not null) await transactionScope.CommitAsync(cancellationToken);
         }
-        return new SearchBackfillResult(count, batches, started.Elapsed);
     }
 
     internal static async Task LockTenantAsync(SerialisationDbContext db, TenantId tenantId, string mode, CancellationToken cancellationToken)

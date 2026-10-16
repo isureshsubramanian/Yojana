@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Wolverine;
 using Yojana.Platform.Scheduling;
 using Yojana.Platform;
 using Yojana.Serialisation.Commands;
@@ -68,6 +69,14 @@ public static class SerialisationModule
         builder.Services.AddScoped<SearchMetadataProfiles>();
         builder.Services.AddScoped<SearchQueries>();
         builder.Services.AddScoped<IBulkOperation, ReleaseUnitsOperation>();
+        var search = builder.Configuration.GetSection(SearchIndexOptions.SectionName).Get<SearchIndexOptions>() ?? new SearchIndexOptions();
+        if (search.MaximumParallelReindexMessages < 1) throw new InvalidOperationException($"{SearchIndexOptions.SectionName}:MaximumParallelReindexMessages must be at least 1.");
+        builder.Services.AddSingleton(search);
+        builder.Services.ConfigureWolverine(options =>
+        {
+            options.PublishMessage<SearchReindexRequested>().ToLocalQueue(SearchIndexOptions.ReindexQueueName);
+            options.LocalQueue(SearchIndexOptions.ReindexQueueName).UseDurableInbox().MaximumParallelMessages(search.MaximumParallelReindexMessages);
+        });
 
         // Document handlers (P1-T15): thin consumed events, documents through the publisher's query ports; in-memory
         // ports stand in until a connector (P8) or an in-house module (P12) registers the real ones.
