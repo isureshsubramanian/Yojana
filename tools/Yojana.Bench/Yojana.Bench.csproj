@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AnalysisLevel>none</AnalysisLevel>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- P1-T21 storage benchmark (ADR-0001 AI 1, 53): loads the reference layout at scale on a named SQL Server and measures the SLO table. Never shipped. -->
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Platform/Yojana.Platform/Yojana.Platform.csproj" />
+    <ProjectReference Include="../../src/Serialisation/Yojana.Serialisation/Yojana.Serialisation.csproj" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+  </ItemGroup>
+</Project>
