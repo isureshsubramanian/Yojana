@@ -45,6 +45,7 @@ public static partial class PolicyValidator
         if (d.Unit is not (DurationRule.Months or DurationRule.Days)) Error("duration_unit_unknown", "duration", $"Unit '{d.Unit}' is not months or days.");
         if (d.EndOfMonth is not (DurationRule.Clamp or DurationRule.Roll)) Error("end_of_month_unknown", "duration", $"End-of-month rule '{d.EndOfMonth}' is not clamp or roll.");
         if (d.Unit == DurationRule.Days && d.EndOfMonth == DurationRule.Roll) Warn("end_of_month_unused", "duration", "A term in days never meets the end-of-month rule.");
+        else if (d.EndOfMonth == DurationRule.Roll) Warn("end_of_month_roll", "duration", "Roll is not monotonic: a unit started on 31 January ends after one started on 1 February. Clamp avoids it.");
 
         if (terms.DurationBasis is not (DurationBasis.Time or DurationBasis.Usage or DurationBasis.Both)) Error("duration_basis_unknown", "duration_basis", $"Duration basis '{terms.DurationBasis}' is not time, usage or both.");
         else if (terms.DurationBasis != DurationBasis.Time && terms.UsageLimits.Count == 0) Error("usage_limit_missing", "usage_limits", "A usage-based term needs at least one usage limit.");

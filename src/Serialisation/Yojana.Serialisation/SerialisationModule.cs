@@ -57,6 +57,7 @@ public static class SerialisationModule
         // Warranty policies (MOD-06, P2-T03).
         builder.Services.AddScoped<Entitlements.PolicyStore>();
         builder.Services.AddScoped<Entitlements.PolicyQueries>();
+        builder.Services.AddScoped<Entitlements.PolicyResolver>();
 
         builder.Services.AddScoped<SearchIndexer>();
         builder.Services.AddScoped<SearchBackfill>();
@@ -81,6 +82,10 @@ public static class SerialisationModule
         builder.Services.AddSingleton<InMemoryItemPorts>();
         builder.Services.TryAddSingleton<IItemQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());
         builder.Services.TryAddSingleton<IBomQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());
+        builder.Services.AddSingleton<InMemoryWarrantyPorts>();
+        builder.Services.TryAddSingleton<IItemPolicyPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
+        builder.Services.TryAddSingleton<ICustomerContractPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
+        builder.Services.TryAddSingleton<ITimeZonePort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
 
         // Replay-and-diff healer (P1-T05): per tenant, nightly, through the platform's recurring tenant jobs.
         builder.Services.AddScoped<UnitCurrentHealer>();

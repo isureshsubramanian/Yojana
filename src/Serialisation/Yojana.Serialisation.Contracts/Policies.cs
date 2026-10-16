@@ -89,3 +89,22 @@ public sealed record PolicySummary(string PolicyCode, string Name, string Covera
 public sealed record PolicyVersionRow(Guid PolicyVersionId, int Version, DateOnly AppliesToContractsFrom, string Status, string RuleVersion, long LiveEntitlements, DateTime CreatedAt, string CreatedBy, DateTime? PublishedAt, string? PublishedBy);
 
 public sealed record PolicyVersionDetail(Guid PolicyVersionId, string PolicyCode, int Version, string Name, string CoverageFamily, string EntitlementType, DateOnly AppliesToContractsFrom, string Status, string RuleVersion, PolicyTerms Terms, PolicyValidation Validation);
+
+/// <summary>Where the policy stack stopped (ADR-0001 "Policy stack and resolution order").</summary>
+public static class PolicyLevel
+{
+    public const string UnitEntitlement = "unit_entitlement";
+    public const string ParentEntitlement = "parent_entitlement";
+    public const string CustomerContract = "customer_contract";
+    public const string ProductPolicy = "product_policy";
+    public const string None = "none";
+}
+
+/// <summary>What the stack is asked: the unit, its item and family, the contract date, the owner, and the sale's condition, channel and country.</summary>
+public sealed record PolicyQuestion(Guid UnitId, Guid ItemId, string CoverageFamily, DateOnly ContractDate, Guid? OwnerPartyRef = null, string? ConditionGrade = null, string? Channel = null, string? Country = null);
+
+/// <summary>
+/// The answer: the level that matched, the entitlement or policy version it names, and the trail of every level asked, so
+/// adjudication and the exception queue can say why. <see cref="OutOfRegion"/> is set, not skipped: routing is the policy's call (case 63).
+/// </summary>
+public sealed record PolicyResolution(string Level, Guid? EntitlementId, Guid? PolicyVersionId, string? PolicyCode, int? Version, string? ContractRef, bool OutOfRegion, IReadOnlyList<string> Trail);
