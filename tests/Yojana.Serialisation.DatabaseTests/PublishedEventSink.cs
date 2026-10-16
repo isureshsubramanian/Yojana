@@ -1,0 +1,36 @@
+using System.Collections.Concurrent;
+using Yojana.Serialisation.Contracts;
+
+namespace Yojana.Serialisation.DatabaseTests;
+
+/// <summary>Test-side consumer of the module's published events: proves they leave through the outbox after commit.</summary>
+public static class PublishedEventSink
+{
+    public static readonly ConcurrentQueue<IPublishedUnitEvent> Received = new();
+
+    public static Task<IReadOnlyList<T>> WaitForAsync<T>(Func<T, bool> match, int count, TimeSpan timeout) where T : IPublishedUnitEvent
+    {
+        return Task.Run(async () =>
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < deadline)
+            {
+                var hits = Received.OfType<T>().Where(match).ToList();
+                if (hits.Count >= count) return (IReadOnlyList<T>)hits;
+                await Task.Delay(100);
+            }
+
+            return (IReadOnlyList<T>)Received.OfType<T>().Where(match).ToList();
+        });
+    }
+}
+
+public static class PublishedEventSinkHandler
+{
+    public static void Handle(UnitCommissioned e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(UnitReleased e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(UnitIdentifierCorrected e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(OwnershipOpened e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(OwnershipClosed e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(CustodyChanged e) => PublishedEventSink.Received.Enqueue(e);
+}

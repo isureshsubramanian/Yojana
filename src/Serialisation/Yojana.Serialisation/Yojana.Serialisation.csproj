@@ -2,5 +2,9 @@
   <ItemGroup>
     <ProjectReference Include="../Yojana.Serialisation.Contracts/Yojana.Serialisation.Contracts.csproj" />
     <ProjectReference Include="../../Platform/Yojana.Platform/Yojana.Platform.csproj" />
+    <!-- GS1 AI validating parser (Apache-2.0; licence recorded in tools/gates/licence-policy.json, notices regenerated in the same change). -->
+    <PackageReference Include="Solidsoft.Reply.Parsers.Gs1Ai" />
+    <!-- Minimal-API endpoints of the module's read models (the host maps them). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 </Project>

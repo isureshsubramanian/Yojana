@@ -1,0 +1,190 @@
+{
+  "name": "reference-scenario-steps-0-1",
+  "description": "ADR-0001 reference scenario, steps 0 and 1: components received, S1 built and released at Leeds, sold and delivered to customer A. Serials use the {p} run prefix so the scenario replays on a persisted database.",
+  "documents": {
+    "receipts": [
+      {
+        "document": {
+          "type": "receipt",
+          "id": "55555555-0000-0000-0000-00000000e001"
+        },
+        "vendorPartyRef": "33333333-0000-0000-0000-00000000c002",
+        "postedAt": "2025-03-05T09:00:00Z",
+        "lines": [
+          {
+            "lineNo": 1,
+            "itemId": "11111111-0000-0000-0000-00000000a002",
+            "quantity": 1,
+            "serials": [
+              {
+                "value": "{p}-PCB-11209"
+              }
+            ],
+            "locationId": "22222222-0000-0000-0000-00000000b001",
+            "locationKind": "warehouse"
+          }
+        ]
+      }
+    ],
+    "productionReceipts": [
+      {
+        "document": {
+          "type": "production_receipt",
+          "id": "55555555-0000-0000-0000-00000000e003"
+        },
+        "productionOrder": {
+          "type": "production_order",
+          "id": "55555555-0000-0000-0000-00000000e002"
+        },
+        "postedAt": "2025-03-06T08:02:00Z",
+        "produced": [
+          {
+            "lineNo": 1,
+            "itemId": "11111111-0000-0000-0000-00000000a001",
+            "quantity": 1,
+            "serials": [
+              {
+                "value": "{p}-493445"
+              }
+            ],
+            "locationId": "22222222-0000-0000-0000-00000000b001",
+            "locationKind": "warehouse"
+          }
+        ],
+        "components": [
+          {
+            "lineNo": 10,
+            "componentItemId": "11111111-0000-0000-0000-00000000a002",
+            "quantity": 1,
+            "serials": [
+              {
+                "value": "{p}-PCB-11209"
+              }
+            ],
+            "parentSerial": "{p}-493445",
+            "slot": "A1"
+          }
+        ],
+        "facilityId": "22222222-0000-0000-0000-00000000b001"
+      }
+    ],
+    "shipments": [
+      {
+        "document": {
+          "type": "delivery",
+          "id": "55555555-0000-0000-0000-00000000e004"
+        },
+        "customerPartyRef": "33333333-0000-0000-0000-00000000c001",
+        "postedAt": "2025-03-13T11:50:00Z",
+        "lines": [
+          {
+            "lineNo": 1,
+            "itemId": "11111111-0000-0000-0000-00000000a001",
+            "quantity": 1,
+            "serials": [
+              {
+                "value": "{p}-493445"
+              }
+            ]
+          }
+        ],
+        "shipToLocationId": "22222222-0000-0000-0000-00000000b002",
+        "carrierPartyRef": "33333333-0000-0000-0000-00000000c003",
+        "customerPoRef": "OAK-1190"
+      }
+    ],
+    "deliveryConfirmations": [
+      {
+        "document": {
+          "type": "pod",
+          "id": "55555555-0000-0000-0000-00000000e005"
+        },
+        "shipment": {
+          "type": "delivery",
+          "id": "55555555-0000-0000-0000-00000000e004"
+        },
+        "deliveredAt": "2025-03-14T11:05:00Z",
+        "shipToLocationId": "22222222-0000-0000-0000-00000000b002"
+      }
+    ]
+  },
+  "messages": [
+    {
+      "type": "Purchasing.ReceiptPosted",
+      "envelope": {
+        "messageId": "66666666-0000-0000-0000-00000000f001",
+        "legalEntityId": "44444444-0000-0000-0000-00000000d001",
+        "occurredAt": "2025-03-05T09:00:00Z",
+        "source": "cx01-recorded"
+      },
+      "document": {
+        "type": "receipt",
+        "id": "55555555-0000-0000-0000-00000000e001"
+      }
+    },
+    {
+      "type": "Manufacturing.ProductionReceiptPosted",
+      "envelope": {
+        "messageId": "66666666-0000-0000-0000-00000000f002",
+        "legalEntityId": "44444444-0000-0000-0000-00000000d001",
+        "occurredAt": "2025-03-06T08:02:00Z",
+        "source": "cx01-recorded"
+      },
+      "document": {
+        "type": "production_receipt",
+        "id": "55555555-0000-0000-0000-00000000e003"
+      }
+    },
+    {
+      "type": "ReleaseUnit",
+      "serial": "{p}-493445",
+      "eventTime": "2025-03-10T15:20:00Z",
+      "actorRef": "q.mahler",
+      "legalEntityId": "44444444-0000-0000-0000-00000000d001",
+      "releaseSignatureRef": "sig:q.mahler:2025-03-10"
+    },
+    {
+      "type": "Sales.ShipmentPosted",
+      "envelope": {
+        "messageId": "66666666-0000-0000-0000-00000000f003",
+        "legalEntityId": "44444444-0000-0000-0000-00000000d001",
+        "occurredAt": "2025-03-13T11:50:00Z",
+        "source": "cx01-recorded"
+      },
+      "document": {
+        "type": "delivery",
+        "id": "55555555-0000-0000-0000-00000000e004"
+      }
+    },
+    {
+      "type": "Sales.DeliveryConfirmed",
+      "envelope": {
+        "messageId": "66666666-0000-0000-0000-00000000f004",
+        "legalEntityId": "44444444-0000-0000-0000-00000000d001",
+        "occurredAt": "2025-03-14T11:05:00Z",
+        "source": "cx01-recorded"
+      },
+      "document": {
+        "type": "pod",
+        "id": "55555555-0000-0000-0000-00000000e005"
+      }
+    }
+  ],
+  "expect": {
+    "serial": "{p}-493445",
+    "lifecycle": "released",
+    "ownerPartyRef": "33333333-0000-0000-0000-00000000c001",
+    "locationKind": "customer_site",
+    "locationId": "22222222-0000-0000-0000-00000000b002",
+    "events": [
+      "unit.commissioned",
+      "unit.assembled",
+      "unit.released",
+      "unit.shipped",
+      "unit.delivered",
+      "ownership.opened"
+    ],
+    "componentSerial": "{p}-PCB-11209",
+    "buildRecordVersion": 1
+  }
+}

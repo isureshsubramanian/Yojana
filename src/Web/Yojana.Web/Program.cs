@@ -26,6 +26,8 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     Args = args,
     WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot"),
 });
+// Handler assemblies must be known before the platform configures the bus (PlatformSetup.IncludeHandlers).
+PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);
 builder.AddYojanaPlatform();
 builder.AddSerialisationModule();
 builder.AddIntegrationModule();
@@ -64,6 +66,7 @@ app.UseStaticFiles(new StaticFileOptions
     },
 });
 app.UseYojanaPlatform();
+app.MapSerialisationEndpoints();
 
 app.MapGet("/health", async (PlatformDbContext db, CancellationToken ct) =>
 {
