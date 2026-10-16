@@ -80,6 +80,7 @@ public static class SerialisationEndpoints
         entitlements.MapPost("/{entitlementId:guid}/resume", (Guid entitlementId, ResumeEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
         entitlements.MapPost("/{entitlementId:guid}/void", (Guid entitlementId, VoidEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
         entitlements.MapPost("/{entitlementId:guid}/close", (Guid entitlementId, CloseEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
+        entitlements.MapPost("/{entitlementId:guid}/transfer", (Guid entitlementId, TransferEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<TransferEntitlementResult>(bus, tenant, command with { SourceEntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
 
         var reference = app.MapGroup("/api/warranty-reference").RequireAuthorization(YojanaPolicy.TenantMember);
         reference.MapGet("/coverage-families", async (PolicyQueries queries, CancellationToken ct) => Results.Ok(await queries.FamiliesAsync(ct)));

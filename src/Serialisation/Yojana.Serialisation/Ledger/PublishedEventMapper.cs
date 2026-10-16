@@ -88,6 +88,11 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant)
                     Str(a, "coverage_family") ?? "", Str(a, "entitlement_type") ?? "", e.LegalEntityId, GuidOrNull(a, "owner_party_ref"), GuidOrNull(a, "policy_version_id") ?? Guid.Empty, Str(a, "policy_code") ?? "",
                     Int(a, "policy_version") ?? 0, Date(a, "start_date"), Date(a, "end_date"), Str(a, "status") ?? "", GuidOrNull(a, "accrual_cohort_id"), Str(a, "assurance_or_service") ?? "",
                     a?.TryGetProperty("accrual_suppressed", out var suppressed) == true && suppressed.ValueKind == JsonValueKind.True, Str(a, "provenance") ?? "", document);
+            case EntitlementEventType.Transferred:
+                return new EntitlementTransferred(Header(EntitlementTransferred.Schema, EntitlementTransferred.Version), GuidOrNull(a, "source_entitlement_id") ?? Guid.Empty,
+                    GuidOrNull(a, "target_entitlement_id") ?? Guid.Empty, GuidOrNull(a, "source_unit_id") ?? Guid.Empty, GuidOrNull(a, "target_unit_id") ?? Guid.Empty,
+                    GuidOrNull(a, "replacement_link_id"), Str(a, "policy_applied") ?? "", Date(a, "computed_end") ?? default, GuidOrNull(a, "root_entitlement_id") ?? Guid.Empty,
+                    Int(a, "chain_length") ?? 0, a?.TryGetProperty("accrual_suppressed", out var transferSuppressed) == true && transferSuppressed.ValueKind == JsonValueKind.True);
             // The first start of a pending entitlement is published as a rebase from no start, so Finance sees one shape for every start change.
             case EntitlementEventType.Rebased or EntitlementEventType.EvidenceAttached:
             {

@@ -216,6 +216,97 @@ public static class ResumeEntitlementHandler
     }
 }
 
+public static class TransferEntitlementHandler
+{
+    private static readonly DateOnly EuEffectiveDate = new(2026, 7, 31);
+
+    public static async Task<TransferEntitlementResult> Handle(TransferEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        var source = await ledger.LoadAsync(command.SourceEntitlementId, cancellationToken);
+        var transferKey = EntitlementLedger.Key(command.CommandId, command.TargetUnitId, EntitlementEventType.Transferred, command.EventTime);
+        if (await ledger.ReplayedAsync(transferKey, command.EventTime, cancellationToken) is { } replayed)
+        {
+            var existing = await db.Entitlements.AsNoTracking().SingleAsync(e => e.TenantId == tenantId && e.CreatedEventId == replayed.EventId, cancellationToken);
+            using var replayAttributes = JsonDocument.Parse(replayed.Attributes ?? "{}");
+            var replayPolicy = replayAttributes.RootElement.TryGetProperty("policy_applied", out var policyApplied) ? policyApplied.GetString() ?? "" : "";
+            var replayRootId = existing.RootEntitlementId ?? source.EntitlementId;
+            var replayChainLength = await ChainLengthAsync(db, tenantId, replayRootId, cancellationToken) - 1;
+            return new(source.EntitlementId, existing.EntitlementId, replayRootId, replayPolicy, existing.EndDate!.Value, replayChainLength, replayed.EventId, true);
+        }
+
+        EntitlementLedger.Transition(source, EntitlementEventType.Closed);
+        if (source.EndDate is not { } sourceEnd || source.StartDate is null) throw new CommandRefusedException("term_unresolved", "A replacement can only inherit an entitlement whose start and end are resolved.");
+        if (!await db.Current.AsNoTracking().AnyAsync(c => c.TenantId == tenantId && c.UnitId == command.TargetUnitId, cancellationToken))
+            throw new CommandRefusedException("target_unit_unknown", $"Unit {command.TargetUnitId} does not exist.");
+        if (source.UnitId == command.TargetUnitId) throw new CommandRefusedException("target_is_source", "A replacement entitlement must move to a different unit.");
+        if (await db.Entitlements.AnyAsync(e => e.TenantId == tenantId && e.UnitId == command.TargetUnitId && e.CoverageFamily == source.CoverageFamily && e.Status != EntitlementStatus.Closed, cancellationToken))
+            throw new CommandRefusedException("family_occupied", $"Unit {command.TargetUnitId} already has a live {source.CoverageFamily} entitlement.");
+
+        var version = await db.PolicyVersions.AsNoTracking().SingleAsync(v => v.TenantId == tenantId && v.PolicyVersionId == source.PolicyVersionId, cancellationToken);
+        var policy = command.ReplacementPolicyCode is { } code
+            ? await db.ReplacementPolicies.AsNoTracking().FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Code == code, cancellationToken)
+            : version.ReplacementPolicyId is { } policyId
+                ? await db.ReplacementPolicies.AsNoTracking().FirstOrDefaultAsync(p => p.TenantId == tenantId && p.ReplacementPolicyId == policyId, cancellationToken)
+                : null;
+        if (policy is null) throw new CommandRefusedException("replacement_policy_unknown", command.ReplacementPolicyCode is null ? "The source policy has no replacement policy." : $"Replacement policy '{command.ReplacementPolicyCode}' does not exist.");
+
+        var rootId = source.RootEntitlementId ?? source.EntitlementId;
+        if (policy.Rule == ReplacementRule.StatutoryExtensionOnce)
+        {
+            var scope = JsonSerializer.Deserialize<List<string>>(source.RegionScope, LedgerJson.Options) ?? [];
+            if (source.Type != EntitlementType.Statutory || command.Remedy != "repair" || !command.ConsumerContract || command.ContractDate is not { } contractDate || contractDate < EuEffectiveDate
+                || command.Country is not { } country || !Regions.Contains("EU", country) || !Regions.InScope(scope, country))
+                throw new CommandRefusedException("statutory_extension_not_applicable", "The one-time statutory extension requires a live statutory entitlement and a repair remedy for an EU consumer contract dated on or after 2026-07-31 within its region scope.");
+            if (await db.Entitlements.AnyAsync(e => e.TenantId == tenantId && (e.EntitlementId == rootId || e.RootEntitlementId == rootId) && e.StatutoryExtensionApplied, cancellationToken))
+                throw new CommandRefusedException("statutory_extension_already_applied", $"Entitlement chain {rootId} has already received its statutory extension.");
+        }
+
+        var duration = new DurationRule(source.DurationValue, source.DurationUnit, source.EndOfMonthRule, source.EndInclusive);
+        var computedEnd = ReplacementArithmetic.EndDate(sourceEnd, command.ReplacementDate, duration, policy.Rule, policy.MinDays, policy.ExtensionMonths);
+        var eventId = TimeOrderedId.New(command.EventTime);
+        var target = new Entitlement
+        {
+            TenantId = tenantId, EntitlementId = TimeOrderedId.New(command.EventTime), UnitId = command.TargetUnitId, Scope = source.Scope, ScopeChildUnitId = source.ScopeChildUnitId, ScopeItemClass = source.ScopeItemClass,
+            Type = source.Type, CoverageFamily = source.CoverageFamily, Direction = source.Direction, OwnerPartyRef = source.OwnerPartyRef, OwnerPartyType = source.OwnerPartyType, ObligorEntityId = source.ObligorEntityId,
+            PayerPartyRef = source.PayerPartyRef, PayerPartyType = source.PayerPartyType, PolicyVersionId = source.PolicyVersionId, StartTrigger = source.StartTrigger, StartBasis = source.StartBasis,
+            StartEvidenceRef = source.StartEvidenceRef, StartDate = source.StartDate, StartTimeZone = source.StartTimeZone, EndDate = computedEnd, ComputedByRuleVersion = source.ComputedByRuleVersion,
+            StartLatest = source.StartLatest, DurationValue = source.DurationValue, DurationUnit = source.DurationUnit, EndOfMonthRule = source.EndOfMonthRule, EndInclusive = source.EndInclusive,
+            DurationBasis = source.DurationBasis, Coverage = source.Coverage, RegionScope = source.RegionScope, Transferable = source.Transferable, ConditionAtCreation = source.ConditionAtCreation,
+            ParentEntitlementId = source.EntitlementId, RootEntitlementId = rootId, ReplacementLinkId = command.ReplacementLinkId, AccrualCohortId = null, RevenueScheduleRef = source.RevenueScheduleRef,
+            AssuranceOrService = source.AssuranceOrService, Status = EntitlementStatus.Active, Confidence = source.Confidence, StatutoryExtensionApplied = policy.Rule == ReplacementRule.StatutoryExtensionOnce,
+            Provenance = EntitlementProvenance.Transferred, SourceDocumentType = source.SourceDocumentType, SourceDocumentId = source.SourceDocumentId, SourceDocumentLine = source.SourceDocumentLine,
+            CustomerPoRef = source.CustomerPoRef, CreatedEventId = eventId, CreatedAt = clock.UtcNow,
+        };
+        db.Entitlements.Add(target);
+        var limits = await db.EntitlementUsageLimits.AsNoTracking().Where(l => l.TenantId == tenantId && l.EntitlementId == source.EntitlementId).ToListAsync(cancellationToken);
+        foreach (var limit in limits) db.EntitlementUsageLimits.Add(new EntitlementUsageLimit { TenantId = tenantId, EntitlementId = target.EntitlementId, MeterType = limit.MeterType, LimitValue = limit.LimitValue, Period = limit.Period });
+
+        source.ClosedReason = EntitlementClosedReason.Replaced;
+        source.ClosedEffective = command.ReplacementDate;
+        source.ClosedAt = clock.UtcNow;
+        source.SuccessorUnitId = target.UnitId;
+        source.SuccessorEntitlementId = target.EntitlementId;
+        var closeKey = EntitlementLedger.Key(command.CommandId, source.UnitId, EntitlementEventType.Closed, command.EventTime);
+        await ledger.AppendAsync(source, EntitlementEventType.Closed, closeKey, command.EventTime, command.ActorRef, new
+        {
+            entitlement_id = source.EntitlementId, coverage_family = source.CoverageFamily, reason = EntitlementClosedReason.Replaced, effective = command.ReplacementDate,
+            successor_entitlement_id = target.EntitlementId, successor_unit_id = target.UnitId,
+        }, null, cancellationToken);
+
+        var chainLength = await ChainLengthAsync(db, tenantId, rootId, cancellationToken) - 1;
+        await ledger.AppendAsync(target, EntitlementEventType.Transferred, transferKey, command.EventTime, command.ActorRef, new
+        {
+            source_entitlement_id = source.EntitlementId, target_entitlement_id = target.EntitlementId, source_unit_id = source.UnitId, target_unit_id = target.UnitId,
+            replacement_link_id = command.ReplacementLinkId, policy_applied = policy.Code, computed_end = computedEnd, root_entitlement_id = rootId, chain_length = chainLength, accrual_suppressed = true,
+        }, null, cancellationToken, eventId);
+        return new(source.EntitlementId, target.EntitlementId, rootId, policy.Code, computedEnd, chainLength, eventId, false);
+    }
+
+    private static Task<int> ChainLengthAsync(SerialisationDbContext db, Yojana.Platform.Contracts.Tenancy.TenantId tenantId, Guid rootId, CancellationToken cancellationToken) =>
+        db.Entitlements.CountAsync(e => e.TenantId == tenantId && (e.EntitlementId == rootId || e.RootEntitlementId == rootId), cancellationToken);
+}
+
 public static class VoidEntitlementHandler
 {
     public static async Task<EntitlementChangeResult> Handle(VoidEntitlement command, EntitlementLedger ledger, IClock clock, CancellationToken cancellationToken)
