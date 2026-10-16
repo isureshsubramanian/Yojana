@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/entitlement.transferred.json",
+  "title": "Entitlement.Transferred",
+  "type": "object",
+  "required": [
+    "header",
+    "source_entitlement_id",
+    "target_entitlement_id",
+    "source_unit_id",
+    "target_unit_id",
+    "policy_applied",
+    "computed_end",
+    "root_entitlement_id",
+    "chain_length",
+    "accrual_suppressed"
+  ],
+  "properties": {
+    "header": {
+      "type": "object",
+      "required": [
+        "schema",
+        "version",
+        "event_id",
+        "unit_id",
+        "event_time",
+        "recorded_time",
+        "seq",
+        "legal_entity_id",
+        "actor_ref"
+      ],
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "unit_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "recorded_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "legal_entity_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actor_ref": {
+          "type": "string"
+        },
+        "document": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "line": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        }
+      }
+    },
+    "source_entitlement_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "target_entitlement_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_unit_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "target_unit_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "replacement_link_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "policy_applied": {
+      "type": "string"
+    },
+    "computed_end": {
+      "type": "string",
+      "format": "date"
+    },
+    "root_entitlement_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "chain_length": {
+      "type": "integer"
+    },
+    "accrual_suppressed": {
+      "type": "boolean"
+    }
+  }
+}

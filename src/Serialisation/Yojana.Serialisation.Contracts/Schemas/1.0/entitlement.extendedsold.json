@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/entitlement.extendedsold.json",
+  "title": "Entitlement.ExtendedSold",
+  "type": "object",
+  "required": [
+    "header",
+    "entitlement_id",
+    "item_id",
+    "coverage_family",
+    "obligor_entity_id",
+    "price",
+    "currency",
+    "term_months",
+    "start_date",
+    "end_date",
+    "revenue_schedule",
+    "source_document"
+  ],
+  "properties": {
+    "header": {
+      "type": "object",
+      "required": [
+        "schema",
+        "version",
+        "event_id",
+        "unit_id",
+        "event_time",
+        "recorded_time",
+        "seq",
+        "legal_entity_id",
+        "actor_ref"
+      ],
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "unit_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "recorded_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "legal_entity_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actor_ref": {
+          "type": "string"
+        },
+        "document": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "line": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        }
+      }
+    },
+    "entitlement_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "item_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "coverage_family": {
+      "type": "string"
+    },
+    "obligor_entity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "payer_party_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "price": {
+      "type": "number"
+    },
+    "currency": {
+      "type": "string"
+    },
+    "term_months": {
+      "type": "integer"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "end_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "revenue_schedule": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "period_start",
+          "period_end",
+          "amount"
+        ],
+        "properties": {
+          "period_start": {
+            "type": "string",
+            "format": "date"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date"
+          },
+          "amount": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "source_document": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "line": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ]
+    }
+  }
+}

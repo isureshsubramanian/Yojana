@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/entitlement.created.json",
+  "title": "Entitlement.Created",
+  "type": "object",
+  "required": [
+    "header",
+    "entitlement_id",
+    "item_id",
+    "coverage_family",
+    "entitlement_type",
+    "obligor_entity_id",
+    "policy_version_id",
+    "policy_code",
+    "policy_version",
+    "status",
+    "assurance_or_service",
+    "accrual_suppressed",
+    "provenance"
+  ],
+  "properties": {
+    "header": {
+      "type": "object",
+      "required": [
+        "schema",
+        "version",
+        "event_id",
+        "unit_id",
+        "event_time",
+        "recorded_time",
+        "seq",
+        "legal_entity_id",
+        "actor_ref"
+      ],
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "unit_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "recorded_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "legal_entity_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actor_ref": {
+          "type": "string"
+        },
+        "document": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "line": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        }
+      }
+    },
+    "entitlement_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "item_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "coverage_family": {
+      "type": "string"
+    },
+    "entitlement_type": {
+      "type": "string"
+    },
+    "obligor_entity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "owner_party_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "policy_version_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "policy_code": {
+      "type": "string"
+    },
+    "policy_version": {
+      "type": "integer"
+    },
+    "start_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "end_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "status": {
+      "type": "string"
+    },
+    "accrual_cohort_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "assurance_or_service": {
+      "type": "string"
+    },
+    "accrual_suppressed": {
+      "type": "boolean"
+    },
+    "provenance": {
+      "type": "string"
+    },
+    "source_document": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "line": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ]
+    }
+  }
+}

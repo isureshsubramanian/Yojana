@@ -123,7 +123,7 @@ public sealed class PolicyResolutionTests(SerialisationHostFixture fixture)
     {
         TenantId = tenant, EntitlementId = TimeOrderedId.New(DateTime.UtcNow), UnitId = unit, Scope = scope, Type = EntitlementType.Manufacturer, CoverageFamily = "base_warranty", Direction = EntitlementDirection.Outbound,
         ObligorEntityId = Guid.NewGuid(), PolicyVersionId = policyVersion, StartTrigger = StartTrigger.Deliver, StartDate = new DateOnly(2026, 9, 2), StartTimeZone = "Europe/Berlin", EndDate = new DateOnly(2028, 9, 1),
-        DurationBasis = DurationBasis.Time, RegionScope = """["EU","UK","CH"]""", Transferable = Transferability.Yes, AssuranceOrService = AssuranceOrService.Assurance, Status = EntitlementStatus.Active, Confidence = "high",
+        DurationValue = 24, DurationUnit = DurationRule.Months, EndOfMonthRule = DurationRule.Clamp, DurationBasis = DurationBasis.Time, RegionScope = """["EU","UK","CH"]""", Transferable = Transferability.Yes, AssuranceOrService = AssuranceOrService.Assurance, Status = EntitlementStatus.Active, Confidence = "high",
         Provenance = EntitlementProvenance.Created, CreatedAt = DateTime.UtcNow,
     };
 }

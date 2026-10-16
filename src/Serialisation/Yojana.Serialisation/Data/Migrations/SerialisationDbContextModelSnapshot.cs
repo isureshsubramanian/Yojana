@@ -522,9 +522,29 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(10)")
                         .HasColumnName("duration_basis");
 
+                    b.Property<string>("DurationUnit")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("duration_unit");
+
+                    b.Property<int>("DurationValue")
+                        .HasColumnType("int")
+                        .HasColumnName("duration_value");
+
                     b.Property<DateOnly?>("EndDate")
                         .HasColumnType("date")
                         .HasColumnName("end_date");
+
+                    b.Property<bool>("EndInclusive")
+                        .HasColumnType("bit")
+                        .HasColumnName("end_inclusive");
+
+                    b.Property<string>("EndOfMonthRule")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("end_of_month_rule");
 
                     b.Property<Guid>("ObligorEntityId")
                         .HasColumnType("uniqueidentifier")
@@ -631,6 +651,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("start_evidence_ref");
+
+                    b.Property<DateOnly?>("StartLatest")
+                        .HasColumnType("date")
+                        .HasColumnName("start_latest");
 
                     b.Property<string>("StartTimeZone")
                         .IsRequired()

@@ -58,6 +58,8 @@ public static class SerialisationModule
         builder.Services.AddScoped<Entitlements.PolicyStore>();
         builder.Services.AddScoped<Entitlements.PolicyQueries>();
         builder.Services.AddScoped<Entitlements.PolicyResolver>();
+        builder.Services.AddScoped<Entitlements.EntitlementLedger>();
+        builder.Services.AddScoped<Entitlements.EntitlementQueries>();
 
         builder.Services.AddScoped<SearchIndexer>();
         builder.Services.AddScoped<SearchBackfill>();

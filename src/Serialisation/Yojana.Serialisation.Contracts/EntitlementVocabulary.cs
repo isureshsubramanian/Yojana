@@ -126,3 +126,15 @@ public static class AmendmentReason
     public const string DisputeSettlement = "dispute_settlement";
     public const string SellerError = "seller_error";
 }
+
+/// <summary>Ledger event types of the entitlement state machine (MOD-06). They are unit events: the entitlement is attached to the unit.</summary>
+public static class EntitlementEventType
+{
+    public const string Created = "entitlement.created";
+    public const string EvidenceAttached = "entitlement.evidence_attached";
+    public const string Rebased = "entitlement.rebased";
+    public const string Suspended = "entitlement.suspended";
+    public const string Resumed = "entitlement.resumed";
+    public const string Voided = "entitlement.voided";
+    public const string Closed = "entitlement.closed";
+}

@@ -18,12 +18,30 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant)
     {
         foreach (var @event in written)
         {
-            var message = Map(@event);
-            if (message is not null)
+            foreach (var message in new[] { Map(@event), CoverageChanged(@event) }.OfType<IPublishedUnitEvent>())
             {
                 await bus.PublishAsync(message, new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
             }
         }
+    }
+
+    /// <summary>
+    /// <c>Entitlement.CoverageChanged</c> beside any entitlement fact that changed the unit's live set or latest warranty
+    /// end: the before values are what <see cref="Entitlements.EntitlementLedger"/> recorded under <c>coverage_before</c>,
+    /// the after values the event's own delta.
+    /// </summary>
+    public static EntitlementCoverageChanged? CoverageChanged(UnitEvent e)
+    {
+        if (e.Attributes is null || !e.EventType.StartsWith("entitlement.", StringComparison.Ordinal)) return null;
+        using var doc = JsonDocument.Parse(e.Attributes);
+        var a = doc.RootElement;
+        if (!a.TryGetProperty("coverage_before", out var before) || !a.TryGetProperty("_state", out var state) || !state.TryGetProperty("live_entitlement_ids", out var afterIds)) return null;
+        var idsBefore = Guids(before, "live_entitlement_ids");
+        var idsAfter = afterIds.EnumerateArray().Select(i => i.GetGuid()).Order().ToList();
+        var endBefore = Date(before, "warranty_end_max");
+        var endAfter = state.TryGetProperty("warranty_end_max", out var w) && w.ValueKind == JsonValueKind.Object ? Date(w, "value") : Date(state, "warranty_end_max");
+        if (idsBefore.SequenceEqual(idsAfter) && endBefore == endAfter) return null;
+        return new EntitlementCoverageChanged(Header(e, EntitlementCoverageChanged.Schema, EntitlementCoverageChanged.Version), idsBefore, idsAfter, endBefore, endAfter, e.EventType);
     }
 
     public static IPublishedUnitEvent? Map(UnitEvent e)
@@ -31,7 +49,7 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant)
         using var doc = e.Attributes is null ? null : JsonDocument.Parse(e.Attributes);
         var a = doc?.RootElement;
         var document = e.DocumentType is null || e.DocumentId is null ? null : new DocumentRef(e.DocumentType, e.DocumentId.Value, e.DocumentLine);
-        PublishedEventHeader Header(string schema, string version) => new(schema, version, e.EventId, e.UnitId, e.EventTime, e.RecordedTime, e.Seq, e.LegalEntityId, e.ActorRef, document);
+        PublishedEventHeader Header(string schema, string version) => PublishedEventMapper.Header(e, schema, version);
         switch (e.EventType)
         {
             case UnitEventType.Commissioned:
@@ -65,10 +83,37 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant)
                 return new CustodyChanged(Header(CustodyChanged.Schema, CustodyChanged.Version), GuidOrNull(a, "episode_id") ?? Guid.Empty, Str(to, "location_kind") ?? "", GuidOrNull(to, "location_id"), GuidOrNull(to, "party_ref"), Str(to, "party_type"), Str(from, "location_kind"), GuidOrNull(from, "location_id"), Str(a, "reason") ?? "", e.EventType);
             }
 
+            case EntitlementEventType.Created:
+                return new EntitlementCreated(Header(EntitlementCreated.Schema, EntitlementCreated.Version), GuidOrNull(a, "entitlement_id") ?? Guid.Empty, GuidOrNull(a, "item_id") ?? Guid.Empty,
+                    Str(a, "coverage_family") ?? "", Str(a, "entitlement_type") ?? "", e.LegalEntityId, GuidOrNull(a, "owner_party_ref"), GuidOrNull(a, "policy_version_id") ?? Guid.Empty, Str(a, "policy_code") ?? "",
+                    Int(a, "policy_version") ?? 0, Date(a, "start_date"), Date(a, "end_date"), Str(a, "status") ?? "", GuidOrNull(a, "accrual_cohort_id"), Str(a, "assurance_or_service") ?? "",
+                    a?.TryGetProperty("accrual_suppressed", out var suppressed) == true && suppressed.ValueKind == JsonValueKind.True, Str(a, "provenance") ?? "", document);
+            // The first start of a pending entitlement is published as a rebase from no start, so Finance sees one shape for every start change.
+            case EntitlementEventType.Rebased or EntitlementEventType.EvidenceAttached:
+            {
+                var before = a?.TryGetProperty("before", out var b) == true ? b : (JsonElement?)null;
+                var after = a?.TryGetProperty("after", out var f) == true ? f : (JsonElement?)null;
+                return new EntitlementRebased(Header(EntitlementRebased.Schema, EntitlementRebased.Version), GuidOrNull(a, "entitlement_id") ?? Guid.Empty, Date(before, "start"), Date(after, "start") ?? default,
+                    Date(before, "end"), Date(after, "end") ?? default, Str(after, "basis") ?? "", Str(a, "evidence_ref"), a?.TryGetProperty("cap_applied", out var cap) == true && cap.ValueKind == JsonValueKind.True);
+            }
+
+            // A void is a close with a void reason (wrong unit, duplicate, fraud): Finance reverses on the reason, not on a separate schema.
+            case EntitlementEventType.Closed or EntitlementEventType.Voided:
+                return new EntitlementClosed(Header(EntitlementClosed.Schema, EntitlementClosed.Version), GuidOrNull(a, "entitlement_id") ?? Guid.Empty, Str(a, "coverage_family") ?? "", Str(a, "reason") ?? "",
+                    Date(a, "effective") ?? DateOnly.FromDateTime(e.EventTime), GuidOrNull(a, "successor_entitlement_id"), GuidOrNull(a, "successor_unit_id"));
             default:
                 return null;
         }
     }
+
+    private static PublishedEventHeader Header(UnitEvent e, string schema, string version) =>
+        new(schema, version, e.EventId, e.UnitId, e.EventTime, e.RecordedTime, e.Seq, e.LegalEntityId, e.ActorRef, e.DocumentType is null || e.DocumentId is null ? null : new DocumentRef(e.DocumentType, e.DocumentId.Value, e.DocumentLine));
+
+    private static int? Int(JsonElement? element, string name) => element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt32() : null;
+
+    private static DateOnly? Date(JsonElement? element, string name) => Str(element, name) is { } text && DateOnly.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out var date) ? date : null;
+
+    private static List<Guid> Guids(JsonElement element, string name) => element.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Array ? p.EnumerateArray().Select(i => i.GetGuid()).Order().ToList() : [];
 
     private static string? Str(JsonElement? element, string name) => element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
 

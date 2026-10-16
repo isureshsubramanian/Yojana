@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/finance.entitlementpostingrecorded.json",
+  "title": "Finance.EntitlementPostingRecorded",
+  "type": "object",
+  "required": [
+    "message_id",
+    "entitlement_id",
+    "source_event_id",
+    "source_schema",
+    "posting_reference",
+    "posted_at",
+    "ledger_entity_id"
+  ],
+  "properties": {
+    "message_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "entitlement_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_schema": {
+      "type": "string"
+    },
+    "posting_reference": {
+      "type": "string"
+    },
+    "posted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ledger_entity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "amount": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "currency": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

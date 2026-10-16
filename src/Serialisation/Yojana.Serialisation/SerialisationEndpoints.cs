@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Wolverine;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Identity;
@@ -68,6 +69,18 @@ public static class SerialisationEndpoints
         policies.MapPost("/versions/{policyVersionId:guid}/validate", (Guid policyVersionId, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyValidation>(bus, tenant, new ValidatePolicyDraft(policyVersionId), ct));
         policies.MapPost("/versions/{policyVersionId:guid}/publish", (Guid policyVersionId, PublishPolicyVersion command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyDraftResult>(bus, tenant, command with { PolicyVersionId = policyVersionId }, ct)).RequireAuthorization(editor);
         policies.MapPost("/versions/{policyVersionId:guid}/discard", (Guid policyVersionId, DiscardPolicyDraft command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyDraftResult>(bus, tenant, command with { PolicyVersionId = policyVersionId }, ct)).RequireAuthorization(editor);
+        // Entitlements (P2-T05): the panel reads; the service desk and manager act (approval levels per reason arrive with AmendEntitlement, P2-T08).
+        var entitlements = app.MapGroup("/api/entitlements").RequireAuthorization(YojanaPolicy.TenantMember);
+        var desk = YojanaPolicy.ForRole(YojanaRole.ServiceDesk);
+        units.MapGet("/{unitId:guid}/entitlements", async (Guid unitId, DateOnly? on, EntitlementQueries queries, IClock clock, CancellationToken ct) =>
+            Results.Ok(await queries.ForUnitAsync(unitId, on ?? DateOnly.FromDateTime(clock.UtcNow), ct)));
+        entitlements.MapPost("/", (CreateEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CreateEntitlementResult>(bus, tenant, command, ct)).RequireAuthorization(desk);
+        entitlements.MapPost("/{entitlementId:guid}/rebase", (Guid entitlementId, RebaseEntitlementStart command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { EntitlementId = entitlementId }, ct)).RequireAuthorization(desk);
+        entitlements.MapPost("/{entitlementId:guid}/suspend", (Guid entitlementId, SuspendEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
+        entitlements.MapPost("/{entitlementId:guid}/resume", (Guid entitlementId, ResumeEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
+        entitlements.MapPost("/{entitlementId:guid}/void", (Guid entitlementId, VoidEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
+        entitlements.MapPost("/{entitlementId:guid}/close", (Guid entitlementId, CloseEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
+
         var reference = app.MapGroup("/api/warranty-reference").RequireAuthorization(YojanaPolicy.TenantMember);
         reference.MapGet("/coverage-families", async (PolicyQueries queries, CancellationToken ct) => Results.Ok(await queries.FamiliesAsync(ct)));
         reference.MapPost("/coverage-families", (DefineCoverageFamily command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CoverageFamilyRow>(bus, tenant, command, ct)).RequireAuthorization(editor);

@@ -153,7 +153,7 @@ public sealed class EntitlementSchemaTests(SerialisationHostFixture fixture)
     {
         TenantId = tenant, EntitlementId = TimeOrderedId.New(T0), UnitId = unit, Scope = EntitlementScope.Unit, Type = EntitlementType.Manufacturer, CoverageFamily = family, Direction = EntitlementDirection.Outbound,
         OwnerPartyRef = Guid.NewGuid(), OwnerPartyType = PartyType.Customer, ObligorEntityId = Guid.NewGuid(), PolicyVersionId = policy.PolicyVersionId, StartTrigger = StartTrigger.Deliver, StartBasis = StartTrigger.Deliver,
-        StartDate = new DateOnly(2026, 10, 2), StartTimeZone = "Europe/Berlin", EndDate = new DateOnly(2028, 10, 1), ComputedByRuleVersion = policy.RuleVersion, DurationBasis = DurationBasis.Time, Transferable = Transferability.Yes,
+        StartDate = new DateOnly(2026, 10, 2), StartTimeZone = "Europe/Berlin", EndDate = new DateOnly(2028, 10, 1), ComputedByRuleVersion = policy.RuleVersion, DurationValue = 24, DurationUnit = DurationRule.Months, EndOfMonthRule = DurationRule.Clamp, DurationBasis = DurationBasis.Time, Transferable = Transferability.Yes,
         AssuranceOrService = AssuranceOrService.Assurance, Status = status, Confidence = "high", Provenance = EntitlementProvenance.Created, CreatedEventId = Guid.NewGuid(), CreatedAt = T0,
     };
 }

@@ -391,6 +391,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(e => e.StartEvidenceRef).HasMaxLength(200);
             b.Property(e => e.StartTimeZone).HasMaxLength(64);
             b.Property(e => e.ComputedByRuleVersion).HasMaxLength(20);
+            b.Property(e => e.DurationUnit).HasMaxLength(10);
+            b.Property(e => e.EndOfMonthRule).HasMaxLength(10);
             b.Property(e => e.DurationBasis).HasMaxLength(10);
             b.Property(e => e.Transferable).HasMaxLength(30);
             b.Property(e => e.ConditionAtCreation).HasMaxLength(20);

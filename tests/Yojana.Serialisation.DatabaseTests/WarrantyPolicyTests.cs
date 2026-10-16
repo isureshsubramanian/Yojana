@@ -100,7 +100,7 @@ public sealed class WarrantyPolicyTests(SerialisationHostFixture fixture)
             db.Entitlements.Add(new Entitlement
             {
                 TenantId = tenant, EntitlementId = TimeOrderedId.New(DateTime.UtcNow), UnitId = Guid.NewGuid(), Scope = EntitlementScope.Unit, Type = EntitlementType.Manufacturer, CoverageFamily = "service_level", Direction = EntitlementDirection.Outbound,
-                ObligorEntityId = Guid.NewGuid(), PolicyVersionId = v1.PolicyVersionId, StartTrigger = StartTrigger.Invoice, StartTimeZone = "UTC", DurationBasis = DurationBasis.Time, Transferable = Transferability.Yes,
+                ObligorEntityId = Guid.NewGuid(), PolicyVersionId = v1.PolicyVersionId, StartTrigger = StartTrigger.Invoice, StartTimeZone = "UTC", DurationValue = 24, DurationUnit = DurationRule.Months, EndOfMonthRule = DurationRule.Clamp, DurationBasis = DurationBasis.Time, Transferable = Transferability.Yes,
                 AssuranceOrService = AssuranceOrService.Service, Status = EntitlementStatus.Active, Confidence = "high", Provenance = EntitlementProvenance.Created, CreatedAt = DateTime.UtcNow,
             });
             await db.SaveChangesAsync();

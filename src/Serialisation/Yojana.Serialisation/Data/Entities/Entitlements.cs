@@ -202,6 +202,19 @@ public sealed class Entitlement : ITenantScoped
 
     public string? ComputedByRuleVersion { get; set; }
 
+    /// <summary>The cap's ceiling: the start can never move later than this day, whatever evidence arrives (invoice + cap days).</summary>
+    public DateOnly? StartLatest { get; set; }
+
+    // The term actually applied (the policy's, or a refurbished row's with the floor): a rebase recomputes the end from
+    // these, never from a policy that may have been read differently, so the end date stays the rule's output (invariant 5).
+    public int DurationValue { get; set; }
+
+    public required string DurationUnit { get; set; }
+
+    public required string EndOfMonthRule { get; set; }
+
+    public bool EndInclusive { get; set; } = true;
+
     public required string DurationBasis { get; set; }
 
     public string Coverage { get; set; } = "{}";
