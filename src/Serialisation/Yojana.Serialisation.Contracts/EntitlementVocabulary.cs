@@ -125,6 +125,17 @@ public static class AmendmentReason
     public const string StatutoryExtension = "statutory_extension";
     public const string DisputeSettlement = "dispute_settlement";
     public const string SellerError = "seller_error";
+
+    public static readonly IReadOnlyList<string> All = [Purchase, Goodwill, Correction, StatutoryExtension, DisputeSettlement, SellerError];
+}
+
+/// <summary>The fields AmendEntitlement changes, as named on EntitlementAmendment rows and in Entitlement.Amended.</summary>
+public static class AmendedField
+{
+    public const string StartDate = "start_date";
+    public const string Term = "term";
+    public const string EndDate = "end_date";
+    public const string Coverage = "coverage";
 }
 
 /// <summary>Ledger event types of the entitlement state machine (MOD-06). They are unit events: the entitlement is attached to the unit.</summary>
@@ -139,4 +150,5 @@ public static class EntitlementEventType
     public const string Closed = "entitlement.closed";
     public const string Transferred = "entitlement.transferred";
     public const string ExtendedSold = "entitlement.extended_sold";
+    public const string Amended = "entitlement.amended";
 }

@@ -108,6 +108,11 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant)
                     Date(before, "end"), Date(after, "end") ?? default, Str(after, "basis") ?? "", Str(a, "evidence_ref"), a?.TryGetProperty("cap_applied", out var cap) == true && cap.ValueKind == JsonValueKind.True);
             }
 
+            case EntitlementEventType.Amended:
+                return new EntitlementAmended(Header(EntitlementAmended.Schema, EntitlementAmended.Version), GuidOrNull(a, "entitlement_id") ?? Guid.Empty, Str(a, "reason_code") ?? "", Int(a, "days_changed"),
+                    Str(a, "approved_by"), Str(a, "customer_notification_ref"),
+                    a?.TryGetProperty("changes", out var changes) == true ? changes.Deserialize<List<EntitlementFieldChange>>(LedgerJson.Options) ?? [] : [], document);
+
             // A void is a close with a void reason (wrong unit, duplicate, fraud): Finance reverses on the reason, not on a separate schema.
             case EntitlementEventType.Closed or EntitlementEventType.Voided:
                 return new EntitlementClosed(Header(EntitlementClosed.Schema, EntitlementClosed.Version), GuidOrNull(a, "entitlement_id") ?? Guid.Empty, Str(a, "coverage_family") ?? "", Str(a, "reason") ?? "",

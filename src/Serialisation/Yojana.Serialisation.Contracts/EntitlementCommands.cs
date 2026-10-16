@@ -93,5 +93,55 @@ public sealed record AttachExtendedWarranty(
 
 public sealed record AttachExtendedWarrantyResult(Guid EntitlementId, string PolicyCode, int PolicyVersion, string StartBasis, DateOnly StartDate, DateOnly EndDate, Guid? BaseEntitlementId, IReadOnlyList<EntitlementRevenueSchedulePeriod> RevenueSchedule, Guid EventId, bool Replayed);
 
+/// <summary>
+/// Corrects term, end date, coverage or start on one entitlement (P2-T08, ADR-0001 correction table, cases 129 and 140)
+/// with a reason code; before and after are kept on EntitlementAmendment and nothing is edited in place. Give either a
+/// new end or a new term, not both: a new start or term recomputes the end and keeps any earlier adjustment, a new end
+/// sets it outright. A coverage change keeps the service mode; a change of service mode is SupersedeEntitlement.
+/// <see cref="CommittedBy"/> is who commits it and the roles they hold, which the approval policy is checked against;
+/// the HTTP endpoint always sets it from the signed-in user, whatever the body says.
+/// </summary>
+public sealed record AmendEntitlement(
+    Guid CommandId,
+    Guid EntitlementId,
+    string ReasonCode,
+    DateTime EventTime,
+    string ActorRef,
+    DateOnly? NewStart = null,
+    DateOnly? NewEnd = null,
+    AmendedTerm? NewTerm = null,
+    CoverageTerms? NewCoverage = null,
+    DocumentRef? SourceDocument = null,
+    string? CustomerNotificationRef = null,
+    string? FinanceReviewRef = null,
+    string? Note = null,
+    AmendmentCommitter? CommittedBy = null);
+
+/// <summary>A new term length; the entitlement keeps its end-of-month rule and whether the term counts its start day.</summary>
+public sealed record AmendedTerm(int Value, string Unit);
+
+/// <summary>Who commits an amendment and the roles they hold in the tenant. <see cref="System"/> applies statutory extensions; no signed-in user is ever it.</summary>
+public sealed record AmendmentCommitter(string UserRef, IReadOnlyList<string> Roles)
+{
+    public static readonly AmendmentCommitter System = new("system", []);
+
+    public bool IsSystem => UserRef == System.UserRef && Roles.Count == 0;
+}
+
+public sealed record AmendEntitlementResult(Guid EntitlementId, DateOnly? StartDate, DateOnly? EndDate, int DaysChanged, bool Reduction, string ApprovalLevel, string ApprovedBy, IReadOnlyList<EntitlementFieldChange> Changes, Guid EventId, bool Replayed);
+
+/// <summary>
+/// The tenant's approval policy for AmendEntitlement (OD-06, Action Item 33b): per reason, whether a source document is
+/// required, whether only the system applies it, and tiers by days changed, the first tier whose bound holds deciding.
+/// A reduction is raised to <see cref="ReductionRole"/> at least, and needs a customer notification once a certificate
+/// was issued. Stored as tenant data; the module's default (the ADR's proposed values) applies until a tenant sets one.
+/// </summary>
+public sealed record AmendmentApprovalPolicy(IReadOnlyList<AmendmentReasonRule> Reasons, string ReductionRole);
+
+public sealed record AmendmentReasonRule(string ReasonCode, bool SourceDocumentRequired, bool SystemOnly, IReadOnlyList<AmendmentApprovalTier> Tiers);
+
+/// <summary>Up to <see cref="UpToDays"/> days changed (either way; null: any), <see cref="Role"/> commits it, with a finance review reference when <see cref="FinanceReview"/>.</summary>
+public sealed record AmendmentApprovalTier(int? UpToDays, string Role, bool FinanceReview = false);
+
 /// <summary>An entitlement as a reader sees it today: the stored status and the effective one (lazy expiry, never written at read).</summary>
 public sealed record EntitlementView(Guid EntitlementId, Guid UnitId, string CoverageFamily, string Type, string StoredStatus, string EffectiveStatus, string? ClosedReason, DateOnly? StartDate, DateOnly? EndDate, int? DaysRemaining, Guid PolicyVersionId, string? StartBasis, string StartTimeZone, Guid? ParentEntitlementId, Guid? RootEntitlementId, Guid? SupersedesEntitlementId);

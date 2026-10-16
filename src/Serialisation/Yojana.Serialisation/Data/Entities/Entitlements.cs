@@ -218,6 +218,12 @@ public sealed class Entitlement : ITenantScoped
 
     public bool EndInclusive { get; set; } = true;
 
+    /// <summary>
+    /// Days the end stands beyond the term counted from the start: paused suspension days, an amended end, a replacement
+    /// rule's extension. A rebase recomputes the term from the new start and adds this, so none of them is lost.
+    /// </summary>
+    public int EndAdjustmentDays { get; set; }
+
     public required string DurationBasis { get; set; }
 
     public string Coverage { get; set; } = "{}";

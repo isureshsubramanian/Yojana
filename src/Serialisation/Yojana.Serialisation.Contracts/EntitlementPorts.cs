@@ -29,3 +29,21 @@ public interface ITimeZonePort
 
     Task<string?> ForLegalEntityAsync(Guid legalEntityId, CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Whether a unit's entitlement has claims still open (claims and adjudication, P4). A reduction of term or coverage is
+/// blocked while any is open (case 140), so a claim is never adjudicated against a term shortened under it.
+/// </summary>
+public interface IWarrantyClaimsPort
+{
+    Task<bool> HasOpenClaimsAsync(Guid unitId, Guid entitlementId, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Whether a warranty certificate carrying this entitlement has been issued to the customer (certificates, P6). A
+/// reduction after issue needs the higher approval and a customer notification reference (case 140).
+/// </summary>
+public interface IWarrantyCertificatePort
+{
+    Task<bool> CertificateIssuedAsync(Guid entitlementId, CancellationToken cancellationToken);
+}

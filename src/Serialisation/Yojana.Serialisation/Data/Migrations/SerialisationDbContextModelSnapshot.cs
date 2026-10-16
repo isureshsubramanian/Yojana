@@ -532,6 +532,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("int")
                         .HasColumnName("duration_value");
 
+                    b.Property<int>("EndAdjustmentDays")
+                        .HasColumnType("int")
+                        .HasColumnName("end_adjustment_days");
+
                     b.Property<DateOnly?>("EndDate")
                         .HasColumnType("date")
                         .HasColumnName("end_date");

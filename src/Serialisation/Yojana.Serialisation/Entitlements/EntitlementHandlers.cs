@@ -153,7 +153,7 @@ public static class RebaseEntitlementStartHandler
         var capApplied = entitlement.StartLatest is { } latest && newStart > latest;
         if (capApplied) newStart = entitlement.StartLatest!.Value;
         if (!pending && newStart == entitlement.StartDate) throw new CommandRefusedException("no_change", $"The start is already {newStart:yyyy-MM-dd}.");
-        var newEnd = TermArithmetic.EndDate(newStart, new DurationRule(entitlement.DurationValue, entitlement.DurationUnit, entitlement.EndOfMonthRule, entitlement.EndInclusive));
+        var newEnd = TermArithmetic.EndDate(newStart, new DurationRule(entitlement.DurationValue, entitlement.DurationUnit, entitlement.EndOfMonthRule, entitlement.EndInclusive)).AddDays(entitlement.EndAdjustmentDays);
         var eventId = TimeOrderedId.New(command.EventTime);
         db.EntitlementRebases.Add(new EntitlementRebase
         {
@@ -207,7 +207,11 @@ public static class ResumeEntitlementHandler
         // Case 62: only a paused clock moves the end, by exactly the paused days.
         var paused = open.ClockPaused ? command.On.DayNumber - open.FromDate.DayNumber : 0;
         var oldEnd = entitlement.EndDate;
-        if (paused > 0 && entitlement.EndDate is { } end) entitlement.EndDate = end.AddDays(paused);
+        if (paused > 0 && entitlement.EndDate is { } end)
+        {
+            entitlement.EndDate = end.AddDays(paused);
+            entitlement.EndAdjustmentDays += paused;
+        }
         var eventId = TimeOrderedId.New(command.EventTime);
         open.ToDate = command.On;
         open.ResumedEventId = eventId;
@@ -272,7 +276,7 @@ public static class TransferEntitlementHandler
             PayerPartyRef = source.PayerPartyRef, PayerPartyType = source.PayerPartyType, PolicyVersionId = source.PolicyVersionId, StartTrigger = source.StartTrigger, StartBasis = source.StartBasis,
             StartEvidenceRef = source.StartEvidenceRef, StartDate = source.StartDate, StartTimeZone = source.StartTimeZone, EndDate = computedEnd, ComputedByRuleVersion = source.ComputedByRuleVersion,
             StartLatest = source.StartLatest, DurationValue = source.DurationValue, DurationUnit = source.DurationUnit, EndOfMonthRule = source.EndOfMonthRule, EndInclusive = source.EndInclusive,
-            DurationBasis = source.DurationBasis, Coverage = source.Coverage, RegionScope = source.RegionScope, Transferable = source.Transferable, ConditionAtCreation = source.ConditionAtCreation,
+            EndAdjustmentDays = computedEnd.DayNumber - TermArithmetic.EndDate(source.StartDate.Value, duration).DayNumber, DurationBasis = source.DurationBasis, Coverage = source.Coverage, RegionScope = source.RegionScope, Transferable = source.Transferable, ConditionAtCreation = source.ConditionAtCreation,
             ParentEntitlementId = source.EntitlementId, RootEntitlementId = rootId, ReplacementLinkId = command.ReplacementLinkId, AccrualCohortId = null, RevenueScheduleRef = source.RevenueScheduleRef,
             AssuranceOrService = source.AssuranceOrService, Status = EntitlementStatus.Active, Confidence = source.Confidence, StatutoryExtensionApplied = policy.Rule == ReplacementRule.StatutoryExtensionOnce,
             Provenance = EntitlementProvenance.Transferred, SourceDocumentType = source.SourceDocumentType, SourceDocumentId = source.SourceDocumentId, SourceDocumentLine = source.SourceDocumentLine,

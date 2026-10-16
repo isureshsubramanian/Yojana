@@ -59,6 +59,11 @@ public static class SerialisationModule
         builder.Services.AddScoped<Entitlements.PolicyStore>();
         builder.Services.AddScoped<Entitlements.PolicyQueries>();
         builder.Services.AddScoped<Entitlements.PolicyResolver>();
+        // A factory on purpose, coupled to AmendEntitlementHandler: Wolverine does not look inside a factory, so the
+        // PlatformDbContext behind ITenantSettings stays out of the handler's generated graph and the handler keeps the
+        // default transaction on SerialisationDbContext, opened after the tenant middleware. A plain registration makes
+        // the host refuse to start ("multiple DbContext types detected").
+        builder.Services.AddScoped(sp => new Entitlements.AmendmentApprovalSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped<Entitlements.EntitlementLedger>();
         builder.Services.AddScoped<Entitlements.EntitlementQueries>();
 
@@ -97,6 +102,8 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<IItemPolicyPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
         builder.Services.TryAddSingleton<ICustomerContractPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
         builder.Services.TryAddSingleton<ITimeZonePort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
+        builder.Services.TryAddSingleton<IWarrantyClaimsPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
+        builder.Services.TryAddSingleton<IWarrantyCertificatePort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
 
         // Replay-and-diff healer (P1-T05): per tenant, nightly, through the platform's recurring tenant jobs.
         builder.Services.AddScoped<UnitCurrentHealer>();

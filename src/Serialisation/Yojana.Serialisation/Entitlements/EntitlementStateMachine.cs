@@ -23,6 +23,7 @@ public static class EntitlementStateMachine
     {
         (EntitlementStatus.PendingEvidence, EntitlementEventType.EvidenceAttached) => EntitlementStatus.Active,
         (EntitlementStatus.Active, EntitlementEventType.Rebased) => EntitlementStatus.Active,
+        (EntitlementStatus.Active, EntitlementEventType.Amended) => EntitlementStatus.Active,
         (EntitlementStatus.Active, EntitlementEventType.Suspended) => EntitlementStatus.Suspended,
         (EntitlementStatus.Suspended, EntitlementEventType.Resumed) => EntitlementStatus.Active,
         (EntitlementStatus.PendingEvidence or EntitlementStatus.Active or EntitlementStatus.Suspended, EntitlementEventType.Voided) => EntitlementStatus.Closed,
