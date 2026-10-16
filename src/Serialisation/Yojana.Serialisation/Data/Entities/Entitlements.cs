@@ -344,6 +344,18 @@ public sealed class EntitlementRequirement : ITenantScoped
     public string? WaiverReason { get; set; }
 }
 
+/// <summary>One durable execution summary; detailed rows remain a current, set-based report.</summary>
+public sealed class EntitlementGapRun : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid RunId { get; set; }
+    public DateTime RunAt { get; set; }
+    public required string Trigger { get; set; }
+    public required string FiltersJson { get; set; }
+    public int Total { get; set; }
+    public required string CountsJson { get; set; }
+}
+
 public sealed class EntitlementSuspension : ITenantScoped
 {
     public TenantId TenantId { get; set; }

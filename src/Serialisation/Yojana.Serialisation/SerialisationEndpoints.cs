@@ -104,6 +104,43 @@ public static class SerialisationEndpoints
             Results.Ok(await queries.PageAsync(status, documentType, document, skip ?? 0, take ?? 50, ct)));
         entitlements.MapGet("/requirements/check", async (string documentType, Guid documentId, EntitlementRequirementQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.CheckAsync(documentType, documentId, ct)));
+        entitlements.MapGet("/gap-report", async (string? items, DateOnly? saleFrom, DateOnly? saleTo, string? channels, string? dropShip,
+            string? requirementStatus, string? sort, int? skip, int? take, EntitlementGapQueries queries, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+        {
+            try
+            {
+                var filters = EntitlementGapFilterParser.Parse(items, saleFrom, saleTo, channels, dropShip, requirementStatus, sort);
+                await bus.InvokeAsync<EntitlementGapRunResult>(new RunEntitlementGapReport(Guid.NewGuid(), EntitlementGapTrigger.OnDemand, filters),
+                    new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, ct);
+                return Results.Ok(await queries.PageAsync(filters, skip ?? 0, take ?? 50, ct));
+            }
+            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "filters_invalid", detail = ex.Message }); }
+        });
+        entitlements.MapGet("/gap-report/runs/latest", async (EntitlementGapQueries queries, CancellationToken ct) =>
+            await queries.LastRunAsync(ct) is { } run ? Results.Ok(run) : Results.NotFound());
+        entitlements.MapGet("/gap-report/export", async (string? items, DateOnly? saleFrom, DateOnly? saleTo, string? channels, string? dropShip,
+            string? requirementStatus, string? sort, EntitlementGapQueries queries, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+        {
+            EntitlementGapFilters filters;
+            try { filters = EntitlementGapFilterParser.Parse(items, saleFrom, saleTo, channels, dropShip, requirementStatus, sort); }
+            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "filters_invalid", detail = ex.Message }); }
+            await bus.InvokeAsync<EntitlementGapRunResult>(new RunEntitlementGapReport(Guid.NewGuid(), EntitlementGapTrigger.OnDemand, filters),
+                new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, ct);
+            return Results.Stream(async stream =>
+            {
+                await using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false), leaveOpen: true);
+                await writer.WriteAsync(EntitlementGapCsv.Header.AsMemory(), ct);
+                var offset = 0;
+                while (true)
+                {
+                    var page = await queries.PageAsync(filters, offset, 500, ct);
+                    foreach (var row in page.Rows) await writer.WriteAsync(EntitlementGapCsv.Row(row).AsMemory(), ct);
+                    offset += page.Rows.Count;
+                    if (offset >= page.Total || page.Rows.Count == 0) break;
+                }
+                await writer.FlushAsync(ct);
+            }, "text/csv; charset=utf-8", "entitlement-gap-report.csv");
+        });
         entitlements.MapPost("/requirements/{requirementId:guid}/waive", (Guid requirementId, WaiveEntitlementRequirement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<EntitlementRequirementRow>(bus, tenant, command with { RequirementId = requirementId }, ct)).RequireAuthorization(editor);
 

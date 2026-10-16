@@ -73,6 +73,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<EntitlementRequirement> EntitlementRequirements => Set<EntitlementRequirement>();
 
+    public DbSet<EntitlementGapRun> EntitlementGapRuns => Set<EntitlementGapRun>();
+
     public DbSet<EntitlementSuspension> EntitlementSuspensions => Set<EntitlementSuspension>();
 
     public DbSet<EntitlementRebase> EntitlementRebases => Set<EntitlementRebase>();
@@ -215,6 +217,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             // One open ownership row and one open custody row per unit.
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.Kind }).IsUnique().HasFilter("[valid_to] IS NULL");
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.ValidFrom });
+            b.HasIndex(e => new { e.TenantId, e.Kind, e.PartyType, e.ValidFrom })
+                .IncludeProperties(e => new { e.UnitId, e.EpisodeId, e.PartyRef, e.Source, e.OpeningDocumentType });
             b.HasIndex(e => new { e.TenantId, e.PartyRef, e.Kind, e.ValidTo });
             b.HasIndex(e => new { e.TenantId, e.LocationId, e.ValidTo });
         });
@@ -419,6 +423,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.CoverageFamily }).IsUnique().HasFilter("[status] <> 'closed'");
             // Every entitlement a unit has carried, newest first, for the Entitlements panel and the policy stack.
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.CreatedAt });
+            b.HasIndex(e => new { e.TenantId, e.UnitId, e.CoverageFamily, e.Status, e.ClosedReason });
             b.HasIndex(e => new { e.TenantId, e.RootEntitlementId });
             b.HasIndex(e => new { e.TenantId, e.OwnerPartyRef, e.Status });
             b.HasIndex(e => new { e.TenantId, e.PolicyVersionId });
@@ -438,6 +443,19 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(r => new { r.TenantId, r.UnitId, r.OwnershipEpisodeId }).IsUnique();
             b.HasIndex(r => new { r.TenantId, r.Status, r.RaisedAt });
             b.HasIndex(r => new { r.TenantId, r.SourceDocumentType, r.SourceDocumentId, r.Status });
+        });
+
+        modelBuilder.Entity<EntitlementGapRun>(b =>
+        {
+            b.ToTable("entitlement_gap_run", t =>
+            {
+                t.HasCheckConstraint("ck_entitlement_gap_run_filters_json", "ISJSON(filters_json) = 1");
+                t.HasCheckConstraint("ck_entitlement_gap_run_counts_json", "ISJSON(counts_json) = 1");
+                t.HasCheckConstraint("ck_entitlement_gap_run_trigger", "trigger IN ('migration_load', 'on_demand', 'daily_job')");
+            });
+            b.HasKey(r => new { r.TenantId, r.RunId });
+            b.Property(r => r.Trigger).HasMaxLength(20);
+            b.HasIndex(r => new { r.TenantId, r.RunAt });
         });
 
         modelBuilder.Entity<EntitlementSuspension>(b =>

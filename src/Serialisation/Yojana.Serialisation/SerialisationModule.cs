@@ -69,6 +69,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<Entitlements.EntitlementRequirementWriter>();
         builder.Services.AddScoped<Entitlements.EntitlementRequirementQueries>();
         builder.Services.AddScoped<Entitlements.EntitlementRequirementSweep>();
+        builder.Services.AddScoped<Entitlements.EntitlementGapQueries>();
 
         builder.Services.AddScoped<SearchIndexer>();
         builder.Services.AddScoped<SearchBackfill>();
