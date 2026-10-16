@@ -55,6 +55,7 @@ public static class SerialisationModule
 
         // Global search (MOD-13, P1-T23): the index table and its maintenance handlers live here; other modules index through ISearchIndex.
         builder.Services.AddScoped<SearchIndexer>();
+        builder.Services.AddScoped<SearchBackfill>();
         builder.Services.AddScoped<ISearchIndex>(sp => sp.GetRequiredService<SearchIndexer>());
         builder.Services.AddSingleton<SearchEngineCapabilities>();
         builder.Services.AddScoped<SearchMetadataProfiles>();

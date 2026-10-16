@@ -31,6 +31,9 @@ public sealed class SearchIndexer(SerialisationDbContext db, ITenantContext tena
         // transaction: the handler's own under the bus middleware, or one opened here for a direct caller.
         var ownTransaction = db.Database.CurrentTransaction is null;
         if (ownTransaction) await db.Database.BeginTransactionAsync(cancellationToken);
+        // SearchBackfill takes this tenant gate exclusively for each replacement batch. Incremental writers hold it
+        // shared through their transaction, so neither path can replace rows while the other writes them.
+        await SearchBackfill.LockTenantAsync(db, tenantId, "Shared", cancellationToken);
         // 100 entries per statement keeps every delete and insert far below the 5,000-lock escalation threshold, so parallel handlers never escalate to a table lock and deadlock.
         foreach (var chunk in entries.Chunk(100))
         {
@@ -111,18 +114,30 @@ public sealed class SearchIndexer(SerialisationDbContext db, ITenantContext tena
     public async Task ReindexUnitsAsync(IReadOnlyCollection<Guid> unitIds, CancellationToken cancellationToken)
     {
         if (unitIds.Count == 0) return;
+        var drafts = await BuildUnitDraftsAsync(unitIds, 100, cancellationToken);
+        await UpsertAsync(drafts, cancellationToken);
+    }
+
+    // Shared draft construction keeps the bulk and incremental representations identical.
+    internal async Task<List<SearchEntryDraft>> BuildUnitDraftsAsync(IReadOnlyCollection<Guid> unitIds, int chunkSize, CancellationToken cancellationToken)
+    {
         var tenantId = tenant.TenantId;
         var drafts = new List<SearchEntryDraft>();
         var itemCodes = new Dictionary<Guid, string>();
         // Sorted, so two handlers re-indexing overlapping sets take their application locks in the same order and never deadlock.
-        foreach (var ids in unitIds.Distinct().Order().Chunk(100))
+        foreach (var ids in unitIds.Distinct().Order().Chunk(chunkSize))
         {
             var units = await db.Units.AsNoTracking().Where(u => u.TenantId == tenantId && ids.Contains(u.UnitId)).ToListAsync(cancellationToken);
             var current = await db.Current.AsNoTracking().Where(c => c.TenantId == tenantId && ids.Contains(c.UnitId)).ToDictionaryAsync(c => c.UnitId, cancellationToken);
             var identifiers = (await db.Identifiers.AsNoTracking().Where(i => i.TenantId == tenantId && ids.Contains(i.UnitId)).ToListAsync(cancellationToken)).ToLookup(i => i.UnitId);
             var ownership = (await db.Episodes.AsNoTracking().Where(e => e.TenantId == tenantId && ids.Contains(e.UnitId) && e.ValidTo == null).ToListAsync(cancellationToken)).ToLookup(e => e.UnitId);
-            // the newest event per unit: the rows of these units are few, so group in memory rather than ask the partitioned ledger for a per-group TOP 1
-            var lastEvents = (await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && ids.Contains(e.UnitId)).Select(e => new { e.UnitId, e.EventType, e.EventTime, e.Seq }).ToListAsync(cancellationToken))
+            // The newest event per unit is the one unit_current names (last_event_time, last_event_seq): one seek per unit on
+            // (tenant, unit, event_time) in a single partition, instead of reading every event of every unit, which the
+            // backfill's 5,000-unit batches could not afford (P1-T25).
+            var lastEvents = (await (from c in db.Current.AsNoTracking()
+                                     join e in db.Events.AsNoTracking() on new { c.TenantId, c.UnitId, EventTime = c.LastEventTime } equals new { e.TenantId, e.UnitId, e.EventTime }
+                                     where c.TenantId == tenantId && ids.Contains(c.UnitId) && e.Seq == c.LastEventSeq
+                                     select new { e.UnitId, e.EventType, e.EventTime, e.Seq }).ToListAsync(cancellationToken))
                 .GroupBy(e => e.UnitId).ToDictionary(g => g.Key, g => g.MaxBy(e => e.Seq)!);
             foreach (var unit in units)
             {
@@ -164,7 +179,7 @@ public sealed class SearchIndexer(SerialisationDbContext db, ITenantContext tena
             }
         }
 
-        await UpsertAsync(drafts, cancellationToken);
+        return drafts;
     }
 
     /// <summary>Rebuilds a document's entry from the events that name it: every serial it lists is a term (the "document lists the serial" reason).</summary>

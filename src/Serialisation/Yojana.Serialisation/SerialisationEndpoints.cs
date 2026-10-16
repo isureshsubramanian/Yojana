@@ -52,6 +52,9 @@ public static class SerialisationEndpoints
             string.IsNullOrWhiteSpace(q) ? Results.Ok(new SearchResponse("", 0, [], [], null, "none")) : Results.Ok(await search.SearchAsync(q, scope, SearchDisclosureTier.Portal == scope ? SearchDisclosureTier.Portal : SearchDisclosureTier.BackOffice, ct)))
             .RequireAuthorization(YojanaPolicy.TenantMember);
 
+        app.MapPost("/api/search/backfill", async (SearchBackfill backfill, CancellationToken ct) => Results.Ok(await backfill.BackfillUnitsAsync(ct)))
+            .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+
         var selections = app.MapGroup("/api/selections").RequireAuthorization(YojanaPolicy.TenantMember);
         selections.MapPost("/", (ResolveSelectionSet command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ResolveSelectionSetResult>(bus, tenant, command, ct));
         selections.MapPost("/{selectionId:guid}/preview", (Guid selectionId, PreviewBulkOperation command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<BulkPreviewResult>(bus, tenant, command with { SelectionId = selectionId }, ct));
