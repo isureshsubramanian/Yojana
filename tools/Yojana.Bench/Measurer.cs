@@ -267,10 +267,12 @@ public sealed class Measurer(IServiceProvider services, BenchOptions options, Be
             var watch = Stopwatch.StartNew();
             var result = await bus.InvokeAsync<ConsumedEventResult>(new SalesShipmentPosted(new ThinEnvelope(Guid.NewGuid(), BenchOptions.LegalEntity, DateTime.UtcNow, "bench"), document), new DeliveryOptions { TenantId = tenant.ToString() }, CancellationToken.None);
             watch.Stop();
+            var end = Stopwatch.GetTimestamp();
             timings.Add(watch.Elapsed.TotalMilliseconds);
             notes.Add($"run {run}: {result.UnitsAffected} units on {lines.Count} lines, {result.Exceptions.Count} exceptions, {counter.Commands} statements in {BenchReport.Ms(counter.Elapsed.TotalMilliseconds)} of command time");
             Console.WriteLine($"{DateTime.Now:HH:mm:ss} shipment {notes[^1]} in {BenchReport.Ms(watch.Elapsed.TotalMilliseconds)}");
             foreach (var slow in counter.Slowest(8)) Console.WriteLine($"    {slow}");
+            foreach (var gap in counter.Gaps(10, end)) Console.WriteLine($"  gap {gap}");
         }
 
         report.Measure("Shipment of 500 serials (one document)", "≤ 500 ms", string.Join(" · ", timings.Select(BenchReport.Ms)), timings.Min() <= 500 ? "PASS" : "FAIL",
