@@ -8,6 +8,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Ports;
 using Yojana.Serialisation.Projections;
@@ -44,6 +45,7 @@ public sealed class Measurer(IServiceProvider services, BenchOptions options, Be
         await StageAsync("lookup", () => LookupAsync(serials, rtt));
         await StageAsync("history", () => HistoryAsync(unitIds, rtt));
         await StageAsync("detail", () => DetailAsync(unitIds.Take(Math.Min(300, unitIds.Count)).ToList(), rtt));
+        await StageAsync("warranty", () => WarrantyAsync(unitIds));
         await StageAsync("shipment", ShipmentAsync);
         await StageAsync("receipt", ReceiptAsync);
         await StageAsync("ingestion", () => IngestionAsync(unitIds));
@@ -56,7 +58,15 @@ public sealed class Measurer(IServiceProvider services, BenchOptions options, Be
             await StageAsync("lookup after archival", () => LookupAsync(serials, rtt, "after archival"));
         }
 
-        report.Measure("Entitlement check for a claim", "p99 ≤ 20 ms", "not measurable", "OPEN", "the entitlement engine arrives in P2");
+    }
+
+    public async Task WarrantyOnlyAsync()
+    {
+        await FactsAsync();
+        await using var connection = await Sql.OpenAsync(options.ConnectionString, tenant.Value);
+        var unitIds = (await Sql.RowsAsync(connection, $"SELECT TOP ({Math.Max(1, options.Samples)}) unit_id FROM serialisation.unit_current ORDER BY NEWID()", 600))
+            .Select(r => (Guid)r["unit_id"]!).ToList();
+        await WarrantyAsync(unitIds);
     }
 
     /// <summary>A failed stage (a dropped connection, for example) is recorded and the run continues; the report is always written.</summary>
@@ -231,6 +241,30 @@ public sealed class Measurer(IServiceProvider services, BenchOptions options, Be
 
         var c = BenchReport.Percentiles(client);
         report.Measure("Unit detail page (identifiers, episodes, as-built, build records, event count)", "informative", $"client p50 {BenchReport.Ms(c.P50)} · p99 {BenchReport.Ms(c.P99)}", "INFO", $"several round trips per call over LAN p50 {BenchReport.Ms(rtt)}; {unitIds.Count} samples");
+    }
+
+    private async Task WarrantyAsync(List<Guid> unitIds)
+    {
+        if (unitIds.Count == 0)
+        {
+            report.Measure("Entitlement check for a claim", "p99 ≤ 20 ms", "no units available", "SKIP");
+            return;
+        }
+
+        var on = DateOnly.FromDateTime(DateTime.UtcNow);
+        var client = new List<double>();
+        foreach (var unitId in unitIds)
+        {
+            using var scope = Scope();
+            var queries = scope.ServiceProvider.GetRequiredService<EntitlementQueries>();
+            var watch = Stopwatch.StartNew();
+            await queries.WarrantyCheckAsync(unitId, on, null, CancellationToken.None);
+            client.Add(watch.Elapsed.TotalMilliseconds);
+        }
+
+        var p = BenchReport.Percentiles(client);
+        report.Measure("Entitlement check for a claim", "p99 ≤ 20 ms", $"client p50 {BenchReport.Ms(p.P50)} · p95 {BenchReport.Ms(p.P95)} · p99 {BenchReport.Ms(p.P99)}", p.P99 <= 20 ? "PASS" : "FAIL",
+            $"{client.Count:N0} random unit checks through EntitlementQueries and serialisation.warranty_current; row-level security on");
     }
 
     /// <summary>The write SLOs only (shipment, receipt), for a re-measurement after a change to the posting path.</summary>

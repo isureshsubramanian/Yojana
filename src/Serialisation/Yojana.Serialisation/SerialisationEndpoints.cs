@@ -76,6 +76,16 @@ public static class SerialisationEndpoints
         var desk = YojanaPolicy.ForRole(YojanaRole.ServiceDesk);
         units.MapGet("/{unitId:guid}/entitlements", async (Guid unitId, DateOnly? on, EntitlementQueries queries, IClock clock, CancellationToken ct) =>
             Results.Ok(await queries.ForUnitAsync(unitId, on ?? DateOnly.FromDateTime(clock.UtcNow), ct)));
+        units.MapGet("/{unitId:guid}/warranty-check", async (Guid unitId, DateOnly? on, string? family, EntitlementQueries queries, IClock clock, CancellationToken ct) =>
+            await queries.WarrantyCheckAsync(unitId, on ?? DateOnly.FromDateTime(clock.UtcNow), family, ct) is { } result ? Results.Ok(result) : Results.NotFound());
+        units.MapGet("/warranty-check", async (string identifier, string? type, DateOnly? on, string? family, UnitQueries unitQueries, EntitlementQueries entitlementQueries, IClock clock, CancellationToken ct) =>
+        {
+            var lookup = await unitQueries.LookupAsync(identifier, type, ct);
+            var unitsFound = lookup.Hits.Select(h => h.UnitId).Distinct().ToList();
+            if (unitsFound.Count == 0) return Results.NotFound();
+            if (unitsFound.Count > 1) return Results.Conflict(new { reason = "ambiguous_identifier", lookup.Hits });
+            return Results.Ok(await entitlementQueries.WarrantyCheckAsync(unitsFound[0], on ?? DateOnly.FromDateTime(clock.UtcNow), family, ct));
+        });
         entitlements.MapPost("/", (CreateEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CreateEntitlementResult>(bus, tenant, command, ct)).RequireAuthorization(desk);
         entitlements.MapPost("/extended", (AttachExtendedWarranty command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<AttachExtendedWarrantyResult>(bus, tenant, command, ct)).RequireAuthorization(desk);
         entitlements.MapPost("/backfill", (BackfillEntitlements command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
