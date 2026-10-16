@@ -121,6 +121,9 @@ public sealed class WarrantyPolicyVersion : ITenantScoped
     /// <summary>The flag for separately priced plans under service-contract regulation (OD-05).</summary>
     public bool ServiceContractRegulated { get; set; }
 
+    /// <summary>JSON <see cref="Contracts.EligibilityRule"/>, null when anyone may buy the plan (P2-T07).</summary>
+    public string? Eligibility { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public required string CreatedBy { get; set; }

@@ -44,11 +44,23 @@ public sealed record PolicyTerms(
     int? DoaWindowDays,
     string AssuranceOrService,
     string ReferenceTimeZoneRule,
-    bool ServiceContractRegulated = false)
+    bool ServiceContractRegulated = false,
+    EligibilityRule? Eligibility = null)
 {
     public const string TimeZoneCustomerSite = "customer_site";
     public const string TimeZoneObligorEntity = "obligor_entity";
     public const string TimeZoneUtc = "utc";
+}
+
+/// <summary>
+/// Who may buy a separately priced plan after the sale (ADR-0001 "Extended warranty"): while the unit's entitlement in
+/// <see cref="BaseFamily"/> still covers it, or within <see cref="WithinDays"/> of that entitlement's start. The base
+/// family is also what a <c>base_expiry</c> start follows.
+/// </summary>
+public sealed record EligibilityRule(string Kind, string BaseFamily, int? WithinDays = null)
+{
+    public const string WithinBaseCoverage = "within_base_coverage";
+    public const string WithinDaysOfBaseStart = "within_days_of_base_start";
 }
 
 public sealed record PolicyIssue(string Severity, string Code, string Field, string Message)

@@ -65,5 +65,33 @@ public sealed record TransferEntitlement(
 
 public sealed record TransferEntitlementResult(Guid SourceEntitlementId, Guid TargetEntitlementId, Guid RootEntitlementId, string PolicyApplied, DateOnly ComputedEnd, int ChainLength, Guid EventId, bool Replayed);
 
+/// <summary>
+/// Sells a separately priced plan for a unit after the sale (P2-T07): an extended term or an add-on in a stacking family,
+/// started at the purchase or at the base entitlement's expiry as its policy says, priced and deferred over its term.
+/// The source document (the plan's invoice or order) is required: Finance defers revenue against it.
+/// </summary>
+public sealed record AttachExtendedWarranty(
+    Guid CommandId,
+    Guid UnitId,
+    string CoverageFamily,
+    DateOnly ContractDate,
+    Guid ObligorEntityId,
+    DateTime PurchasedAt,
+    decimal Price,
+    string Currency,
+    DocumentRef SourceDocument,
+    DateTime EventTime,
+    string ActorRef,
+    Guid? PolicyVersionId = null,
+    Guid? PayerPartyRef = null,
+    string? PayerPartyType = null,
+    Guid? OwnerPartyRef = null,
+    string? OwnerPartyType = null,
+    string? Country = null,
+    Guid? SiteLocationId = null,
+    string? CustomerPoRef = null);
+
+public sealed record AttachExtendedWarrantyResult(Guid EntitlementId, string PolicyCode, int PolicyVersion, string StartBasis, DateOnly StartDate, DateOnly EndDate, Guid? BaseEntitlementId, IReadOnlyList<EntitlementRevenueSchedulePeriod> RevenueSchedule, Guid EventId, bool Replayed);
+
 /// <summary>An entitlement as a reader sees it today: the stored status and the effective one (lazy expiry, never written at read).</summary>
 public sealed record EntitlementView(Guid EntitlementId, Guid UnitId, string CoverageFamily, string Type, string StoredStatus, string EffectiveStatus, string? ClosedReason, DateOnly? StartDate, DateOnly? EndDate, int? DaysRemaining, Guid PolicyVersionId, string? StartBasis, string StartTimeZone, Guid? ParentEntitlementId, Guid? RootEntitlementId, Guid? SupersedesEntitlementId);

@@ -2360,6 +2360,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("int")
                         .HasColumnName("duration_value");
 
+                    b.Property<string>("Eligibility")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("eligibility");
+
                     b.Property<bool>("EndInclusive")
                         .HasColumnType("bit")
                         .HasColumnName("end_inclusive");
@@ -2500,6 +2504,8 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("warranty_policy_version", "serialisation", t =>
                         {
                             t.HasCheckConstraint("ck_warranty_policy_version_coverage_json", "ISJSON(coverage) = 1");
+
+                            t.HasCheckConstraint("ck_warranty_policy_version_eligibility_json", "eligibility IS NULL OR ISJSON(eligibility) = 1");
 
                             t.HasCheckConstraint("ck_warranty_policy_version_exclusions_json", "ISJSON(exclusions) = 1");
 

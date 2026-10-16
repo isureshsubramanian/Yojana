@@ -93,6 +93,12 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant)
                     GuidOrNull(a, "target_entitlement_id") ?? Guid.Empty, GuidOrNull(a, "source_unit_id") ?? Guid.Empty, GuidOrNull(a, "target_unit_id") ?? Guid.Empty,
                     GuidOrNull(a, "replacement_link_id"), Str(a, "policy_applied") ?? "", Date(a, "computed_end") ?? default, GuidOrNull(a, "root_entitlement_id") ?? Guid.Empty,
                     Int(a, "chain_length") ?? 0, a?.TryGetProperty("accrual_suppressed", out var transferSuppressed) == true && transferSuppressed.ValueKind == JsonValueKind.True);
+            case EntitlementEventType.ExtendedSold:
+                return new EntitlementExtendedSold(Header(EntitlementExtendedSold.Schema, EntitlementExtendedSold.Version), GuidOrNull(a, "entitlement_id") ?? Guid.Empty, GuidOrNull(a, "item_id") ?? Guid.Empty,
+                    Str(a, "coverage_family") ?? "", e.LegalEntityId, GuidOrNull(a, "payer_party_ref"), a?.TryGetProperty("price", out var price) == true ? price.GetDecimal() : 0m, Str(a, "currency") ?? "",
+                    Int(a, "term_months") ?? 0, Date(a, "start_date") ?? default, Date(a, "end_date") ?? default,
+                    a?.TryGetProperty("revenue_schedule", out var schedule) == true ? schedule.Deserialize<List<EntitlementRevenueSchedulePeriod>>(LedgerJson.Options) ?? [] : [],
+                    document ?? new DocumentRef("", Guid.Empty, null));
             // The first start of a pending entitlement is published as a rebase from no start, so Finance sees one shape for every start change.
             case EntitlementEventType.Rebased or EntitlementEventType.EvidenceAttached:
             {

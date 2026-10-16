@@ -44,6 +44,7 @@ public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant
         row.AssuranceOrService = terms.AssuranceOrService;
         row.ReferenceTimeZoneRule = terms.ReferenceTimeZoneRule;
         row.ServiceContractRegulated = terms.ServiceContractRegulated;
+        row.Eligibility = terms.Eligibility is null ? null : Json(terms.Eligibility);
     }
 
     public async Task<PolicyTerms> ReadTermsAsync(WarrantyPolicyVersion row, CancellationToken cancellationToken)
@@ -55,7 +56,8 @@ public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant
         return new PolicyTerms(
             new DurationRule(row.DurationValue, row.DurationUnit, row.EndOfMonthRule, row.EndInclusive), row.DurationBasis, Read<List<UsageLimitTerm>>(row.UsageLimits),
             new StartRule(row.StartTrigger, Read<List<StartFallback>>(row.FallbackChain), row.StartCapDays), Read<CoverageTerms>(row.Coverage), Read<List<string>>(row.Exclusions), Read<List<string>>(row.RegionScope),
-            row.Transferable, row.SettlementFormula, replacement, Read<List<RefurbishedTerm>>(row.RefurbishedPolicies), row.DoaWindowDays, row.AssuranceOrService, row.ReferenceTimeZoneRule, row.ServiceContractRegulated);
+            row.Transferable, row.SettlementFormula, replacement, Read<List<RefurbishedTerm>>(row.RefurbishedPolicies), row.DoaWindowDays, row.AssuranceOrService, row.ReferenceTimeZoneRule, row.ServiceContractRegulated,
+            row.Eligibility is null ? null : Read<EligibilityRule>(row.Eligibility));
     }
 
     public async Task<PolicyValidation> ValidateAsync(WarrantyPolicyVersion row, PolicyTerms terms, CancellationToken cancellationToken)

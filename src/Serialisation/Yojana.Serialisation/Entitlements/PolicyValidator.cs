@@ -68,6 +68,21 @@ public static partial class PolicyValidator
         if (start.CapDays is <= 0) Error("start_cap_not_positive", "start.cap_days", "The cap must be at least one day.");
         if (start.Trigger == StartTrigger.BaseExpiry && context.CoverageFamily == "base_warranty") Error("base_expiry_on_base", "start.trigger", "The base warranty cannot start at its own expiry.");
 
+        // A plan sold after the sale (P2-T07): base_expiry follows the eligibility rule's base family, so it needs one.
+        if (start.Trigger == StartTrigger.BaseExpiry && terms.Eligibility is null) Error("base_family_missing", "eligibility", "A plan that starts at the base warranty's expiry must name the base family in its eligibility rule.");
+        if (terms.Eligibility is { } eligibility)
+        {
+            if (eligibility.Kind is not (EligibilityRule.WithinBaseCoverage or EligibilityRule.WithinDaysOfBaseStart)) Error("eligibility_unknown", "eligibility.kind", $"'{eligibility.Kind}' is not within_base_coverage or within_days_of_base_start.");
+            if (eligibility.Kind == EligibilityRule.WithinDaysOfBaseStart && eligibility.WithinDays is not > 0) Error("eligibility_days_not_positive", "eligibility.within_days", "The purchase window must be at least one day.");
+            if (eligibility.BaseFamily == context.CoverageFamily) Error("eligibility_base_is_self", "eligibility.base_family", "A plan cannot depend on its own family.");
+            else if (!context.Families.ContainsKey(eligibility.BaseFamily)) Error("family_unknown", "eligibility.base_family", $"Coverage family '{eligibility.BaseFamily}' is not defined for this tenant.");
+        }
+
+        if (start.Trigger is StartTrigger.PlanPurchase or StartTrigger.BaseExpiry && terms.AssuranceOrService == AssuranceOrService.Assurance)
+        {
+            Warn("plan_trigger_on_assurance", "start.trigger", "A plan bought separately is a service warranty; an assurance warranty comes with the sale and starts from it.");
+        }
+
         var c = terms.Coverage;
         foreach (var (name, pct) in new[] { ("parts_pct", c.PartsPct), ("labour_pct", c.LabourPct), ("travel_pct", c.TravelPct) })
         {

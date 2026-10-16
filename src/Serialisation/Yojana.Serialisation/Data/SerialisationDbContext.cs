@@ -338,6 +338,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
                 {
                     t.HasCheckConstraint($"ck_warranty_policy_version_{column}_json", $"ISJSON({column}) = 1");
                 }
+
+                t.HasCheckConstraint("ck_warranty_policy_version_eligibility_json", "eligibility IS NULL OR ISJSON(eligibility) = 1");
             });
             b.HasKey(v => new { v.TenantId, v.PolicyVersionId });
             b.Property(v => v.PolicyCode).HasMaxLength(60);

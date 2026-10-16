@@ -36,6 +36,7 @@ public static class PublishedEventSinkHandler
     public static void Handle(EntitlementCreated e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(EntitlementRebased e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(EntitlementTransferred e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(EntitlementExtendedSold e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(EntitlementClosed e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(EntitlementCoverageChanged e) => PublishedEventSink.Received.Enqueue(e);
 }

@@ -56,6 +56,21 @@ public sealed class PolicyValidatorTests
         Assert.DoesNotContain("base_expiry_on_base", Errors(PolicyValidator.Validate(selfExpiry with { AssuranceOrService = AssuranceOrService.Service }, Context(family: "service_level"))));
     }
 
+    /// <summary>P2-T07: a plan's eligibility names a known base family other than its own, and a base_expiry start needs one.</summary>
+    [Fact]
+    public void A_plan_names_its_base_family_and_a_valid_purchase_window()
+    {
+        var plan = Standard24() with { Start = new StartRule(StartTrigger.BaseExpiry, [], null), AssuranceOrService = AssuranceOrService.Service };
+        Assert.Contains("base_family_missing", Errors(PolicyValidator.Validate(plan, Context(family: "service_level"))));
+        var withBase = plan with { Eligibility = new EligibilityRule(EligibilityRule.WithinBaseCoverage, "base_warranty") };
+        Assert.Empty(Errors(PolicyValidator.Validate(withBase, Context(family: "service_level"))));
+        Assert.Contains("eligibility_base_is_self", Errors(PolicyValidator.Validate(withBase with { Eligibility = new EligibilityRule(EligibilityRule.WithinBaseCoverage, "service_level") }, Context(family: "service_level"))));
+        Assert.Contains("family_unknown", Errors(PolicyValidator.Validate(withBase with { Eligibility = new EligibilityRule(EligibilityRule.WithinBaseCoverage, "nope") }, Context(family: "service_level"))));
+        Assert.Contains("eligibility_days_not_positive", Errors(PolicyValidator.Validate(withBase with { Eligibility = new EligibilityRule(EligibilityRule.WithinDaysOfBaseStart, "base_warranty") }, Context(family: "service_level"))));
+        Assert.Contains("eligibility_unknown", Errors(PolicyValidator.Validate(withBase with { Eligibility = new EligibilityRule("anytime", "base_warranty") }, Context(family: "service_level"))));
+        Assert.Contains("plan_trigger_on_assurance", Warnings(PolicyValidator.Validate(withBase with { AssuranceOrService = AssuranceOrService.Assurance }, Context(family: "service_level"))));
+    }
+
     [Theory]
     [InlineData(0, DurationRule.Months, DurationRule.Clamp, "duration_not_positive")]
     [InlineData(12, "weeks", DurationRule.Clamp, "duration_unit_unknown")]
