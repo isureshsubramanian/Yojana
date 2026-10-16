@@ -6,16 +6,17 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Entitlements;
+using Yojana.Serialisation.Ports;
 
 namespace Yojana.Serialisation.DatabaseTests;
 
 /*
 P2-T20 coverage map (type.method):
 Cases
-  27  -> EntitlementEdgeCaseScenarioTests.Inter_company_transfer_waits_for_the_first_external_sale [product gap]
+  27  -> EntitlementEdgeCaseScenarioTests.Inter_company_transfer_waits_for_the_first_external_sale_and_a_resale_never_restarts_cover
   31  -> EntitlementEdgeCaseScenarioTests.Total_loss_closes_only_the_selected_entitlement_and_keeps_its_history
   44  -> EntitlementCommandTests.Creation_takes_the_first_evidence_in_the_chain_a_rebase_moves_it_within_the_cap_and_unit_current_follows
-  45  -> EntitlementEdgeCaseScenarioTests.Customer_resale_inherits_cover_only_when_the_policy_allows_it [product gap]
+  45  -> EntitlementEdgeCaseScenarioTests.Customer_resale_moves_cover_only_when_the_policy_allows_it
   49  -> EntitlementEdgeCaseScenarioTests.Customer_supplied_unit_gets_only_the_explicit_contract_entitlement
   52  -> EntitlementCommandTests.Creation_takes_the_first_evidence_in_the_chain_a_rebase_moves_it_within_the_cap_and_unit_current_follows
   53  -> ExtendedWarrantyTests.An_extended_term_starts_at_base_expiry_stacks_beside_the_base_and_is_published_as_sold_with_its_schedule
@@ -26,10 +27,10 @@ Cases
   62  -> EntitlementCommandTests.Pending_evidence_suspension_void_close_and_lazy_expiry
   63  -> PolicyResolutionTests.The_stack_runs_unit_then_parent_then_contract_then_product_and_versions_go_by_contract_date
   64  -> ExtendedWarrantyTests.An_extended_term_starts_at_base_expiry_stacks_beside_the_base_and_is_published_as_sold_with_its_schedule
-  66  -> EntitlementEdgeCaseScenarioTests.Discontinued_item_remains_serviceable_until_its_last_service_date [product gap]
+  66  -> P4 (claims after discontinuation); placeholder EntitlementEdgeCaseScenarioTests.Discontinued_item_remains_serviceable_until_its_last_service_date
   71  -> EntitlementCommandTests.Transfer_closes_the_source_builds_one_rooted_chain_and_suppresses_the_second_accrual
   72  -> EntitlementCommandTests.Creation_takes_the_first_evidence_in_the_chain_a_rebase_moves_it_within_the_cap_and_unit_current_follows
-  110 -> EntitlementEdgeCaseScenarioTests.Inter_company_sale_keeps_the_reserve_with_the_obligor_and_does_not_restart_cover [product gap]
+  110 -> EntitlementEdgeCaseScenarioTests.Inter_company_transfer_waits_for_the_first_external_sale_and_a_resale_never_restarts_cover
   112 -> TermArithmeticTests.The_reference_zone_decides_the_calendar_day_of_an_instant; TermArithmeticTests.Across_a_year_of_hours_the_local_day_never_goes_back_and_never_skips_whatever_the_zone_and_daylight_saving
   113 -> TermArithmeticTests.Months_end_by_the_rule; TermArithmeticTests.Clamp_keeps_the_day_of_month_when_it_exists_otherwise_the_month_end_and_is_monotonic
   114 -> PolicyResolutionTests.The_stack_runs_unit_then_parent_then_contract_then_product_and_versions_go_by_contract_date
@@ -129,15 +130,111 @@ public sealed class EntitlementEdgeCaseScenarioTests(SerialisationHostFixture fi
         Assert.Equal((created.EntitlementId, EntitlementType.Contract, "contract_cover"), (row.EntitlementId, row.Type, row.CoverageFamily));
     }
 
-    [DatabaseFact(Skip = "No ownership/inter-company command or port exposes group-member transfers to entitlement start-trigger resolution.")]
-    public Task Inter_company_transfer_waits_for_the_first_external_sale() => Task.CompletedTask;
+    // Cases 27, 110 and 45: ownership changes that are not a plain first sale. The base policy is required on sale; the
+    // requirement flow (P2-T13) is what creates, moves or closes cover, so every scenario ends in that command path.
+    private async Task<(TenantId Tenant, Guid Unit)> ResaleSetUpAsync(string prefix, string transferable, StartRule? start = null)
+    {
+        var tenant = await fixture.NewTenantAsync(prefix);
+        await InvokeAsync<CoverageFamilyRow>(tenant, new DefineCoverageFamily(CoverageFamilyCode.Base, "Base warranty", false, AssuranceOrService.Assurance));
+        await InvokeAsync<ReplacementPolicyRow>(tenant, new DefineReplacementPolicy("RS-90", ReplacementRule.MaxRemainingOrMinDays, 90, null, null));
+        var code = "RS-" + Guid.NewGuid().ToString("N")[..6];
+        var draft = await InvokeAsync<PolicyDraftResult>(tenant, new CreatePolicyDraft(Guid.NewGuid(), code, code, CoverageFamilyCode.Base, EntitlementType.Manufacturer, new DateOnly(2020, 1, 1),
+            PolicyValidatorTestsTerms.Standard24() with { ReplacementPolicyCode = "RS-90", Transferable = transferable, Start = start ?? PolicyValidatorTestsTerms.Standard24().Start }, "test"));
+        await InvokeAsync<PolicyDraftResult>(tenant, new PublishPolicyVersion(draft.PolicyVersionId, "test"));
+        var item = Guid.NewGuid();
+        fixture.Services.GetRequiredService<InMemoryWarrantyPorts>().Register(new ItemWarrantyPolicy(item, CoverageFamilyCode.Base, code, true));
+        var commissioned = await InvokeAsync<CommissionUnitsResult>(tenant, new CommissionUnits(Guid.NewGuid(), item, UnitOrigin.Manufactured,
+            [new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, prefix.ToUpperInvariant() + Guid.NewGuid().ToString("N"))])], At.AddDays(-20), "test", Obligor));
+        return (tenant, commissioned.Lines[0].UnitId!.Value);
+    }
 
-    [DatabaseFact(Skip = "No customer ownership-transfer command invokes entitlement transferability or creates inherited owner cover.")]
-    public Task Customer_resale_inherits_cover_only_when_the_policy_allows_it() => Task.CompletedTask;
+    private Task<OpenOwnershipResult> SellAsync(TenantId tenant, Guid unit, Guid party, DateTime at, string partyType = PartyType.Customer, bool groupMember = false) =>
+        InvokeAsync<OpenOwnershipResult>(tenant, new OpenOwnership(Guid.NewGuid(), unit, party, partyType, EpisodeReason.Sale, at, "sales", Obligor, EpisodeSource.Delivery,
+            Document: new DocumentRef("delivery", Guid.NewGuid(), 1), PartyIsGroupMember: groupMember));
 
-    [DatabaseFact(Skip = "Item sales-block, service-block, successor and last-service-date facts are not exposed through an entitlement command or port.")]
+    private async Task<Data.Entities.EntitlementRequirement> RequirementAsync(TenantId tenant, Guid episode, string status)
+    {
+        for (var i = 0; i < 150; i++)
+        {
+            using var scope = fixture.ScopeFor(tenant);
+            var row = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().EntitlementRequirements.AsNoTracking().SingleOrDefaultAsync(r => r.OwnershipEpisodeId == episode && r.Status == status);
+            if (row is not null) return row;
+            await Task.Delay(100);
+        }
+
+        throw new TimeoutException($"The requirement of episode {episode} did not reach {status}.");
+    }
+
+    private async Task<List<Data.Entities.Entitlement>> BaseAsync(TenantId tenant, Guid unit)
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        return await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Entitlements.AsNoTracking().Where(e => e.UnitId == unit && e.CoverageFamily == CoverageFamilyCode.Base).ToListAsync();
+    }
+
+    [DatabaseFact]
+    public async Task Inter_company_transfer_waits_for_the_first_external_sale_and_a_resale_never_restarts_cover()
+    {
+        // cases 27 and 110: manufacturer cover starts at the first external sale; the reserve stays with the obligor
+        var (tenant, unit) = await ResaleSetUpAsync("ic", Transferability.Yes, new StartRule(StartTrigger.FirstExternalSale, [], 365));
+        var sister = await SellAsync(tenant, unit, Guid.NewGuid(), new DateTime(2026, 10, 2, 9, 0, 0, DateTimeKind.Utc), PartyType.GroupEntity, groupMember: true);
+        await Task.Delay(1000);
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            Assert.False(await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().EntitlementRequirements.AnyAsync(r => r.OwnershipEpisodeId == sister.EpisodeId));
+        }
+
+        Assert.Empty(await BaseAsync(tenant, unit));
+        var external = await SellAsync(tenant, unit, Guid.NewGuid(), new DateTime(2026, 11, 20, 9, 0, 0, DateTimeKind.Utc));
+        var satisfied = await RequirementAsync(tenant, external.EpisodeId, EntitlementRequirementStatus.Satisfied);
+        var cover = Assert.Single(await BaseAsync(tenant, unit));
+        Assert.Equal(((Guid?)cover.EntitlementId, (DateOnly?)new DateOnly(2026, 11, 20), Obligor), (satisfied.EntitlementId, cover.StartDate, cover.ObligorEntityId));
+
+        // the customer resells: the same cover follows, its start does not move
+        var resale = await SellAsync(tenant, unit, Guid.NewGuid(), new DateTime(2027, 3, 1, 9, 0, 0, DateTimeKind.Utc));
+        await RequirementAsync(tenant, resale.EpisodeId, EntitlementRequirementStatus.Satisfied);
+        var after = Assert.Single(await BaseAsync(tenant, unit));
+        Assert.Equal((cover.EntitlementId, cover.StartDate, cover.EndDate), (after.EntitlementId, after.StartDate, after.EndDate));
+    }
+
+    [DatabaseFact]
+    public async Task Customer_resale_moves_cover_only_when_the_policy_allows_it()
+    {
+        // case 45, transferable: the cover follows to the new owner; the previous owner is kept in the ledger only
+        var (yesTenant, yesUnit) = await ResaleSetUpAsync("ry", Transferability.Yes);
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var sold = await SellAsync(yesTenant, yesUnit, first, new DateTime(2026, 10, 2, 9, 0, 0, DateTimeKind.Utc));
+        await RequirementAsync(yesTenant, sold.EpisodeId, EntitlementRequirementStatus.Satisfied);
+        var resold = await SellAsync(yesTenant, yesUnit, second, new DateTime(2027, 1, 15, 9, 0, 0, DateTimeKind.Utc));
+        await RequirementAsync(yesTenant, resold.EpisodeId, EntitlementRequirementStatus.Satisfied);
+        var moved = Assert.Single(await BaseAsync(yesTenant, yesUnit));
+        Assert.Equal((second, EntitlementStatus.Active), (moved.OwnerPartyRef, moved.Status));
+
+        // not transferable: the cover closes at the resale and the new owner's requirement is waived by the policy
+        var (noTenant, noUnit) = await ResaleSetUpAsync("rn", Transferability.No);
+        await RequirementAsync(noTenant, (await SellAsync(noTenant, noUnit, first, new DateTime(2026, 10, 2, 9, 0, 0, DateTimeKind.Utc))).EpisodeId, EntitlementRequirementStatus.Satisfied);
+        var refused = await SellAsync(noTenant, noUnit, second, new DateTime(2027, 1, 15, 9, 0, 0, DateTimeKind.Utc));
+        Assert.Equal("policy", (await RequirementAsync(noTenant, refused.EpisodeId, EntitlementRequirementStatus.Waived)).WaivedBy);
+        var closed = Assert.Single(await BaseAsync(noTenant, noUnit));
+        Assert.Equal((EntitlementStatus.Closed, EntitlementClosedReason.NotTransferable, first, new DateOnly(2027, 1, 15)), (closed.Status, closed.ClosedReason, closed.OwnerPartyRef, closed.ClosedEffective));
+
+        // registration required: an exception until the registration is recorded, then the cover moves
+        var (regTenant, regUnit) = await ResaleSetUpAsync("rr", Transferability.RegistrationRequired);
+        await RequirementAsync(regTenant, (await SellAsync(regTenant, regUnit, first, new DateTime(2026, 10, 2, 9, 0, 0, DateTimeKind.Utc))).EpisodeId, EntitlementRequirementStatus.Satisfied);
+        var pending = await SellAsync(regTenant, regUnit, second, new DateTime(2027, 1, 15, 9, 0, 0, DateTimeKind.Utc));
+        var waiting = await RequirementAsync(regTenant, pending.EpisodeId, EntitlementRequirementStatus.Exception);
+        Assert.Equal(EntitlementMissingInput.TransferRegistrationRequired, waiting.MissingInput);
+        Assert.Equal(first, Assert.Single(await BaseAsync(regTenant, regUnit)).OwnerPartyRef);
+        Assert.Equal("evidence_required", (await Assert.ThrowsAsync<CommandRefusedException>(() =>
+            InvokeAsync<EntitlementRequirementRow>(regTenant, new CompleteEntitlementTransfer(waiting.RequirementId, " ", new DateTime(2027, 1, 20, 9, 0, 0, DateTimeKind.Utc), "service.desk")))).Rule);
+        var completed = await InvokeAsync<EntitlementRequirementRow>(regTenant, new CompleteEntitlementTransfer(waiting.RequirementId, "REG-4471", new DateTime(2027, 1, 20, 9, 0, 0, DateTimeKind.Utc), "service.desk"));
+        Assert.Equal(EntitlementRequirementStatus.Satisfied, completed.Status);
+        Assert.Equal(second, Assert.Single(await BaseAsync(regTenant, regUnit)).OwnerPartyRef);
+    }
+
+    // Case 66 belongs with claims (P4): repairs continue after an item's sales block; nothing in an entitlement changes
+    // when the item is discontinued, and the item master's sales/service block and last service date reach this module
+    // through the item port in P8/P12.
+    [DatabaseFact(Skip = "Claims after discontinuation are adjudicated in P4; the item serviceability facts arrive with the item port (P8/P12).")]
     public Task Discontinued_item_remains_serviceable_until_its_last_service_date() => Task.CompletedTask;
-
-    [DatabaseFact(Skip = "No ownership/inter-company sale command or port connects first_external_sale to entitlement creation while retaining the obligor.")]
-    public Task Inter_company_sale_keeps_the_reserve_with_the_obligor_and_does_not_restart_cover() => Task.CompletedTask;
 }

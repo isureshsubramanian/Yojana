@@ -8,6 +8,9 @@ public sealed record ResolveEntitlementRequirements(IReadOnlyList<Guid> Requirem
 
 public sealed record WaiveEntitlementRequirement(Guid RequirementId, string Reason, string ActorRef);
 
+/// <summary>A resale whose policy lets cover follow only on registration or a fee (case 45): records that evidence and moves the cover to the new owner.</summary>
+public sealed record CompleteEntitlementTransfer(Guid RequirementId, string EvidenceRef, DateTime EventTime, string ActorRef);
+
 public sealed record EntitlementRequirementRow(Guid RequirementId, Guid UnitId, Guid OwnershipEpisodeId, Guid ItemId, DocumentRef? SourceDocument, string Status, string? MissingInput, string? Detail, DateTime RaisedAt, DateTime? ResolvedAt, Guid? EntitlementId);
 
 public sealed record EntitlementRequirementPage(IReadOnlyList<EntitlementRequirementRow> Items, int Total, int Skip, int Take);
