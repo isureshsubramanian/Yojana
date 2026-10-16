@@ -27,7 +27,16 @@ public sealed record UsageLimitTerm(string MeterType, decimal Limit, string Peri
 public sealed record CoverageTerms(decimal PartsPct, decimal LabourPct, decimal TravelPct, string ServiceMode, int? ResponseHours = null, string? CoverageHours = null);
 
 /// <summary>A refurbished-goods term keyed by (item, grade, channel, region); the statutory floor wins over a shorter term.</summary>
-public sealed record RefurbishedTerm(Guid? ItemId, string Grade, string Channel, string Region, int DurationMonths, int? StatutoryFloorMonths);
+public sealed record RefurbishedTerm(Guid? ItemId, string Grade, string Channel, string Region, int DurationMonths, int? StatutoryFloorMonths, string StatementKind = RefurbishedWarrantyStatement.NoOemWarranty);
+
+public static class RefurbishedWarrantyStatement
+{
+    public const string NoOemWarranty = "no_oem_warranty";
+    public const string OemRefurbished = "oem_refurbished";
+    public const string SellerRefurbished = "seller_refurbished";
+
+    public static readonly IReadOnlySet<string> All = new HashSet<string>([NoOemWarranty, OemRefurbished, SellerRefurbished], StringComparer.Ordinal);
+}
 
 public sealed record PolicyTerms(
     DurationRule Duration,

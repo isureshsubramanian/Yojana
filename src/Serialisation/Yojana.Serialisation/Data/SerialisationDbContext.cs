@@ -405,6 +405,9 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(e => e.DurationBasis).HasMaxLength(10);
             b.Property(e => e.Transferable).HasMaxLength(30);
             b.Property(e => e.ConditionAtCreation).HasMaxLength(20);
+            b.Property(e => e.RefurbishedMatchedRow).HasMaxLength(1000);
+            b.Property(e => e.RefurbishedFloorSource).HasMaxLength(20);
+            b.Property(e => e.RefurbishedStatementKind).HasMaxLength(30);
             b.Property(e => e.RevenueScheduleRef).HasMaxLength(100);
             b.Property(e => e.AssuranceOrService).HasMaxLength(20);
             b.Property(e => e.Status).HasMaxLength(20);

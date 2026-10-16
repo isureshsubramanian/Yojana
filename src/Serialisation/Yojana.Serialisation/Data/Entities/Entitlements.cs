@@ -237,6 +237,18 @@ public sealed class Entitlement : ITenantScoped
 
     public string? ConditionAtCreation { get; set; }
 
+    public string? RefurbishedMatchedRow { get; set; }
+
+    public bool RefurbishedFloorApplied { get; set; }
+
+    public int? RefurbishedFloorMonths { get; set; }
+
+    public string? RefurbishedFloorSource { get; set; }
+
+    public Guid? RefurbisherPartyRef { get; set; }
+
+    public string? RefurbishedStatementKind { get; set; }
+
     public Guid? ParentEntitlementId { get; set; }
 
     public Guid? RootEntitlementId { get; set; }

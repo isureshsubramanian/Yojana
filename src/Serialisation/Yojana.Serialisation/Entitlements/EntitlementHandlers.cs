@@ -17,10 +17,12 @@ namespace Yojana.Serialisation.Entitlements;
 
 public static class CreateEntitlementHandler
 {
-    public static async Task<CreateEntitlementResult> Handle(CreateEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
-        => await CreateAsync(command, db, ledger, resolver, store, zones, tenant, clock, null, [], false, null, null, cancellationToken);
+    // Coupled to the factory registration of RefurbishedGoodsSettings in SerialisationModule: Wolverine must not see the
+    // PlatformDbContext behind ITenantSettings in this handler graph, or its SerialisationDbContext transaction is refused.
+    public static async Task<CreateEntitlementResult> Handle(CreateEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        => await CreateAsync(command, db, ledger, resolver, store, zones, refurbishedSettings, tenant, clock, null, [], false, null, null, cancellationToken);
 
-    internal static async Task<CreateEntitlementResult> CreateAsync(CreateEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, ITenantContext tenant, IClock clock,
+    internal static async Task<CreateEntitlementResult> CreateAsync(CreateEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings, ITenantContext tenant, IClock clock,
         string? startBasisOverride, IReadOnlyList<string> evidenceRefs, bool financeReviewRequired, string? reasonCode, string? financeReviewRef, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -28,10 +30,10 @@ public static class CreateEntitlementHandler
         if (await ledger.ReplayedAsync(key, command.EventTime, cancellationToken) is { } replayed)
         {
             var existing = await db.Entitlements.AsNoTracking().FirstAsync(e => e.TenantId == tenantId && e.CreatedEventId == replayed.EventId, cancellationToken);
-            return new CreateEntitlementResult(existing.EntitlementId, existing.Status, "replayed", null, null, existing.StartDate, existing.EndDate, existing.StartBasis, false, false, existing.StartTimeZone, existing.AccrualCohortId, []);
+            return new CreateEntitlementResult(existing.EntitlementId, existing.Status, "replayed", null, null, existing.StartDate, existing.EndDate, existing.StartBasis, false, existing.RefurbishedFloorApplied, existing.StartTimeZone, existing.AccrualCohortId, [], Disclosure(existing));
         }
 
-        var unit = await db.Current.AsNoTracking().Where(c => c.TenantId == tenantId && c.UnitId == command.UnitId).Select(c => new { c.ItemId, c.LocationId }).FirstOrDefaultAsync(cancellationToken)
+        var unit = await db.Current.AsNoTracking().Where(c => c.TenantId == tenantId && c.UnitId == command.UnitId).Select(c => new { c.ItemId, c.LocationId, c.ConditionGrade }).FirstOrDefaultAsync(cancellationToken)
             ?? throw new CommandRefusedException("unit_unknown", $"Unit {command.UnitId} does not exist.");
         if (await db.Entitlements.AnyAsync(e => e.TenantId == tenantId && e.UnitId == command.UnitId && e.CoverageFamily == command.CoverageFamily && e.Status != EntitlementStatus.Closed, cancellationToken))
         {
@@ -50,7 +52,7 @@ public static class CreateEntitlementHandler
         }
         else
         {
-            var resolution = await resolver.ResolveAsync(new PolicyQuestion(command.UnitId, unit.ItemId, command.CoverageFamily, command.ContractDate, command.OwnerPartyRef, command.ConditionGrade, command.Channel, command.Country), cancellationToken);
+            var resolution = await resolver.ResolveAsync(new PolicyQuestion(command.UnitId, unit.ItemId, command.CoverageFamily, command.ContractDate, command.OwnerPartyRef, unit.ConditionGrade ?? command.ConditionGrade, command.Channel, command.Country), cancellationToken);
             trail = resolution.Trail;
             if (resolution.Level == PolicyLevel.ParentEntitlement)
             {
@@ -70,7 +72,16 @@ public static class CreateEntitlementHandler
         if (version.CoverageFamily != command.CoverageFamily) throw new CommandRefusedException("policy_family_differs", $"{version.PolicyCode} is a {version.CoverageFamily} policy, not {command.CoverageFamily}.");
 
         var terms = await store.ReadTermsAsync(version, cancellationToken);
-        var duration = TermArithmetic.ForCondition(terms, unit.ItemId, command.ConditionGrade, command.Channel, command.Country);
+        var grade = unit.ConditionGrade ?? command.ConditionGrade ?? "new";
+        RefurbishedEntitlementDisclosure? disclosure = null;
+        EffectiveDuration duration;
+        if (grade != "new")
+        {
+            if (command.Channel is null || command.Country is null) throw new CommandRefusedException("refurbished_sale_context_missing", "A non-new sale needs its channel and country.", "supply the sale channel and ISO country");
+            disclosure = RefurbishedGoodsPolicyEngine.Decide(unit.ItemId, grade, command.Channel, command.Country, command.BuyerKind, terms.Refurbished, await refurbishedSettings.GetAsync(cancellationToken), command.RefurbisherPartyRef);
+            duration = new EffectiveDuration(terms.Duration with { Value = disclosure.TermMonths, Unit = DurationRule.Months }, disclosure.FloorApplied, disclosure.MatchedRow);
+        }
+        else duration = new EffectiveDuration(terms.Duration, false, null);
         var zone = await ZoneAsync(terms.ReferenceTimeZoneRule, command.SiteLocationId ?? unit.LocationId, command.ObligorEntityId, zones, cancellationToken);
         var start = TermArithmetic.ResolveStart(terms.Start, command.Evidence, zone);
         DateOnly? startLatest = terms.Start.CapDays is { } cap && command.Evidence.TryGetValue(StartTrigger.Invoice, out var invoice) ? TermArithmetic.LocalDay(invoice, zone).AddDays(cap) : null;
@@ -99,7 +110,9 @@ public static class CreateEntitlementHandler
             PayerPartyType = command.PayerPartyType, PolicyVersionId = version.PolicyVersionId, StartTrigger = terms.Start.Trigger, StartBasis = start.Start is null ? null : startBasisOverride ?? start.Basis, StartEvidenceRef = start.Basis is null ? null : command.StartEvidenceRef,
             StartDate = start.Start, StartTimeZone = zone, EndDate = end, ComputedByRuleVersion = version.RuleVersion, StartLatest = startLatest, DurationValue = duration.Duration.Value, DurationUnit = duration.Duration.Unit,
             EndOfMonthRule = duration.Duration.EndOfMonth, EndInclusive = duration.Duration.EndInclusive, DurationBasis = terms.DurationBasis, Coverage = JsonSerializer.Serialize(terms.Coverage, LedgerJson.Options),
-            RegionScope = JsonSerializer.Serialize(terms.RegionScope, LedgerJson.Options), Transferable = terms.Transferable, ConditionAtCreation = command.ConditionGrade ?? "new", AccrualCohortId = cohortId,
+            RegionScope = JsonSerializer.Serialize(terms.RegionScope, LedgerJson.Options), Transferable = terms.Transferable, ConditionAtCreation = grade, AccrualCohortId = cohortId,
+            RefurbishedMatchedRow = disclosure is null ? null : JsonSerializer.Serialize(disclosure.MatchedRow, LedgerJson.Options), RefurbishedFloorApplied = disclosure?.FloorApplied ?? false,
+            RefurbishedFloorMonths = disclosure?.FloorMonths, RefurbishedFloorSource = disclosure?.FloorSource, RefurbisherPartyRef = disclosure?.RefurbisherPartyRef, RefurbishedStatementKind = disclosure?.StatementKind,
             AssuranceOrService = terms.AssuranceOrService, Status = start.Start is null ? EntitlementStatus.PendingEvidence : EntitlementStatus.Active, Confidence = command.Confidence, Provenance = command.Provenance,
             SourceDocumentType = command.SourceDocument?.Type, SourceDocumentId = command.SourceDocument?.Id, SourceDocumentLine = command.SourceDocument?.Line, CustomerPoRef = command.CustomerPoRef,
             CreatedEventId = eventId, CreatedAt = clock.UtcNow,
@@ -114,12 +127,18 @@ public static class CreateEntitlementHandler
         {
             entitlement_id = entitlement.EntitlementId, item_id = unit.ItemId, coverage_family = entitlement.CoverageFamily, entitlement_type = entitlement.Type, policy_level = level, policy_code = version.PolicyCode, policy_version = version.Version, policy_version_id = version.PolicyVersionId,
             status = entitlement.Status, start_basis = entitlement.StartBasis, start = start.Explanation, start_date = entitlement.StartDate, end_date = entitlement.EndDate, cap_applied = start.CapApplied, floor_applied = duration.FloorApplied,
+            matched_refurbished_row = disclosure?.MatchedRow, term_months = disclosure?.TermMonths, floor_months = disclosure?.FloorMonths, floor_source = disclosure?.FloorSource, refurbisher_party_ref = disclosure?.RefurbisherPartyRef, statement_kind = disclosure?.StatementKind,
             time_zone = zone, accrual_cohort_id = cohortId, assurance_or_service = entitlement.AssuranceOrService,
             accrual_suppressed = entitlement.AssuranceOrService == AssuranceOrService.Assurance && cohortId is null, provenance = command.Provenance, owner_party_ref = command.OwnerPartyRef, rule_version = version.RuleVersion, trail,
             evidence_refs = evidenceRefs, finance_review_required = financeReviewRequired, reason_code = reasonCode, finance_review_ref = financeReviewRef,
         }, command.SourceDocument, cancellationToken, eventId);
-        return new CreateEntitlementResult(entitlement.EntitlementId, entitlement.Status, level, version.PolicyCode, version.Version, entitlement.StartDate, entitlement.EndDate, entitlement.StartBasis, start.CapApplied, duration.FloorApplied, zone, cohortId, trail);
+        return new CreateEntitlementResult(entitlement.EntitlementId, entitlement.Status, level, version.PolicyCode, version.Version, entitlement.StartDate, entitlement.EndDate, entitlement.StartBasis, start.CapApplied, duration.FloorApplied, zone, cohortId, trail, disclosure);
     }
+
+    internal static RefurbishedEntitlementDisclosure? Disclosure(Entitlement e) => e.RefurbishedMatchedRow is null || e.RefurbishedStatementKind is null
+        ? null
+        : new(e.DurationValue, e.RefurbishedFloorApplied, e.RefurbishedFloorMonths, e.RefurbishedFloorSource, e.RefurbisherPartyRef, e.RefurbishedStatementKind,
+            JsonSerializer.Deserialize<RefurbishedTerm>(e.RefurbishedMatchedRow, LedgerJson.Options)!);
 
     /// <summary>The reference zone by the policy's rule, falling back to the obligor's zone and then UTC, so a start is never read in an unknown calendar.</summary>
     internal static async Task<string> ZoneAsync(string rule, Guid? site, Guid obligor, ITimeZonePort zones, CancellationToken cancellationToken)

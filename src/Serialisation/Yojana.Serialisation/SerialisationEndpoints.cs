@@ -98,12 +98,27 @@ public static class SerialisationEndpoints
         entitlements.MapPost("/{entitlementId:guid}/amend", (Guid entitlementId, AmendEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<AmendEntitlementResult>(bus, tenant, command with { EntitlementId = entitlementId, CommittedBy = Committer(user) }, ct));
         entitlements.MapPost("/{entitlementId:guid}/transfer", (Guid entitlementId, TransferEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<TransferEntitlementResult>(bus, tenant, command with { SourceEntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
+        entitlements.MapGet("/{entitlementId:guid}/disclosure", async (Guid entitlementId, EntitlementQueries queries, CancellationToken ct) =>
+            await queries.DisclosureAsync(entitlementId, ct) is { } disclosure ? Results.Ok(disclosure) : Results.NotFound()).RequireAuthorization(YojanaPolicy.TenantMember);
 
         var reference = app.MapGroup("/api/warranty-reference").RequireAuthorization(YojanaPolicy.TenantMember);
         reference.MapGet("/coverage-families", async (PolicyQueries queries, CancellationToken ct) => Results.Ok(await queries.FamiliesAsync(ct)));
         reference.MapPost("/coverage-families", (DefineCoverageFamily command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CoverageFamilyRow>(bus, tenant, command, ct)).RequireAuthorization(editor);
         reference.MapGet("/amendment-approval", async (AmendmentApprovalSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
         reference.MapPut("/amendment-approval", async (AmendmentApprovalPolicy policy, AmendmentApprovalSettings settings, CancellationToken ct) =>
+        {
+            try
+            {
+                await settings.SetAsync(policy, ct);
+                return Results.Ok(policy);
+            }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest, extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+            }
+        }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+        reference.MapGet("/refurbished-goods", async (RefurbishedGoodsSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
+        reference.MapPut("/refurbished-goods", async (RefurbishedGoodsPolicy policy, RefurbishedGoodsSettings settings, CancellationToken ct) =>
         {
             try
             {

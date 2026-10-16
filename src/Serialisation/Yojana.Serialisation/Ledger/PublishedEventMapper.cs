@@ -94,7 +94,12 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant)
                 return new EntitlementCreated(Header(EntitlementCreated.Schema, EntitlementCreated.Version), GuidOrNull(a, "entitlement_id") ?? Guid.Empty, GuidOrNull(a, "item_id") ?? Guid.Empty,
                     Str(a, "coverage_family") ?? "", Str(a, "entitlement_type") ?? "", e.LegalEntityId, GuidOrNull(a, "owner_party_ref"), GuidOrNull(a, "policy_version_id") ?? Guid.Empty, Str(a, "policy_code") ?? "",
                     Int(a, "policy_version") ?? 0, Date(a, "start_date"), Date(a, "end_date"), Str(a, "status") ?? "", GuidOrNull(a, "accrual_cohort_id"), Str(a, "assurance_or_service") ?? "",
-                    a?.TryGetProperty("accrual_suppressed", out var suppressed) == true && suppressed.ValueKind == JsonValueKind.True, Str(a, "provenance") ?? "", document);
+                    a?.TryGetProperty("accrual_suppressed", out var suppressed) == true && suppressed.ValueKind == JsonValueKind.True, Str(a, "provenance") ?? "", document,
+                    a?.TryGetProperty("matched_refurbished_row", out var matched) == true && matched.ValueKind == JsonValueKind.Object
+                        ? new RefurbishedEntitlementDisclosure(Int(a, "term_months") ?? Int(matched, "duration_months") ?? 0,
+                            a?.TryGetProperty("floor_applied", out var floorApplied) == true && floorApplied.ValueKind == JsonValueKind.True,
+                            Int(a, "floor_months"), Str(a, "floor_source"), GuidOrNull(a, "refurbisher_party_ref"), Str(a, "statement_kind") ?? RefurbishedWarrantyStatement.NoOemWarranty,
+                            matched.Deserialize<RefurbishedTerm>(LedgerJson.Options)!) : null);
             case EntitlementEventType.Transferred:
                 return new EntitlementTransferred(Header(EntitlementTransferred.Schema, EntitlementTransferred.Version), GuidOrNull(a, "source_entitlement_id") ?? Guid.Empty,
                     GuidOrNull(a, "target_entitlement_id") ?? Guid.Empty, GuidOrNull(a, "source_unit_id") ?? Guid.Empty, GuidOrNull(a, "target_unit_id") ?? Guid.Empty,

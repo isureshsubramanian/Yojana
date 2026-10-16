@@ -105,7 +105,7 @@ public sealed class EntitlementCommandTests(SerialisationHostFixture fixture)
 
         var timeout = TimeSpan.FromSeconds(20);
         var published = Assert.Single(await PublishedEventSink.WaitForAsync<EntitlementCreated>(e => e.Header.UnitId == unit, 1, timeout));
-        Assert.Equal((EntitlementCreated.Schema, "1.0", created.EntitlementId, item, "base_warranty", Obligor), (published.Header.Schema, published.Header.Version, published.EntitlementId, published.ItemId, published.CoverageFamily, published.ObligorEntityId));
+        Assert.Equal((EntitlementCreated.Schema, "1.1", created.EntitlementId, item, "base_warranty", Obligor), (published.Header.Schema, published.Header.Version, published.EntitlementId, published.ItemId, published.CoverageFamily, published.ObligorEntityId));
         Assert.Equal((new DateOnly(2026, 9, 16), new DateOnly(2028, 9, 15), created.AccrualCohortId, AssuranceOrService.Assurance, false), (published.StartDate, published.EndDate, published.AccrualCohortId, published.AssuranceOrService, published.AccrualSuppressed));
         Assert.Equal(command.SourceDocument, published.SourceDocument);
         var rebased = Assert.Single(await PublishedEventSink.WaitForAsync<EntitlementRebased>(e => e.Header.UnitId == unit, 1, timeout));
@@ -172,6 +172,50 @@ public sealed class EntitlementCommandTests(SerialisationHostFixture fixture)
         var refurbished = await InvokeAsync<CreateEntitlementResult>(tenant, Create(units[3], new Dictionary<string, DateTime> { [StartTrigger.Deliver] = Invoice }, grade: "C", channel: "portal_consumer"));
         Assert.True(refurbished.FloorApplied);
         Assert.Equal(new DateOnly(2027, 9, 1), refurbished.EndDate);
+    }
+
+    [DatabaseFact]
+    public async Task Refurbished_resale_snapshots_the_floor_and_disclosure_and_starts_a_new_chain()
+    {
+        var (tenant, _, units) = await SetUpAsync("er", 1);
+        var unit = units[0];
+        var earlier = await InvokeAsync<CreateEntitlementResult>(tenant, Create(unit, new() { [StartTrigger.Deliver] = Invoice }));
+        await InvokeAsync<EntitlementChangeResult>(tenant, new CloseEntitlement(Guid.NewGuid(), earlier.EntitlementId, EntitlementClosedReason.ReturnedToStock, new DateOnly(2026, 10, 1), Invoice.AddDays(30), "returns"));
+        var refurbisher = Guid.NewGuid();
+        var sold = Create(unit, new() { [StartTrigger.Deliver] = Invoice.AddDays(60) }, grade: "C", channel: "portal_consumer") with
+        {
+            BuyerKind = RefurbishedBuyerKind.Consumer,
+            RefurbisherPartyRef = refurbisher,
+        };
+        var created = await InvokeAsync<CreateEntitlementResult>(tenant, sold);
+        Assert.Equal((12, true, "jurisdiction", refurbisher, RefurbishedWarrantyStatement.NoOemWarranty),
+            (created.Disclosure!.TermMonths, created.Disclosure.FloorApplied, created.Disclosure.FloorSource, created.Disclosure.RefurbisherPartyRef, created.Disclosure.StatementKind));
+
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var row = await db.Entitlements.SingleAsync(e => e.EntitlementId == created.EntitlementId);
+            Assert.Equal("C", row.ConditionAtCreation);
+            Assert.Null(row.ParentEntitlementId);
+            Assert.Null(row.RootEntitlementId);
+            var disclosure = await scope.ServiceProvider.GetRequiredService<EntitlementQueries>().DisclosureAsync(created.EntitlementId, CancellationToken.None);
+            Assert.Equal(created.Disclosure, disclosure);
+        }
+
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            await scope.ServiceProvider.GetRequiredService<RefurbishedGoodsSettings>().SetAsync(new([new("EU", RefurbishedBuyerKind.Consumer, 18)]), CancellationToken.None);
+        }
+        await InvokeAsync<EntitlementChangeResult>(tenant, new CloseEntitlement(Guid.NewGuid(), created.EntitlementId, EntitlementClosedReason.ReturnedToStock, new DateOnly(2027, 1, 1), Invoice.AddDays(120), "returns"));
+        var later = await InvokeAsync<CreateEntitlementResult>(tenant, sold with { CommandId = Guid.NewGuid(), EventTime = Invoice.AddDays(121) });
+        Assert.Equal(18, later.Disclosure!.TermMonths);
+        Assert.Equal(12, (await InScopeDisclosure(tenant, created.EntitlementId)).TermMonths);
+    }
+
+    private async Task<RefurbishedEntitlementDisclosure> InScopeDisclosure(TenantId tenant, Guid entitlementId)
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        return (await scope.ServiceProvider.GetRequiredService<EntitlementQueries>().DisclosureAsync(entitlementId, CancellationToken.None))!;
     }
 
     [DatabaseFact]

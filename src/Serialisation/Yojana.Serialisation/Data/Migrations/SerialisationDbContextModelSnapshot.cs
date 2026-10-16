@@ -596,6 +596,33 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(20)")
                         .HasColumnName("provenance");
 
+                    b.Property<bool>("RefurbishedFloorApplied")
+                        .HasColumnType("bit")
+                        .HasColumnName("refurbished_floor_applied");
+
+                    b.Property<int?>("RefurbishedFloorMonths")
+                        .HasColumnType("int")
+                        .HasColumnName("refurbished_floor_months");
+
+                    b.Property<string>("RefurbishedFloorSource")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("refurbished_floor_source");
+
+                    b.Property<string>("RefurbishedMatchedRow")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("refurbished_matched_row");
+
+                    b.Property<string>("RefurbishedStatementKind")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("refurbished_statement_kind");
+
+                    b.Property<Guid?>("RefurbisherPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("refurbisher_party_ref");
+
                     b.Property<string>("RegionScope")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
@@ -2355,7 +2382,9 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnName("unit_id");
 
                     b.ToTable("warranty_current", "serialisation", t =>
-                        t.ExcludeFromMigrations());
+                        {
+                            t.ExcludeFromMigrations();
+                        });
 
                     b.ToView("warranty_current", "serialisation");
                 });

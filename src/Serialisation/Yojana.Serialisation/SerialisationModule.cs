@@ -64,6 +64,9 @@ public static class SerialisationModule
         // default transaction on SerialisationDbContext, opened after the tenant middleware. A plain registration makes
         // the host refuse to start ("multiple DbContext types detected").
         builder.Services.AddScoped(sp => new Entitlements.AmendmentApprovalSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>(), sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantCurrency>()));
+        // Coupled to CreateEntitlementHandler and BackfillEntitlementsHandler for the same reason as the factory above:
+        // ITenantSettings brings PlatformDbContext; exposing it to Wolverine would break their SerialisationDbContext transaction graph.
+        builder.Services.AddScoped(sp => new Entitlements.RefurbishedGoodsSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped<Entitlements.EntitlementLedger>();
         builder.Services.AddScoped<Entitlements.EntitlementQueries>();
 
