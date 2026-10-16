@@ -43,12 +43,20 @@ public sealed class UnitEventWriter(SerialisationDbContext db, ITenantContext te
         var recordedTime = clock.UtcNow;
 
         // Idempotency: a draft whose (key, business time) is already in the ledger is a no-op, reported, never re-applied.
-        var keys = drafts.Select(d => d.IdempotencyKey).Distinct().ToList();
-        var existing = await db.Events.AsNoTracking()
-            .Where(e => keys.Contains(e.IdempotencyKey))
-            .Select(e => new { e.IdempotencyKey, e.EventTime })
-            .ToListAsync(cancellationToken);
-        var existingSet = existing.Select(e => (e.IdempotencyKey, e.EventTime)).ToHashSet();
+        // The business times go into the predicate too, so the (tenant, key, event_time) index seeks only their partitions
+        // rather than every partition of the ledger per key (P1-T24); chunked to keep the parameter lists bounded.
+        var existingSet = new HashSet<(string, DateTime)>();
+        foreach (var chunk in drafts.Select(d => (d.IdempotencyKey, d.EventTime)).Distinct().Chunk(2000))
+        {
+            var keys = chunk.Select(k => k.IdempotencyKey).Distinct().ToList();
+            var times = chunk.Select(k => k.EventTime).Distinct().ToList();
+            var existing = await db.Events.AsNoTracking()
+                .Where(e => e.TenantId == tenantId && times.Contains(e.EventTime) && keys.Contains(e.IdempotencyKey))
+                .Select(e => new { e.IdempotencyKey, e.EventTime })
+                .ToListAsync(cancellationToken);
+            existingSet.UnionWith(existing.Select(e => (e.IdempotencyKey, e.EventTime)));
+        }
+
         var seenInBatch = new HashSet<(string, DateTime)>();
         var duplicates = new List<UnitEventDraft>();
         var fresh = new List<UnitEventDraft>();
@@ -104,10 +112,13 @@ public sealed class UnitEventWriter(SerialisationDbContext db, ITenantContext te
             written.Add(@event);
         }
 
-        // Inline projection, in seq order per unit, within this same unit of work (coupling 2).
+        // Inline projection, in seq order per unit, within this same unit of work (coupling 2). The current rows of all the
+        // units are read in one query first; the projector then finds them tracked instead of asking once per unit.
+        var deltaOf = fresh.ToDictionary(d => (d.IdempotencyKey, d.EventTime), d => d.Delta);
+        await projector.PreloadAsync(tenantId, written.Select(e => e.UnitId).Distinct().ToList(), cancellationToken);
         foreach (var group in written.GroupBy(e => e.UnitId))
         {
-            var deltas = group.OrderBy(e => e.Seq).Select(e => (e, fresh.First(d => d.IdempotencyKey == e.IdempotencyKey && d.EventTime == e.EventTime).Delta)).ToList();
+            var deltas = group.OrderBy(e => e.Seq).Select(e => (e, deltaOf[(e.IdempotencyKey, e.EventTime)])).ToList();
             await projector.ApplyAsync(tenantId, group.Key, deltas, cancellationToken);
         }
 

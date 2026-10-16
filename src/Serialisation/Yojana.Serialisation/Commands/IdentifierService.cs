@@ -68,6 +68,27 @@ public sealed class IdentifierService(SerialisationDbContext db, IIdentifierPoli
                       select new OpenIdentifierHolder(i.UnitId, i.IdentifierId, u.LifecycleStatus)).ToListAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Every open identifier whose normalised value is one of <paramref name="normalised"/>, any scheme and scope, with its
+    /// unit's status: one seek per value on the (tenant, normalised value) index instead of one round trip per serial
+    /// (P1-T24). The caller matches scheme and scope in memory with the same precedence <see cref="HolderOfAsync"/> uses.
+    /// </summary>
+    public async Task<IReadOnlyList<(string Scheme, string ScopeKey, string NormalisedValue, OpenIdentifierHolder Holder)>> OpenHoldersOfValuesAsync(IReadOnlyCollection<string> normalised, CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        var result = new List<(string, string, string, OpenIdentifierHolder)>();
+        foreach (var values in normalised.Distinct(StringComparer.Ordinal).Chunk(2000))
+        {
+            var rows = await (from i in db.Identifiers.AsNoTracking()
+                              join u in db.Units.AsNoTracking() on new { i.TenantId, i.UnitId } equals new { u.TenantId, u.UnitId }
+                              where i.TenantId == tenantId && values.Contains(i.NormalisedValue) && i.ValidTo == null
+                              select new { i.Scheme, i.ScopeKey, i.NormalisedValue, i.UnitId, i.IdentifierId, u.LifecycleStatus }).ToListAsync(cancellationToken);
+            result.AddRange(rows.Select(r => (r.Scheme, r.ScopeKey, r.NormalisedValue, new OpenIdentifierHolder(r.UnitId, r.IdentifierId, r.LifecycleStatus))));
+        }
+
+        return result;
+    }
+
     /// <summary>The unit's open identifier of a type, or null.</summary>
     public Task<UnitIdentifier?> OpenOfTypeAsync(Guid unitId, string type, CancellationToken cancellationToken)
     {

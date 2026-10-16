@@ -144,6 +144,9 @@ public sealed class BulkIngestion(SerialisationDbContext db, ITenantContext tena
             INSERT INTO [{S}].[unit_item_assignment] ({AssignmentColumns})
             SELECT {AssignmentColumns} FROM #assign a WHERE EXISTS (SELECT 1 FROM #inserted i WHERE i.event_id = a.event_id);
             """, cancellationToken);
+        // HIDDEN COUPLING with EpisodeService.PreloadOpenAsync (P1-T24): the document handlers keep an in-memory index of
+        // the open episodes of the units they preloaded. Rows written here bypass that index, so this path must only open
+        // episodes for units it creates (true today: commissioning), never for a unit a handler in the same scope preloaded.
         var episodesInserted = await session.ExecuteAsync($"""
             INSERT INTO [{S}].[custody_episode] ({EpisodeColumns})
             SELECT {EpisodeColumns} FROM #ep p WHERE EXISTS (SELECT 1 FROM #inserted i WHERE i.event_id = p.opening_event_id);

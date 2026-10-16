@@ -24,6 +24,51 @@ public sealed record PreparedOwnershipOpen(UnitEventDraft Draft, UnitEventDraft?
 /// </summary>
 public sealed class EpisodeService(SerialisationDbContext db, ITenantContext tenant)
 {
+    // Filled by PreloadOpenAsync (P1-T24): the open custody and ownership row of each preloaded unit (null when it has
+    // none) and, for the stock check of invariant 3, the shipped parent it is still installed in. HIDDEN COUPLING: the
+    // index is only true while every episode change to a preloaded unit in this scope goes through this service (the
+    // Prepare* methods keep it current). A handler that writes custody_episode rows for those units some other way
+    // (bulk ingestion, raw SQL) must not preload them; today only commissioning does, and it writes units that did
+    // not exist when the document was read, which a preload never names. The service is scoped to one message.
+    private readonly Dictionary<(Guid UnitId, string Kind), CustodyEpisode?> open = [];
+    private readonly Dictionary<Guid, (Guid ParentUnitId, string LocationKind)?> installedInShippedParent = [];
+
+    /// <summary>
+    /// Reads the open episodes of many units, and their shipped parents, in three queries so that a document of five
+    /// hundred lines does not ask for them one unit at a time. Afterwards <see cref="OpenAsync"/> and the stock check
+    /// answer these units from memory.
+    /// </summary>
+    public async Task PreloadOpenAsync(IReadOnlyCollection<Guid> unitIds, CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        foreach (var ids in unitIds.Where(u => !installedInShippedParent.ContainsKey(u)).Distinct().Chunk(2000))
+        {
+            // Tracked: the Prepare* methods close these rows in place, as they do the row OpenAsync returns.
+            var rows = await db.Episodes.Where(e => e.TenantId == tenantId && ids.Contains(e.UnitId) && e.ValidTo == null).ToListAsync(cancellationToken);
+            var parents = await (from link in db.AssemblyLinks.AsNoTracking()
+                                 join parent in db.Current.AsNoTracking() on link.ParentUnitId equals parent.UnitId
+                                 where link.TenantId == tenantId && parent.TenantId == tenantId && ids.Contains(link.ChildUnitId!.Value) && link.RemovedAt == null
+                                       && (parent.LocationKind == LocationKind.CustomerSite || parent.LocationKind == LocationKind.InTransit)
+                                 select new { ChildUnitId = link.ChildUnitId!.Value, link.ParentUnitId, parent.LocationKind }).ToListAsync(cancellationToken);
+            // a row added earlier in this unit of work wins over the stored one, as in OpenAsync; one pass over the tracker, not one per unit
+            var idSet = ids.ToHashSet();
+            var local = db.ChangeTracker.Entries<CustodyEpisode>().Select(e => e.Entity).Where(e => e.TenantId == tenantId && e.ValidTo == null && idSet.Contains(e.UnitId))
+                .GroupBy(e => (e.UnitId, e.Kind)).ToDictionary(g => g.Key, g => g.Last());
+            var stored = rows.GroupBy(r => (r.UnitId, r.Kind)).ToDictionary(g => g.Key, g => g.First());
+            var shipped = parents.GroupBy(x => x.ChildUnitId).ToDictionary(g => g.Key, g => g.First());
+            foreach (var id in ids)
+            {
+                foreach (var kind in new[] { EpisodeKind.Custody, EpisodeKind.Ownership })
+                {
+                    open[(id, kind)] = local.TryGetValue((id, kind), out var l) ? l : stored.GetValueOrDefault((id, kind));
+                }
+
+                var p = shipped.GetValueOrDefault(id);
+                installedInShippedParent[id] = p is null ? null : (p.ParentUnitId, p.LocationKind!);
+            }
+        }
+    }
+
     public async Task<PreparedCustodyMove> PrepareCustodyMoveAsync(Guid unitId, CustodyTarget target, string eventType, string idempotencyKey, DateTime at, string actorRef, Guid legalEntityId,
         DocumentRef? document, IDictionary<string, object?>? extraAttributes, CurrentStateDelta? extraDelta, bool enforceTransitions, CancellationToken cancellationToken)
     {
@@ -40,7 +85,14 @@ public sealed class EpisodeService(SerialisationDbContext db, ITenantContext ten
         }
 
         // Invariant 3 (case 37): a child still linked into a parent cannot come back into stock while the parent is out with a customer or in transit.
-        if (target.LocationKind is LocationKind.Warehouse or LocationKind.Bin)
+        if (target.LocationKind is LocationKind.Warehouse or LocationKind.Bin && installedInShippedParent.TryGetValue(unitId, out var known))
+        {
+            if (known is { } k)
+            {
+                throw new CommandRefusedException("mismatch_instance", $"Unit {unitId} is still installed in {k.ParentUnitId}, which is {k.LocationKind}; it cannot be in stock on its own.", "record the removal (RecordDisassembly or a rework swap) before receiving the child, or receive the parent");
+            }
+        }
+        else if (target.LocationKind is LocationKind.Warehouse or LocationKind.Bin)
         {
             var shippedParent = await (from link in db.AssemblyLinks.AsNoTracking()
                                        join parent in db.Current.AsNoTracking() on link.ParentUnitId equals parent.UnitId
@@ -70,6 +122,7 @@ public sealed class EpisodeService(SerialisationDbContext db, ITenantContext ten
         }
 
         db.Episodes.Add(episode);
+        Track(unitId, EpisodeKind.Custody, episode);
         var disposition = DispositionFor(target.LocationKind);
         var attributes = new Dictionary<string, object?>
         {
@@ -138,6 +191,7 @@ public sealed class EpisodeService(SerialisationDbContext db, ITenantContext ten
         }
 
         db.Episodes.Add(episode);
+        Track(unitId, EpisodeKind.Ownership, episode);
         var draft = new UnitEventDraft
         {
             UnitId = unitId, EventTime = at, EventType = open is null ? UnitEventType.OwnershipOpened : UnitEventType.OwnershipTransferred, PresetEventId = eventId, LegalEntityId = legalEntityId, ActorRef = actorRef,
@@ -163,6 +217,7 @@ public sealed class EpisodeService(SerialisationDbContext db, ITenantContext ten
         open.ClosingDocumentType = document?.Type;
         open.ClosingDocumentId = document?.Id;
         open.ClosingDocumentLine = document?.Line;
+        Track(unitId, EpisodeKind.Ownership, null);
         var draft = new UnitEventDraft
         {
             UnitId = unitId, EventTime = at, EventType = UnitEventType.OwnershipClosed, PresetEventId = eventId, LegalEntityId = legalEntityId, ActorRef = actorRef,
@@ -175,10 +230,19 @@ public sealed class EpisodeService(SerialisationDbContext db, ITenantContext ten
 
     public Task<CustodyEpisode?> OpenAsync(Guid unitId, string kind, CancellationToken cancellationToken)
     {
+        if (open.TryGetValue((unitId, kind), out var preloaded)) return Task.FromResult(preloaded);
         var tenantId = tenant.TenantId;
         // Rows added in this unit of work (an earlier line of the same document) count as open too.
-        var local = db.ChangeTracker.Entries<CustodyEpisode>().Select(e => e.Entity).FirstOrDefault(e => e.TenantId == tenantId && e.UnitId == unitId && e.Kind == kind && e.ValidTo == null);
+        var local = Local(tenantId, unitId, kind);
         return local is not null ? Task.FromResult<CustodyEpisode?>(local) : db.Episodes.FirstOrDefaultAsync(e => e.TenantId == tenantId && e.UnitId == unitId && e.Kind == kind && e.ValidTo == null, cancellationToken);
+    }
+
+    private CustodyEpisode? Local(TenantId tenantId, Guid unitId, string kind) =>
+        db.ChangeTracker.Entries<CustodyEpisode>().Select(e => e.Entity).FirstOrDefault(e => e.TenantId == tenantId && e.UnitId == unitId && e.Kind == kind && e.ValidTo == null);
+
+    private void Track(Guid unitId, string kind, CustodyEpisode? episode)
+    {
+        if (open.ContainsKey((unitId, kind))) open[(unitId, kind)] = episode;
     }
 
     public static string DispositionFor(string locationKind) => locationKind switch
@@ -242,16 +306,43 @@ public sealed class UnitResolver(IdentifierService identifiers)
 
         return null;
     }
+
+    /// <summary>
+    /// <see cref="ResolveAsync"/> for many serials of one item in one query (P1-T24). Same answer per serial: the
+    /// candidate types in the same order, the item's scope before the tenant's. The map reflects the database when it was
+    /// read, so a caller that commissions units between lines resolves per line, not per document.
+    /// </summary>
+    public async Task<Dictionary<DocumentSerial, ResolvedUnit?>> ResolveManyAsync(IReadOnlyCollection<DocumentSerial> serials, Guid itemId, CancellationToken cancellationToken)
+    {
+        var candidates = serials.Distinct().ToDictionary(s => s, s => (s.IdentifierType is null ? FallbackTypes : [s.IdentifierType])
+            .Select(type => (Type: type, Prepared: identifiers.Prepare(new IdentifierInput(type, s.Value, s.IssuerPartyRef), itemId, null))).ToList());
+        var held = (await identifiers.OpenHoldersOfValuesAsync(candidates.Values.SelectMany(c => c.Select(x => x.Prepared.Normalised)).ToList(), cancellationToken))
+            .GroupBy(h => (h.Scheme, h.ScopeKey, h.NormalisedValue)).ToDictionary(g => g.Key, g => g.First().Holder);
+        var result = new Dictionary<DocumentSerial, ResolvedUnit?>(candidates.Count);
+        foreach (var (serial, types) in candidates)
+        {
+            result[serial] = types.SelectMany(t => new[] { t.Prepared.ScopeKey, ScopeKeys.Tenant }.Distinct().Select(scope => (t.Type, t.Prepared, Scope: scope)))
+                .Select(c => held.TryGetValue((c.Prepared.Policy.Scheme, c.Scope, c.Prepared.Normalised), out var h) ? new ResolvedUnit(h.UnitId, h.IdentifierId, h.LifecycleStatus, c.Prepared.Normalised, c.Type) : null)
+                .FirstOrDefault(r => r is not null);
+        }
+
+        return result;
+    }
 }
 
 /// <summary>Case 33: a fact dated inside a closed Finance period posts to the first open period; the business time stays as it was.</summary>
 public sealed class PostingPeriods(SerialisationDbContext db, ITenantContext tenant)
 {
+    // The last closed period, read once per scope (one message): a shipment of five hundred serials asked for it five
+    // hundred times (P1-T24). CloseAsync in the same scope forgets it.
+    private (bool Read, string? Period) lastClosedCache;
+
     public async Task<string> ResolveAsync(DateTime eventTime, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var period = eventTime.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
-        var lastClosed = await db.FinancePeriods.AsNoTracking().Where(p => p.TenantId == tenantId).OrderByDescending(p => p.Period).Select(p => p.Period).FirstOrDefaultAsync(cancellationToken);
+        if (!lastClosedCache.Read) lastClosedCache = (true, await db.FinancePeriods.AsNoTracking().Where(p => p.TenantId == tenantId).OrderByDescending(p => p.Period).Select(p => p.Period).FirstOrDefaultAsync(cancellationToken));
+        var lastClosed = lastClosedCache.Period;
         if (lastClosed is null || string.CompareOrdinal(period, lastClosed) > 0)
         {
             return period;
@@ -274,6 +365,7 @@ public sealed class PostingPeriods(SerialisationDbContext db, ITenantContext ten
             return;
         }
 
+        lastClosedCache = default;
         db.FinancePeriods.Add(new FinancePeriod { TenantId = tenantId, Period = period, ClosedAt = closedAt, Source = source });
     }
 }

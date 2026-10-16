@@ -13,6 +13,9 @@ namespace Yojana.Serialisation.Documents;
 // deterministic idempotency key (source, document, line, unit, event type, business time), append once, and report what
 // happened per line. A replayed message produces duplicates only, never a second effect. Lines the rules stop are
 // reported as exceptions and skipped: a document never fails as a whole because one serial is wrong (ADR-0002 degradation).
+// Reads are set-based (P1-T24): a document's serials resolve in one query per item, its idempotency keys are checked in
+// one, and the open episodes and current rows of its units load in one each before the per-unit rules run in memory;
+// the rules themselves are the per-unit ones of EpisodeService, unchanged. 500 serials cost about 1,500 statements before.
 
 internal static class Documents
 {
@@ -20,24 +23,46 @@ internal static class Documents
 
     public static DocumentRef Line(DocumentRef doc, int line) => new(doc.Type, doc.Id, line);
 
-    /// <summary>Resolves every serial of a line; unknown serials become exceptions.</summary>
-    public static async Task<List<(DocumentSerial Serial, ResolvedUnit Unit)>> ResolveAsync(DocumentContext ctx, DocumentLine line, DocumentRef doc, List<string> exceptions, CancellationToken ct)
+    /// <summary>
+    /// Resolves every serial of every line, one query per item; unknown serials become exceptions, in line order. Only
+    /// for documents that do not commission units part-way: the map is the database as it was before the first line.
+    /// </summary>
+    public static async Task<List<(DocumentLine Line, DocumentSerial Serial, ResolvedUnit Unit)>> ResolveAllAsync(DocumentContext ctx, IReadOnlyList<DocumentLine> lines, DocumentRef doc, List<string> exceptions, CancellationToken ct)
     {
-        var resolved = new List<(DocumentSerial, ResolvedUnit)>();
-        CheckQuantity(line, doc, exceptions);
-        foreach (var serial in line.Serials)
+        var maps = new Dictionary<Guid, Dictionary<DocumentSerial, ResolvedUnit?>>();
+        foreach (var item in lines.Where(l => l.Serials.Count > 0).GroupBy(l => l.ItemId))
         {
-            var unit = await ctx.Resolver.ResolveAsync(serial, line.ItemId, ct);
-            if (unit is null)
-            {
-                exceptions.Add($"{doc.Type} {doc.Id:N} line {line.LineNo}: unknown serial '{serial.Value}'");
-                continue;
-            }
+            maps[item.Key] = await ctx.Resolver.ResolveManyAsync(item.SelectMany(l => l.Serials).ToList(), item.Key, ct);
+        }
 
-            resolved.Add((serial, unit));
+        var resolved = new List<(DocumentLine, DocumentSerial, ResolvedUnit)>();
+        foreach (var line in lines)
+        {
+            CheckQuantity(line, doc, exceptions);
+            foreach (var serial in line.Serials)
+            {
+                if (maps[line.ItemId][serial] is not { } unit)
+                {
+                    exceptions.Add($"{doc.Type} {doc.Id:N} line {line.LineNo}: unknown serial '{serial.Value}'");
+                    continue;
+                }
+
+                resolved.Add((line, serial, unit));
+            }
         }
 
         return resolved;
+    }
+
+    /// <summary>
+    /// The second half of the set-based read: which of these keys the ledger holds already, and the open episodes of
+    /// the units still to move, loaded once. Returns the keys seen; the caller skips those units as before.
+    /// </summary>
+    public static async Task<HashSet<(string Key, DateTime At)>> PrefetchAsync(DocumentContext ctx, IReadOnlyCollection<(Guid UnitId, string Key, DateTime At)> moves, CancellationToken ct)
+    {
+        var seen = await ctx.SeenManyAsync(moves.Select(m => (m.Key, m.At)).ToList(), ct);
+        await ctx.Episodes.PreloadOpenAsync(moves.Where(m => !seen.Contains((m.Key, m.At))).Select(m => m.UnitId).Distinct().ToList(), ct);
+        return seen;
     }
 
     /// <summary>Invariant 5 (case 12): a unit is one base unit, so a line's quantity is its serial count; conversion is the document's concern and never reaches here.</summary>
@@ -87,9 +112,14 @@ public static class PurchasingReceiptPostedHandler
             // Pre-announced units (ASN) exist already: they move from in transit to the warehouse. New serials are commissioned purchased, released.
             Documents.CheckQuantity(line, doc.Document, exceptions);
             var fresh = new List<DocumentSerial>();
+            // Per line, not per document: a line commissions its new serials before the next line resolves its own.
+            var units = await ctx.Resolver.ResolveManyAsync(line.Serials, line.ItemId, ct);
+            var applied = units.Values.Any(u => u is not null) ? await ctx.UnitsAppliedAsync(doc.Document, line.LineNo, ct) : [];
+            var seen = await Documents.PrefetchAsync(ctx, units.Values.OfType<ResolvedUnit>().Where(u => !applied.Contains(u.UnitId))
+                .Select(u => (u.UnitId, Documents.Key(message.Envelope, doc.Document, line.LineNo, u.UnitId, UnitEventType.CustodyChanged, doc.PostedAt), doc.PostedAt)).ToList(), ct);
             foreach (var serial in line.Serials)
             {
-                var unit = await ctx.Resolver.ResolveAsync(serial, line.ItemId, ct);
+                var unit = units[serial];
                 if (unit is null)
                 {
                     fresh.Add(serial);
@@ -102,13 +132,13 @@ public static class PurchasingReceiptPostedHandler
                     continue;
                 }
 
-                if (await ctx.DocumentAppliedAsync(unit.UnitId, doc.Document, line.LineNo, ct))
+                if (applied.Contains(unit.UnitId))
                 {
                     continue; // this receipt line commissioned the unit on an earlier delivery of the same message
                 }
 
                 var key = Documents.Key(message.Envelope, doc.Document, line.LineNo, unit.UnitId, UnitEventType.CustodyChanged, doc.PostedAt);
-                if (await ctx.SeenAsync(key, doc.PostedAt, ct)) { continue; }
+                if (seen.Contains((key, doc.PostedAt))) { continue; }
                 var move = await ctx.Episodes.PrepareCustodyMoveAsync(unit.UnitId, new CustodyTarget(line.LocationKind ?? LocationKind.Warehouse, line.LocationId, null, null, EpisodeReason.Receipt, EpisodeSource.Receipt), UnitEventType.CustodyChanged, key, doc.PostedAt, message.Envelope.Source, message.Envelope.LegalEntityId, Documents.Line(doc.Document, line.LineNo),
                     new Dictionary<string, object?> { ["message_id"] = message.Envelope.MessageId, ["vendor_party_ref"] = doc.VendorPartyRef }, null, false, ct);
                 drafts.Add(move.Draft);
@@ -137,12 +167,8 @@ public static class PurchasingAsnReceivedHandler
         var affected = 0;
         foreach (var line in doc.Lines)
         {
-            var fresh = new List<DocumentSerial>();
-            foreach (var serial in line.Serials)
-            {
-                if (await ctx.Resolver.ResolveAsync(serial, line.ItemId, ct) is null) fresh.Add(serial);
-            }
-
+            var known = await ctx.Resolver.ResolveManyAsync(line.Serials, line.ItemId, ct);
+            var fresh = line.Serials.Where(s => known[s] is null).ToList();
             if (fresh.Count == 0) continue;
             // Units the vendor announced: they exist from now with custody in transit under the vendor (case 26 starts here).
             var result = await ctx.CommissionAsync(Documents.CommissionFor(message.Envelope, doc.Document, line, UnitOrigin.VendorAsn, doc.PostedAt, null, LocationKind.InTransit, EpisodeSource.Receipt, fresh), ct);
@@ -167,11 +193,14 @@ public static class PurchasingVendorShipConfirmedHandler
         {
             var fresh = line.Serials.ToList();
             var units = new List<ResolvedUnit>();
+            var known = await ctx.Resolver.ResolveManyAsync(line.Serials, line.ItemId, ct);
             foreach (var serial in line.Serials)
             {
-                var unit = await ctx.Resolver.ResolveAsync(serial, line.ItemId, ct);
-                if (unit is not null) { units.Add(unit); fresh.Remove(serial); }
+                if (known[serial] is { } unit) { units.Add(unit); fresh.Remove(serial); }
             }
+
+            // only the units that existed before this line: the ones commissioned below are read the per-unit way
+            await ctx.Episodes.PreloadOpenAsync(units.Select(u => u.UnitId).ToList(), ct);
 
             if (fresh.Count > 0)
             {
@@ -215,12 +244,8 @@ public static class ManufacturingProductionReceiptPostedHandler
         var affected = 0;
         foreach (var line in doc.Produced)
         {
-            var fresh = new List<DocumentSerial>();
-            foreach (var serial in line.Serials)
-            {
-                if (await ctx.Resolver.ResolveAsync(serial, line.ItemId, ct) is null) fresh.Add(serial);
-            }
-
+            var known = await ctx.Resolver.ResolveManyAsync(line.Serials, line.ItemId, ct);
+            var fresh = line.Serials.Where(s => known[s] is null).ToList();
             if (fresh.Count == 0) continue;
             var result = await ctx.CommissionAsync(Documents.CommissionFor(message.Envelope, doc.Document, line, UnitOrigin.Manufactured, doc.PostedAt, line.LocationId ?? doc.FacilityId, line.LocationKind ?? LocationKind.Warehouse, EpisodeSource.Receipt, fresh) with { Document = doc.ProductionOrder with { Line = line.LineNo } }, ct);
             affected += result.Commissioned;
@@ -308,23 +333,22 @@ public static class InventoryTransferPostedHandler
         var doc = await ctx.Inventory.GetTransferAsync(message.Document, ct) ?? throw new CommandRefusedException("document_unavailable", $"Transfer {message.Document.Id:N} could not be read through the inventory port.");
         var exceptions = new List<string>();
         var drafts = new List<UnitEventDraft>();
-        foreach (var line in doc.Lines)
+        var resolved = await Documents.ResolveAllAsync(ctx, doc.Lines, doc.Document, exceptions, ct);
+        var seen = await Documents.PrefetchAsync(ctx, resolved.Select(r => (r.Unit.UnitId, Documents.Key(message.Envelope, doc.Document, r.Line.LineNo, r.Unit.UnitId, UnitEventType.CustodyChanged, doc.PostedAt), doc.PostedAt)).ToList(), ct);
+        foreach (var (line, serial, unit) in resolved)
         {
-            foreach (var (serial, unit) in await Documents.ResolveAsync(ctx, line, doc.Document, exceptions, ct))
+            var kind = doc.TwoStep ? LocationKind.InTransit : doc.ToLocationKind;
+            var key = Documents.Key(message.Envelope, doc.Document, line.LineNo, unit.UnitId, UnitEventType.CustodyChanged, doc.PostedAt);
+            if (seen.Contains((key, doc.PostedAt))) continue;
+            try
             {
-                var kind = doc.TwoStep ? LocationKind.InTransit : doc.ToLocationKind;
-                var key = Documents.Key(message.Envelope, doc.Document, line.LineNo, unit.UnitId, UnitEventType.CustodyChanged, doc.PostedAt);
-                if (await ctx.SeenAsync(key, doc.PostedAt, ct)) continue;
-                try
-                {
-                    var move = await ctx.Episodes.PrepareCustodyMoveAsync(unit.UnitId, new CustodyTarget(kind, doc.TwoStep ? null : doc.ToLocationId, null, null, EpisodeReason.Transfer, EpisodeSource.Delivery), UnitEventType.CustodyChanged, key, doc.PostedAt, message.Envelope.Source, message.Envelope.LegalEntityId, Documents.Line(doc.Document, line.LineNo),
-                        new Dictionary<string, object?> { ["message_id"] = message.Envelope.MessageId, ["from_location_id"] = doc.FromLocationId, ["to_location_id"] = doc.ToLocationId, ["two_step"] = doc.TwoStep }, null, true, ct);
-                    drafts.Add(move.Draft);
-                }
-                catch (CommandRefusedException ex)
-                {
-                    exceptions.Add($"line {line.LineNo}: serial '{serial.Value}': {ex.Rule}: {ex.Message}");
-                }
+                var move = await ctx.Episodes.PrepareCustodyMoveAsync(unit.UnitId, new CustodyTarget(kind, doc.TwoStep ? null : doc.ToLocationId, null, null, EpisodeReason.Transfer, EpisodeSource.Delivery), UnitEventType.CustodyChanged, key, doc.PostedAt, message.Envelope.Source, message.Envelope.LegalEntityId, Documents.Line(doc.Document, line.LineNo),
+                    new Dictionary<string, object?> { ["message_id"] = message.Envelope.MessageId, ["from_location_id"] = doc.FromLocationId, ["to_location_id"] = doc.ToLocationId, ["two_step"] = doc.TwoStep }, null, true, ct);
+                drafts.Add(move.Draft);
+            }
+            catch (CommandRefusedException ex)
+            {
+                exceptions.Add($"line {line.LineNo}: serial '{serial.Value}': {ex.Rule}: {ex.Message}");
             }
         }
 
@@ -343,9 +367,10 @@ public static class InventoryAdjustmentPostedHandler
         foreach (var line in doc.Lines)
         {
             var fresh = new List<DocumentSerial>();
+            var known = await ctx.Resolver.ResolveManyAsync(line.Serials, line.ItemId, ct);
             foreach (var serial in line.Serials)
             {
-                var unit = await ctx.Resolver.ResolveAsync(serial, line.ItemId, ct);
+                var unit = known[serial];
                 switch (doc.AdjustmentKind)
                 {
                     case AdjustmentDocument.Kinds.In when unit is null:
@@ -425,13 +450,14 @@ public static class SalesShipmentPostedHandler
                 }
 
                 pending++;
-                continue;
             }
+        }
 
-            foreach (var (serial, unit) in await Documents.ResolveAsync(ctx, line, doc.Document, exceptions, ct))
-            {
-                exceptions.AddRange(await Shipments.ShipAsync(ctx, message.Envelope, doc, line.LineNo, line.ItemId, unit, serial, doc.PostedAt, doc.SerialsCopiedWithoutScan, drafts, ct));
-            }
+        var resolved = await Documents.ResolveAllAsync(ctx, doc.Lines, doc.Document, exceptions, ct);
+        var known = await Shipments.PrefetchAsync(ctx, message.Envelope, doc, resolved.Select(r => (r.Line.LineNo, r.Line.ItemId, r.Unit.UnitId)).ToList(), doc.PostedAt, ct);
+        foreach (var (line, serial, unit) in resolved)
+        {
+            exceptions.AddRange(await Shipments.ShipAsync(ctx, message.Envelope, doc, line.LineNo, line.ItemId, unit, serial, doc.PostedAt, doc.SerialsCopiedWithoutScan, drafts, ct, known));
         }
 
         return await Documents.ReportAsync(ctx, "Sales.ShipmentPosted", doc.Document, drafts, exceptions, pending, ct);
@@ -440,13 +466,29 @@ public static class SalesShipmentPostedHandler
 
 internal static class Shipments
 {
+    /// <summary>What <see cref="ShipAsync"/> would otherwise read once per unit, read for the whole shipment.</summary>
+    public sealed record Prefetched(HashSet<(string Key, DateTime At)> Seen, Dictionary<Guid, UnitCompleteness> Completeness);
+
+    public static async Task<Prefetched> PrefetchAsync(DocumentContext ctx, ThinEnvelope env, ShipmentDocument doc, IReadOnlyList<(int LineNo, Guid ItemId, Guid UnitId)> units, DateTime at, CancellationToken ct)
+    {
+        var seen = await Documents.PrefetchAsync(ctx, units.Select(u => (u.UnitId, Documents.Key(env, doc.Document, u.LineNo, u.UnitId, UnitEventType.Shipped, at), at)).ToList(), ct);
+        var toCheck = units.Where(u => !seen.Contains((Documents.Key(env, doc.Document, u.LineNo, u.UnitId, UnitEventType.Shipped, at), at))).Select(u => (u.UnitId, u.ItemId)).Distinct().ToList();
+        var completeness = new Dictionary<Guid, UnitCompleteness>();
+        foreach (var chunk in toCheck.Chunk(2000))
+        {
+            foreach (var c in await ctx.Completeness.QueryAsync(chunk, DateOnly.FromDateTime(at), ct)) completeness[c.UnitId] = c;
+        }
+
+        return new Prefetched(seen, completeness);
+    }
+
     /// <summary>One unit leaving on a shipment line: completeness at sale (rule 12), custody to in transit or the site, ownership when the trigger is ship.</summary>
-    public static async Task<List<string>> ShipAsync(DocumentContext ctx, ThinEnvelope env, ShipmentDocument doc, int lineNo, Guid itemId, ResolvedUnit unit, DocumentSerial serial, DateTime at, bool copiedWithoutScan, List<UnitEventDraft> drafts, CancellationToken ct)
+    public static async Task<List<string>> ShipAsync(DocumentContext ctx, ThinEnvelope env, ShipmentDocument doc, int lineNo, Guid itemId, ResolvedUnit unit, DocumentSerial serial, DateTime at, bool copiedWithoutScan, List<UnitEventDraft> drafts, CancellationToken ct, Prefetched? known = null)
     {
         var exceptions = new List<string>();
         var key = Documents.Key(env, doc.Document, lineNo, unit.UnitId, UnitEventType.Shipped, at);
-        if (await ctx.SeenAsync(key, at, ct)) return exceptions;
-        var completeness = await ctx.Completeness.CheckAsync(unit.UnitId, itemId, DateOnly.FromDateTime(at), ct);
+        if (known is not null ? known.Seen.Contains((key, at)) : await ctx.SeenAsync(key, at, ct)) return exceptions;
+        var completeness = known?.Completeness.GetValueOrDefault(unit.UnitId) is { ItemId: var checkedItem } c && checkedItem == itemId ? c : await ctx.Completeness.CheckAsync(unit.UnitId, itemId, DateOnly.FromDateTime(at), ct);
         if (!completeness.IsComplete && completeness.Policy == ItemSerialisationProfile.Completeness.Block)
         {
             exceptions.Add($"line {lineNo}: serial '{serial.Value}': incomplete_asbuilt ({completeness.MissingRequiredComponentSerials} missing); not shipped in the module until the component serials are recorded");
@@ -491,12 +533,14 @@ public static class ConfirmShipmentSerialsHandler
         var drafts = new List<UnitEventDraft>();
         var exceptions = new List<string>();
         var shipped = 0;
+        var units = await ctx.Resolver.ResolveManyAsync(command.Serials, pending.ItemId, ct);
+        var known = await Shipments.PrefetchAsync(ctx, env, doc, units.Values.OfType<ResolvedUnit>().Select(u => (command.Line, pending.ItemId, u.UnitId)).ToList(), command.PhysicalShipTime, ct);
         foreach (var serial in command.Serials)
         {
-            var unit = await ctx.Resolver.ResolveAsync(serial, pending.ItemId, ct);
+            var unit = units[serial];
             if (unit is null) { exceptions.Add($"serial '{serial.Value}' is unknown"); continue; }
             var before = drafts.Count;
-            exceptions.AddRange(await Shipments.ShipAsync(ctx, env, doc, command.Line, pending.ItemId, unit, serial, command.PhysicalShipTime, false, drafts, ct));
+            exceptions.AddRange(await Shipments.ShipAsync(ctx, env, doc, command.Line, pending.ItemId, unit, serial, command.PhysicalShipTime, false, drafts, ct, known));
             if (drafts.Count > before) shipped++;
         }
 
@@ -521,30 +565,29 @@ public static class SalesDeliveryConfirmedHandler
         var exceptions = new List<string>();
         var drafts = new List<UnitEventDraft>();
         var lines = confirmation.Serials is { Count: > 0 } s ? shipment.Lines.Select(l => l with { Serials = l.Serials.Where(x => s.Any(y => y.Value == x.Value)).ToList() }).ToList() : shipment.Lines.ToList();
-        foreach (var line in lines)
+        var resolved = await Documents.ResolveAllAsync(ctx, lines, shipment.Document, exceptions, ct);
+        var seen = await Documents.PrefetchAsync(ctx, resolved.Select(r => (r.Unit.UnitId, Documents.Key(message.Envelope, confirmation.Document, r.Line.LineNo, r.Unit.UnitId, UnitEventType.Delivered, confirmation.DeliveredAt), confirmation.DeliveredAt)).ToList(), ct);
+        foreach (var (line, serial, unit) in resolved)
         {
-            foreach (var (serial, unit) in await Documents.ResolveAsync(ctx, line, shipment.Document, exceptions, ct))
+            var key = Documents.Key(message.Envelope, confirmation.Document, line.LineNo, unit.UnitId, UnitEventType.Delivered, confirmation.DeliveredAt);
+            if (seen.Contains((key, confirmation.DeliveredAt))) continue;
+            try
             {
-                var key = Documents.Key(message.Envelope, confirmation.Document, line.LineNo, unit.UnitId, UnitEventType.Delivered, confirmation.DeliveredAt);
-                if (await ctx.SeenAsync(key, confirmation.DeliveredAt, ct)) continue;
-                try
+                var move = await ctx.Episodes.PrepareCustodyMoveAsync(unit.UnitId, new CustodyTarget(LocationKind.CustomerSite, confirmation.ShipToLocationId ?? shipment.ShipToLocationId, shipment.CustomerPartyRef, PartyType.Customer, EpisodeReason.Sale, EpisodeSource.CarrierPod), UnitEventType.Delivered, key, confirmation.DeliveredAt, message.Envelope.Source, message.Envelope.LegalEntityId, Documents.Line(shipment.Document, line.LineNo),
+                    new Dictionary<string, object?> { ["message_id"] = message.Envelope.MessageId, ["evidence"] = confirmation.Evidence, ["confirmation_document"] = confirmation.Document }, null, false, ct);
+                drafts.Add(move.Draft);
+                var currentOwner = await ctx.Episodes.OpenAsync(unit.UnitId, EpisodeKind.Ownership, ct);
+                if (ctx.Options.OwnershipTrigger == "deliver" && currentOwner?.PartyRef != shipment.CustomerPartyRef)
                 {
-                    var move = await ctx.Episodes.PrepareCustodyMoveAsync(unit.UnitId, new CustodyTarget(LocationKind.CustomerSite, confirmation.ShipToLocationId ?? shipment.ShipToLocationId, shipment.CustomerPartyRef, PartyType.Customer, EpisodeReason.Sale, EpisodeSource.CarrierPod), UnitEventType.Delivered, key, confirmation.DeliveredAt, message.Envelope.Source, message.Envelope.LegalEntityId, Documents.Line(shipment.Document, line.LineNo),
-                        new Dictionary<string, object?> { ["message_id"] = message.Envelope.MessageId, ["evidence"] = confirmation.Evidence, ["confirmation_document"] = confirmation.Document }, null, false, ct);
-                    drafts.Add(move.Draft);
-                    var currentOwner = await ctx.Episodes.OpenAsync(unit.UnitId, EpisodeKind.Ownership, ct);
-                    if (ctx.Options.OwnershipTrigger == "deliver" && currentOwner?.PartyRef != shipment.CustomerPartyRef)
-                    {
-                        var ownerKey = Documents.Key(message.Envelope, confirmation.Document, line.LineNo, unit.UnitId, UnitEventType.OwnershipOpened, confirmation.DeliveredAt);
-                        var open = await ctx.Episodes.PrepareOwnershipOpenAsync(unit.UnitId, new OwnershipTarget(shipment.CustomerPartyRef, PartyType.Customer, EpisodeReason.Sale, EpisodeSource.CarrierPod, CustomerPoRef: shipment.CustomerPoRef), ownerKey, confirmation.DeliveredAt, message.Envelope.Source, message.Envelope.LegalEntityId, Documents.Line(shipment.Document, line.LineNo), null, ct);
-                        if (open.CloseDraft is not null) drafts.Add(open.CloseDraft);
-                        drafts.Add(open.Draft);
-                    }
+                    var ownerKey = Documents.Key(message.Envelope, confirmation.Document, line.LineNo, unit.UnitId, UnitEventType.OwnershipOpened, confirmation.DeliveredAt);
+                    var open = await ctx.Episodes.PrepareOwnershipOpenAsync(unit.UnitId, new OwnershipTarget(shipment.CustomerPartyRef, PartyType.Customer, EpisodeReason.Sale, EpisodeSource.CarrierPod, CustomerPoRef: shipment.CustomerPoRef), ownerKey, confirmation.DeliveredAt, message.Envelope.Source, message.Envelope.LegalEntityId, Documents.Line(shipment.Document, line.LineNo), null, ct);
+                    if (open.CloseDraft is not null) drafts.Add(open.CloseDraft);
+                    drafts.Add(open.Draft);
                 }
-                catch (CommandRefusedException ex)
-                {
-                    exceptions.Add($"line {line.LineNo}: serial '{serial.Value}': {ex.Rule}: {ex.Message}");
-                }
+            }
+            catch (CommandRefusedException ex)
+            {
+                exceptions.Add($"line {line.LineNo}: serial '{serial.Value}': {ex.Rule}: {ex.Message}");
             }
         }
 
@@ -559,17 +602,16 @@ public static class SalesReturnPostedHandler
         var doc = await ctx.Sales.GetReturnAsync(message.Document, ct) ?? throw new CommandRefusedException("document_unavailable", $"Return {message.Document.Id:N} could not be read through the sales port.");
         var exceptions = new List<string>();
         var drafts = new List<UnitEventDraft>();
-        foreach (var line in doc.Lines)
+        var resolved = await Documents.ResolveAllAsync(ctx, doc.Lines, doc.Document, exceptions, ct);
+        var seen = await Documents.PrefetchAsync(ctx, resolved.Select(r => (r.Unit.UnitId, Documents.Key(message.Envelope, doc.Document, r.Line.LineNo, r.Unit.UnitId, UnitEventType.CustodyChanged, doc.ReceivedAt), doc.ReceivedAt)).ToList(), ct);
+        foreach (var (line, serial, unit) in resolved)
         {
-            foreach (var (serial, unit) in await Documents.ResolveAsync(ctx, line, doc.Document, exceptions, ct))
-            {
-                // Custody to quarantine only (P1); the RMA stages, grading and the ownership effects arrive with P5.
-                var key = Documents.Key(message.Envelope, doc.Document, line.LineNo, unit.UnitId, UnitEventType.CustodyChanged, doc.ReceivedAt);
-                if (await ctx.SeenAsync(key, doc.ReceivedAt, ct)) continue;
-                var move = await ctx.Episodes.PrepareCustodyMoveAsync(unit.UnitId, new CustodyTarget(LocationKind.Quarantine, doc.ReceivingLocationId, null, null, EpisodeReason.Return, EpisodeSource.Receipt), UnitEventType.CustodyChanged, key, doc.ReceivedAt, message.Envelope.Source, message.Envelope.LegalEntityId, Documents.Line(doc.Document, line.LineNo),
-                    new Dictionary<string, object?> { ["message_id"] = message.Envelope.MessageId, ["return_reason_code"] = doc.ReturnReasonCode, ["rma_external_ref"] = doc.RmaExternalRef, ["base_delivery"] = doc.BaseDelivery, ["customer_party_ref"] = doc.CustomerPartyRef }, new CurrentStateDelta { Disposition = UnitDisposition.Returned }, false, ct);
-                drafts.Add(move.Draft);
-            }
+            // Custody to quarantine only (P1); the RMA stages, grading and the ownership effects arrive with P5.
+            var key = Documents.Key(message.Envelope, doc.Document, line.LineNo, unit.UnitId, UnitEventType.CustodyChanged, doc.ReceivedAt);
+            if (seen.Contains((key, doc.ReceivedAt))) continue;
+            var move = await ctx.Episodes.PrepareCustodyMoveAsync(unit.UnitId, new CustodyTarget(LocationKind.Quarantine, doc.ReceivingLocationId, null, null, EpisodeReason.Return, EpisodeSource.Receipt), UnitEventType.CustodyChanged, key, doc.ReceivedAt, message.Envelope.Source, message.Envelope.LegalEntityId, Documents.Line(doc.Document, line.LineNo),
+                new Dictionary<string, object?> { ["message_id"] = message.Envelope.MessageId, ["return_reason_code"] = doc.ReturnReasonCode, ["rma_external_ref"] = doc.RmaExternalRef, ["base_delivery"] = doc.BaseDelivery, ["customer_party_ref"] = doc.CustomerPartyRef }, new CurrentStateDelta { Disposition = UnitDisposition.Returned }, false, ct);
+            drafts.Add(move.Draft);
         }
 
         return await Documents.ReportAsync(ctx, "Sales.ReturnPosted", doc.Document, drafts, exceptions, 0, ct);
@@ -583,17 +625,16 @@ public static class ServiceLoanerIssuedHandler
         var doc = await ctx.Service.GetLoanerIssueAsync(message.Document, ct) ?? throw new CommandRefusedException("document_unavailable", $"Loaner issue {message.Document.Id:N} could not be read through the service port.");
         var exceptions = new List<string>();
         var drafts = new List<UnitEventDraft>();
-        foreach (var line in doc.Lines)
+        var resolved = await Documents.ResolveAllAsync(ctx, doc.Lines, doc.Document, exceptions, ct);
+        var seen = await Documents.PrefetchAsync(ctx, resolved.Select(r => (r.Unit.UnitId, Documents.Key(message.Envelope, doc.Document, r.Line.LineNo, r.Unit.UnitId, UnitEventType.CustodyChanged, doc.IssuedAt), doc.IssuedAt)).ToList(), ct);
+        foreach (var (line, serial, unit) in resolved)
         {
-            foreach (var (serial, unit) in await Documents.ResolveAsync(ctx, line, doc.Document, exceptions, ct))
-            {
-                var key = Documents.Key(message.Envelope, doc.Document, line.LineNo, unit.UnitId, UnitEventType.CustodyChanged, doc.IssuedAt);
-                if (await ctx.SeenAsync(key, doc.IssuedAt, ct)) continue;
-                // A loaner is a normal unit at the customer with a due date (case 21); ownership stays with us.
-                var move = await ctx.Episodes.PrepareCustodyMoveAsync(unit.UnitId, new CustodyTarget(LocationKind.CustomerSite, doc.SiteLocationId, doc.CustomerPartyRef, PartyType.Customer, doc.Reason, EpisodeSource.Delivery, DueBack: doc.DueBack), UnitEventType.CustodyChanged, key, doc.IssuedAt, message.Envelope.Source, message.Envelope.LegalEntityId, Documents.Line(doc.Document, line.LineNo),
-                    new Dictionary<string, object?> { ["message_id"] = message.Envelope.MessageId, ["loan"] = true }, null, false, ct);
-                drafts.Add(move.Draft);
-            }
+            var key = Documents.Key(message.Envelope, doc.Document, line.LineNo, unit.UnitId, UnitEventType.CustodyChanged, doc.IssuedAt);
+            if (seen.Contains((key, doc.IssuedAt))) continue;
+            // A loaner is a normal unit at the customer with a due date (case 21); ownership stays with us.
+            var move = await ctx.Episodes.PrepareCustodyMoveAsync(unit.UnitId, new CustodyTarget(LocationKind.CustomerSite, doc.SiteLocationId, doc.CustomerPartyRef, PartyType.Customer, doc.Reason, EpisodeSource.Delivery, DueBack: doc.DueBack), UnitEventType.CustodyChanged, key, doc.IssuedAt, message.Envelope.Source, message.Envelope.LegalEntityId, Documents.Line(doc.Document, line.LineNo),
+                new Dictionary<string, object?> { ["message_id"] = message.Envelope.MessageId, ["loan"] = true }, null, false, ct);
+            drafts.Add(move.Draft);
         }
 
         return await Documents.ReportAsync(ctx, "Service.LoanerIssued", doc.Document, drafts, exceptions, 0, ct);

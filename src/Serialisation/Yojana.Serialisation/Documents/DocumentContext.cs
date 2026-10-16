@@ -82,6 +82,33 @@ public sealed class DocumentContext(
         return db.Events.AsNoTracking().AnyAsync(e => e.TenantId == tenantId && e.UnitId == unitId && e.DocumentType == document.Type && e.DocumentId == document.Id && e.DocumentLine == line, cancellationToken);
     }
 
+    /// <summary>The units this document line already produced an event for, in one read of the document index (P1-T24).</summary>
+    public async Task<HashSet<Guid>> UnitsAppliedAsync(DocumentRef document, int line, CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        return (await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && e.DocumentType == document.Type && e.DocumentId == document.Id && e.DocumentLine == line).Select(e => e.UnitId).Distinct().ToListAsync(cancellationToken)).ToHashSet();
+    }
+
+    /// <summary>
+    /// The (key, business time) pairs among these that the ledger holds already (P1-T24). Naming the business times as
+    /// well lets the unique (tenant, key, event_time) index seek only the partitions of those times; a document's events
+    /// share one or two.
+    /// </summary>
+    public async Task<HashSet<(string Key, DateTime At)>> SeenManyAsync(IReadOnlyCollection<(string Key, DateTime At)> keys, CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        var seen = new HashSet<(string, DateTime)>();
+        foreach (var chunk in keys.Distinct().Chunk(2000))
+        {
+            var values = chunk.Select(k => k.Key).ToList();
+            var times = chunk.Select(k => k.At).Distinct().ToList();
+            var rows = await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && times.Contains(e.EventTime) && values.Contains(e.IdempotencyKey)).Select(e => new { e.IdempotencyKey, e.EventTime }).ToListAsync(cancellationToken);
+            seen.UnionWith(rows.Select(r => (r.IdempotencyKey, r.EventTime)));
+        }
+
+        return seen;
+    }
+
     /// <summary>True when an event with this key was recorded before.</summary>
     public Task<bool> SeenAsync(string idempotencyKey, DateTime eventTime, CancellationToken cancellationToken)
     {

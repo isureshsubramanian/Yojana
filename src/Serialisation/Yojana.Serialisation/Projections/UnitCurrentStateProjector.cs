@@ -33,9 +33,20 @@ public sealed class UnitCurrentStateProjector(SerialisationDbContext db)
     /// <summary>Attributes key under which the writer stores the delta an event carried.</summary>
     public const string StateKey = "_state";
 
+    /// <summary>Reads the current rows of many units into the unit of work, so the applies that follow find them without a query each.</summary>
+    public async Task PreloadAsync(TenantId tenant, IReadOnlyCollection<Guid> unitIds, CancellationToken cancellationToken)
+    {
+        if (unitIds.Count < 2) return;
+        foreach (var ids in unitIds.Chunk(2000))
+        {
+            await db.Current.Where(c => c.TenantId == tenant && ids.Contains(c.UnitId)).LoadAsync(cancellationToken);
+        }
+    }
+
     public async Task ApplyAsync(TenantId tenant, Guid unitId, IReadOnlyList<(UnitEvent Event, CurrentStateDelta? Delta)> events, CancellationToken cancellationToken)
     {
-        var current = await db.Current.FirstOrDefaultAsync(c => c.TenantId == tenant && c.UnitId == unitId, cancellationToken);
+        // FindAsync answers from the unit of work when the row is tracked (a preload, or an earlier apply) and queries otherwise.
+        var current = await db.Current.FindAsync([tenant, unitId], cancellationToken);
         foreach (var (@event, delta) in events)
         {
             if (current is not null && @event.Seq <= current.LastEventSeq)
