@@ -110,6 +110,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("decimal(18,6)")
                         .HasColumnName("quantity");
 
+                    b.Property<DateTime?>("RecordedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("recorded_at");
+
                     b.Property<string>("Relation")
                         .IsRequired()
                         .HasMaxLength(20)

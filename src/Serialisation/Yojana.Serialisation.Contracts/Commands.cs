@@ -134,6 +134,65 @@ public sealed record RecordDisassembly(Guid CommandId, Guid ParentUnitId, IReadO
 
 public sealed record RecordDisassemblyResult(Guid ParentUnitId, IReadOnlyList<Guid> ClosedLinkIds, string ParentLifecycleStatus);
 
+/// <summary>A unit named either by its stable id or by one serial from a pasted list. Exactly one is supplied.</summary>
+public sealed record AsBuiltUnitReference(
+    Guid? UnitId = null,
+    string? Serial = null,
+    string? IdentifierType = null,
+    Guid? IssuerPartyRef = null);
+
+/// <summary>A serialised component, or an item/lot/quantity component, to write into the corrected tree.</summary>
+public sealed record CorrectedAsBuiltComponent(
+    AsBuiltUnitReference? Unit = null,
+    Guid? ItemId = null,
+    Guid? LotId = null,
+    decimal? Quantity = null,
+    string Relation = AssemblyRelation.Component,
+    string? Slot = null,
+    Guid? ThroughPhantomItemId = null,
+    string? ReleaseStatus = null,
+    string? ReleaseDocRef = null,
+    DateTime? EffectiveUntil = null);
+
+/// <summary>One link correction. Remove and replace name the retained AssemblyLink row; add and replace provide the fitted component.</summary>
+public sealed record AsBuiltLinkCorrection(string Change, Guid? RemovedLinkId = null, CorrectedAsBuiltComponent? Installed = null);
+
+/// <summary>All component corrections for one parent at one physical effective time; the command writes one parent fact.</summary>
+public sealed record AsBuiltParentCorrection(AsBuiltUnitReference Parent, DateTime EffectiveAt, IReadOnlyList<AsBuiltLinkCorrection> Changes);
+
+/// <summary>The signed-in correction committer and their tenant roles; HTTP endpoints always replace both from claims.</summary>
+public sealed record CorrectionCommitter(string UserRef, IReadOnlyList<string> Roles);
+
+/// <summary>
+/// Correct an as-built tree after the fact. Parents and serialised components may be supplied as a pasted serial list;
+/// every target is validated before the atomic batch writes anything.
+/// </summary>
+public sealed record CorrectAsBuilt(
+    Guid CommandId,
+    IReadOnlyList<AsBuiltParentCorrection> Targets,
+    string Reason,
+    string ActorRef,
+    Guid LegalEntityId,
+    CorrectionMetadata? Correction = null,
+    CorrectionCommitter? CommittedBy = null,
+    string? Note = null);
+
+/// <summary>Dry run of <see cref="CorrectAsBuilt"/> through the same planner and tenant approval policy.</summary>
+public sealed record PreviewCorrectAsBuilt(CorrectAsBuilt Command);
+
+public sealed record CorrectedAsBuiltParentResult(
+    Guid ParentUnitId,
+    Guid EventId,
+    IReadOnlyList<Guid> InstalledLinkIds,
+    IReadOnlyList<Guid> RemovedLinkIds);
+
+public sealed record CorrectAsBuiltResult(
+    Guid CorrectionId,
+    int ParentCount,
+    int ChangeCount,
+    IReadOnlyList<CorrectedAsBuiltParentResult> Parents,
+    bool Replayed = false);
+
 /// <summary>
 /// Change the item or model version a unit is (case 42): upgrade, conversion or relabel close the current
 /// UnitItemAssignment and open the next one; the serial stays. Warranty rules decide later whether they evaluate the

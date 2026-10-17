@@ -76,6 +76,15 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     GuidOrNull(before, "identifier_id") ?? Guid.Empty, GuidOrNull(after, "identifier_id") ?? Guid.Empty, Str(a, "approver_ref"));
             }
 
+            case UnitEventType.AsBuiltCorrected:
+            {
+                var asBuiltChanges = a?.TryGetProperty("changes", out var listed) == true && listed.ValueKind == JsonValueKind.Array
+                    ? listed.EnumerateArray().Select(c => new PublishedAsBuiltChange(Str(c, "change") ?? "", AssemblyLink(c, "removed"), AssemblyLink(c, "installed"))).ToList()
+                    : [];
+                return new UnitAsBuiltCorrected(Header(UnitAsBuiltCorrected.Schema, UnitAsBuiltCorrected.Version), Correction(a), Str(a, "change") ?? "",
+                    DateTimeValue(a, "effective_at") ?? e.EventTime, AssemblyLink(a, "removed"), AssemblyLink(a, "installed"), asBuiltChanges);
+            }
+
             case UnitEventType.OwnershipOpened or UnitEventType.OwnershipTransferred:
                 return new OwnershipOpened(Header(OwnershipOpened.Schema, OwnershipOpened.Version), GuidOrNull(a, "episode_id") ?? Guid.Empty, GuidOrNull(a, "party_ref") ?? Guid.Empty, Str(a, "party_type") ?? "", Str(a, "reason") ?? "", Str(a, "source") ?? "", Str(a, "confidence") ?? "", Str(a, "customer_po_ref"), Str(a, "customer_item_ref"), GuidOrNull(a, "previous_episode_id"));
             case UnitEventType.OwnershipClosed:
@@ -152,6 +161,9 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
 
     private static DateOnly? Date(JsonElement? element, string name) => Str(element, name) is { } text && DateOnly.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out var date) ? date : null;
 
+    private static DateTime? DateTimeValue(JsonElement? element, string name) =>
+        element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String && p.TryGetDateTime(out var value) ? value : null;
+
     private static List<Guid> Guids(JsonElement element, string name) => element.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Array ? p.EnumerateArray().Select(i => i.GetGuid()).Order().ToList() : [];
 
     private static string? Str(JsonElement? element, string name) => element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
@@ -174,6 +186,23 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
     {
         if (element is not { ValueKind: JsonValueKind.Object } el || !el.TryGetProperty("identifiers", out var ids) || ids.ValueKind != JsonValueKind.Array) return [];
         return ids.EnumerateArray().Select(i => new PublishedIdentifier(Str(i, "type") ?? "", Str(i, "scheme") ?? "", Str(i, "value") ?? "", GuidOrNull(i, "issuer_party_ref"))).ToList();
+    }
+
+    private static PublishedCorrection Correction(JsonElement? attributes)
+    {
+        var approvers = attributes is { ValueKind: JsonValueKind.Object } a && a.TryGetProperty("approvers", out var values) && values.ValueKind == JsonValueKind.Array
+            ? values.Deserialize<List<CorrectionApprover>>(LedgerJson.Options) ?? []
+            : [];
+        return new(GuidOrNull(attributes, "correction_id") ?? Guid.Empty, Str(attributes, "reason_code") ?? "", Str(attributes, "initiated_via") ?? "",
+            GuidOrNull(attributes, "corrects_correction_id"), approvers.Select(x => x.UserRef).ToList());
+    }
+
+    private static PublishedAssemblyLink? AssemblyLink(JsonElement? attributes, string name)
+    {
+        if (attributes is not { ValueKind: JsonValueKind.Object } a || !a.TryGetProperty(name, out var link) || link.ValueKind != JsonValueKind.Object) return null;
+        return new(GuidOrNull(link, "assembly_link_id") ?? Guid.Empty, GuidOrNull(link, "child_unit_id"), GuidOrNull(link, "child_item_id"), GuidOrNull(link, "child_lot_id"),
+            link.TryGetProperty("quantity", out var quantity) && quantity.ValueKind == JsonValueKind.Number ? quantity.GetDecimal() : null,
+            Str(link, "relation") ?? "", Str(link, "slot"));
     }
 }
 
