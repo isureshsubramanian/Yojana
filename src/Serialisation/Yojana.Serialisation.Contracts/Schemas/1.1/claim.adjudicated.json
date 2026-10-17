@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.1/claim.adjudicated.json",
+  "title": "Claim.Adjudicated",
+  "type": "object",
+  "required": ["header", "claim_id", "coverage_source", "approved_amounts_by_line", "service_entity_id", "obligor_entity_id", "claimant_party_ref", "settlement_party_ref"],
+  "properties": {
+    "header": { "type": "object" },
+    "claim_id": { "type": "string", "format": "uuid" },
+    "cohort_id": { "type": ["string", "null"], "format": "uuid" },
+    "coverage_source": { "enum": ["warranty", "recall", "goodwill", "contract", "chargeable"] },
+    "approved_amounts_by_line": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim_line_id", "requested_amount", "approved_amount", "coverage_pct", "coverage_source"],
+        "properties": {
+          "claim_line_id": { "type": "string", "format": "uuid" },
+          "requested_amount": { "type": "number" },
+          "approved_amount": { "type": "number" },
+          "coverage_pct": { "type": "number" },
+          "coverage_source": { "type": "string" },
+          "entitlement_id": { "type": ["string", "null"], "format": "uuid" }
+        }
+      }
+    },
+    "service_entity_id": { "type": "string", "format": "uuid" },
+    "obligor_entity_id": { "type": "string", "format": "uuid" },
+    "claimant_party_ref": { "type": "string", "format": "uuid" },
+    "settlement_party_ref": { "type": "string", "format": "uuid" },
+    "successor_item_id": { "type": ["string", "null"], "format": "uuid" }
+  }
+}

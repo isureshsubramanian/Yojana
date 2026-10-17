@@ -10,10 +10,12 @@ public sealed record ClaimAdjudicated(
     IReadOnlyList<PublishedClaimLineAmount> ApprovedAmountsByLine,
     Guid ServiceEntityId,
     Guid ObligorEntityId,
+    Guid ClaimantPartyRef,
+    Guid SettlementPartyRef,
     Guid? SuccessorItemId = null) : IPublishedUnitEvent
 {
     public const string Schema = "Claim.Adjudicated";
-    public const string Version = "1.0";
+    public const string Version = "1.1";
 }
 
 public sealed record RecoveryClaimRaised(
