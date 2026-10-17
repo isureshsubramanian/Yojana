@@ -15,6 +15,8 @@ namespace Yojana.Serialisation.Workbench;
 /// <summary>
 /// Narrow command seam for the workbench. It translates an opaque answer into the existing preview or command message;
 /// it owns no correction rule and always overwrites identity, route metadata and approvers with trusted values.
+/// TIGHT COUPLING: every adapter command id is mirrored by WorkbenchChoiceRules.AvailableCommands because settings must
+/// reject dead-end routes before saving. There is no safe generic adapter; changing this switch requires changing that list.
 /// </summary>
 public sealed class WorkbenchCommandDispatcher(IMessageBus bus, ITenantContext tenant, BulkExecutor bulk)
 {

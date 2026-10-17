@@ -62,9 +62,16 @@ public static class SerialisationModule
         builder.Services.AddScoped<BulkApprovalRequestQueries>();
         builder.Services.AddScoped<CorrectionLedger>();
         builder.Services.AddScoped<CorrectionKpiQueries>();
-        builder.Services.AddSingleton<IWorkbenchChoiceCatalog, BuiltInWorkbenchChoiceCatalog>();
+        // Coupled to WorkbenchChoiceSettings for the same two-DbContext Wolverine constraint as correction approvals:
+        // the factory hides ITenantSettings' PlatformDbContext from workbench command dependency graphs.
+        builder.Services.AddScoped(sp => new WorkbenchChoiceSettings(
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>(),
+            sp.GetRequiredService<CorrectionApprovalSettings>(),
+            sp.GetRequiredService<Yojana.Platform.Contracts.Time.IClock>()));
+        builder.Services.AddScoped<IWorkbenchChoiceCatalog>(sp => sp.GetRequiredService<WorkbenchChoiceSettings>());
         builder.Services.AddScoped<WorkbenchEntryResolver>();
         builder.Services.AddScoped<WorkbenchLineageQueries>();
+        builder.Services.AddScoped<WorkbenchPickerService>();
         builder.Services.AddScoped<WorkbenchCommandDispatcher>();
         builder.Services.AddScoped<WorkbenchRequestService>();
         builder.Services.AddScoped<WorkbenchRequestQueries>();

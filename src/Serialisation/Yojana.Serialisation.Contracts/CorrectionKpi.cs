@@ -30,7 +30,23 @@ public sealed record CorrectionKpiReport(
     string Breakdown,
     Guid? ItemId,
     CorrectionKpiBaseline Baseline,
-    IReadOnlyList<CorrectionKpiRow> Rows);
+    IReadOnlyList<CorrectionKpiRow> Rows,
+    UnclassifiedRequestAlert? UnclassifiedAlert = null);
+
+public sealed record UnclassifiedRequestAlert(
+    decimal ThresholdPercent,
+    decimal RatePercent,
+    int UnclassifiedRequests,
+    int Corrections,
+    bool Alert,
+    IReadOnlyList<UnclassifiedRequestRate>? Months = null);
+
+public sealed record UnclassifiedRequestRate(
+    string Bucket,
+    decimal RatePercent,
+    int UnclassifiedRequests,
+    int Corrections,
+    bool Alert);
 
 public static class CorrectionKpiStatus
 {

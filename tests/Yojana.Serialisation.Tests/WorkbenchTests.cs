@@ -1,5 +1,7 @@
 using Xunit;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Workbench;
 
 namespace Yojana.Serialisation.Tests;
@@ -7,10 +9,9 @@ namespace Yojana.Serialisation.Tests;
 public sealed class WorkbenchTests
 {
     [Fact]
-    public void Built_in_catalog_maps_every_phase_three_choice_to_existing_commands()
+    public void Standard_catalog_maps_every_phase_three_choice_to_existing_commands()
     {
-        var catalog = new BuiltInWorkbenchChoiceCatalog();
-        var choices = catalog.GetChoices();
+        var choices = StandardWorkbenchChoices.All.Where(c => !c.Fallback).ToList();
 
         Assert.Equal(8, choices.Count);
         Assert.DoesNotContain(choices, c => c.Choice == CorrectionWorkbenchChoice.ReplacedOrExchanged);
@@ -20,15 +21,63 @@ public sealed class WorkbenchTests
             Assert.NotEmpty(choice.Commands);
             Assert.All(choice.Commands, command =>
             {
-                var route = catalog.Route(choice.Choice, command);
+                var route = WorkbenchChoiceRules.Options(choice).Single(o => o.Command == command);
                 Assert.False(string.IsNullOrWhiteSpace(route.DefaultReason));
                 Assert.InRange(route.RootCause, CorrectionRootCause.DocumentSerials, CorrectionRootCause.Warranty);
             });
         });
         Assert.Equal([CorrectionCommand.CorrectIdentifier, CorrectionCommand.SwapIdentifiers],
-            catalog.Get(CorrectionWorkbenchChoice.MistypedOrCrossed).Commands);
+            choices.Single(c => c.Choice == CorrectionWorkbenchChoice.MistypedOrCrossed).Commands);
         Assert.Equal([CorrectionCommand.ReassignAllocation, CorrectionCommand.VoidUnit],
-            catalog.Get(CorrectionWorkbenchChoice.WrongAllocation).Commands);
+            choices.Single(c => c.Choice == CorrectionWorkbenchChoice.WrongAllocation).Commands);
+        Assert.True(StandardWorkbenchChoices.All[^1].Fallback);
+        Assert.Empty(Validate(StandardWorkbenchChoices.All));
+    }
+
+    [Fact]
+    public void Choice_cannot_weaken_the_commands_approval_roles()
+    {
+        var added = Added("loose", CorrectionCommand.CorrectIdentifier) with { CommitRoles = [YojanaRole.CustomerService] };
+        var problems = Validate([.. StandardWorkbenchChoices.All, added]);
+
+        Assert.Contains(problems, p => p.Rule == "workbench_approval_weaker_than_command");
+    }
+
+    [Fact]
+    public void Choice_refuses_a_command_without_a_dispatch_adapter()
+    {
+        var problems = Validate([.. StandardWorkbenchChoices.All, Added("unknown", "change_anything")]);
+
+        Assert.Contains(problems, p => p.Rule == "workbench_command_unknown");
+    }
+
+    [Fact]
+    public void Standard_choice_cannot_be_retired()
+    {
+        var choices = StandardWorkbenchChoices.All.Select(c => c.Choice == CorrectionWorkbenchChoice.WrongItem
+            ? c with { Status = WorkbenchChoiceStatus.Retired } : c).ToList();
+
+        Assert.Contains(Validate(choices), p => p.Rule == "standard_choice_cannot_retire");
+    }
+
+    [Fact]
+    public void Fallback_is_always_present()
+    {
+        var choices = StandardWorkbenchChoices.All.Where(c => !c.Fallback).ToList();
+
+        Assert.Contains(Validate(choices), p => p.Rule == "workbench_fallback_required");
+    }
+
+    [Fact]
+    public void Suggestion_rules_are_ordered_distinct_and_limited_to_three()
+    {
+        var suggestions = WorkbenchSuggestionRules.Suggest(new(true, true, true, true));
+
+        Assert.Equal(3, suggestions.Count);
+        Assert.Equal(CorrectionWorkbenchChoice.WrongItem, suggestions[0].Choice);
+        Assert.Equal(CorrectionWorkbenchChoice.WrongComponents, suggestions[1].Choice);
+        Assert.Equal(CorrectionWorkbenchChoice.DuplicateUnit, suggestions[2].Choice);
+        Assert.Equal(3, WorkbenchSuggestionRules.Suggest(new(false, false, false, false)).Count);
     }
 
     [Fact]
@@ -52,4 +101,11 @@ public sealed class WorkbenchTests
         EntitlementChanges: [],
         CertificateVersions: [],
         PrintJobs: []);
+
+    private static WorkbenchChoice Added(string id, string command) => new(id, id, "Added", "Added choice",
+        [command], [], IdentifierCorrectionReason.Typo, CorrectionRootCause.TypoOrCrossedPair, [id], 90,
+        [YojanaRole.CustomerService], [YojanaRole.SerialAdministrator], Standard: false);
+
+    private static IReadOnlyList<CommandRefusal> Validate(IReadOnlyList<WorkbenchChoice> choices) =>
+        WorkbenchChoiceRules.Validate(new(choices, 10m), StandardWorkbenchChoices.Default, CorrectionApprovalRules.DefaultPolicy);
 }

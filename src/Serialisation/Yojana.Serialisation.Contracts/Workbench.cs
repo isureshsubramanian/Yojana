@@ -49,7 +49,62 @@ public sealed record WorkbenchChoice(
     IReadOnlyList<string> Commands,
     IReadOnlyList<WorkbenchNarrowingQuestion> Questions,
     string DefaultReason,
-    int RootCause);
+    int RootCause,
+    IReadOnlyList<string>? SearchWords = null,
+    int Order = 0,
+    IReadOnlyList<string>? InitiateRoles = null,
+    IReadOnlyList<string>? CommitRoles = null,
+    string Status = WorkbenchChoiceStatus.Shown,
+    bool Standard = true,
+    bool Fallback = false);
+
+public static class WorkbenchChoiceStatus
+{
+    public const string Shown = "shown";
+    public const string Retired = "retired";
+    public static readonly IReadOnlyList<string> All = [Shown, Retired];
+}
+
+public static class WorkbenchChoiceId
+{
+    public const string Fallback = "none_or_not_sure";
+}
+
+/// <summary>The complete versioned tenant setting used by both the picker and approval workflow.</summary>
+public sealed record WorkbenchChoiceConfiguration(
+    int Version,
+    IReadOnlyList<WorkbenchChoice> Choices,
+    decimal UnclassifiedAlertPercent,
+    string UpdatedBy,
+    DateTime UpdatedAt);
+
+/// <summary>Administrator input. Version and audit fields are always supplied by the server.</summary>
+public sealed record UpdateWorkbenchChoices(IReadOnlyList<WorkbenchChoice> Choices, decimal UnclassifiedAlertPercent);
+
+public sealed record WorkbenchChoiceConfigurationVersion(
+    WorkbenchChoiceConfiguration Configuration,
+    DateTime ValidFrom,
+    DateTime ValidTo);
+
+public sealed record WorkbenchChoiceSettingsView(
+    WorkbenchChoiceConfiguration Current,
+    IReadOnlyList<WorkbenchChoiceConfigurationVersion> History);
+
+public sealed record WorkbenchChoiceGroup(string Area, IReadOnlyList<WorkbenchChoice> Choices);
+
+public sealed record WorkbenchChoiceSuggestion(string Choice, string Rule, string Label);
+
+public sealed record WorkbenchPicker(
+    string? Search,
+    IReadOnlyList<WorkbenchChoiceSuggestion> Suggestions,
+    IReadOnlyList<WorkbenchChoiceGroup> Groups,
+    WorkbenchChoice Fallback);
+
+public sealed record WorkbenchSuggestionFacts(
+    bool DocumentMismatch,
+    bool AwaitingVendorSerial,
+    bool DuplicateVendorSerial,
+    bool OpenAssemblyWithUncapturedChildren);
 
 /// <summary>The chosen route plus the existing command's arguments. Server-owned identity fields are overwritten.</summary>
 public sealed record WorkbenchAnswers(string Command, JsonElement Arguments, IReadOnlyDictionary<string, string>? Narrowing = null);
@@ -78,8 +133,10 @@ public static class WorkbenchRequestStatus
     public const string Rejected = "rejected";
     public const string Committed = "committed";
     public const string Superseded = "superseded";
+    public const string Unclassified = "unclassified";
+    public const string NoCommandFits = "no_command_fits";
 
-    public static readonly IReadOnlyList<string> All = [Draft, AwaitingApproval, Approved, Rejected, Committed, Superseded];
+    public static readonly IReadOnlyList<string> All = [Draft, AwaitingApproval, Approved, Rejected, Committed, Superseded, Unclassified, NoCommandFits];
 }
 
 public sealed record WorkbenchActor(string UserRef, IReadOnlyList<string> Roles);
@@ -109,13 +166,27 @@ public sealed record WorkbenchRequestRow(
     string? DecisionNote = null,
     string? CommittedBy = null,
     DateTime? CommittedAt = null,
-    JsonElement? Result = null);
+    JsonElement? Result = null,
+    string? UnclassifiedDescription = null,
+    string? ClassifiedBy = null,
+    DateTime? ClassifiedAt = null,
+    string? EscalatedBy = null,
+    DateTime? EscalatedAt = null);
 
 public sealed record WorkbenchRequestPage(IReadOnlyList<WorkbenchRequestRow> Items, int Total, int Skip, int Take);
 
 public sealed record RejectWorkbenchRequest(string Note);
 
 public sealed record ApproveWorkbenchRequest(string? Note = null);
+
+public sealed record FileUnclassifiedWorkbenchRequest(
+    WorkbenchTarget Target,
+    string Description,
+    IReadOnlyList<WorkbenchEvidenceRef>? Evidence = null);
+
+public sealed record RefileWorkbenchRequest(WorkbenchPreviewRequest Request);
+
+public sealed record EscalateWorkbenchRequest(string Note);
 
 public sealed record WorkbenchItemAssignment(Guid AssignmentId, Guid ItemId, Guid? ModelVersionId, DateTime ValidFrom, DateTime? ValidTo, string Reason);
 

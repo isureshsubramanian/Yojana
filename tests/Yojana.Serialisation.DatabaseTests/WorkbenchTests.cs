@@ -21,6 +21,125 @@ public sealed class WorkbenchTests(SerialisationHostFixture fixture)
     private static readonly WorkbenchActor SerialAdministrator = new("serial-admin", [YojanaRole.SerialAdministrator]);
     private static readonly WorkbenchActor ProductionSupervisor = new("production-supervisor", [YojanaRole.ProductionSupervisor]);
 
+    [DatabaseFact]
+    public async Task Reword_and_reorder_persist_per_tenant_without_leaking()
+    {
+        var tenant = await fixture.NewTenantAsync("wbchoice");
+        var otherTenant = await fixture.NewTenantAsync("wbchoiceother");
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var settings = scope.ServiceProvider.GetRequiredService<WorkbenchChoiceSettings>();
+            var current = await settings.GetConfigurationAsync(CancellationToken.None);
+            var choices = current.Choices.Select(c => c.Choice == CorrectionWorkbenchChoice.WrongItem
+                ? c with { Label = "The recorded product is wrong", Order = 15, SearchWords = ["catalogue mismatch"] } : c).ToList();
+            var saved = await settings.SetAsync(new(choices, 12m), "application-admin", CancellationToken.None);
+            Assert.Equal(1, saved.Version);
+            Assert.Equal("application-admin", saved.UpdatedBy);
+        }
+
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var view = await scope.ServiceProvider.GetRequiredService<WorkbenchChoiceSettings>().GetViewAsync(CancellationToken.None);
+            Assert.Equal("The recorded product is wrong", view.Current.Choices.Single(c => c.Choice == CorrectionWorkbenchChoice.WrongItem).Label);
+            Assert.Equal(15, view.Current.Choices.Single(c => c.Choice == CorrectionWorkbenchChoice.WrongItem).Order);
+            Assert.NotEmpty(view.History);
+            var picker = await scope.ServiceProvider.GetRequiredService<WorkbenchPickerService>().QueryAsync(null, "catalogue", CancellationToken.None);
+            Assert.Equal(CorrectionWorkbenchChoice.WrongItem, Assert.Single(picker.Groups.SelectMany(g => g.Choices)).Choice);
+            Assert.True(picker.Fallback.Fallback);
+        }
+
+        using (var scope = fixture.ScopeFor(otherTenant))
+        {
+            var other = await scope.ServiceProvider.GetRequiredService<WorkbenchChoiceSettings>().GetConfigurationAsync(CancellationToken.None);
+            Assert.Equal("The serial is on the wrong item", other.Choices.Single(c => c.Choice == CorrectionWorkbenchChoice.WrongItem).Label);
+            Assert.Equal(10m, other.UnclassifiedAlertPercent);
+        }
+    }
+
+    [DatabaseFact]
+    public async Task Added_choice_routes_to_its_existing_command()
+    {
+        var tenant = await fixture.NewTenantAsync("wbadded");
+        var prefix = "WA" + Guid.NewGuid().ToString("N")[..5].ToUpperInvariant();
+        var unit = (await CommissionAsync(tenant, prefix, 1)).Single();
+        using var scope = fixture.ScopeFor(tenant);
+        var settings = scope.ServiceProvider.GetRequiredService<WorkbenchChoiceSettings>();
+        var current = await settings.GetConfigurationAsync(CancellationToken.None);
+        var added = new WorkbenchChoice("unfinished_order_unit", "The order ended before this unit was completed", "Item, build and allocation",
+            "Void an unfinished unit through the existing audited command.", [CorrectionCommand.VoidUnit], [], VoidUnitReason.WorkOrderQuantityReduced,
+            CorrectionRootCause.AllocationBeforeBirth, ["unfinished", "cancelled order"], 15, [YojanaRole.Technician],
+            [YojanaRole.ProductionSupervisor], Standard: false);
+        await settings.SetAsync(new([.. current.Choices, added], current.UnclassifiedAlertPercent), "application-admin", CancellationToken.None);
+
+        var service = scope.ServiceProvider.GetRequiredService<WorkbenchRequestService>();
+        var command = new VoidUnit(Guid.Empty, unit, VoidUnitReason.WorkOrderQuantityReduced, At.AddHours(1), "ignored", Entity,
+            new DocumentRef("production_order", Guid.NewGuid()));
+        var request = Request(Guid.NewGuid(), added.Choice, CorrectionCommand.VoidUnit, unit, VoidUnitReason.WorkOrderQuantityReduced, command);
+        var raised = await service.InitiateAsync(Guid.NewGuid(), request, Technician, CancellationToken.None);
+        Assert.Equal(WorkbenchRequestStatus.AwaitingApproval, raised.Status);
+        Assert.Equal(WorkbenchRequestStatus.Approved, (await service.ApproveAsync(raised.RequestId, ProductionSupervisor, null, CancellationToken.None)).Status);
+        Assert.Equal(WorkbenchRequestStatus.Committed, (await service.CommitAsync(raised.RequestId, ProductionSupervisor, CancellationToken.None)).Status);
+        Assert.Equal(CorrectionCommand.VoidUnit, (await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Corrections
+            .SingleAsync(c => c.CorrectionId == request.CommandId)).Command);
+    }
+
+    [DatabaseFact]
+    public async Task Unclassified_request_refiles_under_the_same_request_and_kpi_counts_the_command_once()
+    {
+        var tenant = await fixture.NewTenantAsync("wbrefile");
+        var prefix = "WU" + Guid.NewGuid().ToString("N")[..5].ToUpperInvariant();
+        var unit = (await CommissionAsync(tenant, prefix, 1)).Single();
+        using var scope = fixture.ScopeFor(tenant);
+        var service = scope.ServiceProvider.GetRequiredService<WorkbenchRequestService>();
+        var requestId = Guid.NewGuid();
+        var filed = await service.FileUnclassifiedAsync(requestId,
+            new(new(WorkbenchTargetKind.Unit, UnitId: unit), "The plate has a character that does not match the record", [new("photo", "evidence:plate")]),
+            Technician, CancellationToken.None);
+        Assert.Equal(WorkbenchRequestStatus.Unclassified, filed.Status);
+        Assert.Equal(unit, Assert.Single(filed.Preview.Units).UnitId);
+
+        var commandId = Guid.NewGuid();
+        var command = new CorrectIdentifier(Guid.Empty, unit, IdentifierType.InternalSerial, $"{prefix}-101",
+            IdentifierCorrectionReason.Typo, At.AddHours(2), "ignored", Entity);
+        var classified = await service.RefileAsync(requestId, new(Request(commandId, CorrectionWorkbenchChoice.MistypedOrCrossed,
+            CorrectionCommand.CorrectIdentifier, unit, IdentifierCorrectionReason.Typo, command)), SerialAdministrator, CancellationToken.None);
+        Assert.Equal(requestId, classified.RequestId);
+        Assert.Equal(WorkbenchRequestStatus.Approved, classified.Status);
+        Assert.Equal(WorkbenchRequestStatus.Committed, (await service.CommitAsync(requestId, SerialAdministrator, CancellationToken.None)).Status);
+
+        var report = await scope.ServiceProvider.GetRequiredService<Yojana.Serialisation.Queries.CorrectionKpiQueries>().QueryAsync(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31), CorrectionKpiBreakdown.RootCause, null, CancellationToken.None);
+        Assert.Equal(1, report.Rows.Single(r => r.Dimension == CorrectionRootCause.TypoOrCrossedPair.ToString()).Corrections);
+        Assert.DoesNotContain(report.Rows, r => r.Dimension == "unclassified");
+        var requestProjection = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Corrections.SingleAsync(c => c.CorrectionId == requestId);
+        Assert.Equal(CorrectionRequestStatus.Refiled, requestProjection.RequestStatus);
+    }
+
+    [DatabaseFact]
+    public async Task Unclassified_request_can_escalate_and_triggers_the_tenant_alert()
+    {
+        var tenant = await fixture.NewTenantAsync("wbescalate");
+        var prefix = "WE" + Guid.NewGuid().ToString("N")[..5].ToUpperInvariant();
+        var unit = (await CommissionAsync(tenant, prefix, 1)).Single();
+        using var scope = fixture.ScopeFor(tenant);
+        var settings = scope.ServiceProvider.GetRequiredService<WorkbenchChoiceSettings>();
+        var configuration = await settings.GetConfigurationAsync(CancellationToken.None);
+        await settings.SetAsync(new(configuration.Choices, 80m), "application-admin", CancellationToken.None);
+        var service = scope.ServiceProvider.GetRequiredService<WorkbenchRequestService>();
+        var requestId = Guid.NewGuid();
+        await service.FileUnclassifiedAsync(requestId,
+            new(new(WorkbenchTargetKind.Unit, UnitId: unit), "No listed command describes the physical state"), Technician, CancellationToken.None);
+        var escalated = await service.EscalateAsync(requestId, SerialAdministrator, "Product change assessment required", CancellationToken.None);
+        Assert.Equal(WorkbenchRequestStatus.NoCommandFits, escalated.Status);
+
+        var report = await scope.ServiceProvider.GetRequiredService<Yojana.Serialisation.Queries.CorrectionKpiQueries>().QueryAsync(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31), CorrectionKpiBreakdown.RootCause, null, CancellationToken.None);
+        Assert.Equal(1, report.Rows.Single(r => r.Dimension == "unclassified").Corrections);
+        Assert.Equal(80m, report.UnclassifiedAlert!.ThresholdPercent);
+        Assert.Equal(100m, report.UnclassifiedAlert.RatePercent);
+        Assert.True(report.UnclassifiedAlert.Alert);
+    }
+
     private async Task<T> InvokeAsync<T>(TenantId tenant, object command) where T : class
     {
         using var scope = fixture.ScopeFor(tenant);

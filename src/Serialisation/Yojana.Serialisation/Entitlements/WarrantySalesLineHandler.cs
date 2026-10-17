@@ -7,6 +7,7 @@ using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
@@ -21,7 +22,7 @@ public static class SalesInvoicePostedHandler
     public static async Task<ConsumedEventResult> Handle(SalesInvoicePosted message, ISalesDocumentQueryPort sales, SerialisationDbContext db,
         SelectionSetResolver selections, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbished,
         WarrantyReferenceSettings reference, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates,
-        ITenantCurrency currency, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITenantCurrency currency, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
         var invoice = await sales.GetInvoiceAsync(message.Document, cancellationToken)
             ?? throw new CommandRefusedException("document_unavailable", $"Invoice {message.Document.Id:N} could not be read through the sales port.");
@@ -31,7 +32,7 @@ public static class SalesInvoicePostedHandler
         {
             try
             {
-                affected += await ApplyLineAsync(invoice, line, null, message.Envelope, db, selections, ledger, resolver, store, zones, refurbished, reference, approvals, claims, certificates, currency, tenant, clock, cancellationToken);
+                affected += await ApplyLineAsync(invoice, line, null, message.Envelope, db, selections, ledger, resolver, store, zones, refurbished, reference, approvals, claims, certificates, currency, tenant, clock, corrections, cancellationToken);
             }
             catch (CommandRefusedException ex)
             {
@@ -46,7 +47,7 @@ public static class SalesInvoicePostedHandler
     internal static async Task<int> ApplyLineAsync(InvoiceDocument invoice, InvoiceLine line, IReadOnlyList<string>? suppliedSerials, ThinEnvelope envelope,
         SerialisationDbContext db, SelectionSetResolver selections, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbished,
         WarrantyReferenceSettings reference, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates,
-        ITenantCurrency currency, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITenantCurrency currency, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
         var target = line.Target
             ?? throw new CommandRefusedException("target_rule_missing", "A warranty-service line needs a target rule.");
@@ -88,7 +89,7 @@ public static class SalesInvoicePostedHandler
                 await AttachExtendedWarrantyHandler.Handle(new AttachExtendedWarranty(commandId, unitId, version.CoverageFamily, contractDate, invoice.ObligorEntityId, invoice.PostedAt,
                     line.Price / Math.Max(1, line.Quantity), line.Currency, sourceDocument, invoice.PostedAt, envelope.Source, version.PolicyVersionId,
                     invoice.CustomerPartyRef, PartyType.Customer, invoice.CustomerPartyRef, PartyType.Customer, invoice.Country, invoice.SiteLocationId, invoice.CustomerPoRef),
-                    db, ledger, resolver, store, zones, tenant, clock, cancellationToken);
+                    db, ledger, resolver, store, zones, tenant, clock, corrections, cancellationToken);
             }
             else if (live is null)
             {
@@ -183,7 +184,7 @@ public static class ResolveWarrantyLineExceptionHandler
     public static async Task<WarrantyLineExceptionRow> Handle(ResolveWarrantyLineException command, ISalesDocumentQueryPort sales, SerialisationDbContext db,
         SelectionSetResolver selections, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbished,
         WarrantyReferenceSettings reference, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates,
-        ITenantCurrency currency, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITenantCurrency currency, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
         var row = await db.WarrantyLineExceptions.SingleOrDefaultAsync(e => e.TenantId == tenant.TenantId && e.ExceptionId == command.ExceptionId, cancellationToken)
             ?? throw new CommandRefusedException("exception_unknown", $"Warranty-line exception {command.ExceptionId} does not exist.");
@@ -193,7 +194,7 @@ public static class ResolveWarrantyLineExceptionHandler
         var line = invoice.Lines.SingleOrDefault(l => l.LineNo == row.DocumentLine) ?? throw new CommandRefusedException("line_unknown", "The warranty line is no longer present on the invoice.");
         var envelope = new ThinEnvelope(command.ExceptionId, invoice.ObligorEntityId, row.TriggerAt, command.ActorRef);
         await SalesInvoicePostedHandler.ApplyLineAsync(invoice with { PostedAt = row.TriggerAt }, line, command.Serials.Count == 0 ? null : command.Serials, envelope,
-            db, selections, ledger, resolver, store, zones, refurbished, reference, approvals, claims, certificates, currency, tenant, clock, cancellationToken);
+            db, selections, ledger, resolver, store, zones, refurbished, reference, approvals, claims, certificates, currency, tenant, clock, corrections, cancellationToken);
         row.Status = WarrantyLineExceptionStatus.Resolved;
         row.ResolvedAt = clock.UtcNow;
         row.ResolvedBy = command.ActorRef;

@@ -32,4 +32,9 @@ public sealed class WorkbenchRequest : ITenantScoped
     public string? CommittedBy { get; set; }
     public DateTime? CommittedAt { get; set; }
     public string? ResultJson { get; set; }
+    public string? UnclassifiedDescription { get; set; }
+    public string? ClassifiedBy { get; set; }
+    public DateTime? ClassifiedAt { get; set; }
+    public string? EscalatedBy { get; set; }
+    public DateTime? EscalatedAt { get; set; }
 }

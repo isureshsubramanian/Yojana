@@ -7,6 +7,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
+using Yojana.Serialisation.Workbench;
 
 namespace Yojana.Serialisation.Queries;
 
@@ -74,7 +75,12 @@ public static class CorrectionKpiCsv
 }
 
 /// <summary>Set-based correction-volume aggregates over the indexed projection; no correction row is loaded individually.</summary>
-public sealed class CorrectionKpiQueries(SerialisationDbContext db, ITenantContext tenant, IClock clock, CorrectionKpiTargetSettings targets)
+public sealed class CorrectionKpiQueries(
+    SerialisationDbContext db,
+    ITenantContext tenant,
+    IClock clock,
+    CorrectionKpiTargetSettings targets,
+    WorkbenchChoiceSettings workbenchChoices)
 {
     private sealed class Aggregate
     {
@@ -103,6 +109,14 @@ public sealed class CorrectionKpiQueries(SerialisationDbContext db, ITenantConte
         public int Units { get; init; }
     }
 
+    private sealed class RequestAggregate
+    {
+        public int Year { get; init; }
+        public int Month { get; init; }
+        public int Corrections { get; init; }
+        public int Unclassified { get; init; }
+    }
+
     public async Task<CorrectionKpiReport> QueryAsync(DateOnly from, DateOnly to, string breakdown, Guid? itemId, CancellationToken cancellationToken)
     {
         if (from > to) throw new ArgumentException("from must not be after to.", nameof(from));
@@ -116,6 +130,25 @@ public sealed class CorrectionKpiQueries(SerialisationDbContext db, ITenantConte
             .Where(c => c.RootCauseCategory != null || (c.RequestStatus != null && c.RequestStatus != CorrectionRequestStatus.Refiled));
         if (itemId is { } item)
             source = source.Where(c => db.CorrectionUnits.Any(link => link.TenantId == tenantId && link.CorrectionId == c.CorrectionId && link.ItemId == item));
+
+        var correctionCount = await source.CountAsync(cancellationToken);
+        var unclassifiedCount = await source.CountAsync(c => c.RootCauseCategory == null, cancellationToken);
+        var threshold = (await workbenchChoices.GetConfigurationAsync(cancellationToken)).UnclassifiedAlertPercent;
+        var unclassifiedRate = correctionCount == 0 ? 0 : Math.Round(unclassifiedCount * 100m / correctionCount, 2, MidpointRounding.AwayFromZero);
+        var requestMonths = await source.GroupBy(c => new { c.EventTime.Year, c.EventTime.Month }).Select(g => new RequestAggregate
+        {
+            Year = g.Key.Year,
+            Month = g.Key.Month,
+            Corrections = g.Count(),
+            Unclassified = g.Count(c => c.RootCauseCategory == null),
+        }).ToListAsync(cancellationToken);
+        var monthlyRates = requestMonths.OrderBy(r => r.Year).ThenBy(r => r.Month).Select(r =>
+        {
+            var rate = Math.Round(r.Unclassified * 100m / r.Corrections, 2, MidpointRounding.AwayFromZero);
+            return new UnclassifiedRequestRate(CorrectionKpiRules.MonthBucket(r.Year, r.Month), rate, r.Unclassified, r.Corrections, rate > threshold);
+        }).ToList();
+        var alert = new UnclassifiedRequestAlert(threshold, unclassifiedRate, unclassifiedCount, correctionCount,
+            monthlyRates.Any(r => r.Alert), monthlyRates);
 
         var aggregates = breakdown switch
         {
@@ -141,7 +174,7 @@ public sealed class CorrectionKpiQueries(SerialisationDbContext db, ITenantConte
                 : null;
             return new CorrectionKpiRow(CorrectionKpiRules.MonthBucket(a.Year, a.Month), a.Dimension, a.Corrections, a.Units, shippedUnits, rate, a.Reversed, target);
         }).ToList();
-        return new(from, to, breakdown, itemId, baseline, rows);
+        return new(from, to, breakdown, itemId, baseline, rows, alert);
     }
 
     private async Task<List<Aggregate>> RootCauseAsync(IQueryable<CorrectionRecord> source, TenantId tenantId, CancellationToken cancellationToken)

@@ -95,7 +95,7 @@ public sealed record ResumeEntitlement(Guid CommandId, Guid EntitlementId, DateO
 /// <summary>Void is per entitlement with a reason and evidence (case 61); a damage finding is a claim denial, never this.</summary>
 public sealed record VoidEntitlement(Guid CommandId, Guid EntitlementId, string ClosedReason, string Explanation, IReadOnlyList<string> EvidenceRefs, DateOnly Effective, DateTime EventTime, string ActorRef, CorrectionMetadata? Correction = null);
 
-public sealed record CloseEntitlement(Guid CommandId, Guid EntitlementId, string ClosedReason, DateOnly Effective, DateTime EventTime, string ActorRef, DocumentRef? SourceDocument = null, string? Note = null);
+public sealed record CloseEntitlement(Guid CommandId, Guid EntitlementId, string ClosedReason, DateOnly Effective, DateTime EventTime, string ActorRef, DocumentRef? SourceDocument = null, string? Note = null, CorrectionMetadata? Correction = null);
 
 public sealed record EntitlementChangeResult(Guid EntitlementId, string Status, string? ClosedReason, DateOnly? StartDate, DateOnly? EndDate, Guid EventId, bool Replayed);
 
@@ -141,7 +141,8 @@ public sealed record AttachExtendedWarranty(
     string? OwnerPartyType = null,
     string? Country = null,
     Guid? SiteLocationId = null,
-    string? CustomerPoRef = null);
+    string? CustomerPoRef = null,
+    CorrectionMetadata? Correction = null);
 
 public sealed record AttachExtendedWarrantyResult(Guid EntitlementId, string PolicyCode, int PolicyVersion, string StartBasis, DateOnly StartDate, DateOnly EndDate, Guid? BaseEntitlementId, IReadOnlyList<EntitlementRevenueSchedulePeriod> RevenueSchedule, Guid EventId, bool Replayed);
 

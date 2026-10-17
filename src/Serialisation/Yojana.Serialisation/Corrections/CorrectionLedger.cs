@@ -7,6 +7,7 @@ using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation.Corrections;
@@ -114,6 +115,63 @@ public sealed class CorrectionLedger(SerialisationDbContext db, ITenantContext t
         }
     }
 
+    /// <summary>
+    /// Records the KPI projection for a fallback request. The workbench row is the durable request fact; this indexed
+    /// row is written in the same transaction and is removed from KPI input when the re-filed command commits.
+    /// TIGHT COUPLING: WorkbenchRequestService must save this row with workbench_request. Separating those saves would
+    /// make the unclassified KPI disagree with the administrator inbox after a partial failure.
+    /// </summary>
+    public async Task RecordRequestAsync(Guid requestId, string actorRef, string initiatingRole, DateTime eventTime,
+        string description, IReadOnlyCollection<Guid> unitIds, CancellationToken cancellationToken)
+    {
+        if (await db.Corrections.AnyAsync(c => c.TenantId == tenant.TenantId && c.CorrectionId == requestId, cancellationToken)) return;
+        var distinctUnits = unitIds.Distinct().ToList();
+        db.Corrections.Add(new CorrectionRecord
+        {
+            TenantId = tenant.TenantId,
+            CorrectionId = requestId,
+            Command = "correction_request",
+            ReasonCode = "unclassified",
+            RootCauseCategory = null,
+            RequestStatus = CorrectionRequestStatus.Open,
+            InitiatedVia = CorrectionInitiatedVia.Workbench,
+            InitiatingRole = initiatingRole,
+            ActorRef = actorRef,
+            EventTime = eventTime,
+            RecordedTime = clock.UtcNow,
+            UnitCount = distinctUnits.Count,
+            Note = description,
+        });
+        if (distinctUnits.Count == 0) return;
+        var items = await db.Current.AsNoTracking().Where(c => c.TenantId == tenant.TenantId && distinctUnits.Contains(c.UnitId))
+            .ToDictionaryAsync(c => c.UnitId, c => c.ItemId, cancellationToken);
+        foreach (var unitId in distinctUnits)
+            if (items.TryGetValue(unitId, out var itemId))
+                db.CorrectionUnits.Add(new CorrectionRecordUnit { TenantId = tenant.TenantId, CorrectionId = requestId, UnitId = unitId, ItemId = itemId });
+    }
+
+    public async Task SetRequestStatusAsync(Guid requestId, string status, CancellationToken cancellationToken)
+    {
+        if (!CorrectionRequestStatus.All.Contains(status)) throw new ArgumentOutOfRangeException(nameof(status));
+        var row = await db.Corrections.FirstOrDefaultAsync(c => c.TenantId == tenant.TenantId && c.CorrectionId == requestId, cancellationToken)
+            ?? throw new CommandRefusedException("correction_request_unknown", $"Correction request {requestId} does not exist.");
+        row.RequestStatus = status;
+    }
+
+    /// <summary>
+    /// TIGHT COUPLING: WorkbenchRequestService calls this only after the dispatched command records the correction.
+    /// The catalogue root cause is tenant data, so applying it earlier is impossible; reversing the order leaves no row
+    /// to update, while omitting this call makes added-choice KPI attribution ignore its configured category.
+    /// </summary>
+    public async Task SetWorkbenchRootCauseAsync(Guid correctionId, int rootCause, CancellationToken cancellationToken)
+    {
+        if (rootCause is < CorrectionRootCause.DocumentSerials or > CorrectionRootCause.Warranty)
+            throw new ArgumentOutOfRangeException(nameof(rootCause));
+        var row = await db.Corrections.FirstOrDefaultAsync(c => c.TenantId == tenant.TenantId && c.CorrectionId == correctionId, cancellationToken)
+            ?? throw new CommandRefusedException("correction_record_missing", $"Correction {correctionId} did not record its KPI fact.");
+        row.RootCauseCategory = rootCause;
+    }
+
     /// <summary>Merges common metadata into command-specific attributes, keeping it flat and identical on every fact.</summary>
     public static JsonObjectText Attributes(CorrectionMetadata metadata, object commandSpecific)
     {
@@ -155,6 +213,8 @@ public static class CorrectionRules
         CorrectionCommand.VoidEntitlement => EntitlementStateMachineReasons.Void,
         CorrectionCommand.TransferEntitlement => [EntitlementTransferReason.Replacement],
         CorrectionCommand.BackfillEntitlements => BackfillReason.All,
+        CorrectionCommand.AttachExtendedWarranty => AmendmentReason.All,
+        CorrectionCommand.CloseEntitlement => EntitlementStateMachine.CloseReasons.ToList(),
         _ => [],
     };
 
@@ -181,7 +241,8 @@ public static class CorrectionRules
         CorrectionCommand.LateSerialization or CorrectionCommand.ReassignAllocation or CorrectionCommand.VoidUnit or CorrectionCommand.AssignIdentifiers => CorrectionRootCause.AllocationBeforeBirth,
         CorrectionCommand.MergeUnits => CorrectionRootCause.TypoOrCrossedPair,
         CorrectionCommand.AmendEntitlement or CorrectionCommand.SupersedeEntitlement or CorrectionCommand.VoidEntitlement
-            or CorrectionCommand.TransferEntitlement or CorrectionCommand.BackfillEntitlements => CorrectionRootCause.Warranty,
+            or CorrectionCommand.TransferEntitlement or CorrectionCommand.BackfillEntitlements
+            or CorrectionCommand.AttachExtendedWarranty or CorrectionCommand.CloseEntitlement => CorrectionRootCause.Warranty,
         _ => throw new CommandRefusedException("root_cause_unknown", $"Correction command '{command}' has no KPI root-cause mapping."),
     };
 

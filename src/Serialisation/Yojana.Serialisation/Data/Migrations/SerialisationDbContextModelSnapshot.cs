@@ -3630,6 +3630,15 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(60)")
                         .HasColumnName("choice");
 
+                    b.Property<DateTime?>("ClassifiedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("classified_at");
+
+                    b.Property<string>("ClassifiedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("classified_by");
+
                     b.Property<string>("Command")
                         .IsRequired()
                         .HasMaxLength(60)
@@ -3658,6 +3667,15 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("evidence_json");
+
+                    b.Property<DateTime?>("EscalatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("escalated_at");
+
+                    b.Property<string>("EscalatedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("escalated_by");
 
                     b.Property<DateTime>("InitiatedAt")
                         .HasColumnType("datetime2(3)")
@@ -3726,6 +3744,11 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("target_json");
 
+                    b.Property<string>("UnclassifiedDescription")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("unclassified_description");
+
                     b.HasKey("TenantId", "RequestId")
                         .HasName("pk_workbench_request");
 
@@ -3752,7 +3775,7 @@ namespace Yojana.Serialisation.Data.Migrations
 
                             t.HasCheckConstraint("ck_workbench_request_result_json", "result_json IS NULL OR ISJSON(result_json) = 1");
 
-                            t.HasCheckConstraint("ck_workbench_request_status", "status IN ('draft', 'awaiting_approval', 'approved', 'rejected', 'committed', 'superseded')");
+                            t.HasCheckConstraint("ck_workbench_request_status", "status IN ('draft', 'awaiting_approval', 'approved', 'rejected', 'committed', 'superseded', 'unclassified', 'no_command_fits')");
 
                             t.HasCheckConstraint("ck_workbench_request_target_json", "ISJSON(target_json) = 1");
                         });

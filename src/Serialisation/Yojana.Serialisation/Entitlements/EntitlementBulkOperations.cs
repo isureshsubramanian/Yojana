@@ -133,7 +133,7 @@ public sealed class BulkCreateEntitlementOperation(SerialisationDbContext db, En
 }
 
 public sealed class BulkAttachExtendedOperation(SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store,
-    ITimeZonePort zones, ITenantContext tenant, IClock clock, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
+    ITimeZonePort zones, ITenantContext tenant, IClock clock, CorrectionLedger corrections, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
 {
     public override string Name => "entitlement.attach_extended";
     protected override async Task<UnitOutcome> PrecheckAsync(Guid unitId, string? serial, BulkOperationArguments arguments, CancellationToken cancellationToken)
@@ -148,7 +148,7 @@ public sealed class BulkAttachExtendedOperation(SerialisationDbContext db, Entit
         var x = EntitlementBulkArguments.Parse(arguments);
         await AttachExtendedWarrantyHandler.Handle(new(commandId, unitId, x.Family, x.ContractDate!.Value, x.ObligorEntityId!.Value, arguments.EventTime,
             x.Price!.Value, x.Currency!, arguments.SourceDocument, arguments.EventTime, arguments.ActorRef, x.PolicyVersionId, x.PayerPartyRef, x.PayerPartyType,
-            x.OwnerPartyRef, x.OwnerPartyType, x.Country, x.SiteLocationId), Db, ledger, resolver, store, zones, Tenant, clock, cancellationToken);
+            x.OwnerPartyRef, x.OwnerPartyType, x.Country, x.SiteLocationId, Correction: Correction(commandId, arguments.Reason!, arguments)), Db, ledger, resolver, store, zones, Tenant, clock, corrections, cancellationToken);
     }
 }
 
@@ -216,13 +216,13 @@ public sealed class BulkVoidEntitlementOperation(SerialisationDbContext db, Enti
     { var x = EntitlementBulkArguments.Parse(arguments); var reason = arguments.Reason ?? throw new CommandRefusedException("bulk_arguments_invalid", "A reason is required."); var e = (await Live(unitId, x.Family, cancellationToken))!; await VoidEntitlementHandler.Handle(new(commandId, e.EntitlementId, reason, arguments.Note ?? "", x.EvidenceRefs, x.EffectiveDate!.Value, arguments.EventTime, arguments.ActorRef, Correction(commandId, reason, arguments, x.EvidenceRefs)), ledger, clock, corrections, cancellationToken); }
 }
 
-public sealed class BulkCloseEntitlementOperation(SerialisationDbContext db, EntitlementLedger ledger, ITenantContext tenant, IClock clock, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
+public sealed class BulkCloseEntitlementOperation(SerialisationDbContext db, EntitlementLedger ledger, CorrectionLedger corrections, ITenantContext tenant, IClock clock, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
 {
     public override string Name => "entitlement.close";
     protected override async Task<UnitOutcome> PrecheckAsync(Guid unitId, string? serial, BulkOperationArguments arguments, CancellationToken cancellationToken)
     { var x = EntitlementBulkArguments.Parse(arguments); return await Live(unitId, x.Family, cancellationToken) is null ? Skip(unitId, serial, "no_live_entitlement_in_family") : x.EffectiveDate is null ? Block(unitId, serial, "effective_date_required") : Change(unitId, serial, $"close {x.Family} entitlement"); }
     public override async Task ApplyAsync(Guid unitId, Guid commandId, BulkOperationArguments arguments, CancellationToken cancellationToken)
-    { var x = EntitlementBulkArguments.Parse(arguments); var e = (await Live(unitId, x.Family, cancellationToken))!; await CloseEntitlementHandler.Handle(new(commandId, e.EntitlementId, (arguments.Reason ?? throw new CommandRefusedException("bulk_arguments_invalid", "A reason is required.")), x.EffectiveDate!.Value, arguments.EventTime, arguments.ActorRef, arguments.SourceDocument, arguments.Note), ledger, clock, cancellationToken); }
+    { var x = EntitlementBulkArguments.Parse(arguments); var e = (await Live(unitId, x.Family, cancellationToken))!; var reason = arguments.Reason ?? throw new CommandRefusedException("bulk_arguments_invalid", "A reason is required."); await CloseEntitlementHandler.Handle(new(commandId, e.EntitlementId, reason, x.EffectiveDate!.Value, arguments.EventTime, arguments.ActorRef, arguments.SourceDocument, arguments.Note, Correction(commandId, reason, arguments)), ledger, clock, corrections, cancellationToken); }
 }
 
 public sealed class BulkBackfillOperation(SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones,

@@ -294,12 +294,15 @@ public static class CorrectionCommand
     public const string VoidEntitlement = "void_entitlement";
     public const string TransferEntitlement = "transfer_entitlement";
     public const string BackfillEntitlements = "backfill_entitlements";
+    public const string AttachExtendedWarranty = "attach_extended_warranty";
+    public const string CloseEntitlement = "close_entitlement";
 
     public static readonly IReadOnlyList<string> All =
     [
         CorrectIdentifier, SwapIdentifiers, CorrectItem, CorrectAsBuilt, LateSerialization, VoidUnit, MergeUnits,
         AssignIdentifiers, ReassignAllocation, CorrectDocumentSerials, CorrectSourceDocument, AmendEntitlement,
-        SupersedeEntitlement, VoidEntitlement, TransferEntitlement, BackfillEntitlements,
+        SupersedeEntitlement, VoidEntitlement, TransferEntitlement, BackfillEntitlements, AttachExtendedWarranty,
+        CloseEntitlement,
     ];
 
     /// <summary>
@@ -307,7 +310,8 @@ public static class CorrectionCommand
     /// (AmendmentRules, tenant thresholds), not the correction approval policy, so that policy carries no rule for them.
     /// </summary>
     public static readonly IReadOnlyList<string> ApprovedByEntitlementPolicy =
-        [AmendEntitlement, SupersedeEntitlement, VoidEntitlement, TransferEntitlement, BackfillEntitlements];
+        [AmendEntitlement, SupersedeEntitlement, VoidEntitlement, TransferEntitlement, BackfillEntitlements,
+            AttachExtendedWarranty, CloseEntitlement];
 }
 
 /// <summary>Where a correction entered the module; HTTP endpoints default to <see cref="Api"/>.</summary>
