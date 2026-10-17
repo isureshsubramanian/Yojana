@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { campaignSchedule, campaignTone, pageNumber, repairPresentation, title } from "../src/campaigns/format.ts";
+import { campaignCoverSummary, campaignSchedule, campaignTone, pageNumber, repairPresentation, title } from "../src/campaigns/format.ts";
 
 test("campaign status presentation remains text-led", () => {
   assert.equal(campaignTone("active"), "ok");
   assert.equal(campaignTone("draft"), "warn");
   assert.equal(title("partially_approved"), "Partially approved");
+  assert.equal(campaignCoverSummary(100, 50, 0), "Cover 100 / 50 / 0 %");
 });
 
 test("repair guidance follows claim then custody", () => {

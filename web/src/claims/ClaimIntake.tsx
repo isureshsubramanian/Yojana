@@ -11,13 +11,16 @@ import { openDrawer } from "../shell/drawerStore";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { claimsApi } from "./api";
-import { COUNTRY_CODES, LINE_KINDS, REMEDIES, countryName, humanise, money } from "./format";
-import type { ClaimEvidenceInput, CoverageFamily, CurrencyInfo, SubmitClaim, TenantCurrency } from "./types";
+import { COUNTRY_CODES, LINE_KINDS, REMEDIES, campaignCoverTerms, campaignOptionHint, countryName, humanise, money } from "./format";
+import type { CampaignCoverageSource, ClaimCampaignOption, ClaimEvidenceInput, CoverageFamily, CurrencyInfo, SubmitClaim, TenantCurrency } from "./types";
 import "./claims.css";
 
 type IntakeMode = "unit" | "proof" | "no_record";
 type DraftLine = { id: string; kind: string; description: string; childUnitId: string; coverageFamily: string; requestedAmount: string; measurements: string };
 type DraftEvidence = { id: string; kind: string; reference: string; description: string };
+type AskedSource = "Warranty" | "Recall" | "Goodwill" | "Contract" | "Chargeable";
+const ASKED_SOURCES: AskedSource[] = ["Warranty", "Recall", "Goodwill", "Contract", "Chargeable"];
+const TODAY = new Date().toISOString().slice(0, 10);
 
 // Base warranty is what most claims are made under; other families are a deliberate choice on the line.
 function defaultFamily(families: { familyCode: string; active: boolean }[]): string {
@@ -40,6 +43,7 @@ export function Component() {
   const [claimant, setClaimant] = useState<string | null>(null);
   const [settlement, setSettlement] = useState<string | null>(null);
   const [serviceCountry, setServiceCountry] = useState("GB");
+  const [claimDate, setClaimDate] = useState(TODAY);
   const [currency, setCurrency] = useState("");
   const [currencySettings, setCurrencySettings] = useState<TenantCurrency | null>(null);
   const [catalogue, setCatalogue] = useState<CurrencyInfo[]>([]);
@@ -48,6 +52,10 @@ export function Component() {
   const [evidence, setEvidence] = useState<DraftEvidence[]>([draftEvidence()]);
   const [remedy, setRemedy] = useState("repair");
   const [choiceEvidence, setChoiceEvidence] = useState("");
+  const [askedSource, setAskedSource] = useState<AskedSource>("Warranty");
+  const [campaignOptions, setCampaignOptions] = useState<ClaimCampaignOption[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [campaignsLoading, setCampaignsLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [lookupBusy, setLookupBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -62,6 +70,25 @@ export function Component() {
       }).catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    if (!unit?.unitId || !claimDate) { setCampaignOptions([]); setSelectedCampaignId(""); setCampaignsLoading(false); return; }
+    const controller = new AbortController();
+    setCampaignOptions([]); setSelectedCampaignId(""); setCampaignsLoading(true);
+    claimsApi.campaignOptions(unit.unitId, claimDate, controller.signal)
+      .then(setCampaignOptions)
+      .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); })
+      .finally(() => { if (!controller.signal.aborted) setCampaignsLoading(false); });
+    return () => controller.abort();
+  }, [unit?.unitId, claimDate]);
+
+  useEffect(() => {
+    if (askedSource !== "Recall" && askedSource !== "Goodwill") { setSelectedCampaignId(""); return; }
+    const source = askedSource.toLowerCase() as CampaignCoverageSource;
+    const covering = campaignOptions.filter((option) => option.coverageSource === source && option.coversOnDate);
+    if (!campaignsLoading && covering.length === 0) { setSelectedCampaignId(""); setAskedSource("Warranty"); return; }
+    setSelectedCampaignId((current) => covering.some((option) => option.campaignId === current) ? current : covering.length === 1 ? covering[0]!.campaignId : "");
+  }, [askedSource, campaignOptions, campaignsLoading]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -96,9 +123,13 @@ export function Component() {
   // What the live cover suggests; adjudication still decides per line. No unit yet → nothing highlighted.
   const customerCover = activeCover.filter((cover) => cover.direction === "outbound");
   const coverageExplanation = !unit ? null : customerCover.length === 0 ? "Chargeable" : suggestedSource(customerCover.map((cover) => cover.type));
+  const coveringCampaigns = (source: CampaignCoverageSource) => campaignOptions.filter((option) => option.coverageSource === source && option.coversOnDate);
+  const selectedCampaigns = askedSource === "Recall" || askedSource === "Goodwill" ? coveringCampaigns(askedSource.toLowerCase() as CampaignCoverageSource) : [];
+  const selectedCampaign = selectedCampaigns.find((option) => option.campaignId === selectedCampaignId) ?? null;
+  const campaignChosen = askedSource !== "Recall" && askedSource !== "Goodwill" || !!selectedCampaign;
   const currencyChoices = currencySettings?.accepted ?? [];
-  const canSubmit = !!currency && !!claimant && !!settlement && !!serviceCountry && !!choiceEvidence.trim() && lines.length > 0 && lines.every((line) => line.description.trim() && line.coverageFamily && line.requestedAmount !== "" && Number(line.requestedAmount) >= 0)
-    && (mode === "unit" ? !!unit : !!identifier.trim() && !!itemId && !!proofRef.trim() && !!proofDate);
+  const canSubmit = !!claimDate && !!currency && !!claimant && !!settlement && !!serviceCountry && !!choiceEvidence.trim() && lines.length > 0 && lines.every((line) => line.description.trim() && line.coverageFamily && line.requestedAmount !== "" && Number(line.requestedAmount) >= 0)
+    && campaignChosen && (mode === "unit" ? !!unit : !!identifier.trim() && !!itemId && !!proofRef.trim() && !!proofDate);
 
   const submit = async () => {
     if (!canSubmit || busy) return;
@@ -106,12 +137,13 @@ export function Component() {
     const body: SubmitClaim = {
       commandId: crypto.randomUUID(), unitId: mode === "unit" ? unit!.unitId : null,
       identifier: mode === "unit" ? null : { value: identifier.trim(), issuerPartyRef: null, identifierType: null, erpSerialId: null },
-      claimDate: new Date().toISOString().slice(0, 10), claimantPartyRef: claimant!, settlementPartyRef: settlement!,
+      claimDate, claimantPartyRef: claimant!, settlementPartyRef: settlement!,
       serviceEntityId: DEFAULT_LEGAL_ENTITY, obligorEntityId: DEFAULT_LEGAL_ENTITY, serviceCountry, currency,
       lines: lines.map((line) => ({ kind: line.kind, coverageFamily: line.coverageFamily, requestedAmount: Number(line.requestedAmount), unitId: line.childUnitId || null, description: line.description.trim(), measurements: parseMeasurements(line.measurements) })),
       evidence: evidence.filter((row) => row.reference.trim()).map<ClaimEvidenceInput>((row) => ({ kind: row.kind, reference: row.reference.trim(), description: row.description.trim() || null })),
-      remedy, consumerChoiceEvidenceRef: choiceEvidence.trim(), eventTime: new Date().toISOString(), actorRef: "",
+      remedy, consumerChoiceEvidenceRef: choiceEvidence.trim(), eventTime: new Date().toISOString(),
       proofOfPurchaseRef: mode === "unit" ? null : proofRef.trim(), proofOfPurchaseDate: mode === "unit" ? null : proofDate, itemId: mode === "unit" ? null : itemId,
+      ...(selectedCampaign ? { campaignId: selectedCampaign.campaignId } : {}),
     };
     try { const result = await claimsApi.submit(body); navigate(`/claims/${result.claimId}`); } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
@@ -157,10 +189,22 @@ export function Component() {
             <div className="span"><PartyField id="claim-settlement" label="Settles with" value={settlement} onChange={setSettlement} hint="Who is credited; this may differ from the claimant" /></div>
             <div className="field"><label htmlFor="claim-country">Service country</label><select id="claim-country" className="select" value={serviceCountry} onChange={(event) => setServiceCountry(event.target.value)}>{COUNTRY_CODES.map((code) => <option key={code} value={code}>{code} · {countryName(code)}</option>)}</select></div>
             <div className="field"><label htmlFor="claim-currency">Currency</label><select id="claim-currency" className="select" value={currency} disabled={!currencyChoices.length} onChange={(event) => setCurrency(event.target.value)}>{currencyChoices.map((code) => <option key={code} value={code}>{code}{code === currencySettings?.currency ? " · working currency" : ""}</option>)}</select></div>
+            <div className="field"><label htmlFor="claim-date">Claim date</label><input id="claim-date" className="input" type="date" value={claimDate} onChange={(event) => setClaimDate(event.target.value)} /></div>
             <div className="field span"><label>Service entity</label><div className="reference-selected"><span>{names.party(DEFAULT_LEGAL_ENTITY)}</span></div><span className="help">The tenant’s legal entity; read-only.</span></div>
             <div className="field span"><label>Obligor entity</label><div className="reference-selected"><span>{names.party(DEFAULT_LEGAL_ENTITY)}</span></div><span className="help">Adjudication records the obligor on the event.</span></div>
           </div></div></section>
-          <section className="card" aria-labelledby="claim-source"><div className="card-header"><h2 id="claim-source">Coverage source asked for</h2><span className="meta">adjudication decides it</span></div><div className="card-body"><div className="claims-segmented" aria-label="Coverage source explanation">{["Warranty", "Recall", "Goodwill", "Contract", "Chargeable"].map((source) => <span key={source} className={`chip${source === coverageExplanation ? " on" : ""}`}>{source}</span>)}</div><p className="hint" style={{ marginTop: 10 }}>Adjudication decides the source for each line from the policy stack on the claim date; the highlighted source is only what the unit's live cover suggests.</p></div></section>
+          <section className="card" aria-labelledby="claim-source"><div className="card-header"><h2 id="claim-source">Coverage source asked for</h2><span className="meta">adjudication may change it</span></div><div className="card-body"><div className="claims-segmented" role="group" aria-label="Coverage source">{ASKED_SOURCES.map((source) => {
+            const campaignSource = source === "Recall" || source === "Goodwill" ? source.toLowerCase() as CampaignCoverageSource : null;
+            const disabled = campaignSource !== null && coveringCampaigns(campaignSource).length === 0;
+            return <button type="button" key={source} className={`chip${source === askedSource ? " on" : ""}`} aria-pressed={source === askedSource} disabled={disabled || campaignSource !== null && campaignsLoading} onClick={() => { setAskedSource(source); if (campaignSource) { const choices = coveringCampaigns(campaignSource); setSelectedCampaignId(choices.length === 1 ? choices[0]!.campaignId : ""); } }}>{source}</button>;
+          })}</div>
+            {(askedSource === "Recall" || askedSource === "Goodwill") && selectedCampaigns.length > 0 && <div className="field claims-campaign-picker"><label htmlFor="claim-campaign">Campaign</label><select id="claim-campaign" className="select" value={selectedCampaignId} onChange={(event) => setSelectedCampaignId(event.target.value)}><option value="">Choose a campaign…</option>{selectedCampaigns.map((option) => <option key={option.campaignId} value={option.campaignId}>{option.code} · {option.name}</option>)}</select>{selectedCampaign && <span className="help">{[selectedCampaign.runsUntil ? `runs until ${selectedCampaign.runsUntil}` : null, `reserve ${selectedCampaign.reserveTag}`, campaignCoverTerms(selectedCampaign)].filter(Boolean).join(" · ")}</span>}</div>}
+            {unit && campaignsLoading && <p className="hint claims-campaign-hint">Checking campaigns for this unit and claim date…</p>}
+            {unit && !campaignsLoading && (["recall", "goodwill"] as const).map((source) => coveringCampaigns(source).length === 0 ? <p className="hint claims-campaign-hint" key={source}>{campaignOptionHint(campaignOptions, source)}</p> : null)}
+            {!unit && <p className="hint claims-campaign-hint">Resolve a unit to check recall and goodwill campaigns. Warranty, contract and chargeable claims are decided by adjudication.</p>}
+            {unit && !campaignsLoading && coveringCampaigns("recall").length > 0 && coveringCampaigns("goodwill").length > 0 && askedSource !== "Recall" && askedSource !== "Goodwill" && <p className="hint claims-campaign-hint">Recall and goodwill are available through campaigns selecting this unit; choose one to name its campaign.</p>}
+            {coverageExplanation && askedSource !== coverageExplanation && <p className="hint claims-campaign-hint">The unit’s live cover suggests {coverageExplanation.toLowerCase()}; adjudication still decides each line.</p>}
+          </div></section>
           <section className="card" aria-labelledby="claim-remedy"><div className="card-header"><h2 id="claim-remedy">Remedy and informed choice</h2></div><div className="card-body"><div className="claims-remedy">{REMEDIES.map((value) => <label key={value} className={remedy === value ? "on" : ""}><input type="radio" name="claim-remedy" value={value} checked={remedy === value} onChange={() => setRemedy(value)} /><span>{humanise(value)}<span className="help">The consumer’s requested outcome; coverage is still adjudicated.</span></span></label>)}</div><div className="field" style={{ marginTop: 12 }}><label htmlFor="claim-choice">Consumer’s informed choice evidence reference</label><input id="claim-choice" className="input" value={choiceEvidence} onChange={(event) => setChoiceEvidence(event.target.value)} placeholder="Call, e-mail or signed choice reference" /><span className="help">Required and stored as consumer remedy-choice evidence.</span></div></div></section>
           <section className="card" aria-labelledby="claim-evidence"><div className="card-header"><h2 id="claim-evidence">Evidence <span className="meta">{evidence.filter((row) => row.reference.trim()).length} items</span></h2><button type="button" className="btn sm" onClick={() => setEvidence((current) => [...current, draftEvidence()])}><Icon name="plus" />Add</button></div><div className="card-body stack">{evidence.map((row, index) => <div className="form-grid" key={row.id}>
             <div className="field"><label htmlFor={`evidence-kind-${row.id}`}>Kind</label><select id={`evidence-kind-${row.id}`} className="select" value={row.kind} onChange={(event) => updateEvidence(row.id, { kind: event.target.value })}><option value="attachment">Attachment</option><option value="proof_of_purchase">Proof of purchase</option></select></div>

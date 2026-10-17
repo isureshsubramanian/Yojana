@@ -35,6 +35,7 @@ export function termText(months: number | null, end: string | null): string {
 
 export function noRecoveryExplanation(reason: RecoveryNotRaisedReason, context?: Pick<RecoveryNotRaisedRow, "vendorTermMonths" | "vendorTermEnd" | "claimMonthOfTerm">): string {
   switch (reason) {
+    case "campaign_claim": return "Claim under a campaign; tenant policy recovers nothing from suppliers for campaign claims.";
     case "recall_claim": return "recall claim · recovery handled once for the whole campaign";
     case "vendor_term_ended": return `vendor term ${context?.vendorTermMonths ?? "—"} m ended ${context?.vendorTermEnd?.slice(0, 10) ?? "—"} · claim in month ${context?.claimMonthOfTerm ?? "—"}`;
     case "several_covered_parts": return "several parts inside the unit carry live vendor terms · name the part on the line to recover";

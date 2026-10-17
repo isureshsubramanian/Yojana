@@ -9,6 +9,12 @@
 .claims-line-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .claims-line-actions .btn { padding: 0 8px; }
 .claims-segmented { display: flex; flex-wrap: wrap; gap: 8px; }
+.claims-segmented .chip:disabled { opacity: 0.55; cursor: not-allowed; }
+.claims-campaign-picker { margin-top: 12px; }
+.claims-campaign-hint { margin-top: 10px; }
+.claims-header-facts { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 10px; font-size: 13px; color: var(--text-2); }
+.claims-header-facts strong { margin-right: 4px; color: var(--text-1); }
+.claims-campaign-cover-note { margin-top: 6px; font-size: 13px; }
 .claims-remedy { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .claims-remedy label { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-s); cursor: pointer; }
 .claims-remedy label.on { border-color: var(--accent); background: var(--accent-soft); }

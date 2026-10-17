@@ -47,14 +47,17 @@ export type RecoveryNotRaisedReason =
   | "vendor_term_ended"
   | "no_vendor_term"
   | "recall_claim"
+  | "campaign_claim"
   | "several_covered_parts"
   | "part_not_named"
   | "line_kind_not_recovered";
 
 export type RecoveryWholeUnitRule = "single_covered_part" | "named_part_only";
+export type RecoveryCampaignClaimsRule = "no_recovery" | "recover_like_warranty";
 
 export interface RecoveryPolicy {
   wholeUnitLines: RecoveryWholeUnitRule;
+  campaignClaims: RecoveryCampaignClaimsRule;
   lineKinds: string[];
   vendorAnswerDueDays: number;
 }

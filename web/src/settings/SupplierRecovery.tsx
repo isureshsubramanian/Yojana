@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { ApiError } from "../api/client";
 import { LINE_KINDS, humanise } from "../claims/format";
 import { recoveryApi } from "../recovery/api";
-import type { RecoveryPolicy, RecoveryWholeUnitRule } from "../recovery/types";
+import type { RecoveryCampaignClaimsRule, RecoveryPolicy, RecoveryWholeUnitRule } from "../recovery/types";
 import { useSession } from "../session/session";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
@@ -28,6 +28,7 @@ export function Component() {
   }, []);
 
   const updateRule = (wholeUnitLines: RecoveryWholeUnitRule) => policy && setPolicy({ ...policy, wholeUnitLines });
+  const updateCampaignClaims = (campaignClaims: RecoveryCampaignClaimsRule) => policy && setPolicy({ ...policy, campaignClaims });
   const toggleKind = (kind: string) => policy && setPolicy({ ...policy, lineKinds: policy.lineKinds.includes(kind) ? policy.lineKinds.filter((value) => value !== kind) : [...policy.lineKinds, kind] });
   const save = async () => {
     if (!policy || policy.lineKinds.length === 0 || !Number.isInteger(policy.vendorAnswerDueDays) || policy.vendorAnswerDueDays < 1 || policy.vendorAnswerDueDays > 90) return;
@@ -57,6 +58,10 @@ export function Component() {
         <div className="note">{example}</div>
       </div></section>
       <div className="stack">
+        <section className="card" aria-labelledby="campaign-claims"><div className="card-header"><h2 id="campaign-claims">Claims under a campaign</h2></div><div className="card-body stack">
+          <div className="field"><label className="radiorow"><input type="radio" name="campaign-claims" checked={policy.campaignClaims === "no_recovery"} disabled={!permitted} onChange={() => updateCampaignClaims("no_recovery")} /><span><strong>No supplier recovery (default)</strong><span className="help">Campaign claims are paid from the campaign reserve; nothing is claimed from suppliers.</span></span></label></div>
+          <div className="field"><label className="radiorow"><input type="radio" name="campaign-claims" checked={policy.campaignClaims === "recover_like_warranty"} disabled={!permitted} onChange={() => updateCampaignClaims("recover_like_warranty")} /><span><strong>Recover like warranty claims</strong><span className="help">The rules above also apply to claims under a campaign when a supplier term is live on the part.</span></span></label></div>
+        </div></section>
         <section className="card" aria-labelledby="recovery-line-kinds"><div className="card-header"><h2 id="recovery-line-kinds">Line kinds that raise recovery</h2><span className="meta">at least one</span></div><div className="card-body stack">
           {LINE_KINDS.map((kind) => <div className="field" key={kind}><label className="radiorow"><input type="checkbox" checked={policy.lineKinds.includes(kind)} disabled={!permitted} onChange={() => toggleKind(kind)} /><span><strong>{humanise(kind)}</strong><span className="help">Approved {kind} lines may recover against a live vendor term.</span></span></label></div>)}
           {invalidKinds && <div className="form-error" role="alert">Choose at least one claim line kind.</div>}

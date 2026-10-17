@@ -5,7 +5,7 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote } from "../units/common";
 import { fmtDate } from "../units/format";
 import { campaignApi } from "./api";
-import { campaignSchedule, campaignTone, title } from "./format";
+import { campaignCoverSummary, campaignSchedule, campaignTone, title } from "./format";
 import type { CampaignListRow, Page } from "./types";
 
 const PAGE = 50;
@@ -27,11 +27,11 @@ export function Component() {
   }, [status, page]);
   const columns: GridColumn<CampaignListRow>[] = [
     { key: "code", label: "Code · name", width: 25, mono: true, render: (row) => <>{row.code}<span className="sub" style={{ fontFamily: "var(--font-body)" }}>{row.name}</span></> },
-    { key: "source", label: "Cover · reason", width: 14, render: (row) => <>{title(row.coverageSource)}<span className="sub">{title(row.reasonCode)}</span></> },
+    { key: "source", label: "Cover · reason", width: 17, render: (row) => <>{title(row.coverageSource)} · {title(row.reasonCode)}<span className="sub">{campaignCoverSummary(row.partsPct, row.labourPct, row.travelPct)}</span></> },
     { key: "status", label: "Status", width: 12, render: (row) => { const schedule = campaignSchedule(row.runsUntil, TODAY); return <><StatusBadge tone={schedule.ended ? "neutral" : campaignTone(row.status)}>{schedule.ended ? "Ended" : title(row.status)}</StatusBadge><span className="sub">{schedule.label}</span></>; } },
     { key: "units", label: "Units selected", width: 13, numeric: true, render: (row) => row.selectedUnits.toLocaleString() },
     { key: "date", label: "Selected", width: 12, render: (row) => fmtDate(row.selectedAt) },
-    { key: "reserve", label: "Reserve tag", width: 24, mono: true, render: (row) => row.reserveTag },
+    { key: "reserve", label: "Reserve tag", width: 21, mono: true, render: (row) => row.reserveTag },
   ];
   return <main className="content" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Campaigns" }]} />

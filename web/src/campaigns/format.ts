@@ -19,6 +19,10 @@ export function title(value: string): string {
   return text ? text[0]!.toUpperCase() + text.slice(1) : "—";
 }
 
+export function campaignCoverSummary(partsPct: number, labourPct: number, travelPct: number): string {
+  return `Cover ${partsPct} / ${labourPct} / ${travelPct} %`;
+}
+
 export function pageNumber(skip: number, take: number): number { return Math.floor(skip / take) + 1; }
 
 export function campaignSchedule(runsUntil: string | null, today: string): { ended: boolean; label: string } {
