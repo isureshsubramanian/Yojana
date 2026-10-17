@@ -733,6 +733,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("submitted_by");
 
+                    b.Property<Guid?>("SuccessorItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("successor_item_id");
+
                     b.Property<Guid>("UnitId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("unit_id");

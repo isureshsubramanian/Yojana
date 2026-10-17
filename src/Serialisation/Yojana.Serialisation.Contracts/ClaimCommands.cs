@@ -59,7 +59,8 @@ public sealed record AdjudicateClaimResult(
     IReadOnlyList<ClaimLineDecision> Lines,
     IReadOnlyList<Guid> RecoveryClaimIds,
     Guid EventId,
-    bool Replayed);
+    bool Replayed,
+    Guid? SuccessorItemId = null);
 
 public sealed record ApproveRecoveryClaim(Guid CommandId, Guid RecoveryClaimId, decimal ApprovedAmount, DateTime EventTime, string ActorRef);
 
@@ -95,7 +96,8 @@ public sealed record ClaimDetail(
     int ChainLength,
     IReadOnlyList<Guid> EntitlementIds,
     IReadOnlyList<ClaimLineDecision> Lines,
-    IReadOnlyList<ClaimEvidenceRow> Evidence);
+    IReadOnlyList<ClaimEvidenceRow> Evidence,
+    Guid? SuccessorItemId = null);
 
 public sealed record RecoveryClaimRow(
     Guid RecoveryClaimId,

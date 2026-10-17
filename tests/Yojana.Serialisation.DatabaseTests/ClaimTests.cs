@@ -8,6 +8,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
+using Yojana.Serialisation.Ports;
 
 namespace Yojana.Serialisation.DatabaseTests;
 
@@ -16,6 +17,7 @@ namespace Yojana.Serialisation.DatabaseTests;
 public sealed class ClaimTests(SerialisationHostFixture fixture)
 {
     private static readonly DateTime Start = new(2025, 1, 1, 9, 0, 0, DateTimeKind.Utc);
+    private InMemoryItemPorts Items => fixture.Services.GetRequiredService<InMemoryItemPorts>();
 
     private async Task<T> InvokeAsync<T>(TenantId tenant, object message) where T : class
     {
@@ -62,6 +64,87 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
         Assert.DoesNotContain(PublishedEventSink.Received.OfType<RecoveryClaimRaised>(), e => e.CustomerClaimId == month15.ClaimId);
     }
 
+    [DatabaseFact]
+    public async Task Sales_block_alone_does_not_affect_claim_approval()
+    {
+        var setup = await SetUpAsync("sales-block", 1);
+        Items.Register(InMemoryItemPorts.DefaultProfile(setup.ItemId) with { SalesBlocked = true });
+        var claim = await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2026, 9, 1),
+            new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc), ClaimRemedy.Repair);
+
+        var result = await InvokeAsync<AdjudicateClaimResult>(setup.Tenant,
+            new AdjudicateClaim(Guid.NewGuid(), claim.ClaimId, new DateTime(2026, 9, 1, 10, 0, 0, DateTimeKind.Utc), "service.manager"));
+
+        Assert.Equal(ClaimStatus.Approved, result.Status);
+        Assert.Null(Assert.Single(result.Lines).DenialReason);
+    }
+
+    [DatabaseFact]
+    public async Task Service_block_denies_parts_with_the_named_reason()
+    {
+        var setup = await SetUpAsync("service-block", 1);
+        var successorItemId = Guid.NewGuid();
+        Items.Register(InMemoryItemPorts.DefaultProfile(setup.ItemId) with { ServiceBlocked = true, SuccessorItemId = successorItemId });
+        var claim = await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2026, 9, 1),
+            new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc), ClaimRemedy.Repair);
+
+        var result = await InvokeAsync<AdjudicateClaimResult>(setup.Tenant,
+            new AdjudicateClaim(Guid.NewGuid(), claim.ClaimId, new DateTime(2026, 9, 1, 10, 0, 0, DateTimeKind.Utc), "service.manager"));
+
+        Assert.Equal(ClaimStatus.Denied, result.Status);
+        Assert.Equal(ClaimDenialReason.ItemServiceBlocked, Assert.Single(result.Lines).DenialReason);
+        Assert.Equal(successorItemId, result.SuccessorItemId);
+    }
+
+    [DatabaseFact]
+    public async Task Claim_after_last_service_date_is_denied()
+    {
+        var setup = await SetUpAsync("last-service", 1);
+        Items.Register(InMemoryItemPorts.DefaultProfile(setup.ItemId) with { LastServiceDate = new DateOnly(2026, 8, 31) });
+        var claim = await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2026, 9, 1),
+            new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc), ClaimRemedy.Repair);
+
+        var result = await InvokeAsync<AdjudicateClaimResult>(setup.Tenant,
+            new AdjudicateClaim(Guid.NewGuid(), claim.ClaimId, new DateTime(2026, 9, 1, 10, 0, 0, DateTimeKind.Utc), "service.manager"));
+
+        Assert.Equal(ClaimDenialReason.AfterLastServiceDate, Assert.Single(result.Lines).DenialReason);
+    }
+
+    [DatabaseFact]
+    public async Task Discontinued_replacement_uses_and_publishes_the_successor_item()
+    {
+        var setup = await SetUpAsync("successor", 1);
+        var successorItemId = Guid.NewGuid();
+        Items.Register(InMemoryItemPorts.DefaultProfile(setup.ItemId) with { SalesBlocked = true, SuccessorItemId = successorItemId });
+        var claim = await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2026, 9, 1),
+            new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc), ClaimRemedy.Replacement);
+
+        var result = await InvokeAsync<AdjudicateClaimResult>(setup.Tenant,
+            new AdjudicateClaim(Guid.NewGuid(), claim.ClaimId, new DateTime(2026, 9, 1, 10, 0, 0, DateTimeKind.Utc), "service.manager"));
+
+        Assert.Equal(ClaimStatus.Approved, result.Status);
+        Assert.Equal(successorItemId, result.SuccessorItemId);
+        var published = Assert.Single(await PublishedEventSink.WaitForAsync<ClaimAdjudicated>(e => e.ClaimId == claim.ClaimId, 1, TimeSpan.FromSeconds(20)));
+        Assert.Equal(successorItemId, published.SuccessorItemId);
+        using var scope = fixture.ScopeFor(setup.Tenant);
+        Assert.Equal(successorItemId, (await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Claims.SingleAsync(c => c.ClaimId == claim.ClaimId)).SuccessorItemId);
+    }
+
+    [DatabaseFact]
+    public async Task Discontinued_replacement_without_a_successor_is_refused_with_the_next_step()
+    {
+        var setup = await SetUpAsync("no-successor", 1);
+        Items.Register(InMemoryItemPorts.DefaultProfile(setup.ItemId) with { SalesBlocked = true });
+        var claim = await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2026, 9, 1),
+            new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc), ClaimRemedy.Replacement);
+
+        var refusal = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<AdjudicateClaimResult>(setup.Tenant,
+            new AdjudicateClaim(Guid.NewGuid(), claim.ClaimId, new DateTime(2026, 9, 1, 10, 0, 0, DateTimeKind.Utc), "service.manager")));
+
+        Assert.Equal("replacement_successor_required", refusal.Rule);
+        Assert.Equal("choose repair or goodwill", refusal.UnblockingStep);
+    }
+
     private async Task<SubmitClaimResult> SubmitAsync(TenantId tenant, Guid unitId, DateOnly claimDate, DateTime at, string remedy) =>
         await InvokeAsync<SubmitClaimResult>(tenant, new SubmitClaim(Guid.NewGuid(), unitId, null, claimDate, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "DE", "EUR",
             [new ClaimLineInput(ClaimLineKind.Parts, CoverageFamilyCode.Base, 100m)], [new ClaimEvidenceInput(ClaimEvidenceKind.Attachment, "DEFECT-PHOTO")], remedy, "CHOICE-RECORDED", at, "service.desk", "INVOICE-1"));
@@ -90,7 +173,7 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
             cohorts.Add(created.AccrualCohortId);
         }
 
-        return new(tenant, units, cohorts, obligor, draft.PolicyVersionId);
+        return new(tenant, item, units, cohorts, obligor, draft.PolicyVersionId);
     }
 
     private async Task AddChildrenAndSupplierCoverAsync(ClaimSetup setup, Guid firstRoot, Guid firstChild, Guid secondRoot, Guid secondChild)
@@ -120,5 +203,5 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
         await db.SaveChangesAsync();
     }
 
-    private sealed record ClaimSetup(TenantId Tenant, IReadOnlyList<Guid> Units, IReadOnlyList<Guid?> Cohorts, Guid Obligor, Guid PolicyVersionId);
+    private sealed record ClaimSetup(TenantId Tenant, Guid ItemId, IReadOnlyList<Guid> Units, IReadOnlyList<Guid?> Cohorts, Guid Obligor, Guid PolicyVersionId);
 }

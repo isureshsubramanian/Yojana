@@ -13,7 +13,7 @@ public sealed class InMemoryItemPorts : IItemQueryPort, IBomQueryPort
     private readonly ConcurrentDictionary<Guid, ItemSerialisationProfile> items = new();
     private readonly ConcurrentDictionary<Guid, IReadOnlyList<ExpectedComponent>> boms = new();
 
-    /// <summary>Profile returned for an item nobody registered: serial-tracked, released at production, never re-used, completeness blocks.</summary>
+    /// <summary>Profile returned for an item nobody registered: serial-tracked, released at production, never re-used, complete, saleable and serviceable.</summary>
     public static ItemSerialisationProfile DefaultProfile(Guid itemId) => new(itemId, "ITEM-" + itemId.ToString("N")[..8].ToUpperInvariant(),
         ItemSerialisationProfile.TrackingModes.Serial, SerialisationPoint.ProductionRelease, "standard_10y",
         ItemSerialisationProfile.ReusePolicies.Never, ItemSerialisationProfile.Completeness.Block, IdentifierScheme.Internal);

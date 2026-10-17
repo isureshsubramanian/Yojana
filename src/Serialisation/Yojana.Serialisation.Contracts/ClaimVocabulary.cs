@@ -51,6 +51,12 @@ public static class ClaimRemedy
     public static readonly IReadOnlySet<string> All = new HashSet<string>([Repair, Replacement], StringComparer.Ordinal);
 }
 
+public static class ClaimDenialReason
+{
+    public const string ItemServiceBlocked = "item_service_blocked";
+    public const string AfterLastServiceDate = "after_last_service_date";
+}
+
 public static class ClaimEvidenceKind
 {
     public const string Attachment = "attachment";

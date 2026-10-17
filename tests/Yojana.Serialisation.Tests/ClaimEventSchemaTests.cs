@@ -17,4 +17,14 @@ public sealed class ClaimEventSchemaTests
         Assert.Equal("1.0", version);
         Assert.Equal(schema, document.RootElement.GetProperty("title").GetString());
     }
+
+    [Fact]
+    public void Claim_adjudicated_keeps_successor_item_optional_in_schema_1_0()
+    {
+        using var document = JsonDocument.Parse(PublishedEventSchemas.Read(ClaimAdjudicated.Schema, ClaimAdjudicated.Version));
+        var root = document.RootElement;
+
+        Assert.True(root.GetProperty("properties").TryGetProperty("successor_item_id", out _));
+        Assert.DoesNotContain("successor_item_id", root.GetProperty("required").EnumerateArray().Select(value => value.GetString()));
+    }
 }

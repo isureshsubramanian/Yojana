@@ -12,7 +12,11 @@ public sealed record ItemSerialisationProfile(
     string SerialScheme,
     bool ExpiryRequired = false,
     /// <summary>Stable item-class key used by tenant correction policy overrides; null means the tenant default.</summary>
-    string? ItemClass = null)
+    string? ItemClass = null,
+    bool SalesBlocked = false,
+    bool ServiceBlocked = false,
+    Guid? SuccessorItemId = null,
+    DateOnly? LastServiceDate = null)
 {
     public static class TrackingModes
     {

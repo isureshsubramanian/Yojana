@@ -24,6 +24,7 @@ public sealed class Claim : ITenantScoped
     public bool RecoveryRaised { get; set; }
     public string EntitlementIds { get; set; } = "[]";
     public string? DenialReason { get; set; }
+    public Guid? SuccessorItemId { get; set; }
     public int ChainLength { get; set; }
     public DateTime SubmittedAt { get; set; }
     public DateTime? AdjudicatedAt { get; set; }
