@@ -73,7 +73,7 @@ public sealed class ReleaseUnitsOperation(SerialisationDbContext db, IUnitEventW
         {
             if (await guard.CheckAsync(unit, assignment.ItemId, arguments.EventTime, cancellationToken) is { } refusal)
             {
-                return new UnitOutcome(unitId, serial, UnitOutcome.Outcomes.Block, refusal.Rule, refusal.Message);
+                return new UnitOutcome(unitId, serial, UnitOutcome.Outcomes.Block, refusal.Rule, refusal.Message, refusal.UnblockingStep);
             }
         }
 

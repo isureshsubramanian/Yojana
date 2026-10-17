@@ -239,6 +239,156 @@ public static class UnitEventType
     public const string OwnershipTransferred = "ownership.transferred";
 }
 
+/// <summary>The correction commands governed by the shared correction policy and metadata contract.</summary>
+public static class CorrectionCommand
+{
+    public const string CorrectIdentifier = "correct_identifier";
+    public const string SwapIdentifiers = "swap_identifiers";
+    public const string CorrectItem = "correct_item";
+    public const string CorrectAsBuilt = "correct_as_built";
+    public const string LateSerialization = "late_serialization";
+    public const string VoidUnit = "void_unit";
+    public const string MergeUnits = "merge_units";
+    public const string AssignIdentifiers = "assign_identifiers";
+    public const string ReassignAllocation = "reassign_allocation";
+    public const string CorrectDocumentSerials = "correct_document_serials";
+    public const string CorrectSourceDocument = "correct_source_document";
+
+    public static readonly IReadOnlyList<string> All =
+    [
+        CorrectIdentifier, SwapIdentifiers, CorrectItem, CorrectAsBuilt, LateSerialization, VoidUnit, MergeUnits,
+        AssignIdentifiers, ReassignAllocation, CorrectDocumentSerials, CorrectSourceDocument,
+    ];
+}
+
+/// <summary>Where a correction entered the module; HTTP endpoints default to <see cref="Api"/>.</summary>
+public static class CorrectionInitiatedVia
+{
+    public const string Workbench = "workbench";
+    public const string Api = "api";
+    public const string Migration = "migration";
+    public const string System = "system";
+
+    public static readonly IReadOnlyList<string> All = [Workbench, Api, Migration, System];
+}
+
+/// <summary>The initiating-role dimension of the correction-volume KPI.</summary>
+public static class CorrectionInitiatingRole
+{
+    public const string CustomerService = "customer_service";
+    public const string WarehouseLead = "warehouse_lead";
+    public const string ProductionSupervisor = "production_supervisor";
+    public const string ServiceTechnician = "service_technician";
+    public const string SerialAdministrator = "serial_administrator";
+    public const string System = "system";
+
+    public static readonly IReadOnlyList<string> All = [CustomerService, WarehouseLead, ProductionSupervisor, ServiceTechnician, SerialAdministrator, System];
+}
+
+/// <summary>The seven root-cause categories in ADR-0001's correction-volume KPI.</summary>
+public static class CorrectionRootCause
+{
+    public const int DocumentSerials = 1;
+    public const int ReplacementOrExchange = 2;
+    public const int RefurbishmentReserialisation = 3;
+    public const int TypoOrCrossedPair = 4;
+    public const int WrongItemOrOrder = 5;
+    public const int AllocationBeforeBirth = 6;
+    public const int Warranty = 7;
+}
+
+public static class IdentifierCorrectionReason
+{
+    public const string Typo = "typo";
+    public const string Misread = "misread";
+    public const string Relabel = "relabel";
+    public const string Regulatory = "regulatory";
+
+    public static readonly IReadOnlyList<string> All = [Typo, Misread, Relabel, Regulatory];
+}
+
+public static class SwapIdentifiersReason
+{
+    public const string CrossRecordedAtBuild = "cross_recorded_at_build";
+    public const string CrossRecordedAtReceipt = "cross_recorded_at_receipt";
+    public const string LabelAppliedToWrongUnit = "label_applied_to_wrong_unit";
+    public static readonly IReadOnlyList<string> All = [CrossRecordedAtBuild, CrossRecordedAtReceipt, LabelAppliedToWrongUnit];
+}
+
+public static class CorrectItemReason
+{
+    public const string WrongItemAtReceipt = "wrong_item_at_receipt";
+    public const string WrongItemAtBuild = "wrong_item_at_build";
+    public const string ConfigurationMismatch = "configuration_mismatch";
+    public static readonly IReadOnlyList<string> All = [WrongItemAtReceipt, WrongItemAtBuild, ConfigurationMismatch];
+}
+
+public static class CorrectAsBuiltReason
+{
+    public const string ComponentNotCaptured = "component_not_captured";
+    public const string WrongComponentRecorded = "wrong_component_recorded";
+    public const string LateSerialization = "late_serialization";
+    public const string BomChangeAfterRelease = "bom_change_after_release";
+    public static readonly IReadOnlyList<string> All = [ComponentNotCaptured, WrongComponentRecorded, LateSerialization, BomChangeAfterRelease];
+}
+
+public static class LateSerializationReason
+{
+    public const string CodingErrorAtItemSetup = "coding_error_at_item_setup";
+    public const string PolicyChange = "policy_change";
+    public static readonly IReadOnlyList<string> All = [CodingErrorAtItemSetup, PolicyChange];
+}
+
+public static class VoidUnitReason
+{
+    public const string WorkOrderQuantityReduced = "work_order_quantity_reduced";
+    public const string WorkOrderCancelled = "work_order_cancelled";
+    public const string DuplicateAllocation = "duplicate_allocation";
+    public static readonly IReadOnlyList<string> All = [WorkOrderQuantityReduced, WorkOrderCancelled, DuplicateAllocation];
+}
+
+public static class MergeUnitsReason
+{
+    public const string DuplicateRecord = "duplicate_record";
+    public const string MigrationDuplicate = "migration_duplicate";
+    public const string VendorSerialKeyedTwice = "vendor_serial_keyed_twice";
+    public static readonly IReadOnlyList<string> All = [DuplicateRecord, MigrationDuplicate, VendorSerialKeyedTwice];
+}
+
+public static class AssignIdentifiersReason
+{
+    public const string VendorList = "vendor_list";
+    public const string VendorListSupplement = "vendor_list_supplement";
+    public const string LateCapture = "late_capture";
+    public static readonly IReadOnlyList<string> All = [VendorList, VendorListSupplement, LateCapture];
+}
+
+/// <summary>P3-T02 proposal: ADR-0001 defines the command but not its reason codes.</summary>
+public static class ReassignAllocationReason
+{
+    public const string AllocationError = "allocation_error";
+    public const string WorkOrderChanged = "work_order_changed";
+    public const string WorkOrderCancelled = "work_order_cancelled";
+    public static readonly IReadOnlyList<string> All = [AllocationError, WorkOrderChanged, WorkOrderCancelled];
+}
+
+public static class CorrectDocumentSerialsReason
+{
+    public const string ShippedWrongUnits = "shipped_wrong_units";
+    public const string CopiedSerialsWithoutScan = "copied_serials_without_scan";
+    public const string VendorListWrong = "vendor_list_wrong";
+    public const string ReturnedNeverDelivered = "returned_never_delivered";
+    public static readonly IReadOnlyList<string> All = [ShippedWrongUnits, CopiedSerialsWithoutScan, VendorListWrong, ReturnedNeverDelivered];
+}
+
+public static class CorrectSourceDocumentReason
+{
+    public const string ReleasedUnderWrongOrder = "released_under_wrong_order";
+    public const string WrongDeliverySelected = "wrong_delivery_selected";
+    public const string InvoiceSplitError = "invoice_split_error";
+    public static readonly IReadOnlyList<string> All = [ReleasedUnderWrongOrder, WrongDeliverySelected, InvoiceSplitError];
+}
+
 /// <summary>Disposition of a unit in <c>unit_current</c> (CBV 2.0 terms where one exists).</summary>
 public static class UnitDisposition
 {

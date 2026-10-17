@@ -36,7 +36,7 @@ public abstract class EntitlementBulkOperation(SerialisationDbContext db, ITenan
     {
         UnitOutcome pre;
         try { pre = await PrecheckAsync(unitId, serial, arguments, cancellationToken); }
-        catch (CommandRefusedException ex) { return Block(unitId, serial, ex.Rule, ex.Message); }
+        catch (CommandRefusedException ex) { return Block(unitId, serial, ex.Rule, ex.Message, ex.UnblockingStep); }
         return pre.Outcome == UnitOutcome.Outcomes.Change ? await DryRunAsync(unitId, serial, arguments, pre, cancellationToken) : pre;
     }
 
@@ -62,7 +62,7 @@ public abstract class EntitlementBulkOperation(SerialisationDbContext db, ITenan
         }
         catch (CommandRefusedException ex)
         {
-            return Block(unitId, serial, ex.Rule, MergeDetail(pre.Detail, ex.Message));
+            return Block(unitId, serial, ex.Rule, MergeDetail(pre.Detail, ex.Message), ex.UnblockingStep);
         }
         catch (DbUpdateException ex)
         {
@@ -79,7 +79,7 @@ public abstract class EntitlementBulkOperation(SerialisationDbContext db, ITenan
 
     protected static UnitOutcome Change(Guid unitId, string? serial, string detail) => new(unitId, serial, UnitOutcome.Outcomes.Change, null, detail);
     protected static UnitOutcome Skip(Guid unitId, string? serial, string reason) => new(unitId, serial, UnitOutcome.Outcomes.Skip, reason);
-    protected static UnitOutcome Block(Guid unitId, string? serial, string reason, string? detail = null) => new(unitId, serial, UnitOutcome.Outcomes.Block, reason, detail);
+    protected static UnitOutcome Block(Guid unitId, string? serial, string reason, string? detail = null, string? unblockingStep = null) => new(unitId, serial, UnitOutcome.Outcomes.Block, reason, detail, unblockingStep);
     protected static string PreviewDetail(string? now, DateOnly? nowEnd, string? after, DateOnly? afterEnd, int? days, string? summary = null) =>
         JsonSerializer.Serialize(new { now, nowEnd, after, afterEnd, days, summary }, LedgerJson.Options);
     private static string MergeDetail(string? detail, string message)

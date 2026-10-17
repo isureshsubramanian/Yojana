@@ -8,6 +8,7 @@ using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Identity;
@@ -39,12 +40,39 @@ public static class SerialisationEndpoints
         units.MapPost("/completeness", async (CompletenessQuery query, CompletenessQueries queries, CancellationToken ct) => Results.Ok(await queries.QueryAsync(query, ct)));
         units.MapPost("/commission", (CommissionUnits command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CommissionUnitsResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/assign-identifier", (AssignIdentifier command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<AssignIdentifierResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
-        units.MapPost("/correct-identifier", (CorrectIdentifier command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CorrectIdentifierResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
+        units.MapPost("/correct-identifier", (CorrectIdentifier command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CorrectIdentifierResult>(bus, tenant, command with { ActorRef = Actor(user), Correction = ApiCorrection(command, user) }, ct));
         units.MapPost("/release", (ReleaseUnit command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ReleaseUnitResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/assemble", (RecordAssembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordAssemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/disassemble", (RecordDisassembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordDisassemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/flag", (SetUnitFlag command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<UnitFlagResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/unflag", (ClearUnitFlag command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<UnitFlagResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
+
+        var correctionReference = app.MapGroup("/api/correction-reference").RequireAuthorization(YojanaPolicy.TenantMember);
+        correctionReference.MapGet("/approval", async (CorrectionApprovalSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
+        correctionReference.MapPut("/approval", async (CorrectionApprovalPolicy policy, CorrectionApprovalSettings settings, CancellationToken ct) =>
+        {
+            try
+            {
+                await settings.SetAsync(policy, ct);
+                return Results.Ok(policy);
+            }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+            }
+        }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+        correctionReference.MapGet("/serial-reuse", async (SerialReuseSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
+        correctionReference.MapPut("/serial-reuse", async (SerialReusePolicy policy, SerialReuseSettings settings, CancellationToken ct) =>
+        {
+            try { await settings.SetAsync(policy, ct); return Results.Ok(policy); }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+            }
+        }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
 
         var ranges = app.MapGroup("/api/serial-ranges").RequireAuthorization(YojanaPolicy.TenantMember);
         ranges.MapGet("/schemes", (SerialRangeQueries queries) => Results.Ok(queries.Schemes()));
@@ -249,6 +277,32 @@ public static class SerialisationEndpoints
     {
         var committer = Committer(user);
         return new BulkApproval(committer.UserRef, given?.Required ?? false, committer.Roles);
+    }
+
+    private static CorrectionMetadata ApiCorrection(CorrectIdentifier command, ClaimsPrincipal user)
+    {
+        var supplied = command.Correction;
+        return new CorrectionMetadata(
+            supplied?.CorrectionId ?? command.CommandId,
+            supplied?.ReasonCode ?? command.Reason,
+            supplied?.Note ?? command.Note,
+            supplied?.EvidenceRefs ?? [],
+            supplied?.InitiatedVia ?? CorrectionInitiatedVia.Api,
+            supplied?.CorrectsCorrectionId,
+            InitiatingRole(user),
+            // Approvers are never taken from the request body: a caller could name anyone, with any roles. The legacy
+            // ApproverRef keeps its P1 meaning; server-recorded approvals arrive with the workbench approval flow (P3-T16).
+            null);
+    }
+
+    private static string InitiatingRole(ClaimsPrincipal user)
+    {
+        var roles = user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToHashSet(StringComparer.Ordinal);
+        if (roles.Contains(YojanaRole.CustomerService)) return CorrectionInitiatingRole.CustomerService;
+        if (roles.Contains(YojanaRole.WarehouseLead)) return CorrectionInitiatingRole.WarehouseLead;
+        if (roles.Contains(YojanaRole.ProductionSupervisor)) return CorrectionInitiatingRole.ProductionSupervisor;
+        if (roles.Contains(YojanaRole.Technician)) return CorrectionInitiatingRole.ServiceTechnician;
+        return CorrectionInitiatingRole.SerialAdministrator;
     }
 
     /// <summary>"type:guid" as the search result href carries it; null when absent or malformed.</summary>

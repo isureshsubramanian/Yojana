@@ -369,6 +369,100 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CorrectionRecord", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CorrectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("correction_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<string>("Approvers")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("approvers");
+
+                    b.Property<string>("Command")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("command");
+
+                    b.Property<Guid?>("CorrectsCorrectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("corrects_correction_id");
+
+                    b.Property<DateTime>("EventTime")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("event_time");
+
+                    b.Property<string>("EvidenceRefs")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("evidence_refs");
+
+                    b.Property<string>("InitiatedVia")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("initiated_via");
+
+                    b.Property<string>("InitiatingRole")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("initiating_role");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("reason_code");
+
+                    b.Property<DateTime>("RecordedTime")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("recorded_time");
+
+                    b.Property<int>("RootCauseCategory")
+                        .HasColumnType("int")
+                        .HasColumnName("root_cause_category");
+
+                    b.Property<int>("UnitCount")
+                        .HasColumnType("int")
+                        .HasColumnName("unit_count");
+
+                    b.HasKey("TenantId", "CorrectionId")
+                        .HasName("pk_correction_record");
+
+                    b.HasIndex("TenantId", "CorrectsCorrectionId")
+                        .HasDatabaseName("ix_correction_record_tenant_id_corrects_correction_id");
+
+                    b.HasIndex("TenantId", "EventTime", "RootCauseCategory", "InitiatingRole", "InitiatedVia")
+                        .HasDatabaseName("ix_correction_record_tenant_id_event_time_root_cause_category_initiating_role_initiated_via");
+
+                    b.ToTable("correction_record", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_correction_record_approvers_json", "ISJSON(approvers) = 1");
+
+                            t.HasCheckConstraint("ck_correction_record_evidence_refs_json", "ISJSON(evidence_refs) = 1");
+
+                            t.HasCheckConstraint("ck_correction_record_root_cause", "root_cause_category BETWEEN 1 AND 7");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CoverageFamily", b =>
                 {
                     b.Property<Guid>("TenantId")

@@ -50,24 +50,27 @@ public sealed record AssignIdentifier(Guid CommandId, Guid UnitId, IdentifierInp
 
 public sealed record AssignIdentifierResult(Guid UnitId, Guid IdentifierId, string NormalisedValue, string LifecycleStatus);
 
-/// <summary>Reason codes of <see cref="CorrectIdentifier"/> (ADR-0001 "Controlled corrections" command table).</summary>
-public static class IdentifierCorrectionReason
-{
-    public const string Typo = "typo";
-    public const string Misread = "misread";
-    public const string Relabel = "relabel";
-    public const string Regulatory = "regulatory";
+/// <summary>One approval attached to a correction; roles are recorded as evidence, never inferred later.</summary>
+public sealed record CorrectionApprover(string UserRef, IReadOnlyList<string> Roles);
 
-    public static readonly IReadOnlyList<string> All = [Typo, Misread, Relabel, Regulatory];
-}
+/// <summary>Metadata shared by every correction command and every ledger fact it writes.</summary>
+public sealed record CorrectionMetadata(
+    Guid CorrectionId,
+    string ReasonCode,
+    string? Note = null,
+    IReadOnlyList<string>? EvidenceRefs = null,
+    string InitiatedVia = CorrectionInitiatedVia.Api,
+    Guid? CorrectsCorrectionId = null,
+    string? InitiatingRole = null,
+    IReadOnlyList<CorrectionApprover>? Approvers = null);
 
 /// <summary>
 /// Identity rule 5: a new identifier row replaces the open one of that type; the old row closes with the reason and
 /// points at its successor; the unit's key and every event stay as they are; no stock moves.
 /// </summary>
-public sealed record CorrectIdentifier(Guid CommandId, Guid UnitId, string IdentifierType, string NewRawValue, string Reason, DateTime EventTime, string ActorRef, Guid LegalEntityId, string? ApproverRef = null, string? Note = null, Guid? IssuerPartyRef = null, string? Qualifier = null);
+public sealed record CorrectIdentifier(Guid CommandId, Guid UnitId, string IdentifierType, string NewRawValue, string Reason, DateTime EventTime, string ActorRef, Guid LegalEntityId, string? ApproverRef = null, string? Note = null, Guid? IssuerPartyRef = null, string? Qualifier = null, CorrectionMetadata? Correction = null);
 
-public sealed record CorrectIdentifierResult(Guid UnitId, Guid SupersededIdentifierId, Guid NewIdentifierId, string OldNormalisedValue, string NewNormalisedValue);
+public sealed record CorrectIdentifierResult(Guid UnitId, Guid SupersededIdentifierId, Guid NewIdentifierId, string OldNormalisedValue, string NewNormalisedValue, Guid CorrectionId = default);
 
 /// <summary>Release a <c>pre_release</c> unit on its release signature; freezes the as-built into BuildRecord version 1 (or the next version after reassembly).</summary>
 public sealed record ReleaseUnit(Guid CommandId, Guid UnitId, DateTime EventTime, string ActorRef, Guid LegalEntityId, string ReleaseSignatureRef, DocumentRef? Document = null, string? Revision = null, Guid? FacilityId = null, string? TestResultsJson = null);
@@ -78,11 +81,15 @@ public sealed record ReleaseUnitResult(Guid UnitId, Guid BuildRecordId, int Buil
 /// A command that a rule stops. The result names the rule and the step that unblocks it, so a screen or a
 /// connector never has to guess (MOD-11: refusal results naming the rule and the unblocking step).
 /// </summary>
+public sealed record CommandRefusal(string Rule, string Message, string? UnblockingStep = null);
+
 public sealed class CommandRefusedException(string rule, string message, string? unblockingStep = null) : InvalidOperationException(message)
 {
     public string Rule { get; } = rule;
 
     public string? UnblockingStep { get; } = unblockingStep;
+
+    public CommandRefusal Refusal => new(Rule, Message, UnblockingStep);
 }
 
 /// <summary>
