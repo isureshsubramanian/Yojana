@@ -91,3 +91,15 @@ public sealed class DatabaseFactAttribute : FactAttribute
         }
     }
 }
+
+/// <summary>Marks a theory that needs the database; skipped when YOJANA_TEST_SQL is not set.</summary>
+public sealed class DatabaseTheoryAttribute : TheoryAttribute
+{
+    public DatabaseTheoryAttribute()
+    {
+        if (SerialisationHostFixture.ConnectionString is null)
+        {
+            Skip = "YOJANA_TEST_SQL is not set";
+        }
+    }
+}

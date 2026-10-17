@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Wolverine;
 using Xunit;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
@@ -42,32 +41,17 @@ public sealed class CorrectionEdgeCaseScenarioTests(SerialisationHostFixture fix
     private static readonly WorkbenchActor Technician = new("technician", [YojanaRole.Technician]);
 
     private InMemoryDocumentPorts Documents => fixture.Services.GetRequiredService<InMemoryDocumentPorts>();
+    private CorrectionScenarioHelper Scenario => new(fixture, Entity, At);
 
     private async Task<T> InvokeAsync<T>(TenantId tenant, object message) where T : class
-    {
-        using var scope = fixture.ScopeFor(tenant);
-        return await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<T>(message,
-            new DeliveryOptions { TenantId = tenant.ToString() }, CancellationToken.None);
-    }
+        => await Scenario.InvokeAsync<T>(tenant, message);
 
     private async Task<(Guid UnitId, Guid ItemId, string Serial)> CommissionAsync(TenantId tenant, string prefix,
         string origin = UnitOrigin.Manufactured, DocumentRef? document = null, Guid? location = null, Guid? item = null)
-    {
-        var itemId = item ?? Guid.NewGuid();
-        var serial = prefix + "-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
-        var result = await InvokeAsync<CommissionUnitsResult>(tenant, new CommissionUnits(Guid.NewGuid(), itemId, origin,
-            [new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, serial)])], At, "scenario", Entity,
-            Document: document, LocationId: location, LocationKind: location is null ? null : LocationKind.Warehouse));
-        return (Assert.Single(result.Lines).UnitId!.Value, itemId, serial);
-    }
+        => await Scenario.CommissionAsync(tenant, prefix, origin, document, location, item);
 
     private async Task<Guid> SelectAsync(TenantId tenant, IReadOnlyList<string> serials)
-    {
-        var selectionId = Guid.NewGuid();
-        await InvokeAsync<ResolveSelectionSetResult>(tenant,
-            new ResolveSelectionSet(selectionId, SelectionSource.ByPastedList(serials), "scenario"));
-        return selectionId;
-    }
+        => await Scenario.SelectAsync(tenant, serials);
 
     private static ThinEnvelope Envelope(DateTime at) => new(Guid.NewGuid(), Entity, at, "scenario");
 
@@ -84,31 +68,13 @@ public sealed class CorrectionEdgeCaseScenarioTests(SerialisationHostFixture fix
     private async Task<(T Result, CorrectionPreview Preview)> CommitWorkbenchAsync<T>(TenantId tenant,
         WorkbenchPreviewRequest request, WorkbenchActor committer, params WorkbenchActor[] approvers) where T : class
     {
-        using var scope = fixture.ScopeFor(tenant);
-        var service = scope.ServiceProvider.GetRequiredService<WorkbenchRequestService>();
-        var displayed = await service.PreviewAsync(request, CancellationToken.None);
-        var raised = await service.InitiateAsync(Guid.NewGuid(), request, Technician, CancellationToken.None);
-        Assert.Equal(displayed.PreviewHash, raised.PreviewHash);
-        Assert.Equal(WorkbenchRequestStatus.AwaitingApproval, raised.Status);
-        foreach (var approver in approvers)
-        {
-            raised = await service.ApproveAsync(raised.RequestId, approver, "scenario approval", CancellationToken.None);
-            if (raised.Status == WorkbenchRequestStatus.Approved) break;
-        }
-        Assert.Equal(WorkbenchRequestStatus.Approved, raised.Status);
-        var committed = await service.CommitAsync(raised.RequestId, committer, CancellationToken.None);
-        Assert.Equal(WorkbenchRequestStatus.Committed, committed.Status);
-        if (committed.Result is not { } resultJson)
-            throw new InvalidOperationException("The committed workbench request has no result.");
-        var result = resultJson.Deserialize<T>(LedgerJson.Options)
-            ?? throw new InvalidOperationException("The committed workbench request has no readable result.");
-        return (result, displayed.Preview);
+        var (result, preview, _) = await Scenario.CommitWorkbenchAsync<T>(tenant, request, Technician, committer, approvers);
+        return (result, preview);
     }
 
     private static WorkbenchPreviewRequest WorkbenchRequest<T>(Guid correctionId, string choice, string command,
         WorkbenchTarget target, string reason, T arguments) where T : class =>
-        new(correctionId, choice, new(command, JsonSerializer.SerializeToElement(arguments, LedgerJson.Options)),
-            target, reason, "edge-case scenario", [new("reference", $"scenario:{correctionId:N}", "reviewed")]);
+        CorrectionScenarioHelper.WorkbenchRequest(correctionId, choice, command, target, reason, arguments);
 
     [DatabaseFact]
     public async Task Case_32_a_sale_recorded_for_a_unit_that_never_shipped_is_reversed_with_its_cover()
