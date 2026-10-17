@@ -243,6 +243,9 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     GuidOrNull(a, "rma_line_id") ?? Guid.Empty, GuidOrNull(a, "unit_id") ?? e.UnitId, Str(a, "disposition") ?? "",
                     Str(a, "entitlement_closed_reason"), GuidOrNull(a, "replacement_intent_id"));
             case ReplacementEventType.Shipped:
+                // COUPLED to ShipWarrantyReplacementHandler: it records the fact on both physical units, while this
+                // integration contract leaves once from the replacement unit or consumers process one shipment twice.
+                if (GuidOrNull(a, "replacement_unit_id") != e.UnitId) return null;
                 return new ReplacementShipped(Header(ReplacementShipped.Schema, ReplacementShipped.Version),
                     GuidOrNull(a, "warranty_replacement_id") ?? Guid.Empty, Str(a, "replacement_number") ?? "",
                     GuidOrNull(a, "replacement_link_id") ?? Guid.Empty, GuidOrNull(a, "original_unit_id") ?? Guid.Empty,

@@ -219,7 +219,12 @@ public sealed class ShipWarrantyReplacementHandler
         if (ownership.CloseDraft is not null) drafts.Add(ownership.CloseDraft);
         drafts.Add(ownership.Draft);
         var tag = await RepointAssetTagAsync(db, tenantId, link, command, clock.UtcNow, drafts, cancellationToken);
-        drafts.Add(ShipmentDraft(document, link, transfer, grade, stockResult.PostingReference, command, shipEventId));
+        // COUPLED to PublishedEventMapper's Replacement.Shipped branch: both units need the internal fact, while the
+        // published document event must leave only from the replacement unit or consumers process one shipment twice.
+        drafts.Add(ShipmentDraft(document, link, transfer, grade, stockResult.PostingReference, command,
+            link.OriginalUnitId, TimeOrderedId.New(command.EventTime)));
+        drafts.Add(ShipmentDraft(document, link, transfer, grade, stockResult.PostingReference, command,
+            link.ReplacementUnitId, shipEventId));
         if (tag is not null) drafts.Add(PrintDraft(document, link, tag, command));
         await writer.AppendAsync(drafts, cancellationToken);
 
@@ -284,11 +289,11 @@ public sealed class ShipWarrantyReplacementHandler
     }
 
     private static UnitEventDraft ShipmentDraft(WarrantyReplacement document, ReplacementLink link, TransferEntitlementResult transfer,
-        string grade, string postingReference, ShipWarrantyReplacement command, Guid eventId) => new()
+        string grade, string postingReference, ShipWarrantyReplacement command, Guid unitId, Guid eventId) => new()
     {
-        UnitId = link.ReplacementUnitId, EventTime = command.EventTime, EventType = ReplacementEventType.Shipped, PresetEventId = eventId,
+        UnitId = unitId, EventTime = command.EventTime, EventType = ReplacementEventType.Shipped, PresetEventId = eventId,
         LegalEntityId = document.LegalEntityId, ActorRef = command.ActorRef, DocumentType = "warranty_replacement", DocumentId = document.WarrantyReplacementId,
-        IdempotencyKey = IdempotencyKey.ForCommand("serialisation", command.CommandId, link.ReplacementUnitId, ReplacementEventType.Shipped, command.EventTime),
+        IdempotencyKey = IdempotencyKey.ForCommand("serialisation", command.CommandId, unitId, ReplacementEventType.Shipped, command.EventTime),
         Attributes = JsonObjectText.Of(new
         {
             warranty_replacement_id = document.WarrantyReplacementId, replacement_number = document.ReplacementNumber,
