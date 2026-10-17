@@ -43,7 +43,6 @@ export function Component() {
   const [evidence, setEvidence] = useState<DraftEvidence[]>([draftEvidence()]);
   const [remedy, setRemedy] = useState("repair");
   const [choiceEvidence, setChoiceEvidence] = useState("");
-  const [coverageExplanation] = useState("Warranty");
   const [busy, setBusy] = useState(false);
   const [lookupBusy, setLookupBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -89,6 +88,9 @@ export function Component() {
   const total = lines.reduce((sum, line) => sum + (Number(line.requestedAmount) || 0), 0);
   const children = unit?.asBuilt.filter((child) => child.childUnitId && !child.removedAt) ?? [];
   const activeCover = entitlements?.entitlements.filter((cover) => cover.effectiveStatus === "active") ?? [];
+  // What the live cover suggests; adjudication still decides per line. No unit yet → nothing highlighted.
+  const customerCover = activeCover.filter((cover) => cover.direction === "outbound");
+  const coverageExplanation = !unit ? null : customerCover.length === 0 ? "Chargeable" : suggestedSource(customerCover.map((cover) => cover.type));
   const currencyChoices = currencySettings?.accepted ?? [];
   const canSubmit = !!currency && !!claimant && !!settlement && !!serviceCountry && !!choiceEvidence.trim() && lines.length > 0 && lines.every((line) => line.description.trim() && line.coverageFamily && line.requestedAmount !== "" && Number(line.requestedAmount) >= 0)
     && (mode === "unit" ? !!unit : !!identifier.trim() && !!itemId && !!proofRef.trim() && !!proofDate);
@@ -153,7 +155,7 @@ export function Component() {
             <div className="field span"><label>Service entity</label><div className="reference-selected"><span>{names.party(DEFAULT_LEGAL_ENTITY)}</span></div><span className="help">The tenant’s legal entity; read-only.</span></div>
             <div className="field span"><label>Obligor entity</label><div className="reference-selected"><span>{names.party(DEFAULT_LEGAL_ENTITY)}</span></div><span className="help">Adjudication records the obligor on the event.</span></div>
           </div></div></section>
-          <section className="card" aria-labelledby="claim-source"><div className="card-header"><h2 id="claim-source">Coverage source asked for</h2><span className="meta">adjudication decides it</span></div><div className="card-body"><div className="claims-segmented" aria-label="Coverage source explanation">{["Warranty", "Recall", "Goodwill", "Contract", "Chargeable"].map((source) => <span key={source} className={`chip${source === coverageExplanation ? " on" : ""}`}>{source}</span>)}</div><p className="hint" style={{ marginTop: 10 }}>Informational only. SubmitClaim has no requested-source field; the policy stack determines the source per line.</p></div></section>
+          <section className="card" aria-labelledby="claim-source"><div className="card-header"><h2 id="claim-source">Coverage source asked for</h2><span className="meta">adjudication decides it</span></div><div className="card-body"><div className="claims-segmented" aria-label="Coverage source explanation">{["Warranty", "Recall", "Goodwill", "Contract", "Chargeable"].map((source) => <span key={source} className={`chip${source === coverageExplanation ? " on" : ""}`}>{source}</span>)}</div><p className="hint" style={{ marginTop: 10 }}>Adjudication decides the source for each line from the policy stack on the claim date; the highlighted source is only what the unit's live cover suggests.</p></div></section>
           <section className="card" aria-labelledby="claim-remedy"><div className="card-header"><h2 id="claim-remedy">Remedy and informed choice</h2></div><div className="card-body"><div className="claims-remedy">{REMEDIES.map((value) => <label key={value} className={remedy === value ? "on" : ""}><input type="radio" name="claim-remedy" value={value} checked={remedy === value} onChange={() => setRemedy(value)} /><span>{humanise(value)}<span className="help">The consumer’s requested outcome; coverage is still adjudicated.</span></span></label>)}</div><div className="field" style={{ marginTop: 12 }}><label htmlFor="claim-choice">Consumer’s informed choice evidence reference</label><input id="claim-choice" className="input" value={choiceEvidence} onChange={(event) => setChoiceEvidence(event.target.value)} placeholder="Call, e-mail or signed choice reference" /><span className="help">Required and stored as consumer remedy-choice evidence.</span></div></div></section>
           <section className="card" aria-labelledby="claim-evidence"><div className="card-header"><h2 id="claim-evidence">Evidence <span className="meta">{evidence.filter((row) => row.reference.trim()).length} items</span></h2><button type="button" className="btn sm" onClick={() => setEvidence((current) => [...current, draftEvidence()])}><Icon name="plus" />Add</button></div><div className="card-body stack">{evidence.map((row, index) => <div className="form-grid" key={row.id}>
             <div className="field"><label htmlFor={`evidence-kind-${row.id}`}>Kind</label><select id={`evidence-kind-${row.id}`} className="select" value={row.kind} onChange={(event) => updateEvidence(row.id, { kind: event.target.value })}><option value="attachment">Attachment</option><option value="proof_of_purchase">Proof of purchase</option></select></div>
@@ -169,4 +171,12 @@ export function Component() {
 function parseMeasurements(text: string): Record<string, number> | null {
   const entries = text.split(",").map((entry) => entry.trim()).filter(Boolean).map((entry) => { const [key, raw] = entry.split("=").map((part) => part.trim()); return key && raw !== undefined && Number.isFinite(Number(raw)) ? [key, Number(raw)] as const : null; }).filter((entry): entry is readonly [string, number] => entry !== null);
   return entries.length ? Object.fromEntries(entries) : null;
+}
+
+/** The coverage source an entitlement type usually leads to (mirrors the server's mapping; display only). */
+function suggestedSource(types: string[]): string {
+  if (types.includes("recall_campaign")) return "Recall";
+  if (types.some((type) => type === "contract" || type === "extended")) return "Contract";
+  if (types.includes("goodwill")) return "Goodwill";
+  return "Warranty";
 }

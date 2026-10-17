@@ -39,7 +39,7 @@
     { "id": "20000000-0000-0000-0000-000000000015", "code": "R-CIRRAVUE", "name": "Cirravue Technology Partners", "partyType": "reseller" },
     { "id": "20000000-0000-0000-0000-000000000016", "code": "L-PARCELORA", "name": "Parcelora Logistics", "partyType": "3pl" },
     { "id": "20000000-0000-0000-0000-000000000017", "code": "S-ASTERRA", "name": "Asterra Field Services", "partyType": "service_entity" },
-    { "id": "20000000-0000-0000-0000-000000000018", "code": "LE-ASTERRA", "name": "Asterra Compute Works", "partyType": "legal_entity" }
+    { "id": "00000000-0000-0000-0000-000000000001", "code": "LE-ASTERRA", "name": "Asterra Compute Works", "partyType": "legal_entity" }
   ],
   "documents": [
     { "id": "30000000-0000-0000-0000-000000000001", "type": "production_order", "number": "MO-2026-0901", "status": "released", "itemId": "10000000-0000-0000-0000-000000000001" },
