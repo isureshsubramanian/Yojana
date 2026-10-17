@@ -259,6 +259,7 @@ public static class UnitEventType
     public const string Decommissioned = "unit.decommissioned";
     public const string FlagSet = "unit.flag_set";
     public const string FlagCleared = "unit.flag_cleared";
+    public const string AttributeChanged = "unit.attribute_changed";
     public const string Shipped = "unit.shipped";
     public const string ShipmentReversed = "unit.shipment_reversed";
     public const string Delivered = "unit.delivered";

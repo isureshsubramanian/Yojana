@@ -62,7 +62,9 @@ if (args.Contains("--migrate") || args.Contains("--seed"))
 var referenceCounts = DevReferenceCatalogue.Load(
     app.Environment,
     Path.Combine(AppContext.BaseDirectory, "DevData", "reference-labels.json"),
+    app.Services.GetRequiredService<InMemoryItemPorts>(),
     app.Services.GetRequiredService<InMemoryItemNamePort>(),
+    app.Services.GetRequiredService<InMemoryWarrantyPorts>(),
     app.Services.GetRequiredService<InMemoryPartyNamePort>(),
     app.Services.GetRequiredService<InMemoryDocumentNumberRegistry>());
 if (app.Environment.IsDevelopment())
