@@ -69,8 +69,8 @@ public sealed class WorkbenchEntryResolver(
             .Select(c => new { c.UnitId, c.ItemId, c.LifecycleStatus }).ToDictionaryAsync(c => c.UnitId, cancellationToken);
         var identifiers = await db.Identifiers.AsNoTracking().Where(i => i.TenantId == tenantId && resolvedIds.Contains(i.UnitId) && i.ValidTo == null)
             .OrderBy(i => i.Type == IdentifierType.InternalSerial ? 0 : 1).ThenBy(i => i.Type)
-            .Select(i => new { i.UnitId, i.NormalisedValue }).ToListAsync(cancellationToken);
-        var display = identifiers.GroupBy(i => i.UnitId).ToDictionary(g => g.Key, g => g.First().NormalisedValue);
+            .Select(i => new { i.UnitId, i.RawValue }).ToListAsync(cancellationToken);
+        var display = identifiers.GroupBy(i => i.UnitId).ToDictionary(g => g.Key, g => g.First().RawValue);
         var matchKind = command.Entry.Kind == WorkbenchTargetKind.Identifier ? resolution : command.Entry.Kind;
         var candidates = original.Select(u =>
         {
