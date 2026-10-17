@@ -12,10 +12,14 @@ public sealed record ClaimAdjudicated(
     Guid ObligorEntityId,
     Guid ClaimantPartyRef,
     Guid SettlementPartyRef,
-    Guid? SuccessorItemId = null) : IPublishedUnitEvent
+    Guid? SuccessorItemId = null,
+    Guid? CampaignId = null,
+    string? CampaignCode = null,
+    string? ReserveTag = null,
+    string? CampaignCoverReason = null) : IPublishedUnitEvent
 {
     public const string Schema = "Claim.Adjudicated";
-    public const string Version = "1.1";
+    public const string Version = "1.2";
 }
 
 public sealed record RecoveryClaimRaised(

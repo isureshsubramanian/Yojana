@@ -17,6 +17,12 @@ public sealed class Campaign : ITenantScoped
     /// <summary>Accounting reserve for this campaign; deliberately independent of warranty accrual cohorts.</summary>
     public required string ReserveTag { get; set; }
 
+    public decimal PartsPct { get; set; } = 100m;
+
+    public decimal LabourPct { get; set; } = 100m;
+
+    public decimal TravelPct { get; set; } = 100m;
+
     public required string ReasonCode { get; set; }
 
     public string? ReasonNote { get; set; }

@@ -427,8 +427,23 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
             new RecoveryPolicy(RecoveryWholeUnitRule.SingleCoveredPart, [ClaimLineKind.Parts], 91), CancellationToken.None));
         var unknown = await Assert.ThrowsAsync<CommandRefusedException>(() => settings.SetAsync(
             new RecoveryPolicy("guess_vendor", [ClaimLineKind.Parts], 7), CancellationToken.None));
+        var unknownCampaignRule = await Assert.ThrowsAsync<CommandRefusedException>(() => settings.SetAsync(
+            new RecoveryPolicy(RecoveryWholeUnitRule.SingleCoveredPart, [ClaimLineKind.Parts], 7, "recover_everything"), CancellationToken.None));
 
-        Assert.All([noKinds, tooSoon, tooLate, unknown], refusal => Assert.Equal("recovery_policy_invalid", refusal.Rule));
+        Assert.All([noKinds, tooSoon, tooLate, unknown, unknownCampaignRule], refusal => Assert.Equal("recovery_policy_invalid", refusal.Rule));
+    }
+
+    [DatabaseFact]
+    public async Task Stored_recovery_policy_without_campaign_rule_defaults_to_no_recovery()
+    {
+        var tenant = await fixture.NewTenantAsync("recovery-policy-old", "EUR");
+        using var scope = fixture.ScopeFor(tenant);
+        await scope.ServiceProvider.GetRequiredService<ITenantSettings>().SetAsync(Claims.RecoverySettings.Key,
+            """{"wholeUnitLines":"single_covered_part","lineKinds":["parts"],"vendorAnswerDueDays":7}""", CancellationToken.None);
+
+        var policy = await scope.ServiceProvider.GetRequiredService<Claims.RecoverySettings>().GetAsync(CancellationToken.None);
+
+        Assert.Equal(RecoveryCampaignClaims.NoRecovery, policy.CampaignClaims);
     }
 
     [DatabaseFact]

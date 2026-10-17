@@ -13,6 +13,7 @@ public sealed class Claim : ITenantScoped
     public required string ClaimNumber { get; set; }
     public Guid CommandId { get; set; }
     public Guid UnitId { get; set; }
+    public Guid? CampaignId { get; set; }
     public DateOnly ClaimDate { get; set; }
     public Guid ClaimantPartyRef { get; set; }
     public Guid SettlementPartyRef { get; set; }
@@ -27,6 +28,9 @@ public sealed class Claim : ITenantScoped
 
     /// <summary>Why an approved claim raised no recovery under the policy at approval (<c>RecoveryNotRaisedReason</c>); null when recovered or not decided.</summary>
     public string? RecoveryNotRaisedReason { get; set; }
+    /// <summary>The campaign reserve captured when adjudication resolves the named campaign.</summary>
+    public string? ReserveTag { get; set; }
+    public string? CampaignCoverReason { get; set; }
     public string EntitlementIds { get; set; } = "[]";
     public string? DenialReason { get; set; }
     public Guid? SuccessorItemId { get; set; }

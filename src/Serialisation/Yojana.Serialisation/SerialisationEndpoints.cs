@@ -338,14 +338,18 @@ public static class SerialisationEndpoints
         // Claims and supplier recovery (MOD-07, P4). Identity and reviewer roles come from the session; the endpoint
         // overwrites both values so a request body cannot forge the low-confidence review evidence.
         var claims = app.MapGroup("/api/claims").RequireAuthorization(YojanaPolicy.TenantMember);
-        claims.MapGet("/", async (string? status, string? coverageSource, string? serviceCountry, string? recovery, string? q, int? skip, int? take,
+        claims.MapGet("/", async (string? status, string? coverageSource, string? serviceCountry, string? recovery, string? q, Guid? campaignId, int? skip, int? take,
             ClaimQueries queries, UnitQueries units, IClock clock, CancellationToken ct) =>
         {
             IReadOnlyList<Guid>? unitIds = null;
             if (!string.IsNullOrWhiteSpace(q)) unitIds = (await units.LookupAsync(q.Trim(), null, ct)).Hits.Select(h => h.UnitId).Distinct().ToList();
-            return Results.Ok(await queries.ListAsync(new ClaimListFilter(status ?? "open", coverageSource, serviceCountry, recovery, q, unitIds),
+            return Results.Ok(await queries.ListAsync(new ClaimListFilter(status ?? "open", coverageSource, serviceCountry, recovery, q, unitIds, campaignId),
                 DateOnly.FromDateTime(clock.UtcNow), Math.Max(0, skip ?? 0), take ?? 50, ct));
         });
+        claims.MapGet("/campaign-options", async (Guid unitId, DateOnly claimDate, ICampaignCoverPort campaigns, CancellationToken ct) =>
+            Results.Ok((await campaigns.ListForUnitAsync(unitId, claimDate, ct)).Select(campaign => new ClaimCampaignOption(
+                campaign.CampaignId, campaign.Code, campaign.Name, campaign.CoverageSource, campaign.ReserveTag, campaign.ReasonCode,
+                campaign.RunsUntil, campaign.CoversOn(claimDate), campaign.NotCoveredReason(claimDate)))));
         claims.MapGet("/summary", async (ClaimQueries queries, ClaimReviewSettings settings, IClock clock, CancellationToken ct) =>
             Results.Ok(await queries.SummaryAsync(DateOnly.FromDateTime(clock.UtcNow), (await settings.GetAsync(ct)).AdjudicationTargetWorkingDays, ct)));
         claims.MapGet("/{claimId:guid}/adjudication-preview", async (Guid claimId, ClaimAdjudicationPreviewQuery preview, ClaimReviewSettings settings, CancellationToken ct) =>

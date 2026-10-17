@@ -131,7 +131,8 @@ public sealed class CampaignTests(SerialisationHostFixture fixture)
         Assert.Equal(currentOwner, publishedUnit.OwnerPartyRef);
         Assert.Equal(custodian, publishedUnit.CustodianPartyRef);
         Assert.NotEqual(invoiceCustomer, publishedUnit.OwnerPartyRef);
-        Assert.Equal((CampaignReason.Safety, (DateOnly?)null), (published.ReasonCode, published.RunsUntil));
+        Assert.Equal((CampaignReason.Safety, (DateOnly?)null, 100m, 100m, 100m),
+            (published.ReasonCode, published.RunsUntil, published.PartsPct, published.LabourPct, published.TravelPct));
         Assert.Equal(1, first.Added);
 
         var next = await UnitAsync(tenant, "41000002", item, lot);

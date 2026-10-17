@@ -35,7 +35,8 @@ public sealed record SubmitClaim(
     string ActorRef,
     string? ProofOfPurchaseRef = null,
     DateOnly? ProofOfPurchaseDate = null,
-    Guid? ItemId = null);
+    Guid? ItemId = null,
+    Guid? CampaignId = null);
 
 public sealed record SubmitClaimResult(Guid ClaimId, Guid UnitId, string Status, IReadOnlyList<Guid> ClaimLineIds, Guid EventId, bool Replayed);
 
@@ -139,7 +140,12 @@ public sealed record ClaimDetail(
     DateTime? AdjudicatedAt = null,
     IReadOnlyList<ClaimLineRow>? LineRows = null,
     IReadOnlyList<ClaimRecoveryRef>? Recoveries = null,
-    string? OpenWork = null);
+    string? OpenWork = null,
+    Guid? CampaignId = null,
+    string? CampaignCode = null,
+    string? CampaignName = null,
+    string? ReserveTag = null,
+    string? CampaignCoverReason = null);
 
 public sealed record RecoveryClaimRow(
     Guid RecoveryClaimId,
@@ -208,6 +214,7 @@ public static class RecoveryNotRaisedReason
     public const string VendorTermEnded = "vendor_term_ended";
     public const string NoVendorTerm = "no_vendor_term";
     public const string RecallClaim = "recall_claim";
+    public const string CampaignClaim = "campaign_claim";
 
     /// <summary>A line on the whole unit found live vendor cover on more than one part; the failed part must be named.</summary>
     public const string SeveralCoveredParts = "several_covered_parts";
@@ -231,14 +238,27 @@ public static class RecoveryWholeUnitRule
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { SingleCoveredPart, NamedPartOnly };
 }
 
+/// <summary>Whether a claim that names campaign cover participates in the tenant's normal supplier-recovery rules.</summary>
+public static class RecoveryCampaignClaims
+{
+    public const string NoRecovery = "no_recovery";
+    public const string RecoverLikeWarranty = "recover_like_warranty";
+
+    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { NoRecovery, RecoverLikeWarranty };
+}
+
 /// <summary>
 /// Tenant-wide supplier-recovery policy, applied when a claim is approved; a change affects later approvals only.
 /// <paramref name="VendorAnswerDueDays"/> is when an unanswered recovery claim shows as waiting on the vendor.
 /// </summary>
-public sealed record RecoveryPolicy(string WholeUnitLines, IReadOnlyList<string> LineKinds, int VendorAnswerDueDays)
+public sealed record RecoveryPolicy(
+    string WholeUnitLines,
+    IReadOnlyList<string> LineKinds,
+    int VendorAnswerDueDays,
+    string CampaignClaims = RecoveryCampaignClaims.NoRecovery)
 {
     public static readonly RecoveryPolicy Default = new(RecoveryWholeUnitRule.SingleCoveredPart,
-        [ClaimLineKind.Parts, ClaimLineKind.Labour, ClaimLineKind.Travel], 7);
+        [ClaimLineKind.Parts, ClaimLineKind.Labour, ClaimLineKind.Travel], 7, RecoveryCampaignClaims.NoRecovery);
 }
 
 public sealed record RecoveryNotRaisedRow(

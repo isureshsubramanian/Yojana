@@ -20,7 +20,8 @@ public static class CampaignHandler
         ISerialSchemeSource schemes, IIdentifierPolicySource identifierPolicies, ITenantContext tenant,
         CancellationToken cancellationToken)
     {
-        ValidateCampaign(command.Code, command.Name, command.CoverageSource, command.ReserveTag, command.ReasonCode, command.ReasonNote);
+        ValidateCampaign(command.Code, command.Name, command.CoverageSource, command.ReserveTag, command.ReasonCode, command.ReasonNote,
+            command.PartsPct, command.LabourPct, command.TravelPct);
         var existing = await db.Campaigns.AsNoTracking().FirstOrDefaultAsync(c => c.TenantId == tenant.TenantId && c.CampaignId == command.CommandId, cancellationToken);
         if (existing is not null)
         {
@@ -38,6 +39,9 @@ public static class CampaignHandler
             Name = command.Name.Trim(),
             CoverageSource = command.CoverageSource,
             ReserveTag = command.ReserveTag.Trim(),
+            PartsPct = command.PartsPct,
+            LabourPct = command.LabourPct,
+            TravelPct = command.TravelPct,
             ReasonCode = command.ReasonCode,
             ReasonNote = Note(command.ReasonNote),
             RunsUntil = command.RunsUntil,
@@ -58,7 +62,8 @@ public static class CampaignHandler
         ISerialSchemeSource schemes, IIdentifierPolicySource identifierPolicies, ITenantContext tenant,
         CancellationToken cancellationToken)
     {
-        ValidateCampaign(command.Code, command.Name, command.CoverageSource, command.ReserveTag, command.ReasonCode, command.ReasonNote);
+        ValidateCampaign(command.Code, command.Name, command.CoverageSource, command.ReserveTag, command.ReasonCode, command.ReasonNote,
+            command.PartsPct, command.LabourPct, command.TravelPct);
         if (!CampaignStatus.All.Contains(command.Status, StringComparer.Ordinal))
             throw new CommandRefusedException("campaign_status_unknown", $"Campaign status '{command.Status}' is not known.");
         var campaign = await db.Campaigns.SingleOrDefaultAsync(c => c.TenantId == tenant.TenantId && c.CampaignId == command.CampaignId, cancellationToken)
@@ -76,7 +81,7 @@ public static class CampaignHandler
                 throw new CommandRefusedException("campaign_active", "An active campaign can only be closed.");
             if (command.Code.Trim() != campaign.Code || command.Name.Trim() != campaign.Name
                 || command.CoverageSource != campaign.CoverageSource || command.ReserveTag.Trim() != campaign.ReserveTag)
-                throw new CommandRefusedException("campaign_active", "An active campaign can change its reason or runs-until date, or be closed; its identity and cover stay fixed.");
+                throw new CommandRefusedException("campaign_active", "An active campaign can change its reason, runs-until date and cover percentages, or be closed; its identity stays fixed.");
             campaign.Status = command.Status;
         }
         else
@@ -102,6 +107,9 @@ public static class CampaignHandler
         campaign.ReasonCode = command.ReasonCode;
         campaign.ReasonNote = Note(command.ReasonNote);
         campaign.RunsUntil = command.RunsUntil;
+        campaign.PartsPct = command.PartsPct;
+        campaign.LabourPct = command.LabourPct;
+        campaign.TravelPct = command.TravelPct;
 
         campaign.UpdatedAt = command.EventTime;
         campaign.UpdatedBy = command.ActorRef;
@@ -148,6 +156,7 @@ public static class CampaignHandler
                     clock.UtcNow, command.LegalEntityId, command.ActorRef, null),
                 loaded.Campaign.CampaignId, loaded.Campaign.Code, loaded.Campaign.CoverageSource, loaded.Campaign.ReserveTag,
                 loaded.Campaign.ReasonCode, loaded.Campaign.ReasonNote, loaded.Campaign.RunsUntil,
+                loaded.Campaign.PartsPct, loaded.Campaign.LabourPct, loaded.Campaign.TravelPct,
                 command.CommandId, index + 1, batches.Count, matched.Count, total, units),
                 new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
         }
@@ -171,7 +180,8 @@ public static class CampaignHandler
             throw new CommandRefusedException("campaign_not_selectable", $"A {campaign.Status} campaign cannot change its selected units.");
     }
 
-    private static void ValidateCampaign(string code, string name, string coverageSource, string reserveTag, string reasonCode, string? reasonNote)
+    private static void ValidateCampaign(string code, string name, string coverageSource, string reserveTag, string reasonCode, string? reasonNote,
+        decimal partsPct, decimal labourPct, decimal travelPct)
     {
         if (string.IsNullOrWhiteSpace(code)) throw new CommandRefusedException("campaign_code_required", "A campaign code is required.");
         if (string.IsNullOrWhiteSpace(name)) throw new CommandRefusedException("campaign_name_required", "A campaign name is required.");
@@ -183,6 +193,8 @@ public static class CampaignHandler
             throw new CommandRefusedException("campaign_reason_unknown", $"Campaign reason '{reasonCode}' is not known.");
         if (reasonNote?.Trim().Length > 500)
             throw new CommandRefusedException("campaign_reason_note_too_long", "A campaign reason note is at most 500 characters.");
+        if (partsPct is < 0 or > 100 || labourPct is < 0 or > 100 || travelPct is < 0 or > 100)
+            throw new CommandRefusedException("campaign_cover_pct_out_of_range", "Campaign parts, labour and travel percentages must each be between 0 and 100.");
     }
 
     private static string? Note(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -191,6 +203,7 @@ public static class CampaignHandler
         campaign.CampaignId, campaign.Code, campaign.Name, campaign.CoverageSource, campaign.ReserveTag, campaign.Status,
         criteria.Select(c => new CampaignCriterionRow(c.CriterionId, c.Kind, c.Scheme, c.RangeStart, c.RangeEnd, c.LotId,
             c.ChildUnitId, c.ChildItemId, c.FirmwareValue, c.EffectiveAt, c.ChildLotId, c.FirmwareKey)).ToList(), campaign.CreatedAt, campaign.CreatedBy,
-        campaign.UpdatedAt, campaign.UpdatedBy, campaign.SelectedAt, campaign.ReasonCode, campaign.ReasonNote, campaign.RunsUntil);
+        campaign.UpdatedAt, campaign.UpdatedBy, campaign.SelectedAt, campaign.ReasonCode, campaign.ReasonNote, campaign.RunsUntil,
+        campaign.PartsPct, campaign.LabourPct, campaign.TravelPct);
 }
 

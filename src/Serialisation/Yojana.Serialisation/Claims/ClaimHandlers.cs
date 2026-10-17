@@ -16,7 +16,8 @@ namespace Yojana.Serialisation.Claims;
 public static class SubmitClaimHandler
 {
     public static async Task<SubmitClaimResult> Handle(SubmitClaim command, SerialisationDbContext db, UnitQueries units, ClaimUnitFacts facts,
-        ClaimLedger ledger, LegacyUnknownClaimUnitCreator legacyUnits, DocumentNumbers numbers, ITenantCurrency currencies, ITenantContext tenant, CancellationToken cancellationToken)
+        ClaimLedger ledger, LegacyUnknownClaimUnitCreator legacyUnits, DocumentNumbers numbers, ICampaignCoverPort campaigns,
+        ITenantCurrency currencies, ITenantContext tenant, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         if (await db.Claims.AsNoTracking().FirstOrDefaultAsync(c => c.TenantId == tenantId && c.CommandId == command.CommandId, cancellationToken) is { } replay)
@@ -64,6 +65,16 @@ public static class SubmitClaimHandler
 
         await facts.ReadAsync(unitId.Value, cancellationToken);
 
+        if (command.CampaignId is { } campaignId)
+        {
+            var campaign = await campaigns.FindAsync(campaignId, unitId.Value, command.ClaimDate, cancellationToken)
+                ?? throw new CommandRefusedException("campaign_not_found", $"Campaign {campaignId:N} does not exist.");
+            if (campaign.Status != CampaignStatus.Active)
+                throw new CommandRefusedException("campaign_not_active", $"Campaign {campaign.Code} is {campaign.Status}; claims can name only active campaigns.");
+            if (!campaign.Selected)
+                throw new CommandRefusedException("unit_not_in_campaign", $"The claim unit is not selected into campaign {campaign.Code}.");
+        }
+
         var asBuilt = await facts.AsBuiltUnitsAsync(unitId.Value, command.ClaimDate, cancellationToken);
         foreach (var line in command.Lines)
         {
@@ -79,7 +90,7 @@ public static class SubmitClaimHandler
         var claim = new Claim
         {
             TenantId = tenantId, ClaimId = claimId, ClaimNumber = await numbers.NextAsync(DocumentNumbers.Claim, command.EventTime, cancellationToken),
-            CommandId = command.CommandId, UnitId = unitId.Value, ClaimDate = command.ClaimDate,
+            CommandId = command.CommandId, UnitId = unitId.Value, CampaignId = command.CampaignId, ClaimDate = command.ClaimDate,
             ClaimantPartyRef = command.ClaimantPartyRef, SettlementPartyRef = command.SettlementPartyRef, ServiceEntityId = command.ServiceEntityId,
             ObligorEntityId = command.ObligorEntityId, ServiceCountry = command.ServiceCountry.Trim().ToUpperInvariant(), Currency = command.Currency.Trim().ToUpperInvariant(),
             CoverageSource = ClaimCoverageSource.Chargeable, Remedy = command.Remedy, Status = ClaimStatus.Submitted, SubmittedAt = command.EventTime,
@@ -106,7 +117,7 @@ public static class SubmitClaimHandler
             {
                 UnitId = claim.UnitId, EventTime = command.EventTime, EventType = ClaimEventType.Submitted, PresetEventId = eventId,
                 LegalEntityId = claim.ServiceEntityId, ActorRef = command.ActorRef, IdempotencyKey = ClaimLedger.Key(command.CommandId, claim.UnitId, ClaimEventType.Submitted, command.EventTime),
-                Attributes = JsonObjectText.Of(new { claim_id = claimId, claim_date = claim.ClaimDate, claimant_party_ref = claim.ClaimantPartyRef, settlement_party_ref = claim.SettlementPartyRef, line_ids = claimLines.Select(l => l.ClaimLineId), remedy = claim.Remedy }),
+                Attributes = JsonObjectText.Of(new { claim_id = claimId, campaign_id = claim.CampaignId, claim_date = claim.ClaimDate, claimant_party_ref = claim.ClaimantPartyRef, settlement_party_ref = claim.SettlementPartyRef, line_ids = claimLines.Select(l => l.ClaimLineId), remedy = claim.Remedy }),
             },
         ], cancellationToken);
         return new(claimId, claim.UnitId, claim.Status, claimLines.Select(l => l.ClaimLineId).ToList(), eventId, false);
@@ -123,7 +134,7 @@ public static class AdjudicateClaimHandler
 {
     public static async Task<AdjudicateClaimResult> Handle(AdjudicateClaim command, SerialisationDbContext db, ClaimLedger ledger, ClaimUnitFacts facts,
         ClaimLineDecider decider, IItemQueryPort items, IEntitlementRecoveryQuery recoveries, ClaimReviewSettings reviewSettings,
-        RecoverySettings recoverySettings, DocumentNumbers numbers, ITenantContext tenant, CancellationToken cancellationToken)
+        RecoverySettings recoverySettings, DocumentNumbers numbers, ICampaignCoverPort campaigns, ITenantContext tenant, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var claim = await ledger.LoadAsync(command.ClaimId, cancellationToken);
@@ -134,6 +145,15 @@ public static class AdjudicateClaimHandler
         }
 
         var root = await facts.ReadAsync(claim.UnitId, cancellationToken);
+        var namedCampaign = claim.CampaignId is { } campaignId
+            ? await campaigns.FindAsync(campaignId, claim.UnitId, claim.ClaimDate, cancellationToken)
+            : null;
+        var liveCampaign = namedCampaign is { Selected: true } && namedCampaign.CoversOn(claim.ClaimDate) ? namedCampaign : null;
+        // The reserve belongs to the campaign's cover: a claim that falls back to the policy stack posts to warranty, not to the campaign reserve.
+        claim.ReserveTag = liveCampaign?.ReserveTag;
+        claim.CampaignCoverReason = claim.CampaignId is null || liveCampaign is not null
+            ? null
+            : namedCampaign?.NotCoveredReason(claim.ClaimDate) ?? ClaimCampaignCoverReason.Closed;
         var item = await items.GetAsync(root.ItemId, cancellationToken);
         if (claim.Remedy == ClaimRemedy.Replacement && ClaimAdjudicationRules.IsDiscontinued(item, claim.ClaimDate))
         {
@@ -173,7 +193,7 @@ public static class AdjudicateClaimHandler
         {
             foreach (var line in lines)
             {
-                var decided = await decider.DecideAsync(claim, root, item, line, cancellationToken);
+                var decided = await decider.DecideAsync(claim, root, item, line, liveCampaign, cancellationToken);
                 ClaimLineDecider.Apply(line, decided);
                 if (decided.ApprovedAmount <= 0) continue;
                 coveredSources.Add(decided.CoverageSource);
@@ -236,11 +256,12 @@ public static class AdjudicateClaimHandler
                 LegalEntityId = claim.ObligorEntityId, ActorRef = command.ActorRef, IdempotencyKey = key,
                 Attributes = JsonObjectText.Of(new
                 {
-                    claim_id = claim.ClaimId, cohort_id = claim.CoverageSource == ClaimCoverageSource.Recall || cohorts.Count == 0 ? (Guid?)null : cohorts.Single(), coverage_source = claim.CoverageSource,
+                    claim_id = claim.ClaimId, cohort_id = liveCampaign is not null || claim.CoverageSource == ClaimCoverageSource.Recall || cohorts.Count == 0 ? (Guid?)null : cohorts.Single(), coverage_source = claim.CoverageSource,
                     approved_amounts_by_line = lines.Select(l => new { claim_line_id = l.ClaimLineId, requested_amount = l.RequestedAmount, approved_amount = l.ApprovedAmount, coverage_pct = l.CoveragePct, coverage_source = l.CoverageSource, entitlement_id = l.EntitlementId }),
                     service_entity_id = claim.ServiceEntityId, obligor_entity_id = claim.ObligorEntityId, claimant_party_ref = claim.ClaimantPartyRef,
                     settlement_party_ref = claim.SettlementPartyRef, status = claim.Status, denial_reason = claim.DenialReason,
                     chain_length = claim.ChainLength, remedy = claim.Remedy, adjudicated_by = claim.AdjudicatedBy, reviewer_role = claim.ReviewerRole, successor_item_id = claim.SuccessorItemId,
+                    campaign_id = claim.CampaignId, campaign_code = namedCampaign?.Code, reserve_tag = claim.ReserveTag, campaign_cover_reason = claim.CampaignCoverReason,
                 }),
             },
         };
@@ -250,30 +271,37 @@ public static class AdjudicateClaimHandler
         if (claim.Status is ClaimStatus.Approved or ClaimStatus.PartiallyApproved)
         {
             var recoveryPolicy = await recoverySettings.GetAsync(cancellationToken);
-            foreach (var line in lines.Where(l => l.ApprovedAmount > 0))
+            // Only a claim the campaign actually covers follows the campaign rule; one that fell back is a warranty claim.
+            notRaisedReason = liveCampaign is not null
+                ? recoveryPolicy.CampaignClaims == RecoveryCampaignClaims.NoRecovery ? RecoveryNotRaisedReason.CampaignClaim : null
+                : claim.CoverageSource == ClaimCoverageSource.Recall ? RecoveryNotRaisedReason.RecallClaim : null;
+            if (notRaisedReason is null)
             {
-                var decision = RecoverySelection.Select(recoveryPolicy, claim.UnitId, line, await recoveries.FindAsync(claim.UnitId, line.UnitId, claim.ClaimDate, cancellationToken));
-                notRaisedReason ??= decision.NotRaisedReason;
-                foreach (var cover in decision.Covers)
+                foreach (var line in lines.Where(l => l.ApprovedAmount > 0))
                 {
-                    var recoveryId = TimeOrderedId.New(command.EventTime);
-                    var recoveryEventId = ClaimLedger.EventId(command.EventTime);
-                    db.RecoveryClaims.Add(new RecoveryClaim
+                    var decision = RecoverySelection.Select(recoveryPolicy, claim.UnitId, line, await recoveries.FindAsync(claim.UnitId, line.UnitId, claim.ClaimDate, cancellationToken));
+                    notRaisedReason ??= decision.NotRaisedReason;
+                    foreach (var cover in decision.Covers)
                     {
-                        TenantId = tenantId, RecoveryClaimId = recoveryId, RecoveryNumber = await numbers.NextAsync(DocumentNumbers.Recovery, command.EventTime, cancellationToken),
-                        CustomerClaimId = claim.ClaimId, ClaimLineId = line.ClaimLineId,
-                        InboundEntitlementId = cover.EntitlementId, ChildUnitId = cover.UnitId, VendorPartyRef = cover.VendorPartyRef,
-                        RequestedAmount = line.ApprovedAmount, Currency = claim.Currency, Status = RecoveryClaimStatus.Raised,
-                        RaisedAt = command.EventTime, RaisedEventId = recoveryEventId,
-                    });
-                    recoveryIds.Add(recoveryId);
-                    drafts.Add(new UnitEventDraft
-                    {
-                        UnitId = cover.UnitId, EventTime = command.EventTime, EventType = ClaimEventType.RecoveryRaised, PresetEventId = recoveryEventId,
-                        LegalEntityId = claim.ServiceEntityId, ActorRef = command.ActorRef,
-                        IdempotencyKey = ClaimLedger.Key(command.CommandId, recoveryId, ClaimEventType.RecoveryRaised, command.EventTime),
-                        Attributes = JsonObjectText.Of(new { recovery_claim_id = recoveryId, customer_claim_id = claim.ClaimId, claim_line_id = line.ClaimLineId, inbound_entitlement_id = cover.EntitlementId, child_unit_id = cover.UnitId, vendor_party_ref = cover.VendorPartyRef, requested_amount = line.ApprovedAmount, currency = claim.Currency }),
-                    });
+                        var recoveryId = TimeOrderedId.New(command.EventTime);
+                        var recoveryEventId = ClaimLedger.EventId(command.EventTime);
+                        db.RecoveryClaims.Add(new RecoveryClaim
+                        {
+                            TenantId = tenantId, RecoveryClaimId = recoveryId, RecoveryNumber = await numbers.NextAsync(DocumentNumbers.Recovery, command.EventTime, cancellationToken),
+                            CustomerClaimId = claim.ClaimId, ClaimLineId = line.ClaimLineId,
+                            InboundEntitlementId = cover.EntitlementId, ChildUnitId = cover.UnitId, VendorPartyRef = cover.VendorPartyRef,
+                            RequestedAmount = line.ApprovedAmount, Currency = claim.Currency, Status = RecoveryClaimStatus.Raised,
+                            RaisedAt = command.EventTime, RaisedEventId = recoveryEventId,
+                        });
+                        recoveryIds.Add(recoveryId);
+                        drafts.Add(new UnitEventDraft
+                        {
+                            UnitId = cover.UnitId, EventTime = command.EventTime, EventType = ClaimEventType.RecoveryRaised, PresetEventId = recoveryEventId,
+                            LegalEntityId = claim.ServiceEntityId, ActorRef = command.ActorRef,
+                            IdempotencyKey = ClaimLedger.Key(command.CommandId, recoveryId, ClaimEventType.RecoveryRaised, command.EventTime),
+                            Attributes = JsonObjectText.Of(new { recovery_claim_id = recoveryId, customer_claim_id = claim.ClaimId, claim_line_id = line.ClaimLineId, inbound_entitlement_id = cover.EntitlementId, child_unit_id = cover.UnitId, vendor_party_ref = cover.VendorPartyRef, requested_amount = line.ApprovedAmount, currency = claim.Currency }),
+                        });
+                    }
                 }
             }
         }

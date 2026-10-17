@@ -10,7 +10,8 @@ public static class ClaimAdjudicationRules
 {
     private static readonly string[] BlockingFlags = [OverlayFlag.Lost, OverlayFlag.Stolen, OverlayFlag.WrittenOff, OverlayFlag.CloneSeen, OverlayFlag.Recalled, OverlayFlag.AuthenticityFailed];
 
-    public static string? BlockingFlag(IReadOnlyList<string> flags) => BlockingFlags.FirstOrDefault(flags.Contains);
+    public static string? BlockingFlag(IReadOnlyList<string> flags, bool recalledIsCovered = false) =>
+        BlockingFlags.FirstOrDefault(flag => (!recalledIsCovered || flag != OverlayFlag.Recalled) && flags.Contains(flag));
 
     public static void RequireLowConfidenceReviewer(ClaimReviewer? reviewer, string actorRef, string requiredRole)
     {
