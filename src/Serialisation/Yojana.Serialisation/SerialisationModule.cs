@@ -22,6 +22,7 @@ using Yojana.Serialisation.Workbench;
 using Yojana.Serialisation.Campaigns;
 using Yojana.Serialisation.Rmas;
 using Yojana.Serialisation.Condition;
+using Yojana.Serialisation.Refurbishments;
 
 namespace Yojana.Serialisation;
 
@@ -68,6 +69,13 @@ public static class SerialisationModule
         builder.Services.TryAddScoped<IUnitConditionQueryPort>(sp => sp.GetRequiredService<ConditionQueries>());
         builder.Services.TryAddScoped<IUnitSaleShipmentGuard, ConditionShipmentGuard>();
         builder.Services.TryAddScoped<ILifeEpisodeWriter, LifeEpisodeWriter>();
+        // P5 refurbishment block. RefurbishmentPolicySettings is factory-registered so its ITenantSettings-backed
+        // PlatformDbContext remains hidden from Wolverine's SerialisationDbContext transaction graph.
+        builder.Services.AddScoped(sp => new RefurbishmentPolicySettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped<RefurbishmentService>();
+        builder.Services.AddScoped<RefurbishmentQueries>();
+        builder.Services.TryAddScoped<IRefurbishmentOpener, DefaultRefurbishmentOpener>();
+        // End P5 refurbishment block.
         builder.Services.AddScoped<BulkExecutor>();
         builder.Services.AddScoped<BulkApprovalRequestQueries>();
         builder.Services.AddScoped<CorrectionLedger>();

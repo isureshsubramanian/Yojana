@@ -132,6 +132,11 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<UsageReading> UsageReadings => Set<UsageReading>();
     public DbSet<UnitAttributeHistory> AttributeHistory => Set<UnitAttributeHistory>();
     public DbSet<LifeEpisode> LifeEpisodes => Set<LifeEpisode>();
+    public DbSet<RefurbishmentWorkOrder> RefurbishmentWorkOrders => Set<RefurbishmentWorkOrder>();
+    public DbSet<RefurbishmentOperation> RefurbishmentOperations => Set<RefurbishmentOperation>();
+    public DbSet<RefurbishmentPart> RefurbishmentParts => Set<RefurbishmentPart>();
+    public DbSet<RefurbishmentLabour> RefurbishmentLabour => Set<RefurbishmentLabour>();
+    public DbSet<RefurbishmentCost> RefurbishmentCosts => Set<RefurbishmentCost>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -1075,6 +1080,109 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(e => new { e.TenantId, e.WorkOrderId });
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.Kind }).IsUnique().HasFilter("[ended_at] IS NULL");
         });
+
+        // P5 refurbishment block — kept together so sibling DbContext changes merge mechanically.
+        modelBuilder.Entity<RefurbishmentWorkOrder>(b =>
+        {
+            b.ToTable("refurbishment_work_order", t =>
+            {
+                t.HasCheckConstraint("ck_refurbishment_work_order_kind", "kind IN ('refurbish', 'remanufacture', 'rework')");
+                t.HasCheckConstraint("ck_refurbishment_work_order_status", "status IN ('open', 'released', 'cancelled')");
+                t.HasCheckConstraint("ck_refurbishment_work_order_identity", "identity_policy IN ('same_unit_same_serial', 'same_unit_new_serial', 'new_unit')");
+                t.HasCheckConstraint("ck_refurbishment_work_order_cycles", "cycle_number >= 1 AND max_cycles >= 1");
+            });
+            b.HasKey(w => new { w.TenantId, w.WorkOrderId });
+            b.Property(w => w.WorkOrderNumber).HasMaxLength(24).IsUnicode(false);
+            b.Property(w => w.Kind).HasMaxLength(20).IsUnicode(false);
+            b.Property(w => w.SourceDocumentType).HasMaxLength(40);
+            b.Property(w => w.SelectionKind).HasMaxLength(30).IsUnicode(false);
+            b.Property(w => w.SelectionReference).HasMaxLength(200);
+            b.Property(w => w.Status).HasMaxLength(20).IsUnicode(false);
+            b.Property(w => w.IdentityPolicy).HasMaxLength(40).IsUnicode(false);
+            b.Property(w => w.ReplacementPolicyCode).HasMaxLength(60);
+            b.Property(w => w.OpenedBy).HasMaxLength(200);
+            b.Property(w => w.ReleasedBy).HasMaxLength(200);
+            b.Property(w => w.Grade).HasMaxLength(30).IsUnicode(false);
+            b.Property(w => w.CancelledBy).HasMaxLength(200);
+            b.Property(w => w.CancellationReason).HasMaxLength(500);
+            b.HasIndex(w => new { w.TenantId, w.OpenCommandId, w.TargetUnitId }).IsUnique();
+            b.HasIndex(w => new { w.TenantId, w.WorkOrderNumber }).IsUnique();
+            b.HasIndex(w => new { w.TenantId, w.TargetUnitId, w.OpenedAt });
+            b.HasIndex(w => new { w.TenantId, w.Status, w.OpenedAt });
+            b.HasIndex(w => new { w.TenantId, w.SourceRmaLineId });
+            b.HasIndex(w => new { w.TenantId, w.ReleaseCommandId }).IsUnique().HasFilter("[release_command_id] IS NOT NULL");
+            b.HasIndex(w => new { w.TenantId, w.CancelCommandId }).IsUnique().HasFilter("[cancel_command_id] IS NOT NULL");
+        });
+
+        modelBuilder.Entity<RefurbishmentOperation>(b =>
+        {
+            b.ToTable("refurbishment_operation", t => t.HasCheckConstraint("ck_refurbishment_operation_status", "status IN ('open', 'completed')"));
+            b.HasKey(o => new { o.TenantId, o.OperationId });
+            b.Property(o => o.Description).HasMaxLength(500);
+            b.Property(o => o.TechnicianRef).HasMaxLength(200);
+            b.Property(o => o.PlannedHours).HasPrecision(9, 2);
+            b.Property(o => o.ActualHours).HasPrecision(9, 2);
+            b.Property(o => o.Status).HasMaxLength(20).IsUnicode(false);
+            b.Property(o => o.SignedBy).HasMaxLength(200);
+            b.HasIndex(o => new { o.TenantId, o.CommandId }).IsUnique();
+            b.HasIndex(o => new { o.TenantId, o.CompleteCommandId }).IsUnique().HasFilter("[complete_command_id] IS NOT NULL");
+            b.HasIndex(o => new { o.TenantId, o.WorkOrderId, o.Sequence }).IsUnique();
+            b.HasOne<RefurbishmentWorkOrder>().WithMany().HasForeignKey(o => new { o.TenantId, o.WorkOrderId }).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RefurbishmentPart>(b =>
+        {
+            b.ToTable("refurbishment_part", t =>
+            {
+                t.HasCheckConstraint("ck_refurbishment_part_action", "action IN ('removed', 'installed')");
+                t.HasCheckConstraint("ck_refurbishment_part_destination", "destination IS NULL OR destination IN ('spares', 'scrap', 'vendor_return')");
+                t.HasCheckConstraint("ck_refurbishment_part_identity", "(child_unit_id IS NOT NULL AND child_item_id IS NULL) OR (child_unit_id IS NULL AND child_item_id IS NOT NULL)");
+            });
+            b.HasKey(p => new { p.TenantId, p.PartId });
+            b.Property(p => p.Action).HasMaxLength(20).IsUnicode(false);
+            b.Property(p => p.Quantity).HasPrecision(18, 6);
+            b.Property(p => p.Slot).HasMaxLength(40);
+            b.Property(p => p.Destination).HasMaxLength(30).IsUnicode(false);
+            b.Property(p => p.UnitCost).HasPrecision(18, 2);
+            b.Property(p => p.Currency).HasMaxLength(3).IsUnicode(false).IsFixedLength();
+            b.HasIndex(p => new { p.TenantId, p.CommandId }).IsUnique();
+            b.HasIndex(p => new { p.TenantId, p.WorkOrderId, p.RecordedAt });
+            b.HasIndex(p => new { p.TenantId, p.ChildUnitId, p.RecordedAt });
+            b.HasOne<RefurbishmentWorkOrder>().WithMany().HasForeignKey(p => new { p.TenantId, p.WorkOrderId }).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RefurbishmentLabour>(b =>
+        {
+            b.ToTable("refurbishment_labour", t => t.HasCheckConstraint("ck_refurbishment_labour_amounts", "hours > 0 AND hourly_rate >= 0 AND amount >= 0"));
+            b.HasKey(l => new { l.TenantId, l.LabourId });
+            b.Property(l => l.Hours).HasPrecision(9, 2);
+            b.Property(l => l.HourlyRate).HasPrecision(18, 2);
+            b.Property(l => l.Amount).HasPrecision(18, 2);
+            b.Property(l => l.Currency).HasMaxLength(3).IsUnicode(false).IsFixedLength();
+            b.Property(l => l.TechnicianRef).HasMaxLength(200);
+            b.HasIndex(l => new { l.TenantId, l.CommandId }).IsUnique();
+            b.HasIndex(l => new { l.TenantId, l.WorkOrderId, l.RecordedAt });
+            b.HasOne<RefurbishmentWorkOrder>().WithMany().HasForeignKey(l => new { l.TenantId, l.WorkOrderId }).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RefurbishmentCost>(b =>
+        {
+            b.ToTable("refurbishment_cost", t =>
+            {
+                t.HasCheckConstraint("ck_refurbishment_cost_kind", "kind IN ('graded_receipt', 'part', 'labour', 'other')");
+                t.HasCheckConstraint("ck_refurbishment_cost_amount", "amount >= 0");
+            });
+            b.HasKey(c => new { c.TenantId, c.CostId });
+            b.Property(c => c.Kind).HasMaxLength(30).IsUnicode(false);
+            b.Property(c => c.Amount).HasPrecision(18, 2);
+            b.Property(c => c.Currency).HasMaxLength(3).IsUnicode(false).IsFixedLength();
+            b.Property(c => c.Description).HasMaxLength(500);
+            b.Property(c => c.PostedBy).HasMaxLength(200);
+            b.HasIndex(c => new { c.TenantId, c.CommandId }).IsUnique();
+            b.HasIndex(c => new { c.TenantId, c.WorkOrderId, c.PostedAt });
+            b.HasOne<RefurbishmentWorkOrder>().WithMany().HasForeignKey(c => new { c.TenantId, c.WorkOrderId }).OnDelete(DeleteBehavior.Cascade);
+        });
+        // End P5 refurbishment block.
 
         modelBuilder.Entity<WarrantyReplacement>(b =>
         {

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/releaserecord.reissuerequested.json",
+  "title": "ReleaseRecord.ReissueRequested",
+  "type": "object",
+  "required": ["header", "work_order_id", "reason"],
+  "properties": {
+    "header": { "type": "object" },
+    "work_order_id": { "type": "string", "format": "uuid" },
+    "reason": { "type": "string", "const": "as_built_changed" }
+  }
+}

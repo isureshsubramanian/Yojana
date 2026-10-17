@@ -149,6 +149,9 @@ public static class RecordAssemblyHandler
 
 public static class RecordDisassemblyHandler
 {
+    // CONTRACT with RefurbishmentService.RemovePartAsync: the refurbishment caller saves this tracked link close before
+    // moving the removed child's custody. EpisodeService otherwise still observes an open AssemblyLink and refuses the
+    // stock move. Keeping the close and custody move in one ambient transaction preserves both facts on rollback.
     public static async Task<RecordDisassemblyResult> Handle(RecordDisassembly command, SerialisationDbContext db, IUnitEventWriter writer, ITenantContext tenant, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
