@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createReferenceStore, documentLabelText, itemLabelText, MAX_REFERENCE_NAMES, partyLabelText } from "../src/corrections/referenceStore.ts";
+import { createReferenceStore, documentLabelText, itemLabelText, lotLabelText, MAX_REFERENCE_NAMES, partyLabelText } from "../src/corrections/referenceStore.ts";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const ITEM = "1a2b3c4d-1111-2222-3333-444444444444";
@@ -15,6 +15,14 @@ test("reference labels use business names and short-id loading fallbacks", () =>
   assert.equal(documentLabelText(DOCUMENT, { number: "MO-2026-731", status: "released", itemId: null }), "MO-2026-731");
   assert.equal(itemLabelText(ITEM, undefined), "1A2B3C4D");
   assert.equal(documentLabelText(DOCUMENT, undefined), "90ABCDEF");
+});
+
+test("lot labels combine the lot number with the item name without exposing either id", () => {
+  const lot = { type: "lot", id: "7061be89-a2b0-5cda-b70a-0b2616e5b9c4" };
+  const documentLabel = { number: "KPL-2511", status: null, itemId: ITEM };
+
+  assert.equal(lotLabelText(lot, documentLabel, { code: "PS-1600", name: "1600 W power supply" }), "KPL-2511 · 1600 W power supply");
+  assert.equal(lotLabelText(lot, documentLabel, { code: "PS-1600", name: null }), "KPL-2511 · PS-1600");
 });
 
 test("references requested in one tick are batched per tenant store and cached", async () => {

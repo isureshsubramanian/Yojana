@@ -123,6 +123,23 @@ public sealed class RecordedDocumentReferenceQuery(SerialisationDbContext db, IT
     {
         var tenantId = tenant.TenantId;
         var ids = new HashSet<Guid>();
+        if (type == "lot")
+        {
+            var currentLots = db.Current.AsNoTracking()
+                .Where(unit => unit.TenantId == tenantId && unit.LotId != null
+                    && unit.LotId.Value.ToString().StartsWith(idPrefix))
+                .Select(unit => unit.LotId!.Value);
+            var receiptLots = db.Units.AsNoTracking()
+                .Where(unit => unit.TenantId == tenantId && unit.LotId != null
+                    && unit.LotId.Value.ToString().StartsWith(idPrefix))
+                .Select(unit => unit.LotId!.Value);
+            var recordedLots = await currentLots.Concat(receiptLots)
+                .Distinct()
+                .Take(take)
+                .ToListAsync(cancellationToken);
+            ids.UnionWith(recordedLots);
+        }
+
         if (type == "production_order")
         {
             var allocated = await db.SerialRanges.AsNoTracking()
@@ -188,6 +205,7 @@ public static class ReferenceFallback
         "invoice" => "IN-",
         "transfer" => "TR-",
         "return" => "RT-",
+        "lot" => "LOT-",
         _ => "DOC-",
     };
 

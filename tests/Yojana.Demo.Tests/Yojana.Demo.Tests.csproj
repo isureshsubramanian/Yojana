@@ -9,4 +9,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="../../tools/Yojana.Demo/Yojana.Demo.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="../../src/Web/Yojana.Web/DevData/reference-labels.json" Link="DevData/reference-labels.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
