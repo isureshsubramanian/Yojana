@@ -162,7 +162,10 @@ public sealed record CampaignListRow(
     DateTime? SelectedAt,
     string ReserveTag,
     string ReasonCode,
-    DateOnly? RunsUntil);
+    DateOnly? RunsUntil,
+    decimal PartsPct,
+    decimal LabourPct,
+    decimal TravelPct);
 
 public sealed record CampaignFunnelStep(string Kind, int Count);
 

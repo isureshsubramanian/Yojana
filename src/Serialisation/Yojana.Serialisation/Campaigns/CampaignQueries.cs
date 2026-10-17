@@ -27,7 +27,7 @@ public sealed class CampaignQueries(SerialisationDbContext db, CampaignSelection
         var rows = await query.OrderByDescending(c => c.UpdatedAt).ThenBy(c => c.Code).Skip(skip).Take(take)
             .Select(c => new CampaignListRow(c.CampaignId, c.Code, c.Name, c.CoverageSource, c.Status,
                 db.CampaignUnits.Count(u => u.TenantId == tenant.TenantId && u.CampaignId == c.CampaignId),
-                c.SelectedAt, c.ReserveTag, c.ReasonCode, c.RunsUntil))
+                c.SelectedAt, c.ReserveTag, c.ReasonCode, c.RunsUntil, c.PartsPct, c.LabourPct, c.TravelPct))
             .ToListAsync(cancellationToken);
         return new(rows, total, skip, take);
     }
