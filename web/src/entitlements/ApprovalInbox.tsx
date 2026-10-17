@@ -7,12 +7,11 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, useActor } from "../units/common";
 import { documentLabel, fmtDateTime, humanise, shortId } from "../units/format";
 import { entitlementApi } from "./api";
-import { loadApprovals } from "./approvalStore";
 import { daysOld } from "./format";
-import type { EntitlementRequirement, StoredApproval, WarrantyLineException } from "./types";
+import type { BulkApprovalRequest, EntitlementRequirement, WarrantyLineException } from "./types";
 
 type InboxRow =
-  | { id: string; kind: "bulk"; title: string; subject: string; reason: string; units: number; raisedAt: string; status: string; bulk: StoredApproval }
+  | { id: string; kind: "bulk"; title: string; subject: string; reason: string; units: number; raisedAt: string; status: string; bulk: BulkApprovalRequest }
   | { id: string; kind: "requirement"; title: string; subject: string; reason: string; units: number; raisedAt: string; status: string; requirement: EntitlementRequirement }
   | { id: string; kind: "exception"; title: string; subject: string; reason: string; units: number; raisedAt: string; status: string; exception: WarrantyLineException };
 
@@ -20,22 +19,21 @@ export function Component() {
   const actor = useActor();
   const [requirements, setRequirements] = useState<EntitlementRequirement[]>([]);
   const [exceptions, setExceptions] = useState<WarrantyLineException[]>([]);
-  const [approvals, setApprovals] = useState<StoredApproval[]>(() => loadApprovals());
+  const [approvals, setApprovals] = useState<BulkApprovalRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [active, setActive] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError(null);
-    Promise.all([entitlementApi.requirements("exception", 0, 100, controller.signal), entitlementApi.exceptions("open", 0, 100, controller.signal)])
-      .then(([requirementPage, exceptionPage]) => { setRequirements(requirementPage.items); setExceptions(exceptionPage.items); setApprovals(loadApprovals()); setLoading(false); })
+    Promise.all([entitlementApi.requirements("exception", 0, 100, controller.signal), entitlementApi.exceptions("open", 0, 100, controller.signal), entitlementApi.approvalRequests("pending", 0, 100, controller.signal)])
+      .then(([requirementPage, exceptionPage, approvalPage]) => { setRequirements(requirementPage.items); setExceptions(exceptionPage.items); setApprovals(approvalPage.items); setLoading(false); })
       .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) { setError(reason); setLoading(false); } });
     return () => controller.abort();
   }, [version]);
-  useEffect(() => { const refresh = () => setApprovals(loadApprovals()); window.addEventListener("yojana:entitlement-approvals", refresh); window.addEventListener("storage", refresh); return () => { window.removeEventListener("yojana:entitlement-approvals", refresh); window.removeEventListener("storage", refresh); }; }, []);
 
   const rows = useMemo<InboxRow[]>(() => [
-    ...approvals.map((bulk): InboxRow => ({ id: `bulk:${bulk.id}`, kind: "bulk", title: humanise(bulk.operation), subject: `Selection ${shortId(bulk.selectionId)} · ${bulk.total} units`, reason: "approval_required", units: bulk.total, raisedAt: bulk.createdAt, status: "Needs approval", bulk })),
+    ...approvals.map((bulk): InboxRow => ({ id: `bulk:${bulk.requestId}`, kind: "bulk", title: humanise(bulk.operation), subject: `${documentLabel(bulk.sourceDocument)} · by ${bulk.requestedBy}`, reason: bulk.rules.join(", ") || "approval_required", units: bulk.block, raisedAt: bulk.requestedAt, status: "Needs approval", bulk })),
     ...requirements.map((requirement): InboxRow => ({ id: `requirement:${requirement.requirementId}`, kind: "requirement", title: "Entitlement requirement", subject: `Unit ${shortId(requirement.unitId)}${requirement.sourceDocument ? ` · ${documentLabel(requirement.sourceDocument)}` : ""}`, reason: requirement.missingInput ?? "creation_failed", units: 1, raisedAt: requirement.raisedAt, status: "Manager decision", requirement })),
     ...exceptions.map((exception): InboxRow => ({ id: `exception:${exception.exceptionId}`, kind: "exception", title: "Warranty-line exception", subject: documentLabel(exception.document), reason: exception.missingInput, units: 1, raisedAt: exception.raisedAt, status: "Resolve targets", exception })),
   ].sort((left, right) => left.raisedAt.localeCompare(right.raisedAt)), [approvals, requirements, exceptions]);
@@ -50,7 +48,7 @@ export function Component() {
   const open = (row: InboxRow) => {
     setActive(row.id);
     if (row.kind === "bulk") {
-      openDrawer({ eyebrow: `Client-side approval · ${humanise(row.bulk.operation)}`, title: shortId(row.bulk.selectionId, 12), mono: true }, <><h3>Refused preview</h3><Kv rows={[["Operation", row.bulk.operation], ["Selection", shortId(row.bulk.selectionId, 12)], ["Units", row.bulk.total.toLocaleString()], ["Blocked on page", row.bulk.blocked.length.toLocaleString()], ["Reason", "approval_required"], ["Captured", fmtDateTime(row.bulk.createdAt)]]} /><div className="act"><Link className="btn primary block" to={`/entitlements/bulk?approval=${encodeURIComponent(row.bulk.id)}`}>Open and execute as manager</Link></div><div className="note warn" style={{ marginTop: 12 }}>This item exists only in this browser. The backend does not yet persist an approval request or decision workflow.</div></>);
+      openDrawer({ eyebrow: `Bulk approval · ${humanise(row.bulk.operation)}`, title: shortId(row.bulk.requestId, 12), mono: true }, <><h3>Request</h3><Kv rows={[["Operation", row.bulk.operation], ["Selection", shortId(row.bulk.selectionId, 12)], ["Source document", documentLabel(row.bulk.sourceDocument)], ["Units", `${row.bulk.total.toLocaleString()} · ${row.bulk.block.toLocaleString()} need approval · ${row.bulk.skip.toLocaleString()} skip`], ["Rule", row.bulk.rules.join(", ")], ["Requested by", row.bulk.requestedBy], ["Raised", fmtDateTime(row.bulk.requestedAt)], ["Note", row.bulk.note ?? "—"]]} /><div className="act"><Link className="btn primary block" to={`/entitlements/bulk?approval=${encodeURIComponent(row.bulk.requestId)}`}>Open preview to approve or reject</Link></div><p className="hint">Approval re-checks this preview on the server and executes only if no unit has changed since it was raised.</p></>);
     } else if (row.kind === "requirement") {
       openDrawer({ eyebrow: "Entitlement requirement · manager action", title: shortId(row.requirement.requirementId, 12), mono: true }, <RequirementDecision row={row.requirement} actor={actor} onDone={() => setVersion((value) => value + 1)} />);
     } else {
@@ -64,11 +62,11 @@ export function Component() {
       <div className="page-header"><div><h1>Approvals</h1><p className="sub">Entitlement changes waiting for a manager · thresholds by reason code and days changed are tenant data · no change applies before approval</p></div><div className="actions"><Link className="btn" to="/entitlements/exceptions">Ask for evidence…</Link><Link className="btn primary" to="/entitlements/bulk">Open approval…</Link></div></div>
       <ErrorNote error={error} />
       <div className="stack">
-        <KpiStrip kpis={[{ label: "Waiting for you", value: rows.length.toLocaleString(), detail: `${approvals.length} bulk · ${rows.length - approvals.length} single`, trend: null }, { label: "Oldest", value: `${oldest} d`, detail: rows[0]?.title ?? "Nothing waiting", trend: null }, { label: "Due today", value: requirements.length.toLocaleString(), detail: "manager requirements on this page", trend: null }, { label: "Bulk approvals", value: approvals.length.toLocaleString(), detail: "exact refused previews", trend: null }]} />
+        <KpiStrip kpis={[{ label: "Waiting for you", value: rows.length.toLocaleString(), detail: `${approvals.length} bulk · ${rows.length - approvals.length} single`, trend: null }, { label: "Oldest", value: `${oldest} d`, detail: rows[0]?.title ?? "Nothing waiting", trend: null }, { label: "Due today", value: requirements.length.toLocaleString(), detail: "manager requirements on this page", trend: null }, { label: "Bulk approvals", value: approvals.length.toLocaleString(), detail: "frozen previews · server", trend: null }]} />
         <section className="card" aria-labelledby="approval-list"><div className="card-header"><h2 id="approval-list">Requests <span className="meta">{rows.length} waiting · sorted oldest first</span></h2><div className="segmented plain" aria-label="Approval scope"><button type="button" aria-pressed="true">Mine <span className="n">{rows.length}</span></button><button type="button">Finance review</button><button type="button">All open</button></div></div><DataGrid columns={columns} page={{ rows, total: rows.length, page: 1, pageSize: Math.max(rows.length, 1), continuation: null }} rowId={(row) => row.id} onPage={() => undefined} onRowClick={open} activeRowId={active} loading={loading} emptyText="Nothing is waiting for your approval. New requests will appear here with the command preview and required evidence." viewportHeight={620} /></section>
       </div>
     </main>
-    <Rail label="Approval sources"><Section title="What appears here"><div className="job"><div><div className="t">Entitlement requirements</div><div className="s">backend · exception status</div></div><StatusBadge tone="bad">{requirements.length}</StatusBadge></div><div className="job"><div><div className="t">Warranty-line exceptions</div><div className="s">backend · open status</div></div><StatusBadge tone="warn">{exceptions.length}</StatusBadge></div><div className="job"><div><div className="t">Bulk previews</div><div className="s">this browser · approval_required</div></div><StatusBadge tone="info">{approvals.length}</StatusBadge></div></Section><Section title="Boundary"><p className="muted">The screen does not invent approval state. Requirements and exceptions are persisted backend work. Bulk approval rows are explicitly local and execute the stored selection through the normal signed-in-role check.</p></Section></Rail>
+    <Rail label="Approval sources"><Section title="What appears here"><div className="job"><div><div className="t">Entitlement requirements</div><div className="s">backend · exception status</div></div><StatusBadge tone="bad">{requirements.length}</StatusBadge></div><div className="job"><div><div className="t">Warranty-line exceptions</div><div className="s">backend · open status</div></div><StatusBadge tone="warn">{exceptions.length}</StatusBadge></div><div className="job"><div><div className="t">Bulk previews</div><div className="s">backend · pending status</div></div><StatusBadge tone="info">{approvals.length}</StatusBadge></div></Section><Section title="Boundary"><p className="muted">The screen does not invent approval state. Every row here is persisted on the server. A bulk request executes the requester's exact arguments under your own roles, and never after its units have changed.</p></Section></Rail>
   </>;
 }
 

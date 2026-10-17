@@ -22,6 +22,8 @@ public sealed class EntitlementBulkTests(SerialisationHostFixture fixture)
     private static readonly DateTime Invoice = new(2026, 9, 2, 8, 40, 0, DateTimeKind.Utc);
     private static readonly BulkApproval Manager = new("manager-user", false, [YojanaRole.ServiceManager]);
     private static readonly BulkApproval Desk = new("desk-user", false, [YojanaRole.ServiceDesk]);
+    private static readonly BulkApproval OtherDesk = new("other-desk-user", false, [YojanaRole.ServiceDesk]);
+    private static readonly BulkApproval OtherManager = new("other-manager-user", false, [YojanaRole.ServiceManager]);
 
     private InMemoryWarrantyPorts Ports => fixture.Services.GetRequiredService<InMemoryWarrantyPorts>();
 
@@ -147,5 +149,104 @@ public sealed class EntitlementBulkTests(SerialisationHostFixture fixture)
         });
         var preview = await InvokeAsync<BulkPreviewResult>(tenant, new PreviewBulkOperation(selection.SelectionId, "entitlement.supersede", forged, Approval: Desk));
         Assert.Equal("approval_required", Assert.Single(preview.Page).Reason);
+    }
+
+    // P2-T21: the approval queue. A refused preview becomes a stored request; approval executes exactly what was
+    // requested, under the approver's own roles, or marks the request stale when the units moved underneath it.
+
+    [DatabaseFact]
+    public async Task A_desk_request_is_approved_by_a_manager_and_executes_exactly_the_requested_set()
+    {
+        var (tenant, upgrade, units, serials) = await SetUpAsync("ea", 65, 61);
+        var selection = await InvokeAsync<ResolveSelectionSetResult>(tenant, new ResolveSelectionSet(Guid.NewGuid(), SelectionSource.ByPastedList(serials), "t"));
+        var arguments = Arguments(AmendmentReason.Correction, new() { ["family"] = CoverageFamilyCode.Base, ["policy_code"] = upgrade, ["effective_date"] = "2026-10-01" });
+        var raise = new RequestBulkApproval(Guid.NewGuid(), selection.SelectionId, "entitlement.supersede", arguments, "customer asked for the upgrade", Desk);
+
+        var request = await InvokeAsync<BulkApprovalRequestRow>(tenant, raise);
+        Assert.Equal((BulkApprovalStatus.Pending, 65, 0, 4, 61, "desk-user"), (request.Status, request.Total, request.Change, request.Skip, request.Block, request.RequestedBy));
+        Assert.Equal(["approval_required"], request.Rules);
+        Assert.Equal(request.RequestId, (await InvokeAsync<BulkApprovalRequestRow>(tenant, raise)).RequestId);
+        var duplicate = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<BulkApprovalRequestRow>(tenant, raise with { CommandId = Guid.NewGuid() }));
+        Assert.Equal("approval_already_pending", duplicate.Rule);
+        Assert.Equal(0, await CountAsync(tenant, db => db.Entitlements.CountAsync(e => units.Contains(e.UnitId) && e.SupersedesEntitlementId != null)));
+
+        var own = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<BulkApprovalRequestRow>(tenant, new ApproveBulkRequest(Guid.NewGuid(), request.RequestId, null, Desk)));
+        Assert.Equal("approver_is_requester", own.Rule);
+        var peer = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<BulkApprovalRequestRow>(tenant, new ApproveBulkRequest(Guid.NewGuid(), request.RequestId, null, OtherDesk)));
+        Assert.Equal("approval_required", peer.Rule);
+
+        var approve = new ApproveBulkRequest(Guid.NewGuid(), request.RequestId, "checked with finance", Manager);
+        var approved = await InvokeAsync<BulkApprovalRequestRow>(tenant, approve);
+        Assert.Equal((BulkApprovalStatus.Approved, "manager-user", approve.CommandId), (approved.Status, approved.DecidedBy, approved.ExecutedCommandId));
+        var replayed = await InvokeAsync<BulkApprovalRequestRow>(tenant, approve);
+        Assert.Equal((approved.RequestId, approved.Status, approved.ExecutedCommandId, approved.DecidedBy), (replayed.RequestId, replayed.Status, replayed.ExecutedCommandId, replayed.DecidedBy));
+        Assert.Equal(61, await CountAsync(tenant, db => db.Entitlements.CountAsync(e => units.Contains(e.UnitId) && e.SupersedesEntitlementId != null && e.Status != EntitlementStatus.Closed)));
+        var executed = await CountAsync(tenant, db => db.SelectionSets.SingleAsync(s => s.SelectionId == selection.SelectionId));
+        Assert.Equal((approve.CommandId, "manager-user"), (executed.ExecutedCommandId!.Value, executed.ApproverRef));
+
+        using var scope = fixture.ScopeFor(tenant);
+        var inbox = await scope.ServiceProvider.GetRequiredService<Selection.BulkApprovalRequestQueries>().PageAsync(BulkApprovalStatus.Approved, 0, 10, CancellationToken.None);
+        Assert.Equal(request.RequestId, Assert.Single(inbox.Items).RequestId);
+    }
+
+    [DatabaseFact]
+    public async Task A_request_is_raised_only_for_blocks_an_approver_can_clear()
+    {
+        var (tenant, upgrade, _, serials) = await SetUpAsync("eq", 2, 2);
+        var selection = await InvokeAsync<ResolveSelectionSetResult>(tenant, new ResolveSelectionSet(Guid.NewGuid(), SelectionSource.ByPastedList(serials), "t"));
+        var arguments = Arguments(AmendmentReason.Correction, new() { ["family"] = CoverageFamilyCode.Base, ["policy_code"] = upgrade, ["effective_date"] = "2026-10-01" });
+        var notNeeded = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<BulkApprovalRequestRow>(tenant, new RequestBulkApproval(Guid.NewGuid(), selection.SelectionId, "entitlement.supersede", arguments, null, Manager)));
+        Assert.Equal("approval_not_needed", notNeeded.Rule);
+        var unfixable = Arguments(AmendmentReason.Correction, new() { ["family"] = CoverageFamilyCode.Base, ["policy_code"] = "NO-SUCH-POLICY", ["effective_date"] = "2026-10-01" });
+        var blocked = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<BulkApprovalRequestRow>(tenant, new RequestBulkApproval(Guid.NewGuid(), selection.SelectionId, "entitlement.supersede", unfixable, null, Desk)));
+        Assert.Equal("preview_blocked", blocked.Rule);
+    }
+
+    [DatabaseFact]
+    public async Task A_request_whose_units_changed_after_it_was_raised_goes_stale_and_executes_nothing()
+    {
+        var (tenant, _, units, serials) = await SetUpAsync("es", 2, 2, invoiceSpreadDays: 30);
+        var selection = await InvokeAsync<ResolveSelectionSetResult>(tenant, new ResolveSelectionSet(Guid.NewGuid(), SelectionSource.ByPastedList(serials), "t"));
+        var ends = await CountAsync(tenant, db => db.Entitlements.Where(e => units.Contains(e.UnitId)).OrderBy(e => e.EndDate).Select(e => e.EndDate!.Value).ToListAsync());
+        var arguments = Arguments(AmendmentReason.Correction, new() { ["family"] = CoverageFamilyCode.Base, ["new_end"] = ends[0].AddDays(20).ToString("yyyy-MM-dd"), ["customer_notification_ref"] = "MAIL-77" });
+        var request = await InvokeAsync<BulkApprovalRequestRow>(tenant, new RequestBulkApproval(Guid.NewGuid(), selection.SelectionId, "entitlement.amend", arguments, null, Desk));
+        Assert.Equal((1, 1), (request.Change, request.Block));
+
+        // a manager amends the shortened unit on its own before the request is decided
+        var shortened = await CountAsync(tenant, db => db.Entitlements.Where(e => units.Contains(e.UnitId)).OrderBy(e => e.EndDate).Select(e => e.EntitlementId).Skip(1).FirstAsync());
+        await InvokeAsync<AmendEntitlementResult>(tenant, new AmendEntitlement(Guid.NewGuid(), shortened, AmendmentReason.Correction, Invoice.AddDays(35), "manager-user", null, ends[1].AddDays(5),
+            null, null, new DocumentRef("sales_order", Guid.NewGuid()), "MAIL-78", null, null, new AmendmentCommitter("manager-user", [YojanaRole.ServiceManager])));
+        var amendments = await CountAsync(tenant, db => db.EntitlementAmendments.CountAsync());
+
+        var stale = await InvokeAsync<BulkApprovalRequestRow>(tenant, new ApproveBulkRequest(Guid.NewGuid(), request.RequestId, null, OtherManager));
+        Assert.Equal((BulkApprovalStatus.Stale, (Guid?)null), (stale.Status, stale.ExecutedCommandId));
+        Assert.Equal(amendments, await CountAsync(tenant, db => db.EntitlementAmendments.CountAsync()));
+        Assert.Null((await CountAsync(tenant, db => db.SelectionSets.SingleAsync(s => s.SelectionId == selection.SelectionId))).ExecutedCommandId);
+        var again = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<BulkApprovalRequestRow>(tenant, new ApproveBulkRequest(Guid.NewGuid(), request.RequestId, null, OtherManager)));
+        Assert.Equal("approval_not_pending", again.Rule);
+    }
+
+    [DatabaseFact]
+    public async Task Only_someone_who_could_approve_may_reject_and_the_requester_may_withdraw()
+    {
+        var (tenant, upgrade, _, serials) = await SetUpAsync("er", 2, 2);
+        var arguments = Arguments(AmendmentReason.Correction, new() { ["family"] = CoverageFamilyCode.Base, ["policy_code"] = upgrade, ["effective_date"] = "2026-10-01" });
+        async Task<BulkApprovalRequestRow> RaiseAsync(string serial)
+        {
+            var selection = await InvokeAsync<ResolveSelectionSetResult>(tenant, new ResolveSelectionSet(Guid.NewGuid(), SelectionSource.ByPastedList([serial]), "t"));
+            return await InvokeAsync<BulkApprovalRequestRow>(tenant, new RequestBulkApproval(Guid.NewGuid(), selection.SelectionId, "entitlement.supersede", arguments, null, Desk));
+        }
+
+        var first = await RaiseAsync(serials[0]);
+        var peer = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<BulkApprovalRequestRow>(tenant, new RejectBulkRequest(first.RequestId, "no", OtherDesk)));
+        Assert.Equal("approval_required", peer.Rule);
+        var noNote = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<BulkApprovalRequestRow>(tenant, new RejectBulkRequest(first.RequestId, " ", Manager)));
+        Assert.Equal("note_required", noNote.Rule);
+        var rejected = await InvokeAsync<BulkApprovalRequestRow>(tenant, new RejectBulkRequest(first.RequestId, "wrong policy", Manager));
+        Assert.Equal((BulkApprovalStatus.Rejected, "manager-user", "wrong policy"), (rejected.Status, rejected.DecidedBy, rejected.DecisionNote));
+
+        var second = await RaiseAsync(serials[1]);
+        var withdrawn = await InvokeAsync<BulkApprovalRequestRow>(tenant, new RejectBulkRequest(second.RequestId, "raised by mistake", Desk));
+        Assert.Equal(BulkApprovalStatus.Withdrawn, withdrawn.Status);
     }
 }

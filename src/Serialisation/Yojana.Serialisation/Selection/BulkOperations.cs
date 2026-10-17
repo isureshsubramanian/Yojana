@@ -47,6 +47,9 @@ public static class BulkApprovalArguments
         if (approval?.Roles is { Count: > 0 } roles) extra[ApproverRoles] = string.Join(',', roles);
         return arguments with { Extra = extra };
     }
+
+    /// <summary>The arguments without any reserved key: what a stored approval request keeps (P2-T21).</summary>
+    public static BulkOperationArguments Clean(BulkOperationArguments arguments) => With(arguments, null);
 }
 
 /// <summary>P1's bulk operation: release every pre-release unit of the set (the completeness guard decides block or change).</summary>
@@ -94,27 +97,38 @@ public sealed class BulkExecutor(SerialisationDbContext db, IServiceProvider ser
 
     public async Task<BulkPreviewResult> PreviewAsync(PreviewBulkOperation command, CancellationToken cancellationToken)
     {
+        var (selectionId, operationName, outcomes) = await EvaluateAsync(command.SelectionId, command.Operation, command.Arguments, command.Approval, cancellationToken);
+
+        // Blocked first, then skipped, then changes: the operator reads the problems before the bulk of the list.
+        var ordered = outcomes.OrderBy(o => o.Outcome switch { UnitOutcome.Outcomes.Block => 0, UnitOutcome.Outcomes.Skip => 1, _ => 2 }).ThenBy(o => o.Serial).ToList();
+        var filtered = ordered.Where(o => command.OutcomeFilter is null || o.Outcome == command.OutcomeFilter).Where(o => command.Find is null || Matches(o.Serial, command.Find)).ToList();
+        var page = filtered.Skip(command.Skip).Take(command.Take).ToList();
+        return new BulkPreviewResult(selectionId, operationName, outcomes.Count, outcomes.Count(o => o.Outcome == UnitOutcome.Outcomes.Change), outcomes.Count(o => o.Outcome == UnitOutcome.Outcomes.Skip), outcomes.Count(o => o.Outcome == UnitOutcome.Outcomes.Block), page, command.Skip, command.Take);
+    }
+
+    /// <summary>
+    /// Every unit's outcome, in serial order, as the person in <paramref name="approval"/> would commit the set. The preview
+    /// pages it; P2-T21 approval requests fingerprint it. The last outcome is kept on each member (the validation report).
+    /// </summary>
+    public async Task<(Guid SelectionId, string Operation, IReadOnlyList<UnitOutcome> Outcomes)> EvaluateAsync(Guid selectionId, string operationName, BulkOperationArguments arguments, BulkApproval? approval, CancellationToken cancellationToken)
+    {
         var tenantId = tenant.TenantId;
-        var selection = await db.SelectionSets.AsNoTracking().FirstOrDefaultAsync(s => s.TenantId == tenantId && s.SelectionId == command.SelectionId, cancellationToken)
-            ?? throw new CommandRefusedException("selection_unknown", $"Selection {command.SelectionId} does not exist.");
-        var operation = Operation(command.Operation);
-        var members = await db.SelectionSetMembers.Where(m => m.TenantId == tenantId && m.SelectionId == selection.SelectionId).OrderBy(m => m.Serial).ToListAsync(cancellationToken);
+        var selection = await db.SelectionSets.AsNoTracking().FirstOrDefaultAsync(s => s.TenantId == tenantId && s.SelectionId == selectionId, cancellationToken)
+            ?? throw new CommandRefusedException("selection_unknown", $"Selection {selectionId} does not exist.");
+        var operation = Operation(operationName);
+        var members = await db.SelectionSetMembers.Where(m => m.TenantId == tenantId && m.SelectionId == selection.SelectionId).OrderBy(m => m.Serial).ThenBy(m => m.UnitId).ToListAsync(cancellationToken);
         var outcomes = new List<UnitOutcome>(members.Count);
-        var arguments = BulkApprovalArguments.With(command.Arguments, command.Approval);
+        var judged = BulkApprovalArguments.With(arguments, approval);
         foreach (var member in members)
         {
-            var outcome = await operation.PreviewAsync(member.UnitId, member.Serial, arguments, cancellationToken);
+            var outcome = await operation.PreviewAsync(member.UnitId, member.Serial, judged, cancellationToken);
             member.Outcome = outcome.Outcome;
             member.Reason = outcome.Reason;
             member.Detail = outcome.Detail?.Length > 400 ? outcome.Detail[..400] : outcome.Detail;
             outcomes.Add(outcome);
         }
 
-        // Blocked first, then skipped, then changes: the operator reads the problems before the bulk of the list.
-        var ordered = outcomes.OrderBy(o => o.Outcome switch { UnitOutcome.Outcomes.Block => 0, UnitOutcome.Outcomes.Skip => 1, _ => 2 }).ThenBy(o => o.Serial).ToList();
-        var filtered = ordered.Where(o => command.OutcomeFilter is null || o.Outcome == command.OutcomeFilter).Where(o => command.Find is null || Matches(o.Serial, command.Find)).ToList();
-        var page = filtered.Skip(command.Skip).Take(command.Take).ToList();
-        return new BulkPreviewResult(selection.SelectionId, operation.Name, outcomes.Count, outcomes.Count(o => o.Outcome == UnitOutcome.Outcomes.Change), outcomes.Count(o => o.Outcome == UnitOutcome.Outcomes.Skip), outcomes.Count(o => o.Outcome == UnitOutcome.Outcomes.Block), page, command.Skip, command.Take);
+        return (selection.SelectionId, operation.Name, outcomes);
     }
 
     public async Task<BulkExecutionResult> ExecuteAsync(ExecuteBulkOperation command, CancellationToken cancellationToken)

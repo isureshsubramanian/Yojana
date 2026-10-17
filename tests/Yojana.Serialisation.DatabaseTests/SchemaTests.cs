@@ -27,7 +27,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
         using var scope = fixture.ScopeFor(null);
         var db = Db(scope);
         var expected = db.Model.GetEntityTypes().Where(e => typeof(ITenantScoped).IsAssignableFrom(e.ClrType)).Select(e => e.GetTableName()!).ToHashSet();
-        Assert.Equal(30, expected.Count);
+        Assert.Equal(31, expected.Count);
         var covered = await db.Database.SqlQueryRaw<string>($"""
             SELECT OBJECT_NAME(p.target_object_id) AS [Value]
             FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id

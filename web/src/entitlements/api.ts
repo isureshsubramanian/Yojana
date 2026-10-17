@@ -1,6 +1,6 @@
 import { api } from "../api/client";
 import type { BulkExecutionResult, BulkOperationArguments, BulkPreviewResult, ResolveSelectionSetResult, SelectionSource } from "../api/units";
-import type { AmendmentApprovalPolicy, CoverageFamily, EntitlementRequirement, EntitlementRequirementPage, EntitlementView, GapPage, GapRun, PolicyDetail, PolicyDraftResult, PolicySummary, PolicyValidation, PolicyVersion, RefurbishedGoodsPolicy, ReplacementPolicy, TenantCurrency, UnitEntitlementDetail, WarrantyCheck, WarrantyLineException, WarrantyLineExceptionPage, WarrantyReferencePolicy } from "./types";
+import type { AmendmentApprovalPolicy, BulkApprovalRequest, BulkApprovalRequestPage, CoverageFamily, EntitlementRequirement, EntitlementRequirementPage, EntitlementView, GapPage, GapRun, PolicyDetail, PolicyDraftResult, PolicySummary, PolicyValidation, PolicyVersion, RefurbishedGoodsPolicy, ReplacementPolicy, TenantCurrency, UnitEntitlementDetail, WarrantyCheck, WarrantyLineException, WarrantyLineExceptionPage, WarrantyReferencePolicy } from "./types";
 
 function query(values: Record<string, string | number | boolean | undefined | null>): string {
   const result = new URLSearchParams();
@@ -38,4 +38,10 @@ export const entitlementApi = {
   resolveSelection: (source: SelectionSource, actorRef: string, commandId: string) => api<ResolveSelectionSetResult>("/api/selections/", { method: "POST", body: { commandId, source, actorRef } }),
   previewSelection: (selectionId: string, operation: string, args: BulkOperationArguments, skip: number, take: number, find: string | null, outcomeFilter: string | null, signal?: AbortSignal) => api<BulkPreviewResult>(`/api/selections/${selectionId}/preview`, { method: "POST", body: { selectionId, operation, arguments: args, skip, take, find, outcomeFilter, approval: null }, signal }),
   executeSelection: (selectionId: string, operation: string, args: BulkOperationArguments, commandId: string) => api<BulkExecutionResult>(`/api/selections/${selectionId}/execute`, { method: "POST", body: { commandId, selectionId, operation, arguments: args, approval: { approverRef: null, required: false } } }),
+  approvalRequests: (status: string | null, skip: number, take: number, signal?: AbortSignal) => api<BulkApprovalRequestPage>(`/api/approval-requests/${query({ status, skip, take })}`, { signal }),
+  approvalRequest: (id: string, signal?: AbortSignal) => api<BulkApprovalRequest>(`/api/approval-requests/${id}`, { signal }),
+  // Requester and approver are the signed-in user; the server ignores any identity in the body.
+  raiseApproval: (selectionId: string, operation: string, args: BulkOperationArguments, note: string | null, commandId: string) => api<BulkApprovalRequest>("/api/approval-requests/", { method: "POST", body: { commandId, selectionId, operation, arguments: args, note, requester: { approverRef: null } } }),
+  approveRequest: (id: string, note: string | null, commandId: string) => api<BulkApprovalRequest>(`/api/approval-requests/${id}/approve`, { method: "POST", body: { commandId, requestId: id, note, approver: { approverRef: null } } }),
+  rejectRequest: (id: string, note: string) => api<BulkApprovalRequest>(`/api/approval-requests/${id}/reject`, { method: "POST", body: { requestId: id, note, decider: { approverRef: null } } }),
 };

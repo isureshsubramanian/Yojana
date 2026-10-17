@@ -207,6 +207,18 @@ public static class SerialisationEndpoints
             Invoke<BulkExecutionResult>(bus, tenant, command with { SelectionId = selectionId, Approval = Approver(user, command.Approval)! }, ct));
         selections.MapGet("/{selectionId:guid}/find", async (Guid selectionId, string q, int? skip, int? take, BulkExecutor executor, CancellationToken ct) =>
             Results.Ok(await executor.FindAsync(new FindInSelection(selectionId, q, Math.Max(0, skip ?? 0), take ?? 50), ct)));
+        // P2-T21 approval queue: requester, approver and their roles come from the claims, never the body.
+        var approvals = app.MapGroup("/api/approval-requests").RequireAuthorization(YojanaPolicy.TenantMember);
+        approvals.MapGet("/", async (string? status, int? skip, int? take, BulkApprovalRequestQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.PageAsync(status, skip ?? 0, take ?? 50, ct)));
+        approvals.MapGet("/{requestId:guid}", async (Guid requestId, BulkApprovalRequestQueries queries, CancellationToken ct) =>
+            await queries.GetAsync(requestId, ct) is { } row ? Results.Ok(row) : Results.NotFound());
+        approvals.MapPost("/", (RequestBulkApproval command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<BulkApprovalRequestRow>(bus, tenant, command with { Requester = Approver(user, null) }, ct));
+        approvals.MapPost("/{requestId:guid}/approve", (Guid requestId, ApproveBulkRequest command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<BulkApprovalRequestRow>(bus, tenant, command with { RequestId = requestId, Approver = Approver(user, null) }, ct));
+        approvals.MapPost("/{requestId:guid}/reject", (Guid requestId, RejectBulkRequest command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<BulkApprovalRequestRow>(bus, tenant, command with { RequestId = requestId, Decider = Approver(user, null) }, ct));
         return app;
     }
 
