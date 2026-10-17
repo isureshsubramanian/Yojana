@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/chargeablequote.requested.json",
+  "title": "ChargeableQuote.Requested",
+  "type": "object",
+  "required": ["header", "claim_id", "claimant_party_ref", "settlement_party_ref", "currency", "lines"],
+  "properties": {
+    "header": { "type": "object" },
+    "claim_id": { "type": "string", "format": "uuid" },
+    "claimant_party_ref": { "type": "string", "format": "uuid" },
+    "settlement_party_ref": { "type": "string", "format": "uuid" },
+    "currency": { "type": "string" },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim_line_id", "kind", "uncovered_amount"],
+        "properties": {
+          "claim_line_id": { "type": "string", "format": "uuid" },
+          "kind": { "type": "string" },
+          "uncovered_amount": { "type": "number" },
+          "reason": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

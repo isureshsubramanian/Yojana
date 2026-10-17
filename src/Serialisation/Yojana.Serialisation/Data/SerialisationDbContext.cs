@@ -101,6 +101,14 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<WarrantyCurrent> WarrantyCurrent => Set<WarrantyCurrent>();
 
+    public DbSet<Claim> Claims => Set<Claim>();
+
+    public DbSet<ClaimLine> ClaimLines => Set<ClaimLine>();
+
+    public DbSet<ClaimEvidence> ClaimEvidence => Set<ClaimEvidence>();
+
+    public DbSet<RecoveryClaim> RecoveryClaims => Set<RecoveryClaim>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasSequence<long>(EventSequence, SchemaName).StartsAt(1).IncrementsBy(1);
@@ -707,6 +715,83 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(w => w.Type).HasMaxLength(30);
             b.Property(w => w.Status).HasMaxLength(20);
             b.Property(w => w.DurationBasis).HasMaxLength(10);
+        });
+
+        // MOD-07 claim half (P4-T02). Campaign tables are deliberately absent: P4-T07 owns them in its worktree.
+        modelBuilder.Entity<Claim>(b =>
+        {
+            b.ToTable("claim", t =>
+            {
+                t.HasCheckConstraint("ck_claim_entitlement_ids_json", "ISJSON(entitlement_ids) = 1");
+                t.HasCheckConstraint("ck_claim_status", "status IN ('submitted', 'adjudicating', 'approved', 'partially_approved', 'denied', 'settled', 'closed')");
+                t.HasCheckConstraint("ck_claim_coverage_source", "coverage_source IN ('warranty', 'recall', 'goodwill', 'contract', 'chargeable')");
+            });
+            b.HasKey(c => new { c.TenantId, c.ClaimId });
+            b.Property(c => c.ServiceCountry).HasMaxLength(2).IsUnicode(false);
+            b.Property(c => c.Currency).HasMaxLength(3).IsUnicode(false);
+            b.Property(c => c.CoverageSource).HasMaxLength(20);
+            b.Property(c => c.Remedy).HasMaxLength(20);
+            b.Property(c => c.Status).HasMaxLength(30);
+            b.Property(c => c.DenialReason).HasMaxLength(100);
+            b.Property(c => c.SubmittedBy).HasMaxLength(200);
+            b.HasIndex(c => new { c.TenantId, c.CommandId }).IsUnique();
+            b.HasIndex(c => new { c.TenantId, c.UnitId, c.Status, c.ClaimDate });
+            b.HasIndex(c => new { c.TenantId, c.Status, c.SubmittedAt });
+        });
+
+        modelBuilder.Entity<ClaimLine>(b =>
+        {
+            b.ToTable("claim_line", t =>
+            {
+                t.HasCheckConstraint("ck_claim_line_measurements_json", "ISJSON(measurements) = 1");
+                t.HasCheckConstraint("ck_claim_line_amounts", "requested_amount >= 0 AND approved_amount >= 0 AND approved_amount <= requested_amount");
+                t.HasCheckConstraint("ck_claim_line_coverage_pct", "coverage_pct >= 0 AND coverage_pct <= 100");
+                t.HasCheckConstraint("ck_claim_line_coverage_source", "coverage_source IN ('warranty', 'recall', 'goodwill', 'contract', 'chargeable')");
+            });
+            b.HasKey(l => new { l.TenantId, l.ClaimLineId });
+            b.Property(l => l.Kind).HasMaxLength(20);
+            b.Property(l => l.CoverageFamily).HasMaxLength(40);
+            b.Property(l => l.Description).HasMaxLength(500);
+            b.Property(l => l.RequestedAmount).HasPrecision(18, 2);
+            b.Property(l => l.CoveragePct).HasPrecision(5, 2);
+            b.Property(l => l.ApprovedAmount).HasPrecision(18, 2);
+            b.Property(l => l.CoverageSource).HasMaxLength(20);
+            b.Property(l => l.SettlementFormula).HasMaxLength(60);
+            b.Property(l => l.DenialReason).HasMaxLength(100);
+            b.HasIndex(l => new { l.TenantId, l.ClaimId, l.Sequence }).IsUnique();
+            b.HasIndex(l => new { l.TenantId, l.UnitId, l.EntitlementId });
+            b.HasOne<Claim>().WithMany().HasForeignKey(l => new { l.TenantId, l.ClaimId }).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ClaimEvidence>(b =>
+        {
+            b.ToTable("claim_evidence");
+            b.HasKey(e => new { e.TenantId, e.EvidenceId });
+            b.Property(e => e.Kind).HasMaxLength(40);
+            b.Property(e => e.Reference).HasMaxLength(500);
+            b.Property(e => e.Description).HasMaxLength(1000);
+            b.Property(e => e.ActorRef).HasMaxLength(200);
+            b.HasIndex(e => new { e.TenantId, e.ClaimId, e.RecordedAt });
+            b.HasOne<Claim>().WithMany().HasForeignKey(e => new { e.TenantId, e.ClaimId }).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RecoveryClaim>(b =>
+        {
+            b.ToTable("recovery_claim", t =>
+            {
+                t.HasCheckConstraint("ck_recovery_claim_amounts", "requested_amount >= 0 AND (approved_amount IS NULL OR (approved_amount >= 0 AND approved_amount <= requested_amount))");
+                t.HasCheckConstraint("ck_recovery_claim_status", "status IN ('raised', 'approved')");
+            });
+            b.HasKey(r => new { r.TenantId, r.RecoveryClaimId });
+            b.Property(r => r.RequestedAmount).HasPrecision(18, 2);
+            b.Property(r => r.ApprovedAmount).HasPrecision(18, 2);
+            b.Property(r => r.Currency).HasMaxLength(3).IsUnicode(false);
+            b.Property(r => r.Status).HasMaxLength(20);
+            b.Property(r => r.ApprovedBy).HasMaxLength(200);
+            b.HasIndex(r => new { r.TenantId, r.CustomerClaimId, r.ClaimLineId, r.InboundEntitlementId, r.ChildUnitId }).IsUnique();
+            b.HasIndex(r => new { r.TenantId, r.Status, r.RaisedAt });
+            b.HasIndex(r => new { r.TenantId, r.VendorPartyRef, r.Status });
+            b.HasOne<Claim>().WithMany().HasForeignKey(r => new { r.TenantId, r.CustomerClaimId }).OnDelete(DeleteBehavior.Cascade);
         });
 
         base.OnModelCreating(modelBuilder);

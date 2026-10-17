@@ -6,6 +6,7 @@ using Wolverine;
 using Yojana.Platform.Scheduling;
 using Yojana.Platform;
 using Yojana.Serialisation.Commands;
+using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
@@ -114,6 +115,12 @@ public static class SerialisationModule
         builder.Services.AddScoped<Entitlements.WarrantyLineExceptionQueries>();
         builder.Services.AddScoped<Entitlements.WarrantyLineValidationService>();
         builder.Services.AddScoped<Entitlements.DocumentCorrectionEntitlements>();
+        builder.Services.AddScoped<ClaimLedger>();
+        builder.Services.AddScoped<ClaimUnitFacts>();
+        builder.Services.AddScoped<ClaimQueries>();
+        builder.Services.TryAddScoped<IWarrantyClaimsPort, WarrantyClaimsPort>();
+        builder.Services.TryAddScoped<ISettlementFormulaPort, FullSettlementFormula>();
+        builder.Services.TryAddScoped<IEntitlementRecoveryQuery, Entitlements.RecoveryEntitlementQueries>();
         // Coupled to SourceDocumentCorrectionEntitlements for the same Wolverine constraint as the P2 settings-backed
         // handlers: this factory hides ITenantSettings' PlatformDbContext, leaving SerialisationDbContext transactional.
         builder.Services.AddScoped(sp => new Entitlements.SourceDocumentCorrectionEntitlements(
