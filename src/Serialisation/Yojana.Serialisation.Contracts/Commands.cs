@@ -108,6 +108,35 @@ public sealed record SwapIdentifiersResult(
     int AssetTagPrintJobsRequested,
     bool Replayed);
 
+/// <summary>
+/// Void an allocated or kitted unit that was never shipped or named on an external document. A command whose
+/// correction metadata references an earlier VoidUnit correction reverses that void instead.
+/// </summary>
+public sealed record VoidUnit(
+    Guid CommandId,
+    Guid UnitId,
+    string Reason,
+    DateTime EventTime,
+    string ActorRef,
+    Guid LegalEntityId,
+    DocumentRef? ProductionOrder = null,
+    string? Note = null,
+    CorrectionMetadata? Correction = null,
+    CorrectionCommitter? CommittedBy = null);
+
+/// <summary>Rehearse <see cref="VoidUnit"/> without recording facts or changing state.</summary>
+public sealed record PreviewVoidUnit(VoidUnit Command);
+
+public sealed record VoidUnitResult(
+    Guid UnitId,
+    string PreviousLifecycleStatus,
+    string LifecycleStatus,
+    IReadOnlyList<Guid> IdentifierIds,
+    string SerialReuseOutcome,
+    Guid CorrectionId,
+    bool Reversed,
+    bool Replayed = false);
+
 /// <summary>Release a <c>pre_release</c> unit on its release signature; freezes the as-built into BuildRecord version 1 (or the next version after reassembly).</summary>
 public sealed record ReleaseUnit(Guid CommandId, Guid UnitId, DateTime EventTime, string ActorRef, Guid LegalEntityId, string ReleaseSignatureRef, DocumentRef? Document = null, string? Revision = null, Guid? FacilityId = null, string? TestResultsJson = null);
 

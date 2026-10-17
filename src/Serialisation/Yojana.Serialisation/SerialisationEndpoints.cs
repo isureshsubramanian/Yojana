@@ -53,6 +53,13 @@ public static class SerialisationEndpoints
         });
         units.MapPost("/{unitId:guid}/correct-item", (Guid unitId, CorrectItem command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<CorrectItemResult>(bus, tenant, command with { UnitId = unitId, ActorRef = Actor(user), Correction = ApiCorrection(command, user), CommittedBy = CorrectionCommitter(user) }, ct));
+        units.MapPost("/{unitId:guid}/void/preview", (Guid unitId, VoidUnit command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+        {
+            var stamped = StampVoid(command with { UnitId = unitId }, user);
+            return Invoke<CorrectionPreview>(bus, tenant, new PreviewVoidUnit(stamped), ct);
+        });
+        units.MapPost("/{unitId:guid}/void", (Guid unitId, VoidUnit command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<VoidUnitResult>(bus, tenant, StampVoid(command with { UnitId = unitId }, user), ct));
         units.MapPost("/release", (ReleaseUnit command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ReleaseUnitResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/assemble", (RecordAssembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordAssemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/disassemble", (RecordDisassembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordDisassemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
@@ -315,6 +322,13 @@ public static class SerialisationEndpoints
         ActorRef = Actor(user),
         Correction = ApiCorrection(command.CommandId, command.Reason, command.Note, command.Correction, user),
         CommittedBy = CorrectionCommitter(user),
+    };
+
+    private static VoidUnit StampVoid(VoidUnit command, ClaimsPrincipal user) => command with
+    {
+        ActorRef = Actor(user),
+        CommittedBy = CorrectionCommitter(user),
+        Correction = ApiCorrection(command.CommandId, command.Reason, command.Note, command.Correction, user),
     };
 
     private static CorrectionMetadata ApiCorrection(Guid commandId, string reason, string? note, CorrectionMetadata? supplied, ClaimsPrincipal user)

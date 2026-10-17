@@ -4,6 +4,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Ledger;
@@ -13,7 +14,7 @@ namespace Yojana.Serialisation.Documents;
 
 /// <summary>Everything a document handler reaches for, resolved once per message scope so the handlers stay readable.</summary>
 public sealed class DocumentContext(
-    SerialisationDbContext db, IUnitEventWriter writer, BulkIngestion bulk, IdentifierService identifiers, IItemQueryPort items, SerialRangeService ranges, ITenantContext tenant, IClock clock,
+    SerialisationDbContext db, IUnitEventWriter writer, BulkIngestion bulk, IdentifierService identifiers, IItemQueryPort items, SerialRangeService ranges, SerialReuseSettings reuseSettings, ITenantContext tenant, IClock clock,
     EpisodeService episodes, UnitResolver resolver, DocumentOptions options, PostingPeriods periods, AsBuiltCompleteness completeness,
     IPurchasingDocumentQueryPort purchasing, IManufacturingDocumentQueryPort manufacturing, IInventoryDocumentQueryPort inventory, ISalesDocumentQueryPort sales, IServiceDocumentQueryPort service,
     IItemPolicyPort itemPolicies, IMessageBus bus)
@@ -75,7 +76,9 @@ public sealed class DocumentContext(
     }
 
     public Task<CommissionUnitsResult> CommissionAsync(CommissionUnits command, CancellationToken cancellationToken) =>
-        CommissionUnitsHandler.Handle(command, db, writer, bulk, identifiers, items, ranges, tenant, clock, cancellationToken);
+        // Coupled to SerialisationModule's SerialReuseSettings factory: a direct ITenantSettings dependency here would
+        // expose PlatformDbContext beside SerialisationDbContext and make Wolverine refuse the document-handler graph.
+        CommissionUnitsHandler.Handle(command, db, writer, bulk, identifiers, items, ranges, reuseSettings, tenant, clock, cancellationToken);
 
     public Task<RecordAssemblyResult> AssembleAsync(RecordAssembly command, CancellationToken cancellationToken) =>
         RecordAssemblyHandler.Handle(command, db, writer, tenant, cancellationToken);

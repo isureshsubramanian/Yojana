@@ -20,6 +20,7 @@ public static class SearchIndexHandler
     public static Task Handle(UnitItemCorrected e, SearchIndexer indexer, CancellationToken ct) => ApplyAsync(e, indexer, ct);
     public static Task Handle(UnitAsBuiltCorrected e, SearchIndexer indexer, CancellationToken ct) => ApplyAsync(e, indexer, ct);
     public static Task Handle(UnitVoided e, SearchIndexer indexer, CancellationToken ct) => ApplyAsync(e, indexer, ct);
+    public static Task Handle(UnitVoidReversed e, SearchIndexer indexer, CancellationToken ct) => ApplyAsync(e, indexer, ct);
     public static Task Handle(UnitMerged e, SearchIndexer indexer, CancellationToken ct) => ApplyAsync(e, indexer, ct);
 
     private static async Task ApplyAsync(IPublishedUnitEvent e, SearchIndexer indexer, CancellationToken ct)

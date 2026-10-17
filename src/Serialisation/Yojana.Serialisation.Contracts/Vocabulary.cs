@@ -243,6 +243,7 @@ public static class UnitEventType
     public const string Released = "unit.released";
     public const string Scrapped = "unit.scrapped";
     public const string Voided = "unit.voided";
+    public const string VoidReversed = "unit.void_reversed";
     public const string Decommissioned = "unit.decommissioned";
     public const string FlagSet = "unit.flag_set";
     public const string FlagCleared = "unit.flag_cleared";
@@ -360,6 +361,14 @@ public static class VoidUnitReason
     public const string WorkOrderCancelled = "work_order_cancelled";
     public const string DuplicateAllocation = "duplicate_allocation";
     public static readonly IReadOnlyList<string> All = [WorkOrderQuantityReduced, WorkOrderCancelled, DuplicateAllocation];
+}
+
+public static class SerialReuseOutcome
+{
+    public const string NeverReuse = "never_reuse";
+    public const string EligibleForReuse = "eligible_for_reuse";
+    public const string ReusedFromVoidedUnit = "reused_from_voided_unit";
+    public const string VoidReversed = "void_reversed";
 }
 
 public static class MergeUnitsReason

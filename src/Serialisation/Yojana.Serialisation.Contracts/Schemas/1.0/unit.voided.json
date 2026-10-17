@@ -24,7 +24,11 @@
       }
     },
     "serial_reuse_outcome": {
-      "type": "string"
+      "type": "string",
+      "enum": [
+        "never_reuse",
+        "eligible_for_reuse"
+      ]
     },
     "production_order": {
       "anyOf": [

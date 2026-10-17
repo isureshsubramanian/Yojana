@@ -10,7 +10,9 @@ public sealed record ItemSerialisationProfile(
     string SerialReusePolicy,
     string AsBuiltCompleteness,
     string SerialScheme,
-    bool ExpiryRequired = false)
+    bool ExpiryRequired = false,
+    /// <summary>Stable item-class key used by tenant correction policy overrides; null means the tenant default.</summary>
+    string? ItemClass = null)
 {
     public static class TrackingModes
     {

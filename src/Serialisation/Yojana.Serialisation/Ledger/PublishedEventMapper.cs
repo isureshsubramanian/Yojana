@@ -104,6 +104,13 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     DateTimeValue(a, "effective_at") ?? e.EventTime, AssemblyLink(a, "removed"), AssemblyLink(a, "installed"), asBuiltChanges);
             }
 
+            case UnitEventType.Voided:
+                return new UnitVoided(Header(UnitVoided.Schema, UnitVoided.Version), Correction(a), Guids(a!.Value, "closed_identifier_ids"),
+                    Str(a, "serial_reuse_outcome") ?? "", document);
+            case UnitEventType.VoidReversed:
+                return new UnitVoidReversed(Header(UnitVoidReversed.Schema, UnitVoidReversed.Version), Correction(a),
+                    Guids(a!.Value, "restored_identifier_ids"), Str(a, "lifecycle_status") ?? "", document);
+
             case UnitEventType.OwnershipOpened or UnitEventType.OwnershipTransferred:
                 return new OwnershipOpened(Header(OwnershipOpened.Schema, OwnershipOpened.Version), GuidOrNull(a, "episode_id") ?? Guid.Empty, GuidOrNull(a, "party_ref") ?? Guid.Empty, Str(a, "party_type") ?? "", Str(a, "reason") ?? "", Str(a, "source") ?? "", Str(a, "confidence") ?? "", Str(a, "customer_po_ref"), Str(a, "customer_item_ref"), GuidOrNull(a, "previous_episode_id"));
             case UnitEventType.OwnershipClosed:
