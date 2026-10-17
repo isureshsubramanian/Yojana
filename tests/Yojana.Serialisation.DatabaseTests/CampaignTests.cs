@@ -1,0 +1,185 @@
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Wolverine;
+using Xunit;
+using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Ledger;
+
+namespace Yojana.Serialisation.DatabaseTests;
+
+/// <summary>P4-T07: criteria, immutable recipient snapshots, re-selection, publication and tenant isolation.</summary>
+[Collection("serialisation host")]
+public sealed class CampaignTests(SerialisationHostFixture fixture)
+{
+    private static readonly Guid Entity = Guid.Parse("10000000-0000-0000-0000-000000000004");
+    private static readonly DateTime At = new(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc);
+
+    private async Task<T> InvokeAsync<T>(TenantId tenant, object command) where T : class
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        return await scope.ServiceProvider.GetRequiredService<IMessageBus>()
+            .InvokeAsync<T>(command, new DeliveryOptions { TenantId = tenant.ToString() }, CancellationToken.None);
+    }
+
+    private async Task<Guid> UnitAsync(TenantId tenant, string serial, Guid item, Guid? lot = null)
+    {
+        var result = await InvokeAsync<CommissionUnitsResult>(tenant, new CommissionUnits(Guid.NewGuid(), item, UnitOrigin.Purchased,
+            [new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, serial)], LotId: lot)], At, "test", Entity,
+            LocationId: Guid.NewGuid(), LocationKind: LocationKind.Warehouse));
+        return result.Lines[0].UnitId!.Value;
+    }
+
+    private Task<CampaignResult> CampaignAsync(TenantId tenant, string code, params CampaignCriterionInput[] criteria)
+    {
+        var id = Guid.NewGuid();
+        return InvokeAsync<CampaignResult>(tenant, new CreateCampaign(id, code, "Campaign " + code,
+            CampaignCoverageSource.Recall, "recall:" + code, criteria, At.AddDays(10), "service-manager"));
+    }
+
+    [DatabaseFact]
+    public async Task Identifier_ranges_and_lots_are_or_within_kind_and_and_between_kinds()
+    {
+        var tenant = await fixture.NewTenantAsync("ca");
+        var item = Guid.NewGuid();
+        var lotA = Guid.NewGuid();
+        var lotB = Guid.NewGuid();
+        var outsideLot = Guid.NewGuid();
+        var first = await UnitAsync(tenant, "11000001", item, lotA);
+        var second = await UnitAsync(tenant, "11000002", item, lotB);
+        await UnitAsync(tenant, "11000003", item, outsideLot);
+        await UnitAsync(tenant, "12000001", item, lotA);
+        var campaign = await CampaignAsync(tenant, "RANGE-" + Guid.NewGuid().ToString("N")[..6],
+            new CampaignCriterionInput(CampaignCriterionKind.IdentifierRange, Scheme: "internal", RangeStart: "11000001", RangeEnd: "11000003"),
+            new CampaignCriterionInput(CampaignCriterionKind.Lot, LotId: lotA),
+            new CampaignCriterionInput(CampaignCriterionKind.Lot, LotId: lotB));
+
+        var preview = await InvokeAsync<CampaignPreview>(tenant, new PreviewCampaign(campaign.Campaign.CampaignId, Take: 20));
+
+        Assert.Equal(2, preview.Page.Total);
+        Assert.Equal(new[] { first, second }.Order(), preview.Page.Items.Select(row => row.UnitId).Order());
+    }
+
+    [DatabaseFact]
+    public async Task Child_unit_and_child_item_rows_are_alternatives_of_the_child_kind()
+    {
+        var tenant = await fixture.NewTenantAsync("cc");
+        var item = Guid.NewGuid();
+        var childItem = Guid.NewGuid();
+        var parentByUnit = await UnitAsync(tenant, "21000001", item);
+        var parentByItem = await UnitAsync(tenant, "21000002", item);
+        var child = await UnitAsync(tenant, "21000003", childItem);
+        await InvokeAsync<RecordAssemblyResult>(tenant, new RecordAssembly(Guid.NewGuid(), parentByUnit, [new ChildInput(child)], At.AddDays(1), "line", Entity));
+        await InvokeAsync<RecordAssemblyResult>(tenant, new RecordAssembly(Guid.NewGuid(), parentByItem,
+            [new ChildInput(null, childItem, Guid.NewGuid(), 1)], At.AddDays(1), "line", Entity));
+        var campaign = await CampaignAsync(tenant, "CHILD-" + Guid.NewGuid().ToString("N")[..6],
+            new CampaignCriterionInput(CampaignCriterionKind.Child, ChildUnitId: child),
+            new CampaignCriterionInput(CampaignCriterionKind.Child, ChildItemId: childItem));
+
+        var preview = await InvokeAsync<CampaignPreview>(tenant, new PreviewCampaign(campaign.Campaign.CampaignId, Take: 20));
+
+        Assert.Equal(2, preview.Page.Total);
+        Assert.Equal(new[] { parentByUnit, parentByItem }.Order(), preview.Page.Items.Select(row => row.UnitId).Order());
+    }
+
+    [DatabaseFact]
+    public async Task Firmware_reads_current_value_or_the_value_effective_at_the_criterion_time()
+    {
+        var tenant = await fixture.NewTenantAsync("cf");
+        var unit = await UnitAsync(tenant, "31000001", Guid.NewGuid());
+        await FirmwareAsync(tenant, unit, "1.4.0", At.AddDays(1));
+        await FirmwareAsync(tenant, unit, "2.0.0", At.AddDays(3));
+        var historical = await CampaignAsync(tenant, "FW-H-" + Guid.NewGuid().ToString("N")[..6],
+            new CampaignCriterionInput(CampaignCriterionKind.Firmware, FirmwareValue: "1.4.0", EffectiveAt: At.AddDays(2)));
+        var current = await CampaignAsync(tenant, "FW-C-" + Guid.NewGuid().ToString("N")[..6],
+            new CampaignCriterionInput(CampaignCriterionKind.Firmware, FirmwareValue: "2.0.0"));
+
+        Assert.Equal(1, (await InvokeAsync<CampaignPreview>(tenant, new PreviewCampaign(historical.Campaign.CampaignId))).Page.Total);
+        Assert.Equal(1, (await InvokeAsync<CampaignPreview>(tenant, new PreviewCampaign(current.Campaign.CampaignId))).Page.Total);
+    }
+
+    [DatabaseFact]
+    public async Task Selection_snapshots_current_owner_and_custodian_reselects_idempotently_publishes_and_is_tenant_private()
+    {
+        var tenant = await fixture.NewTenantAsync("cs");
+        var other = await fixture.NewTenantAsync("co");
+        var lot = Guid.NewGuid();
+        var item = Guid.NewGuid();
+        var unit = await UnitAsync(tenant, "41000001", item, lot);
+        var invoiceCustomer = Guid.NewGuid();
+        var currentOwner = Guid.NewGuid();
+        var custodian = Guid.NewGuid();
+        await InvokeAsync<OpenOwnershipResult>(tenant, new OpenOwnership(Guid.NewGuid(), unit, invoiceCustomer, PartyType.Distributor,
+            EpisodeReason.Sale, At.AddDays(1), "sales", Entity, Document: new DocumentRef("invoice", Guid.NewGuid())));
+        await InvokeAsync<OpenOwnershipResult>(tenant, new OpenOwnership(Guid.NewGuid(), unit, currentOwner, PartyType.EndUser,
+            EpisodeReason.Sale, At.AddDays(2), "registration", Entity, Source: EpisodeSource.Registration));
+        await InvokeAsync<ChangeCustodyResult>(tenant, new ChangeCustody(Guid.NewGuid(), unit, LocationKind.InTransit,
+            EpisodeReason.Sale, At.AddDays(1), "shipping", Entity, PartyRef: Guid.NewGuid(), PartyType: PartyType.ThreePl));
+        await InvokeAsync<ChangeCustodyResult>(tenant, new ChangeCustody(Guid.NewGuid(), unit, LocationKind.CustomerSite,
+            EpisodeReason.Sale, At.AddDays(2), "carrier", Entity, LocationId: Guid.NewGuid(), PartyRef: custodian, PartyType: PartyType.Customer));
+        var campaign = await CampaignAsync(tenant, "SELECT-" + Guid.NewGuid().ToString("N")[..6], new CampaignCriterionInput(CampaignCriterionKind.Lot, LotId: lot));
+        var firstCommand = Guid.NewGuid();
+
+        var first = await InvokeAsync<SelectCampaignUnitsResult>(tenant,
+            new SelectCampaignUnits(firstCommand, campaign.Campaign.CampaignId, At.AddDays(11), Entity, "service-manager"));
+        var published = Assert.Single(await PublishedEventSink.WaitForAsync<CampaignUnitsSelected>(
+            e => e.CampaignId == campaign.Campaign.CampaignId && e.SelectionCommandId == firstCommand, 1, TimeSpan.FromSeconds(10)));
+        var publishedUnit = Assert.Single(published.Units);
+        Assert.Equal(currentOwner, publishedUnit.OwnerPartyRef);
+        Assert.Equal(custodian, publishedUnit.CustodianPartyRef);
+        Assert.NotEqual(invoiceCustomer, publishedUnit.OwnerPartyRef);
+        Assert.Equal(1, first.Added);
+
+        var next = await UnitAsync(tenant, "41000002", item, lot);
+        var second = await InvokeAsync<SelectCampaignUnitsResult>(tenant,
+            new SelectCampaignUnits(Guid.NewGuid(), campaign.Campaign.CampaignId, At.AddDays(12), Entity, "service-manager"));
+        var replay = await InvokeAsync<SelectCampaignUnitsResult>(tenant,
+            new SelectCampaignUnits(Guid.NewGuid(), campaign.Campaign.CampaignId, At.AddDays(13), Entity, "service-manager"));
+        Assert.Equal(1, second.Added);
+        Assert.Equal(0, replay.Added);
+        Assert.True(replay.Replayed);
+
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var selected = await db.CampaignUnits.OrderBy(u => u.UnitId).ToListAsync();
+            Assert.Equal(new[] { unit, next }.Order(), selected.Select(row => row.UnitId).Order());
+            Assert.Equal(currentOwner, selected.Single(row => row.UnitId == unit).OwnerPartyRef);
+            Assert.Equal(custodian, selected.Single(row => row.UnitId == unit).CustodianPartyRef);
+        }
+
+        using (var scope = fixture.ScopeFor(other))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            Assert.Empty(await db.Campaigns.Where(c => c.CampaignId == campaign.Campaign.CampaignId).ToListAsync());
+            Assert.Empty(await db.CampaignCriteria.Where(c => c.CampaignId == campaign.Campaign.CampaignId).ToListAsync());
+            Assert.Empty(await db.CampaignUnits.Where(c => c.CampaignId == campaign.Campaign.CampaignId).ToListAsync());
+        }
+    }
+
+    private async Task FirmwareAsync(TenantId tenant, Guid unitId, string value, DateTime at)
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        var writer = scope.ServiceProvider.GetRequiredService<IUnitEventWriter>();
+        await writer.AppendAsync(
+        [
+            new UnitEventDraft
+            {
+                UnitId = unitId,
+                EventTime = at,
+                EventType = "unit.attribute_changed",
+                LegalEntityId = Entity,
+                ActorRef = "device-management",
+                IdempotencyKey = "firmware:" + unitId.ToString("N") + ":" + value,
+                Attributes = JsonObjectText.Of(new { attribute = "firmware", value }),
+                Delta = new CurrentStateDelta
+                {
+                    Attributes = new Dictionary<string, JsonElement?> { ["firmware"] = JsonSerializer.SerializeToElement(value) },
+                },
+            },
+        ], CancellationToken.None);
+        await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().SaveChangesAsync();
+    }
+}

@@ -17,6 +17,7 @@ using Yojana.Serialisation.Queries;
 using Yojana.Serialisation.Search;
 using Yojana.Serialisation.Selection;
 using Yojana.Serialisation.Workbench;
+using Yojana.Serialisation.Campaigns;
 
 namespace Yojana.Serialisation;
 
@@ -418,6 +419,22 @@ public static class SerialisationEndpoints
             Results.Ok(await queries.PageAsync(status, skip ?? 0, take ?? 50, ct)));
         warrantyLines.MapPost("/exceptions/{exceptionId:guid}/resolve", (Guid exceptionId, ResolveWarrantyLineException command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<WarrantyLineExceptionRow>(bus, tenant, command with { ActorRef = Actor(user), ExceptionId = exceptionId }, ct)).RequireAuthorization(desk);
+
+        // Campaign recipients are selected from current ownership and custody by the handler. The body can never name
+        // the acting user; the authenticated claim is stamped at this boundary like every other command endpoint.
+        var campaigns = app.MapGroup("/api/campaigns").RequireAuthorization(YojanaPolicy.TenantMember);
+        campaigns.MapGet("/{campaignId:guid}", async (Guid campaignId, CampaignQueries queries, CancellationToken ct) =>
+            await queries.DetailAsync(campaignId, ct) is { } campaign ? Results.Ok(campaign) : Results.NotFound());
+        campaigns.MapPost("/", (CreateCampaign command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CampaignResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(editor);
+        campaigns.MapPut("/{campaignId:guid}", (Guid campaignId, UpdateCampaign command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CampaignResult>(bus, tenant, command with { CampaignId = campaignId, ActorRef = Actor(user) }, ct)).RequireAuthorization(editor);
+        campaigns.MapPost("/{campaignId:guid}/preview", (Guid campaignId, PreviewCampaign command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CampaignPreview>(bus, tenant, command with { CampaignId = campaignId }, ct));
+        campaigns.MapPost("/{campaignId:guid}/select", (Guid campaignId, SelectCampaignUnits command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<SelectCampaignUnitsResult>(bus, tenant, command with { CampaignId = campaignId, ActorRef = Actor(user) }, ct)).RequireAuthorization(editor);
+        campaigns.MapGet("/{campaignId:guid}/units", async (Guid campaignId, int? skip, int? take, CampaignQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.UnitsAsync(campaignId, skip ?? 0, take ?? 50, ct)));
 
         var selections = app.MapGroup("/api/selections").RequireAuthorization(YojanaPolicy.TenantMember);
         selections.MapPost("/", (ResolveSelectionSet command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ResolveSelectionSetResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));

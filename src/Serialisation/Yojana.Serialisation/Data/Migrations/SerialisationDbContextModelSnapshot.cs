@@ -387,6 +387,242 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.Campaign", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CampaignId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("campaign_id");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("code");
+
+                    b.Property<string>("CoverageSource")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("coverage_source");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("ReserveTag")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("reserve_tag");
+
+                    b.Property<DateTime?>("SelectedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("selected_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("TenantId", "CampaignId")
+                        .HasName("pk_campaign");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("ux_campaign_tenant_id_code");
+
+                    b.HasIndex("TenantId", "Status", "UpdatedAt")
+                        .HasDatabaseName("ix_campaign_tenant_id_status_updated_at");
+
+                    b.ToTable("campaign", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_campaign_coverage_source", "coverage_source IN ('recall', 'goodwill')");
+
+                            t.HasCheckConstraint("ck_campaign_status", "status IN ('draft', 'selected', 'active', 'closed')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CampaignCriterion", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CriterionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("criterion_id");
+
+                    b.Property<Guid>("CampaignId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("campaign_id");
+
+                    b.Property<Guid?>("ChildItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("child_item_id");
+
+                    b.Property<Guid?>("ChildUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("child_unit_id");
+
+                    b.Property<DateTime?>("EffectiveAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("effective_at");
+
+                    b.Property<string>("FirmwareValue")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("firmware_value");
+
+                    b.Property<string>("IdentifierType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("identifier_type");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid?>("LotId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("lot_id");
+
+                    b.Property<string>("RangeEnd")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("range_end");
+
+                    b.Property<long?>("RangeEndOrdinal")
+                        .HasColumnType("bigint")
+                        .HasColumnName("range_end_ordinal");
+
+                    b.Property<string>("RangeStart")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("range_start");
+
+                    b.Property<long?>("RangeStartOrdinal")
+                        .HasColumnType("bigint")
+                        .HasColumnName("range_start_ordinal");
+
+                    b.Property<string>("Scheme")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("scheme");
+
+                    b.HasKey("TenantId", "CriterionId")
+                        .HasName("pk_campaign_criteria");
+
+                    b.HasIndex("TenantId", "CampaignId", "Kind")
+                        .HasDatabaseName("ix_campaign_criteria_tenant_id_campaign_id_kind");
+
+                    b.HasIndex("TenantId", "ChildItemId", "CampaignId")
+                        .HasDatabaseName("ix_campaign_criteria_tenant_id_child_item_id_campaign_id");
+
+                    b.HasIndex("TenantId", "ChildUnitId", "CampaignId")
+                        .HasDatabaseName("ix_campaign_criteria_tenant_id_child_unit_id_campaign_id");
+
+                    b.HasIndex("TenantId", "LotId", "CampaignId")
+                        .HasDatabaseName("ix_campaign_criteria_tenant_id_lot_id_campaign_id");
+
+                    b.ToTable("campaign_criteria", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_campaign_criteria_shape", "(kind = 'identifier_range' AND scheme IS NOT NULL AND identifier_type IS NOT NULL AND range_start IS NOT NULL AND range_end IS NOT NULL AND range_start_ordinal IS NOT NULL AND range_end_ordinal IS NOT NULL AND lot_id IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL AND firmware_value IS NULL AND effective_at IS NULL)\nOR (kind = 'lot' AND lot_id IS NOT NULL AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL AND firmware_value IS NULL AND effective_at IS NULL)\nOR (kind = 'child' AND ((child_unit_id IS NOT NULL AND child_item_id IS NULL) OR (child_unit_id IS NULL AND child_item_id IS NOT NULL)) AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND lot_id IS NULL AND firmware_value IS NULL AND effective_at IS NULL)\nOR (kind = 'firmware' AND firmware_value IS NOT NULL AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND lot_id IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CampaignUnit", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CampaignId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("campaign_id");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<Guid?>("CustodianPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("custodian_party_ref");
+
+                    b.Property<string>("CustodianPartyType")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("custodian_party_type");
+
+                    b.Property<Guid?>("OwnerPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("owner_party_ref");
+
+                    b.Property<string>("OwnerPartyType")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("owner_party_type");
+
+                    b.Property<DateTime>("SelectedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("selected_at");
+
+                    b.Property<string>("SelectedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("selected_by");
+
+                    b.Property<Guid>("SelectionCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("selection_command_id");
+
+                    b.HasKey("TenantId", "CampaignId", "UnitId")
+                        .HasName("pk_campaign_unit");
+
+                    b.HasIndex("TenantId", "SelectionCommandId")
+                        .HasDatabaseName("ix_campaign_unit_tenant_id_selection_command_id");
+
+                    b.HasIndex("TenantId", "CampaignId", "SelectedAt")
+                        .HasDatabaseName("ix_campaign_unit_tenant_id_campaign_id_selected_at");
+
+                    b.HasIndex("TenantId", "CustodianPartyRef", "CampaignId")
+                        .HasDatabaseName("ix_campaign_unit_tenant_id_custodian_party_ref_campaign_id");
+
+                    b.HasIndex("TenantId", "OwnerPartyRef", "CampaignId")
+                        .HasDatabaseName("ix_campaign_unit_tenant_id_owner_party_ref_campaign_id");
+
+                    b.ToTable("campaign_unit", "serialisation");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CorrectionRecord", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -3663,11 +3899,6 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(2000)")
                         .HasColumnName("decision_note");
 
-                    b.Property<string>("EvidenceJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("evidence_json");
-
                     b.Property<DateTime?>("EscalatedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("escalated_at");
@@ -3676,6 +3907,11 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("escalated_by");
+
+                    b.Property<string>("EvidenceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("evidence_json");
 
                     b.Property<DateTime>("InitiatedAt")
                         .HasColumnType("datetime2(3)")
@@ -3779,6 +4015,26 @@ namespace Yojana.Serialisation.Data.Migrations
 
                             t.HasCheckConstraint("ck_workbench_request_target_json", "ISJSON(target_json) = 1");
                         });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CampaignCriterion", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.Campaign", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CampaignId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_campaign_criteria_tenant_id_campaign_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CampaignUnit", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.Campaign", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CampaignId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_campaign_unit_tenant_id_campaign_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CorrectionRecordUnit", b =>
