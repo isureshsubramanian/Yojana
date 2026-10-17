@@ -89,7 +89,20 @@ public sealed record InvoiceLine(int LineNo, Guid ItemId, decimal Quantity, deci
 
 /// <summary>The immutable sales facts needed to apply warranty-service invoice lines.</summary>
 public sealed record InvoiceDocument(DocumentRef Document, DocumentRef Order, Guid CustomerPartyRef, Guid ObligorEntityId, DateTime PostedAt,
-    IReadOnlyList<InvoiceLine> Lines, string? CustomerPoRef = null, string? Country = null, string? RegionGroup = null, Guid? SiteLocationId = null, bool HasLicensedObligor = false);
+    IReadOnlyList<InvoiceLine> Lines, string? CustomerPoRef = null, string? Country = null, string? RegionGroup = null, Guid? SiteLocationId = null,
+    bool HasLicensedObligor = false, string? Channel = null);
+
+/// <summary>
+/// Sales' immutable view of a document that may open customer ownership, plus the invoices whose warranty lines apply
+/// to it. Serialisation asks through this narrow contract so a correction never reaches into Sales document storage.
+/// </summary>
+public sealed record OwnershipSourceDocument(
+    DocumentRef Document,
+    Guid OwnerPartyRef,
+    string OwnerPartyType,
+    DateTime EffectiveAt,
+    string? CustomerPoRef,
+    IReadOnlyList<InvoiceDocument> WarrantyDocuments);
 
 /// <summary>Order-entry view of a sales document's targetable goods lines; the sales module remains authoritative for whether each item is serial-tracked.</summary>
 public sealed record WarrantyTargetDocument(DocumentRef Document, IReadOnlyList<WarrantyTargetDocumentLine> Lines);
@@ -141,6 +154,11 @@ public interface ISalesDocumentQueryPort
     Task<DeliveryConfirmation?> GetDeliveryConfirmationAsync(DocumentRef document, CancellationToken cancellationToken);
 
     Task<ReturnDocument?> GetReturnAsync(DocumentRef document, CancellationToken cancellationToken);
+}
+
+public interface IOwnershipSourceDocumentQueryPort
+{
+    Task<OwnershipSourceDocument?> GetOwnershipSourceAsync(DocumentRef document, CancellationToken cancellationToken);
 }
 
 public interface IServiceDocumentQueryPort

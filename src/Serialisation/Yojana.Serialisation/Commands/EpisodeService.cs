@@ -17,6 +17,14 @@ public sealed record PreparedCustodyMove(UnitEventDraft Draft, CustodyEpisode Ep
 
 public sealed record PreparedOwnershipOpen(UnitEventDraft Draft, UnitEventDraft? CloseDraft, CustodyEpisode Episode, CustodyEpisode? Closed);
 
+public sealed record PreparedOwnershipSourceDocumentCorrection(
+    UnitEventDraft CorrectionDraft,
+    UnitEventDraft? CloseDraft,
+    UnitEventDraft? OpenDraft,
+    CustodyEpisode Episode,
+    CustodyEpisode? PreviousEpisode,
+    bool OwnerChanged);
+
 /// <summary>
 /// The episode mechanics shared by the custody and ownership commands and by the document handlers: close the open row
 /// of the kind, open the next, and prepare the event that carries both (the caller appends, possibly many at once).
@@ -205,6 +213,83 @@ public sealed class EpisodeService(SerialisationDbContext db, ITenantContext ten
             Delta = new CurrentStateDelta { OwnerPartyRef = (Guid?)target.PartyRef, OpenOwnershipEpisodeId = (Guid?)episode.EpisodeId },
         };
         return new PreparedOwnershipOpen(draft, closeDraft, episode, open);
+    }
+
+    /// <summary>
+    /// Corrects the effective source of an open ownership episode without altering the ledger fact that originally
+    /// named the wrong document. SQL temporal history retains the episode's previous pointer, while the returned
+    /// compensating fact names every immutable UnitEvent whose effective document has changed. A party change is a
+    /// real ownership transition, so it closes and reopens the episode through the ordinary ownership path.
+    /// </summary>
+    public async Task<PreparedOwnershipSourceDocumentCorrection> PrepareOwnershipSourceDocumentCorrectionAsync(
+        Guid unitId,
+        OwnershipTarget correctedOwner,
+        DocumentRef correctedDocument,
+        IReadOnlyList<Guid> correctedEventIds,
+        string idempotencyKey,
+        DateTime at,
+        string actorRef,
+        Guid legalEntityId,
+        CancellationToken cancellationToken)
+    {
+        var current = await OpenAsync(unitId, EpisodeKind.Ownership, cancellationToken)
+            ?? throw new CommandRefusedException("no_open_ownership", $"Unit {unitId} has no open ownership to correct.");
+        var previousDocument = current.OpeningDocumentType is null || current.OpeningDocumentId is null
+            ? null
+            : new DocumentRef(current.OpeningDocumentType, current.OpeningDocumentId.Value, current.OpeningDocumentLine);
+        var ownerChanged = current.PartyRef != correctedOwner.PartyRef || current.PartyType != correctedOwner.PartyType;
+        UnitEventDraft? closeDraft = null;
+        UnitEventDraft? openDraft = null;
+        CustodyEpisode episode = current;
+        CustodyEpisode? previousEpisode = null;
+
+        if (ownerChanged)
+        {
+            var opened = await PrepareOwnershipOpenAsync(unitId, correctedOwner, IdempotencyKey.Derive(idempotencyKey, "ownership"),
+                at, actorRef, legalEntityId, correctedDocument, EpisodeReason.DocumentCorrection, cancellationToken);
+            closeDraft = opened.CloseDraft;
+            openDraft = opened.Draft;
+            episode = opened.Episode;
+            previousEpisode = opened.Closed;
+        }
+        else
+        {
+            // The episode is the current aggregate row, not an immutable ledger row. Its temporal table keeps the
+            // previous value; the correction fact below is the mandatory audit seam for this otherwise invisible edit.
+            current.OpeningDocumentType = correctedDocument.Type;
+            current.OpeningDocumentId = correctedDocument.Id;
+            current.OpeningDocumentLine = correctedDocument.Line;
+            current.CustomerPoRef = correctedOwner.CustomerPoRef;
+            current.CustomerItemRef = correctedOwner.CustomerItemRef;
+            current.ExternalOrderRef = correctedOwner.ExternalOrderRef;
+        }
+
+        var eventId = TimeOrderedId.New(at);
+        var correctionDraft = new UnitEventDraft
+        {
+            UnitId = unitId,
+            EventTime = at,
+            EventType = UnitEventType.OwnershipSourceDocumentCorrected,
+            PresetEventId = eventId,
+            LegalEntityId = legalEntityId,
+            ActorRef = actorRef,
+            DocumentType = correctedDocument.Type,
+            DocumentId = correctedDocument.Id,
+            DocumentLine = correctedDocument.Line,
+            IdempotencyKey = idempotencyKey,
+            Attributes = JsonObjectText.Of(new
+            {
+                episode_id = episode.EpisodeId,
+                previous_episode_id = previousEpisode?.EpisodeId,
+                previous_document = previousDocument,
+                corrected_document = correctedDocument,
+                corrected_event_ids = correctedEventIds,
+                previous_owner_party_ref = current.PartyRef,
+                corrected_owner_party_ref = correctedOwner.PartyRef,
+                owner_changed = ownerChanged,
+            }),
+        };
+        return new(correctionDraft, closeDraft, openDraft, episode, previousEpisode, ownerChanged);
     }
 
     public async Task<(UnitEventDraft Draft, CustodyEpisode Closed)> PrepareOwnershipCloseAsync(Guid unitId, string reason, string idempotencyKey, DateTime at, string actorRef, Guid legalEntityId, DocumentRef? document, CancellationToken cancellationToken)

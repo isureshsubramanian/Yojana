@@ -100,6 +100,16 @@ public static class SerialisationModule
         builder.Services.AddScoped<Entitlements.WarrantyLineExceptionQueries>();
         builder.Services.AddScoped<Entitlements.WarrantyLineValidationService>();
         builder.Services.AddScoped<Entitlements.DocumentCorrectionEntitlements>();
+        // Coupled to SourceDocumentCorrectionEntitlements for the same Wolverine constraint as the P2 settings-backed
+        // handlers: this factory hides ITenantSettings' PlatformDbContext, leaving SerialisationDbContext transactional.
+        builder.Services.AddScoped(sp => new Entitlements.SourceDocumentCorrectionEntitlements(
+            sp.GetRequiredService<SerialisationDbContext>(),
+            sp.GetRequiredService<Entitlements.PolicyStore>(),
+            sp.GetRequiredService<ITimeZonePort>(),
+            sp.GetRequiredService<Entitlements.RefurbishedGoodsSettings>(),
+            sp.GetRequiredService<Entitlements.WarrantyReferenceSettings>(),
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>(),
+            sp.GetRequiredService<Yojana.Platform.Contracts.Time.IClock>()));
 
         builder.Services.AddScoped<SearchIndexer>();
         builder.Services.AddScoped<SearchBackfill>();
@@ -138,6 +148,7 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<IProductionOrderAllocationPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.TryAddSingleton<IInventoryDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.TryAddSingleton<ISalesDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
+        builder.Services.TryAddSingleton<IOwnershipSourceDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.TryAddSingleton<IServiceDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.AddSingleton<InMemoryStockUnitEventPort>();
         builder.Services.TryAddSingleton<IStockUnitEventPort>(sp => sp.GetRequiredService<InMemoryStockUnitEventPort>());

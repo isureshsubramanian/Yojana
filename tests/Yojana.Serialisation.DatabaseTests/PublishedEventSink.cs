@@ -9,22 +9,28 @@ public static class PublishedEventSink
     public static readonly ConcurrentQueue<IPublishedUnitEvent> Received = new();
     public static readonly ConcurrentQueue<IPublishedSummaryEvent> Summaries = new();
     public static readonly ConcurrentQueue<AssetTagPrintJobRequested> PrintJobRequests = new();
+    public static readonly ConcurrentQueue<LabelReprintJobRequested> LabelReprintRequests = new();
 
-    public static Task<IReadOnlyList<T>> WaitForAsync<T>(Func<T, bool> match, int count, TimeSpan timeout) where T : IPublishedUnitEvent
+    public static Task<IReadOnlyList<T>> WaitForAsync<T>(Func<T, bool> match, int count, TimeSpan timeout)
     {
         return Task.Run(async () =>
         {
             var deadline = DateTime.UtcNow + timeout;
             while (DateTime.UtcNow < deadline)
             {
-                var hits = Received.OfType<T>().Where(match).ToList();
+                var hits = All<T>().Where(match).ToList();
                 if (hits.Count >= count) return (IReadOnlyList<T>)hits;
                 await Task.Delay(100);
             }
 
-            return (IReadOnlyList<T>)Received.OfType<T>().Where(match).ToList();
+            return (IReadOnlyList<T>)All<T>().Where(match).ToList();
         });
     }
+
+    private static IEnumerable<T> All<T>() => Received.OfType<T>()
+        .Concat(Summaries.OfType<T>())
+        .Concat(PrintJobRequests.OfType<T>())
+        .Concat(LabelReprintRequests.OfType<T>());
 
     public static Task<IReadOnlyList<T>> WaitForSummaryAsync<T>(Func<T, bool> match, int count, TimeSpan timeout) where T : IPublishedSummaryEvent
     {
@@ -73,4 +79,5 @@ public static class PublishedEventSinkHandler
     public static void Handle(OwnershipSourceDocumentCorrected e) => PublishedEventSink.Summaries.Enqueue(e);
     public static void Handle(UnitProductionOrderReconciled e) => PublishedEventSink.Summaries.Enqueue(e);
     public static void Handle(AssetTagPrintJobRequested e) => PublishedEventSink.PrintJobRequests.Enqueue(e);
+    public static void Handle(LabelReprintJobRequested e) => PublishedEventSink.LabelReprintRequests.Enqueue(e);
 }
