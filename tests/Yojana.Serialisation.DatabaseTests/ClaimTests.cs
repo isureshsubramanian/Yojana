@@ -142,11 +142,61 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
             Assert.Equal(["CLM-2025-00001", "CLM-2026-00001"], numbers);
             var recovery = Assert.Single(await scope.ServiceProvider.GetRequiredService<Claims.ClaimQueries>().RecoveryListAsync(null, CancellationToken.None));
             Assert.Equal(("RCV-2025-0001", "CLM-2025-00001"), (recovery.RecoveryNumber, recovery.CustomerClaimNumber));
+
+            var queries = scope.ServiceProvider.GetRequiredService<Claims.RecoveryQueries>();
+            var page = await queries.PageAsync(Claims.RecoveryClaimFilter.Open, null, setup.ItemId, "RCV-2025", [], new DateOnly(2026, 9, 1), 0, 50, CancellationToken.None);
+            var enriched = Assert.Single(page.Rows);
+            Assert.Equal((setup.Units[1], setup.Units[0], setup.ItemId, 12, 9),
+                (enriched.ChildUnitId, enriched.ParentUnitId, enriched.ChildItemId, enriched.VendorTermMonths, enriched.ClaimMonthOfTerm));
+            Assert.StartsWith("RC", enriched.ChildSerial);
+            Assert.StartsWith("RC", enriched.ParentSerial);
+
+            var notRaised = await queries.NotRaisedAsync(30, new DateOnly(2026, 3, 1), CancellationToken.None);
+            var expiredTerm = Assert.Single(notRaised.Rows);
+            Assert.Equal((month15.ClaimId, RecoveryNotRaisedReason.VendorTermEnded, 12, 15),
+                (expiredTerm.CustomerClaimId, expiredTerm.Reason, expiredTerm.VendorTermMonths, expiredTerm.ClaimMonthOfTerm));
+            var summary = await queries.SummaryAsync(new DateOnly(2026, 9, 1), CancellationToken.None);
+            Assert.Equal(1, summary.OpenCount);
+            Assert.Equal(1, summary.TermExpiredWithoutRecovery);
+            Assert.Equal(100m, Assert.Single(summary.OpenAmounts).RequestedAmount);
+        }
+
+        var recoveryId = Assert.Single(inTerm.RecoveryClaimIds);
+        var answered = await InvokeAsync<RecoveryClaimChangeResult>(setup.Tenant, new ApproveRecoveryClaim(Guid.NewGuid(), recoveryId, 80m,
+            new DateTime(2026, 9, 1, 11, 0, 0, DateTimeKind.Utc), VendorReference: "CN-4081", VendorNote: "Labour share refused"));
+        Assert.Equal((80m, "CN-4081", "Labour share refused"), (answered.ApprovedAmount, answered.VendorReference, answered.VendorNote));
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var saved = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().RecoveryClaims.SingleAsync(row => row.RecoveryClaimId == recoveryId);
+            Assert.Equal(("CN-4081", "Labour share refused"), (saved.VendorReference, saved.VendorNote));
+            var summary = await scope.ServiceProvider.GetRequiredService<Claims.RecoveryQueries>().SummaryAsync(new DateOnly(2026, 9, 1), CancellationToken.None);
+            Assert.Equal(0, summary.OpenCount);
+            Assert.Equal(80m, Assert.Single(summary.ApprovedThisYear).ApprovedAmount);
         }
 
         var raised = Assert.Single(await PublishedEventSink.WaitForAsync<RecoveryClaimRaised>(e => e.CustomerClaimId == month9.ClaimId, 1, TimeSpan.FromSeconds(20)));
         Assert.Equal(setup.Units[1], raised.ChildUnitId);
         Assert.DoesNotContain(PublishedEventSink.Received.OfType<RecoveryClaimRaised>(), e => e.CustomerClaimId == month15.ClaimId);
+    }
+
+    [DatabaseFact]
+    public async Task Not_raised_report_distinguishes_no_vendor_term_and_recall_recovery()
+    {
+        var setup = await SetUpAsync("not-raised", 3);
+        var at = new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+        var noTerm = await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2026, 9, 1), at, ClaimRemedy.Repair);
+        var recall = await SubmitAsync(setup.Tenant, setup.Units[2], new DateOnly(2026, 9, 1), at.AddMinutes(1), ClaimRemedy.Repair);
+        await InvokeAsync<AdjudicateClaimResult>(setup.Tenant, new AdjudicateClaim(Guid.NewGuid(), noTerm.ClaimId, at.AddHours(1), "service.manager"));
+        await InvokeAsync<AdjudicateClaimResult>(setup.Tenant, new AdjudicateClaim(Guid.NewGuid(), recall.ClaimId, at.AddHours(1).AddMinutes(1), "service.manager"));
+        using var scope = fixture.ScopeFor(setup.Tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        (await db.Claims.SingleAsync(row => row.ClaimId == recall.ClaimId)).CoverageSource = ClaimCoverageSource.Recall;
+        await db.SaveChangesAsync();
+
+        var report = await scope.ServiceProvider.GetRequiredService<Claims.RecoveryQueries>().NotRaisedAsync(30, new DateOnly(2026, 9, 1), CancellationToken.None);
+        Assert.Equal(2, report.Rows.Count);
+        Assert.Equal(RecoveryNotRaisedReason.NoVendorTerm, report.Rows.Single(row => row.CustomerClaimId == noTerm.ClaimId).Reason);
+        Assert.Equal(RecoveryNotRaisedReason.RecallClaim, report.Rows.Single(row => row.CustomerClaimId == recall.ClaimId).Reason);
     }
 
     [DatabaseFact]

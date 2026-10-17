@@ -71,9 +71,24 @@ public sealed record AdjudicateClaimResult(
     bool Replayed,
     Guid? SuccessorItemId = null);
 
-public sealed record ApproveRecoveryClaim(Guid CommandId, Guid RecoveryClaimId, decimal ApprovedAmount, DateTime EventTime, string ActorRef);
+public sealed record ApproveRecoveryClaim(
+    Guid CommandId,
+    Guid RecoveryClaimId,
+    decimal ApprovedAmount,
+    DateTime EventTime,
+    string ActorRef = "",
+    string? VendorReference = null,
+    string? VendorNote = null);
 
-public sealed record RecoveryClaimChangeResult(Guid RecoveryClaimId, string Status, decimal RequestedAmount, decimal? ApprovedAmount, Guid EventId, bool Replayed);
+public sealed record RecoveryClaimChangeResult(
+    Guid RecoveryClaimId,
+    string Status,
+    decimal RequestedAmount,
+    decimal? ApprovedAmount,
+    Guid EventId,
+    bool Replayed,
+    string? VendorReference = null,
+    string? VendorNote = null);
 
 public sealed record SettleClaim(Guid CommandId, Guid ClaimId, DateTime EventTime, string ActorRef);
 
@@ -126,4 +141,73 @@ public sealed record RecoveryClaimRow(
     string? ApprovedBy,
     string RecoveryNumber = "",
     string CustomerClaimNumber = "");
+
+public sealed record RecoveryClaimListRow(
+    Guid RecoveryClaimId,
+    string RecoveryNumber,
+    DateTime RaisedAt,
+    Guid CustomerClaimId,
+    string CustomerClaimNumber,
+    DateOnly ClaimDate,
+    DateTime? ClaimApprovedAt,
+    Guid ChildUnitId,
+    string ChildSerial,
+    Guid ChildItemId,
+    Guid? ParentUnitId,
+    string? ParentSerial,
+    Guid VendorPartyRef,
+    DateOnly? VendorTermStart,
+    DateOnly? VendorTermEnd,
+    int? VendorTermMonths,
+    int? ClaimMonthOfTerm,
+    decimal RequestedAmount,
+    decimal? ApprovedAmount,
+    string Currency,
+    string Status,
+    int AgeDays,
+    DateTime? ApprovedAt,
+    string? ApprovedBy,
+    string? VendorReference,
+    string? VendorNote);
+
+public sealed record RecoveryClaimPage(IReadOnlyList<RecoveryClaimListRow> Rows, int Total, int Skip, int Take);
+
+public sealed record RecoveryCurrencyTotal(string Currency, int ClaimCount, decimal RequestedAmount, decimal ApprovedAmount);
+
+public sealed record RecoveryFilterOption(Guid Id, int Count);
+
+public sealed record OldestOpenRecovery(int AgeDays, string RecoveryNumber, Guid VendorPartyRef);
+
+public sealed record RecoveryClaimSummary(
+    int OpenCount,
+    IReadOnlyList<RecoveryCurrencyTotal> OpenAmounts,
+    IReadOnlyList<RecoveryCurrencyTotal> ApprovedThisYear,
+    int TermExpiredWithoutRecovery,
+    OldestOpenRecovery? OldestOpen,
+    IReadOnlyList<RecoveryFilterOption> Vendors,
+    IReadOnlyList<RecoveryFilterOption> ChildItems);
+
+public static class RecoveryNotRaisedReason
+{
+    public const string VendorTermEnded = "vendor_term_ended";
+    public const string NoVendorTerm = "no_vendor_term";
+    public const string RecallClaim = "recall_claim";
+}
+
+public sealed record RecoveryNotRaisedRow(
+    Guid CustomerClaimId,
+    string CustomerClaimNumber,
+    DateOnly ClaimDate,
+    DateTime ApprovedAt,
+    Guid UnitId,
+    string UnitSerial,
+    Guid ItemId,
+    string Reason,
+    Guid? VendorPartyRef,
+    DateOnly? VendorTermStart,
+    DateOnly? VendorTermEnd,
+    int? VendorTermMonths,
+    int? ClaimMonthOfTerm);
+
+public sealed record RecoveryNotRaisedReport(int Days, IReadOnlyList<RecoveryNotRaisedRow> Rows);
 

@@ -122,6 +122,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<DocumentNumbers>();
         builder.Services.AddScoped<ClaimUnitFacts>();
         builder.Services.AddScoped<ClaimQueries>();
+        builder.Services.AddScoped<RecoveryQueries>();
         builder.Services.AddScoped<LegacyUnknownClaimUnitCreator>();
         // Coupled to ClaimReviewSettings for the same Wolverine constraint as entitlement approval settings: the
         // factory hides ITenantSettings' PlatformDbContext from AdjudicateClaimHandler's transactional graph.

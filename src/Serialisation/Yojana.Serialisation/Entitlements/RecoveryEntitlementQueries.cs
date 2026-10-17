@@ -8,8 +8,6 @@ namespace Yojana.Serialisation.Entitlements;
 /// <summary>Historical entitlement and as-built query used by supplier recovery; claims see only its narrow result.</summary>
 public sealed class RecoveryEntitlementQueries(SerialisationDbContext db, ITenantContext tenant) : IEntitlementRecoveryQuery
 {
-    private const int MaxDepth = 5;
-
     public async Task<IReadOnlyList<InboundRecoveryCoverage>> FindAsync(Guid rootUnitId, Guid lineUnitId, DateOnly claimDate, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -19,7 +17,7 @@ public sealed class RecoveryEntitlementQueries(SerialisationDbContext db, ITenan
             var frontier = new List<Guid> { rootUnitId };
             var from = claimDate.ToDateTime(TimeOnly.MinValue);
             var until = from.AddDays(1);
-            for (var depth = 0; depth < MaxDepth && frontier.Count > 0; depth++)
+            for (var depth = 0; depth < InboundRecoveryRules.MaximumAssemblyDepth && frontier.Count > 0; depth++)
             {
                 var children = await db.AssemblyLinks.AsNoTracking()
                     .Where(l => l.TenantId == tenantId && frontier.Contains(l.ParentUnitId) && l.ChildUnitId != null

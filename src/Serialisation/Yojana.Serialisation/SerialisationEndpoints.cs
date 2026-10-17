@@ -356,7 +356,49 @@ public static class SerialisationEndpoints
             Invoke<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
 
         var recoveryClaims = app.MapGroup("/api/recovery-claims").RequireAuthorization(YojanaPolicy.TenantMember);
-        recoveryClaims.MapGet("/", async (string? status, ClaimQueries queries, CancellationToken ct) => Results.Ok(await queries.RecoveryListAsync(status, ct)));
+        recoveryClaims.MapGet("/", async (string? status, Guid? vendor, Guid? childItem, string? find, int? skip, int? take, RecoveryQueries queries, IPartyNamePort parties, IClock clock, CancellationToken ct) =>
+        {
+            try
+            {
+                var matchingVendors = string.IsNullOrWhiteSpace(find) ? [] : (await parties.SearchAsync(find, 25, ct)).Select(row => row.PartyRef).ToList();
+                return Results.Ok(await queries.PageAsync(status, vendor, childItem, find, matchingVendors, DateOnly.FromDateTime(clock.UtcNow), skip ?? 0, take ?? 50, ct));
+            }
+            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "filters_invalid", detail = ex.Message }); }
+        });
+        recoveryClaims.MapGet("/summary", async (RecoveryQueries queries, IClock clock, CancellationToken ct) =>
+            Results.Ok(await queries.SummaryAsync(DateOnly.FromDateTime(clock.UtcNow), ct)));
+        recoveryClaims.MapGet("/not-raised", async (int? days, RecoveryQueries queries, IClock clock, CancellationToken ct) =>
+            Results.Ok(await queries.NotRaisedAsync(days ?? 30, DateOnly.FromDateTime(clock.UtcNow), ct)));
+        recoveryClaims.MapGet("/export", async (string? status, Guid? vendor, Guid? childItem, string? find, RecoveryQueries queries, IItemNamePort items,
+            IPartyNamePort parties, IClock clock, CancellationToken ct) =>
+        {
+            try { _ = RecoveryClaimFilter.Parse(status); }
+            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "filters_invalid", detail = ex.Message }); }
+            return Results.Stream(async stream =>
+            {
+                await using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false), leaveOpen: true);
+                await writer.WriteAsync(RecoveryClaimCsv.Header.AsMemory(), ct);
+                var offset = 0;
+                var matchingVendors = string.IsNullOrWhiteSpace(find) ? [] : (await parties.SearchAsync(find, 25, ct)).Select(row => row.PartyRef).ToList();
+                while (true)
+                {
+                    var page = await queries.PageAsync(status, vendor, childItem, find, matchingVendors, DateOnly.FromDateTime(clock.UtcNow), offset, 500, ct);
+                    var itemNames = await items.NamesAsync(page.Rows.Select(row => row.ChildItemId).Distinct().ToList(), ct);
+                    var partyNames = await parties.NamesAsync(page.Rows.Select(row => row.VendorPartyRef).Distinct().ToList(), ct);
+                    foreach (var row in page.Rows)
+                    {
+                        var itemLabel = itemNames.GetValueOrDefault(row.ChildItemId);
+                        var partyLabel = partyNames.GetValueOrDefault(row.VendorPartyRef);
+                        var itemName = itemLabel is null ? "" : itemLabel.Name is null ? itemLabel.Code : $"{itemLabel.Code} · {itemLabel.Name}";
+                        var partyName = partyLabel is null ? "" : partyLabel.Name ?? partyLabel.Code;
+                        await writer.WriteAsync(RecoveryClaimCsv.Row(row, itemName, partyName).AsMemory(), ct);
+                    }
+                    offset += page.Rows.Count;
+                    if (offset >= page.Total || page.Rows.Count == 0) break;
+                }
+                await writer.FlushAsync(ct);
+            }, "text/csv; charset=utf-8", "recovery-claims.csv");
+        });
         recoveryClaims.MapPost("/{recoveryClaimId:guid}/approve", (Guid recoveryClaimId, ApproveRecoveryClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<RecoveryClaimChangeResult>(bus, tenant, command with { RecoveryClaimId = recoveryClaimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(editor);
         entitlements.MapGet("/requirements", async (string? status, string? documentType, Guid? document, int? skip, int? take, EntitlementRequirementQueries queries, CancellationToken ct) =>

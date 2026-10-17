@@ -356,15 +356,21 @@ public static class ApproveRecoveryClaimHandler
         var recovery = await db.RecoveryClaims.FirstOrDefaultAsync(r => r.TenantId == tenantId && r.RecoveryClaimId == command.RecoveryClaimId, cancellationToken)
             ?? throw new CommandRefusedException("recovery_claim_unknown", $"Recovery claim {command.RecoveryClaimId} does not exist.");
         var key = ClaimLedger.Key(command.CommandId, recovery.RecoveryClaimId, ClaimEventType.RecoveryApproved, command.EventTime);
-        if (await ledger.ReplayedAsync(key, command.EventTime, cancellationToken) is { } replayed) return new(recovery.RecoveryClaimId, recovery.Status, recovery.RequestedAmount, recovery.ApprovedAmount, replayed.EventId, true);
+        if (await ledger.ReplayedAsync(key, command.EventTime, cancellationToken) is { } replayed) return new(recovery.RecoveryClaimId, recovery.Status, recovery.RequestedAmount, recovery.ApprovedAmount, replayed.EventId, true, recovery.VendorReference, recovery.VendorNote);
         if (recovery.Status != RecoveryClaimStatus.Raised) throw new CommandRefusedException("recovery_claim_transition_not_allowed", $"Recovery claim {recovery.RecoveryClaimId} is {recovery.Status}; only raised claims can be approved.");
         if (command.ApprovedAmount < 0 || command.ApprovedAmount > recovery.RequestedAmount) throw new CommandRefusedException("recovery_amount_invalid", "The approved recovery amount must be between zero and the requested amount.");
+        var vendorReference = string.IsNullOrWhiteSpace(command.VendorReference) ? null : command.VendorReference.Trim();
+        var vendorNote = string.IsNullOrWhiteSpace(command.VendorNote) ? null : command.VendorNote.Trim();
+        if (vendorReference?.Length > 100) throw new CommandRefusedException("vendor_reference_too_long", "The vendor reference must be 100 characters or fewer.");
+        if (vendorNote?.Length > 500) throw new CommandRefusedException("vendor_note_too_long", "The vendor note must be 500 characters or fewer.");
         var claim = await ledger.LoadAsync(recovery.CustomerClaimId, cancellationToken);
         var eventId = ClaimLedger.EventId(command.EventTime);
         recovery.ApprovedAmount = command.ApprovedAmount;
         recovery.Status = RecoveryClaimStatus.Approved;
         recovery.ApprovedAt = command.EventTime;
         recovery.ApprovedBy = command.ActorRef;
+        recovery.VendorReference = vendorReference;
+        recovery.VendorNote = vendorNote;
         recovery.ApprovedEventId = eventId;
         await ledger.AppendAsync(
         [
@@ -375,7 +381,7 @@ public static class ApproveRecoveryClaimHandler
                 Attributes = JsonObjectText.Of(new { recovery_claim_id = recovery.RecoveryClaimId, vendor_party_ref = recovery.VendorPartyRef, amount = command.ApprovedAmount, currency = recovery.Currency }),
             },
         ], cancellationToken);
-        return new(recovery.RecoveryClaimId, recovery.Status, recovery.RequestedAmount, recovery.ApprovedAmount, eventId, false);
+        return new(recovery.RecoveryClaimId, recovery.Status, recovery.RequestedAmount, recovery.ApprovedAmount, eventId, false, recovery.VendorReference, recovery.VendorNote);
     }
 }
 
