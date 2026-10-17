@@ -1,5 +1,21 @@
 namespace Yojana.Serialisation.Contracts;
 
+public sealed record DefineReturnReason(
+    string Code,
+    string Name,
+    string RestockFeeRule,
+    decimal? RestockFeeValue = null,
+    int? DoaWindowDays = null,
+    bool Active = true);
+
+public sealed record ReturnReasonRow(
+    string Code,
+    string Name,
+    string RestockFeeRule,
+    decimal? RestockFeeValue,
+    int? DoaWindowDays,
+    bool Active);
+
 /// <summary>One RMA line identified by a unit/serial, or by a sales document whose serial is resolved server-side.</summary>
 public sealed record RmaRequestLineInput(
     Guid? UnitId = null,

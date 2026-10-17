@@ -41,7 +41,8 @@ public static class DevReferenceCatalogue
             {
                 itemProfiles.Register(new ItemSerialisationProfile(item.Id, item.Code, profile.TrackingMode,
                     profile.SerialisationPoint, profile.RetentionClass, profile.SerialReusePolicy,
-                    profile.AsBuiltCompleteness, profile.SerialScheme, profile.ExpiryRequired, profile.ItemClass));
+                    profile.AsBuiltCompleteness, profile.SerialScheme, profile.ExpiryRequired, profile.ItemClass,
+                    RequiresSanitisation: profile.RequiresSanitisation));
             }
 
             foreach (var policy in item.WarrantyPolicies ?? [])
@@ -111,7 +112,8 @@ public static class DevReferenceCatalogue
         string AsBuiltCompleteness,
         string SerialScheme,
         bool ExpiryRequired = false,
-        string? ItemClass = null);
+        string? ItemClass = null,
+        bool RequiresSanitisation = false);
 
     public sealed record DevItemWarrantyPolicy(
         string CoverageFamily,

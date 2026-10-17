@@ -11,6 +11,8 @@ using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ports;
 using Yojana.Serialisation.Queries;
+using Yojana.Serialisation.Refurbishments;
+using Yojana.Serialisation.Replacements;
 
 namespace Yojana.Demo;
 
@@ -26,6 +28,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
     private int assembled;
     private int claimsCreated;
     private int recoveriesApproved;
+    private int p5ClaimsCreated;
     private DemoUnit? recoveryDimm;
     private DemoUnit? recoveryNvme;
     private DemoUnit? expiredPsu;
@@ -34,8 +37,8 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
     private static readonly Dictionary<string, int> ExpectedUnitCounts = new(StringComparer.Ordinal)
     {
         ["RS-1100"] = 36, ["RT-1200T"] = 1, ["RT-N1"] = 2, ["RS-1520"] = 2, ["RG-4800"] = 1,
-        ["SS-1110"] = 2, ["SS-1112"] = 2, ["NX-4850"] = 4, ["NR-220"] = 3, ["DW-300"] = 8,
-        ["LB-14"] = 8, ["PF-400"] = 3, ["MD-64R"] = 172, ["ND-384"] = 96, ["HD-20T"] = 28,
+        ["SS-1110"] = 2, ["SS-1112"] = 2, ["NX-4850"] = 4, ["NR-220"] = 3, ["DW-300"] = 48,
+        ["LB-14"] = 8, ["PF-400"] = 5, ["MD-64R"] = 172, ["ND-384"] = 96, ["HD-20T"] = 28,
         ["PS-1600"] = 92, ["BM-2"] = 45, ["GX-80"] = 8,
     };
     private static readonly Dictionary<string, string> SerialPrefixes = new(StringComparer.Ordinal)
@@ -49,7 +52,10 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
 
     private Guid LegalEntityId => Party("LE-ASTERRA").Id;
     private Guid ServiceEntityId => Party("S-ASTERRA").Id;
-    private Guid WarehouseId => DemoIds.FromName("location:asterra-demo-warehouse");
+    private Guid WarehouseId => Location("LDS-WA-01").Id;
+    private Guid QuarantineId => Location("LDS-Q1").Id;
+    private Guid QuarantineOverflowId => Location("LDS-Q2").Id;
+    private Guid RepairLocationId => Location("LDS-RB-01").Id;
     private Guid AffectedPsuLotId => DemoIds.FromName("lot:KPL-2511");
     private Guid OrdinaryPsuLotId => DemoIds.FromName("lot:KPL-2601");
     private Guid OldPsuLotId => DemoIds.FromName("lot:KPL-2410");
@@ -59,15 +65,17 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
     {
         await StepAsync("verify the DEV tenant and configure currencies", SetUpTenantAsync, cancellationToken);
         await StepAsync("define and publish warranty policies", SetUpPoliciesAsync, cancellationToken);
+        await StepAsync("configure return and refurbishment policies", SetUpReturnPoliciesAsync, cancellationToken);
         await StepAsync("post supplier receipts and create inbound cover", PostReceiptsAsync, cancellationToken);
         await StepAsync("commission manufactured units", CommissionManufacturedAsync, cancellationToken);
-        await StepAsync("resolve the 513-unit serial plan", ResolveUnitsAsync, cancellationToken);
+        await StepAsync("resolve the IT-hardware serial plan", ResolveUnitsAsync, cancellationToken);
         await StepAsync("assemble and release finished goods", AssembleAndReleaseAsync, cancellationToken);
         await StepAsync("record PSU and BMC firmware history", RecordFirmwareAsync, cancellationToken);
         await StepAsync("post shipments, deliveries and invoices", PostSalesAsync, cancellationToken);
         await StepAsync("create outbound entitlements", CreateOutboundEntitlementsAsync, cancellationToken);
         await StepAsync("create recall and goodwill campaigns", CreateCampaignsAsync, cancellationToken);
         await StepAsync("submit and progress 27 claims", CreateClaimsAsync, cancellationToken);
+        await StepAsync("load RMA, replacement and refurbishment stories", CreatePhaseFiveScenariosAsync, cancellationToken);
         await PrintSummaryAsync(cancellationToken);
     }
 
@@ -106,6 +114,11 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             await InvokeAsync<CoverageFamilyRow>(family, cancellationToken);
         }
 
+        await InvokeAsync<ReplacementPolicyRow>(new DefineReplacementPolicy("DEMO-REPLACE-90",
+            ReplacementRule.MaxRemainingOrMinDays, 90, null, "Keep remaining cover or grant at least 90 days"), cancellationToken);
+        await InvokeAsync<ReplacementPolicyRow>(new DefineReplacementPolicy("DEMO-PRESERVE",
+            ReplacementRule.CarryRemaining, null, null, "Keep the original start date and term"), cancellationToken);
+
         var definitions = new[]
         {
             Policy("DEMO-SERVER-36", "Server 36-month on-site NBD", CoverageFamilyCode.Base, 36, "on_site", travel: 100, responseHours: 8),
@@ -136,6 +149,31 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         warranties.Register(new VendorWarrantyTerm(Party("V-TENSORLOOM").Id, Item("GX-80").Id, policies["DEMO-SUP-GPU-36"]));
     }
 
+    private async Task SetUpReturnPoliciesAsync(CancellationToken cancellationToken)
+    {
+        foreach (var reason in new[]
+        {
+            new DefineReturnReason("warranty_defect", "Warranty defect", RestockFeeRule.None),
+            new DefineReturnReason("dead_on_arrival", "Dead on arrival", RestockFeeRule.None, DoaWindowDays: 14),
+            new DefineReturnReason("seller_error", "Seller error", RestockFeeRule.None),
+            new DefineReturnReason("goodwill_exchange", "Goodwill exchange", RestockFeeRule.Percentage, 10m),
+            new DefineReturnReason("usage_limit_exceeded", "Usage limit exceeded", RestockFeeRule.None),
+        })
+        {
+            await InvokeAsync<ReturnReasonRow>(reason, cancellationToken);
+        }
+
+        using var scope = TenantScope();
+        await scope.ServiceProvider.GetRequiredService<RefurbishmentPolicySettings>().SetAsync(new RefurbishmentPolicy(
+            RefurbishmentIdentity.SameUnitNewSerial,
+            3,
+            [
+                new RefurbishmentItemClassPolicy("storage", RefurbishmentIdentity.SameUnitNewSerial, 3),
+                new RefurbishmentItemClassPolicy("printer", RefurbishmentIdentity.SameUnitSameSerial, 2),
+            ],
+            "DEMO-REPLACE-90"), cancellationToken);
+    }
+
     private async Task PostReceiptsAsync(CancellationToken cancellationToken)
     {
         await ReceiptAsync("GR-DIMM-2601", Party("V-MEMRYX").Id, today.AddDays(-110),
@@ -154,8 +192,8 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             [Line("GX-80", 1, 8)], 8, cancellationToken);
         await ReceiptAsync("GR-FINISHED-2601", Party("V-RACKSPIRE").Id, today.AddDays(-90),
         [
-            Line("NX-4850", 1, 4), Line("NR-220", 2, 3), Line("DW-300", 3, 8),
-            Line("LB-14", 4, 8), Line("PF-400", 5, 3),
+            Line("NX-4850", 1, 4), Line("NR-220", 2, 3), Line("DW-300", 3, 48),
+            Line("LB-14", 4, 8), Line("PF-400", 5, 5),
         ], 0, cancellationToken);
     }
 
@@ -186,7 +224,9 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var rows = await (from identifier in db.Identifiers.AsNoTracking()
                           join current in db.Current.AsNoTracking() on new { identifier.TenantId, identifier.UnitId } equals new { current.TenantId, current.UnitId }
-                          where identifier.ValidTo == null && identifier.Type == IdentifierType.InternalSerial
+                          // Resolve by the original deterministic plan even after refurbishment supersedes a serial;
+                          // command ids and scenario indexes remain stable across loader replays.
+                          where identifier.Type == IdentifierType.InternalSerial
                           select new { identifier.UnitId, identifier.RawValue, current.ItemId, current.LotId })
             .ToListAsync(cancellationToken);
         var codeByItem = catalogue.Items.Values.ToDictionary(item => item.Id, item => item.Code);
@@ -293,7 +333,10 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
                 DemoIds.FromName("site:" + sale.EndOwner.Code), Party("L-PARCELORA").Id, false, orderRef,
                 $"PO-{sale.EndOwner.Code}-{today.Year}", IsInvoiced: true);
             documents.Add(shipment);
-            await InvokeAsync<ConsumedEventResult>(new SalesShipmentPosted(Envelope("shipment:" + sale.Key, shippedAt), shipmentRef), cancellationToken);
+            var shipmentAlreadyPosted = await HasDocumentEventsAsync(shipmentRef, UnitEventType.Shipped,
+                sale.Units, cancellationToken);
+            await InvokeAsync<ConsumedEventResult>(new SalesShipmentPosted(
+                Envelope("shipment:" + sale.Key, shippedAt), shipmentRef), cancellationToken);
 
             var deliveredAt = shippedAt.AddDays(2);
             var deliveryRef = new DocumentRef("delivery_confirmation", DemoIds.FromName("delivery:" + sale.Key));
@@ -307,16 +350,22 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
                 shipment.CustomerPoRef, sale.Country, Channel: sale.Channel));
             await InvokeAsync<ConsumedEventResult>(new SalesInvoicePosted(Envelope("invoice:" + sale.Key, shippedAt.AddDays(1)), invoiceRef), cancellationToken);
 
-            if (sale.InvoiceParty.Id != sale.EndOwner.Id)
+            if (!shipmentAlreadyPosted)
             {
-                foreach (var unit in sale.Units)
+                await WaitForCurrentOwnerAsync(sale.Units, sale.InvoiceParty.Id, sale.EndOwner.Id, cancellationToken);
+                await WaitForEntitlementRequirementsAsync(sale.Units, cancellationToken);
+                if (sale.InvoiceParty.Id != sale.EndOwner.Id)
                 {
-                    await InvokeAsync<OpenOwnershipResult>(new OpenOwnership(DemoIds.FromName($"end-owner:{sale.Key}:{unit.Serial}"), unit.UnitId,
-                        sale.EndOwner.Id, PartyType.EndUser, EpisodeReason.Sale, deliveredAt.AddHours(2), actor, LegalEntityId,
-                        EpisodeSource.Registration, Document: invoiceRef, CustomerPoRef: shipment.CustomerPoRef), cancellationToken);
-                    await InvokeAsync<ChangeCustodyResult>(new ChangeCustody(DemoIds.FromName($"end-custody:{sale.Key}:{unit.Serial}"), unit.UnitId,
-                        LocationKind.CustomerSite, EpisodeReason.Sale, deliveredAt.AddHours(2), actor, LegalEntityId,
-                        shipment.ShipToLocationId, sale.EndOwner.Id, PartyType.EndUser, EpisodeSource.Registration, Document: invoiceRef), cancellationToken);
+                    foreach (var unit in sale.Units)
+                    {
+                        await InvokeAsync<OpenOwnershipResult>(new OpenOwnership(DemoIds.FromName($"end-owner:{sale.Key}:{unit.Serial}"), unit.UnitId,
+                            sale.EndOwner.Id, PartyType.Customer, EpisodeReason.Sale, deliveredAt.AddHours(2), actor, LegalEntityId,
+                            EpisodeSource.Registration, Document: invoiceRef, CustomerPoRef: shipment.CustomerPoRef), cancellationToken);
+                        await WaitForEntitlementRequirementsAsync([unit], cancellationToken);
+                        await InvokeAsync<ChangeCustodyResult>(new ChangeCustody(DemoIds.FromName($"end-custody:{sale.Key}:{unit.Serial}"), unit.UnitId,
+                            LocationKind.CustomerSite, EpisodeReason.Sale, deliveredAt.AddHours(2), actor, LegalEntityId,
+                            shipment.ShipToLocationId, sale.EndOwner.Id, PartyType.Customer, EpisodeSource.Registration, Document: invoiceRef), cancellationToken);
+                    }
                 }
             }
         }
@@ -346,6 +395,12 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         var studioAt = DemoDates.At(today.AddDays(-studioSale.DaysAgo), 10);
         await CreateEntitlementAsync(printer, policies["DEMO-GOODWILL-12"], "goodwill", studioSale.EndOwner,
             Document(studioSale.InvoiceNumber, "invoice"), DateOnly.FromDateTime(studioAt), studioAt, studioSale.Country, studioSale.Channel, cancellationToken);
+        var goodwillPrinter = Units("PF-400")[3];
+        var goodwillSale = SalesPlan().Single(sale => sale.Key == "p5-goodwill");
+        var goodwillAt = DemoDates.At(today.AddDays(-goodwillSale.DaysAgo), 10);
+        await CreateEntitlementAsync(goodwillPrinter, policies["DEMO-GOODWILL-12"], "goodwill", goodwillSale.EndOwner,
+            Document(goodwillSale.InvoiceNumber, "invoice"), DateOnly.FromDateTime(goodwillAt), goodwillAt,
+            goodwillSale.Country, goodwillSale.Channel, cancellationToken);
         var contractSwitch = Units("NX-4850")[2];
         var ispSale = SalesPlan().Single(sale => sale.Key == "isp");
         var ispAt = DemoDates.At(today.AddDays(-ispSale.DaysAgo), 10);
@@ -401,7 +456,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             Claim("submitted-laptop", Units("LB-14")[3], bank, "GBP", null, ClaimLineKind.Labour, 95m, "Keyboard inspection", ClaimAction.Submit),
             Claim("submitted-desktop", Units("DW-300")[2], bank, "INR", null, ClaimLineKind.Parts, 8200m, "Display adapter", ClaimAction.Submit),
             Claim("no-fault-found", Units("DW-300")[3], bank, "EUR", null, ClaimLineKind.Labour, 80m, "Intermittent noise", ClaimAction.NoFaultDeny),
-            Claim("server-replacement", Units("RS-1100")[6], hpc, "USD", null, ClaimLineKind.Parts, 890m, "System board replacement", ClaimAction.Adjudicate, remedy: ClaimRemedy.Replacement),
+            Claim("server-replacement", Units("RS-1100")[31], bank, "USD", null, ClaimLineKind.Parts, 890m, "Management controller replacement", ClaimAction.Adjudicate, remedy: ClaimRemedy.Replacement),
             Claim("recall-campaign", Units("RS-1100")[0], hpc, "EUR", null, ClaimLineKind.Parts, 360m,
                 "Affected power-supply inspection", ClaimAction.Adjudicate, campaignId: activeRecallCampaignId, claimDate: today),
             Claim("ended-goodwill-campaign", Units("RS-1100")[10], hpc, "EUR", null, ClaimLineKind.Labour, 145m,
@@ -458,6 +513,581 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             if (!answer.Replayed) recoveriesApproved++;
         }
     }
+
+    private async Task CreatePhaseFiveScenariosAsync(CancellationToken cancellationToken)
+    {
+        await StepAsync("  warranty server refurbishment", CreateServerReturnAndRefurbishmentAsync, cancellationToken);
+        await StepAsync("  RMA stages and receipt exceptions", CreateRmaStageAndExceptionCasesAsync, cancellationToken);
+        await StepAsync("  DOA, seller-error, goodwill and chargeable replacements", CreateReplacementReasonCasesAsync, cancellationToken);
+        await StepAsync("  advance replacement due dates and overdue run", CreateAdvanceReplacementCasesAsync, cancellationToken);
+        await StepAsync("  loan conversion", CreateLoanConversionAsync, cancellationToken);
+        await StepAsync("  supplier return and replacement", CreateVendorReplacementAsync, cancellationToken);
+        await StepAsync("  replacement-link correction", CreateReplacementCorrectionAsync, cancellationToken);
+    }
+
+    private async Task CreateServerReturnAndRefurbishmentAsync(CancellationToken cancellationToken)
+    {
+        var original = Units("RS-1100")[31];
+        var replacement = Units("RS-1100")[32];
+        var bank = Party("C-ASHVANE");
+        var requestedAt = DemoDates.At(today.AddDays(-2), 8);
+        var rma = await RequestAndAuthoriseRmaAsync("server-refurbishment", original, bank,
+            requestedAt, CoverageFamilyCode.Base, "Management controller not responding", cancellationToken);
+        var claim = await ClaimSourceAsync("server-replacement", cancellationToken);
+        var shipped = await CreateAndShipReplacementAsync("server-advance", ReplacementSourceKind.Claim,
+            claim.ClaimId, claim.EntitlementId, replacement, ReplacementReason.WarrantyDefect,
+            requestedAt.AddHours(3), requestedAt.AddHours(4), "USD", "IN", cancellationToken,
+            returnDue: today.AddDays(28), nonReturnAmount: 2890m, returnReason: "warranty_defect");
+
+        var receivedAt = DemoDates.At(today.AddDays(-1), 9);
+        await ReceiveRmaAsync("server-refurbishment", rma, original, ConditionGrades.Defective,
+            "write_down_to_salvage", receivedAt, ReturnOutcome.Accepted, QuarantineId, cancellationToken);
+        await WaitForLinkStateAsync(shipped.ReplacementLinkId, ReplacementLinkState.ClosedReturned, cancellationToken);
+
+        List<(Guid LinkId, Guid UnitId)> retained;
+        using (var scope = TenantScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var raw = await (from link in db.AssemblyLinks.AsNoTracking()
+                             join assignment in db.ItemAssignments.AsNoTracking()
+                                 on new { link.TenantId, UnitId = link.ChildUnitId!.Value }
+                                 equals new { assignment.TenantId, assignment.UnitId }
+                             where link.ParentUnitId == original.UnitId && link.ChildUnitId != null
+                                 && assignment.ItemId == Item("ND-384").Id && assignment.ValidTo == null
+                             orderby link.InstalledAt, link.LinkId
+                             select new { link.LinkId, UnitId = link.ChildUnitId!.Value }).ToListAsync(cancellationToken);
+            retained = raw.Select(row => (row.LinkId, row.UnitId)).ToList();
+        }
+        await InvokeAsync<RecordDisassemblyResult>(new RecordDisassembly(DemoIds.FromName("p5:server-retained-drives"),
+            original.UnitId, retained.Select(row => row.LinkId).ToList(), receivedAt.AddMinutes(10), actor,
+            LegalEntityId, "customer_retained", new DocumentRef("rma", rma.RmaId, 1)), cancellationToken);
+        foreach (var (linkId, unitId) in retained)
+        {
+            await InvokeAsync<ChangeCustodyResult>(new ChangeCustody(DemoIds.FromName("p5:retained-drive:" + linkId), unitId,
+                LocationKind.CustomerSite, "customer_retained", receivedAt.AddMinutes(11), actor, LegalEntityId,
+                DemoIds.FromName("site:" + bank.Code), bank.Id, PartyType.Customer, "rma",
+                Document: new DocumentRef("rma", rma.RmaId, 1)), cancellationToken);
+        }
+
+        await DispositionRmaAsync("server-refurbishment", rma, RmaDisposition.Refurbish,
+            receivedAt.AddHours(1), cancellationToken);
+        Guid workOrderId;
+        using (var scope = TenantScope())
+        {
+            workOrderId = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().RefurbishmentWorkOrders.AsNoTracking()
+                .Where(row => row.SourceRmaLineId == rma.RmaLineId).Select(row => row.WorkOrderId).SingleAsync(cancellationToken);
+        }
+
+        var replacementController = await CommissionScenarioUnitAsync("server-controller", "BM-2", "17990001",
+            receivedAt.AddMinutes(30), WarehouseId, LocationKind.Warehouse, cancellationToken);
+        Guid controllerLinkId;
+        using (var scope = TenantScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            controllerLinkId = await (from link in db.AssemblyLinks.AsNoTracking()
+                                      join assignment in db.ItemAssignments.AsNoTracking()
+                                          on new { link.TenantId, UnitId = link.ChildUnitId!.Value }
+                                          equals new { assignment.TenantId, assignment.UnitId }
+                                      where link.ParentUnitId == original.UnitId && link.ChildUnitId != null
+                                          && assignment.ItemId == Item("BM-2").Id && assignment.ValidTo == null
+                                      orderby link.RemovedAt == null descending, link.InstalledAt
+                                      select link.LinkId).FirstAsync(cancellationToken);
+        }
+
+        var operations = new[]
+        {
+            (10, "Diagnose management-controller failure", 0.5m),
+            (20, "Replace management controller part", 0.75m),
+            (30, "Clear controller configuration and platform secrets", 0.25m),
+            (40, "Apply current management-controller and platform firmware", 0.5m),
+            (50, "Run burn-in and key-function tests", 1.0m),
+        };
+        var operationIds = new Dictionary<int, Guid>();
+        foreach (var (sequence, description, hours) in operations)
+        {
+            var added = await InvokeAsync<RefurbishmentOperationResult>(new AddRefurbishmentOperation(
+                DemoIds.FromName($"p5:server-refurb-operation:{sequence}"), workOrderId, sequence, description,
+                actor, hours, receivedAt.AddMinutes(40 + sequence), actor, LegalEntityId), cancellationToken);
+            operationIds[sequence] = added.OperationId;
+            await InvokeAsync<RefurbishmentOperationResult>(new CompleteRefurbishmentOperation(
+                DemoIds.FromName($"p5:server-refurb-complete:{sequence}"), workOrderId, added.OperationId,
+                hours, receivedAt.AddMinutes(45 + sequence), actor, LegalEntityId), cancellationToken);
+        }
+
+        await InvokeAsync<RefurbishmentPartResult>(new RemoveRefurbishmentPart(
+            DemoIds.FromName("p5:server-controller-remove"), workOrderId, controllerLinkId,
+            RemovedPartDestination.VendorReturn, receivedAt.AddHours(2), actor, LegalEntityId,
+            VendorPartyRef: Party("V-RACKSPIRE").Id), cancellationToken);
+        await InvokeAsync<RefurbishmentPartResult>(new InstallRefurbishmentPart(
+            DemoIds.FromName("p5:server-controller-install"), workOrderId,
+            new ChildInput(replacementController.UnitId, Slot: "BMC-01"), 184m, "GBP",
+            receivedAt.AddHours(2).AddMinutes(10), actor, LegalEntityId, RepairLocationId), cancellationToken);
+        await InvokeAsync<RefurbishmentCostResult>(new RecordRefurbishmentCost(
+            DemoIds.FromName("p5:server-graded-value"), workOrderId, RefurbishmentCostKind.GradedReceipt,
+            720m, "GBP", "Defective receipt value", receivedAt.AddHours(2).AddMinutes(20), actor, LegalEntityId), cancellationToken);
+        await InvokeAsync<RefurbishmentLabourResult>(new RecordRefurbishmentLabour(
+            DemoIds.FromName("p5:server-refurb-labour"), workOrderId, operationIds[20], 3.5m, 50m,
+            "GBP", receivedAt.AddHours(3), actor, LegalEntityId), cancellationToken);
+        await InvokeAsync<RecordSanitisationResult>(new RecordSanitisation(
+            DemoIds.FromName("p5:server-sanitisation"), original.UnitId, "Asterra Compute Works", "RS-1100",
+            original.Serial, "embedded configuration storage", SanitisationMethod.Clear, "Asterra service image",
+            "read-back verification", "SAN-DEMO-0001", receivedAt.AddHours(4), actor, LegalEntityId,
+            ToolVersion: "7.2", Document: new DocumentRef("refurbishment_work_order", workOrderId)), cancellationToken);
+        await InvokeAsync<RecordTestResult>(new RecordTest(DemoIds.FromName("p5:server-test-key-functions"), original.UnitId,
+            RefurbishmentTestKind.KeyFunctions, UnitTestResult.Pass,
+            "{\"burn_in_hours\":24,\"memory_errors\":0,\"network_ports_passed\":2}", "Asterra bench 4",
+            receivedAt.AddHours(5), actor, LegalEntityId, new DocumentRef("refurbishment_work_order", workOrderId)), cancellationToken);
+        await InvokeAsync<RecordTestResult>(new RecordTest(DemoIds.FromName("p5:server-test-power"), original.UnitId,
+            "power-and-thermal", UnitTestResult.Pass, "{\"cycles\":20,\"peak_celsius\":68}", "Asterra bench 4",
+            receivedAt.AddHours(5).AddMinutes(10), actor, LegalEntityId, new DocumentRef("refurbishment_work_order", workOrderId)), cancellationToken);
+        await AttributeAsync(original, "bmc.firmware", "4.3.0", receivedAt.AddHours(5).AddMinutes(20), cancellationToken);
+        await AttributeAsync(original, "bios.firmware", "2.14", receivedAt.AddHours(5).AddMinutes(21), cancellationToken);
+        await InvokeAsync<RecordUsageReadingResult>(new RecordUsageReading(DemoIds.FromName("p5:server-power-hours"),
+            original.UnitId, "power_on_hours", 5812m, "hours", receivedAt.AddHours(5).AddMinutes(30), actor,
+            LegalEntityId, Document: new DocumentRef("refurbishment_work_order", workOrderId)), cancellationToken);
+        await InvokeAsync<ReleaseRefurbishmentResult>(new ReleaseRefurbishment(
+            DemoIds.FromName("p5:server-refurb-release"), workOrderId, ConditionGrades.RefurbishedA,
+            "refurbished_standard_cost", receivedAt.AddHours(6), actor, LegalEntityId, WarehouseId,
+            NewSerial: "01990001", FCode: "F5", CCode: "C6"), cancellationToken);
+    }
+
+    private async Task CreateRmaStageAndExceptionCasesAsync(CancellationToken cancellationToken)
+    {
+        var bank = Party("C-ASHVANE");
+        var engineering = Party("C-TORRENFOLD");
+        var cloudmere = Party("C-CLOUDMERE");
+
+        await RequestRmaAsync("stage-requested", Units("DW-300")[11], bank,
+            DemoDates.At(today.AddDays(-2), 9), CoverageFamilyCode.Base, "Awaiting coverage review", cancellationToken);
+        await RequestAndAuthoriseRmaAsync("stage-authorised", Units("DW-300")[12], bank,
+            DemoDates.At(today.AddDays(-3), 9), CoverageFamilyCode.Base, "Return authorised; customer arranging collection", cancellationToken);
+
+        var received = await RequestAndAuthoriseRmaAsync("stage-received", Units("DW-300")[17], engineering,
+            DemoDates.At(today.AddDays(-5), 9), CoverageFamilyCode.Base, "Workstation intermittently restarts", cancellationToken);
+        await ReceiveRmaAsync("stage-received", received, Units("DW-300")[17], ConditionGrades.Defective,
+            "repairable_value", DemoDates.At(today.AddDays(-3), 10), ReturnOutcome.Accepted, QuarantineOverflowId, cancellationToken);
+
+        var closed = await RequestAndAuthoriseRmaAsync("stage-closed", Units("DW-300")[18], engineering,
+            DemoDates.At(today.AddDays(-7), 9), CoverageFamilyCode.Base, "Unused return approved", cancellationToken);
+        await ReceiveRmaAsync("stage-closed", closed, Units("DW-300")[18], ConditionGrades.OpenBox,
+            "open_box_value", DemoDates.At(today.AddDays(-5), 10), ReturnOutcome.Accepted, QuarantineOverflowId, cancellationToken);
+        await DispositionRmaAsync("stage-closed", closed, RmaDisposition.ReturnToStock,
+            DemoDates.At(today.AddDays(-4), 11), cancellationToken);
+
+        var provisional = await RequestAndAuthoriseRmaAsync("unauthorised-provisional", Units("DW-300")[21], cloudmere,
+            DemoDates.At(today.AddDays(-6), 9), CoverageFamilyCode.Base, "Carton received without a readable unit label", cancellationToken);
+        await ReceiveRmaAsync("unauthorised-provisional", provisional, null, ConditionGrades.Used,
+            "hold_pending_identity", DemoDates.At(today.AddDays(-4), 10), ReturnOutcome.Unauthorised,
+            QuarantineOverflowId, cancellationToken, "MAC and carton identify one candidate; confirmation is still required");
+
+        var mismatch = await RequestAndAuthoriseRmaAsync("serial-mismatch", Units("DW-300")[22], cloudmere,
+            DemoDates.At(today.AddDays(-6), 10), CoverageFamilyCode.Base, "Returned serial differs from the authorised unit", cancellationToken);
+        await ReceiveRmaAsync("serial-mismatch", mismatch, Units("DW-300")[23], ConditionGrades.Defective,
+            "hold_for_serial_resolution", DemoDates.At(today.AddDays(-4), 11), ReturnOutcome.Accepted,
+            QuarantineId, cancellationToken, "Received serial belongs to the same customer but is not the authorised unit");
+    }
+
+    private async Task CreateReplacementReasonCasesAsync(CancellationToken cancellationToken)
+    {
+        var engineering = Party("C-TORRENFOLD");
+        var cloudmere = Party("C-CLOUDMERE");
+        var studio = Party("C-MIREVA");
+
+        var doaOriginal = Units("DW-300")[14];
+        var doa = await RequestAndAuthoriseRmaAsync("doa-workstation", doaOriginal, engineering,
+            DemoDates.At(today.AddDays(-6), 9), CoverageFamilyCode.Base, "Dead on arrival during initial power-on", cancellationToken);
+        await ReceiveRmaAsync("doa-workstation", doa, doaOriginal, ConditionGrades.OpenBox, "unused_open_box",
+            DemoDates.At(today.AddDays(-4), 10), ReturnOutcome.Accepted, QuarantineId, cancellationToken);
+        await DispositionRmaAsync("doa-workstation", doa, RmaDisposition.Replace,
+            DemoDates.At(today.AddDays(-3), 9), cancellationToken);
+        await CreateAndShipReplacementAsync("doa-workstation", ReplacementSourceKind.Rma, doa.RmaId,
+            doa.EntitlementId!.Value, Units("DW-300")[34], ReplacementReason.DeadOnArrival,
+            DemoDates.At(today.AddDays(-3), 10), DemoDates.At(today.AddDays(-3), 11), "EUR", "DE", cancellationToken,
+            replacementPolicy: "DEMO-PRESERVE", conditionAllowed: ReplacementConditionAllowed.New,
+            returnReason: "dead_on_arrival");
+
+        var sellerOriginal = Units("DW-300")[19];
+        var sellerClaim = await CreateApprovedClaimAsync("seller-error-exchange", sellerOriginal, cloudmere,
+            CoverageFamilyCode.Base, DemoDates.At(today.AddDays(-6), 9), "Wrong workstation configuration shipped", cancellationToken);
+        var sellerRma = await RequestAndAuthoriseRmaAsync("seller-error-exchange", sellerOriginal, cloudmere,
+            DemoDates.At(today.AddDays(-6), 12), CoverageFamilyCode.Base, "Wrong configuration supplied", cancellationToken);
+        await CreateAndShipReplacementAsync("seller-error-exchange", ReplacementSourceKind.Claim, sellerClaim.ClaimId,
+            sellerClaim.EntitlementId, Units("DW-300")[35], ReplacementReason.SellerError,
+            DemoDates.At(today.AddDays(-5), 10), DemoDates.At(today.AddDays(-4), 9), "INR", "IN", cancellationToken,
+            replacementPolicy: "DEMO-PRESERVE", returnReason: "seller_error");
+        await ReceiveRmaAsync("seller-error-exchange", sellerRma, sellerOriginal, ConditionGrades.New, "full_new_value",
+            DemoDates.At(today.AddDays(-3), 10), ReturnOutcome.Accepted, QuarantineId, cancellationToken);
+        await DispositionRmaAsync("seller-error-exchange", sellerRma, RmaDisposition.RestockAsNew,
+            DemoDates.At(today.AddDays(-2), 10), cancellationToken);
+
+        var goodwillOriginal = Units("PF-400")[3];
+        var goodwillClaim = await CreateApprovedClaimAsync("goodwill-fee", goodwillOriginal, studio, "goodwill",
+            DemoDates.At(today.AddDays(-5), 9), "Goodwill replacement approved after cosmetic return", cancellationToken);
+        await CreateAndShipReplacementAsync("goodwill-fee", ReplacementSourceKind.Claim, goodwillClaim.ClaimId,
+            goodwillClaim.EntitlementId, Units("PF-400")[4], ReplacementReason.Goodwill,
+            DemoDates.At(today.AddDays(-3), 9), DemoDates.At(today.AddDays(-2), 9), "GBP", "GB", cancellationToken,
+            replacementPolicy: "DEMO-REPLACE-90", returnReason: "goodwill_exchange", restockingFeeBasis: 250m);
+
+        var usagePrinter = Units("PF-400")[0];
+        await InvokeAsync<RecordUsageReadingResult>(new RecordUsageReading(DemoIds.FromName("p5:printer-usage-limit"),
+            usagePrinter.UnitId, "print_hours", 2140m, "hours", DemoDates.At(today.AddDays(-6), 8), actor,
+            LegalEntityId), cancellationToken);
+        var chargeable = await RequestAndAuthoriseRmaAsync("printer-chargeable", usagePrinter, studio,
+            DemoDates.At(today.AddDays(-5), 10), "usage_exhausted", "2,140 print hours exceeds the 2,000-hour cover limit", cancellationToken);
+        await ReceiveRmaAsync("printer-chargeable", chargeable, usagePrinter, ConditionGrades.Used, "chargeable_repair_value",
+            DemoDates.At(today.AddDays(-3), 11), ReturnOutcome.Accepted, QuarantineOverflowId, cancellationToken);
+        await DispositionRmaAsync("printer-chargeable", chargeable, RmaDisposition.RepairAndReturn,
+            DemoDates.At(today.AddDays(-2), 11), cancellationToken);
+    }
+
+    private async Task CreateAdvanceReplacementCasesAsync(CancellationToken cancellationToken)
+    {
+        var bank = Party("C-ASHVANE");
+        var engineering = Party("C-TORRENFOLD");
+        var cloudmere = Party("C-CLOUDMERE");
+        var hospital = Party("C-VELMORA");
+        var links = new List<ShipWarrantyReplacementResult>();
+        for (var index = 0; index < 3; index++)
+        {
+            var original = Units("DW-300")[8 + index];
+            var rma = await RequestAndAuthoriseRmaAsync($"advance-overdue-{index}", original, bank,
+                DemoDates.At(today.AddDays(-14 + index), 9), CoverageFamilyCode.Base,
+                "Advance replacement awaiting the failed workstation", cancellationToken);
+            links.Add(await CreateAndShipReplacementAsync($"advance-overdue-{index}", ReplacementSourceKind.Rma,
+                rma.RmaId, rma.EntitlementId!.Value, Units("DW-300")[28 + index], ReplacementReason.WarrantyDefect,
+                DemoDates.At(today.AddDays(-12 + index), 9), DemoDates.At(today.AddDays(-11 + index), 9),
+                "INR", "IN", cancellationToken, returnDue: today.AddDays(-3 + index),
+                nonReturnAmount: 1240m + index * 110m, returnReason: "warranty_defect"));
+        }
+
+        var dueCases = new[]
+        {
+            ("engineering", Units("DW-300")[15], engineering, Units("DW-300")[31], "EUR", "DE", 3),
+            ("cloudmere", Units("DW-300")[20], cloudmere, Units("DW-300")[32], "INR", "IN", 5),
+            ("hospital", Units("DW-300")[24], hospital, Units("DW-300")[33], "GBP", "GB", 7),
+        };
+        foreach (var (key, original, party, replacement, currency, country, dueDays) in dueCases)
+        {
+            var rma = await RequestAndAuthoriseRmaAsync("advance-due-" + key, original, party,
+                DemoDates.At(today.AddDays(-7), 9), CoverageFamilyCode.Base,
+                "Advance replacement with a scheduled return", cancellationToken);
+            links.Add(await CreateAndShipReplacementAsync("advance-due-" + key, ReplacementSourceKind.Rma,
+                rma.RmaId, rma.EntitlementId!.Value, replacement, ReplacementReason.WarrantyDefect,
+                DemoDates.At(today.AddDays(-6), 9), DemoDates.At(today.AddDays(-5), 9), currency, country,
+                cancellationToken, returnDue: today.AddDays(dueDays), nonReturnAmount: 1180m,
+                returnReason: "warranty_defect"));
+        }
+
+        await InvokeAsync<ExtendReturnDueResult>(new ExtendReturnDue(DemoIds.FromName("p5:advance-extension"),
+            links[3].ReplacementLinkId, today.AddDays(10), "Customer collection window agreed",
+            DemoDates.At(today.AddDays(-1), 8), actor), cancellationToken);
+        await InvokeAsync<ReplacementOverdueRunResult>(new RunReplacementOverdue(today,
+            DemoDates.At(today.AddDays(-1), 23)), cancellationToken);
+        await InvokeAsync<BillNonReturnResult>(new BillNonReturn(DemoIds.FromName("p5:advance-billed"),
+            links[0].ReplacementLinkId, NonReturnPriceBasis.FairMarketValue, 900m, today.AddDays(-1),
+            DemoDates.At(today.AddDays(-1), 23, 30), actor), cancellationToken);
+    }
+
+    private async Task CreateLoanConversionAsync(CancellationToken cancellationToken)
+    {
+        var original = Units("DW-300")[16];
+        var loaner = Units("DW-300")[38];
+        var customer = Party("C-TORRENFOLD");
+        var issuedAt = DemoDates.At(today.AddDays(-5), 9);
+        var site = DemoIds.FromName("site:" + customer.Code);
+        await InvokeAsync<ChangeCustodyResult>(new ChangeCustody(DemoIds.FromName("p5:loan-custody"), loaner.UnitId,
+            LocationKind.CustomerSite, EpisodeReason.Loan, issuedAt, actor, LegalEntityId, site,
+            customer.Id, PartyType.Customer, "loaner_issue"), cancellationToken);
+        var loanDocument = new DocumentRef("loaner_issue", DemoIds.FromName("p5:loan-document"), 1);
+        documents.Add(new LoanerIssue(loanDocument, customer.Id, issuedAt, site, today.AddDays(7),
+            [new DocumentLine(1, Item("DW-300").Id, 1, [new DocumentSerial(loaner.Serial, IdentifierType: IdentifierType.InternalSerial)])]));
+        await InvokeAsync<ConvertLoanToReplacementResult>(new ConvertLoanToReplacement(
+            DemoIds.FromName("p5:loan-conversion"), loanDocument, original.UnitId,
+            await OriginalEntitlementIdAsync(original.UnitId, CoverageFamilyCode.Base, cancellationToken), loaner.UnitId,
+            ReplacementReason.WarrantyDefect, today.AddDays(-3), DemoDates.At(today.AddDays(-3), 10),
+            LegalEntityId, "DE", false, false, ActorRef: actor), cancellationToken);
+    }
+
+    private async Task CreateVendorReplacementAsync(CancellationToken cancellationToken)
+    {
+        ComponentFact component;
+        using (var scope = TenantScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var raw = await (from link in db.AssemblyLinks.AsNoTracking()
+                             join assignment in db.ItemAssignments.AsNoTracking()
+                                 on new { link.TenantId, UnitId = link.ChildUnitId!.Value }
+                                 equals new { assignment.TenantId, assignment.UnitId }
+                             join identifier in db.Identifiers.AsNoTracking()
+                                 on new { link.TenantId, UnitId = link.ChildUnitId!.Value }
+                                 equals new { identifier.TenantId, identifier.UnitId }
+                             where link.ChildUnitId != null && link.RemovedAt == null
+                                 && assignment.ItemId == Item("MD-64R").Id && assignment.ValidTo == null
+                                 && identifier.Type == IdentifierType.InternalSerial && identifier.ValidTo == null
+                                 && link.ParentUnitId != Units("RS-1100")[31].UnitId
+                             orderby link.ParentUnitId, link.LinkId
+                             select new { link.LinkId, link.ParentUnitId, UnitId = link.ChildUnitId!.Value, identifier.RawValue })
+                .FirstAsync(cancellationToken);
+            component = new(raw.LinkId, raw.ParentUnitId, raw.UnitId, raw.RawValue);
+        }
+
+        var customer = Party("C-NANDIRA");
+        var preparedAt = DemoDates.At(today.AddDays(-8), 9);
+        await InvokeAsync<RecordDisassemblyResult>(new RecordDisassembly(DemoIds.FromName("p5:vendor-component-remove"),
+            component.ParentUnitId, [component.LinkId], preparedAt, actor, LegalEntityId, "service_vendor_return"), cancellationToken);
+        await InvokeAsync<OpenOwnershipResult>(new OpenOwnership(DemoIds.FromName("p5:vendor-component-owner"),
+            component.UnitId, customer.Id, PartyType.Customer, EpisodeReason.ServiceInstallation, preparedAt.AddMinutes(1),
+            actor, LegalEntityId, EpisodeSource.Service, Document: Document("IN-HPC-2601", "invoice")), cancellationToken);
+        await InvokeAsync<ChangeCustodyResult>(new ChangeCustody(DemoIds.FromName("p5:vendor-component-custody"),
+            component.UnitId, LocationKind.CustomerSite, EpisodeReason.ServiceInstallation, preparedAt.AddMinutes(2),
+            actor, LegalEntityId, DemoIds.FromName("site:" + customer.Code), customer.Id, PartyType.Customer,
+            EpisodeSource.Service), cancellationToken);
+
+        var rma = await RequestAndAuthoriseRmaAsync("vendor-component", new DemoUnit(component.UnitId, "MD-64R", component.Serial, null),
+            customer, DemoDates.At(today.AddDays(-7), 9), CoverageFamilyCode.Supplier,
+            "Registered DIMM returned to its supplier", cancellationToken);
+        await ReceiveRmaAsync("vendor-component", rma, new DemoUnit(component.UnitId, "MD-64R", component.Serial, null),
+            ConditionGrades.Defective, "supplier_return_value", DemoDates.At(today.AddDays(-5), 10),
+            ReturnOutcome.Accepted, QuarantineId, cancellationToken);
+        await DispositionRmaAsync("vendor-component", rma, RmaDisposition.ReturnToVendor,
+            DemoDates.At(today.AddDays(-4), 10), cancellationToken, Party("V-MEMRYX").Id);
+
+        var replacement = await CommissionScenarioUnitAsync("vendor-component-replacement", "MD-64R", "13990001",
+            DemoDates.At(today.AddDays(-4), 11), WarehouseId, LocationKind.Warehouse, cancellationToken);
+        await InvokeAsync<OpenOwnershipResult>(new OpenOwnership(DemoIds.FromName("p5:vendor-replacement-owner"),
+            replacement.UnitId, Party("V-MEMRYX").Id, PartyType.Vendor, EpisodeReason.Receipt,
+            DemoDates.At(today.AddDays(-3), 9), actor, LegalEntityId, EpisodeSource.Receipt), cancellationToken);
+        await InvokeAsync<ChangeCustodyResult>(new ChangeCustody(DemoIds.FromName("p5:vendor-replacement-custody"),
+            replacement.UnitId, LocationKind.Vendor, EpisodeReason.Receipt, DemoDates.At(today.AddDays(-3), 9, 1),
+            actor, LegalEntityId, PartyRef: Party("V-MEMRYX").Id, PartyType: PartyType.Vendor,
+            Source: EpisodeSource.Receipt), cancellationToken);
+        await InvokeAsync<ReceiveVendorReplacementResult>(new ReceiveVendorReplacement(
+            DemoIds.FromName("p5:vendor-replacement-received"), rma.RmaLineId,
+            await LiveEntitlementIdAsync(component.UnitId, CoverageFamilyCode.Supplier, cancellationToken),
+            replacement.UnitId, WarehouseId, today.AddDays(-1), DemoDates.At(today.AddDays(-1), 10),
+            LegalEntityId, ActorRef: actor), cancellationToken);
+    }
+
+    private async Task CreateReplacementCorrectionAsync(CancellationToken cancellationToken)
+    {
+        var correctionId = DemoIds.FromName("p5:wrong-replacement-link:correction");
+        using (var scope = TenantScope())
+        {
+            if (await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Corrections.AsNoTracking()
+                    .AnyAsync(row => row.CorrectionId == correctionId, cancellationToken)) return;
+        }
+
+        var original = Units("DW-300")[13];
+        var recorded = Units("DW-300")[36];
+        var actual = Units("DW-300")[37];
+        var rma = await RequestAndAuthoriseRmaAsync("wrong-replacement-link", original, Party("C-ASHVANE"),
+            DemoDates.At(today.AddDays(-7), 10), CoverageFamilyCode.Base,
+            "Replacement unit was scanned incorrectly at shipping", cancellationToken);
+        await CreateAndShipReplacementAsync("wrong-replacement-link", ReplacementSourceKind.Rma, rma.RmaId,
+            rma.EntitlementId!.Value, recorded, ReplacementReason.WarrantyDefect,
+            DemoDates.At(today.AddDays(-6), 10), DemoDates.At(today.AddDays(-5), 10), "INR", "IN",
+            cancellationToken, returnReason: "warranty_defect");
+        var reason = CorrectReplacementLinkReason.WrongUnitScannedAtShipping;
+        await InvokeAsync<CorrectReplacementLinkResult>(new CorrectReplacementLink(correctionId, recorded.UnitId,
+            actual.UnitId, reason, DemoDates.At(today.AddDays(-4), 10), actor, LegalEntityId,
+            "Warehouse count and customer scan agree on the physical unit",
+            new CorrectionMetadata(correctionId, reason, "Physical delivery evidence checked",
+                EvidenceRefs: ["DEMO-CYCLE-COUNT", "DEMO-CUSTOMER-SCAN"],
+                InitiatingRole: CorrectionInitiatingRole.CustomerService,
+                Approvers: [new CorrectionApprover(actor, [YojanaRole.ServiceManager])]),
+            new CorrectionCommitter(actor, [YojanaRole.ServiceManager])), cancellationToken);
+    }
+
+    private async Task<RmaScenario> RequestRmaAsync(string key, DemoUnit unit, DemoCatalogue.CatalogueParty party,
+        DateTime requestedAt, string coverageFamily, string description, CancellationToken cancellationToken)
+    {
+        var result = await InvokeAsync<RequestRmaResult>(new RequestRma(DemoIds.FromName("p5:rma-request:" + key),
+            DateOnly.FromDateTime(requestedAt), party.Id, party.Id, ServiceEntityId, LegalEntityId,
+            CountryFor(party.Code), CurrencyFor(party.Code),
+            [new RmaRequestLineInput(UnitId: unit.UnitId, CoverageFamily: coverageFamily, RequestedAmount: 500m,
+                ClaimLineKind: ClaimLineKind.Parts, Description: description)], requestedAt, actor), cancellationToken);
+        return new(result.RmaId, result.LineIds.Single(), null);
+    }
+
+    private async Task<RmaScenario> RequestAndAuthoriseRmaAsync(string key, DemoUnit unit,
+        DemoCatalogue.CatalogueParty party, DateTime requestedAt, string coverageFamily, string description,
+        CancellationToken cancellationToken)
+    {
+        var requested = await RequestRmaAsync(key, unit, party, requestedAt, coverageFamily, description, cancellationToken);
+        var authorised = await InvokeAsync<AuthoriseRmaResult>(new AuthoriseRma(
+            DemoIds.FromName("p5:rma-authorise:" + key), requested.RmaId, requestedAt.AddHours(1), actor), cancellationToken);
+        var line = authorised.Lines.Single();
+        return requested with { EntitlementId = line.EntitlementId };
+    }
+
+    private async Task ReceiveRmaAsync(string key, RmaScenario rma, DemoUnit? received, string grade,
+        string valuationRule, DateTime receivedAt, string outcome, Guid locationId, CancellationToken cancellationToken,
+        string? exceptionNote = null)
+    {
+        await InvokeAsync<ReceiveReturnResult>(new ReceiveReturn(DemoIds.FromName("p5:rma-receive:" + key),
+            rma.RmaId, locationId,
+            [new ReturnReceiptLineInput(rma.RmaLineId,
+                received is null ? null : new DocumentSerial(received.Serial, IdentifierType: IdentifierType.InternalSerial),
+                grade, valuationRule, outcome, exceptionNote)], receivedAt.AddHours(-8), receivedAt, receivedAt,
+            actor), cancellationToken);
+    }
+
+    private async Task DispositionRmaAsync(string key, RmaScenario rma, string disposition, DateTime at,
+        CancellationToken cancellationToken, Guid? vendorPartyRef = null)
+    {
+        await InvokeAsync<DispositionRmaResult>(new DispositionRma(DemoIds.FromName("p5:rma-disposition:" + key),
+            rma.RmaId, [new RmaDispositionLineInput(rma.RmaLineId, disposition, vendorPartyRef)],
+            DateOnly.FromDateTime(at), at, actor), cancellationToken);
+    }
+
+    private async Task<ShipWarrantyReplacementResult> CreateAndShipReplacementAsync(string key, string sourceKind,
+        Guid sourceId, Guid sourceEntitlementId, DemoUnit replacement, string reason, DateTime createdAt,
+        DateTime shippedAt, string currency, string country, CancellationToken cancellationToken,
+        DateOnly? returnDue = null, decimal? nonReturnAmount = null, string? replacementPolicy = null,
+        string conditionAllowed = ReplacementConditionAllowed.Any, string? returnReason = null,
+        decimal restockingFeeBasis = 0m)
+    {
+        var created = await InvokeAsync<CreateWarrantyReplacementResult>(new CreateWarrantyReplacement(
+            DemoIds.FromName("p5:replacement-create:" + key), sourceKind, sourceId, sourceEntitlementId,
+            replacement.UnitId, reason, ReplacementPricePolicy.Zero, 0m, currency, country, false, false,
+            createdAt, LegalEntityId, actor, conditionAllowed, replacementPolicy, returnDue,
+            returnDue is null ? null : NonReturnPriceBasis.List, returnReason, restockingFeeBasis,
+            nonReturnAmount), cancellationToken);
+        return await InvokeAsync<ShipWarrantyReplacementResult>(new ShipWarrantyReplacement(
+            DemoIds.FromName("p5:replacement-ship:" + key), created.Document.Document.WarrantyReplacementId,
+            DateOnly.FromDateTime(shippedAt), shippedAt, actor), cancellationToken);
+    }
+
+    private async Task<ApprovedClaim> CreateApprovedClaimAsync(string key, DemoUnit unit,
+        DemoCatalogue.CatalogueParty customer, string coverageFamily, DateTime submittedAt, string description,
+        CancellationToken cancellationToken)
+    {
+        var submitted = await InvokeAsync<SubmitClaimResult>(new SubmitClaim(DemoIds.FromName("p5:claim:" + key),
+            unit.UnitId, null, DateOnly.FromDateTime(submittedAt), customer.Id, customer.Id, ServiceEntityId,
+            LegalEntityId, CountryFor(customer.Code), CurrencyFor(customer.Code),
+            [new ClaimLineInput(ClaimLineKind.Parts, coverageFamily, 500m, Description: description)],
+            [new ClaimEvidenceInput(ClaimEvidenceKind.Attachment, "DEMO-P5-" + key.ToUpperInvariant(), "Demo evidence")],
+            ClaimRemedy.Replacement, "P5-CHOICE-" + key.ToUpperInvariant(), submittedAt, actor), cancellationToken);
+        if (!submitted.Replayed) p5ClaimsCreated++;
+        var adjudicated = await InvokeAsync<AdjudicateClaimResult>(new AdjudicateClaim(
+            DemoIds.FromName("p5:claim-adjudicate:" + key), submitted.ClaimId, submittedAt.AddHours(1), actor,
+            new ClaimReviewer(actor, [YojanaRole.ServiceManager])), cancellationToken);
+        var entitlementId = adjudicated.Lines.Single().EntitlementId
+            ?? throw new InvalidOperationException($"P5 claim '{key}' did not resolve to an entitlement.");
+        return new(submitted.ClaimId, entitlementId);
+    }
+
+    private async Task<ApprovedClaim> ClaimSourceAsync(string key, CancellationToken cancellationToken)
+    {
+        using var scope = TenantScope();
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var commandId = DemoIds.FromName("claim:" + key);
+        var row = await (from claim in db.Claims.AsNoTracking()
+                         join line in db.ClaimLines.AsNoTracking()
+                             on new { claim.TenantId, claim.ClaimId } equals new { line.TenantId, line.ClaimId }
+                         where claim.CommandId == commandId && line.EntitlementId != null
+                         orderby line.Sequence
+                         select new { claim.ClaimId, EntitlementId = line.EntitlementId!.Value })
+            .FirstAsync(cancellationToken);
+        return new(row.ClaimId, row.EntitlementId);
+    }
+
+    private async Task<Guid> LiveEntitlementIdAsync(Guid unitId, string family, CancellationToken cancellationToken)
+    {
+        using var scope = TenantScope();
+        return await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Entitlements.AsNoTracking()
+            .Where(row => row.UnitId == unitId && row.CoverageFamily == family && row.Status != EntitlementStatus.Closed)
+            .OrderByDescending(row => row.CreatedAt).Select(row => row.EntitlementId).FirstAsync(cancellationToken);
+    }
+
+    private async Task<Guid> OriginalEntitlementIdAsync(Guid unitId, string family, CancellationToken cancellationToken)
+    {
+        using var scope = TenantScope();
+        return await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Entitlements.AsNoTracking()
+            .Where(row => row.UnitId == unitId && row.CoverageFamily == family)
+            .OrderBy(row => row.CreatedAt).Select(row => row.EntitlementId).FirstAsync(cancellationToken);
+    }
+
+    private async Task<DemoUnit> CommissionScenarioUnitAsync(string key, string itemCode, string serial,
+        DateTime at, Guid locationId, string locationKind, CancellationToken cancellationToken)
+    {
+        var result = await InvokeAsync<CommissionUnitsResult>(new CommissionUnits(DemoIds.FromName("p5:commission:" + key),
+            Item(itemCode).Id, UnitOrigin.Purchased, [new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, serial)])],
+            at, actor, LegalEntityId, LocationId: locationId, LocationKind: locationKind, Source: Source), cancellationToken);
+        var line = result.Lines.Single();
+        if (line.UnitId is null) throw new InvalidOperationException($"P5 scenario unit '{key}' was not commissioned: {string.Join(", ", line.Reasons)}");
+        return new(line.UnitId.Value, itemCode, serial, null);
+    }
+
+    private async Task WaitForLinkStateAsync(Guid replacementLinkId, string state, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            using var scope = TenantScope();
+            var current = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().ReplacementLinks.AsNoTracking()
+                .Where(row => row.ReplacementLinkId == replacementLinkId).Select(row => row.State).SingleAsync(cancellationToken);
+            if (current == state) return;
+            await Task.Delay(100, cancellationToken);
+        }
+        throw new InvalidOperationException($"Replacement link {replacementLinkId} did not reach '{state}'.");
+    }
+
+    private async Task WaitForCurrentOwnerAsync(IReadOnlyList<DemoUnit> saleUnits, Guid invoicePartyRef, Guid endOwnerPartyRef,
+        CancellationToken cancellationToken)
+    {
+        var unitIds = saleUnits.Select(unit => unit.UnitId).ToList();
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            using var scope = TenantScope();
+            var owned = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Current.AsNoTracking()
+                .CountAsync(row => unitIds.Contains(row.UnitId)
+                    && (row.OwnerPartyRef == invoicePartyRef || row.OwnerPartyRef == endOwnerPartyRef), cancellationToken);
+            if (owned == unitIds.Count) return;
+            await Task.Delay(100, cancellationToken);
+        }
+        throw new InvalidOperationException($"Sales posting did not establish ownership for all {unitIds.Count} unit(s).");
+    }
+
+    private async Task<bool> HasDocumentEventsAsync(DocumentRef document, string eventType,
+        IReadOnlyList<DemoUnit> documentUnits, CancellationToken cancellationToken)
+    {
+        var unitIds = documentUnits.Select(unit => unit.UnitId).ToList();
+        using var scope = TenantScope();
+        var recorded = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Events.AsNoTracking()
+            .Where(row => row.DocumentType == document.Type && row.DocumentId == document.Id
+                && row.EventType == eventType && unitIds.Contains(row.UnitId))
+            .Select(row => row.UnitId).Distinct().CountAsync(cancellationToken);
+        return recorded == unitIds.Count;
+    }
+
+    private async Task WaitForEntitlementRequirementsAsync(IReadOnlyList<DemoUnit> saleUnits,
+        CancellationToken cancellationToken)
+    {
+        var unitIds = saleUnits.Select(unit => unit.UnitId).ToList();
+        for (var attempt = 0; attempt < 300; attempt++)
+        {
+            using var scope = TenantScope();
+            var pending = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().EntitlementRequirements.AsNoTracking()
+                .AnyAsync(row => unitIds.Contains(row.UnitId) && row.Status == EntitlementRequirementStatus.Open, cancellationToken);
+            if (!pending) return;
+            await Task.Delay(100, cancellationToken);
+        }
+        throw new InvalidOperationException($"Entitlement requirements did not settle for all {unitIds.Count} unit(s).");
+    }
+
+    private static string CountryFor(string partyCode) => partyCode switch
+    {
+        "C-ASHVANE" or "C-CLOUDMERE" => "IN",
+        "C-NANDIRA" or "C-TORRENFOLD" => "DE",
+        _ => "GB",
+    };
+
+    private static string CurrencyFor(string partyCode) => partyCode switch
+    {
+        "C-ASHVANE" or "C-CLOUDMERE" => "INR",
+        "C-NANDIRA" or "C-TORRENFOLD" => "EUR",
+        _ => "GBP",
+    };
 
     private async Task CreateCampaignsAsync(CancellationToken cancellationToken)
     {
@@ -531,8 +1161,16 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         var campaignCount = await db.Campaigns.CountAsync(cancellationToken);
         Console.WriteLine();
         Console.WriteLine("IT-hardware demo dataset is ready for tenant DEV.");
+        var rmaCounts = await db.Rmas.AsNoTracking().GroupBy(row => row.Stage).Select(group => new { Stage = group.Key, Count = group.Count() })
+            .ToDictionaryAsync(row => row.Stage, row => row.Count, cancellationToken);
+        var replacementCount = await db.WarrantyReplacements.CountAsync(cancellationToken);
+        var awaitingCount = await db.ReplacementLinks.CountAsync(row => row.State == ReplacementLinkState.AwaitingReturn, cancellationToken);
+        var overdueCount = await db.ReplacementLinks.CountAsync(row => row.OverdueEventId != null && row.State == ReplacementLinkState.AwaitingReturn, cancellationToken);
+        var heldCustomers = await db.PartyReplacementHolds.CountAsync(row => row.LiftedAt == null, cancellationToken);
+        var refurbishmentCount = await db.RefurbishmentWorkOrders.CountAsync(cancellationToken);
         Console.WriteLine($"Units {unitCount}; assembled finished goods {assembled}; entitlements {entitlementCount}; claims {claimCount}; recovery claims {recoveryCount}; campaigns {campaignCount}.");
-        Console.WriteLine($"This run added {claimsCreated} claim(s) and approved {recoveriesApproved} vendor answer(s); stable command ids make re-runs no-ops.");
+        Console.WriteLine($"RMAs {rmaCounts.Values.Sum()} ({string.Join(", ", RmaStage.All.Select(stage => $"{stage} {rmaCounts.GetValueOrDefault(stage)}"))}); replacements {replacementCount}; awaiting return {awaitingCount}; overdue {overdueCount}; customers on hold {heldCustomers}; refurbishment work orders {refurbishmentCount}.");
+        Console.WriteLine($"This run added {claimsCreated + p5ClaimsCreated} claim(s) and approved {recoveriesApproved} vendor answer(s); stable command ids make re-runs no-ops.");
     }
 
     private async Task ReceiptAsync(string number, Guid vendor, DateOnly day, IReadOnlyList<DocumentLine> lines,
@@ -588,8 +1226,19 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         DocumentRef invoice, DateOnly contractDate, DateTime eventTime, string country, string channel, CancellationToken cancellationToken)
     {
         // A sold unit whose item requires cover on sale gets it from the entitlement-requirement handler, which runs
-        // off the bus after the invoice. Let it finish, then create only what the sale did not.
-        if (await LiveEntitlementAfterRequirementsAsync(unit.UnitId, family, cancellationToken)) return;
+        // off the bus after the invoice. Let it finish, then strengthen delivery fallback evidence to the invoice or
+        // create only what the sale did not.
+        if (await LiveEntitlementAfterRequirementsAsync(unit.UnitId, family, cancellationToken) is { } live)
+        {
+            if (live.StartBasis != StartTrigger.Invoice)
+            {
+                await InvokeAsync<EntitlementChangeResult>(new RebaseEntitlementStart(
+                    DemoIds.FromName($"entitlement-rebase:{family}:{unit.Serial}"), live.EntitlementId,
+                    StartTrigger.Invoice, eventTime, $"{invoice.Type}:{invoice.Id:N}", eventTime.AddHours(4), actor), cancellationToken);
+            }
+            return;
+        }
+        if (await HasAnyEntitlementAsync(unit.UnitId, family, cancellationToken)) return;
         await InvokeAsync<CreateEntitlementResult>(new CreateEntitlement(DemoIds.FromName($"entitlement:{family}:{unit.Serial}"), unit.UnitId,
             family, contractDate, LegalEntityId, eventTime.AddHours(3), actor,
             new Dictionary<string, DateTime> { [StartTrigger.Invoice] = eventTime }, policyVersionId,
@@ -598,20 +1247,29 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             BuyerKind: RefurbishedBuyerKind.Business), cancellationToken);
     }
 
-    private async Task<bool> LiveEntitlementAfterRequirementsAsync(Guid unitId, string family, CancellationToken cancellationToken)
+    private async Task<LiveEntitlementFact?> LiveEntitlementAfterRequirementsAsync(Guid unitId, string family, CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < 100; attempt++)
         {
             using var scope = TenantScope();
             var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
-            if (await db.Entitlements.AsNoTracking().AnyAsync(row => row.UnitId == unitId && row.CoverageFamily == family
-                    && row.Status != EntitlementStatus.Closed, cancellationToken)) return true;
+            var live = await db.Entitlements.AsNoTracking().Where(row => row.UnitId == unitId && row.CoverageFamily == family
+                    && row.Status != EntitlementStatus.Closed)
+                .Select(row => new LiveEntitlementFact(row.EntitlementId, row.StartBasis)).FirstOrDefaultAsync(cancellationToken);
+            if (live is not null) return live;
             if (!await db.EntitlementRequirements.AsNoTracking().AnyAsync(row => row.UnitId == unitId
-                    && row.Status == EntitlementRequirementStatus.Open, cancellationToken)) return false;
+                    && row.Status == EntitlementRequirementStatus.Open, cancellationToken)) return null;
             await Task.Delay(100, cancellationToken);
         }
 
-        return false;
+        return null;
+    }
+
+    private async Task<bool> HasAnyEntitlementAsync(Guid unitId, string family, CancellationToken cancellationToken)
+    {
+        using var scope = TenantScope();
+        return await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Entitlements.AsNoTracking()
+            .AnyAsync(row => row.UnitId == unitId && row.CoverageFamily == family, cancellationToken);
     }
 
     private async Task<Guid> EnsurePolicyAsync(PolicyDefinition definition, CancellationToken cancellationToken)
@@ -639,31 +1297,41 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         decimal travel = 0, int? responseHours = null, IReadOnlyList<string>? regions = null, string durationBasis = "time",
         IReadOnlyList<UsageLimitTerm>? usage = null, string type = EntitlementType.Manufacturer, string assurance = AssuranceOrService.Assurance) =>
         new(code, name, family, type, new PolicyTerms(new DurationRule(months, DurationRule.Months), durationBasis, usage ?? [],
-            new StartRule(StartTrigger.Invoice, [], null), new CoverageTerms(100, 100, travel, serviceMode, responseHours,
+            new StartRule(StartTrigger.Invoice, [new StartFallback(StartTrigger.Deliver)], 30), new CoverageTerms(100, 100, travel, serviceMode, responseHours,
                 responseHours is null ? null : "business_hours"), ["misuse", "unauthorised_modification", "consumables"],
             regions ?? ["IN", "GB", "DE", "FR", "US"], "yes", "full", null, [], 30, assurance, PolicyTerms.TimeZoneUtc,
-            ServiceContractRegulated: assurance == AssuranceOrService.Service));
+            ServiceContractRegulated: assurance == AssuranceOrService.Service) with { ReplacementPolicyCode = "DEMO-REPLACE-90" });
 
     private PolicyDefinition SupplierPolicy(string code, string name, int months) =>
         new(code, name, CoverageFamilyCode.Supplier, EntitlementType.Manufacturer,
             new PolicyTerms(new DurationRule(months, DurationRule.Months), "time", [], new StartRule(StartTrigger.Receipt, [], null),
                 new CoverageTerms(100, 0, 0, "return_to_base"), [], ["IN", "GB", "DE", "US"], "no", "full", null, [],
-                null, AssuranceOrService.Assurance, PolicyTerms.TimeZoneUtc));
+                null, AssuranceOrService.Assurance, PolicyTerms.TimeZoneUtc) with { ReplacementPolicyCode = "DEMO-REPLACE-90" });
 
     private IReadOnlyList<SalePlan> SalesPlan() =>
     [
         new("hpc", "DN-HPC-2601", "IN-HPC-2601", Party("C-NANDIRA"), Party("C-NANDIRA"),
-            [.. Units("RS-1100").Take(32), .. Units("SS-1110"), .. Units("NX-4850").Take(2)], "DE", "EUR", "direct", 60),
+            [.. Units("RS-1100").Take(31), .. Units("SS-1110"), .. Units("NX-4850").Take(2)], "DE", "EUR", "direct", 60),
         new("hospital", "DN-HOSP-2601", "IN-HOSP-2601", Party("R-KEPLORA"), Party("C-VELMORA"),
             [Units("RT-1200T")[0], Units("RS-1520")[0], Units("LB-14")[4], Units("LB-14")[5]], "GB", "GBP", "reseller", 55),
         new("bank", "DN-BANK-2601", "IN-BANK-2601", Party("D-GRIDLOOM"), Party("C-ASHVANE"),
-            [.. Units("SS-1112"), .. Units("DW-300").Take(6), .. Units("LB-14").Take(4)], "IN", "INR", "distributor", 50),
+            [Units("RS-1100")[31], .. Units("SS-1112"), .. Units("DW-300").Take(6), .. Units("LB-14").Take(4)], "IN", "INR", "distributor", 50),
         new("engineering", "DN-ENG-2601", "IN-ENG-2601", Party("R-CIRRAVUE"), Party("C-TORRENFOLD"),
             [Units("RS-1520")[1], Units("RG-4800")[0], Units("DW-300")[6], Units("DW-300")[7]], "DE", "EUR", "reseller", 46),
         new("studio", "DN-STUDIO-2601", "IN-STUDIO-2601", Party("C-MIREVA"), Party("C-MIREVA"),
-            [.. Units("PF-400")], "GB", "GBP", "direct", 42),
+            [.. Units("PF-400").Take(3)], "GB", "GBP", "direct", 42),
         new("isp", "DN-ISP-2601", "IN-ISP-2601", Party("C-CLOUDMERE"), Party("C-CLOUDMERE"),
             [.. Units("NX-4850").Skip(2), .. Units("NR-220")], "IN", "INR", "direct", 38),
+        new("p5-bank", "DN-P5-BANK", "IN-P5-BANK", Party("C-ASHVANE"), Party("C-ASHVANE"),
+            [.. Units("DW-300").Skip(8).Take(6)], "IN", "INR", "direct", 25),
+        new("p5-engineering", "DN-P5-ENG", "IN-P5-ENG", Party("R-CIRRAVUE"), Party("C-TORRENFOLD"),
+            [.. Units("DW-300").Skip(14).Take(5)], "DE", "EUR", "reseller", 10),
+        new("p5-cloudmere", "DN-P5-CLOUD", "IN-P5-CLOUD", Party("C-CLOUDMERE"), Party("C-CLOUDMERE"),
+            [.. Units("DW-300").Skip(19).Take(5)], "IN", "INR", "direct", 18),
+        new("p5-hospital", "DN-P5-HOSP", "IN-P5-HOSP", Party("R-KEPLORA"), Party("C-VELMORA"),
+            [.. Units("DW-300").Skip(24).Take(4)], "GB", "GBP", "reseller", 15),
+        new("p5-goodwill", "DN-P5-GOODWILL", "IN-P5-GOODWILL", Party("C-MIREVA"), Party("C-MIREVA"),
+            [Units("PF-400")[3]], "GB", "GBP", "direct", 20),
     ];
 
     private List<DocumentLine> LinesFor(IReadOnlyList<DemoUnit> saleUnits) => saleUnits.GroupBy(unit => unit.Code)
@@ -692,6 +1360,8 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         ? item : throw new InvalidOperationException($"Catalogue item '{code}' is missing.");
     private DemoCatalogue.CatalogueParty Party(string code) => catalogue.Parties.TryGetValue(code, out var party)
         ? party : throw new InvalidOperationException($"Catalogue party '{code}' is missing.");
+    private DemoCatalogue.CatalogueLocation Location(string code) => catalogue.Locations.TryGetValue(code, out var location)
+        ? location : throw new InvalidOperationException($"Catalogue location '{code}' is missing.");
     private List<DemoUnit> Units(string code) => units.TryGetValue(code, out var rows) ? rows : [];
     private DocumentRef Document(string number, string type) => catalogue.Documents.TryGetValue(number, out var row)
         ? new DocumentRef(row.Type, row.Id) : new DocumentRef(type, DemoIds.FromName("document:" + number));
@@ -709,9 +1379,19 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
 
     private async Task<T> InvokeAsync<T>(object message, CancellationToken cancellationToken) where T : class
     {
-        using var scope = services.CreateScope();
-        return await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<T>(message,
-            new DeliveryOptions { TenantId = tenant.ToString() }, cancellationToken);
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                using var scope = services.CreateScope();
+                return await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<T>(message,
+                    new DeliveryOptions { TenantId = tenant.ToString() }, cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException) when (attempt < 4)
+            {
+                await Task.Delay(50 * (attempt + 1), cancellationToken);
+            }
+        }
     }
 
     private static async Task StepAsync(string name, Func<CancellationToken, Task> work, CancellationToken cancellationToken)
@@ -736,6 +1416,10 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
 
     private sealed record PolicyDefinition(string Code, string Name, string Family, string Type, PolicyTerms Terms);
     private sealed record DemoUnit(Guid UnitId, string Code, string Serial, Guid? LotId);
+    private sealed record LiveEntitlementFact(Guid EntitlementId, string? StartBasis);
+    private sealed record RmaScenario(Guid RmaId, Guid RmaLineId, Guid? EntitlementId);
+    private sealed record ApprovedClaim(Guid ClaimId, Guid EntitlementId);
+    private sealed record ComponentFact(Guid LinkId, Guid ParentUnitId, Guid UnitId, string Serial);
     private sealed record SalePlan(string Key, string ShipmentNumber, string InvoiceNumber, DemoCatalogue.CatalogueParty InvoiceParty,
         DemoCatalogue.CatalogueParty EndOwner, IReadOnlyList<DemoUnit> Units, string Country, string Currency, string Channel, int DaysAgo);
     private sealed record ClaimPlan(string Key, DemoUnit? Unit, DemoCatalogue.CatalogueParty Customer, string Currency, string Country,
