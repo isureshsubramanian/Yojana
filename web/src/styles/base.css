@@ -156,11 +156,15 @@ svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-wid
 .badge.neutral { color: var(--text-2); background: var(--surface-2); }
 
 /* Key/value lists */
-.kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; row-gap: 10px; column-gap: 16px; font-size: 13px; }
+/* Values sit beside their labels, left-aligned (owner review 2026-10-17): the label column takes the longest label up to
+   40 % of the block, so a long label truncates before it squeezes the value. */
+.kv { display: grid; grid-template-columns: fit-content(40%) minmax(0, 1fr); row-gap: 10px; column-gap: 20px; font-size: 13px; }
 .kv .k { color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kv .v { color: var(--text-1); font-weight: 500; text-align: right; white-space: nowrap; }
+.kv .v { color: var(--text-1); font-weight: 500; text-align: left; overflow-wrap: anywhere; }
 .kv .v.muted { color: var(--text-3); font-weight: 400; }
 .kv.wide { grid-template-columns: 160px minmax(0, 1fr); }
+/* In the drawer every section shares one label column, so stacked sections line up. */
+.rail .kv { grid-template-columns: 120px minmax(0, 1fr); }
 .kv.wide .v { text-align: left; white-space: normal; }
 
 /* Right rail */

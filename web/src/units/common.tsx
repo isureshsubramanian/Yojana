@@ -16,10 +16,12 @@ export function Kv({ rows }: { rows: [string, ReactNode][] }) {
 
 function KvRow({ label, value }: { label: string; value: ReactNode }) {
   const empty = value === null || value === undefined || value === "" || value === "—";
+  // A label or a plain value may be cut off by the column; the title keeps the full text one hover away.
+  const full = typeof value === "string" || typeof value === "number" ? String(value) : undefined;
   return (
     <>
-      <span className="k">{label}</span>
-      <span className={empty ? "v muted" : "v"}>{empty ? "—" : value}</span>
+      <span className="k" title={label}>{label}</span>
+      <span className={empty ? "v muted" : "v"} title={empty ? undefined : full}>{empty ? "—" : value}</span>
     </>
   );
 }

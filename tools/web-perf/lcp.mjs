@@ -4,6 +4,7 @@
 //
 //   node tools/web-perf/lcp.mjs --base http://localhost:5080 [--budget-ms 2000] [--browser <path>]
 //        [--email admin@dev.yojana.local] [--password ...] [--pages /sign-in,/tenants,/] [--screenshots dir] [--no-throttle]
+//        [--click "<css selector>"]  clicks the first match on each page after LCP is read (e.g. a row, to open its drawer)
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,6 +21,7 @@ const email = args.email ?? process.env.YOJANA_LCP_EMAIL ?? "admin@dev.yojana.lo
 const password = args.password ?? process.env.YOJANA_SEED_PASSWORD ?? "";
 const throttle = args["no-throttle"] !== "true";
 const shots = args.screenshots;
+const click = args.click;
 
 const candidates = [
   args.browser, process.env.YOJANA_BROWSER,
@@ -103,6 +105,10 @@ for (const page of pages) {
   const info = JSON.parse(result.value);
   const lcp = info.lcp ? Math.round(info.lcp.time) : null;
   results.push({ page, landed: info.url, lcp, element: info.lcp?.tag ?? null });
+  if (click) {
+    await send("Runtime.evaluate", { expression: `document.querySelector(${JSON.stringify(click)})?.click()` }, sessionId);
+    await sleep(800);
+  }
   if (shots) {
     mkdirSync(shots, { recursive: true });
     const name = page === "/" ? "overview" : page.replace(/^\//, "").replace(/[^a-z0-9-]+/gi, "-");

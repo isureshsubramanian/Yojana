@@ -31,8 +31,8 @@ export function HoverCard({ metadata }: { metadata: ResultMetadata | null }) {
 function FieldRow({ label, value, mono }: { label: string; value: string | null; mono: boolean }) {
   return (
     <>
-      <span className="k">{label}</span>
-      <span className={`v${value === null ? " muted" : ""}${mono ? " serial" : ""}`}>{value ?? "—"}</span>
+      <span className="k" title={label}>{label}</span>
+      <span className={`v${value === null ? " muted" : ""}${mono ? " serial" : ""}`} title={value ?? undefined}>{value ?? "—"}</span>
     </>
   );
 }
