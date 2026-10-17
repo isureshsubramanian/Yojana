@@ -25,6 +25,22 @@ public static class PublishedEventSink
             return (IReadOnlyList<T>)Received.OfType<T>().Where(match).ToList();
         });
     }
+
+    public static Task<IReadOnlyList<T>> WaitForSummaryAsync<T>(Func<T, bool> match, int count, TimeSpan timeout) where T : IPublishedSummaryEvent
+    {
+        return Task.Run(async () =>
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < deadline)
+            {
+                var hits = Summaries.OfType<T>().Where(match).ToList();
+                if (hits.Count >= count) return (IReadOnlyList<T>)hits;
+                await Task.Delay(100);
+            }
+
+            return (IReadOnlyList<T>)Summaries.OfType<T>().Where(match).ToList();
+        });
+    }
 }
 
 public static class PublishedEventSinkHandler

@@ -67,12 +67,26 @@ public sealed record CorrectionPreview(
     IReadOnlyList<CorrectionEntitlementPreview> EntitlementChanges,
     IReadOnlyList<CorrectionCertificatePreview> CertificateVersions,
     IReadOnlyList<CorrectionPrintJobPreview> PrintJobs,
-    CommandRefusal? Refusal = null);
+    CommandRefusal? Refusal = null,
+    IReadOnlyList<CorrectionAllocationPreview>? AllocationReassignments = null);
 
 public sealed record CorrectionEventPreview(Guid UnitId, string EventType, DateTime EffectiveAt, string? Summary = null);
 public sealed record CorrectionEntitlementPreview(Guid UnitId, string Change, Guid? EntitlementId = null, string? Summary = null);
 public sealed record CorrectionCertificatePreview(Guid UnitId, string CertificateType, string Action, string Reason);
 public sealed record CorrectionPrintJobPreview(Guid UnitId, string JobType, string Reason);
+/// <summary>One ordered pair (or one-sided move) in an allocation correction preview.</summary>
+public sealed record CorrectionAllocationPreview(
+    int Pair,
+    string FromSerial,
+    string? ExchangeSerial,
+    Guid FromSerialRangeId,
+    Guid? ExchangeSerialRangeId,
+    DocumentRef FromProductionOrder,
+    DocumentRef ToProductionOrder,
+    string Outcome,
+    string? Rule = null,
+    string? Detail = null,
+    string? UnblockingStep = null);
 
 /// <summary>Run the named bulk operation over a stored selection without writing; the outcomes are the command's own.</summary>
 /// <see cref="Approval"/> is who previews and the roles they hold (the endpoint sets it from the claims), so the preview judges the set as that person would commit it.

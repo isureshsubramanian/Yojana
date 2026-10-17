@@ -176,6 +176,29 @@ public sealed record CorrectDocumentSerialsResult(
     bool FinanceReviewRequired,
     bool Replayed = false);
 
+/// <summary>
+/// Identity rule 13: selected reservations may move before commissioning without changing an identity. A pairwise
+/// exchange pairs the two selections in their supplied order; a move uses only <see cref="FromSerials"/>. The serial
+/// selections use the pasted-list and scheme-validated range shapes already used by bulk selection sets.
+/// </summary>
+public sealed record ReassignAllocation(
+    Guid CommandId,
+    DocumentRef FromProductionOrder,
+    DocumentRef ToProductionOrder,
+    string Mode,
+    SelectionSource FromSerials,
+    SelectionSource? ToSerials,
+    string Reason,
+    DateTime EventTime,
+    string ActorRef,
+    Guid LegalEntityId,
+    string? Note = null,
+    CorrectionMetadata? Correction = null,
+    CorrectionCommitter? CommittedBy = null,
+    bool PreviewOnly = false);
+
+public sealed record ReassignAllocationResult(Guid CorrectionId, Guid? EventId, CorrectionPreview Preview, bool Replayed);
+
 /// <summary>Release a <c>pre_release</c> unit on its release signature; freezes the as-built into BuildRecord version 1 (or the next version after reassembly).</summary>
 public sealed record ReleaseUnit(Guid CommandId, Guid UnitId, DateTime EventTime, string ActorRef, Guid LegalEntityId, string ReleaseSignatureRef, DocumentRef? Document = null, string? Revision = null, Guid? FacilityId = null, string? TestResultsJson = null);
 

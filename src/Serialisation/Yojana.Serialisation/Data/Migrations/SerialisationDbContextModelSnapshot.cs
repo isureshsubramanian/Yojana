@@ -1868,6 +1868,195 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("selection_set_member", "serialisation");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.SerialAllocationOverride", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Scheme")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("scheme");
+
+                    b.Property<long>("SerialOrdinal")
+                        .HasColumnType("bigint")
+                        .HasColumnName("serial_ordinal");
+
+                    b.Property<Guid?>("CommissionedUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("commissioned_unit_id");
+
+                    b.Property<Guid>("LastCorrectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("last_correction_id");
+
+                    b.Property<Guid>("ProductionOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("production_order_id");
+
+                    b.Property<int?>("ProductionOrderLine")
+                        .HasColumnType("int")
+                        .HasColumnName("production_order_line");
+
+                    b.Property<string>("ProductionOrderType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("production_order_type");
+
+                    b.Property<Guid>("SerialRangeId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("serial_range_id");
+
+                    b.Property<string>("SerialValue")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("serial_value");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("TenantId", "Scheme", "SerialOrdinal")
+                        .HasName("pk_serial_allocation_override");
+
+                    b.HasIndex("TenantId", "CommissionedUnitId")
+                        .HasDatabaseName("ix_serial_allocation_override_tenant_id_commissioned_unit_id");
+
+                    b.HasIndex("TenantId", "SerialRangeId", "SerialOrdinal")
+                        .HasDatabaseName("ix_serial_allocation_override_tenant_id_serial_range_id_serial_ordinal");
+
+                    b.HasIndex("TenantId", "ProductionOrderType", "ProductionOrderId", "ProductionOrderLine")
+                        .HasDatabaseName("ix_serial_allocation_override_tenant_id_production_order_type_production_order_id_production_order_line");
+
+                    b.ToTable("serial_allocation_override", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.SerialAllocationReassignment", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ReassignmentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reassignment_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<string>("Attributes")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("attributes");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<Guid>("CorrectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("correction_id");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<DateTime>("EventTime")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("event_time");
+
+                    b.Property<Guid>("LegalEntityId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("legal_entity_id");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("mode");
+
+                    b.Property<Guid>("NewProductionOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("new_production_order_id");
+
+                    b.Property<int?>("NewProductionOrderLine")
+                        .HasColumnType("int")
+                        .HasColumnName("new_production_order_line");
+
+                    b.Property<string>("NewProductionOrderType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("new_production_order_type");
+
+                    b.Property<int>("Pair")
+                        .HasColumnType("int")
+                        .HasColumnName("pair");
+
+                    b.Property<Guid>("PreviousProductionOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("previous_production_order_id");
+
+                    b.Property<int?>("PreviousProductionOrderLine")
+                        .HasColumnType("int")
+                        .HasColumnName("previous_production_order_line");
+
+                    b.Property<string>("PreviousProductionOrderType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("previous_production_order_type");
+
+                    b.Property<DateTime>("RecordedTime")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("recorded_time");
+
+                    b.Property<string>("Scheme")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("scheme");
+
+                    b.Property<long>("SerialOrdinal")
+                        .HasColumnType("bigint")
+                        .HasColumnName("serial_ordinal");
+
+                    b.Property<Guid>("SerialRangeId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("serial_range_id");
+
+                    b.Property<string>("SerialValue")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("serial_value");
+
+                    b.HasKey("TenantId", "ReassignmentId")
+                        .HasName("pk_serial_allocation_reassignment");
+
+                    b.HasIndex("TenantId", "CommandId", "Scheme", "SerialOrdinal")
+                        .IsUnique()
+                        .HasDatabaseName("ux_serial_allocation_reassignment_tenant_id_command_id_scheme_serial_ordinal");
+
+                    b.HasIndex("TenantId", "CorrectionId", "Scheme", "SerialOrdinal")
+                        .IsUnique()
+                        .HasDatabaseName("ux_serial_allocation_reassignment_tenant_id_correction_id_scheme_serial_ordinal");
+
+                    b.HasIndex("TenantId", "SerialRangeId", "SerialOrdinal", "EventTime")
+                        .HasDatabaseName("ix_serial_allocation_reassignment_tenant_id_serial_range_id_serial_ordinal_event_time");
+
+                    b.ToTable("serial_allocation_reassignment", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_serial_allocation_reassignment_attributes_json", "ISJSON(attributes) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.SerialRange", b =>
                 {
                     b.Property<Guid>("TenantId")

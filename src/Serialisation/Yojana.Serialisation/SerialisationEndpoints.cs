@@ -87,6 +87,22 @@ public static class SerialisationEndpoints
                 ActorRef = Actor(user), CommittedBy = CorrectionCommitter(user),
                 Correction = ApiCorrection(command.CommandId, command.Reason, null, command.Correction, user),
             }, ct));
+        corrections.MapPost("/reassign-allocation/preview", (ReassignAllocation command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<ReassignAllocationResult>(bus, tenant, command with
+            {
+                ActorRef = Actor(user),
+                Correction = ApiCorrection(command.CommandId, command.Reason, command.Note, command.Correction, user),
+                CommittedBy = CorrectionCommitter(user),
+                PreviewOnly = true,
+            }, ct));
+        corrections.MapPost("/reassign-allocation", (ReassignAllocation command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<ReassignAllocationResult>(bus, tenant, command with
+            {
+                ActorRef = Actor(user),
+                Correction = ApiCorrection(command.CommandId, command.Reason, command.Note, command.Correction, user),
+                CommittedBy = CorrectionCommitter(user),
+                PreviewOnly = false,
+            }, ct));
         corrections.MapPost("/as-built", (CorrectAsBuilt command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
         {
             var secured = Secure(command, user);

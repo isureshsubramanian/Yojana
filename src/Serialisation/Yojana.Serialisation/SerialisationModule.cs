@@ -43,6 +43,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<IdentifierService>();
         builder.Services.AddSingleton<InMemorySerialSchemes>();
         builder.Services.TryAddSingleton<ISerialSchemeSource>(sp => sp.GetRequiredService<InMemorySerialSchemes>());
+        builder.Services.AddScoped<SerialAllocationReservationStore>();
         builder.Services.AddScoped<SerialRangeService>();
         builder.Services.AddScoped<AsBuiltCompleteness>();
         builder.Services.AddScoped<EpisodeService>();
@@ -123,6 +124,7 @@ public static class SerialisationModule
         builder.Services.AddSingleton<InMemoryDocumentPorts>();
         builder.Services.TryAddSingleton<IPurchasingDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.TryAddSingleton<IManufacturingDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
+        builder.Services.TryAddSingleton<IProductionOrderAllocationPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.TryAddSingleton<IInventoryDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.TryAddSingleton<ISalesDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.TryAddSingleton<IServiceDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());

@@ -30,6 +30,9 @@ public sealed record VendorShipment(DocumentRef Document, Guid VendorPartyRef, G
 /// <summary>A produced parent with the component lines consumed into it (serials where known).</summary>
 public sealed record ProductionReceipt(DocumentRef Document, DocumentRef ProductionOrder, DateTime PostedAt, IReadOnlyList<DocumentLine> Produced, IReadOnlyList<ComponentIssue> Components, Guid? FacilityId = null);
 
+/// <summary>The allocation facts Serialisation needs to decide whether reservations may move to a production order.</summary>
+public sealed record ProductionOrderAllocation(DocumentRef ProductionOrder, Guid ItemId, string SerialScheme, int Quantity);
+
 /// <summary>A component line issued into a parent serial (or into the order when the parent is not serialised yet).</summary>
 public sealed record ComponentIssue(int LineNo, Guid ComponentItemId, decimal Quantity, IReadOnlyList<DocumentSerial> Serials, string? ParentSerial = null, string? Slot = null, Guid? LotId = null, Guid? ThroughPhantomItemId = null);
 
@@ -91,6 +94,15 @@ public interface IManufacturingDocumentQueryPort
     Task<ProductionReceipt?> GetProductionReceiptAsync(DocumentRef document, CancellationToken cancellationToken);
 
     Task<ComponentIssueDocument?> GetComponentIssueAsync(DocumentRef document, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Narrow Manufacturing boundary for reservation reassignment. Serialisation owns the reservation; Manufacturing owns
+/// the target order's item and serial scheme, so neither module reads the other's tables.
+/// </summary>
+public interface IProductionOrderAllocationPort
+{
+    Task<ProductionOrderAllocation?> GetAsync(DocumentRef productionOrder, CancellationToken cancellationToken);
 }
 
 public interface IInventoryDocumentQueryPort

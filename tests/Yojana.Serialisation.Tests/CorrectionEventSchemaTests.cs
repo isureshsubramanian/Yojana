@@ -29,7 +29,7 @@ public sealed class CorrectionEventSchemaTests
         SummaryEntry<UnitIdentifiersAssigned>(UnitIdentifiersAssigned.Schema, UnitIdentifiersAssigned.Version,
             h => new(h, Correction, new("production_order", Id(60), null), [new(Id(61), Id(62), new("vendor_serial", "OEM", "V-61", Id(63)))], 1, [Id(64)])),
         SummaryEntry<UnitAllocationReassigned>(UnitAllocationReassigned.Schema, UnitAllocationReassigned.Version,
-            h => new(h, Correction, [new(Id(70), new("production_order", Id(71), null), new("production_order", Id(72), null))])),
+            h => new(h, Correction, [new("SER-70", Id(70), new("production_order", Id(71), null), new("production_order", Id(72), null))])),
         SummaryEntry<DocumentSerialsCorrected>(DocumentSerialsCorrected.Schema, DocumentSerialsCorrected.Version,
             h => new(h, Correction, new("delivery", Id(80), null), [Id(81), Id(82)], [Id(83), Id(84)], true, true)),
         SummaryEntry<OwnershipSourceDocumentCorrected>(OwnershipSourceDocumentCorrected.Schema, OwnershipSourceDocumentCorrected.Version,
