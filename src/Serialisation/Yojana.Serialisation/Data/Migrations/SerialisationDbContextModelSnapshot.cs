@@ -2233,6 +2233,79 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.LifeEpisode", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("LifeEpisodeId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("life_episode_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<Guid?>("ClosingEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("closing_event_id");
+
+                    b.Property<int?>("CycleNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("cycle_number");
+
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("ended_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("OpeningEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("opening_event_id");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("started_at");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<Guid?>("WorkOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("work_order_id");
+
+                    b.HasKey("TenantId", "LifeEpisodeId")
+                        .HasName("pk_life_episode");
+
+                    b.HasIndex("TenantId", "WorkOrderId")
+                        .HasDatabaseName("ix_life_episode_tenant_id_work_order_id");
+
+                    b.HasIndex("TenantId", "UnitId", "Kind")
+                        .IsUnique()
+                        .HasDatabaseName("ux_life_episode_tenant_id_unit_id_kind")
+                        .HasFilter("[ended_at] IS NULL");
+
+                    b.HasIndex("TenantId", "UnitId", "StartedAt")
+                        .HasDatabaseName("ix_life_episode_tenant_id_unit_id_started_at");
+
+                    b.ToTable("life_episode", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_life_episode_dates", "ended_at IS NULL OR ended_at >= started_at");
+
+                            t.HasCheckConstraint("ck_life_episode_kind", "kind IN ('refurbish', 'remanufacture', 'rework')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ManufacturingMessageReceipt", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -3015,6 +3088,113 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.SanitisationRecord", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("SanitisationRecordId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("sanitisation_record_id");
+
+                    b.Property<string>("CertificateRef")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)")
+                        .HasColumnName("certificate_ref");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("Manufacturer")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("manufacturer");
+
+                    b.Property<string>("MediaSerial")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("media_serial");
+
+                    b.Property<string>("MediaType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("media_type");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("method");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("model");
+
+                    b.Property<string>("OperatorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("operator_ref");
+
+                    b.Property<DateTime>("SanitisedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("sanitised_at");
+
+                    b.Property<string>("SignatureRef")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)")
+                        .HasColumnName("signature_ref");
+
+                    b.Property<string>("Tool")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("tool");
+
+                    b.Property<string>("ToolVersion")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("tool_version");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<string>("VerificationMethod")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("verification_method");
+
+                    b.HasKey("TenantId", "SanitisationRecordId")
+                        .HasName("pk_sanitisation_record");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_sanitisation_record_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "UnitId", "SanitisedAt")
+                        .HasDatabaseName("ix_sanitisation_record_tenant_id_unit_id_sanitised_at");
+
+                    b.ToTable("sanitisation_record", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_sanitisation_record_method", "method IN ('clear', 'purge', 'destroy')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.SearchEntry", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -3608,6 +3788,80 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("serial_range_member", "serialisation");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.TestRecord", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TestRecordId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("test_record_id");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<string>("Equipment")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)")
+                        .HasColumnName("equipment");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("MeasurementsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("measurements_json");
+
+                    b.Property<string>("OperatorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("operator_ref");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(10)")
+                        .HasColumnName("result");
+
+                    b.Property<string>("TestKind")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("test_kind");
+
+                    b.Property<DateTime>("TestedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("tested_at");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("TenantId", "TestRecordId")
+                        .HasName("pk_test_record");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_test_record_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "UnitId", "TestedAt")
+                        .HasDatabaseName("ix_test_record_tenant_id_unit_id_tested_at");
+
+                    b.ToTable("test_record", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_test_record_measurements_json", "ISJSON(measurements_json) = 1");
+
+                            t.HasCheckConstraint("ck_test_record_result", "result IN ('pass', 'fail')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.Unit", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -3726,6 +3980,135 @@ namespace Yojana.Serialisation.Data.Migrations
                                     .HasPeriodEnd("PeriodEnd")
                                     .HasColumnName("sys_end");
                             }));
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.UnitAttributeHistory", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("AttributeHistoryId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("attribute_history_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("effective_from");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("key");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<string>("Value")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("value");
+
+                    b.HasKey("TenantId", "AttributeHistoryId")
+                        .HasName("pk_unit_attribute_history");
+
+                    b.HasIndex("TenantId", "CommandId", "Key")
+                        .IsUnique()
+                        .HasDatabaseName("ux_unit_attribute_history_tenant_id_command_id_key");
+
+                    b.HasIndex("TenantId", "UnitId", "Key", "EffectiveFrom")
+                        .HasDatabaseName("ix_unit_attribute_history_tenant_id_unit_id_key_effective_from");
+
+                    b.ToTable("unit_attribute_history", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.UnitConditionEvent", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ConditionEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("condition_event_id");
+
+                    b.Property<string>("CCode")
+                        .HasMaxLength(2)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(2)")
+                        .HasColumnName("c_code");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("FCode")
+                        .HasMaxLength(2)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(2)")
+                        .HasColumnName("f_code");
+
+                    b.Property<string>("Grade")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("grade");
+
+                    b.Property<DateTime>("GradedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("graded_at");
+
+                    b.Property<string>("InspectorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("inspector_ref");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<string>("ValuationRule")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("valuation_rule");
+
+                    b.HasKey("TenantId", "ConditionEventId")
+                        .HasName("pk_unit_condition_event");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_unit_condition_event_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "UnitId", "GradedAt")
+                        .HasDatabaseName("ix_unit_condition_event_tenant_id_unit_id_graded_at");
+
+                    b.ToTable("unit_condition_event", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_unit_condition_event_grade", "grade IN ('new', 'open_box', 'refurbished_a', 'refurbished_b', 'refurbished_c', 'used', 'remanufactured', 'defective', 'scrap')");
+                        });
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.UnitCurrent", b =>
@@ -4456,6 +4839,75 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("unit_merge_record", "serialisation", t =>
                         {
                             t.HasCheckConstraint("ck_unit_merge_record_reversal_data_json", "ISJSON(reversal_data) = 1");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.UsageReading", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("UsageReadingId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("usage_reading_id");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("MeterKind")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("meter_kind");
+
+                    b.Property<bool>("MeterReplacement")
+                        .HasColumnType("bit")
+                        .HasColumnName("meter_replacement");
+
+                    b.Property<string>("OperatorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("operator_ref");
+
+                    b.Property<DateTime>("ReadAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("read_at");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("unit");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)")
+                        .HasColumnName("value");
+
+                    b.HasKey("TenantId", "UsageReadingId")
+                        .HasName("pk_usage_reading");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_usage_reading_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "UnitId", "MeterKind", "ReadAt")
+                        .HasDatabaseName("ix_usage_reading_tenant_id_unit_id_meter_kind_read_at");
+
+                    b.ToTable("usage_reading", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_usage_reading_value", "value >= 0");
                         });
                 });
 

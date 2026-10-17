@@ -55,6 +55,7 @@ public static class PublishedEventSinkHandler
 {
     public static void Handle(UnitCommissioned e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitReleased e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(UnitGraded e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitIdentifierCorrected e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(OwnershipOpened e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(OwnershipClosed e) => PublishedEventSink.Received.Enqueue(e);

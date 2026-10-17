@@ -16,7 +16,9 @@ public sealed record ItemSerialisationProfile(
     bool SalesBlocked = false,
     bool ServiceBlocked = false,
     Guid? SuccessorItemId = null,
-    DateOnly? LastServiceDate = null)
+    DateOnly? LastServiceDate = null,
+    /// <summary>Item-class policy fact: a unit cannot be sold or shipped until its media sanitisation is recorded.</summary>
+    bool RequiresSanitisation = false)
 {
     public static class TrackingModes
     {

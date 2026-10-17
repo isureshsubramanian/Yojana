@@ -20,6 +20,7 @@ using Yojana.Serialisation.Selection;
 using Yojana.Serialisation.Workbench;
 using Yojana.Serialisation.Campaigns;
 using Yojana.Serialisation.Rmas;
+using Yojana.Serialisation.Condition;
 
 namespace Yojana.Serialisation;
 
@@ -78,6 +79,27 @@ public static class SerialisationEndpoints
         units.MapPost("/disassemble", (RecordDisassembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordDisassemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/flag", (SetUnitFlag command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<UnitFlagResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/unflag", (ClearUnitFlag command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<UnitFlagResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
+        units.MapGet("/{unitId:guid}/condition", async (Guid unitId, ConditionQueries queries, CancellationToken ct) => Results.Ok(await queries.ConditionAsync(unitId, ct)));
+        units.MapPost("/{unitId:guid}/condition", (Guid unitId, GradeUnitRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<GradeUnitResult>(bus, tenant, new GradeUnit(request.CommandId, unitId, request.Grade, request.ValuationRule, request.EventTime,
+                Actor(user), request.LegalEntityId, request.FCode, request.CCode, request.Document), ct)).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.Quality));
+        units.MapGet("/{unitId:guid}/sanitisation", async (Guid unitId, ConditionQueries queries, CancellationToken ct) => Results.Ok(await queries.SanitisationAsync(unitId, ct)));
+        units.MapPost("/{unitId:guid}/sanitisation", (Guid unitId, RecordSanitisationRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RecordSanitisationResult>(bus, tenant, new RecordSanitisation(request.CommandId, unitId, request.Manufacturer, request.Model,
+                request.MediaSerial, request.MediaType, request.Method, request.Tool, request.VerificationMethod, request.CertificateRef,
+                request.EventTime, Actor(user), request.LegalEntityId, request.ToolVersion, request.SignatureRef, request.Document), ct)).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.Quality));
+        units.MapGet("/{unitId:guid}/tests", async (Guid unitId, ConditionQueries queries, CancellationToken ct) => Results.Ok(await queries.TestsAsync(unitId, ct)));
+        units.MapPost("/{unitId:guid}/tests", (Guid unitId, RecordTestRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RecordTestResult>(bus, tenant, new RecordTest(request.CommandId, unitId, request.TestKind, request.Result, request.MeasurementsJson,
+                request.Equipment, request.EventTime, Actor(user), request.LegalEntityId, request.Document), ct)).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.Quality));
+        units.MapGet("/{unitId:guid}/usage", async (Guid unitId, ConditionQueries queries, CancellationToken ct) => Results.Ok(await queries.UsageAsync(unitId, ct)));
+        units.MapPost("/{unitId:guid}/usage", (Guid unitId, RecordUsageReadingRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RecordUsageReadingResult>(bus, tenant, new RecordUsageReading(request.CommandId, unitId, request.MeterKind, request.Value,
+                request.Unit, request.ReadAt, Actor(user), request.LegalEntityId, request.MeterReplacement, request.Document), ct)).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.Technician));
+        units.MapGet("/{unitId:guid}/attributes/history", async (Guid unitId, ConditionQueries queries, CancellationToken ct) => Results.Ok(await queries.AttributesAsync(unitId, ct)));
+        units.MapPost("/{unitId:guid}/attributes/history", (Guid unitId, RecordUnitAttributesRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RecordUnitAttributesResult>(bus, tenant, new RecordUnitAttributes(request.CommandId, unitId, request.Attributes, request.EventTime,
+                Actor(user), request.LegalEntityId, request.Document), ct)).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.Technician));
 
         var corrections = app.MapGroup("/api/corrections").RequireAuthorization(YojanaPolicy.TenantMember);
         corrections.MapPost("/document-serials/preview", (PreviewCorrectDocumentSerials command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>

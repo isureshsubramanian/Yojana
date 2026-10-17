@@ -76,7 +76,7 @@ public static class CreateInboundEntitlementsHandler
                     StartTimeZone = zone, EndDate = end, ComputedByRuleVersion = policy.RuleVersion, DurationValue = duration.Duration.Value, DurationUnit = duration.Duration.Unit,
                     EndOfMonthRule = duration.Duration.EndOfMonth, EndInclusive = duration.Duration.EndInclusive, DurationBasis = terms.DurationBasis,
                     Coverage = JsonSerializer.Serialize(terms.Coverage, LedgerJson.Options), RegionScope = JsonSerializer.Serialize(terms.RegionScope, LedgerJson.Options),
-                    Transferable = terms.Transferable, ConditionAtCreation = current.ConditionGrade ?? "new", AccrualCohortId = null, AssuranceOrService = terms.AssuranceOrService,
+                    Transferable = terms.Transferable, ConditionAtCreation = current.ConditionGrade ?? ConditionGrades.New, AccrualCohortId = null, AssuranceOrService = terms.AssuranceOrService,
                     Status = start.Start is null ? EntitlementStatus.PendingEvidence : EntitlementStatus.Active, Confidence = "high", Provenance = EntitlementProvenance.Created,
                     SourceDocumentType = receipt.Document.Type, SourceDocumentId = receipt.Document.Id, SourceDocumentLine = candidate.Line.LineNo,
                     CreatedEventId = eventId, CreatedAt = clock.UtcNow,

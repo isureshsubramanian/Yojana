@@ -73,10 +73,10 @@ public static class CreateEntitlementHandler
         if (version.CoverageFamily != command.CoverageFamily) throw new CommandRefusedException("policy_family_differs", $"{version.PolicyCode} is a {version.CoverageFamily} policy, not {command.CoverageFamily}.");
 
         var terms = await store.ReadTermsAsync(version, cancellationToken);
-        var grade = unit.ConditionGrade ?? command.ConditionGrade ?? "new";
+        var grade = unit.ConditionGrade ?? command.ConditionGrade ?? ConditionGrades.New;
         RefurbishedEntitlementDisclosure? disclosure = null;
         EffectiveDuration duration;
-        if (grade != "new")
+        if (grade != ConditionGrades.New)
         {
             if (command.Channel is null || command.Country is null) throw new CommandRefusedException("refurbished_sale_context_missing", "A non-new sale needs its channel and country.", "supply the sale channel and ISO country");
             disclosure = RefurbishedGoodsPolicyEngine.Decide(unit.ItemId, grade, command.Channel, command.Country, command.BuyerKind, terms.Refurbished, await refurbishedSettings.GetAsync(cancellationToken), command.RefurbisherPartyRef);

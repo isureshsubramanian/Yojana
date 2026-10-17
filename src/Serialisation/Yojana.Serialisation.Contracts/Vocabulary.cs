@@ -261,6 +261,10 @@ public static class UnitEventType
     public const string FlagSet = "unit.flag_set";
     public const string FlagCleared = "unit.flag_cleared";
     public const string AttributeChanged = "unit.attribute_changed";
+    public const string Graded = "unit.graded";
+    public const string SanitisationRecorded = "unit.sanitisation_recorded";
+    public const string TestRecorded = "unit.test_recorded";
+    public const string UsageRecorded = "unit.usage_recorded";
     public const string Shipped = "unit.shipped";
     public const string ShipmentReversed = "unit.shipment_reversed";
     public const string Delivered = "unit.delivered";
