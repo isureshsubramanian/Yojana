@@ -64,7 +64,10 @@ public sealed record CreateCampaign(
     string ActorRef,
     string ReasonCode,
     string? ReasonNote,
-    DateOnly? RunsUntil);
+    DateOnly? RunsUntil,
+    decimal PartsPct = 100m,
+    decimal LabourPct = 100m,
+    decimal TravelPct = 100m);
 
 public sealed record UpdateCampaign(
     Guid CommandId,
@@ -79,7 +82,10 @@ public sealed record UpdateCampaign(
     string ActorRef,
     string ReasonCode,
     string? ReasonNote,
-    DateOnly? RunsUntil);
+    DateOnly? RunsUntil,
+    decimal PartsPct = 100m,
+    decimal LabourPct = 100m,
+    decimal TravelPct = 100m);
 
 public sealed record PreviewCampaign(Guid CampaignId, int Skip = 0, int Take = 50);
 
@@ -116,7 +122,10 @@ public sealed record CampaignRow(
     DateTime? SelectedAt,
     string ReasonCode,
     string? ReasonNote,
-    DateOnly? RunsUntil);
+    DateOnly? RunsUntil,
+    decimal PartsPct,
+    decimal LabourPct,
+    decimal TravelPct);
 
 /// <summary>Recipients are snapshotted when the unit is selected; callers de-duplicate equal owner and custodian refs.</summary>
 public sealed record CampaignUnitRow(

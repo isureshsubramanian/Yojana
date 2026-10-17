@@ -8,7 +8,7 @@ namespace Yojana.Serialisation.Contracts;
 /// <see cref="Query"/> matches a claim number, or any unit in <see cref="UnitIds"/> that the caller resolved it to.
 /// </summary>
 public sealed record ClaimListFilter(string? Status = "open", string? CoverageSource = null, string? ServiceCountry = null, string? Recovery = null,
-    string? Query = null, IReadOnlyList<Guid>? UnitIds = null);
+    string? Query = null, IReadOnlyList<Guid>? UnitIds = null, Guid? CampaignId = null);
 
 public sealed record ClaimListRow(
     Guid ClaimId,
@@ -33,7 +33,23 @@ public sealed record ClaimListRow(
     bool EvidenceRequested,
     int LineCount,
     int LinesDecided,
-    string? RecoveryVendorNote = null);
+    string? RecoveryVendorNote = null,
+    Guid? CampaignId = null,
+    string? CampaignCode = null,
+    string? CampaignName = null,
+    string? ReserveTag = null,
+    string? CampaignCoverReason = null);
+
+public sealed record ClaimCampaignOption(
+    Guid CampaignId,
+    string Code,
+    string Name,
+    string CoverageSource,
+    string ReserveTag,
+    string ReasonCode,
+    DateOnly? RunsUntil,
+    bool CoversOnDate,
+    string? NotCoveredReason);
 
 public sealed record ClaimPage(IReadOnlyList<ClaimListRow> Items, int Total, int Skip, int Take);
 
@@ -141,4 +157,9 @@ public sealed record ClaimAdjudicationPreview(
     string? RequiredReviewerRole,
     Guid? SuccessorItemId,
     IReadOnlyList<string> ManualDenialReasons,
-    string? RecoveryNotRaisedReason = null);
+    string? RecoveryNotRaisedReason = null,
+    Guid? CampaignId = null,
+    string? CampaignCode = null,
+    string? CampaignName = null,
+    string? ReserveTag = null,
+    string? CampaignCoverReason = null);

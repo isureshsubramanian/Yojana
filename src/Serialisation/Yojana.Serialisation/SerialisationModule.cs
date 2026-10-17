@@ -124,6 +124,8 @@ public static class SerialisationModule
         builder.Services.AddScoped<ClaimAdjudicationPreviewQuery>();
         builder.Services.AddScoped<ClaimUnitFacts>();
         builder.Services.AddScoped<ClaimQueries>();
+        builder.Services.AddScoped<Campaigns.CampaignCoverQueries>();
+        builder.Services.AddScoped<ICampaignCoverPort>(sp => sp.GetRequiredService<Campaigns.CampaignCoverQueries>());
         builder.Services.AddScoped<RecoveryQueries>();
         builder.Services.AddScoped<LegacyUnknownClaimUnitCreator>();
         // Coupled to ClaimReviewSettings and RecoverySettings for the same Wolverine constraint as entitlement approval settings: the

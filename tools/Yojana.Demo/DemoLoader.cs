@@ -29,6 +29,8 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
     private DemoUnit? recoveryDimm;
     private DemoUnit? recoveryNvme;
     private DemoUnit? expiredPsu;
+    private Guid activeRecallCampaignId;
+    private Guid endedGoodwillCampaignId;
     private static readonly Dictionary<string, int> ExpectedUnitCounts = new(StringComparer.Ordinal)
     {
         ["RS-1100"] = 36, ["RT-1200T"] = 1, ["RT-N1"] = 2, ["RS-1520"] = 2, ["RG-4800"] = 1,
@@ -64,8 +66,8 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         await StepAsync("record PSU and BMC firmware history", RecordFirmwareAsync, cancellationToken);
         await StepAsync("post shipments, deliveries and invoices", PostSalesAsync, cancellationToken);
         await StepAsync("create outbound entitlements", CreateOutboundEntitlementsAsync, cancellationToken);
-        await StepAsync("submit and progress 25 claims", CreateClaimsAsync, cancellationToken);
         await StepAsync("create recall and goodwill campaigns", CreateCampaignsAsync, cancellationToken);
+        await StepAsync("submit and progress 27 claims", CreateClaimsAsync, cancellationToken);
         await PrintSummaryAsync(cancellationToken);
     }
 
@@ -364,7 +366,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
 
     private async Task CreateClaimsAsync(CancellationToken cancellationToken)
     {
-        var dates = DemoDates.Spread(today, 25, 24, 1);
+        var dates = DemoDates.Spread(today, 27, 26, 1);
         var hospital = Party("C-VELMORA");
         var hpc = Party("C-NANDIRA");
         var bank = Party("C-ASHVANE");
@@ -400,19 +402,23 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             Claim("submitted-desktop", Units("DW-300")[2], bank, "INR", null, ClaimLineKind.Parts, 8200m, "Display adapter", ClaimAction.Submit),
             Claim("no-fault-found", Units("DW-300")[3], bank, "EUR", null, ClaimLineKind.Labour, 80m, "Intermittent noise", ClaimAction.NoFaultDeny),
             Claim("server-replacement", Units("RS-1100")[6], hpc, "USD", null, ClaimLineKind.Parts, 890m, "System board replacement", ClaimAction.Adjudicate, remedy: ClaimRemedy.Replacement),
+            Claim("recall-campaign", Units("RS-1100")[0], hpc, "EUR", null, ClaimLineKind.Parts, 360m,
+                "Affected power-supply inspection", ClaimAction.Adjudicate, campaignId: activeRecallCampaignId, claimDate: today),
+            Claim("ended-goodwill-campaign", Units("RS-1100")[10], hpc, "EUR", null, ClaimLineKind.Labour, 145m,
+                "Management-controller firmware update", ClaimAction.Adjudicate, campaignId: endedGoodwillCampaignId, claimDate: today),
         };
 
         var recoveryIds = new List<(Guid Id, decimal Requested)>();
         for (var index = 0; index < definitions.Count; index++)
         {
             var plan = definitions[index];
-            var day = dates[index];
+            var day = plan.ClaimDate ?? dates[index];
             var eventTime = DemoDates.At(day, 10);
             var submit = new SubmitClaim(DemoIds.FromName("claim:" + plan.Key), plan.Unit?.UnitId,
                 plan.UnknownIdentifier is null ? null : new DocumentSerial(plan.UnknownIdentifier, IdentifierType: IdentifierType.InternalSerial),
                 day, plan.Customer.Id, plan.Customer.Id, ServiceEntityId, LegalEntityId, plan.Country, plan.Currency,
                 plan.Lines, [new ClaimEvidenceInput(ClaimEvidenceKind.Attachment, "DEMO-EVIDENCE-" + plan.Key.ToUpperInvariant(), "Development review evidence")],
-                plan.Remedy, "CHOICE-" + plan.Key.ToUpperInvariant(), eventTime, actor, plan.ProofRef, plan.ProofDate, plan.ItemId);
+                plan.Remedy, "CHOICE-" + plan.Key.ToUpperInvariant(), eventTime, actor, plan.ProofRef, plan.ProofDate, plan.ItemId, plan.CampaignId);
             var submitted = await InvokeAsync<SubmitClaimResult>(submit, cancellationToken);
             if (!submitted.Replayed) claimsCreated++;
 
@@ -455,30 +461,63 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
 
     private async Task CreateCampaignsAsync(CancellationToken cancellationToken)
     {
-        var at = DemoDates.At(today.AddDays(-1), 9);
-        var recallId = DemoIds.FromName("campaign:RC-PSU-1600-26A");
-        await InvokeAsync<CampaignResult>(new CreateCampaign(recallId, "RC-PSU-1600-26A",
+        var at = DemoDates.At(today.AddDays(-10), 9);
+        activeRecallCampaignId = DemoIds.FromName("campaign:RC-PSU-1600-26A");
+        var recallCriteria = new List<CampaignCriterionInput>
+        {
+            new(CampaignCriterionKind.Child, ChildItemId: Item("PS-1600").Id, ChildLotId: AffectedPsuLotId),
+            new(CampaignCriterionKind.Firmware, FirmwareValue: "1.2.0", FirmwareKey: "psu.firmware"),
+            new(CampaignCriterionKind.Firmware, FirmwareValue: "1.2.1", FirmwareKey: "psu.firmware"),
+            new(CampaignCriterionKind.Firmware, FirmwareValue: "1.2.2", FirmwareKey: "psu.firmware"),
+        };
+        var recall = await InvokeAsync<CampaignResult>(new CreateCampaign(activeRecallCampaignId, "RC-PSU-1600-26A",
             "PSU-1600 lot KPL-2511 firmware inspection", CampaignCoverageSource.Recall, "RECALL-PSU-26A",
-        [
-            new CampaignCriterionInput(CampaignCriterionKind.Child, ChildItemId: Item("PS-1600").Id, ChildLotId: AffectedPsuLotId),
-            new CampaignCriterionInput(CampaignCriterionKind.Firmware, FirmwareValue: "1.2.0", FirmwareKey: "psu.firmware"),
-            new CampaignCriterionInput(CampaignCriterionKind.Firmware, FirmwareValue: "1.2.1", FirmwareKey: "psu.firmware"),
-            new CampaignCriterionInput(CampaignCriterionKind.Firmware, FirmwareValue: "1.2.2", FirmwareKey: "psu.firmware"),
-        ], at, actor, CampaignReason.Reliability,
+            recallCriteria, at, actor, CampaignReason.Reliability,
             "Power-supply components from the affected lot can degrade on the listed firmware releases.", today.AddMonths(6)), cancellationToken);
-        await InvokeAsync<SelectCampaignUnitsResult>(new SelectCampaignUnits(DemoIds.FromName("campaign-select:RC-PSU-1600-26A"), recallId,
-            at.AddHours(1), LegalEntityId, actor), cancellationToken);
+        if (recall.Campaign.Status is CampaignStatus.Draft or CampaignStatus.Selected)
+        {
+            await InvokeAsync<SelectCampaignUnitsResult>(new SelectCampaignUnits(DemoIds.FromName("campaign-select:RC-PSU-1600-26A"), activeRecallCampaignId,
+                at.AddHours(1), LegalEntityId, actor), cancellationToken);
+            await InvokeAsync<CampaignResult>(new UpdateCampaign(DemoIds.FromName("campaign-activate:RC-PSU-1600-26A"), activeRecallCampaignId,
+                "RC-PSU-1600-26A", "PSU-1600 lot KPL-2511 firmware inspection", CampaignCoverageSource.Recall, "RECALL-PSU-26A",
+                CampaignStatus.Active, recallCriteria, at.AddHours(2), actor, CampaignReason.Reliability,
+                "Power-supply components from the affected lot can degrade on the listed firmware releases.", today.AddMonths(6)), cancellationToken);
+        }
 
-        var goodwillId = DemoIds.FromName("campaign:GW-BMC-RS1100-26");
-        await InvokeAsync<CampaignResult>(new CreateCampaign(goodwillId, "GW-BMC-RS1100-26",
-            "RS-1100 management-controller firmware update", CampaignCoverageSource.Goodwill, "GOODWILL-BMC-26",
-        [
-            new CampaignCriterionInput(CampaignCriterionKind.Child, ChildItemId: Item("BM-2").Id),
-            new CampaignCriterionInput(CampaignCriterionKind.IdentifierRange, Scheme: IdentifierScheme.Internal,
+        endedGoodwillCampaignId = DemoIds.FromName("campaign:GW-BMC-RS1100-26");
+        var goodwillCriteria = new List<CampaignCriterionInput>
+        {
+            new(CampaignCriterionKind.Child, ChildItemId: Item("BM-2").Id),
+            new(CampaignCriterionKind.IdentifierRange, Scheme: IdentifierScheme.Internal,
                 RangeStart: Serial("RS-1100", 1), RangeEnd: Serial("RS-1100", 36)),
-            new CampaignCriterionInput(CampaignCriterionKind.Firmware, FirmwareValue: "3.4.0", FirmwareKey: "bmc.firmware"),
-        ], at.AddMinutes(10), actor, CampaignReason.Firmware,
-            "Bring eligible management controllers onto the supported firmware release.", null), cancellationToken);
+            new(CampaignCriterionKind.Firmware, FirmwareValue: "3.4.0", FirmwareKey: "bmc.firmware"),
+        };
+        var goodwill = await InvokeAsync<CampaignResult>(new CreateCampaign(endedGoodwillCampaignId, "GW-BMC-RS1100-26",
+            "RS-1100 management-controller firmware update", CampaignCoverageSource.Goodwill, "GOODWILL-BMC-26",
+            goodwillCriteria, at.AddMinutes(10), actor, CampaignReason.Firmware,
+            "Bring eligible management controllers onto the supported firmware release.", today.AddDays(-3),
+            PartsPct: 100m, LabourPct: 50m, TravelPct: 0m), cancellationToken);
+        if (goodwill.Campaign.Status is CampaignStatus.Draft or CampaignStatus.Selected)
+        {
+            await InvokeAsync<SelectCampaignUnitsResult>(new SelectCampaignUnits(DemoIds.FromName("campaign-select:GW-BMC-RS1100-26"), endedGoodwillCampaignId,
+                at.AddHours(1), LegalEntityId, actor), cancellationToken);
+            await InvokeAsync<CampaignResult>(new UpdateCampaign(DemoIds.FromName("campaign-activate:GW-BMC-RS1100-26"), endedGoodwillCampaignId,
+                "GW-BMC-RS1100-26", "RS-1100 management-controller firmware update", CampaignCoverageSource.Goodwill, "GOODWILL-BMC-26",
+                CampaignStatus.Active, goodwillCriteria, at.AddHours(2), actor, CampaignReason.Firmware,
+                "Bring eligible management controllers onto the supported firmware release.", today.AddDays(-3),
+                PartsPct: 100m, LabourPct: 50m, TravelPct: 0m), cancellationToken);
+        }
+        else if (goodwill.Campaign.Status == CampaignStatus.Active
+            && (goodwill.Campaign.PartsPct != 100m || goodwill.Campaign.LabourPct != 50m || goodwill.Campaign.TravelPct != 0m))
+        {
+            // A dataset created before campaign percentages existed is upgraded once; later runs see the target values
+            // and remain no-ops like the rest of this loader.
+            await InvokeAsync<CampaignResult>(new UpdateCampaign(DemoIds.FromName("campaign-cover:GW-BMC-RS1100-26"), endedGoodwillCampaignId,
+                "GW-BMC-RS1100-26", "RS-1100 management-controller firmware update", CampaignCoverageSource.Goodwill, "GOODWILL-BMC-26",
+                CampaignStatus.Active, goodwillCriteria, at.AddHours(2), actor, CampaignReason.Firmware,
+                "Bring eligible management controllers onto the supported firmware release.", today.AddDays(-3),
+                PartsPct: 100m, LabourPct: 50m, TravelPct: 0m), cancellationToken);
+        }
     }
 
     private async Task PrintSummaryAsync(CancellationToken cancellationToken)
@@ -634,8 +673,9 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
 
     private ClaimPlan Claim(string key, DemoUnit unit, DemoCatalogue.CatalogueParty customer, string currency, DemoUnit? lineUnit,
         string kind, decimal amount, string description, ClaimAction action, string country = "IN", string family = CoverageFamilyCode.Base,
-        IReadOnlyDictionary<string, decimal>? measurements = null, string remedy = ClaimRemedy.Repair) =>
-        new(key, unit, customer, currency, country, [new ClaimLineInput(kind, family, amount, lineUnit?.UnitId, description, measurements)], action, Remedy: remedy);
+        IReadOnlyDictionary<string, decimal>? measurements = null, string remedy = ClaimRemedy.Repair, Guid? campaignId = null, DateOnly? claimDate = null) =>
+        new(key, unit, customer, currency, country, [new ClaimLineInput(kind, family, amount, lineUnit?.UnitId, description, measurements)], action,
+            Remedy: remedy, CampaignId: campaignId, ClaimDate: claimDate);
 
     private string PolicyCodeFor(string itemCode) => itemCode switch
     {
@@ -700,6 +740,6 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         DemoCatalogue.CatalogueParty EndOwner, IReadOnlyList<DemoUnit> Units, string Country, string Currency, string Channel, int DaysAgo);
     private sealed record ClaimPlan(string Key, DemoUnit? Unit, DemoCatalogue.CatalogueParty Customer, string Currency, string Country,
         IReadOnlyList<ClaimLineInput> Lines, ClaimAction Action, string Remedy = ClaimRemedy.Repair, string? UnknownIdentifier = null,
-        Guid? ItemId = null, string? ProofRef = null, DateOnly? ProofDate = null);
+        Guid? ItemId = null, string? ProofRef = null, DateOnly? ProofDate = null, Guid? CampaignId = null, DateOnly? ClaimDate = null);
     private enum ClaimAction { Submit, Evidence, Adjudicate, ManualDeny, NoFaultDeny, Settle, Close }
 }

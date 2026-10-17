@@ -58,6 +58,12 @@ public static class ClaimDenialReason
     public const string AfterLastServiceDate = "after_last_service_date";
 }
 
+public static class ClaimCampaignCoverReason
+{
+    public const string Ended = "campaign_ended";
+    public const string Closed = "campaign_closed";
+}
+
 /// <summary>Findings an adjudicator may deny a whole claim on; the policy stack's own reasons are never chosen by hand.</summary>
 public static class ClaimManualDenialReason
 {

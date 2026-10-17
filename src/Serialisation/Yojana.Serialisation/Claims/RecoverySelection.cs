@@ -56,6 +56,9 @@ public sealed class RecoverySettings(ITenantSettings settings)
             throw new CommandRefusedException("recovery_policy_invalid", "Line kinds must be parts, labour or travel.");
         if (policy.VendorAnswerDueDays is < 1 or > 90)
             throw new CommandRefusedException("recovery_policy_invalid", "The vendor answer is due within 1 to 90 days.");
+        if (!RecoveryCampaignClaims.All.Contains(policy.CampaignClaims))
+            throw new CommandRefusedException("recovery_policy_invalid", $"'{policy.CampaignClaims}' is not a campaign-claim recovery rule.",
+                "choose no_recovery or recover_like_warranty");
 
         var normalised = policy with { LineKinds = ClaimLineKind.All.Where(kinds.Contains).Order(StringComparer.Ordinal).ToList() };
         await settings.SetAsync(Key, JsonSerializer.Serialize(normalised, LedgerJson.Options), cancellationToken);

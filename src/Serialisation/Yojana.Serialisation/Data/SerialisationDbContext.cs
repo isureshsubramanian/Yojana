@@ -741,6 +741,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.Status).HasMaxLength(30);
             b.Property(c => c.DenialReason).HasMaxLength(100);
             b.Property(c => c.RecoveryNotRaisedReason).HasMaxLength(40).IsUnicode(false);
+            b.Property(c => c.ReserveTag).HasMaxLength(100);
+            b.Property(c => c.CampaignCoverReason).HasMaxLength(40).IsUnicode(false);
             b.Property(c => c.SubmittedBy).HasMaxLength(200);
             b.Property(c => c.AdjudicatedBy).HasMaxLength(200);
             b.Property(c => c.ReviewerRole).HasMaxLength(80);
@@ -748,6 +750,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(c => new { c.TenantId, c.CommandId }).IsUnique();
             b.HasIndex(c => new { c.TenantId, c.ClaimNumber }).IsUnique();
             b.HasIndex(c => new { c.TenantId, c.UnitId, c.Status, c.ClaimDate });
+            b.HasIndex(c => new { c.TenantId, c.CampaignId });
             b.HasIndex(c => new { c.TenantId, c.Status, c.SubmittedAt });
         });
 
@@ -824,6 +827,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.ToTable("campaign", t =>
             {
                 t.HasCheckConstraint("ck_campaign_coverage_source", "coverage_source IN ('recall', 'goodwill')");
+                t.HasCheckConstraint("ck_campaign_cover_pct", "parts_pct BETWEEN 0 AND 100 AND labour_pct BETWEEN 0 AND 100 AND travel_pct BETWEEN 0 AND 100");
                 t.HasCheckConstraint("ck_campaign_reason_code", "reason_code IN ('safety', 'reliability', 'firmware', 'regulatory', 'goodwill')");
                 t.HasCheckConstraint("ck_campaign_status", "status IN ('draft', 'selected', 'active', 'closed')");
             });
@@ -832,6 +836,11 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.Name).HasMaxLength(200);
             b.Property(c => c.CoverageSource).HasMaxLength(20);
             b.Property(c => c.ReserveTag).HasMaxLength(100);
+            // -1 is outside the accepted contract range and is the EF sentinel, so a legitimate 0% is written rather
+            // than mistaken for an unset CLR decimal and replaced by the database's 100% default.
+            b.Property(c => c.PartsPct).HasPrecision(5, 2).HasDefaultValue(100m).HasSentinel(-1m);
+            b.Property(c => c.LabourPct).HasPrecision(5, 2).HasDefaultValue(100m).HasSentinel(-1m);
+            b.Property(c => c.TravelPct).HasPrecision(5, 2).HasDefaultValue(100m).HasSentinel(-1m);
             b.Property(c => c.ReasonCode).HasMaxLength(20).IsUnicode(false);
             b.Property(c => c.ReasonNote).HasMaxLength(500);
             b.Property(c => c.RunsUntil).HasColumnType("date");

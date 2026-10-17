@@ -419,11 +419,27 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("created_by");
 
+                    b.Property<decimal>("LabourPct")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)")
+                        .HasDefaultValue(100m)
+                        .HasSentinel(-1m)
+                        .HasColumnName("labour_pct");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("name");
+
+                    b.Property<decimal>("PartsPct")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)")
+                        .HasDefaultValue(100m)
+                        .HasSentinel(-1m)
+                        .HasColumnName("parts_pct");
 
                     b.Property<string>("ReasonCode")
                         .IsRequired()
@@ -457,6 +473,14 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(20)")
                         .HasColumnName("status");
 
+                    b.Property<decimal>("TravelPct")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)")
+                        .HasDefaultValue(100m)
+                        .HasSentinel(-1m)
+                        .HasColumnName("travel_pct");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("updated_at");
@@ -480,6 +504,8 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("campaign", "serialisation", t =>
                         {
                             t.HasCheckConstraint("ck_campaign_coverage_source", "coverage_source IN ('recall', 'goodwill')");
+
+                            t.HasCheckConstraint("ck_campaign_cover_pct", "parts_pct BETWEEN 0 AND 100 AND labour_pct BETWEEN 0 AND 100 AND travel_pct BETWEEN 0 AND 100");
 
                             t.HasCheckConstraint("ck_campaign_reason_code", "reason_code IN ('safety', 'reliability', 'firmware', 'regulatory', 'goodwill')");
 
@@ -669,6 +695,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("adjudicated_by");
 
+                    b.Property<string>("CampaignCoverReason")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("campaign_cover_reason");
+
+                    b.Property<Guid?>("CampaignId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("campaign_id");
+
                     b.Property<int>("ChainLength")
                         .HasColumnType("int")
                         .HasColumnName("chain_length");
@@ -743,6 +779,11 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(20)")
                         .HasColumnName("remedy");
 
+                    b.Property<string>("ReserveTag")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("reserve_tag");
+
                     b.Property<string>("ReviewerRole")
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)")
@@ -793,6 +834,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasKey("TenantId", "ClaimId")
                         .HasName("pk_claim");
+
+                    b.HasIndex("TenantId", "CampaignId")
+                        .HasDatabaseName("ix_claim_tenant_id_campaign_id");
 
                     b.HasIndex("TenantId", "ClaimNumber")
                         .IsUnique()

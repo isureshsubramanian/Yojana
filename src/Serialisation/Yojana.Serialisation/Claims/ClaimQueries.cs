@@ -8,7 +8,7 @@ using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation.Claims;
 
-public sealed class ClaimQueries(SerialisationDbContext db, ITenantContext tenant) : IWarrantyClaimsPort
+public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort campaigns, ITenantContext tenant) : IWarrantyClaimsPort
 {
     private static readonly string[] Settled = [ClaimStatus.Settled, ClaimStatus.Closed];
     private static readonly string[] Decided = [ClaimStatus.Approved, ClaimStatus.PartiallyApproved, ClaimStatus.Denied, ClaimStatus.Settled, ClaimStatus.Closed];
@@ -28,6 +28,7 @@ public sealed class ClaimQueries(SerialisationDbContext db, ITenantContext tenan
         };
         if (!string.IsNullOrWhiteSpace(filter.CoverageSource)) source = source.Where(c => c.CoverageSource == filter.CoverageSource);
         if (!string.IsNullOrWhiteSpace(filter.ServiceCountry)) source = source.Where(c => c.ServiceCountry == filter.ServiceCountry);
+        if (filter.CampaignId is { } campaignId) source = source.Where(c => c.CampaignId == campaignId);
         if (filter.Recovery == "raised") source = source.Where(c => c.RecoveryRaised);
         else if (filter.Recovery == "none") source = source.Where(c => !c.RecoveryRaised);
         if (!string.IsNullOrWhiteSpace(filter.Query))
@@ -61,10 +62,20 @@ public sealed class ClaimQueries(SerialisationDbContext db, ITenantContext tenan
             })
             .ToListAsync(cancellationToken);
         var serials = await UnitSerials.DisplayAsync(db, tenantId, rows.Select(r => r.Claim.UnitId), cancellationToken);
-        return new(rows.Select(x => new ClaimListRow(x.Claim.ClaimId, x.Claim.ClaimNumber, x.Claim.UnitId, serials.GetValueOrDefault(x.Claim.UnitId), x.ItemId,
-            x.Claim.ClaimantPartyRef, x.Claim.SettlementPartyRef, x.Claim.Status, x.Claim.CoverageSource, x.Claim.Remedy, x.Claim.ServiceCountry, x.Claim.Currency,
-            x.Claim.ClaimDate, x.Claim.SubmittedAt, x.Requested, x.Approved, AgeDays(x.Claim.SubmittedAt, asOf), x.Claim.DenialReason, x.Claim.RecoveryRaised,
-            x.LastEvidenceKind == ClaimEvidenceKind.EvidenceRequested, x.Lines, Decided.Contains(x.Claim.Status) ? x.Lines : 0)).ToList(), total, skip, take);
+        var models = new List<ClaimListRow>(rows.Count);
+        foreach (var x in rows)
+        {
+            var campaign = x.Claim.CampaignId is { } campaignId
+                ? await campaigns.FindAsync(campaignId, x.Claim.UnitId, x.Claim.ClaimDate, cancellationToken)
+                : null;
+            models.Add(new ClaimListRow(x.Claim.ClaimId, x.Claim.ClaimNumber, x.Claim.UnitId, serials.GetValueOrDefault(x.Claim.UnitId), x.ItemId,
+                x.Claim.ClaimantPartyRef, x.Claim.SettlementPartyRef, x.Claim.Status, x.Claim.CoverageSource, x.Claim.Remedy, x.Claim.ServiceCountry, x.Claim.Currency,
+                x.Claim.ClaimDate, x.Claim.SubmittedAt, x.Requested, x.Approved, AgeDays(x.Claim.SubmittedAt, asOf), x.Claim.DenialReason, x.Claim.RecoveryRaised,
+                x.LastEvidenceKind == ClaimEvidenceKind.EvidenceRequested, x.Lines, Decided.Contains(x.Claim.Status) ? x.Lines : 0,
+                CampaignId: x.Claim.CampaignId, CampaignCode: campaign?.Code, CampaignName: campaign?.Name,
+                ReserveTag: x.Claim.ReserveTag, CampaignCoverReason: x.Claim.CampaignCoverReason));
+        }
+        return new(models, total, skip, take);
     }
 
     public async Task<ClaimSummary> SummaryAsync(DateOnly asOf, int targetWorkingDays, CancellationToken cancellationToken)
@@ -124,13 +135,17 @@ public sealed class ClaimQueries(SerialisationDbContext db, ITenantContext tenan
         var items = await db.Current.AsNoTracking().Where(u => u.TenantId == tenantId && unitIds.Contains(u.UnitId)).ToDictionaryAsync(u => u.UnitId, u => u.ItemId, cancellationToken);
         var recoveries = await db.RecoveryClaims.AsNoTracking().Where(r => r.TenantId == tenantId && r.CustomerClaimId == claimId).OrderBy(r => r.RecoveryNumber)
             .Select(r => new ClaimRecoveryRef(r.RecoveryClaimId, r.RecoveryNumber, r.VendorPartyRef, r.Status)).ToListAsync(cancellationToken);
+        var campaign = claim.CampaignId is { } campaignId
+            ? await campaigns.FindAsync(campaignId, claim.UnitId, claim.ClaimDate, cancellationToken)
+            : null;
         return new ClaimDetail(claim.ClaimId, claim.UnitId, claim.Status, claim.RecoveryRaised, claim.ClaimDate, claim.ClaimantPartyRef, claim.SettlementPartyRef,
             claim.ServiceEntityId, claim.ObligorEntityId, claim.ServiceCountry, claim.Currency, claim.CoverageSource, claim.Remedy, claim.DenialReason, claim.ChainLength,
             JsonSerializer.Deserialize<List<Guid>>(claim.EntitlementIds, LedgerJson.Options) ?? [],
             lines.Select(Decision).ToList(), evidence.Select(e => new ClaimEvidenceRow(e.EvidenceId, e.Kind, e.Reference, e.Description, e.RecordedAt, e.ActorRef)).ToList(),
             claim.AdjudicatedBy, claim.ReviewerRole, claim.SuccessorItemId, claim.ClaimNumber, serials.GetValueOrDefault(claim.UnitId),
             items.TryGetValue(claim.UnitId, out var itemId) ? itemId : null, claim.SubmittedAt, claim.SubmittedBy, claim.AdjudicatedAt,
-            lines.Select(l => Row(l, serials, items)).ToList(), recoveries);
+            lines.Select(l => Row(l, serials, items)).ToList(), recoveries, CampaignId: claim.CampaignId, CampaignCode: campaign?.Code,
+            CampaignName: campaign?.Name, ReserveTag: claim.ReserveTag, CampaignCoverReason: claim.CampaignCoverReason);
     }
 
     internal static ClaimLineRow Row(ClaimLine line, IReadOnlyDictionary<Guid, string> serials, IReadOnlyDictionary<Guid, Guid> items) =>

@@ -227,18 +227,19 @@ public sealed class RecoveryQueries(SerialisationDbContext db, ITenantContext te
         var answer = new List<RecoveryNotRaisedRow>(candidates.Count);
         foreach (var claim in candidates)
         {
-            if (claim.CoverageSource == ClaimCoverageSource.Recall)
-            {
-                answer.Add(new(claim.CustomerClaimId, claim.CustomerClaimNumber, claim.ClaimDate, claim.ApprovedAt, claim.RootUnitId, Serial(serials, claim.RootUnitId), claim.RootItemId,
-                    RecoveryNotRaisedReason.RecallClaim, null, null, null, null, null));
-                continue;
-            }
-
-            // A reason recorded at approval (the tenant's recovery policy declined a live vendor term) is final.
+            // The approval-time reason wins: campaign-backed recall and goodwill both use campaign_claim. The source
+            // fallback below remains for recall claims recorded before approval began snapshotting a reason.
             if (claim.PolicyReason is { } decidedReason)
             {
                 answer.Add(new(claim.CustomerClaimId, claim.CustomerClaimNumber, claim.ClaimDate, claim.ApprovedAt, claim.RootUnitId, Serial(serials, claim.RootUnitId), claim.RootItemId,
                     decidedReason, null, null, null, null, null));
+                continue;
+            }
+
+            if (claim.CoverageSource == ClaimCoverageSource.Recall)
+            {
+                answer.Add(new(claim.CustomerClaimId, claim.CustomerClaimNumber, claim.ClaimDate, claim.ApprovedAt, claim.RootUnitId, Serial(serials, claim.RootUnitId), claim.RootItemId,
+                    RecoveryNotRaisedReason.RecallClaim, null, null, null, null, null));
                 continue;
             }
 

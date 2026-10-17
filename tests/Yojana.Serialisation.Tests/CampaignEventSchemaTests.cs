@@ -10,7 +10,7 @@ public sealed class CampaignEventSchemaTests
     [Fact]
     public void Units_selected_has_a_matching_embedded_summary_schema()
     {
-        Assert.Equal("1.1", CampaignUnitsSelected.Version);
+        Assert.Equal("1.2", CampaignUnitsSelected.Version);
         using var document = JsonDocument.Parse(PublishedEventSchemas.Read(CampaignUnitsSelected.Schema, CampaignUnitsSelected.Version));
         Assert.Equal(CampaignUnitsSelected.Schema, document.RootElement.GetProperty("title").GetString());
         Assert.True(typeof(IPublishedSummaryEvent).IsAssignableFrom(typeof(CampaignUnitsSelected)));
@@ -25,6 +25,13 @@ public sealed class CampaignEventSchemaTests
     {
         using var document = JsonDocument.Parse(PublishedEventSchemas.Read(CampaignUnitsSelected.Schema, "1.0"));
         Assert.DoesNotContain("reason_code", document.RootElement.GetProperty("properties").EnumerateObject().Select(property => property.Name));
+    }
+
+    [Fact]
+    public void Units_selected_keeps_the_published_one_one_schema()
+    {
+        using var document = JsonDocument.Parse(PublishedEventSchemas.Read(CampaignUnitsSelected.Schema, "1.1"));
+        Assert.DoesNotContain("parts_pct", document.RootElement.GetProperty("properties").EnumerateObject().Select(property => property.Name));
     }
 
     private static string SnakeCase(string value) => string.Concat(value.Select((character, index) =>

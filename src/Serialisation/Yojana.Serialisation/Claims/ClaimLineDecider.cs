@@ -30,12 +30,24 @@ public sealed record ClaimLineOutcome(
 /// </summary>
 public sealed class ClaimLineDecider(ClaimUnitFacts facts, PolicyResolver policies, ISettlementFormulaPort formulas)
 {
-    public async Task<ClaimLineOutcome> DecideAsync(Claim claim, ClaimUnitFact root, ItemSerialisationProfile? item, ClaimLine line, CancellationToken cancellationToken)
+    public async Task<ClaimLineOutcome> DecideAsync(Claim claim, ClaimUnitFact root, ItemSerialisationProfile? item, ClaimLine line,
+        CampaignCover? campaignCover, CancellationToken cancellationToken)
     {
         var unit = line.UnitId == root.UnitId ? root : await facts.ReadAsync(line.UnitId, cancellationToken);
-        var blocked = ClaimAdjudicationRules.BlockingFlag(root.OverlayFlags) ?? ClaimAdjudicationRules.BlockingFlag(unit.OverlayFlags);
+        var blocked = ClaimAdjudicationRules.BlockingFlag(root.OverlayFlags, campaignCover is not null)
+            ?? ClaimAdjudicationRules.BlockingFlag(unit.OverlayFlags, campaignCover is not null);
         if (blocked is not null) return ClaimLineOutcome.Denied($"overlay_{blocked}");
         if (ClaimAdjudicationRules.ItemDenialReason(item, claim.ClaimDate, line.Kind) is { } itemDenialReason) return ClaimLineOutcome.Denied(itemDenialReason);
+        if (campaignCover is not null)
+        {
+            var campaignPercentage = CampaignCoverage(campaignCover, line.Kind);
+            var campaignMeasurements = JsonSerializer.Deserialize<Dictionary<string, decimal>>(line.Measurements, LedgerJson.Options) ?? [];
+            var campaignSettlement = await formulas.CalculateAsync(new SettlementFormulaQuestion("full", line.RequestedAmount, campaignPercentage, campaignMeasurements), cancellationToken);
+            var campaignApproved = Math.Min(line.RequestedAmount, campaignSettlement.ApprovedAmount);
+            return new ClaimLineOutcome(campaignPercentage, campaignApproved, campaignCover.CoverageSource,
+                campaignApproved == 0 ? "coverage_percentage_zero" : campaignApproved < line.RequestedAmount ? "partially_uncovered" : null,
+                SettlementFormula: "full", ObligorEntityId: claim.ObligorEntityId);
+        }
 
         var resolution = await policies.ResolveAsync(new PolicyQuestion(line.UnitId, unit.ItemId, line.CoverageFamily, claim.ClaimDate,
             claim.ClaimantPartyRef, Country: claim.ServiceCountry, CoverageDate: claim.ClaimDate, Direction: EntitlementDirection.Outbound), cancellationToken);
@@ -72,6 +84,14 @@ public sealed class ClaimLineDecider(ClaimUnitFacts facts, PolicyResolver polici
         ClaimLineKind.Labour => coverage.LabourPct,
         ClaimLineKind.Travel => coverage.TravelPct,
         _ => 0,
+    };
+
+    public static decimal CampaignCoverage(CampaignCover campaign, string kind) => kind switch
+    {
+        ClaimLineKind.Parts => campaign.PartsPct,
+        ClaimLineKind.Labour => campaign.LabourPct,
+        ClaimLineKind.Travel => campaign.TravelPct,
+        _ => 0m,
     };
 
     private static string Source(string? entitlementType, string level) => entitlementType switch

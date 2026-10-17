@@ -13,7 +13,7 @@ namespace Yojana.Serialisation.Claims;
 /// offer an approve that the command then refuses, so change both together.
 /// </summary>
 public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext db, ClaimLineDecider decider, ClaimUnitFacts facts, IItemQueryPort items,
-    IEntitlementRecoveryQuery recoveries, RecoverySettings recoverySettings, ITenantContext tenant)
+    IEntitlementRecoveryQuery recoveries, RecoverySettings recoverySettings, ICampaignCoverPort campaigns, ITenantContext tenant)
 {
     public async Task<ClaimAdjudicationPreview?> PreviewAsync(Guid claimId, string lowConfidenceReviewerRole, CancellationToken cancellationToken)
     {
@@ -23,6 +23,10 @@ public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext
         var lines = await db.ClaimLines.AsNoTracking().Where(l => l.TenantId == tenantId && l.ClaimId == claimId).OrderBy(l => l.Sequence).ToListAsync(cancellationToken);
         var evidence = await db.ClaimEvidence.AsNoTracking().Where(e => e.TenantId == tenantId && e.ClaimId == claimId).Select(e => e.Kind).ToListAsync(cancellationToken);
         var root = await facts.ReadAsync(claim.UnitId, cancellationToken);
+        var namedCampaign = claim.CampaignId is { } campaignId
+            ? await campaigns.FindAsync(campaignId, claim.UnitId, claim.ClaimDate, cancellationToken)
+            : null;
+        var liveCampaign = namedCampaign is { Selected: true } && namedCampaign.CoversOn(claim.ClaimDate) ? namedCampaign : null;
         var item = await items.GetAsync(root.ItemId, cancellationToken);
         var unitIds = lines.Select(l => l.UnitId).Append(claim.UnitId).Distinct().ToList();
         var serials = new Dictionary<Guid, string>(await UnitSerials.DisplayAsync(db, tenantId, unitIds, cancellationToken));
@@ -41,15 +45,17 @@ public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext
             // A decided claim shows what was recorded; an open one shows what approve would record now.
             var outcome = decided
                 ? new ClaimLineOutcome(line.CoveragePct, line.ApprovedAmount, line.CoverageSource, line.DenialReason, line.EntitlementId, line.PolicyVersionId, line.AccrualCohortId, line.SettlementFormula, line.ChainLength)
-                : await decider.DecideAsync(claim, root, item, line, cancellationToken);
+                : await decider.DecideAsync(claim, root, item, line, liveCampaign, cancellationToken);
             outcomes.Add((line, outcome));
             var resolution = outcome.Resolution;
             var (start, end) = await TermAsync(outcome.EntitlementId, cancellationToken);
             previews.Add(new ClaimLinePreview(line.ClaimLineId, line.Sequence, line.UnitId, serials.GetValueOrDefault(line.UnitId),
                 itemIds.TryGetValue(line.UnitId, out var itemId) ? itemId : null, line.UnitId != claim.UnitId, line.Kind, line.CoverageFamily, line.Description,
-                line.RequestedAmount, outcome.CoveragePct, outcome.ApprovedAmount, outcome.CoverageSource, resolution?.Level ?? (outcome.EntitlementId is null ? PolicyLevel.None : PolicyLevel.UnitEntitlement),
+                line.RequestedAmount, outcome.CoveragePct, outcome.ApprovedAmount, outcome.CoverageSource,
+                liveCampaign is not null && !decided ? "campaign" : resolution?.Level ?? (outcome.EntitlementId is null ? PolicyLevel.None : PolicyLevel.UnitEntitlement),
                 resolution?.PolicyCode ?? Recorded(outcome.PolicyVersionId)?.PolicyCode, resolution?.Version ?? Recorded(outcome.PolicyVersionId)?.Version, outcome.EntitlementId, start ?? resolution?.StartDate, end ?? resolution?.EndDate, outcome.DenialReason,
-                resolution is null ? [] : Stack(resolution, serials)));
+                liveCampaign is not null && !decided ? [new PolicyStackStep("campaign", "matched", $"{liveCampaign.Code} · {liveCampaign.Name}")]
+                    : resolution is null ? [] : Stack(resolution, serials)));
         }
 
         (string PolicyCode, int Version)? Recorded(Guid? versionId) =>
@@ -74,19 +80,29 @@ public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext
             : outcomes.All(o => o.Outcome.DenialReason is null && o.Outcome.ApprovedAmount == o.Line.RequestedAmount) ? ClaimStatus.Approved
             : approved > 0 ? ClaimStatus.PartiallyApproved : ClaimStatus.Denied;
         var source = sources.Count == 1 ? sources[0] : decided ? claim.CoverageSource : ClaimCoverageSource.Chargeable;
+        var campaignCoverReason = decided ? claim.CampaignCoverReason : claim.CampaignId is null || liveCampaign is not null
+            ? null : namedCampaign?.NotCoveredReason(claim.ClaimDate) ?? ClaimCampaignCoverReason.Closed;
+        var campaignCovered = claim.CampaignId is not null && campaignCoverReason is null
+            && source is ClaimCoverageSource.Recall or ClaimCoverageSource.Goodwill;
 
         var entitlementIds = outcomes.Select(o => o.Outcome.EntitlementId).OfType<Guid>().Distinct().ToList();
         var lowConfidence = entitlementIds.Count > 0 && await db.Entitlements.AsNoTracking()
             .AnyAsync(e => e.TenantId == tenantId && entitlementIds.Contains(e.EntitlementId) && e.Confidence == Confidence.Low, cancellationToken);
 
         var recoveryPreviews = new List<RecoveryPreview>();
-        string? notRaisedReason = decided ? claim.RecoveryNotRaisedReason : null;
-        if (source != ClaimCoverageSource.Recall && !decided)
+        var recoveryPolicy = !decided && outcomeStatus is ClaimStatus.Approved or ClaimStatus.PartiallyApproved
+            ? await recoverySettings.GetAsync(cancellationToken)
+            : null;
+        string? notRaisedReason = decided ? claim.RecoveryNotRaisedReason
+            : recoveryPolicy is null ? null
+            : liveCampaign is not null
+                ? recoveryPolicy.CampaignClaims == RecoveryCampaignClaims.NoRecovery ? RecoveryNotRaisedReason.CampaignClaim : null
+                : source == ClaimCoverageSource.Recall ? RecoveryNotRaisedReason.RecallClaim : null;
+        if (notRaisedReason is null && !decided && outcomeStatus is ClaimStatus.Approved or ClaimStatus.PartiallyApproved)
         {
-            var recoveryPolicy = await recoverySettings.GetAsync(cancellationToken);
             foreach (var (line, outcome) in covered)
             {
-                var decision = RecoverySelection.Select(recoveryPolicy, claim.UnitId, line, await recoveries.FindAsync(claim.UnitId, line.UnitId, claim.ClaimDate, cancellationToken));
+                var decision = RecoverySelection.Select(recoveryPolicy!, claim.UnitId, line, await recoveries.FindAsync(claim.UnitId, line.UnitId, claim.ClaimDate, cancellationToken));
                 notRaisedReason ??= decision.NotRaisedReason;
                 foreach (var cover in decision.Covers)
                 {
@@ -102,19 +118,24 @@ public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext
             }
         }
 
-        var checks = Checks(claim, root, item, outcomes, evidence);
+        var checks = Checks(claim, root, item, outcomes, evidence, campaignCovered, namedCampaign, campaignCoverReason);
         return new ClaimAdjudicationPreview(claim.ClaimId, claim.ClaimNumber, outcomeStatus, source, claim.Currency, requested, approved, previews, checks,
-            source == ClaimCoverageSource.Recall || cohorts.Count != 1 ? null : cohorts[0], obligors.Count == 1 ? obligors[0] : claim.ObligorEntityId,
+            campaignCovered || source == ClaimCoverageSource.Recall || cohorts.Count != 1 ? null : cohorts[0], obligors.Count == 1 ? obligors[0] : claim.ObligorEntityId,
             recoveryPreviews, requested - approved, refusal, step, lowConfidence ? lowConfidenceReviewerRole : null,
             ClaimAdjudicationRules.IsDiscontinued(item, claim.ClaimDate) ? item?.SuccessorItemId : null, ClaimManualDenialReason.All.Order(StringComparer.Ordinal).ToList(),
-            recoveryPreviews.Count == 0 ? notRaisedReason : null);
+            recoveryPreviews.Count == 0 ? notRaisedReason : null, claim.CampaignId, namedCampaign?.Code, namedCampaign?.Name,
+            decided ? claim.ReserveTag : liveCampaign?.ReserveTag, campaignCoverReason);
     }
 
-    private static List<ClaimCheck> Checks(Claim claim, ClaimUnitFact root, ItemSerialisationProfile? item, List<(ClaimLine Line, ClaimLineOutcome Outcome)> outcomes, List<string> evidence)
+    private static List<ClaimCheck> Checks(Claim claim, ClaimUnitFact root, ItemSerialisationProfile? item,
+        List<(ClaimLine Line, ClaimLineOutcome Outcome)> outcomes, List<string> evidence, bool campaignCovered,
+        CampaignCover? campaign, string? campaignCoverReason)
     {
         var checks = new List<ClaimCheck>();
-        var flag = ClaimAdjudicationRules.BlockingFlag(root.OverlayFlags);
+        var flag = ClaimAdjudicationRules.BlockingFlag(root.OverlayFlags, campaignCovered);
         checks.Add(new("overlay_flags", flag ?? (root.OverlayFlags.Count == 0 ? "clear" : string.Join(", ", root.OverlayFlags)), flag is null ? "ok" : "fail"));
+        if (campaign is not null)
+            checks.Add(new("campaign_cover", campaignCoverReason ?? campaign.Code, campaignCoverReason is null ? "ok" : "warn"));
         var outOfRegion = outcomes.Any(o => o.Outcome.Resolution?.OutOfRegion == true);
         checks.Add(new("service_country", claim.ServiceCountry, outOfRegion ? "fail" : "ok"));
         var term = outcomes.Select(o => o.Outcome.Resolution).FirstOrDefault(r => r?.StartDate is not null && r.EndDate is not null);

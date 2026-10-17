@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Xunit;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
@@ -5,6 +6,7 @@ using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Entitlements;
+using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation.Tests;
 
@@ -53,6 +55,49 @@ public sealed class ClaimRulesTests
     [InlineData(OverlayFlag.Recalled)]
     [InlineData(OverlayFlag.AuthenticityFailed)]
     public void Every_claim_overlay_blocks_with_its_name(string flag) => Assert.Equal(flag, ClaimAdjudicationRules.BlockingFlag([flag]));
+
+    [Fact]
+    public void Campaign_cover_ignores_recalled_but_not_other_blocking_flags()
+    {
+        Assert.Null(ClaimAdjudicationRules.BlockingFlag([OverlayFlag.Recalled], recalledIsCovered: true));
+        Assert.Equal(OverlayFlag.Lost, ClaimAdjudicationRules.BlockingFlag([OverlayFlag.Recalled, OverlayFlag.Lost], recalledIsCovered: true));
+    }
+
+    [Theory]
+    [InlineData(ClaimLineKind.Parts, 100)]
+    [InlineData(ClaimLineKind.Labour, 50)]
+    [InlineData(ClaimLineKind.Travel, 0)]
+    [InlineData("other", 0)]
+    public void Campaign_cover_uses_the_campaign_percentage_for_supported_line_kinds(string kind, decimal expected)
+    {
+        var campaign = new CampaignCover(Guid.NewGuid(), "RC-1", "Recall", ClaimCoverageSource.Recall, "reserve", CampaignStatus.Active,
+            CampaignReason.Safety, null, true, 100m, 50m, 0m);
+
+        Assert.Equal(expected, ClaimLineDecider.CampaignCoverage(campaign, kind));
+    }
+
+    [Fact]
+    public void Campaign_cover_includes_its_last_day_and_names_ended_or_closed_fallbacks()
+    {
+        var lastDay = new DateOnly(2026, 9, 1);
+        var active = new CampaignCover(Guid.NewGuid(), "RC-1", "Recall", ClaimCoverageSource.Recall, "reserve", CampaignStatus.Active,
+            CampaignReason.Safety, lastDay, true, 100m, 100m, 100m);
+        var closed = active with { Status = CampaignStatus.Closed };
+
+        Assert.True(active.CoversOn(lastDay));
+        Assert.False(active.CoversOn(lastDay.AddDays(1)));
+        Assert.Equal(ClaimCampaignCoverReason.Ended, active.NotCoveredReason(lastDay.AddDays(1)));
+        Assert.Equal(ClaimCampaignCoverReason.Closed, closed.NotCoveredReason(lastDay));
+    }
+
+    [Fact]
+    public void Recovery_policy_from_before_campaign_recovery_defaults_to_no_recovery()
+    {
+        var policy = JsonSerializer.Deserialize<RecoveryPolicy>(
+            """{"wholeUnitLines":"single_covered_part","lineKinds":["parts"],"vendorAnswerDueDays":7}""", LedgerJson.Options);
+
+        Assert.Equal(RecoveryCampaignClaims.NoRecovery, policy!.CampaignClaims);
+    }
 
     [Fact]
     public void Low_confidence_cover_names_the_required_reviewer_rule()
