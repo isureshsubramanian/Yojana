@@ -237,7 +237,8 @@ public sealed record BillNonReturn(
     decimal Amount,
     DateOnly BillingDate,
     DateTime EventTime,
-    string ActorRef = "");
+    string ActorRef = "",
+    string Reason = "");
 
 public sealed record BillNonReturnResult(Guid ReplacementLinkId, string State, string PriceBasis, decimal Amount, string Currency, Guid EventId, bool Replayed);
 
@@ -318,7 +319,14 @@ public sealed record ReplacementLinkRow(
     decimal? NonReturnAmount,
     string Currency,
     DateTime? OverduePublishedAt,
-    bool PartyOnHold);
+    bool PartyOnHold,
+    string? OriginalSerial,
+    string? ReplacementSerial,
+    Guid OriginalItemId,
+    Guid ReplacementItemId,
+    string SourceNumber,
+    string ReplacementReason,
+    DateTime? ShippedAt);
 
 public sealed record ReplacementLinkPage(IReadOnlyList<ReplacementLinkRow> Rows, ReplacementLinkKpis Kpis, int Total, int Skip, int Take);
 

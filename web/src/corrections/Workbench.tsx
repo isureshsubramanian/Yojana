@@ -360,7 +360,11 @@ function CommandForm({ command, unitId, primary, openTypes, args, setArgs, candi
   const typeSelect = <div className="field"><label htmlFor="wb-type">Identifier type</label><select id="wb-type" className="select" value={args.type ?? ""} onChange={(event) => set("type", event.target.value)}><option value="">Choose…</option>{openTypes.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>;
   if (STRUCTURED_COMMANDS.includes(command as typeof STRUCTURED_COMMANDS[number])) return <StructuredCommandForm command={command} unitId={unitId} primary={primary} candidates={candidates} lineage={lineage} initialDocument={initialDocument ?? null} initialSelectionId={initialSelectionId} reason={reason} corrects={corrects} onArguments={setStructuredArguments} />;
   const dedicated = DEDICATED_SCREENS[command];
-  if (dedicated) return <div className="note info"><strong>{commandName(command)}</strong>&nbsp;has its own screen with the command's full preview.&nbsp;<Link className="btn primary" to={`${dedicated.path}${dedicated.path.includes("?") ? "&" : "?"}unit=${unitId ?? ""}`}>Open {dedicated.label}</Link></div>;
+  if (dedicated) {
+    const path = dedicated.path.includes(":id") ? dedicated.path.replace(":id", unitId ?? "")
+      : `${dedicated.path}${dedicated.path.includes("?") ? "&" : "?"}unit=${unitId ?? ""}`;
+    return <div className="note info"><strong>{commandName(command)}</strong>&nbsp;has its own screen with the command's full preview.&nbsp;<Link className="btn primary" to={path}>Open {dedicated.label}</Link></div>;
+  }
   switch (command) {
     case "correct_identifier": return <div className="form-grid">{typeSelect}<div className="field"><label htmlFor="wb-value">Correct value</label><input id="wb-value" className="input serial" value={args.value ?? ""} onChange={(event) => set("value", event.target.value)} /></div><div className="span hint">CorrectIdentifier · the wrong row closes with superseded_by; the corrected row opens. The old value stays searchable.</div></div>;
     case "swap_identifiers": return <><div className="pair" style={{ marginBottom: 12 }}>

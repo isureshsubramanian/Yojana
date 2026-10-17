@@ -77,6 +77,8 @@ public static class BillNonReturnHandler
         }
         if (link.State != ReplacementLinkState.AwaitingReturn)
             throw new CommandRefusedException("replacement_not_awaiting_return", "Only an advance replacement awaiting return can be billed for non-return.");
+        if (string.IsNullOrWhiteSpace(command.Reason))
+            throw new CommandRefusedException("non_return_billing_reason_required", "Billing a non-return needs a reason.");
         if (!NonReturnPriceBasis.All.Contains(command.PriceBasis)) throw new CommandRefusedException("non_return_price_basis_unknown", $"'{command.PriceBasis}' is not a non-return price basis.");
         if (command.Amount <= 0) throw new CommandRefusedException("non_return_amount_invalid", "The billed non-return amount must be greater than zero.");
         if (command.BillingDate > DateOnly.FromDateTime(command.EventTime)) throw new CommandRefusedException("billing_date_in_future", "The billing date cannot be after its business event time.");
@@ -87,7 +89,7 @@ public static class BillNonReturnHandler
             UnitId = link.OriginalUnitId, EventTime = command.EventTime, EventType = ReplacementEventType.NonReturnBilled, PresetEventId = eventId,
             LegalEntityId = await ExtendReturnDueHandler.LegalEntityAsync(db, tenant.TenantId, link.WarrantyReplacementId, cancellationToken), ActorRef = command.ActorRef,
             DocumentType = "warranty_replacement", DocumentId = link.WarrantyReplacementId, IdempotencyKey = key,
-            Attributes = JsonObjectText.Of(new { replacement_link_id = link.ReplacementLinkId, price_basis = command.PriceBasis, amount = command.Amount, currency = link.Currency, billing_date = command.BillingDate }),
+            Attributes = JsonObjectText.Of(new { replacement_link_id = link.ReplacementLinkId, price_basis = command.PriceBasis, amount = command.Amount, currency = link.Currency, billing_date = command.BillingDate, reason = command.Reason.Trim() }),
         }], cancellationToken);
         link.State = ReplacementLinkState.ClosedBilled;
         link.BillCommandId = command.CommandId;

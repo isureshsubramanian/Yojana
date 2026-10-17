@@ -236,6 +236,8 @@ public sealed record RefurbishmentCostRow(
     Guid CostId, string Kind, decimal Amount, string Currency, string Description,
     DateTime PostedAt, Guid EventId);
 
+public sealed record RefurbishmentReleaseCheck(string Key, string Label, string Detail, bool Passed, bool Required);
+
 public sealed record RefurbishmentWorkOrderRow(
     Guid WorkOrderId, string WorkOrderNumber, string Kind, Guid TargetUnitId, Guid ItemId,
     Guid? SourceRmaLineId, string Status, int CycleNumber, string IdentityPolicy,
@@ -243,6 +245,7 @@ public sealed record RefurbishmentWorkOrderRow(
     string? ReleasedBy, Guid? ReleasedUnitId, string? Grade, decimal TotalCost,
     string? Currency, IReadOnlyList<RefurbishmentOperationRow> Operations,
     IReadOnlyList<RefurbishmentPartRow> Parts, IReadOnlyList<RefurbishmentLabourRow> Labour,
-    IReadOnlyList<RefurbishmentCostRow> Costs);
+    IReadOnlyList<RefurbishmentCostRow> Costs, string? TargetSerial, string? ReleasedSerial,
+    Guid? CurrentLocationId, IReadOnlyList<RefurbishmentReleaseCheck> ReleaseChecks);
 
 public sealed record RefurbishmentWorkOrderPage(IReadOnlyList<RefurbishmentWorkOrderRow> Items, int Total, int Skip, int Take);

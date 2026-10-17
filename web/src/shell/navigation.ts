@@ -30,12 +30,15 @@ export const navigation: NavEntry[] = [
   { path: "/claims/campaigns", label: "Campaigns", icon: "campaign", section: "Work" },
   { path: "/claims/recovery", label: "Recovery claims", icon: "recover", section: "Work" },
   { path: "/returns", label: "Returns", icon: "returns", section: "Work" },
+  { path: "/replacements/awaiting", label: "Replacements", icon: "swap", section: "Work" },
+  { path: "/refurbishments", label: "Refurbishment", icon: "refurb", section: "Work" },
   { path: "/certificates", label: "Certificates", icon: "cert", section: "Work", placeholder: "Certificates and labels" },
   { path: "/imports", label: "Imports", icon: "upload", section: "Data", placeholder: "Imports and 3PL capture" },
   { path: "/integration", label: "Integration", icon: "int", section: "Data", placeholder: "Connections and the integration gateway" },
   { path: "/settings", label: "Settings", icon: "set", section: "Data", roles: ["tenant_administrator"], placeholder: "Tenant settings" },
   { path: "/settings/currencies", label: "Currencies", icon: "coins", section: "Data", roles: ["tenant_administrator"] },
   { path: "/settings/recovery", label: "Supplier recovery", icon: "sliders", section: "Data", roles: ["tenant_administrator"] },
+  { path: "/settings/refurbishment", label: "Refurbishment policy", icon: "cycle", section: "Data", roles: ["tenant_administrator"] },
   { path: "/settings/workbench-choices", label: "Workbench choices", icon: "list", section: "Data", roles: ["tenant_administrator"] },
 ];
 
