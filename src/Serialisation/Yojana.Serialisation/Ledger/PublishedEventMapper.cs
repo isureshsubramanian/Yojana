@@ -244,8 +244,8 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
 }
 
 /// <summary>
-/// Scoped switch for <see cref="PublishedEventMapper"/>: a scope that only rehearses a command (the entitlement bulk or
-/// LateSerialization preview, rolled back) turns publication off. Every other scope publishes.
+/// Scoped switch for <see cref="PublishedEventMapper"/>: a scope that only rehearses a command (the entitlement bulk,
+/// identifier correction or LateSerialization preview, rolled back) turns publication off. Every other scope publishes.
 /// </summary>
 public sealed class LedgerPublication
 {

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Yojana.Platform.Contracts.Identifiers;
@@ -39,14 +40,28 @@ public static class BulkApprovalArguments
 {
     public const string ApproverRef = "__approver_ref";
     public const string ApproverRoles = "__approver_roles";
+    public const string RecordedApprovers = "__recorded_approvers";
+    public const string RecordedEvidenceRefs = "__recorded_evidence_refs";
 
     public static BulkOperationArguments With(BulkOperationArguments arguments, BulkApproval? approval)
     {
         var extra = (arguments.Extra ?? new Dictionary<string, string>()).Where(kv => !kv.Key.StartsWith("__", StringComparison.Ordinal)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
         if (approval?.ApproverRef is { } approver) extra[ApproverRef] = approver;
         if (approval?.Roles is { Count: > 0 } roles) extra[ApproverRoles] = string.Join(',', roles);
+        if (approval?.Approvers is { Count: > 0 } approvers) extra[RecordedApprovers] = JsonSerializer.Serialize(approvers, LedgerJson.Options);
+        if (approval?.EvidenceRefs is { Count: > 0 } evidence) extra[RecordedEvidenceRefs] = JsonSerializer.Serialize(evidence, LedgerJson.Options);
         return arguments with { Extra = extra };
     }
+
+    public static IReadOnlyList<CorrectionApprover> Approvers(BulkOperationArguments arguments) =>
+        arguments.Extra?.GetValueOrDefault(RecordedApprovers) is { } json
+            ? JsonSerializer.Deserialize<List<CorrectionApprover>>(json, LedgerJson.Options) ?? []
+            : [];
+
+    public static IReadOnlyList<string> EvidenceRefs(BulkOperationArguments arguments) =>
+        arguments.Extra?.GetValueOrDefault(RecordedEvidenceRefs) is { } json
+            ? JsonSerializer.Deserialize<List<string>>(json, LedgerJson.Options) ?? []
+            : [];
 
     /// <summary>The arguments without any reserved key: what a stored approval request keeps (P2-T21).</summary>
     public static BulkOperationArguments Clean(BulkOperationArguments arguments) => With(arguments, null);

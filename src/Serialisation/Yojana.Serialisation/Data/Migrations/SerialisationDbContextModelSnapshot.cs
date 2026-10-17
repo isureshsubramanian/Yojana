@@ -3604,6 +3604,160 @@ namespace Yojana.Serialisation.Data.Migrations
                             }));
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.WorkbenchRequest", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("request_id");
+
+                    b.Property<string>("AnswersJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("answers_json");
+
+                    b.Property<string>("ApprovalsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("approvals_json");
+
+                    b.Property<string>("Choice")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("choice");
+
+                    b.Property<string>("Command")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("command");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<DateTime?>("CommittedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("committed_at");
+
+                    b.Property<string>("CommittedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("committed_by");
+
+                    b.Property<string>("DecisionNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("decision_note");
+
+                    b.Property<string>("EvidenceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("evidence_json");
+
+                    b.Property<DateTime>("InitiatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("initiated_at");
+
+                    b.Property<string>("InitiatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("initiated_by");
+
+                    b.Property<string>("InitiatorRolesJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("initiator_roles_json");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("PreviewHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .HasColumnName("preview_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("PreviewJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("preview_json");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTime?>("RejectedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("rejected_at");
+
+                    b.Property<string>("RejectedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("rejected_by");
+
+                    b.Property<string>("RequiredApproverRolesJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("required_approver_roles_json");
+
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("result_json");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TargetJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("target_json");
+
+                    b.HasKey("TenantId", "RequestId")
+                        .HasName("pk_workbench_request");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_workbench_request_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "Status", "InitiatedAt")
+                        .HasDatabaseName("ix_workbench_request_tenant_id_status_initiated_at");
+
+                    b.ToTable("workbench_request", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_workbench_request_answers_json", "ISJSON(answers_json) = 1");
+
+                            t.HasCheckConstraint("ck_workbench_request_approvals_json", "ISJSON(approvals_json) = 1");
+
+                            t.HasCheckConstraint("ck_workbench_request_evidence_json", "ISJSON(evidence_json) = 1");
+
+                            t.HasCheckConstraint("ck_workbench_request_initiator_roles_json", "ISJSON(initiator_roles_json) = 1");
+
+                            t.HasCheckConstraint("ck_workbench_request_preview_json", "ISJSON(preview_json) = 1");
+
+                            t.HasCheckConstraint("ck_workbench_request_required_approver_roles_json", "ISJSON(required_approver_roles_json) = 1");
+
+                            t.HasCheckConstraint("ck_workbench_request_result_json", "result_json IS NULL OR ISJSON(result_json) = 1");
+
+                            t.HasCheckConstraint("ck_workbench_request_status", "status IN ('draft', 'awaiting_approval', 'approved', 'rejected', 'committed', 'superseded')");
+
+                            t.HasCheckConstraint("ck_workbench_request_target_json", "ISJSON(target_json) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CorrectionRecordUnit", b =>
                 {
                     b.HasOne("Yojana.Serialisation.Data.Entities.CorrectionRecord", null)

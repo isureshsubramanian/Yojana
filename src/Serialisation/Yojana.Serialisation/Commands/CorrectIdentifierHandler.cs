@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
@@ -102,5 +104,43 @@ public static class CorrectIdentifierHandler
         ], cancellationToken);
         await corrections.RecordAsync(CorrectionCommand.CorrectIdentifier, metadata, command.ActorRef, command.EventTime, [unit.UnitId], cancellationToken);
         return new CorrectIdentifierResult(unit.UnitId, open.IdentifierId, replacement.IdentifierId, open.NormalisedValue, replacement.NormalisedValue, metadata.CorrectionId);
+    }
+}
+
+public static class PreviewCorrectIdentifierHandler
+{
+    // As with entitlement bulk previews, this is the real command in an isolated transaction. Publication is suppressed
+    // because the rehearsal scope has no transactional outbox; its database writes are always rolled back.
+    public static async Task<CorrectionPreview> Handle(PreviewCorrectIdentifier preview, IServiceScopeFactory scopes,
+        ITenantContext tenant, CancellationToken cancellationToken)
+    {
+        using var scope = scopes.CreateScope();
+        scope.ServiceProvider.GetRequiredService<ITenantContextSetter>().Set(tenant.TenantId);
+        scope.ServiceProvider.GetRequiredService<LedgerPublication>().Suppressed = true;
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var command = preview.Command;
+            var result = await CorrectIdentifierHandler.Handle(command, db,
+                scope.ServiceProvider.GetRequiredService<IUnitEventWriter>(),
+                scope.ServiceProvider.GetRequiredService<IdentifierService>(),
+                scope.ServiceProvider.GetRequiredService<CorrectionLedger>(),
+                scope.ServiceProvider.GetRequiredService<ITenantContext>(),
+                scope.ServiceProvider.GetRequiredService<IClock>(), cancellationToken);
+            var summary = $"{result.OldNormalisedValue} → {result.NewNormalisedValue}";
+            return new(null, CorrectionCommand.CorrectIdentifier, 1, 1, 0, 0,
+                [new(command.UnitId, result.OldNormalisedValue, UnitOutcome.Outcomes.Change, null, summary)],
+                [new(command.UnitId, UnitEventType.IdentifierCorrected, command.EventTime, summary)], [], [], []);
+        }
+        catch (CommandRefusedException ex)
+        {
+            return new(null, CorrectionCommand.CorrectIdentifier, 1, 0, 0, 1,
+                [new(preview.Command.UnitId, null, UnitOutcome.Outcomes.Block, ex.Rule, ex.Message, ex.UnblockingStep)], [], [], [], [], ex.Refusal);
+        }
+        finally
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+        }
     }
 }

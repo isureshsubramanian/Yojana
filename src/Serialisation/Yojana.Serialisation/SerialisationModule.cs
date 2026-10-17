@@ -17,6 +17,7 @@ using Yojana.Serialisation.Search;
 using Yojana.Serialisation.Selection;
 using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Projections;
+using Yojana.Serialisation.Workbench;
 
 namespace Yojana.Serialisation;
 
@@ -61,6 +62,12 @@ public static class SerialisationModule
         builder.Services.AddScoped<BulkApprovalRequestQueries>();
         builder.Services.AddScoped<CorrectionLedger>();
         builder.Services.AddScoped<CorrectionKpiQueries>();
+        builder.Services.AddSingleton<IWorkbenchChoiceCatalog, BuiltInWorkbenchChoiceCatalog>();
+        builder.Services.AddScoped<WorkbenchEntryResolver>();
+        builder.Services.AddScoped<WorkbenchLineageQueries>();
+        builder.Services.AddScoped<WorkbenchCommandDispatcher>();
+        builder.Services.AddScoped<WorkbenchRequestService>();
+        builder.Services.AddScoped<WorkbenchRequestQueries>();
         builder.Services.AddScoped<CorrectAsBuiltPlanner>();
         builder.Services.AddScoped<AssignIdentifiersService>();
         builder.Services.AddScoped<LateSerializationPlanner>();

@@ -38,7 +38,12 @@ public static class PreviewMergeUnitsHandler
         var live = await db.Entitlements.AsNoTracking().AnyAsync(e => e.TenantId == tenantId && (e.UnitId == survivorId || e.UnitId == absorbedId) && e.Status != EntitlementStatus.Closed, cancellationToken);
         var policy = await settings.GetAsync(cancellationToken);
         var roles = command.CommittedBy?.Roles ?? [];
-        var approval = CorrectionApprovalRules.Evaluate(policy, CorrectionCommand.MergeUnits, new(UnitHasLiveEntitlement: live), roles);
+        var facts = new CorrectionApprovalFacts(UnitHasLiveEntitlement: live);
+        var approval = CorrectionApprovalRules.Evaluate(policy, CorrectionCommand.MergeUnits, facts, roles);
+        var approvalRefusal = command.CommittedBy is { } committer
+            && CorrectionApprovalRules.ApprovalsSatisfied(policy, CorrectionCommand.MergeUnits, facts, committer, command.Approvers ?? [])
+                ? null
+                : approval.Refusal;
         var count = await CountRowsAsync(db, tenantId, absorbedId, cancellationToken);
         var events = new List<CorrectionEventPreview>
         {
@@ -52,8 +57,10 @@ public static class PreviewMergeUnitsHandler
             .Select(e => new CorrectionEntitlementPreview(absorbedId, "re-point", e.EntitlementId, e.CoverageFamily)).ToListAsync(cancellationToken);
         var certificates = new List<CorrectionCertificatePreview> { new(survivorId, "release_record", "new_version", "merged_identifier_sets") };
         if (live) certificates.Add(new(survivorId, "warranty_certificate", "new_version", "live_entitlements_merged"));
-        var preview = new CorrectionPreview(null, CorrectionCommand.MergeUnits, 2, refusal is null ? 1 : 0, 0, refusal is null ? 0 : 1, outcomes, events,
-            entitlementPreview, certificates, [], refusal ?? approval.Refusal);
+        var effectiveRefusal = refusal ?? approvalRefusal;
+        var preview = new CorrectionPreview(null, CorrectionCommand.MergeUnits, 2, effectiveRefusal is null ? 1 : 0, 0, effectiveRefusal is null ? 0 : 1,
+            effectiveRefusal is null ? outcomes : [new UnitOutcome(absorbedId, null, UnitOutcome.Outcomes.Block, effectiveRefusal.Rule, effectiveRefusal.Message, effectiveRefusal.UnblockingStep)],
+            events, entitlementPreview, certificates, [], effectiveRefusal);
         var duplicate = await DuplicateAlternativeAsync(db, tenantId, survivorId, absorbedId, cancellationToken);
         return new(recommended, survivorId, absorbedId, preview, approval,
         [
