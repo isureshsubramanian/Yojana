@@ -6,6 +6,7 @@ import { DataGrid, StatusBadge, type GridColumn } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
+import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section, useActor } from "../units/common";
 import { humanise, outcomeTone, shortId, splitSerials } from "../units/format";
 import { entitlementApi } from "./api";
@@ -26,6 +27,7 @@ export function Component() {
   const requestId = params.get("approval");
   const [request, setRequest] = useState<BulkApprovalRequest | null>(null);
   const [raised, setRaised] = useState<BulkApprovalRequest | null>(null);
+  const person = usePeople([actor, request?.requestedBy, request?.decidedBy]);
   const [decisionNote, setDecisionNote] = useState("");
   const [approveCommandId] = useState(newCommandId);
   const initialSerials = params.get("serials") ?? "";
@@ -201,7 +203,7 @@ export function Component() {
           {kind === "date_range" && <><Field label="From" id="bulk-from" value={from} onChange={setFrom} type="date" /><Field label="To" id="bulk-to" value={to} onChange={setTo} type="date" /></>}
           {kind === "pasted_list" && <div className="field span"><label htmlFor="bulk-serials">Serials <span className="hint">· {splitSerials(serials).length} distinct</span></label><textarea id="bulk-serials" className="textarea serial" value={serials} onChange={(event) => setSerials(event.target.value)} /></div>}
           {kind === "serial_range" && <><Field label="Scheme" id="bulk-scheme" value={scheme} onChange={setScheme} /><div /><Field label="From" id="bulk-range-from" value={rangeStart} onChange={setRangeStart} mono /><Field label="To" id="bulk-range-to" value={rangeEnd} onChange={setRangeEnd} mono /></>}</>}
-          {request && <div className={`span note ${request.status === "approved" ? "ok" : request.status === "pending" ? "info" : "warn"}`}><strong>{request.status === "pending" ? "Waiting for your decision." : `Request ${request.status}.`}</strong>&nbsp;{request.status === "stale" ? "The units changed after it was raised, so nothing was executed. Preview again and raise a new request." : request.status === "pending" ? `Raised by ${request.requestedBy} · ${request.block} units need approval. The arguments are fixed by the request.` : `${request.decidedBy ?? ""}${request.decisionNote ? ` · ${request.decisionNote}` : ""}`}</div>}
+          {request && <div className={`span note ${request.status === "approved" ? "ok" : request.status === "pending" ? "info" : "warn"}`}><strong>{request.status === "pending" ? "Waiting for your decision." : `Request ${request.status}.`}</strong>&nbsp;{request.status === "stale" ? "The units changed after it was raised, so nothing was executed. Preview again and raise a new request." : request.status === "pending" ? `Raised by ${person(request.requestedBy)} · ${request.block} units need approval. The arguments are fixed by the request.` : `${request.decidedBy ? person(request.decidedBy) : ""}${request.decisionNote ? ` · ${request.decisionNote}` : ""}`}</div>}
           {selectionId && <div className="span note ok"><strong>{request ? "Requested selection." : "Resolved."}</strong>&nbsp;{resolvedCount} units are frozen in selection {shortId(selectionId)}.</div>}
           <div className="field"><label htmlFor="bulk-family">Coverage family</label><select id="bulk-family" className="select" value={family} onChange={(event) => setFamily(event.target.value)}>{families.map((row) => <option value={row.familyCode} key={row.familyCode}>{row.name} · {row.familyCode}</option>)}</select></div>
           {(operation === "entitlement.create" || operation === "entitlement.supersede" || operation === "entitlement.attach_extended") && <div className="field"><label htmlFor="bulk-policy">Policy</label><select id="bulk-policy" className="select" value={policyCode} onChange={(event) => setPolicyCode(event.target.value)}><option value="">Latest applicable policy</option>{policies.filter((row) => row.coverageFamily === family).map((row) => <option value={row.policyCode} key={row.policyCode}>{row.name} · {row.policyCode}</option>)}</select></div>}
@@ -231,7 +233,7 @@ export function Component() {
         </section>
       </div>
     </main>
-    <Rail label="Execution"><Section title="Routing"><Kv rows={[["Initiator", actor], ["Approver", request ? "you · judged from your roles" : "judged from signed-in roles"], ["Source document", sourceId ? `${sourceType} ${shortId(sourceId)}` : "—"], ["Transaction", "1 · all or nothing"], ["Selection", selectionId ? shortId(selectionId) : "—"]]} /></Section><Section title="Rules applied"><p className="muted">The server rehearses the real command for every unit and rolls it back. Execution uses the same arguments in one transaction. A request for approval freezes this preview on the server; approval re-checks it and executes only if no unit has changed since.</p></Section></Rail>
+    <Rail label="Execution"><Section title="Routing"><Kv rows={[["Initiator", person(actor)], ["Approver", request ? "you · judged from your roles" : "judged from signed-in roles"], ["Source document", sourceId ? `${sourceType} ${shortId(sourceId)}` : "—"], ["Transaction", "1 · all or nothing"], ["Selection", selectionId ? shortId(selectionId) : "—"]]} /></Section><Section title="Rules applied"><p className="muted">The server rehearses the real command for every unit and rolls it back. Execution uses the same arguments in one transaction. A request for approval freezes this preview on the server; approval re-checks it and executes only if no unit has changed since.</p></Section></Rail>
   </>;
 }
 

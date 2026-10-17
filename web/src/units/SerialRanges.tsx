@@ -5,6 +5,7 @@ import { DataGrid, StatusBadge, type GridColumn } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
+import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section, useActor } from "./common";
 import { fmtDate, humanise, shortId } from "./format";
 
@@ -22,6 +23,7 @@ export function Component() {
   const [status, setStatus] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [list, setList] = useState<SerialRangeList | null>(null);
+  const person = usePeople(list?.page.items.map((r) => r.reservedBy) ?? []);
   const [loading, setLoading] = useState(false);
   const [version, setVersion] = useState(0);
   const [quantity, setQuantity] = useState(500);
@@ -67,14 +69,14 @@ export function Component() {
     { key: "qty", label: "Qty", width: 10, numeric: true, render: (r) => r.count.toLocaleString() },
     { key: "used", label: "Used", width: 10, numeric: true, render: (r) => r.commissionedCount ? r.commissionedCount.toLocaleString() : <span className="muted">—</span> },
     { key: "to", label: "Allocated to", width: 21, render: (r) => <><span className="primary">{r.allocatedToDocumentType ? `${humanise(r.allocatedToDocumentType)} ${shortId(r.allocatedToDocumentId)}` : "—"}</span><span className="sub">{r.itemId ? `item ${shortId(r.itemId)}` : "any item"}</span></> },
-    { key: "reserved", label: "Reserved", width: 16, render: (r) => <>{fmtDate(r.reservedAt)}<span className="sub">{r.reservedBy}</span></> },
+    { key: "reserved", label: "Reserved", width: 16, render: (r) => <>{fmtDate(r.reservedAt)}<span className="sub">{person(r.reservedBy)}</span></> },
     { key: "status", label: "Status", width: 20, render: (r) => <StatusBadge tone={rangeTone(r.status)}>{humanise(r.status)}</StatusBadge> },
   ];
 
   const rowClick = (r: SerialRangeRow) => openDrawer({ eyebrow: `Selected range · ${humanise(r.status)}`, title: r.startValue ?? shortId(r.rangeId), mono: true }, (
     <>
       <h3>Range</h3>
-      <Kv rows={[["Start", <span className="serial">{r.startValue ?? "—"}</span>], ["End", <span className="serial">{r.endValue ?? "—"}</span>], ["Count", r.count.toLocaleString()], ["Commissioned", `${r.commissionedCount} of ${r.count}`], ["Allocated to", r.allocatedToDocumentType ? `${humanise(r.allocatedToDocumentType)} ${shortId(r.allocatedToDocumentId)}` : "—"], ["Item", r.itemId ? shortId(r.itemId) : "any"], ["Reserved", `${fmtDate(r.reservedAt)} · ${r.reservedBy}`], ["Mode", r.randomised ? "randomised list" : "contiguous block"], ["Note", r.note ?? "—"]]} />
+      <Kv rows={[["Start", <span className="serial">{r.startValue ?? "—"}</span>], ["End", <span className="serial">{r.endValue ?? "—"}</span>], ["Count", r.count.toLocaleString()], ["Commissioned", `${r.commissionedCount} of ${r.count}`], ["Allocated to", r.allocatedToDocumentType ? `${humanise(r.allocatedToDocumentType)} ${shortId(r.allocatedToDocumentId)}` : "—"], ["Item", r.itemId ? shortId(r.itemId) : "any"], ["Reserved", `${fmtDate(r.reservedAt)} · ${person(r.reservedBy)}`], ["Mode", r.randomised ? "randomised list" : "contiguous block"], ["Note", r.note ?? "—"]]} />
       <div className="act"><Link className="btn block" to={`/units?q=${encodeURIComponent((r.startValue ?? "").slice(0, Math.max(0, (r.startValue ?? "").length - 3)))}`}>Units in this block</Link></div>
     </>
   ));

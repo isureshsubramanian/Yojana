@@ -67,6 +67,9 @@ public static class PlatformSetup
         HandlerAssemblies.Add(typeof(PlatformSetup).Assembly);
 
         builder.Services.AddScoped<SignInService>();
+        // A factory for the same reason as ITenantCurrency above: it keeps PlatformDbContext out of the generated graph of
+        // any module handler that later takes IUserDirectory.
+        builder.Services.AddScoped<IUserDirectory>(sp => new UserDirectory(sp.GetRequiredService<PlatformDbContext>(), sp.GetRequiredService<ITenantContext>()));
         // Shell contributions: modules add their own IOverviewContributor and IConnectionHealthSource registrations.
         builder.Services.AddScoped<IOverviewContributor, PlatformOverviewContributor>();
         builder.Services.AddSingleton<IConnectionHealthSource, NoConnectionsHealthSource>();

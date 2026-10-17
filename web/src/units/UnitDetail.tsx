@@ -6,6 +6,7 @@ import { openDrawer, updateDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
+import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section, UnitLink, useActor } from "./common";
 import { documentLabel, fmtDate, fmtDateTime, humanise, shortId, statusLabel, statusTone } from "./format";
 import { EntitlementPanel, openAmendEntitlement, openAttachEntitlement, type EntitlementSummary } from "../entitlements/EntitlementPanel";
@@ -41,6 +42,7 @@ export function Component() {
   }, [unitId, skip, version]);
 
   const reload = useCallback(() => setVersion((v) => v + 1), []);
+  const person = usePeople(history?.items.map((e) => e.actorRef) ?? []);
   const primary = detail?.identifiers.find((i) => i.validTo === null && i.type === "internal_serial") ?? detail?.identifiers.find((i) => i.validTo === null);
   const title = primary?.rawValue ?? (detail ? `unit ${shortId(detail.unitId)}` : "…");
   const owner = detail?.episodes.find((e) => e.kind === "ownership" && e.validTo === null);
@@ -63,13 +65,13 @@ export function Component() {
       const bad = e.eventType === "ownership.closed" || e.eventType === "unit.scrapped" || e.eventType === "unit.flag_set";
       out.push({
         kind: "event", title: eventTitle(e.eventType), code: e.eventType,
-        meta: [fmtDateTime(e.eventTime), e.bizStep ? humanise(e.bizStep) : null, e.disposition ? humanise(e.disposition) : null, e.document ? documentLabel(e.document) : null, e.actorRef].filter(Boolean).join(" · "),
+        meta: [fmtDateTime(e.eventTime), e.bizStep ? humanise(e.bizStep) : null, e.disposition ? humanise(e.disposition) : null, e.document ? documentLabel(e.document) : null, person(e.actorRef)].filter(Boolean).join(" · "),
         recordedAt: e.recordedTime !== e.eventTime ? fmtDateTime(e.recordedTime) : null,
         emphasis: key ? "key" : bad ? "bad" : null,
       });
     }
     return out;
-  }, [history, detail]);
+  }, [history, detail, person]);
 
   const eventAt = (index: number): HistoryRow | undefined => {
     // entries interleave episode headings; map the clicked entry back to its event
@@ -87,7 +89,7 @@ export function Component() {
     openDrawer({ eyebrow: "Selected · history event", title: eventTitle(e.eventType) }, (
       <>
         <h3>Event</h3>
-        <Kv rows={[["Type", e.eventType], ["Business time", fmtDateTime(e.eventTime)], ["Recorded time", fmtDateTime(e.recordedTime)], ["Seq", e.seq.toLocaleString()], ["Actor", e.actorRef], ["Biz step", humanise(e.bizStep) || "—"], ["Disposition", humanise(e.disposition) || "—"], ["Document", e.document ? documentLabel(e.document) : "—"], ["Event id", shortId(e.eventId, 12)]]} />
+        <Kv rows={[["Type", e.eventType], ["Business time", fmtDateTime(e.eventTime)], ["Recorded time", fmtDateTime(e.recordedTime)], ["Seq", e.seq.toLocaleString()], ["Actor", person(e.actorRef)], ["Biz step", humanise(e.bizStep) || "—"], ["Disposition", humanise(e.disposition) || "—"], ["Document", e.document ? documentLabel(e.document) : "—"], ["Event id", shortId(e.eventId, 12)]]} />
         <h3 style={{ marginTop: 16 }}>Attributes</h3>
         <pre className="raw" style={{ whiteSpace: "pre-wrap", overflow: "auto", maxHeight: 360 }}>{attributes ?? "{}"}</pre>
       </>

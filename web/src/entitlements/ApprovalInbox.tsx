@@ -4,6 +4,7 @@ import { DataGrid, KpiStrip, StatusBadge, type GridColumn } from "../components"
 import { openDrawer, updateDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
+import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section, useActor } from "../units/common";
 import { documentLabel, fmtDateTime, humanise, shortId } from "../units/format";
 import { entitlementApi } from "./api";
@@ -24,6 +25,7 @@ export function Component() {
   const [error, setError] = useState<unknown>(null);
   const [active, setActive] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
+  const person = usePeople(approvals.map((bulk) => bulk.requestedBy));
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError(null);
     Promise.all([entitlementApi.requirements("exception", 0, 100, controller.signal), entitlementApi.exceptions("open", 0, 100, controller.signal), entitlementApi.approvalRequests("pending", 0, 100, controller.signal)])
@@ -33,10 +35,10 @@ export function Component() {
   }, [version]);
 
   const rows = useMemo<InboxRow[]>(() => [
-    ...approvals.map((bulk): InboxRow => ({ id: `bulk:${bulk.requestId}`, kind: "bulk", title: humanise(bulk.operation), subject: `${documentLabel(bulk.sourceDocument)} · by ${bulk.requestedBy}`, reason: bulk.rules.join(", ") || "approval_required", units: bulk.block, raisedAt: bulk.requestedAt, status: "Needs approval", bulk })),
+    ...approvals.map((bulk): InboxRow => ({ id: `bulk:${bulk.requestId}`, kind: "bulk", title: humanise(bulk.operation), subject: `${documentLabel(bulk.sourceDocument)} · by ${person(bulk.requestedBy)}`, reason: bulk.rules.join(", ") || "approval_required", units: bulk.block, raisedAt: bulk.requestedAt, status: "Needs approval", bulk })),
     ...requirements.map((requirement): InboxRow => ({ id: `requirement:${requirement.requirementId}`, kind: "requirement", title: "Entitlement requirement", subject: `Unit ${shortId(requirement.unitId)}${requirement.sourceDocument ? ` · ${documentLabel(requirement.sourceDocument)}` : ""}`, reason: requirement.missingInput ?? "creation_failed", units: 1, raisedAt: requirement.raisedAt, status: "Manager decision", requirement })),
     ...exceptions.map((exception): InboxRow => ({ id: `exception:${exception.exceptionId}`, kind: "exception", title: "Warranty-line exception", subject: documentLabel(exception.document), reason: exception.missingInput, units: 1, raisedAt: exception.raisedAt, status: "Resolve targets", exception })),
-  ].sort((left, right) => left.raisedAt.localeCompare(right.raisedAt)), [approvals, requirements, exceptions]);
+  ].sort((left, right) => left.raisedAt.localeCompare(right.raisedAt)), [approvals, requirements, exceptions, person]);
   const oldest = rows[0] ? daysOld(rows[0].raisedAt) : 0;
   const columns: GridColumn<InboxRow>[] = [
     { key: "request", label: "Request · subject", width: 34, render: (row) => <>{row.title}<span className="sub">{row.subject}</span></> },
@@ -48,7 +50,7 @@ export function Component() {
   const open = (row: InboxRow) => {
     setActive(row.id);
     if (row.kind === "bulk") {
-      openDrawer({ eyebrow: `Bulk approval · ${humanise(row.bulk.operation)}`, title: shortId(row.bulk.requestId, 12), mono: true }, <><h3>Request</h3><Kv rows={[["Operation", row.bulk.operation], ["Selection", shortId(row.bulk.selectionId, 12)], ["Source document", documentLabel(row.bulk.sourceDocument)], ["Units", `${row.bulk.total.toLocaleString()} · ${row.bulk.block.toLocaleString()} need approval · ${row.bulk.skip.toLocaleString()} skip`], ["Rule", row.bulk.rules.join(", ")], ["Requested by", row.bulk.requestedBy], ["Raised", fmtDateTime(row.bulk.requestedAt)], ["Note", row.bulk.note ?? "—"]]} /><div className="act"><Link className="btn primary block" to={`/entitlements/bulk?approval=${encodeURIComponent(row.bulk.requestId)}`}>Open preview to approve or reject</Link></div><p className="hint">Approval re-checks this preview on the server and executes only if no unit has changed since it was raised.</p></>);
+      openDrawer({ eyebrow: `Bulk approval · ${humanise(row.bulk.operation)}`, title: shortId(row.bulk.requestId, 12), mono: true }, <><h3>Request</h3><Kv rows={[["Operation", row.bulk.operation], ["Selection", shortId(row.bulk.selectionId, 12)], ["Source document", documentLabel(row.bulk.sourceDocument)], ["Units", `${row.bulk.total.toLocaleString()} · ${row.bulk.block.toLocaleString()} need approval · ${row.bulk.skip.toLocaleString()} skip`], ["Rule", row.bulk.rules.join(", ")], ["Requested by", person(row.bulk.requestedBy)], ["Raised", fmtDateTime(row.bulk.requestedAt)], ["Note", row.bulk.note ?? "—"]]} /><div className="act"><Link className="btn primary block" to={`/entitlements/bulk?approval=${encodeURIComponent(row.bulk.requestId)}`}>Open preview to approve or reject</Link></div><p className="hint">Approval re-checks this preview on the server and executes only if no unit has changed since it was raised.</p></>);
     } else if (row.kind === "requirement") {
       openDrawer({ eyebrow: "Entitlement requirement · manager action", title: shortId(row.requirement.requirementId, 12), mono: true }, <RequirementDecision row={row.requirement} actor={actor} onDone={() => setVersion((value) => value + 1)} />);
     } else {

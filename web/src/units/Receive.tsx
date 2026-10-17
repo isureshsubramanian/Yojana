@@ -5,6 +5,7 @@ import { DataGrid, ScanInput, StatusBadge, type GridColumn } from "../components
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
+import { usePeople } from "../people/people";
 import { ErrorNote, Figure, Kv, Section, useActor } from "./common";
 import { outcomeTone, pct, serialFromScan, splitSerials } from "./format";
 
@@ -17,6 +18,7 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Receive and commission (P1 screen 3): scan-first capture, GS1 parsing on the server, vendor serial pairing, one set-based commit. */
 export function Component() {
   const actor = useActor();
+  const person = usePeople([actor]);
   const [mode, setMode] = useState<"scan" | "paste">("scan");
   const [itemId, setItemId] = useState("");
   const [origin, setOrigin] = useState("purchased");
@@ -104,7 +106,7 @@ export function Component() {
   const rowClick = (r: Captured) => openDrawer({ eyebrow: `Selected scan · #${r.n}`, title: r.serial, mono: true }, (
     <>
       <h3>Scan</h3>
-      <Kv rows={[["Validation", r.errors.length ? <span className="bad-text">{r.errors.join("; ")}</span> : <span className="ok-text">valid</span>], ["Raw", <span className="serial" title={r.raw}>{r.raw.length > 28 ? r.raw.slice(0, 28) + "…" : r.raw}</span>], ["Internal serial", <span className="serial">{r.serial}</span>], ["Vendor serial", r.vendor ? <span className="serial">{r.vendor}</span> : "—"], ["Lot", r.lot ?? "—"], ["Source", r.source], ["Captured", r.at.slice(11, 19)], ["Operator", actor], ...(r.result ? [["Outcome", `${r.result.outcome}${r.result.unitId ? ` · ${r.result.unitId.slice(0, 8)}` : ""}`] as [string, string]] : [])]} />
+      <Kv rows={[["Validation", r.errors.length ? <span className="bad-text">{r.errors.join("; ")}</span> : <span className="ok-text">valid</span>], ["Raw", <span className="serial" title={r.raw}>{r.raw.length > 28 ? r.raw.slice(0, 28) + "…" : r.raw}</span>], ["Internal serial", <span className="serial">{r.serial}</span>], ["Vendor serial", r.vendor ? <span className="serial">{r.vendor}</span> : "—"], ["Lot", r.lot ?? "—"], ["Source", r.source], ["Captured", r.at.slice(11, 19)], ["Operator", person(actor)], ...(r.result ? [["Outcome", `${r.result.outcome}${r.result.unitId ? ` · ${r.result.unitId.slice(0, 8)}` : ""}`] as [string, string]] : [])]} />
       {r.scan && r.scan.fields.length > 0 && <div className="parsed" style={{ marginTop: 12 }}>{r.scan.fields.map((f, i) => <span className={`tok${f.errors.length ? " bad" : ""}`} key={i}><b>{f.key}{f.description ? ` ${f.description}` : ""}</b><code>{f.value}</code></span>)}</div>}
       <div className="act">
         {r.result?.unitId ? <Link className="btn primary block" to={`/units/${r.result.unitId}`}>Open unit</Link> : <button type="button" className="btn block" onClick={() => { setRows((x) => x.filter((y) => y.n !== r.n)); }}>Remove from session</button>}

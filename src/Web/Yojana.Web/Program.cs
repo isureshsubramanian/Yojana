@@ -142,6 +142,17 @@ app.MapPut("/api/tenant/currency", async (TenantCurrencyRequest request, ITenant
     return Results.Ok(new { currency = await currency.SetAsync(request.Currency, ct) });
 }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
 
+// People: display names for actor references (user ids or e-mail addresses) of members of the selected tenant.
+app.MapPost("/api/people/names", async (PeopleNamesRequest request, IUserDirectory directory, CancellationToken ct) =>
+{
+    if (request.References.Count > IUserDirectory.MaxReferences)
+    {
+        return Results.Problem(title: "too_many_references", detail: $"At most {IUserDirectory.MaxReferences} references resolve in one call.", statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    return Results.Ok(new { names = await directory.DisplayNamesAsync(request.References, ct) });
+}).RequireAuthorization(YojanaPolicy.TenantMember);
+
 // Shell: the overview page and the header's connection health, assembled from every module's contributions.
 app.MapGet("/api/shell/overview", async (ShellOverviewService shell, HttpContext http, IClock clock, CancellationToken ct) =>
 {
@@ -186,6 +197,8 @@ namespace Yojana.Web
     public sealed record PingRequest(string Note);
 
     public sealed record TenantCurrencyRequest(string Currency);
+
+    public sealed record PeopleNamesRequest(IReadOnlyList<string> References);
 
     /// <summary>Wire shape of the signed-in session for the web shell (web/src/api/types.ts mirrors it).</summary>
     public sealed record SessionView(SessionUserView User, SessionTenantView? Tenant, IReadOnlyList<string> Roles, IReadOnlyList<TenantChoiceView> Tenants)

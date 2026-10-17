@@ -5,6 +5,7 @@ import { SelectionPreview, StatusBadge, type PreviewOutcome, type PreviewResult 
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
+import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section, useActor } from "./common";
 import { humanise, shortId, splitSerials } from "./format";
 
@@ -24,6 +25,7 @@ function toPreview(r: BulkPreviewResult): PreviewResult {
 /** Selection-set preview (P1 screen 6): address units by document, customer, item, dates, list or range; the command computes every outcome; execute is one transaction. */
 export function Component() {
   const actor = useActor();
+  const person = usePeople([actor]);
   const [params] = useSearchParams();
   const [kind, setKind] = useState<string>(params.get("serials") ? "pasted_list" : "serial_range");
   const [docType, setDocType] = useState("production_order");
@@ -165,7 +167,7 @@ export function Component() {
       </main>
       <Rail label="Execution">
         <Section title="Routing">
-          <Kv rows={[["Initiator", actor], ["Approver", approver || "not required"], ["Source document", sourceDocId ? `${sourceDocType} ${shortId(sourceDocId)}` : "—"], ["Transaction", "1 · all or nothing"], ["Selection", resolved ? shortId(resolved.selectionId) : "—"]]} />
+          <Kv rows={[["Initiator", person(actor)], ["Approver", approver || "not required"], ["Source document", sourceDocId ? `${sourceDocType} ${shortId(sourceDocId)}` : "—"], ["Transaction", "1 · all or nothing"], ["Selection", resolved ? shortId(resolved.selectionId) : "—"]]} />
         </Section>
         <Section title="What will be recorded">
           <div className="job"><div><div className="t">unit.released</div><div className="s">one event per unit · seq assigned in order</div></div><StatusBadge tone="neutral">{preview?.change ?? 0}</StatusBadge></div>
