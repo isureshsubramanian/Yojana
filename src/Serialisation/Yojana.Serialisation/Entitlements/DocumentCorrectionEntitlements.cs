@@ -22,7 +22,7 @@ public sealed class DocumentCorrectionEntitlements(SerialisationDbContext db, IU
     public sealed record Result(int Voided, int Created, IReadOnlyList<CorrectionEntitlementPreview> Preview);
 
     public async Task<IReadOnlyList<CorrectionEntitlementPreview>> PreviewAsync(DocumentRef document,
-        IReadOnlyDictionary<Guid, Guid> physicalByRecorded, CancellationToken cancellationToken)
+        IReadOnlyDictionary<Guid, Guid?> physicalByRecorded, CancellationToken cancellationToken)
     {
         var recordedIds = physicalByRecorded.Keys.ToList();
         var sources = await db.Entitlements.AsNoTracking().Where(e => e.TenantId == tenant.TenantId
@@ -30,19 +30,24 @@ public sealed class DocumentCorrectionEntitlements(SerialisationDbContext db, IU
             && e.SourceDocumentType == document.Type && e.SourceDocumentId == document.Id
             && (document.Line == null || e.SourceDocumentLine == document.Line)).ToListAsync(cancellationToken);
         EnsureTransferableState(sources);
-        return sources.OrderBy(e => e.UnitId).ThenBy(e => e.CoverageFamily).SelectMany(e => new[]
+        return sources.OrderBy(e => e.UnitId).ThenBy(e => e.CoverageFamily).SelectMany(e =>
         {
-            new CorrectionEntitlementPreview(e.UnitId, "void", e.EntitlementId, $"{e.CoverageFamily} · {EntitlementClosedReason.VoidedDocumentCorrection}"),
-            new CorrectionEntitlementPreview(physicalByRecorded[e.UnitId], "create", null, $"{e.CoverageFamily} · same source document"),
+            var changes = new List<CorrectionEntitlementPreview>
+            {
+                new(e.UnitId, "void", e.EntitlementId, $"{e.CoverageFamily} · {EntitlementClosedReason.VoidedDocumentCorrection}"),
+            };
+            if (physicalByRecorded[e.UnitId] is { } physicalUnitId)
+                changes.Add(new(physicalUnitId, "create", null, $"{e.CoverageFamily} · same source document"));
+            return changes;
         }).ToList();
     }
 
-    public async Task<Result> ApplyAsync(Guid commandId, DocumentRef document, IReadOnlyDictionary<Guid, Guid> physicalByRecorded,
+    public async Task<Result> ApplyAsync(Guid commandId, DocumentRef document, IReadOnlyDictionary<Guid, Guid?> physicalByRecorded,
         DateTime effectiveAt, string actorRef, Guid legalEntityId, CorrectionMetadata metadata, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var recordedIds = physicalByRecorded.Keys.ToList();
-        var physicalIds = physicalByRecorded.Values.ToList();
+        var physicalIds = physicalByRecorded.Values.OfType<Guid>().ToList();
         var affected = recordedIds.Concat(physicalIds).Distinct().ToList();
         var rows = await db.Entitlements.Where(e => e.TenantId == tenantId && affected.Contains(e.UnitId)).ToListAsync(cancellationToken);
         var items = await db.Current.AsNoTracking().Where(c => c.TenantId == tenantId && affected.Contains(c.UnitId))
@@ -58,7 +63,7 @@ public sealed class DocumentCorrectionEntitlements(SerialisationDbContext db, IU
             .ToLookup(e => (e.UnitId, e.CoverageFamily));
         foreach (var source in sources)
         {
-            var targetId = physicalByRecorded[source.UnitId];
+            if (physicalByRecorded[source.UnitId] is not { } targetId) continue;
             if (targetLive[(targetId, source.CoverageFamily)].Any())
             {
                 throw new CommandRefusedException("physical_unit_entitlement_conflict",
@@ -77,6 +82,7 @@ public sealed class DocumentCorrectionEntitlements(SerialisationDbContext db, IU
 
         var drafts = new List<UnitEventDraft>(sources.Count * 2);
         var preview = new List<CorrectionEntitlementPreview>(sources.Count * 2);
+        var created = 0;
         foreach (var source in sources.OrderBy(e => e.UnitId).ThenBy(e => e.CoverageFamily))
         {
             var sourceDocument = document.Line is null && source.SourceDocumentLine is { } line
@@ -100,7 +106,7 @@ public sealed class DocumentCorrectionEntitlements(SerialisationDbContext db, IU
                     correction_of_document_id = document.Id }));
             preview.Add(new(source.UnitId, "void", source.EntitlementId, $"{source.CoverageFamily} · {EntitlementClosedReason.VoidedDocumentCorrection}"));
 
-            var targetId = physicalByRecorded[source.UnitId];
+            if (physicalByRecorded[source.UnitId] is not { } targetId) continue;
             var createdEventId = TimeOrderedId.New(effectiveAt);
             var target = Copy(source, sourceStatus, targetId, effectiveAt, createdEventId);
             source.SuccessorUnitId = targetId;
@@ -131,10 +137,11 @@ public sealed class DocumentCorrectionEntitlements(SerialisationDbContext db, IU
                     correction_of_document_id = document.Id, corrected_from_entitlement_id = source.EntitlementId,
                 }));
             preview.Add(new(targetId, "create", target.EntitlementId, $"{target.CoverageFamily} · same source document"));
+            created++;
         }
 
         if (drafts.Count > 0) await writer.AppendAsync(drafts, cancellationToken);
-        return new(sources.Count, sources.Count, preview);
+        return new(sources.Count, created, preview);
     }
 
     private UnitEventDraft Event(Guid commandId, Guid unitId, Guid obligorEntityId, string eventType, Guid sourceEntitlementId, DateTime at,

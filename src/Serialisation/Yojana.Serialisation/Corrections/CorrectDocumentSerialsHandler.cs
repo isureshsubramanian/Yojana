@@ -13,19 +13,19 @@ using Yojana.Serialisation.Ledger;
 namespace Yojana.Serialisation.Corrections;
 
 /// <summary>
-/// Case 141: replaces only the serial side of a posted delivery, transfer or receipt. Planning uses fixed-count,
-/// set-based reads; execution preloads episodes once, so a 500-serial correction never falls into per-unit queries.
+/// Cases 32 and 141: replaces only the serial side of a posted delivery, transfer or receipt, or reverses a shipment
+/// that never physically happened. Planning uses fixed-count, set-based reads; execution preloads episodes once.
 /// </summary>
 public static class CorrectDocumentSerialsHandler
 {
     private sealed record PostingDocument(DateTime PostedAt, IReadOnlyList<DocumentLine> Lines, bool Invoiced,
-        CustodyTarget? SourceFallback, Guid? CustomerPartyRef = null);
+        CustodyTarget? SourceFallback, Guid? CustomerPartyRef = null, bool IsShipment = false);
 
-    private sealed record Pair(Guid RecordedUnitId, Guid PhysicalUnitId, Guid ItemId, string? RecordedSerial, string? PhysicalSerial,
+    private sealed record Pair(Guid RecordedUnitId, Guid? PhysicalUnitId, Guid ItemId, string? RecordedSerial, string? PhysicalSerial,
         CustodyEpisode RecordedCustody, CustodyEpisode? SourceCustody, UnitEvent OriginalEvent, CustodyEpisode? RecordedOwnership);
 
     private sealed record Plan(PostingDocument Posting, IReadOnlyList<Pair> Pairs, bool WholeListReplacement,
-        IReadOnlyDictionary<Guid, Guid> PhysicalByRecorded, CorrectionApprovalDecision Approval);
+        IReadOnlyDictionary<Guid, Guid?> PhysicalByRecorded, CorrectionApprovalDecision Approval);
 
     public static async Task<CorrectDocumentSerialsResult> Handle(CorrectDocumentSerials command, DocumentContext documents,
         DocumentCorrectionEntitlements entitlements, CorrectionLedger corrections, CorrectionApprovalSettings approvalSettings,
@@ -43,8 +43,9 @@ public static class CorrectDocumentSerialsHandler
                     "send a new correction id, or replay the original command idempotently");
             }
 
-            var correctedCount = existing.UnitCount / 2;
-            return new(existing.CorrectionId, command.Document, correctedCount, correctedCount, 0, 0, false, false, true);
+            var reversalOnly = existing.ReasonCode == CorrectDocumentSerialsReason.ReturnedNeverDelivered;
+            var correctedCount = reversalOnly ? existing.UnitCount : existing.UnitCount / 2;
+            return new(existing.CorrectionId, command.Document, correctedCount, reversalOnly ? 0 : correctedCount, 0, 0, false, false, true);
         }
 
         var plan = await PlanAsync(command.Document, command.RecordedSelectionId, command.PhysicalSelectionId, command.Reason,
@@ -55,7 +56,9 @@ public static class CorrectDocumentSerialsHandler
 
         return await documents.InTransactionAsync(async () =>
         {
-            await documents.Episodes.PreloadOpenAsync(plan.Pairs.SelectMany(p => new[] { p.RecordedUnitId, p.PhysicalUnitId }).Distinct().ToList(), cancellationToken);
+            await documents.Episodes.PreloadOpenAsync(plan.Pairs.SelectMany(p => p.PhysicalUnitId is { } physical
+                ? new[] { p.RecordedUnitId, physical }
+                : [p.RecordedUnitId]).Distinct().ToList(), cancellationToken);
             var drafts = new List<UnitEventDraft>(plan.Pairs.Count * 4);
             foreach (var pair in plan.Pairs)
             {
@@ -81,30 +84,31 @@ public static class CorrectDocumentSerialsHandler
                     drafts.Add(closed.Draft with { Attributes = CorrectionLedger.Attributes(metadata, closed.Draft.Attributes!) });
                 }
 
-                var target = new CustodyTarget(pair.RecordedCustody.LocationKind!, pair.RecordedCustody.LocationId,
-                    pair.RecordedCustody.PartyRef, pair.RecordedCustody.PartyType, pair.RecordedCustody.Reason ?? EpisodeReason.DocumentCorrection,
-                    pair.RecordedCustody.Source ?? EpisodeSource.Delivery, pair.RecordedCustody.Confidence ?? Confidence.High,
-                    pair.RecordedCustody.DueBack, pair.RecordedCustody.ExternalOrderRef);
-                var shipKey = IdempotencyKey.ForCommand(CommissionUnitsHandler.Source, command.CommandId, pair.PhysicalUnitId, UnitEventType.Shipped, plan.Posting.PostedAt);
-                var shipped = await documents.Episodes.PrepareCustodyMoveAsync(pair.PhysicalUnitId, target, UnitEventType.Shipped,
-                    shipKey, plan.Posting.PostedAt, command.ActorRef, command.LegalEntityId, postingDocument,
-                    new Dictionary<string, object?> { ["correction_of_document_id"] = command.Document.Id, ["recorded_unit_id"] = pair.RecordedUnitId,
-                        ["physical_unit_id"] = pair.PhysicalUnitId }, null, false, cancellationToken);
-                drafts.Add(shipped.Draft with { Attributes = CorrectionLedger.Attributes(metadata, shipped.Draft.Attributes!) });
-
-                if (pair.RecordedOwnership is { PartyRef: { } owner, PartyType: { } ownerType } ownership)
+                if (pair.PhysicalUnitId is { } physicalUnitId)
                 {
-                    var opened = await documents.Episodes.PrepareOwnershipOpenAsync(pair.PhysicalUnitId,
-                        new OwnershipTarget(owner, ownerType, ownership.Reason ?? EpisodeReason.Sale,
-                            ownership.Source ?? EpisodeSource.Delivery, ownership.Confidence ?? Confidence.High,
-                            ownership.CustomerPoRef, ownership.CustomerItemRef, ownership.PartyIsGroupMember, ownership.ExternalOrderRef),
-                        IdempotencyKey.Derive(shipKey, "ownership-open"), plan.Posting.PostedAt, command.ActorRef,
-                        command.LegalEntityId, postingDocument, EpisodeReason.DocumentCorrection, cancellationToken);
-                    if (opened.CloseDraft is not null)
+                    var target = new CustodyTarget(pair.RecordedCustody.LocationKind!, pair.RecordedCustody.LocationId,
+                        pair.RecordedCustody.PartyRef, pair.RecordedCustody.PartyType, pair.RecordedCustody.Reason ?? EpisodeReason.DocumentCorrection,
+                        pair.RecordedCustody.Source ?? EpisodeSource.Delivery, pair.RecordedCustody.Confidence ?? Confidence.High,
+                        pair.RecordedCustody.DueBack, pair.RecordedCustody.ExternalOrderRef);
+                    var shipKey = IdempotencyKey.ForCommand(CommissionUnitsHandler.Source, command.CommandId, physicalUnitId, UnitEventType.Shipped, plan.Posting.PostedAt);
+                    var shipped = await documents.Episodes.PrepareCustodyMoveAsync(physicalUnitId, target, UnitEventType.Shipped,
+                        shipKey, plan.Posting.PostedAt, command.ActorRef, command.LegalEntityId, postingDocument,
+                        new Dictionary<string, object?> { ["correction_of_document_id"] = command.Document.Id, ["recorded_unit_id"] = pair.RecordedUnitId,
+                            ["physical_unit_id"] = physicalUnitId }, null, false, cancellationToken);
+                    drafts.Add(shipped.Draft with { Attributes = CorrectionLedger.Attributes(metadata, shipped.Draft.Attributes!) });
+
+                    if (pair.RecordedOwnership is { PartyRef: { } owner, PartyType: { } ownerType } ownership)
                     {
-                        drafts.Add(opened.CloseDraft with { Attributes = CorrectionLedger.Attributes(metadata, opened.CloseDraft.Attributes!) });
+                        var opened = await documents.Episodes.PrepareOwnershipOpenAsync(physicalUnitId,
+                            new OwnershipTarget(owner, ownerType, ownership.Reason ?? EpisodeReason.Sale,
+                                ownership.Source ?? EpisodeSource.Delivery, ownership.Confidence ?? Confidence.High,
+                                ownership.CustomerPoRef, ownership.CustomerItemRef, ownership.PartyIsGroupMember, ownership.ExternalOrderRef),
+                            IdempotencyKey.Derive(shipKey, "ownership-open"), plan.Posting.PostedAt, command.ActorRef,
+                            command.LegalEntityId, postingDocument, EpisodeReason.DocumentCorrection, cancellationToken);
+                        if (opened.CloseDraft is not null)
+                            drafts.Add(opened.CloseDraft with { Attributes = CorrectionLedger.Attributes(metadata, opened.CloseDraft.Attributes!) });
+                        drafts.Add(opened.Draft with { Attributes = CorrectionLedger.Attributes(metadata, opened.Draft.Attributes!) });
                     }
-                    drafts.Add(opened.Draft with { Attributes = CorrectionLedger.Attributes(metadata, opened.Draft.Attributes!) });
                 }
             }
 
@@ -114,11 +118,12 @@ public static class CorrectDocumentSerialsHandler
             foreach (var item in plan.Pairs.GroupBy(p => p.ItemId))
             {
                 await stock.RecordCorrectionForPosting(new(command.Document, item.Key, 0,
-                    item.Select(p => p.RecordedUnitId).ToList(), item.Select(p => p.PhysicalUnitId).ToList(), metadata.CorrectionId), cancellationToken);
+                    item.Select(p => p.RecordedUnitId).ToList(),
+                    item.Where(p => p.PhysicalUnitId.HasValue).Select(p => p.PhysicalUnitId!.Value).ToList(), metadata.CorrectionId), cancellationToken);
             }
 
             await corrections.RecordAsync(CorrectionCommand.CorrectDocumentSerials, metadata, command.ActorRef, command.EventTime,
-                plan.Pairs.SelectMany(p => new[] { p.RecordedUnitId, p.PhysicalUnitId }).ToList(), cancellationToken);
+                plan.Pairs.SelectMany(p => p.PhysicalUnitId is { } physical ? new[] { p.RecordedUnitId, physical } : [p.RecordedUnitId]).ToList(), cancellationToken);
             var finance = plan.Approval.ReviewTasks.Count > 0;
             var publishedCorrection = new PublishedCorrection(metadata.CorrectionId, metadata.ReasonCode, metadata.InitiatedVia,
                 metadata.CorrectsCorrectionId, (metadata.Approvers ?? []).Select(a => a.UserRef).ToList());
@@ -126,9 +131,9 @@ public static class CorrectDocumentSerialsHandler
                 new(DocumentSerialsCorrected.Schema, DocumentSerialsCorrected.Version, TimeOrderedId.New(command.EventTime),
                     command.EventTime, clock.UtcNow, command.LegalEntityId, command.ActorRef, command.Document),
                 publishedCorrection, command.Document, plan.Pairs.Select(p => p.RecordedUnitId).ToList(),
-                plan.Pairs.Select(p => p.PhysicalUnitId).ToList(), plan.WholeListReplacement, finance),
+                plan.Pairs.Where(p => p.PhysicalUnitId.HasValue).Select(p => p.PhysicalUnitId!.Value).ToList(), plan.WholeListReplacement, finance),
                 new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
-            return new CorrectDocumentSerialsResult(metadata.CorrectionId, command.Document, plan.Pairs.Count, plan.Pairs.Count,
+            return new CorrectDocumentSerialsResult(metadata.CorrectionId, command.Document, plan.Pairs.Count, plan.Pairs.Count(p => p.PhysicalUnitId is not null),
                 entitlementResult.Voided, entitlementResult.Created, plan.WholeListReplacement, finance);
         }, cancellationToken);
     }
@@ -143,16 +148,20 @@ public static class CorrectDocumentSerialsHandler
                 command.CommittedBy, documents, approvalSettings, cancellationToken);
             var entitlementPreview = await entitlements.PreviewAsync(command.Document, plan.PhysicalByRecorded, cancellationToken);
             var refusal = ApprovalRefusal(plan.Approval, command.CommittedBy, metadata);
-            var units = plan.Pairs.SelectMany(p => new[]
-            {
-                new UnitOutcome(p.RecordedUnitId, p.RecordedSerial, UnitOutcome.Outcomes.Change, null, "reverse the recorded shipment and return custody to its source"),
-                new UnitOutcome(p.PhysicalUnitId, p.PhysicalSerial, UnitOutcome.Outcomes.Change, null, "ship the physical unit at the original document time"),
-            }).ToList();
-            var events = plan.Pairs.SelectMany(p => new[]
-            {
-                new CorrectionEventPreview(p.RecordedUnitId, UnitEventType.ShipmentReversed, plan.Posting.PostedAt, "custody restored; ownership closed where the document opened it"),
-                new CorrectionEventPreview(p.PhysicalUnitId, UnitEventType.Shipped, plan.Posting.PostedAt, "corrective shipment"),
-            }).ToList();
+            var units = plan.Pairs.SelectMany(p => p.PhysicalUnitId is { } physical
+                ? new[]
+                {
+                    new UnitOutcome(p.RecordedUnitId, p.RecordedSerial, UnitOutcome.Outcomes.Change, null, "reverse the recorded shipment and return custody to its source"),
+                    new UnitOutcome(physical, p.PhysicalSerial, UnitOutcome.Outcomes.Change, null, "ship the physical unit at the original document time"),
+                }
+                : [new UnitOutcome(p.RecordedUnitId, p.RecordedSerial, UnitOutcome.Outcomes.Change, null, "reverse the recorded shipment and return custody to its source")]).ToList();
+            var events = plan.Pairs.SelectMany(p => p.PhysicalUnitId is { } physical
+                ? new[]
+                {
+                    new CorrectionEventPreview(p.RecordedUnitId, UnitEventType.ShipmentReversed, plan.Posting.PostedAt, "custody restored; ownership closed where the document opened it"),
+                    new CorrectionEventPreview(physical, UnitEventType.Shipped, plan.Posting.PostedAt, "corrective shipment"),
+                }
+                : [new CorrectionEventPreview(p.RecordedUnitId, UnitEventType.ShipmentReversed, plan.Posting.PostedAt, "custody restored; ownership closed where the document opened it")]).ToList();
             return new(command.RecordedSelectionId, CorrectionCommand.CorrectDocumentSerials, units.Count,
                 units.Count, 0, refusal is null ? 0 : units.Count, units, events, entitlementPreview, [], [], refusal);
         }
@@ -176,7 +185,9 @@ public static class CorrectDocumentSerialsHandler
             .OrderBy(m => m.Serial).ThenBy(m => m.UnitId).ToListAsync(cancellationToken);
         var recorded = members.Where(m => m.SelectionId == recordedSelectionId).ToList();
         var physical = members.Where(m => m.SelectionId == physicalSelectionId).ToList();
-        if (recorded.Count == 0 || physical.Count == 0 || recorded.Count != physical.Count)
+        var reversalOnly = reason == CorrectDocumentSerialsReason.ReturnedNeverDelivered && posting.IsShipment
+            && recorded.Count > 0 && physical.Count == 0;
+        if (!reversalOnly && (recorded.Count == 0 || physical.Count == 0 || recorded.Count != physical.Count))
             throw new CommandRefusedException("document_correction_count_mismatch", $"Recorded count {recorded.Count} does not equal physical count {physical.Count}.", "select the same number of recorded and physical units");
         if (recorded.Select(m => m.UnitId).Intersect(physical.Select(m => m.UnitId)).Any())
             throw new CommandRefusedException("document_correction_selection_overlap", "A unit cannot be both recorded and physical in the same replacement.", "remove unchanged units from both selections");
@@ -187,7 +198,7 @@ public static class CorrectDocumentSerialsHandler
         foreach (var row in current.Values) EnsureCorrectable(row.UnitId, row.LifecycleStatus);
         var recordedCounts = recorded.GroupBy(m => current[m.UnitId].ItemId).ToDictionary(g => g.Key, g => g.Count());
         var physicalCounts = physical.GroupBy(m => current[m.UnitId].ItemId).ToDictionary(g => g.Key, g => g.Count());
-        if (recordedCounts.Count != physicalCounts.Count || recordedCounts.Any(kv => physicalCounts.GetValueOrDefault(kv.Key) != kv.Value))
+        if (!reversalOnly && (recordedCounts.Count != physicalCounts.Count || recordedCounts.Any(kv => physicalCounts.GetValueOrDefault(kv.Key) != kv.Value)))
             throw new CommandRefusedException("document_correction_item_mismatch", "Recorded and physical selections must contain the same count of every item.", "replace each recorded unit with a physical unit of the same item");
 
         var recordedIds = recorded.Select(m => m.UnitId).ToList();
@@ -218,13 +229,17 @@ public static class CorrectDocumentSerialsHandler
                 var expectedSource = source is null ? posting.SourceFallback! : new CustodyTarget(source.LocationKind!, source.LocationId,
                     source.PartyRef, source.PartyType, source.Reason ?? EpisodeReason.DocumentCorrection,
                     source.Source ?? EpisodeSource.Delivery, source.Confidence ?? Confidence.High);
-                var physicalCustody = episodes.Where(e => e.UnitId == right[i].UnitId && e.Kind == EpisodeKind.Custody && e.ValidTo == null).SingleOrDefault()
-                    ?? throw new CommandRefusedException("physical_unit_has_no_custody", $"Physical unit {right[i].UnitId} has no current custody episode.");
-                if (physicalCustody.LocationKind != expectedSource.LocationKind || (expectedSource.LocationId is not null && physicalCustody.LocationId != expectedSource.LocationId))
-                    throw new CommandRefusedException("physical_unit_not_at_source", $"Physical unit {right[i].UnitId} is not at the document's source location.", "select a physical unit at the location from which the document posted");
+                var physicalMember = reversalOnly ? null : right[i];
+                if (physicalMember is not null)
+                {
+                    var physicalCustody = episodes.Where(e => e.UnitId == physicalMember.UnitId && e.Kind == EpisodeKind.Custody && e.ValidTo == null).SingleOrDefault()
+                        ?? throw new CommandRefusedException("physical_unit_has_no_custody", $"Physical unit {physicalMember.UnitId} has no current custody episode.");
+                    if (physicalCustody.LocationKind != expectedSource.LocationKind || (expectedSource.LocationId is not null && physicalCustody.LocationId != expectedSource.LocationId))
+                        throw new CommandRefusedException("physical_unit_not_at_source", $"Physical unit {physicalMember.UnitId} is not at the document's source location.", "select a physical unit at the location from which the document posted");
+                }
                 var ownership = episodes.Where(e => e.UnitId == left[i].UnitId && e.Kind == EpisodeKind.Ownership && e.ValidTo == null
                     && (e.OpeningDocumentId == document.Id || (posting.CustomerPartyRef is not null && e.PartyRef == posting.CustomerPartyRef && e.ValidFrom >= posting.PostedAt))).SingleOrDefault();
-                pairs.Add(new(left[i].UnitId, right[i].UnitId, item, left[i].Serial, right[i].Serial,
+                pairs.Add(new(left[i].UnitId, physicalMember?.UnitId, item, left[i].Serial, physicalMember?.Serial,
                     recordedCustody, source, originalByUnit[left[i].UnitId], ownership));
             }
         }
@@ -263,7 +278,7 @@ public static class CorrectDocumentSerialsHandler
     private static async Task<PostingDocument> ReadDocumentAsync(DocumentRef document, DocumentContext ctx, CancellationToken cancellationToken)
     {
         if (await ctx.Sales.GetShipmentAsync(document, cancellationToken) is { } shipment)
-            return new(shipment.PostedAt, shipment.Lines, shipment.IsInvoiced, null, shipment.CustomerPartyRef);
+            return new(shipment.PostedAt, shipment.Lines, shipment.IsInvoiced, null, shipment.CustomerPartyRef, true);
         if (await ctx.Inventory.GetTransferAsync(document, cancellationToken) is { } transfer)
             return new(transfer.PostedAt, transfer.Lines, transfer.IsInvoiced,
                 new CustodyTarget(transfer.FromLocationKind, transfer.FromLocationId, null, null, EpisodeReason.DocumentCorrection, EpisodeSource.Delivery));
