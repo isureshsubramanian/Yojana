@@ -252,10 +252,10 @@ public sealed class SourceDocumentCorrectionEntitlements(
         Entitlement? predecessor, RefurbishedGoodsPolicy settings,
         Dictionary<(Guid Obligor, Guid Item, string Period), AccrualCohort> cohorts, CancellationToken cancellationToken)
     {
-        var grade = unit.ConditionGrade ?? "new";
+        var grade = unit.ConditionGrade ?? ConditionGrades.New;
         RefurbishedEntitlementDisclosure? disclosure = null;
         EffectiveDuration duration;
-        if (grade == "new") duration = new(line.Terms.Duration, false, null);
+        if (grade == ConditionGrades.New) duration = new(line.Terms.Duration, false, null);
         else
         {
             if (line.Invoice.Channel is null || line.Invoice.Country is null)

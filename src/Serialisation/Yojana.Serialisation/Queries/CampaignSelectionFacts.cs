@@ -177,15 +177,22 @@ public sealed class CampaignSelectionFacts(SerialisationDbContext db, ITenantCon
         parameters.Insert(0, new SqlParameter("@tenant", tenant.TenantId.Value));
         var sql = $"""
             WITH firmware_changes AS (
+                SELECT h.unit_id, h.effective_from AS event_time, h.effective_from AS recorded_time,
+                    CAST(0 AS bigint) AS seq, h.value AS firmware
+                FROM [serialisation].[unit_attribute_history] h
+                WHERE h.tenant_id = @tenant AND h.effective_from <= @at AND h.[key] = @key
+                UNION ALL
                 SELECT e.unit_id, e.event_time, e.recorded_time, e.seq, a.[value] AS firmware
                 FROM [serialisation].[unit_event] e
                 CROSS APPLY OPENJSON(e.attributes, '$._state.attributes') a
                 WHERE e.tenant_id = @tenant AND e.event_time <= @at AND a.[key] = @key
+                  AND NOT EXISTS (SELECT 1 FROM [serialisation].[unit_attribute_history] h WHERE h.tenant_id = e.tenant_id AND h.event_id = e.event_id AND h.[key] = a.[key] COLLATE DATABASE_DEFAULT)
                 UNION ALL
                 SELECT e.unit_id, e.event_time, e.recorded_time, e.seq, a.[value] AS firmware
                 FROM [serialisation].[unit_event_archive] e
                 CROSS APPLY OPENJSON(e.attributes, '$._state.attributes') a
                 WHERE e.tenant_id = @tenant AND e.event_time <= @at AND a.[key] = @key
+                  AND NOT EXISTS (SELECT 1 FROM [serialisation].[unit_attribute_history] h WHERE h.tenant_id = e.tenant_id AND h.event_id = e.event_id AND h.[key] = a.[key] COLLATE DATABASE_DEFAULT)
             ), ranked AS (
                 SELECT unit_id, firmware,
                     ROW_NUMBER() OVER (PARTITION BY unit_id ORDER BY event_time DESC, recorded_time DESC, seq DESC) AS rn

@@ -505,8 +505,8 @@ public sealed record ClearUnitFlag(Guid CommandId, Guid UnitId, string Flag, Dat
 public sealed record UnitFlagResult(Guid UnitId, IReadOnlyList<string> Flags, bool Changed, bool InvestigationRaised);
 
 /// <summary>
-/// Records connector-owned unit attributes such as device firmware. Values are merged into the current attribute map;
-/// a null value removes the key. This is an integration command and deliberately has no HTTP endpoint.
+/// Records unit attributes such as device firmware. Values are merged into the current attribute map and retained in
+/// effective-dated history; a null value removes the current key while preserving that removal as a history fact.
 /// </summary>
 public sealed record RecordUnitAttributes(
     Guid CommandId,
@@ -514,6 +514,13 @@ public sealed record RecordUnitAttributes(
     IReadOnlyDictionary<string, string?> Attributes,
     DateTime EventTime,
     string ActorRef,
+    Guid LegalEntityId,
+    DocumentRef? Document = null);
+
+public sealed record RecordUnitAttributesRequest(
+    Guid CommandId,
+    IReadOnlyDictionary<string, string?> Attributes,
+    DateTime EventTime,
     Guid LegalEntityId,
     DocumentRef? Document = null);
 

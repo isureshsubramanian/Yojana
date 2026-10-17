@@ -116,6 +116,13 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<CampaignUnit> CampaignUnits => Set<CampaignUnit>();
 
+    public DbSet<UnitConditionEvent> ConditionEvents => Set<UnitConditionEvent>();
+    public DbSet<SanitisationRecord> SanitisationRecords => Set<SanitisationRecord>();
+    public DbSet<TestRecord> TestRecords => Set<TestRecord>();
+    public DbSet<UsageReading> UsageReadings => Set<UsageReading>();
+    public DbSet<UnitAttributeHistory> AttributeHistory => Set<UnitAttributeHistory>();
+    public DbSet<LifeEpisode> LifeEpisodes => Set<LifeEpisode>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasSequence<long>(EventSequence, SchemaName).StartsAt(1).IncrementsBy(1);
@@ -886,6 +893,94 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(u => new { u.TenantId, u.OwnerPartyRef, u.CampaignId });
             b.HasIndex(u => new { u.TenantId, u.CustodianPartyRef, u.CampaignId });
             b.HasIndex(u => new { u.TenantId, u.SelectionCommandId });
+        });
+
+        // MOD-08 condition and service history (P5-T02/T09/T11). These immutable rows sit beside the unit ledger;
+        // unit_current remains the operational current-grade projection written by Unit.Graded.
+        modelBuilder.Entity<UnitConditionEvent>(b =>
+        {
+            b.ToTable("unit_condition_event", t => t.HasCheckConstraint("ck_unit_condition_event_grade", "grade IN ('new', 'open_box', 'refurbished_a', 'refurbished_b', 'refurbished_c', 'used', 'remanufactured', 'defective', 'scrap')"));
+            b.HasKey(e => new { e.TenantId, e.ConditionEventId });
+            b.Property(e => e.Grade).HasMaxLength(30).IsUnicode(false);
+            b.Property(e => e.FCode).HasMaxLength(2).IsUnicode(false);
+            b.Property(e => e.CCode).HasMaxLength(2).IsUnicode(false);
+            b.Property(e => e.ValuationRule).HasMaxLength(100);
+            b.Property(e => e.InspectorRef).HasMaxLength(200);
+            b.HasIndex(e => new { e.TenantId, e.CommandId }).IsUnique();
+            b.HasIndex(e => new { e.TenantId, e.UnitId, e.GradedAt });
+        });
+
+        modelBuilder.Entity<SanitisationRecord>(b =>
+        {
+            b.ToTable("sanitisation_record", t => t.HasCheckConstraint("ck_sanitisation_record_method", "method IN ('clear', 'purge', 'destroy')"));
+            b.HasKey(r => new { r.TenantId, r.SanitisationRecordId });
+            b.Property(r => r.Manufacturer).HasMaxLength(200);
+            b.Property(r => r.Model).HasMaxLength(200);
+            b.Property(r => r.MediaSerial).HasMaxLength(200);
+            b.Property(r => r.MediaType).HasMaxLength(80);
+            b.Property(r => r.Method).HasMaxLength(20).IsUnicode(false);
+            b.Property(r => r.Tool).HasMaxLength(200);
+            b.Property(r => r.ToolVersion).HasMaxLength(80);
+            b.Property(r => r.VerificationMethod).HasMaxLength(200);
+            b.Property(r => r.OperatorRef).HasMaxLength(200);
+            b.Property(r => r.CertificateRef).HasMaxLength(300);
+            b.Property(r => r.SignatureRef).HasMaxLength(300);
+            b.HasIndex(r => new { r.TenantId, r.CommandId }).IsUnique();
+            b.HasIndex(r => new { r.TenantId, r.UnitId, r.SanitisedAt });
+        });
+
+        modelBuilder.Entity<TestRecord>(b =>
+        {
+            b.ToTable("test_record", t =>
+            {
+                t.HasCheckConstraint("ck_test_record_result", "result IN ('pass', 'fail')");
+                t.HasCheckConstraint("ck_test_record_measurements_json", "ISJSON(measurements_json) = 1");
+            });
+            b.HasKey(r => new { r.TenantId, r.TestRecordId });
+            b.Property(r => r.TestKind).HasMaxLength(100);
+            b.Property(r => r.Result).HasMaxLength(10).IsUnicode(false);
+            b.Property(r => r.Equipment).HasMaxLength(300);
+            b.Property(r => r.OperatorRef).HasMaxLength(200);
+            b.HasIndex(r => new { r.TenantId, r.CommandId }).IsUnique();
+            b.HasIndex(r => new { r.TenantId, r.UnitId, r.TestedAt });
+        });
+
+        modelBuilder.Entity<UsageReading>(b =>
+        {
+            b.ToTable("usage_reading", t => t.HasCheckConstraint("ck_usage_reading_value", "value >= 0"));
+            b.HasKey(r => new { r.TenantId, r.UsageReadingId });
+            b.Property(r => r.MeterKind).HasMaxLength(80);
+            b.Property(r => r.Value).HasPrecision(18, 6);
+            b.Property(r => r.Unit).HasMaxLength(40);
+            b.Property(r => r.OperatorRef).HasMaxLength(200);
+            b.HasIndex(r => new { r.TenantId, r.CommandId }).IsUnique();
+            b.HasIndex(r => new { r.TenantId, r.UnitId, r.MeterKind, r.ReadAt });
+        });
+
+        modelBuilder.Entity<UnitAttributeHistory>(b =>
+        {
+            b.ToTable("unit_attribute_history");
+            b.HasKey(h => new { h.TenantId, h.AttributeHistoryId });
+            b.Property(h => h.Key).HasMaxLength(100);
+            b.Property(h => h.Value).HasMaxLength(2000);
+            b.Property(h => h.ActorRef).HasMaxLength(200);
+            b.HasIndex(h => new { h.TenantId, h.CommandId, h.Key }).IsUnique();
+            b.HasIndex(h => new { h.TenantId, h.UnitId, h.Key, h.EffectiveFrom });
+        });
+
+        modelBuilder.Entity<LifeEpisode>(b =>
+        {
+            b.ToTable("life_episode", t =>
+            {
+                t.HasCheckConstraint("ck_life_episode_kind", "kind IN ('refurbish', 'remanufacture', 'rework')");
+                t.HasCheckConstraint("ck_life_episode_dates", "ended_at IS NULL OR ended_at >= started_at");
+            });
+            b.HasKey(e => new { e.TenantId, e.LifeEpisodeId });
+            b.Property(e => e.Kind).HasMaxLength(20).IsUnicode(false);
+            b.Property(e => e.ActorRef).HasMaxLength(200);
+            b.HasIndex(e => new { e.TenantId, e.UnitId, e.StartedAt });
+            b.HasIndex(e => new { e.TenantId, e.WorkOrderId });
+            b.HasIndex(e => new { e.TenantId, e.UnitId, e.Kind }).IsUnique().HasFilter("[ended_at] IS NULL");
         });
 
         base.OnModelCreating(modelBuilder);

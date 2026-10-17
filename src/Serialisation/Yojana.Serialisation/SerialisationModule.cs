@@ -20,6 +20,7 @@ using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Projections;
 using Yojana.Serialisation.Workbench;
 using Yojana.Serialisation.Campaigns;
+using Yojana.Serialisation.Condition;
 
 namespace Yojana.Serialisation;
 
@@ -62,6 +63,10 @@ public static class SerialisationModule
         builder.Services.AddScoped<AwaitingVendorSerialQueries>();
         builder.Services.AddScoped<CampaignSelectionFacts>();
         builder.Services.AddScoped<CampaignQueries>();
+        builder.Services.AddScoped<ConditionQueries>();
+        builder.Services.TryAddScoped<IUnitConditionQueryPort>(sp => sp.GetRequiredService<ConditionQueries>());
+        builder.Services.TryAddScoped<IUnitSaleShipmentGuard, ConditionShipmentGuard>();
+        builder.Services.TryAddScoped<ILifeEpisodeWriter, LifeEpisodeWriter>();
         builder.Services.AddScoped<BulkExecutor>();
         builder.Services.AddScoped<BulkApprovalRequestQueries>();
         builder.Services.AddScoped<CorrectionLedger>();

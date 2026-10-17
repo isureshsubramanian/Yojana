@@ -588,7 +588,8 @@ public static class SalesShipmentPostedHandler
 internal static class Shipments
 {
     /// <summary>What <see cref="ShipAsync"/> would otherwise read once per unit, read for the whole shipment.</summary>
-    public sealed record Prefetched(HashSet<(string Key, DateTime At)> Seen, Dictionary<Guid, UnitCompleteness> Completeness);
+    public sealed record Prefetched(HashSet<(string Key, DateTime At)> Seen, Dictionary<Guid, UnitCompleteness> Completeness,
+        IReadOnlyDictionary<Guid, UnitShipmentGuardDecision> GuardDecisions);
 
     public static async Task<Prefetched> PrefetchAsync(DocumentContext ctx, ThinEnvelope env, ShipmentDocument doc, IReadOnlyList<(int LineNo, Guid ItemId, Guid UnitId)> units, DateTime at, CancellationToken ct)
     {
@@ -600,7 +601,8 @@ internal static class Shipments
             foreach (var c in await ctx.Completeness.QueryAsync(chunk, DateOnly.FromDateTime(at), ct)) completeness[c.UnitId] = c;
         }
 
-        return new Prefetched(seen, completeness);
+        var guards = await ctx.SaleShipmentGuard.CheckAsync(toCheck.Select(u => new UnitShipmentCheck(u.UnitId, u.ItemId, at)).ToList(), ct);
+        return new Prefetched(seen, completeness, guards);
     }
 
     /// <summary>One unit leaving on a shipment line: completeness at sale (rule 12), custody to in transit or the site, ownership when the trigger is ship.</summary>
@@ -610,6 +612,13 @@ internal static class Shipments
         var exceptions = new List<string>();
         var key = Documents.Key(env, doc.Document, lineNo, unit.UnitId, UnitEventType.Shipped, at);
         if (known is not null ? known.Seen.Contains((key, at)) : await ctx.SeenAsync(key, at, ct)) return exceptions;
+        var guard = known?.GuardDecisions.GetValueOrDefault(unit.UnitId)
+            ?? (await ctx.SaleShipmentGuard.CheckAsync([new UnitShipmentCheck(unit.UnitId, itemId, at)], ct)).GetValueOrDefault(unit.UnitId);
+        if (guard is { Allowed: false })
+        {
+            exceptions.Add($"line {lineNo}: serial '{serial.Value}': {guard.Rule}: {guard.Detail}");
+            return exceptions;
+        }
         var completeness = known?.Completeness.GetValueOrDefault(unit.UnitId) is { ItemId: var checkedItem } c && checkedItem == itemId ? c : await ctx.Completeness.CheckAsync(unit.UnitId, itemId, DateOnly.FromDateTime(at), ct);
         if (!completeness.IsComplete && completeness.Policy == ItemSerialisationProfile.Completeness.Block)
         {

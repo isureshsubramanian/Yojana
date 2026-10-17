@@ -83,7 +83,7 @@ public static class TermArithmetic
     /// </summary>
     public static EffectiveDuration ForCondition(PolicyTerms terms, Guid itemId, string? grade, string? channel, string? country)
     {
-        if (grade is null or "new") return new EffectiveDuration(terms.Duration, false, null);
+        if (grade is null or ConditionGrades.New) return new EffectiveDuration(terms.Duration, false, null);
         var row = terms.Refurbished
             .Where(r => r.Grade == grade && r.Channel == channel && (r.ItemId is null || r.ItemId == itemId) && country is not null && Regions.Contains(r.Region, country))
             .OrderBy(r => r.ItemId is null ? 1 : 0).ThenBy(r => r.Region == country ? 0 : 1).FirstOrDefault();
