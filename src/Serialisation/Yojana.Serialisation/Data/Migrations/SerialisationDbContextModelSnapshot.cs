@@ -101,6 +101,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("installing_event_id");
 
+                    b.Property<Guid?>("MergedFromUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("merged_from_unit_id");
+
                     b.Property<Guid>("ParentUnitId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("parent_unit_id");
@@ -155,6 +159,9 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ux_assembly_link_tenant_id_child_unit_id")
                         .HasFilter("[removed_at] IS NULL AND [child_unit_id] IS NOT NULL");
 
+                    b.HasIndex("TenantId", "MergedFromUnitId")
+                        .HasDatabaseName("ix_assembly_link_tenant_id_merged_from_unit_id");
+
                     b.HasIndex("TenantId", "ParentUnitId", "RemovedAt")
                         .HasDatabaseName("ix_assembly_link_tenant_id_parent_unit_id_removed_at");
 
@@ -181,6 +188,10 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<Guid>("ItemId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("item_id");
+
+                    b.Property<Guid?>("MergedFromUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("merged_from_unit_id");
 
                     b.Property<Guid?>("ModelVersionId")
                         .HasColumnType("uniqueidentifier")
@@ -226,6 +237,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasKey("TenantId", "BuildRecordId")
                         .HasName("pk_build_record");
+
+                    b.HasIndex("TenantId", "MergedFromUnitId")
+                        .HasDatabaseName("ix_build_record_tenant_id_merged_from_unit_id");
 
                     b.HasIndex("TenantId", "UnitId", "Version")
                         .IsUnique()
@@ -578,6 +592,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(30)")
                         .HasColumnName("location_kind");
 
+                    b.Property<Guid?>("MergedFromUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("merged_from_unit_id");
+
                     b.Property<Guid?>("OpeningDocumentId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("opening_document_id");
@@ -642,6 +660,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasKey("TenantId", "EpisodeId")
                         .HasName("pk_custody_episode");
+
+                    b.HasIndex("TenantId", "MergedFromUnitId")
+                        .HasDatabaseName("ix_custody_episode_tenant_id_merged_from_unit_id");
 
                     b.HasIndex("TenantId", "LocationId", "ValidTo")
                         .HasDatabaseName("ix_custody_episode_tenant_id_location_id_valid_to");
@@ -788,6 +809,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("nvarchar(10)")
                         .HasColumnName("end_of_month_rule");
+
+                    b.Property<Guid?>("MergedFromUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("merged_from_unit_id");
 
                     b.Property<Guid>("ObligorEntityId")
                         .HasColumnType("uniqueidentifier")
@@ -978,6 +1003,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasKey("TenantId", "EntitlementId")
                         .HasName("pk_entitlement");
+
+                    b.HasIndex("TenantId", "MergedFromUnitId")
+                        .HasDatabaseName("ix_entitlement_tenant_id_merged_from_unit_id");
 
                     b.HasIndex("TenantId", "PolicyVersionId")
                         .HasDatabaseName("ix_entitlement_tenant_id_policy_version_id");
@@ -1242,6 +1270,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("item_id");
 
+                    b.Property<Guid?>("MergedFromUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("merged_from_unit_id");
+
                     b.Property<string>("MissingInput")
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)")
@@ -1294,6 +1326,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasKey("TenantId", "RequirementId")
                         .HasName("pk_entitlement_requirement");
+
+                    b.HasIndex("TenantId", "MergedFromUnitId")
+                        .HasDatabaseName("ix_entitlement_requirement_tenant_id_merged_from_unit_id");
 
                     b.HasIndex("TenantId", "Status", "RaisedAt")
                         .HasDatabaseName("ix_entitlement_requirement_tenant_id_status_raised_at");
@@ -1604,6 +1639,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("href");
 
+                    b.Property<Guid?>("MergedFromUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("merged_from_unit_id");
+
                     b.Property<string>("Metadata")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
@@ -1639,6 +1678,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasKey("TenantId", "EntityType", "EntityId")
                         .HasName("pk_search_entry");
+
+                    b.HasIndex("TenantId", "MergedFromUnitId")
+                        .HasDatabaseName("ix_search_entry_tenant_id_merged_from_unit_id");
 
                     b.HasIndex("TenantId", "UpdatedAt")
                         .HasDatabaseName("ix_search_entry_tenant_id_updated_at");
@@ -1679,8 +1721,15 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(60)")
                         .HasColumnName("detail");
 
+                    b.Property<Guid?>("MergedFromUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("merged_from_unit_id");
+
                     b.HasKey("TenantId", "Term", "EntityType", "EntityId", "Kind")
                         .HasName("pk_search_term");
+
+                    b.HasIndex("TenantId", "MergedFromUnitId")
+                        .HasDatabaseName("ix_search_term_tenant_id_merged_from_unit_id");
 
                     b.HasIndex("TenantId", "EntityType", "EntityId")
                         .HasDatabaseName("ix_search_term_tenant_id_entity_type_entity_id");
@@ -1788,6 +1837,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(400)")
                         .HasColumnName("detail");
 
+                    b.Property<Guid?>("MergedFromUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("merged_from_unit_id");
+
                     b.Property<string>("Outcome")
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)")
@@ -1805,6 +1858,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasKey("TenantId", "SelectionId", "UnitId")
                         .HasName("pk_selection_set_member");
+
+                    b.HasIndex("TenantId", "MergedFromUnitId")
+                        .HasDatabaseName("ix_selection_set_member_tenant_id_merged_from_unit_id");
 
                     b.HasIndex("TenantId", "SelectionId", "Serial")
                         .HasDatabaseName("ix_selection_set_member_tenant_id_selection_id_serial");
@@ -1940,6 +1996,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("commissioned_unit_id");
 
+                    b.Property<Guid?>("MergedFromUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("merged_from_unit_id");
+
                     b.Property<string>("Value")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1951,6 +2011,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasIndex("TenantId", "CommissionedUnitId")
                         .HasDatabaseName("ix_serial_range_member_tenant_id_commissioned_unit_id");
+
+                    b.HasIndex("TenantId", "MergedFromUnitId")
+                        .HasDatabaseName("ix_serial_range_member_tenant_id_merged_from_unit_id");
 
                     b.ToTable("serial_range_member", "serialisation");
                 });
@@ -2271,6 +2334,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("location_id");
 
+                    b.Property<Guid?>("MergedFromUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("merged_from_unit_id");
+
                     b.Property<string>("PostingPeriod")
                         .HasMaxLength(7)
                         .IsUnicode(false)
@@ -2302,6 +2369,9 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "IdempotencyKey", "EventTime")
                         .IsUnique()
                         .HasDatabaseName("ux_unit_event_tenant_id_idempotency_key_event_time");
+
+                    b.HasIndex("TenantId", "MergedFromUnitId", "EventTime")
+                        .HasDatabaseName("ix_unit_event_tenant_id_merged_from_unit_id_event_time");
 
                     b.HasIndex("TenantId", "UnitId", "EventTime")
                         .IsDescending(false, false, true)
@@ -2383,6 +2453,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("location_id");
 
+                    b.Property<Guid?>("MergedFromUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("merged_from_unit_id");
+
                     b.Property<string>("PostingPeriod")
                         .HasMaxLength(7)
                         .IsUnicode(false)
@@ -2414,6 +2488,9 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "IdempotencyKey", "EventTime")
                         .IsUnique()
                         .HasDatabaseName("ux_unit_event_archive_tenant_id_idempotency_key_event_time");
+
+                    b.HasIndex("TenantId", "MergedFromUnitId", "EventTime")
+                        .HasDatabaseName("ix_unit_event_archive_tenant_id_merged_from_unit_id_event_time");
 
                     b.HasIndex("TenantId", "UnitId", "EventTime")
                         .IsDescending(false, false, true)
@@ -2495,6 +2572,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("location_id");
 
+                    b.Property<Guid?>("MergedFromUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("merged_from_unit_id");
+
                     b.Property<string>("PostingPeriod")
                         .HasMaxLength(7)
                         .IsUnicode(false)
@@ -2526,6 +2607,9 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "IdempotencyKey", "EventTime")
                         .IsUnique()
                         .HasDatabaseName("ux_unit_event_archive_stage_tenant_id_idempotency_key_event_time");
+
+                    b.HasIndex("TenantId", "MergedFromUnitId", "EventTime")
+                        .HasDatabaseName("ix_unit_event_archive_stage_tenant_id_merged_from_unit_id_event_time");
 
                     b.HasIndex("TenantId", "UnitId", "EventTime")
                         .IsDescending(false, false, true)
@@ -2576,6 +2660,10 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<Guid?>("IssuerPartyRef")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("issuer_party_ref");
+
+                    b.Property<Guid?>("MergedFromUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("merged_from_unit_id");
 
                     b.Property<string>("NormalisedValue")
                         .IsRequired()
@@ -2643,6 +2731,9 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasKey("TenantId", "IdentifierId")
                         .HasName("pk_unit_identifier");
 
+                    b.HasIndex("TenantId", "MergedFromUnitId")
+                        .HasDatabaseName("ix_unit_identifier_tenant_id_merged_from_unit_id");
+
                     b.HasIndex("TenantId", "NormalisedValue")
                         .HasDatabaseName("ix_unit_identifier_tenant_id_normalised_value");
 
@@ -2662,7 +2753,7 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "Scheme", "ScopeKey", "NormalisedValue")
                         .IsUnique()
                         .HasDatabaseName("ux_unit_identifier_tenant_id_scheme_scope_key_normalised_value")
-                        .HasFilter("[valid_to] IS NULL");
+                        .HasFilter("[valid_to] IS NULL AND [duplicate_acknowledged] = 0");
 
                     b.ToTable("unit_identifier", "serialisation");
                 });
@@ -2684,6 +2775,10 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<Guid>("ItemId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("item_id");
+
+                    b.Property<Guid?>("MergedFromUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("merged_from_unit_id");
 
                     b.Property<Guid?>("ModelVersionId")
                         .HasColumnType("uniqueidentifier")
@@ -2710,6 +2805,9 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasKey("TenantId", "AssignmentId")
                         .HasName("pk_unit_item_assignment");
 
+                    b.HasIndex("TenantId", "MergedFromUnitId")
+                        .HasDatabaseName("ix_unit_item_assignment_tenant_id_merged_from_unit_id");
+
                     b.HasIndex("TenantId", "UnitId")
                         .IsUnique()
                         .HasDatabaseName("ux_unit_item_assignment_tenant_id_unit_id")
@@ -2719,6 +2817,56 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ix_unit_item_assignment_tenant_id_item_id_valid_to");
 
                     b.ToTable("unit_item_assignment", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.UnitMergeRecord", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CorrectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("correction_id");
+
+                    b.Property<Guid>("AbsorbedUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absorbed_unit_id");
+
+                    b.Property<DateTime>("MergedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("merged_at");
+
+                    b.Property<string>("ReversalData")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("reversal_data");
+
+                    b.Property<DateTime?>("ReversedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("reversed_at");
+
+                    b.Property<Guid?>("ReversedByCorrectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reversed_by_correction_id");
+
+                    b.Property<Guid>("SurvivorUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("survivor_unit_id");
+
+                    b.HasKey("TenantId", "CorrectionId")
+                        .HasName("pk_unit_merge_record");
+
+                    b.HasIndex("TenantId", "ReversedByCorrectionId")
+                        .HasDatabaseName("ix_unit_merge_record_tenant_id_reversed_by_correction_id");
+
+                    b.HasIndex("TenantId", "SurvivorUnitId", "AbsorbedUnitId", "ReversedAt")
+                        .HasDatabaseName("ix_unit_merge_record_tenant_id_survivor_unit_id_absorbed_unit_id_reversed_at");
+
+                    b.ToTable("unit_merge_record", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_unit_merge_record_reversal_data_json", "ISJSON(reversal_data) = 1");
+                        });
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.WarrantyCurrent", b =>

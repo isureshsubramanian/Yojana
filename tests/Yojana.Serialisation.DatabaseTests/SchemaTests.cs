@@ -27,7 +27,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
         using var scope = fixture.ScopeFor(null);
         var db = Db(scope);
         var expected = db.Model.GetEntityTypes().Where(e => typeof(ITenantScoped).IsAssignableFrom(e.ClrType)).Select(e => e.GetTableName()!).ToHashSet();
-        Assert.Equal(32, expected.Count);
+        Assert.Equal(33, expected.Count);
         var covered = await db.Database.SqlQueryRaw<string>($"""
             SELECT OBJECT_NAME(p.target_object_id) AS [Value]
             FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
@@ -63,7 +63,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
                 LEFT JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
                 WHERE i.object_id = OBJECT_ID('{S}.{table}') AND i.index_id > 0
                 """).ToListAsync();
-            Assert.Equal(4, indexes.Count); // clustered key, idempotency, unit, document (P1-T21)
+            Assert.Equal(5, indexes.Count); // clustered key, idempotency, unit, document (P1-T21), merged-from (P3-T09)
             Assert.All(indexes, x => Assert.EndsWith($"|{SerialisationDbContext.PartitionScheme}|event_time", x));
             Assert.Contains(indexes, x => x.StartsWith($"pk_{table}|", StringComparison.Ordinal));
             Assert.Contains(indexes, x => x.StartsWith($"ux_{table}_tenant_id_idempotency_key_event_time|", StringComparison.Ordinal));

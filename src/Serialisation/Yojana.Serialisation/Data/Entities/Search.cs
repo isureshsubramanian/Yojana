@@ -16,6 +16,8 @@ public sealed class SearchEntry : ITenantScoped
 
     public Guid EntityId { get; set; }
 
+    public Guid? MergedFromUnitId { get; set; }
+
     public Guid EntryId { get; set; }
 
     public required string Title { get; set; }
@@ -52,6 +54,8 @@ public sealed class SearchTerm : ITenantScoped
     public required string EntityType { get; set; }
 
     public Guid EntityId { get; set; }
+
+    public Guid? MergedFromUnitId { get; set; }
 
     /// <summary><see cref="Contracts.SearchTermKind"/>.</summary>
     public required string Kind { get; set; }

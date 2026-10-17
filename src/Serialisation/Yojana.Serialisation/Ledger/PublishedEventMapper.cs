@@ -110,6 +110,9 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
             case UnitEventType.VoidReversed:
                 return new UnitVoidReversed(Header(UnitVoidReversed.Schema, UnitVoidReversed.Version), Correction(a),
                     Guids(a!.Value, "restored_identifier_ids"), Str(a, "lifecycle_status") ?? "", document);
+            case UnitEventType.Merged:
+                return new UnitMerged(Header(UnitMerged.Schema, UnitMerged.Version), Correction(a), GuidOrNull(a, "survivor_unit_id") ?? Guid.Empty,
+                    GuidOrNull(a, "absorbed_unit_id") ?? Guid.Empty, Str(a, "role") ?? "");
 
             case UnitEventType.OwnershipOpened or UnitEventType.OwnershipTransferred:
                 return new OwnershipOpened(Header(OwnershipOpened.Schema, OwnershipOpened.Version), GuidOrNull(a, "episode_id") ?? Guid.Empty, GuidOrNull(a, "party_ref") ?? Guid.Empty, Str(a, "party_type") ?? "", Str(a, "reason") ?? "", Str(a, "source") ?? "", Str(a, "confidence") ?? "", Str(a, "customer_po_ref"), Str(a, "customer_item_ref"), GuidOrNull(a, "previous_episode_id"));

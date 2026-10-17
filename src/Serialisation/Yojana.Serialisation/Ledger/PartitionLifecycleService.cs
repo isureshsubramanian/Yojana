@@ -37,7 +37,7 @@ public sealed class PartitionLifecycleService(IServiceScopeFactory scopes, Parti
 
     private static readonly string Columns = string.Join(", ", new[]
     {
-        "tenant_id", "event_time", "event_id", "unit_id", "seq", "event_type", "biz_step", "disposition", "location_id", "legal_entity_id",
+        "tenant_id", "event_time", "event_id", "unit_id", "merged_from_unit_id", "seq", "event_type", "biz_step", "disposition", "location_id", "legal_entity_id",
         "actor_ref", "document_type", "document_id", "document_line", "recorded_time", "posting_period", "idempotency_key", "reverses_event_id", "attributes",
     }.Select(c => "[" + c + "]"));
 

@@ -15,6 +15,8 @@ public sealed class CustodyEpisode : ITenantScoped
 
     public Guid UnitId { get; set; }
 
+    public Guid? MergedFromUnitId { get; set; }
+
     /// <summary><see cref="Contracts.EpisodeKind"/>.</summary>
     public required string Kind { get; set; }
 

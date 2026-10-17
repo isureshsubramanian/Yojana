@@ -65,6 +65,9 @@ public sealed class UnitIdentifier : ITenantScoped
 
     public Guid UnitId { get; set; }
 
+    /// <summary>The alias unit this row belonged to before MergeUnits re-pointed it.</summary>
+    public Guid? MergedFromUnitId { get; set; }
+
     /// <summary><see cref="Contracts.IdentifierType"/>.</summary>
     public required string Type { get; set; }
 
@@ -122,6 +125,8 @@ public sealed class UnitItemAssignment : ITenantScoped
 
     public Guid UnitId { get; set; }
 
+    public Guid? MergedFromUnitId { get; set; }
+
     public Guid ItemId { get; set; }
 
     /// <summary>Distinct from the SKU: a device identifier per version (FDA 830.50).</summary>
@@ -150,6 +155,9 @@ public sealed class AssemblyLink : ITenantScoped
     public Guid ParentUnitId { get; set; }
 
     public Guid? ChildUnitId { get; set; }
+
+    /// <summary>The absorbed unit replaced on either the parent or child side; a unit cannot be both sides of one link.</summary>
+    public Guid? MergedFromUnitId { get; set; }
 
     public Guid? ChildItemId { get; set; }
 
@@ -193,6 +201,8 @@ public sealed class BuildRecord : ITenantScoped
     public Guid BuildRecordId { get; set; }
 
     public Guid UnitId { get; set; }
+
+    public Guid? MergedFromUnitId { get; set; }
 
     public int Version { get; set; }
 
@@ -282,4 +292,6 @@ public sealed class SerialRangeMember : ITenantScoped
     public required string Value { get; set; }
 
     public Guid? CommissionedUnitId { get; set; }
+
+    public Guid? MergedFromUnitId { get; set; }
 }
