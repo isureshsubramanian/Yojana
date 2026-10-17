@@ -214,6 +214,9 @@ public sealed class BuildRecord : ITenantScoped
 /// <summary>
 /// A block or randomised list of serials reserved for an order (case 7, Identity rule 13). A reservation is
 /// not an identity: no unit exists until commissioning.
+/// A per-serial reassignment does not mutate this row: SerialAllocationOverride is the explicit current-state seam and
+/// SerialAllocationReassignment is its immutable audit. Commissioning resolves both set-wise through
+/// SerialAllocationReservationStore.
 /// </summary>
 public sealed class SerialRange : ITenantScoped
 {

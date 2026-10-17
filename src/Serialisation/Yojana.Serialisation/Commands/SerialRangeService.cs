@@ -19,7 +19,7 @@ namespace Yojana.Serialisation.Commands;
 /// into the same ordinals. Released ranges (cancelled orders) keep blocking their ordinals: serials are never re-issued
 /// (OD-07 default).
 /// </summary>
-public sealed class SerialRangeService(SerialisationDbContext db, ISerialSchemeSource schemes, ITenantContext tenant)
+public sealed class SerialRangeService(SerialisationDbContext db, ISerialSchemeSource schemes, SerialAllocationReservationStore reservations, ITenantContext tenant)
 {
     public async Task<AllocateSerialRangeResult> AllocateAsync(AllocateSerialRange command, CancellationToken cancellationToken)
     {
@@ -133,24 +133,47 @@ public sealed class SerialRangeService(SerialisationDbContext db, ISerialSchemeS
     /// After commissioning: counts each serial against the range that reserved it, moving the range to commissioning or
     /// exhausted and marking randomised members. Serials outside any range are ignored (not every tenant pre-allocates).
     /// </summary>
-    public async Task RecordCommissionedAsync(IReadOnlyList<(Guid UnitId, string NormalisedValue)> serials, CancellationToken cancellationToken)
+    // TIGHT COUPLING (P3-T11 effective reservation)
+    // WHAT: commissioning reads SerialAllocationOverride rows written by ReassignAllocationHandler and takes the
+    // scheme's shared application lock while reassignment takes its exclusive lock. WHY: a moved serial must be accepted
+    // only on its effective order without racing a reassignment, and the lookup must stay set-based. WHAT BREAKS IF
+    // SEPARATED: the unit can record the old order while the override commits the new one. Keep the mirrored handler
+    // comment and both locks in SerialAllocationReservationStore.
+    public async Task RecordCommissionedAsync(Guid itemId, IReadOnlyList<(Guid UnitId, string NormalisedValue)> serials,
+        DocumentRef? productionOrder, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var byScheme = serials.Select(s => (s.UnitId, s.NormalisedValue, Scheme: schemes.Recognise(s.NormalisedValue))).Where(x => x.Scheme is not null).GroupBy(x => x.Scheme!.Code);
         foreach (var group in byScheme)
         {
             var scheme = group.First().Scheme!;
+            await reservations.LockForCommissioningAsync(scheme.Code, cancellationToken);
             var ordinals = group.Select(x => (x.UnitId, Ordinal: scheme.TryParse(x.NormalisedValue)!.Value.Ordinal)).ToList();
+            var allocated = await reservations.ResolveAsync(scheme.Code, itemId, ordinals.Select(o => o.Ordinal).ToList(), true, cancellationToken);
+            foreach (var serial in ordinals)
+            {
+                if (!allocated.TryGetValue(serial.Ordinal, out var reservation)) continue;
+                if (reservation.EffectiveOrder is { } expected
+                    && (productionOrder is null || expected.Type != productionOrder.Type || expected.Id != productionOrder.Id))
+                    throw new CommandRefusedException("serial_reserved_for_other_order",
+                        $"Serial {scheme.FormatOrdinal(serial.Ordinal)} is reserved for production order {expected.Id}, not {productionOrder?.Id}.",
+                        "commission it from its assigned production order or reassign the reservation first");
+                if (reservation.Override is not null) reservation.Override.CommissionedUnitId = serial.UnitId;
+            }
             var min = ordinals.Min(o => o.Ordinal);
             var max = ordinals.Max(o => o.Ordinal);
-            var blocks = await db.SerialRanges.Where(r => r.TenantId == tenantId && r.Scheme == scheme.Code && r.StartOrdinal != null && r.StartOrdinal <= max && r.EndOrdinal >= min).ToListAsync(cancellationToken);
+            var blocks = await db.SerialRanges.Where(r => r.TenantId == tenantId && r.Scheme == scheme.Code && r.ItemId == itemId && r.StartOrdinal != null && r.StartOrdinal <= max && r.EndOrdinal >= min).ToListAsync(cancellationToken);
             foreach (var range in blocks)
             {
                 var hits = ordinals.Count(o => o.Ordinal >= range.StartOrdinal && o.Ordinal <= range.EndOrdinal);
                 Bump(range, hits);
             }
 
-            var members = await db.SerialRangeMembers.Where(m => m.TenantId == tenantId && m.CommissionedUnitId == null && ordinals.Select(o => o.Ordinal).Contains(m.Ordinal)).ToListAsync(cancellationToken);
+            var members = await (from member in db.SerialRangeMembers
+                                 join range in db.SerialRanges on new { member.TenantId, member.RangeId } equals new { range.TenantId, range.RangeId }
+                                 where member.TenantId == tenantId && range.Scheme == scheme.Code && range.ItemId == itemId
+                                       && member.CommissionedUnitId == null && ordinals.Select(o => o.Ordinal).Contains(member.Ordinal)
+                                 select member).ToListAsync(cancellationToken);
             if (members.Count > 0)
             {
                 var rangeIds = members.Select(m => m.RangeId).Distinct().ToList();

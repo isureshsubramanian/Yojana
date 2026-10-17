@@ -372,6 +372,19 @@ public static class ReassignAllocationReason
     public static readonly IReadOnlyList<string> All = [AllocationError, WorkOrderChanged, WorkOrderCancelled];
 }
 
+public static class AllocationReassignmentMode
+{
+    public const string PairwiseExchange = "pairwise_exchange";
+    public const string Move = "move";
+    public static readonly IReadOnlySet<string> All = new HashSet<string>([PairwiseExchange, Move], StringComparer.Ordinal);
+}
+
+public static class AllocationReassignmentOutcome
+{
+    public const string WillMove = "will_move";
+    public const string Blocked = "blocked";
+}
+
 public static class CorrectDocumentSerialsReason
 {
     public const string ShippedWrongUnits = "shipped_wrong_units";

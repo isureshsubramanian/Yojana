@@ -7,13 +7,14 @@ namespace Yojana.Serialisation.Ports;
 /// Document query ports fed from memory: the recorded-message harness (P1-T17) and the tests load documents here and
 /// publish the thin events; a connector (P8) or an in-house module (P12) replaces these registrations in a real host.
 /// </summary>
-public sealed class InMemoryDocumentPorts : IPurchasingDocumentQueryPort, IManufacturingDocumentQueryPort, IInventoryDocumentQueryPort, ISalesDocumentQueryPort, IServiceDocumentQueryPort
+public sealed class InMemoryDocumentPorts : IPurchasingDocumentQueryPort, IManufacturingDocumentQueryPort, IProductionOrderAllocationPort, IInventoryDocumentQueryPort, ISalesDocumentQueryPort, IServiceDocumentQueryPort
 {
     private readonly ConcurrentDictionary<(string Type, Guid Id), object> documents = new();
 
     public void Add(ReceiptDocument d) => documents[(d.Document.Type, d.Document.Id)] = d;
     public void Add(VendorShipment d) => documents[(d.Document.Type, d.Document.Id)] = d;
     public void Add(ProductionReceipt d) => documents[(d.Document.Type, d.Document.Id)] = d;
+    public void Add(ProductionOrderAllocation d) => documents[(d.ProductionOrder.Type, d.ProductionOrder.Id)] = d;
     public void Add(ComponentIssueDocument d) => documents[(d.Document.Type, d.Document.Id)] = d;
     public void Add(TransferDocument d) => documents[(d.Document.Type, d.Document.Id)] = d;
     public void Add(AdjustmentDocument d) => documents[(d.Document.Type, d.Document.Id)] = d;
@@ -30,6 +31,7 @@ public sealed class InMemoryDocumentPorts : IPurchasingDocumentQueryPort, IManuf
     public Task<VendorShipment?> GetVendorShipmentAsync(DocumentRef document, CancellationToken cancellationToken) => Get<VendorShipment>(document);
     public Task<ProductionReceipt?> GetProductionReceiptAsync(DocumentRef document, CancellationToken cancellationToken) => Get<ProductionReceipt>(document);
     public Task<ComponentIssueDocument?> GetComponentIssueAsync(DocumentRef document, CancellationToken cancellationToken) => Get<ComponentIssueDocument>(document);
+    public Task<ProductionOrderAllocation?> GetAsync(DocumentRef productionOrder, CancellationToken cancellationToken) => Get<ProductionOrderAllocation>(productionOrder);
     public Task<TransferDocument?> GetTransferAsync(DocumentRef document, CancellationToken cancellationToken) => Get<TransferDocument>(document);
     public Task<AdjustmentDocument?> GetAdjustmentAsync(DocumentRef document, CancellationToken cancellationToken) => Get<AdjustmentDocument>(document);
     public Task<ShipmentDocument?> GetShipmentAsync(DocumentRef document, CancellationToken cancellationToken) => Get<ShipmentDocument>(document);

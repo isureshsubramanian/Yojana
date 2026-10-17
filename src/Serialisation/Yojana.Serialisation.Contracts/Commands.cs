@@ -53,6 +53,9 @@ public sealed record AssignIdentifierResult(Guid UnitId, Guid IdentifierId, stri
 /// <summary>One approval attached to a correction; roles are recorded as evidence, never inferred later.</summary>
 public sealed record CorrectionApprover(string UserRef, IReadOnlyList<string> Roles);
 
+/// <summary>Who commits a correction and the roles they hold in the tenant; HTTP endpoints stamp both from claims.</summary>
+public sealed record CorrectionCommitter(string UserRef, IReadOnlyList<string> Roles);
+
 /// <summary>Metadata shared by every correction command and every ledger fact it writes.</summary>
 public sealed record CorrectionMetadata(
     Guid CorrectionId,
@@ -114,6 +117,29 @@ public sealed record AllocateSerialRange(
     string? Note = null);
 
 public sealed record AllocateSerialRangeResult(Guid RangeId, string Scheme, string? StartValue, string? EndValue, int Count, bool Randomised, IReadOnlyList<string> Serials, bool StartMoved, string? RequestedStart);
+
+/// <summary>
+/// Identity rule 13: selected reservations may move before commissioning without changing an identity. A pairwise
+/// exchange pairs the two selections in their supplied order; a move uses only <see cref="FromSerials"/>. The serial
+/// selections use the pasted-list and scheme-validated range shapes already used by bulk selection sets.
+/// </summary>
+public sealed record ReassignAllocation(
+    Guid CommandId,
+    DocumentRef FromProductionOrder,
+    DocumentRef ToProductionOrder,
+    string Mode,
+    SelectionSource FromSerials,
+    SelectionSource? ToSerials,
+    string Reason,
+    DateTime EventTime,
+    string ActorRef,
+    Guid LegalEntityId,
+    string? Note = null,
+    CorrectionMetadata? Correction = null,
+    CorrectionCommitter? CommittedBy = null,
+    bool PreviewOnly = false);
+
+public sealed record ReassignAllocationResult(Guid CorrectionId, Guid? EventId, CorrectionPreview Preview, bool Replayed);
 
 /// <summary>Details of an overlap refusal, carried on the exception's message and in this record for screens.</summary>
 public sealed record RangeOverlap(Guid RangeId, string StartValue, string EndValue, string AllocatedTo, string NextFreeStart);

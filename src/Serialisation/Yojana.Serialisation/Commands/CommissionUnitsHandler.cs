@@ -218,7 +218,7 @@ public static class CommissionUnitsHandler
         var internalSerials = identifierRows.Where(i => i.Type == IdentifierType.InternalSerial).Select(i => (i.UnitId, i.NormalisedValue)).ToList();
         if (internalSerials.Count > 0)
         {
-            await ranges.RecordCommissionedAsync(internalSerials, cancellationToken);
+            await ranges.RecordCommissionedAsync(command.ItemId, internalSerials, command.Document, cancellationToken);
         }
 
         return new CommissionUnitsResult(results, results.Count(r => r.Outcome == CommissionLineResult.Commissioned), results.Count(r => r.Outcome == CommissionLineResult.Pending),

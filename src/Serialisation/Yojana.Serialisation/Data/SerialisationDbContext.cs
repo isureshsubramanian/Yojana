@@ -61,6 +61,10 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<CorrectionRecord> Corrections => Set<CorrectionRecord>();
 
+    public DbSet<SerialAllocationReassignment> AllocationReassignments => Set<SerialAllocationReassignment>();
+
+    public DbSet<SerialAllocationOverride> AllocationOverrides => Set<SerialAllocationOverride>();
+
     public DbSet<SearchEntry> SearchEntries => Set<SearchEntry>();
 
     public DbSet<SearchTerm> SearchTerms => Set<SearchTerm>();
@@ -315,6 +319,33 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.Note).HasMaxLength(2000);
             b.HasIndex(c => new { c.TenantId, c.EventTime, c.RootCauseCategory, c.InitiatingRole, c.InitiatedVia });
             b.HasIndex(c => new { c.TenantId, c.CorrectsCorrectionId });
+        });
+
+        modelBuilder.Entity<SerialAllocationReassignment>(b =>
+        {
+            b.ToTable("serial_allocation_reassignment", t => t.HasCheckConstraint("ck_serial_allocation_reassignment_attributes_json", "ISJSON(attributes) = 1"));
+            b.HasKey(r => new { r.TenantId, r.ReassignmentId });
+            b.Property(r => r.Mode).HasMaxLength(30);
+            b.Property(r => r.Scheme).HasMaxLength(80);
+            b.Property(r => r.SerialValue).HasMaxLength(200);
+            b.Property(r => r.PreviousProductionOrderType).HasMaxLength(40);
+            b.Property(r => r.NewProductionOrderType).HasMaxLength(40);
+            b.Property(r => r.ActorRef).HasMaxLength(200);
+            b.HasIndex(r => new { r.TenantId, r.CommandId, r.Scheme, r.SerialOrdinal }).IsUnique();
+            b.HasIndex(r => new { r.TenantId, r.CorrectionId, r.Scheme, r.SerialOrdinal }).IsUnique();
+            b.HasIndex(r => new { r.TenantId, r.SerialRangeId, r.SerialOrdinal, r.EventTime });
+        });
+
+        modelBuilder.Entity<SerialAllocationOverride>(b =>
+        {
+            b.ToTable("serial_allocation_override");
+            b.HasKey(r => new { r.TenantId, r.Scheme, r.SerialOrdinal });
+            b.Property(r => r.Scheme).HasMaxLength(80);
+            b.Property(r => r.SerialValue).HasMaxLength(200);
+            b.Property(r => r.ProductionOrderType).HasMaxLength(40);
+            b.HasIndex(r => new { r.TenantId, r.ProductionOrderType, r.ProductionOrderId, r.ProductionOrderLine });
+            b.HasIndex(r => new { r.TenantId, r.SerialRangeId, r.SerialOrdinal });
+            b.HasIndex(r => new { r.TenantId, r.CommissionedUnitId });
         });
 
         modelBuilder.Entity<SearchEntry>(b =>

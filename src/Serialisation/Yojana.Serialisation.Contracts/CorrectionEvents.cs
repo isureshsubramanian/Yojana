@@ -119,10 +119,10 @@ public sealed record UnitAllocationReassigned(
     IReadOnlyList<PublishedAllocationReassignment> Reassignments) : IPublishedSummaryEvent
 {
     public const string Schema = "Unit.AllocationReassigned";
-    public const string Version = "1.0";
+    public const string Version = "1.1";
 }
 
-public sealed record PublishedAllocationReassignment(Guid SerialRangeId, DocumentRef PreviousProductionOrder, DocumentRef NewProductionOrder);
+public sealed record PublishedAllocationReassignment(string Serial, Guid SerialRangeId, DocumentRef PreviousProductionOrder, DocumentRef NewProductionOrder);
 
 public sealed record DocumentSerialsCorrected(
     PublishedSummaryHeader Header,

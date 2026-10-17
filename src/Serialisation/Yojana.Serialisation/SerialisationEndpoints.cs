@@ -74,6 +74,24 @@ public static class SerialisationEndpoints
             }
         }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
 
+        var corrections = app.MapGroup("/api/corrections").RequireAuthorization(YojanaPolicy.TenantMember);
+        corrections.MapPost("/reassign-allocation/preview", (ReassignAllocation command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<ReassignAllocationResult>(bus, tenant, command with
+            {
+                ActorRef = Actor(user),
+                Correction = ApiCorrection(command, user),
+                CommittedBy = CorrectionCommitterFor(user),
+                PreviewOnly = true,
+            }, ct));
+        corrections.MapPost("/reassign-allocation", (ReassignAllocation command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<ReassignAllocationResult>(bus, tenant, command with
+            {
+                ActorRef = Actor(user),
+                Correction = ApiCorrection(command, user),
+                CommittedBy = CorrectionCommitterFor(user),
+                PreviewOnly = false,
+            }, ct));
+
         var ranges = app.MapGroup("/api/serial-ranges").RequireAuthorization(YojanaPolicy.TenantMember);
         ranges.MapGet("/schemes", (SerialRangeQueries queries) => Results.Ok(queries.Schemes()));
         ranges.MapGet("/", async (string scheme, string? status, int? skip, int? take, SerialRangeQueries queries, CancellationToken ct) =>
@@ -294,6 +312,24 @@ public static class SerialisationEndpoints
             // ApproverRef keeps its P1 meaning; server-recorded approvals arrive with the workbench approval flow (P3-T16).
             null);
     }
+
+    private static CorrectionMetadata ApiCorrection(ReassignAllocation command, ClaimsPrincipal user)
+    {
+        var supplied = command.Correction;
+        return new CorrectionMetadata(
+            supplied?.CorrectionId ?? command.CommandId,
+            supplied?.ReasonCode ?? command.Reason,
+            supplied?.Note ?? command.Note,
+            supplied?.EvidenceRefs ?? [],
+            supplied?.InitiatedVia ?? CorrectionInitiatedVia.Api,
+            supplied?.CorrectsCorrectionId,
+            InitiatingRole(user),
+            // Approvers and their roles are server-side approval facts; request bodies cannot mint them.
+            null);
+    }
+
+    private static CorrectionCommitter CorrectionCommitterFor(ClaimsPrincipal user) =>
+        new(Actor(user), user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToList());
 
     private static string InitiatingRole(ClaimsPrincipal user)
     {
