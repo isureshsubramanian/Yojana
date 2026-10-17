@@ -50,6 +50,12 @@ export function documentLabelText(document: ReferenceDocument | null | undefined
   return label?.number ?? shortReference(document.id);
 }
 
+export function lotLabelText(document: ReferenceDocument | null | undefined, documentLabel: DocumentReferenceLabel | null | undefined, itemLabel: ItemReferenceLabel | null | undefined): string {
+  const number = documentLabelText(document, documentLabel);
+  const itemName = itemLabel?.name ?? itemLabel?.code;
+  return itemName ? `${number} · ${itemName}` : number;
+}
+
 export function createReferenceStore(resolve: ResolveReferences): ReferenceStore {
   const items = new Map<string, ItemReferenceLabel | null>();
   const parties = new Map<string, PartyReferenceLabel | null>();

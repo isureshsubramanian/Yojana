@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, 
 import { api } from "../api/client";
 import { useSession } from "../session/session";
 import {
-  createReferenceStore, documentLabelText, itemLabelText, partyLabelText,
+  createReferenceStore, documentLabelText, itemLabelText, lotLabelText, partyLabelText,
   type DocumentReferenceLabel, type ItemReferenceLabel, type PartyReferenceLabel, type ReferenceStore,
 } from "./referenceStore";
 
@@ -38,13 +38,17 @@ function storeFor(tenant: string): ReferenceStore {
 /** Labels for references a screen shows. Pass every reference the screen renders; each label falls back to a short id until the name arrives. */
 export function useReferenceNames(references: { items?: readonly (string | null | undefined)[]; parties?: readonly (string | null | undefined)[]; documents?: readonly (DocumentValue | null | undefined)[] }): {
   item: (id: string | null | undefined) => string;
+  itemName: (id: string | null | undefined) => string | null;
   party: (id: string | null | undefined) => string;
   document: (doc: DocumentValue | null | undefined) => string;
+  lot: (doc: DocumentValue | null | undefined) => string;
 } {
   const session = useSession();
   const store = storeFor(session.tenant?.code ?? "");
   const version = useSyncExternalStore(store.subscribe, store.version, store.version);
-  const itemKey = (references.items ?? []).filter(Boolean).join("\n");
+  const lotItemIds = (references.documents ?? []).filter((document) => document?.type === "lot")
+    .map((document) => document ? store.document(document)?.itemId : null);
+  const itemKey = [...(references.items ?? []), ...lotItemIds].filter(Boolean).join("\n");
   const partyKey = (references.parties ?? []).filter(Boolean).join("\n");
   const documentKey = (references.documents ?? []).filter(Boolean).map((document) => `${document!.type}:${document!.id}`).join("\n");
   useEffect(() => {
@@ -56,12 +60,17 @@ export function useReferenceNames(references: { items?: readonly (string | null 
   }, [store, itemKey, partyKey, documentKey]);
   return {
     item: useCallback((id) => itemLabelText(id, id ? store.item(id) : undefined), [store, version]),
+    itemName: useCallback((id) => id ? store.item(id)?.name ?? store.item(id)?.code ?? null : null, [store, version]),
     party: useCallback((id) => partyLabelText(id, id ? store.party(id) : undefined), [store, version]),
     document: useCallback((document) => documentLabelText(document, document ? store.document(document) : undefined), [store, version]),
+    lot: useCallback((document) => {
+      const documentLabel = document ? store.document(document) : undefined;
+      return lotLabelText(document, documentLabel, documentLabel?.itemId ? store.item(documentLabel.itemId) : undefined);
+    }, [store, version]),
   };
 }
 
-type FieldProps<T> = { id: string; label: string; value: T | null; onChange: (value: T | null) => void; optional?: boolean; hint?: string };
+type FieldProps<T> = { id: string; label: string; value: T | null; onChange: (value: T | null) => void; optional?: boolean | undefined; hint?: string | undefined };
 
 /** An item, chosen by code or name; the value is the item id. */
 export function ItemField({ id, label, value, onChange, optional, hint }: FieldProps<string>) {
@@ -82,12 +91,18 @@ export function DocumentField({ id, label, types, value, onChange, optional, hin
   const [selectedType, setSelectedType] = useState(value?.type ?? types[0] ?? "");
   useEffect(() => { if (value?.type) setSelectedType(value.type); }, [value?.type]);
   const names = useReferenceNames({ documents: [value] });
-  const picker = <ReferencePicker id={id} label={label} value={value?.id ?? null} selectedLabel={names.document(value)}
+  const picker = <ReferencePicker id={id} label={label} value={value?.id ?? null} selectedLabel={selectedType === "lot" ? names.lot(value) : names.document(value)}
     onChange={(documentId) => onChange(documentId ? { type: selectedType, id: documentId } : null)} optional={optional} hint={hint}
     kind="document" documentType={selectedType} placeholder={`Search by ${friendlyType(selectedType)} number`}
     noResult={(query) => `No ${friendlyType(selectedType)} ${query} found`} hideLabel={types.length > 1} />;
   if (types.length <= 1) return picker;
   return <div className="reference-field-with-type"><div className="field"><label htmlFor={`${id}-type`}>{label}{optional && <span className="hint"> · optional</span>}</label><select id={`${id}-type`} className="select" value={selectedType} onChange={(event) => { setSelectedType(event.target.value); if (value) onChange(null); }}>{types.map((candidate) => <option key={candidate} value={candidate}>{friendlyType(candidate)}</option>)}</select></div>{picker}</div>;
+}
+
+/** A lot document, chosen by its number; the value crossing the component boundary is the lot id. */
+export function LotField({ id, label, value, onChange, optional, hint }: FieldProps<string>) {
+  return <DocumentField id={id} label={label} types={["lot"]} value={value ? { type: "lot", id: value } : null}
+    onChange={(document) => onChange(document?.id ?? null)} optional={optional} hint={hint} />;
 }
 
 function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, hint, kind, documentType, placeholder, noResult, hideLabel = false }: {
@@ -102,6 +117,7 @@ function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
+  const resultNames = useReferenceNames({ items: results.map((result) => result.itemId) });
 
   const search = useCallback(async (text: string, signal: AbortSignal) => {
     const params = new URLSearchParams({ kind, q: text, take: "10" });
@@ -160,7 +176,7 @@ function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, 
         {open && results.length > 0 && <div id={listId} className="reference-options" role="listbox">
           {results.map((result, index) => <button type="button" role="option" id={`${listId}-${index}`} aria-selected={active === index}
             className="reference-option" key={`${result.type ?? kind}:${result.id}`} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(result)}>
-            <span>{resultLabel(result)}</span>{resultMeta(result) && <span>{resultMeta(result)}</span>}
+            <span>{resultLabel(result, resultNames.itemName(result.itemId))}</span>{resultMeta(result) && <span>{resultMeta(result)}</span>}
           </button>)}
         </div>}
       </div>}
@@ -169,10 +185,11 @@ function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, 
   </div>;
 }
 
-function resultLabel(result: SearchResult): string {
+function resultLabel(result: SearchResult, itemName: string | null): string {
   if (result.kind === "item") return result.name ? `${result.code} · ${result.name}` : result.code ?? result.id;
   if (result.kind === "party") return result.name ? `${result.name} (${result.code})` : result.code ?? result.id;
-  return result.number ?? result.id;
+  const number = result.number ?? result.id;
+  return result.type === "lot" && itemName ? `${number} · ${itemName}` : number;
 }
 
 function resultMeta(result: SearchResult): string | null {

@@ -11,6 +11,7 @@ import { ErrorNote, Kv, Section, UnitLink, useActor } from "./common";
 import { documentLabel, fmtDate, fmtDateTime, humanise, shortId, statusLabel, statusTone } from "./format";
 import { EntitlementPanel, openAmendEntitlement, openAttachEntitlement, type EntitlementSummary } from "../entitlements/EntitlementPanel";
 import type { UnitEntitlementDetail } from "../entitlements/types";
+import { useReferenceNames } from "../corrections/ReferenceFields";
 
 const HISTORY_PAGE = 20;
 const FLAGS = ["lost", "stolen", "written_off", "clone_seen", "recalled", "authenticity_failed"];
@@ -43,6 +44,10 @@ export function Component() {
 
   const reload = useCallback(() => setVersion((v) => v + 1), []);
   const person = usePeople(history?.items.map((e) => e.actorRef) ?? []);
+  const referenceNames = useReferenceNames({
+    items: [detail?.itemId, ...(detail?.asBuilt.map((row) => row.childItemId) ?? [])],
+    documents: [lotDocument(detail?.lotId), ...(detail?.asBuilt.map((row) => lotDocument(row.childLotId)) ?? [])],
+  });
   const primary = detail?.identifiers.find((i) => i.validTo === null && i.type === "internal_serial") ?? detail?.identifiers.find((i) => i.validTo === null);
   const title = primary?.rawValue ?? (detail ? `unit ${shortId(detail.unitId)}` : "…");
   const owner = detail?.episodes.find((e) => e.kind === "ownership" && e.validTo === null);
@@ -107,7 +112,7 @@ export function Component() {
         <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Units", to: "/units" }, { label: title }]} />
         <div className="page-header">
           <div>
-            <div className="eyebrow">Unit · item {detail ? shortId(detail.itemId) : "…"}{detail?.modelVersionId ? ` · model ${shortId(detail.modelVersionId)}` : ""}{detail?.lotId ? ` · lot ${shortId(detail.lotId)}` : ""}{detail?.expiryDate ? ` · expires ${detail.expiryDate}` : ""}</div>
+            <div className="eyebrow">Unit · item {detail ? referenceNames.item(detail.itemId) : "…"}{detail?.modelVersionId ? ` · model ${shortId(detail.modelVersionId)}` : ""}{detail?.lotId ? <> · lot {referenceNames.lot(lotDocument(detail.lotId))}</> : ""}{detail?.expiryDate ? ` · expires ${detail.expiryDate}` : ""}</div>
             <h1 className="mono" style={{ fontFamily: "var(--font-mono)", letterSpacing: 0 }}>{title}</h1>
             <p className="sub">
               {detail ? tab === "entitlements" && entitlementSummary ? <>Covered to {fmtDate(entitlementSummary.coveredTo)} · {entitlementSummary.live} live entitlements in {entitlementSummary.families} coverage families · owned by {owner ? `${humanise(owner.partyType)} ${shortId(owner.partyRef)}` : "no recorded owner"} · {entitlementSummary.hasOpenClaims ? "open claims" : "no open claims"}</> : <>{statusLabel(detail.lifecycleStatus)} · custody {humanise(detail.locationKind) || "unknown"}{custody?.partyRef ? `, ${humanise(custody.partyType)} ${shortId(custody.partyRef)}` : ""}{owner ? ` · owned by ${humanise(owner.partyType)} ${shortId(owner.partyRef)} since ${fmtDate(owner.validFrom)}` : " · no owner recorded"} · {detail.asBuilt.filter((a) => a.removedAt === null).length} components as built</> : "Loading…"}
@@ -199,10 +204,10 @@ export function Component() {
               </div>
               <div className="card-body" style={{ paddingTop: 8, paddingBottom: 8 }}>
                 <ul className="tree">
-                  <li><span className="node"><span className="item">item {detail ? shortId(detail.itemId) : "…"}</span><span className="serial">{title}</span><span className="hint">· this unit</span></span><StatusBadge tone="neutral">Parent</StatusBadge></li>
+                  <li><span className="node"><span className="item">{detail ? referenceNames.item(detail.itemId) : "…"}</span><span className="serial">{title}</span><span className="hint">· this unit</span></span><StatusBadge tone="neutral">Parent</StatusBadge></li>
                   {detail?.asBuilt.map((a) => (
                     <li className="l1" key={a.linkId}>
-                      <span className="node"><span className="slot">{a.slot ?? "—"}</span><span className="item">{a.childItemId ? shortId(a.childItemId) : "lot"}</span>{a.childUnitId ? <UnitLink unitId={a.childUnitId}>{a.childSerial ?? shortId(a.childUnitId)}</UnitLink> : <span className="serial muted">{a.childLotId ? `lot ${shortId(a.childLotId)}` : ""}{a.quantity != null ? ` · qty ${a.quantity}` : ""}</span>}<span className="hint">· {a.relation}{a.throughPhantomItemId ? ` · through phantom ${shortId(a.throughPhantomItemId)}` : ""}{a.releaseStatus ? ` · ${a.releaseStatus}` : ""}{a.removedAt ? ` · removed ${fmtDate(a.removedAt)}` : ""}</span></span>
+                      <span className="node"><span className="slot">{a.slot ?? "—"}</span><span className="item">{a.childItemId ? referenceNames.item(a.childItemId) : "Lot item"}</span>{a.childUnitId ? <UnitLink unitId={a.childUnitId}>{a.childSerial ?? shortId(a.childUnitId)}</UnitLink> : <span className="serial muted">{a.childLotId ? <>lot {referenceNames.lot(lotDocument(a.childLotId))}</> : ""}{a.quantity != null ? ` · qty ${a.quantity}` : ""}</span>}<span className="hint">· {a.relation}{a.throughPhantomItemId ? ` · through phantom ${shortId(a.throughPhantomItemId)}` : ""}{a.releaseStatus ? ` · ${a.releaseStatus}` : ""}{a.removedAt ? ` · removed ${fmtDate(a.removedAt)}` : ""}</span></span>
                       <StatusBadge tone={a.removedAt ? "neutral" : a.childUnitId ? "ok" : "neutral"}>{a.removedAt ? "Removed" : a.childUnitId ? "Captured" : "Lot"}</StatusBadge>
                     </li>
                   ))}
@@ -228,6 +233,8 @@ export function Component() {
     </>
   );
 }
+
+function lotDocument(id: string | null | undefined) { return id ? { type: "lot", id } : null; }
 
 function eventTitle(code: string): string {
   const tail = code.split(".").pop() ?? code;

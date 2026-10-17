@@ -36,6 +36,7 @@ public sealed class ReferencePortTests
     [InlineData("invoice", "IN-")]
     [InlineData("transfer", "TR-")]
     [InlineData("return", "RT-")]
+    [InlineData("lot", "LOT-")]
     [InlineData("other", "DOC-")]
     public void Document_fallback_prefixes_are_centralised(string type, string prefix)
     {
@@ -73,6 +74,21 @@ public sealed class ReferencePortTests
 
         Assert.Equal(reference, result.Document);
         Assert.Equal("MO-90ABCDEF", result.Number);
+    }
+
+    [Fact]
+    public async Task Registered_lot_search_preserves_the_item_needed_for_its_label()
+    {
+        var lotId = Guid.Parse("7061be89-a2b0-5cda-b70a-0b2616e5b9c4");
+        var registry = new InMemoryDocumentNumberRegistry();
+        registry.Register(new DocumentLabel(new DocumentRef("lot", lotId), "KPL-2511", ItemId: ItemId));
+        var documents = new DefaultDocumentNumberPort(registry, new RecordedDocuments([]));
+
+        var result = Assert.Single(await documents.FindAsync("lot", "KPL-25", 10, CancellationToken.None));
+
+        Assert.Equal(new DocumentRef("lot", lotId), result.Document);
+        Assert.Equal("KPL-2511", result.Number);
+        Assert.Equal(ItemId, result.ItemId);
     }
 
     private sealed class ItemFacts(ItemSerialisationProfile? profile) : IItemQueryPort
