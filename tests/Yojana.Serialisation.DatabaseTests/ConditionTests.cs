@@ -53,7 +53,9 @@ public sealed class ConditionTests(SerialisationHostFixture fixture)
         var published = Assert.Single(await PublishedEventSink.WaitForAsync<UnitGraded>(e => e.Header.EventId == first.EventId, 1, TimeSpan.FromSeconds(20)));
         Assert.Equal((ConditionGrades.RefurbishedA, "F2", "C3", "graded_receipt_40pct"),
             (published.Grade, published.FCode, published.CCode, published.ValuationRule));
-        Assert.Equal("1.0", published.Header.Version);
+        Assert.Equal((UnitGraded.Schema, UnitGraded.Version, first.EventId, unit.UnitId, Entity, "quality.inspector"),
+            (published.Header.Schema, published.Header.Version, published.Header.EventId, published.Header.UnitId,
+                published.Header.LegalEntityId, published.Header.ActorRef));
 
         using var scope = fixture.ScopeFor(tenant);
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();

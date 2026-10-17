@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
+using Wolverine.Tracking;
 using Xunit;
 using Xunit.Abstractions;
 using Yojana.Platform.Contracts.Tenancy;
@@ -146,10 +147,24 @@ public sealed class SearchTests(SerialisationHostFixture fixture, ITestOutputHel
         var item = Guid.NewGuid();
         const int count = 2000;
         var lines = Enumerable.Range(1, count).Select(i => new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, $"{p}-{i:000000}")])).ToList();
-        var result = await InvokeAsync<CommissionUnitsResult>(tenant, new CommissionUnits(Guid.NewGuid(), item, UnitOrigin.Purchased, lines, At, "t", Entity, LocationId: Guid.NewGuid(), LocationKind: LocationKind.Warehouse, Document: new DocumentRef("receipt", Guid.NewGuid(), 1)));
+        CommissionUnitsResult? result = null;
+        async Task InvokeBulkAsync(IMessageContext _)
+        {
+            result = await InvokeAsync<CommissionUnitsResult>(tenant, new CommissionUnits(Guid.NewGuid(), item,
+                UnitOrigin.Purchased, lines, At, "t", Entity, LocationId: Guid.NewGuid(),
+                LocationKind: LocationKind.Warehouse, Document: new DocumentRef("receipt", Guid.NewGuid(), 1)));
+        }
+        await fixture.Host.TrackActivity(TimeSpan.FromMinutes(2))
+            .WaitForExecutionOf<SearchReindexRequested>(2)
+            .ExecuteAndWaitAsync(InvokeBulkAsync);
+        Assert.NotNull(result);
         Assert.Equal(count, result.Commissioned);
-        await WaitForEntriesAsync(tenant, SearchEntityType.Unit, count);
-        await WaitForEntriesAsync(tenant, SearchEntityType.Document, 1);
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            Assert.Equal(count, await db.SearchEntries.CountAsync(e => e.EntityType == SearchEntityType.Unit));
+            Assert.Single(await db.SearchEntries.Where(e => e.EntityType == SearchEntityType.Document).ToListAsync());
+        }
 
         // Relevance on migrated-shaped serial data (feeds OD-13): exact, 8-character prefix and one-character typos over a sample.
         var random = new Random(20261015);

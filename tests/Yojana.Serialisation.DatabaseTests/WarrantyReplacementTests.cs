@@ -136,8 +136,19 @@ public sealed class WarrantyReplacementTests(SerialisationHostFixture fixture)
 
         var shipped = Assert.Single(await PublishedEventSink.WaitForAsync<ReplacementShipped>(message =>
             message.WarrantyReplacementId == first.WarrantyReplacementId, 1, TimeSpan.FromSeconds(20)));
-        Assert.Equal((ReplacementReason.WarrantyDefect, ReplacementPricePolicy.Zero, true, setup.OriginalItemId, setup.ReplacementItemId),
-            (shipped.Reason, shipped.PricePolicy, shipped.AccrualSuppressed, shipped.OriginalItemId, shipped.ReplacementItemId));
+        Assert.Equal((first.WarrantyReplacementId, first.ReplacementNumber, first.ReplacementLinkId,
+                setup.OriginalUnitId, setup.ReplacementUnitId, setup.OriginalItemId, setup.ReplacementItemId,
+                setup.SourceEntitlementId, first.TargetEntitlementId, ReplacementSourceKind.Claim, setup.ClaimId,
+                ReplacementReason.WarrantyDefect, ReplacementPricePolicy.Zero, 0m, "EUR", first.PolicyApplied,
+                first.ComputedEnd, first.ReplacementCondition, true, 0m),
+            (shipped.WarrantyReplacementId, shipped.ReplacementNumber, shipped.ReplacementLinkId,
+                shipped.OriginalUnitId, shipped.ReplacementUnitId, shipped.OriginalItemId, shipped.ReplacementItemId,
+                shipped.SourceEntitlementId, shipped.TargetEntitlementId, shipped.SourceKind, shipped.SourceId,
+                shipped.Reason, shipped.PricePolicy, shipped.DifferenceAmount, shipped.Currency, shipped.PolicyApplied,
+                shipped.ComputedEnd, shipped.ReplacementCondition, shipped.AccrualSuppressed, shipped.RestockingFeeAmount));
+        Assert.StartsWith("CLM-2026-", shipped.SourceNumber, StringComparison.Ordinal);
+        Assert.Equal((ReplacementShipped.Schema, ReplacementShipped.Version, setup.ReplacementUnitId),
+            (shipped.Header.Schema, shipped.Header.Version, shipped.Header.UnitId));
         var print = Assert.Single(await PublishedEventSink.WaitForAsync<ReplacementAssetTagPrintRequested>(message =>
             message.WarrantyReplacementId == first.WarrantyReplacementId, 1, TimeSpan.FromSeconds(20)));
         Assert.Equal(setup.ReplacementUnitId, print.Header.UnitId);

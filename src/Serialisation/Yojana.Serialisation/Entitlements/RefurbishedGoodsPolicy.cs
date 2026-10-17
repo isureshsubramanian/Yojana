@@ -12,7 +12,8 @@ public static class RefurbishedGoodsPolicyEngine
         IReadOnlyList<RefurbishedTerm> rows, RefurbishedGoodsPolicy tenantPolicy, Guid? refurbisherPartyRef)
     {
         if (!RefurbishedBuyerKind.All.Contains(buyerKind)) throw new CommandRefusedException("buyer_kind_unknown", $"'{buyerKind}' is not consumer or business.");
-        var row = rows.Where(r => r.Grade == grade && r.Channel == channel && (r.ItemId is null || r.ItemId == itemId) && Regions.Contains(r.Region, country))
+        var policyGrade = ConditionGrades.WarrantyPolicyGrade(grade);
+        var row = rows.Where(r => ConditionGrades.WarrantyPolicyGrade(r.Grade) == policyGrade && r.Channel == channel && (r.ItemId is null || r.ItemId == itemId) && Regions.Contains(r.Region, country))
             .OrderBy(r => r.ItemId is null ? 1 : 0).ThenBy(r => r.Region == country ? 0 : 1).FirstOrDefault()
             ?? throw new CommandRefusedException("refurbished_policy_missing", $"No refurbished term matches grade '{grade}', channel '{channel}' and country '{country}'.", "add a refurbished policy row for this sale");
         var jurisdiction = tenantPolicy.Floors.Where(f => f.BuyerKind == buyerKind && Regions.Contains(f.Jurisdiction, country))
