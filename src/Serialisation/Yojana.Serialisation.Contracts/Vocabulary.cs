@@ -189,6 +189,7 @@ public static class LocationKind
     public const string At3pl = "at_3pl";
     public const string InRepair = "in_repair";
     public const string Vendor = "vendor";
+    public const string Scrapped = "scrapped";
 }
 
 public static class EpisodeReason
@@ -492,4 +493,5 @@ public static class UnitDisposition
     public const string Recalled = "recalled";
     public const string Inactive = "inactive";
     public const string Destroyed = "destroyed";
+    public const string Incomplete = "incomplete";
 }

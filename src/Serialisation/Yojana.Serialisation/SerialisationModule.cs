@@ -20,6 +20,7 @@ using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Projections;
 using Yojana.Serialisation.Workbench;
 using Yojana.Serialisation.Campaigns;
+using Yojana.Serialisation.Rmas;
 
 namespace Yojana.Serialisation;
 
@@ -128,6 +129,8 @@ public static class SerialisationModule
         builder.Services.AddScoped<ICampaignCoverPort>(sp => sp.GetRequiredService<Campaigns.CampaignCoverQueries>());
         builder.Services.AddScoped<RecoveryQueries>();
         builder.Services.AddScoped<LegacyUnknownClaimUnitCreator>();
+        builder.Services.AddScoped<RmaSaleFactsResolver>();
+        builder.Services.AddScoped<RmaQueries>();
         // Coupled to ClaimReviewSettings and RecoverySettings for the same Wolverine constraint as entitlement approval settings: the
         // factory hides ITenantSettings' PlatformDbContext from AdjudicateClaimHandler's transactional graph.
         builder.Services.AddScoped(sp => new ClaimReviewSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
@@ -187,6 +190,8 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<IServiceDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.AddSingleton<InMemoryStockUnitEventPort>();
         builder.Services.TryAddSingleton<IStockUnitEventPort>(sp => sp.GetRequiredService<InMemoryStockUnitEventPort>());
+        builder.Services.AddSingleton<InMemoryReplacementIntentPort>();
+        builder.Services.TryAddSingleton<IReplacementIntentPort>(sp => sp.GetRequiredService<InMemoryReplacementIntentPort>());
         builder.Services.AddScoped<IReleaseGuard, ReleaseCompletenessGuard>();
         builder.Services.AddSingleton<InMemoryItemPorts>();
         builder.Services.TryAddSingleton<IItemQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());

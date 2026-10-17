@@ -19,6 +19,7 @@ using Yojana.Serialisation.Search;
 using Yojana.Serialisation.Selection;
 using Yojana.Serialisation.Workbench;
 using Yojana.Serialisation.Campaigns;
+using Yojana.Serialisation.Rmas;
 
 namespace Yojana.Serialisation;
 
@@ -388,6 +389,24 @@ public static class SerialisationEndpoints
             Invoke<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
         claims.MapPost("/{claimId:guid}/close", (Guid claimId, CloseClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
+
+        var rmas = app.MapGroup("/api/rmas").RequireAuthorization(YojanaPolicy.TenantMember);
+        rmas.MapGet("/", async (string? stage, int? minimumAgeDays, int? maximumAgeDays, string? q, int? skip, int? take,
+            RmaQueries queries, IClock clock, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await queries.ListAsync(new RmaListFilter(stage, minimumAgeDays, maximumAgeDays, q), clock.UtcNow, skip ?? 0, take ?? 50, ct)); }
+            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "filters_invalid", detail = ex.Message }); }
+        });
+        rmas.MapGet("/{rmaId:guid}", async (Guid rmaId, RmaQueries queries, CancellationToken ct) =>
+            await queries.DetailAsync(rmaId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
+        rmas.MapPost("/request", (RequestRma command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RequestRmaResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
+        rmas.MapPost("/{rmaId:guid}/authorise", (Guid rmaId, AuthoriseRma command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<AuthoriseRmaResult>(bus, tenant, command with { RmaId = rmaId, ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.ServiceSupervisor);
+        rmas.MapPost("/{rmaId:guid}/receive", (Guid rmaId, ReceiveReturn command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<ReceiveReturnResult>(bus, tenant, command with { RmaId = rmaId, ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.WarehouseLead);
+        rmas.MapPost("/{rmaId:guid}/disposition", (Guid rmaId, DispositionRma command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<DispositionRmaResult>(bus, tenant, command with { RmaId = rmaId, ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.ServiceSupervisor);
 
         var recoveryClaims = app.MapGroup("/api/recovery-claims").RequireAuthorization(YojanaPolicy.TenantMember);
         recoveryClaims.MapGet("/", async (string? status, Guid? vendor, Guid? childItem, string? find, int? skip, int? take, RecoveryQueries queries, IPartyNamePort parties, IClock clock, CancellationToken ct) =>

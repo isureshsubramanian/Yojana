@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/rma.received.json",
+  "title": "Rma.Received",
+  "type": "object",
+  "required": ["header", "rma_id", "rma_line_id", "return_receipt_id", "authorised_unit_id", "outcome", "condition_grade", "valuation_rule", "posting_period"],
+  "properties": {
+    "header": { "type": "object" },
+    "rma_id": { "type": "string", "format": "uuid" },
+    "rma_line_id": { "type": "string", "format": "uuid" },
+    "return_receipt_id": { "type": "string", "format": "uuid" },
+    "authorised_unit_id": { "type": "string", "format": "uuid" },
+    "received_unit_id": { "type": ["string", "null"], "format": "uuid" },
+    "provisional_unit_id": { "type": ["string", "null"], "format": "uuid" },
+    "outcome": { "type": "string" },
+    "condition_grade": { "type": "string" },
+    "valuation_rule": { "type": "string" },
+    "posting_period": { "type": "string" }
+  }
+}

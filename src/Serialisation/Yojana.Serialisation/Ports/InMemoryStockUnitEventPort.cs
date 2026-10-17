@@ -25,6 +25,10 @@ public sealed class InMemoryStockUnitEventPort : IStockUnitEventPort
 {
     public ConcurrentQueue<StockPostingSerialCorrection> Corrections { get; } = new();
 
+    // P5 RMA return-receipt extension — keep this block separate so sibling port additions merge mechanically.
+    public ConcurrentQueue<StockReturnPosting> Returns { get; } = new();
+    // End P5 RMA return-receipt extension.
+
     public Task RecordCorrectionForPosting(StockPostingSerialCorrection correction, CancellationToken cancellationToken)
     {
         if (correction.QuantityDelta != 0)
@@ -35,4 +39,12 @@ public sealed class InMemoryStockUnitEventPort : IStockUnitEventPort
         Corrections.Enqueue(correction);
         return Task.CompletedTask;
     }
+
+    // P5 RMA return-receipt extension — keep this block separate so sibling port additions merge mechanically.
+    public Task RecordReturnForPosting(StockReturnPosting request, CancellationToken cancellationToken)
+    {
+        Returns.Enqueue(request);
+        return Task.CompletedTask;
+    }
+    // End P5 RMA return-receipt extension.
 }

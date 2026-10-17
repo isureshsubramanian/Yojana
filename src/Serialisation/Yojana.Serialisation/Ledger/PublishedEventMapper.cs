@@ -205,6 +205,25 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     a?.TryGetProperty("lines", out var quoteLines) == true && quoteLines.ValueKind == JsonValueKind.Array
                         ? quoteLines.EnumerateArray().Select(l => new ChargeableQuoteLine(GuidOrNull(l, "claim_line_id") ?? Guid.Empty, Str(l, "kind") ?? "",
                             Decimal(l, "uncovered_amount"), Str(l, "reason"))).ToList() : []);
+            case RmaEventType.Authorised:
+            {
+                var original = a?.TryGetProperty("original_sale_ref", out var originalElement) == true
+                    ? originalElement.Deserialize<DocumentRef>(LedgerJson.Options) ?? new DocumentRef("", Guid.Empty)
+                    : new DocumentRef("", Guid.Empty);
+                return new RmaAuthorised(Header(RmaAuthorised.Schema, RmaAuthorised.Version), GuidOrNull(a, "rma_id") ?? Guid.Empty,
+                    GuidOrNull(a, "rma_line_id") ?? Guid.Empty, Str(a, "rma_number") ?? "", GuidOrNull(a, "authorised_unit_id") ?? Guid.Empty,
+                    GuidOrNull(a, "ownership_episode_id") ?? Guid.Empty, original, Decimal(a, "coverage_pct"), Str(a, "coverage_source") ?? "",
+                    GuidOrNull(a, "entitlement_id"));
+            }
+            case RmaEventType.Received:
+                return new RmaReceived(Header(RmaReceived.Schema, RmaReceived.Version), GuidOrNull(a, "rma_id") ?? Guid.Empty,
+                    GuidOrNull(a, "rma_line_id") ?? Guid.Empty, GuidOrNull(a, "return_receipt_id") ?? Guid.Empty,
+                    GuidOrNull(a, "authorised_unit_id") ?? Guid.Empty, GuidOrNull(a, "received_unit_id"), GuidOrNull(a, "provisional_unit_id"),
+                    Str(a, "outcome") ?? "", Str(a, "condition_grade") ?? "", Str(a, "valuation_rule") ?? "", Str(a, "posting_period") ?? "");
+            case RmaEventType.Dispositioned:
+                return new RmaDispositioned(Header(RmaDispositioned.Schema, RmaDispositioned.Version), GuidOrNull(a, "rma_id") ?? Guid.Empty,
+                    GuidOrNull(a, "rma_line_id") ?? Guid.Empty, GuidOrNull(a, "unit_id") ?? e.UnitId, Str(a, "disposition") ?? "",
+                    Str(a, "entitlement_closed_reason"), GuidOrNull(a, "replacement_intent_id"));
             default:
                 return null;
         }

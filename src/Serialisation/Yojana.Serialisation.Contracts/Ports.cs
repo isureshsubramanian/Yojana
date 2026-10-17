@@ -132,4 +132,29 @@ public sealed record StockPostingSerialCorrection(
 public interface IStockUnitEventPort
 {
     Task RecordCorrectionForPosting(StockPostingSerialCorrection correction, CancellationToken cancellationToken);
+
+    // P5 RMA return-receipt extension — keep this block separate so sibling port additions merge mechanically.
+    /// <summary>Pairs an RMA return receipt with Inventory's quantity/value posting in the same local transaction.</summary>
+    Task RecordReturnForPosting(StockReturnPosting request, CancellationToken cancellationToken);
+    // End P5 RMA return-receipt extension.
 }
+
+public sealed record StockReturnPosting(
+    Guid CommandId,
+    Guid ReturnReceiptId,
+    Guid UnitId,
+    Guid RmaId,
+    Guid RmaLineId,
+    Guid ReceivingLocationId,
+    string ConditionGrade,
+    string ValuationRule,
+    DateTime ReceivedAt,
+    string PostingPeriod);
+
+/// <summary>Handoff to the sibling-owned replacement document without taking a dependency on its tables or command.</summary>
+public interface IReplacementIntentPort
+{
+    Task<Guid> RecordAsync(ReplacementIntent request, CancellationToken cancellationToken);
+}
+
+public sealed record ReplacementIntent(Guid CommandId, Guid RmaId, Guid RmaLineId, Guid ReturnedUnitId, DateOnly EffectiveDate, DateTime EventTime);

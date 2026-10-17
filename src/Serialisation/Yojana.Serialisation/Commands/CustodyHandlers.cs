@@ -35,7 +35,7 @@ public static class CustodyTransitions
         (LocationKind.InTransit, LocationKind.CustomerSite), (LocationKind.InTransit, LocationKind.At3pl), (LocationKind.InTransit, LocationKind.Warehouse), (LocationKind.InTransit, LocationKind.Bin), (LocationKind.InTransit, LocationKind.Returning), (LocationKind.InTransit, LocationKind.Vendor), (LocationKind.InTransit, LocationKind.AtSubcontractor),
         (LocationKind.CustomerSite, LocationKind.CustomerSite), (LocationKind.CustomerSite, LocationKind.Returning), (LocationKind.CustomerSite, LocationKind.Quarantine), (LocationKind.CustomerSite, LocationKind.InTransit),
         (LocationKind.Returning, LocationKind.Quarantine), (LocationKind.Returning, LocationKind.Warehouse),
-        (LocationKind.Quarantine, LocationKind.Warehouse), (LocationKind.Quarantine, LocationKind.Bin), (LocationKind.Quarantine, LocationKind.InRepair), (LocationKind.Quarantine, LocationKind.Vendor),
+        (LocationKind.Quarantine, LocationKind.Warehouse), (LocationKind.Quarantine, LocationKind.Bin), (LocationKind.Quarantine, LocationKind.InRepair), (LocationKind.Quarantine, LocationKind.Vendor), (LocationKind.Quarantine, LocationKind.Scrapped),
         (LocationKind.InRepair, LocationKind.Warehouse), (LocationKind.InRepair, LocationKind.Bin), (LocationKind.InRepair, LocationKind.Quarantine),
         (LocationKind.AtSubcontractor, LocationKind.Warehouse), (LocationKind.AtSubcontractor, LocationKind.InTransit), (LocationKind.At3pl, LocationKind.InTransit), (LocationKind.At3pl, LocationKind.CustomerSite), (LocationKind.At3pl, LocationKind.Warehouse),
         (LocationKind.Vendor, LocationKind.InTransit), (LocationKind.Vendor, LocationKind.Warehouse),

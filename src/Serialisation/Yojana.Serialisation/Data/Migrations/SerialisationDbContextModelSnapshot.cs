@@ -424,7 +424,6 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasPrecision(5, 2)
                         .HasColumnType("decimal(5,2)")
                         .HasDefaultValue(100m)
-                        .HasSentinel(-1m)
                         .HasColumnName("labour_pct");
 
                     b.Property<string>("Name")
@@ -438,7 +437,6 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasPrecision(5, 2)
                         .HasColumnType("decimal(5,2)")
                         .HasDefaultValue(100m)
-                        .HasSentinel(-1m)
                         .HasColumnName("parts_pct");
 
                     b.Property<string>("ReasonCode")
@@ -478,7 +476,6 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasPrecision(5, 2)
                         .HasColumnType("decimal(5,2)")
                         .HasDefaultValue(100m)
-                        .HasSentinel(-1m)
                         .HasColumnName("travel_pct");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -503,9 +500,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.ToTable("campaign", "serialisation", t =>
                         {
-                            t.HasCheckConstraint("ck_campaign_coverage_source", "coverage_source IN ('recall', 'goodwill')");
-
                             t.HasCheckConstraint("ck_campaign_cover_pct", "parts_pct BETWEEN 0 AND 100 AND labour_pct BETWEEN 0 AND 100 AND travel_pct BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("ck_campaign_coverage_source", "coverage_source IN ('recall', 'goodwill')");
 
                             t.HasCheckConstraint("ck_campaign_reason_code", "reason_code IN ('safety', 'reliability', 'firmware', 'regulatory', 'goodwill')");
 
@@ -2555,6 +2552,467 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ux_replacement_policy_tenant_id_code");
 
                     b.ToTable("replacement_policy", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReturnReason", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("code");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit")
+                        .HasColumnName("active");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<int?>("DoaWindowDays")
+                        .HasColumnType("int")
+                        .HasColumnName("doa_window_days");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("RestockFeeRule")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("restock_fee_rule");
+
+                    b.Property<decimal?>("RestockFeeValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("restock_fee_value");
+
+                    b.HasKey("TenantId", "Code")
+                        .HasName("pk_return_reason");
+
+                    b.HasIndex("TenantId", "Active", "Name")
+                        .HasDatabaseName("ix_return_reason_tenant_id_active_name");
+
+                    b.ToTable("return_reason", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_return_reason_doa_window", "doa_window_days IS NULL OR doa_window_days >= 0");
+
+                            t.HasCheckConstraint("ck_return_reason_restock_fee", "restock_fee_rule IN ('none', 'fixed', 'percentage') AND (restock_fee_value IS NULL OR restock_fee_value >= 0)");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReturnReceipt", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ReturnReceiptId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("return_receipt_id");
+
+                    b.Property<Guid>("AuthorisedUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("authorised_unit_id");
+
+                    b.Property<DateTime>("BusinessTime")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("business_time");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<string>("ConditionGrade")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("condition_grade");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("ExceptionNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("exception_note");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("outcome");
+
+                    b.Property<string>("PostingPeriod")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .IsUnicode(false)
+                        .HasColumnType("char(7)")
+                        .HasColumnName("posting_period")
+                        .IsFixedLength();
+
+                    b.Property<Guid?>("ProvisionalUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("provisional_unit_id");
+
+                    b.Property<string>("ReceivedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("received_by");
+
+                    b.Property<Guid?>("ReceivedUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("received_unit_id");
+
+                    b.Property<Guid>("ReceivingLocationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("receiving_location_id");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("recorded_at");
+
+                    b.Property<Guid>("RmaId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("rma_id");
+
+                    b.Property<Guid>("RmaLineId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("rma_line_id");
+
+                    b.Property<string>("ValuationRule")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("valuation_rule");
+
+                    b.HasKey("TenantId", "ReturnReceiptId")
+                        .HasName("pk_return_receipt");
+
+                    b.HasIndex("TenantId", "RmaLineId")
+                        .HasDatabaseName("ix_return_receipt_tenant_id_rma_line_id");
+
+                    b.HasIndex("TenantId", "CommandId", "RmaLineId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_return_receipt_tenant_id_command_id_rma_line_id");
+
+                    b.HasIndex("TenantId", "ReceivedUnitId", "BusinessTime")
+                        .HasDatabaseName("ix_return_receipt_tenant_id_received_unit_id_business_time");
+
+                    b.HasIndex("TenantId", "RmaId", "BusinessTime")
+                        .HasDatabaseName("ix_return_receipt_tenant_id_rma_id_business_time");
+
+                    b.ToTable("return_receipt", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_return_receipt_identity", "(received_unit_id IS NOT NULL AND provisional_unit_id IS NULL) OR (received_unit_id IS NULL AND provisional_unit_id IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_return_receipt_outcome", "outcome IN ('accepted', 'mismatch', 'unauthorised', 'counterfeit')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.Rma", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RmaId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("rma_id");
+
+                    b.Property<DateTime?>("AuthorisedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("authorised_at");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("closed_at");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<DateTime?>("DispositionedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("dispositioned_at");
+
+                    b.Property<DateTime?>("InTransitAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("in_transit_at");
+
+                    b.Property<string>("LastActorRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_actor_ref");
+
+                    b.Property<Guid>("LastEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("last_event_id");
+
+                    b.Property<Guid>("ObligorEntityId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("obligor_entity_id");
+
+                    b.Property<DateTime?>("ReceivedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("received_at");
+
+                    b.Property<DateOnly>("RequestDate")
+                        .HasColumnType("date")
+                        .HasColumnName("request_date");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("requested_at");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("requested_by");
+
+                    b.Property<Guid>("ReturningPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("returning_party_ref");
+
+                    b.Property<string>("RmaNumber")
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("rma_number");
+
+                    b.Property<string>("ServiceCountry")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(2)")
+                        .HasColumnName("service_country");
+
+                    b.Property<Guid>("ServiceEntityId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("service_entity_id");
+
+                    b.Property<Guid>("SettlementPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("settlement_party_ref");
+
+                    b.Property<string>("Stage")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("stage");
+
+                    b.HasKey("TenantId", "RmaId")
+                        .HasName("pk_rma");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_rma_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "RmaNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ux_rma_tenant_id_rma_number")
+                        .HasFilter("[rma_number] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "ReturningPartyRef", "Stage")
+                        .HasDatabaseName("ix_rma_tenant_id_returning_party_ref_stage");
+
+                    b.HasIndex("TenantId", "Stage", "RequestedAt")
+                        .HasDatabaseName("ix_rma_tenant_id_stage_requested_at");
+
+                    b.ToTable("rma", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_rma_stage", "stage IN ('requested', 'authorised', 'in_transit', 'received', 'dispositioned', 'closed')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RmaLine", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RmaLineId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("rma_line_id");
+
+                    b.Property<decimal?>("ApprovedAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("approved_amount");
+
+                    b.Property<Guid?>("AuthorisedUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("authorised_unit_id");
+
+                    b.Property<string>("ClaimLineKind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("claim_line_kind");
+
+                    b.Property<string>("ConditionGrade")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("condition_grade");
+
+                    b.Property<string>("CoverageFamily")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("coverage_family");
+
+                    b.Property<decimal?>("CoveragePct")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)")
+                        .HasColumnName("coverage_pct");
+
+                    b.Property<string>("CoverageSource")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("coverage_source");
+
+                    b.Property<string>("DenialReason")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("denial_reason");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Disposition")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("disposition");
+
+                    b.Property<string>("EntitlementClosedReason")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("entitlement_closed_reason");
+
+                    b.Property<Guid?>("EntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entitlement_id");
+
+                    b.Property<Guid>("OriginalSaleDocumentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("original_sale_document_id");
+
+                    b.Property<int?>("OriginalSaleDocumentLine")
+                        .HasColumnType("int")
+                        .HasColumnName("original_sale_document_line");
+
+                    b.Property<string>("OriginalSaleDocumentType")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("original_sale_document_type");
+
+                    b.Property<Guid>("OwnershipEpisodeId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("ownership_episode_id");
+
+                    b.Property<bool>("ParentIncomplete")
+                        .HasColumnType("bit")
+                        .HasColumnName("parent_incomplete");
+
+                    b.Property<Guid?>("ParentUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parent_unit_id");
+
+                    b.Property<Guid?>("PolicyVersionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("policy_version_id");
+
+                    b.Property<decimal?>("PriceAllocation")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("price_allocation");
+
+                    b.Property<Guid?>("ProvisionalUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("provisional_unit_id");
+
+                    b.Property<string>("ReceiptOutcome")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("receipt_outcome");
+
+                    b.Property<Guid?>("ReceivedUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("received_unit_id");
+
+                    b.Property<Guid?>("ReplacementIntentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("replacement_intent_id");
+
+                    b.Property<decimal>("RequestedAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("requested_amount");
+
+                    b.Property<Guid>("RequestedUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("requested_unit_id");
+
+                    b.Property<Guid>("RmaId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("rma_id");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("int")
+                        .HasColumnName("sequence");
+
+                    b.Property<string>("ValuationRule")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("valuation_rule");
+
+                    b.HasKey("TenantId", "RmaLineId")
+                        .HasName("pk_rma_line");
+
+                    b.HasIndex("TenantId", "AuthorisedUnitId", "ReceiptOutcome")
+                        .HasDatabaseName("ix_rma_line_tenant_id_authorised_unit_id_receipt_outcome");
+
+                    b.HasIndex("TenantId", "ParentUnitId", "ParentIncomplete")
+                        .HasDatabaseName("ix_rma_line_tenant_id_parent_unit_id_parent_incomplete");
+
+                    b.HasIndex("TenantId", "RequestedUnitId", "OwnershipEpisodeId")
+                        .HasDatabaseName("ix_rma_line_tenant_id_requested_unit_id_ownership_episode_id");
+
+                    b.HasIndex("TenantId", "RmaId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_rma_line_tenant_id_rma_id_sequence");
+
+                    b.ToTable("rma_line", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_rma_line_amounts", "requested_amount >= 0 AND (coverage_pct IS NULL OR coverage_pct BETWEEN 0 AND 100) AND (approved_amount IS NULL OR (approved_amount >= 0 AND approved_amount <= requested_amount))");
+
+                            t.HasCheckConstraint("ck_rma_line_disposition", "disposition IS NULL OR disposition IN ('return_to_stock', 'refurbish', 'repair_and_return', 'scrap', 'return_to_vendor', 'credit', 'refund', 'replace', 'reject', 'restock_as_new')");
+
+                            t.HasCheckConstraint("ck_rma_line_outcome", "receipt_outcome IS NULL OR receipt_outcome IN ('accepted', 'mismatch', 'unauthorised', 'counterfeit')");
+                        });
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.SearchEntry", b =>
@@ -4622,6 +5080,33 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_recovery_claim_tenant_id_customer_claim_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReturnReceipt", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.Rma", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RmaId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("fk_return_receipt_tenant_id_rma_id");
+
+                    b.HasOne("Yojana.Serialisation.Data.Entities.RmaLine", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RmaLineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_return_receipt_tenant_id_rma_line_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RmaLine", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.Rma", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RmaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_rma_line_tenant_id_rma_id");
                 });
 #pragma warning restore 612, 618
         }

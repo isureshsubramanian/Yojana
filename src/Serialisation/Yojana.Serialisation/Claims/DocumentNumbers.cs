@@ -13,6 +13,7 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
 {
     public const string Claim = "CLM";
     public const string Recovery = "RCV";
+    public const string Rma = "RMA";
 
     public async Task<string> NextAsync(string series, DateTime at, CancellationToken cancellationToken)
     {

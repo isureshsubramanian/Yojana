@@ -116,6 +116,11 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<CampaignUnit> CampaignUnits => Set<CampaignUnit>();
 
+    public DbSet<Rma> Rmas => Set<Rma>();
+    public DbSet<RmaLine> RmaLines => Set<RmaLine>();
+    public DbSet<ReturnReceipt> ReturnReceipts => Set<ReturnReceipt>();
+    public DbSet<ReturnReason> ReturnReasons => Set<ReturnReason>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasSequence<long>(EventSequence, SchemaName).StartsAt(1).IncrementsBy(1);
@@ -886,6 +891,89 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(u => new { u.TenantId, u.OwnerPartyRef, u.CampaignId });
             b.HasIndex(u => new { u.TenantId, u.CustodianPartyRef, u.CampaignId });
             b.HasIndex(u => new { u.TenantId, u.SelectionCommandId });
+        });
+
+        modelBuilder.Entity<Rma>(b =>
+        {
+            b.ToTable("rma", t => t.HasCheckConstraint("ck_rma_stage", "stage IN ('requested', 'authorised', 'in_transit', 'received', 'dispositioned', 'closed')"));
+            b.HasKey(r => new { r.TenantId, r.RmaId });
+            b.Property(r => r.RmaNumber).HasMaxLength(20).IsUnicode(false);
+            b.Property(r => r.Stage).HasMaxLength(20).IsUnicode(false);
+            b.Property(r => r.ServiceCountry).HasMaxLength(2).IsUnicode(false);
+            b.Property(r => r.Currency).HasMaxLength(3).IsUnicode(false);
+            b.Property(r => r.RequestedBy).HasMaxLength(200);
+            b.Property(r => r.LastActorRef).HasMaxLength(200);
+            b.HasIndex(r => new { r.TenantId, r.CommandId }).IsUnique();
+            b.HasIndex(r => new { r.TenantId, r.RmaNumber }).IsUnique().HasFilter("[rma_number] IS NOT NULL");
+            b.HasIndex(r => new { r.TenantId, r.Stage, r.RequestedAt });
+            b.HasIndex(r => new { r.TenantId, r.ReturningPartyRef, r.Stage });
+        });
+
+        modelBuilder.Entity<RmaLine>(b =>
+        {
+            b.ToTable("rma_line", t =>
+            {
+                t.HasCheckConstraint("ck_rma_line_amounts", "requested_amount >= 0 AND (coverage_pct IS NULL OR coverage_pct BETWEEN 0 AND 100) AND (approved_amount IS NULL OR (approved_amount >= 0 AND approved_amount <= requested_amount))");
+                t.HasCheckConstraint("ck_rma_line_outcome", "receipt_outcome IS NULL OR receipt_outcome IN ('accepted', 'mismatch', 'unauthorised', 'counterfeit')");
+                t.HasCheckConstraint("ck_rma_line_disposition", "disposition IS NULL OR disposition IN ('return_to_stock', 'refurbish', 'repair_and_return', 'scrap', 'return_to_vendor', 'credit', 'refund', 'replace', 'reject', 'restock_as_new')");
+            });
+            b.HasKey(l => new { l.TenantId, l.RmaLineId });
+            b.Property(l => l.OriginalSaleDocumentType).HasMaxLength(60);
+            b.Property(l => l.PriceAllocation).HasPrecision(18, 2);
+            b.Property(l => l.CoverageFamily).HasMaxLength(40);
+            b.Property(l => l.ClaimLineKind).HasMaxLength(20);
+            b.Property(l => l.RequestedAmount).HasPrecision(18, 2);
+            b.Property(l => l.Description).HasMaxLength(500);
+            b.Property(l => l.CoveragePct).HasPrecision(5, 2);
+            b.Property(l => l.ApprovedAmount).HasPrecision(18, 2);
+            b.Property(l => l.CoverageSource).HasMaxLength(20);
+            b.Property(l => l.DenialReason).HasMaxLength(100);
+            b.Property(l => l.ReceiptOutcome).HasMaxLength(20);
+            b.Property(l => l.ConditionGrade).HasMaxLength(30);
+            b.Property(l => l.ValuationRule).HasMaxLength(60);
+            b.Property(l => l.Disposition).HasMaxLength(30);
+            b.Property(l => l.EntitlementClosedReason).HasMaxLength(40);
+            b.HasIndex(l => new { l.TenantId, l.RmaId, l.Sequence }).IsUnique();
+            b.HasIndex(l => new { l.TenantId, l.RequestedUnitId, l.OwnershipEpisodeId });
+            b.HasIndex(l => new { l.TenantId, l.AuthorisedUnitId, l.ReceiptOutcome });
+            b.HasIndex(l => new { l.TenantId, l.ParentUnitId, l.ParentIncomplete });
+            b.HasOne<Rma>().WithMany().HasForeignKey(l => new { l.TenantId, l.RmaId }).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ReturnReceipt>(b =>
+        {
+            b.ToTable("return_receipt", t =>
+            {
+                t.HasCheckConstraint("ck_return_receipt_outcome", "outcome IN ('accepted', 'mismatch', 'unauthorised', 'counterfeit')");
+                t.HasCheckConstraint("ck_return_receipt_identity", "(received_unit_id IS NOT NULL AND provisional_unit_id IS NULL) OR (received_unit_id IS NULL AND provisional_unit_id IS NOT NULL)");
+            });
+            b.HasKey(r => new { r.TenantId, r.ReturnReceiptId });
+            b.Property(r => r.Outcome).HasMaxLength(20);
+            b.Property(r => r.ConditionGrade).HasMaxLength(30);
+            b.Property(r => r.ValuationRule).HasMaxLength(60);
+            b.Property(r => r.ExceptionNote).HasMaxLength(1000);
+            b.Property(r => r.PostingPeriod).HasMaxLength(7).IsUnicode(false).IsFixedLength();
+            b.Property(r => r.ReceivedBy).HasMaxLength(200);
+            b.HasIndex(r => new { r.TenantId, r.CommandId, r.RmaLineId }).IsUnique();
+            b.HasIndex(r => new { r.TenantId, r.RmaId, r.BusinessTime });
+            b.HasIndex(r => new { r.TenantId, r.ReceivedUnitId, r.BusinessTime });
+            b.HasOne<Rma>().WithMany().HasForeignKey(r => new { r.TenantId, r.RmaId }).OnDelete(DeleteBehavior.NoAction);
+            b.HasOne<RmaLine>().WithMany().HasForeignKey(r => new { r.TenantId, r.RmaLineId }).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ReturnReason>(b =>
+        {
+            b.ToTable("return_reason", t =>
+            {
+                t.HasCheckConstraint("ck_return_reason_restock_fee", "restock_fee_rule IN ('none', 'fixed', 'percentage') AND (restock_fee_value IS NULL OR restock_fee_value >= 0)");
+                t.HasCheckConstraint("ck_return_reason_doa_window", "doa_window_days IS NULL OR doa_window_days >= 0");
+            });
+            b.HasKey(r => new { r.TenantId, r.Code });
+            b.Property(r => r.Code).HasMaxLength(40).IsUnicode(false);
+            b.Property(r => r.Name).HasMaxLength(200);
+            b.Property(r => r.RestockFeeRule).HasMaxLength(20).IsUnicode(false);
+            b.Property(r => r.RestockFeeValue).HasPrecision(18, 2);
+            b.HasIndex(r => new { r.TenantId, r.Active, r.Name });
         });
 
         base.OnModelCreating(modelBuilder);

@@ -37,7 +37,9 @@ public sealed record DocumentLine(
     DocumentRef? BaseDocument = null,
     Guid? PartyRef = null,
     string? ErpLineId = null,
-    string? SerialCaptureMethod = null);
+    string? SerialCaptureMethod = null,
+    /// <summary>Immutable sale-time component allocation used when a returned serial was sold as part of a kit.</summary>
+    decimal? PriceAllocation = null);
 
 /// <summary>A goods receipt or, with <see cref="IsAsn"/>, a vendor's advance shipping notice; an ASN for a drop-ship names the vendor shipment confirmation it carries the serials for in <see cref="VendorShipment"/>.</summary>
 public sealed record ReceiptDocument(DocumentRef Document, Guid VendorPartyRef, DateTime PostedAt, IReadOnlyList<DocumentLine> Lines, DocumentRef? BaseOrder = null, bool IsAsn = false, DocumentRef? VendorShipment = null, bool IsInvoiced = false);
