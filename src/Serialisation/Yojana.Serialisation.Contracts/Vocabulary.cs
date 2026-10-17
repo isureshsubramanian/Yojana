@@ -203,6 +203,7 @@ public static class EpisodeReason
     public const string MigrationOpening = "migration_opening";
     public const string Receipt = "receipt";
     public const string Production = "production";
+    public const string DocumentCorrection = "document_correction";
 }
 
 public static class EpisodeSource
@@ -253,6 +254,7 @@ public static class UnitEventType
     public const string FlagSet = "unit.flag_set";
     public const string FlagCleared = "unit.flag_cleared";
     public const string Shipped = "unit.shipped";
+    public const string ShipmentReversed = "unit.shipment_reversed";
     public const string Delivered = "unit.delivered";
     public const string CustodyChanged = "custody.changed";
     public const string OwnershipOpened = "ownership.opened";

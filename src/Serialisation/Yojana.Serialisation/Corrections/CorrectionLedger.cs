@@ -86,7 +86,12 @@ public sealed class CorrectionLedger(SerialisationDbContext db, ITenantContext t
     /// <summary>Merges common metadata into command-specific attributes, keeping it flat and identical on every fact.</summary>
     public static JsonObjectText Attributes(CorrectionMetadata metadata, object commandSpecific)
     {
-        var root = JsonSerializer.SerializeToNode(commandSpecific, LedgerJson.Options)!.AsObject();
+        var root = commandSpecific switch
+        {
+            JsonObject node => node.DeepClone().AsObject(),
+            JsonObjectText text => JsonNode.Parse(text.Json)!.AsObject(),
+            _ => JsonSerializer.SerializeToNode(commandSpecific, LedgerJson.Options)!.AsObject(),
+        };
         root["correction_id"] = metadata.CorrectionId;
         root["reason_code"] = metadata.ReasonCode;
         root["note"] = metadata.Note;

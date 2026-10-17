@@ -75,6 +75,18 @@ public static class SerialisationEndpoints
         units.MapPost("/unflag", (ClearUnitFlag command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<UnitFlagResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
 
         var corrections = app.MapGroup("/api/corrections").RequireAuthorization(YojanaPolicy.TenantMember);
+        corrections.MapPost("/document-serials/preview", (PreviewCorrectDocumentSerials command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CorrectionPreview>(bus, tenant, command with
+            {
+                ActorRef = Actor(user), CommittedBy = CorrectionCommitter(user),
+                Correction = ApiCorrection(Guid.Empty, command.Reason, null, command.Correction, user),
+            }, ct));
+        corrections.MapPost("/document-serials", (CorrectDocumentSerials command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CorrectDocumentSerialsResult>(bus, tenant, command with
+            {
+                ActorRef = Actor(user), CommittedBy = CorrectionCommitter(user),
+                Correction = ApiCorrection(command.CommandId, command.Reason, null, command.Correction, user),
+            }, ct));
         corrections.MapPost("/as-built", (CorrectAsBuilt command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
         {
             var secured = Secure(command, user);
@@ -420,9 +432,9 @@ public static class SerialisationEndpoints
     {
         var roles = user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToHashSet(StringComparer.Ordinal);
         if (roles.Contains(YojanaRole.CustomerService)) return CorrectionInitiatingRole.CustomerService;
-        if (roles.Contains(YojanaRole.WarehouseLead)) return CorrectionInitiatingRole.WarehouseLead;
+        if (roles.Contains(YojanaRole.WarehouseLead) || roles.Contains(YojanaRole.ShippingSupervisor)) return CorrectionInitiatingRole.WarehouseLead;
         if (roles.Contains(YojanaRole.ProductionSupervisor)) return CorrectionInitiatingRole.ProductionSupervisor;
-        if (roles.Contains(YojanaRole.Technician)) return CorrectionInitiatingRole.ServiceTechnician;
+        if (roles.Contains(YojanaRole.Technician) || roles.Contains(YojanaRole.ServiceSupervisor)) return CorrectionInitiatingRole.ServiceTechnician;
         return CorrectionInitiatingRole.SerialAdministrator;
     }
 

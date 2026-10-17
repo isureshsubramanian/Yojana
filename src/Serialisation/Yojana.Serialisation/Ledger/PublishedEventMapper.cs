@@ -118,7 +118,7 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                 return new OwnershipOpened(Header(OwnershipOpened.Schema, OwnershipOpened.Version), GuidOrNull(a, "episode_id") ?? Guid.Empty, GuidOrNull(a, "party_ref") ?? Guid.Empty, Str(a, "party_type") ?? "", Str(a, "reason") ?? "", Str(a, "source") ?? "", Str(a, "confidence") ?? "", Str(a, "customer_po_ref"), Str(a, "customer_item_ref"), GuidOrNull(a, "previous_episode_id"));
             case UnitEventType.OwnershipClosed:
                 return new OwnershipClosed(Header(OwnershipClosed.Schema, OwnershipClosed.Version), GuidOrNull(a, "episode_id") ?? Guid.Empty, GuidOrNull(a, "party_ref"), Str(a, "party_type"), Str(a, "reason") ?? "", GuidOrNull(a, "replaced_by_episode_id"));
-            case UnitEventType.CustodyChanged or UnitEventType.Shipped or UnitEventType.Delivered:
+            case UnitEventType.CustodyChanged or UnitEventType.Shipped or UnitEventType.ShipmentReversed or UnitEventType.Delivered:
             {
                 if (a?.TryGetProperty("to", out var to) != true || to.ValueKind != JsonValueKind.Object) return null;
                 var from = a?.TryGetProperty("from", out var f) == true && f.ValueKind == JsonValueKind.Object ? f : (JsonElement?)null;

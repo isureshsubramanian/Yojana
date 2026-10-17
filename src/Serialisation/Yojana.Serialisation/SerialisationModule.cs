@@ -90,6 +90,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<Entitlements.EntitlementGapQueries>();
         builder.Services.AddScoped<Entitlements.WarrantyLineExceptionQueries>();
         builder.Services.AddScoped<Entitlements.WarrantyLineValidationService>();
+        builder.Services.AddScoped<Entitlements.DocumentCorrectionEntitlements>();
 
         builder.Services.AddScoped<SearchIndexer>();
         builder.Services.AddScoped<SearchBackfill>();
@@ -125,6 +126,8 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<IInventoryDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.TryAddSingleton<ISalesDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.TryAddSingleton<IServiceDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
+        builder.Services.AddSingleton<InMemoryStockUnitEventPort>();
+        builder.Services.TryAddSingleton<IStockUnitEventPort>(sp => sp.GetRequiredService<InMemoryStockUnitEventPort>());
         builder.Services.AddScoped<IReleaseGuard, ReleaseCompletenessGuard>();
         builder.Services.AddSingleton<InMemoryItemPorts>();
         builder.Services.TryAddSingleton<IItemQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());

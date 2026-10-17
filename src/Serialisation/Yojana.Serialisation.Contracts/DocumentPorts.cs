@@ -22,7 +22,7 @@ public sealed record DocumentLine(
     string? ErpLineId = null);
 
 /// <summary>A goods receipt or, with <see cref="IsAsn"/>, a vendor's advance shipping notice; an ASN for a drop-ship names the vendor shipment confirmation it carries the serials for in <see cref="VendorShipment"/>.</summary>
-public sealed record ReceiptDocument(DocumentRef Document, Guid VendorPartyRef, DateTime PostedAt, IReadOnlyList<DocumentLine> Lines, DocumentRef? BaseOrder = null, bool IsAsn = false, DocumentRef? VendorShipment = null);
+public sealed record ReceiptDocument(DocumentRef Document, Guid VendorPartyRef, DateTime PostedAt, IReadOnlyList<DocumentLine> Lines, DocumentRef? BaseOrder = null, bool IsAsn = false, DocumentRef? VendorShipment = null, bool IsInvoiced = false);
 
 /// <summary>Drop-ship confirmation: what the vendor shipped to which customer, with carrier evidence.</summary>
 public sealed record VendorShipment(DocumentRef Document, Guid VendorPartyRef, Guid CustomerPartyRef, Guid? ShipToLocationId, DateTime ShippedAt, IReadOnlyList<DocumentLine> Lines, string? CarrierRef = null, DateTime? DeliveredAt = null);
@@ -35,7 +35,7 @@ public sealed record ComponentIssue(int LineNo, Guid ComponentItemId, decimal Qu
 
 public sealed record ComponentIssueDocument(DocumentRef Document, DocumentRef ProductionOrder, DateTime PostedAt, IReadOnlyList<ComponentIssue> Components);
 
-public sealed record TransferDocument(DocumentRef Document, DateTime PostedAt, Guid FromLocationId, string FromLocationKind, Guid ToLocationId, string ToLocationKind, IReadOnlyList<DocumentLine> Lines, bool TwoStep = false);
+public sealed record TransferDocument(DocumentRef Document, DateTime PostedAt, Guid FromLocationId, string FromLocationKind, Guid ToLocationId, string ToLocationKind, IReadOnlyList<DocumentLine> Lines, bool TwoStep = false, bool IsInvoiced = false);
 
 public sealed record AdjustmentDocument(DocumentRef Document, DateTime PostedAt, string AdjustmentKind, string? ReasonCode, IReadOnlyList<DocumentLine> Lines)
 {
@@ -49,7 +49,7 @@ public sealed record AdjustmentDocument(DocumentRef Document, DateTime PostedAt,
 }
 
 /// <summary>A shipment (delivery note) to a customer; lines without serials are 3PL lines whose serials come later (case 24).</summary>
-public sealed record ShipmentDocument(DocumentRef Document, Guid CustomerPartyRef, DateTime PostedAt, IReadOnlyList<DocumentLine> Lines, Guid? ShipToLocationId = null, Guid? CarrierPartyRef = null, bool IsDropShip = false, DocumentRef? BaseOrder = null, string? CustomerPoRef = null, bool SerialsCopiedWithoutScan = false);
+public sealed record ShipmentDocument(DocumentRef Document, Guid CustomerPartyRef, DateTime PostedAt, IReadOnlyList<DocumentLine> Lines, Guid? ShipToLocationId = null, Guid? CarrierPartyRef = null, bool IsDropShip = false, DocumentRef? BaseOrder = null, string? CustomerPoRef = null, bool SerialsCopiedWithoutScan = false, bool IsInvoiced = false);
 
 public sealed record DeliveryConfirmation(DocumentRef Document, DocumentRef Shipment, DateTime DeliveredAt, Guid? ShipToLocationId, string Evidence = "carrier_pod", IReadOnlyList<DocumentSerial>? Serials = null);
 
