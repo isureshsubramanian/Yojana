@@ -72,6 +72,43 @@ public sealed class ClaimRulesTests
     }
 
     [Fact]
+    public void Sales_block_alone_does_not_deny_service_lines()
+    {
+        var item = Item() with { SalesBlocked = true };
+
+        Assert.Null(ClaimAdjudicationRules.ItemDenialReason(item, new DateOnly(2026, 9, 1), ClaimLineKind.Parts));
+    }
+
+    [Theory]
+    [InlineData(ClaimLineKind.Parts)]
+    [InlineData(ClaimLineKind.Labour)]
+    public void Service_block_denies_parts_and_labour_with_a_named_reason(string lineKind)
+    {
+        var item = Item() with { ServiceBlocked = true };
+
+        Assert.Equal(ClaimDenialReason.ItemServiceBlocked,
+            ClaimAdjudicationRules.ItemDenialReason(item, new DateOnly(2026, 9, 1), lineKind));
+    }
+
+    [Fact]
+    public void Claim_after_last_service_date_is_denied_but_travel_is_not()
+    {
+        var item = Item() with { LastServiceDate = new DateOnly(2026, 8, 31) };
+
+        Assert.Equal(ClaimDenialReason.AfterLastServiceDate,
+            ClaimAdjudicationRules.ItemDenialReason(item, new DateOnly(2026, 9, 1), ClaimLineKind.Parts));
+        Assert.Null(ClaimAdjudicationRules.ItemDenialReason(item, new DateOnly(2026, 9, 1), ClaimLineKind.Travel));
+    }
+
+    [Fact]
+    public void Last_service_date_itself_remains_serviceable()
+    {
+        var item = Item() with { LastServiceDate = new DateOnly(2026, 9, 1) };
+
+        Assert.Null(ClaimAdjudicationRules.ItemDenialReason(item, new DateOnly(2026, 9, 1), ClaimLineKind.Labour));
+    }
+
+    [Fact]
     public async Task Full_formula_applies_the_line_coverage_percentage()
     {
         var result = await new FullSettlementFormula().CalculateAsync(new SettlementFormulaQuestion("full", 120m, 75m, new Dictionary<string, decimal>()), CancellationToken.None);
@@ -103,4 +140,8 @@ public sealed class ClaimRulesTests
         Assert.True(RecoveryEligibility.IsLive(entitlement, new DateOnly(2025, 9, 1)));
         Assert.False(RecoveryEligibility.IsLive(entitlement, new DateOnly(2026, 3, 1)));
     }
+
+    private static ItemSerialisationProfile Item() => new(Guid.NewGuid(), "ITEM-1", ItemSerialisationProfile.TrackingModes.Serial,
+        SerialisationPoint.ProductionRelease, "standard_10y", ItemSerialisationProfile.ReusePolicies.Never,
+        ItemSerialisationProfile.Completeness.Block, IdentifierScheme.Internal);
 }

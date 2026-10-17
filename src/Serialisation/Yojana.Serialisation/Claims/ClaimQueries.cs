@@ -34,7 +34,7 @@ public sealed class ClaimQueries(SerialisationDbContext db, ITenantContext tenan
             claim.ServiceEntityId, claim.ObligorEntityId, claim.ServiceCountry, claim.Currency, claim.CoverageSource, claim.Remedy, claim.DenialReason, claim.ChainLength,
             JsonSerializer.Deserialize<List<Guid>>(claim.EntitlementIds, LedgerJson.Options) ?? [],
             lines.Select(Decision).ToList(), evidence.Select(e => new ClaimEvidenceRow(e.EvidenceId, e.Kind, e.Reference, e.Description, e.RecordedAt, e.ActorRef)).ToList(),
-            claim.AdjudicatedBy, claim.ReviewerRole);
+            claim.AdjudicatedBy, claim.ReviewerRole, SuccessorItemId: claim.SuccessorItemId);
     }
 
     public Task<List<RecoveryClaimRow>> RecoveryListAsync(string? status, CancellationToken cancellationToken)

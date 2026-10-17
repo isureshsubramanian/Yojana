@@ -187,7 +187,8 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                         ? approved.EnumerateArray().Select(l => new PublishedClaimLineAmount(GuidOrNull(l, "claim_line_id") ?? Guid.Empty,
                             Decimal(l, "requested_amount"), Decimal(l, "approved_amount"), Decimal(l, "coverage_pct"),
                             Str(l, "coverage_source") ?? ClaimCoverageSource.Chargeable, GuidOrNull(l, "entitlement_id"))).ToList() : [],
-                    GuidOrNull(a, "service_entity_id") ?? Guid.Empty, GuidOrNull(a, "obligor_entity_id") ?? Guid.Empty);
+                    GuidOrNull(a, "service_entity_id") ?? Guid.Empty, GuidOrNull(a, "obligor_entity_id") ?? Guid.Empty,
+                    GuidOrNull(a, "successor_item_id"));
             case ClaimEventType.RecoveryRaised:
                 return new RecoveryClaimRaised(Header(RecoveryClaimRaised.Schema, RecoveryClaimRaised.Version), GuidOrNull(a, "recovery_claim_id") ?? Guid.Empty,
                     GuidOrNull(a, "customer_claim_id") ?? Guid.Empty, GuidOrNull(a, "claim_line_id") ?? Guid.Empty,

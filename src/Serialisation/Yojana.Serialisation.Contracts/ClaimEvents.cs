@@ -9,7 +9,8 @@ public sealed record ClaimAdjudicated(
     string CoverageSource,
     IReadOnlyList<PublishedClaimLineAmount> ApprovedAmountsByLine,
     Guid ServiceEntityId,
-    Guid ObligorEntityId) : IPublishedUnitEvent
+    Guid ObligorEntityId,
+    Guid? SuccessorItemId = null) : IPublishedUnitEvent
 {
     public const string Schema = "Claim.Adjudicated";
     public const string Version = "1.0";

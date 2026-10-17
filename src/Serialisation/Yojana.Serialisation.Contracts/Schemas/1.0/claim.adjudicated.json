@@ -25,6 +25,7 @@
       }
     },
     "service_entity_id": { "type": "string", "format": "uuid" },
-    "obligor_entity_id": { "type": "string", "format": "uuid" }
+    "obligor_entity_id": { "type": "string", "format": "uuid" },
+    "successor_item_id": { "type": ["string", "null"], "format": "uuid" }
   }
 }

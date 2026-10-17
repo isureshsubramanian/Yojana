@@ -107,7 +107,7 @@ public static class SubmitClaimHandler
 public static class AdjudicateClaimHandler
 {
     public static async Task<AdjudicateClaimResult> Handle(AdjudicateClaim command, SerialisationDbContext db, ClaimLedger ledger, ClaimUnitFacts facts,
-        PolicyResolver policies, ISettlementFormulaPort formulas, IEntitlementRecoveryQuery recoveries, ClaimReviewSettings reviewSettings,
+        PolicyResolver policies, ISettlementFormulaPort formulas, IItemQueryPort items, IEntitlementRecoveryQuery recoveries, ClaimReviewSettings reviewSettings,
         ITenantContext tenant, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -118,9 +118,25 @@ public static class AdjudicateClaimHandler
             return await ResultAsync(db, tenantId, claim, replayed.EventId, true, cancellationToken);
         }
 
+        var root = await facts.ReadAsync(claim.UnitId, cancellationToken);
+        var item = await items.GetAsync(root.ItemId, cancellationToken);
+        if (claim.Remedy == ClaimRemedy.Replacement && ClaimAdjudicationRules.IsDiscontinued(item, claim.ClaimDate))
+        {
+            if (item?.SuccessorItemId is not { } successorItemId)
+            {
+                throw new CommandRefusedException("replacement_successor_required", "A discontinued item cannot be replaced without a successor item.",
+                    "choose repair or goodwill");
+            }
+
+            claim.SuccessorItemId = successorItemId;
+        }
+        else if (item is { SuccessorItemId: { } successorItemId } && ClaimAdjudicationRules.IsDiscontinued(item, claim.ClaimDate))
+        {
+            claim.SuccessorItemId = successorItemId;
+        }
+
         ClaimLedger.Transition(claim, ClaimEventType.Adjudicating);
         var lines = await db.ClaimLines.Where(l => l.TenantId == tenantId && l.ClaimId == claim.ClaimId).OrderBy(l => l.Sequence).ToListAsync(cancellationToken);
-        var root = await facts.ReadAsync(claim.UnitId, cancellationToken);
         var rootBlock = ClaimAdjudicationRules.BlockingFlag(root.OverlayFlags);
         var coveredSources = new HashSet<string>(StringComparer.Ordinal);
         var cohorts = new HashSet<Guid>();
@@ -133,6 +149,12 @@ public static class AdjudicateClaimHandler
             if (blocked is not null)
             {
                 Deny(line, $"overlay_{blocked}");
+                continue;
+            }
+
+            if (ClaimAdjudicationRules.ItemDenialReason(item, claim.ClaimDate, line.Kind) is { } itemDenialReason)
+            {
+                Deny(line, itemDenialReason);
                 continue;
             }
 
@@ -233,7 +255,7 @@ public static class AdjudicateClaimHandler
                     claim_id = claim.ClaimId, cohort_id = claim.CoverageSource == ClaimCoverageSource.Recall || cohorts.Count == 0 ? (Guid?)null : cohorts.Single(), coverage_source = claim.CoverageSource,
                     approved_amounts_by_line = lines.Select(l => new { claim_line_id = l.ClaimLineId, requested_amount = l.RequestedAmount, approved_amount = l.ApprovedAmount, coverage_pct = l.CoveragePct, coverage_source = l.CoverageSource, entitlement_id = l.EntitlementId }),
                     service_entity_id = claim.ServiceEntityId, obligor_entity_id = claim.ObligorEntityId, status = claim.Status, denial_reason = claim.DenialReason,
-                    chain_length = claim.ChainLength, remedy = claim.Remedy, adjudicated_by = claim.AdjudicatedBy, reviewer_role = claim.ReviewerRole,
+                    chain_length = claim.ChainLength, remedy = claim.Remedy, adjudicated_by = claim.AdjudicatedBy, reviewer_role = claim.ReviewerRole, successor_item_id = claim.SuccessorItemId,
                 }),
             },
         };
@@ -281,7 +303,8 @@ public static class AdjudicateClaimHandler
         }
 
         await ledger.AppendAsync(drafts, cancellationToken);
-        return new(claim.ClaimId, claim.Status, claim.CoverageSource, claim.DenialReason, claim.ChainLength, lines.Select(ClaimQueries.Decision).ToList(), recoveryIds, eventId, false);
+        return new(claim.ClaimId, claim.Status, claim.CoverageSource, claim.DenialReason, claim.ChainLength, lines.Select(ClaimQueries.Decision).ToList(), recoveryIds, eventId, false,
+            SuccessorItemId: claim.SuccessorItemId);
     }
 
     private static void Deny(ClaimLine line, string reason)
@@ -317,7 +340,8 @@ public static class AdjudicateClaimHandler
     {
         var lines = await db.ClaimLines.AsNoTracking().Where(l => l.TenantId == tenantId && l.ClaimId == claim.ClaimId).OrderBy(l => l.Sequence).ToListAsync(cancellationToken);
         var recoveryIds = await db.RecoveryClaims.AsNoTracking().Where(r => r.TenantId == tenantId && r.CustomerClaimId == claim.ClaimId).Select(r => r.RecoveryClaimId).ToListAsync(cancellationToken);
-        return new(claim.ClaimId, claim.Status, claim.CoverageSource, claim.DenialReason, claim.ChainLength, lines.Select(ClaimQueries.Decision).ToList(), recoveryIds, eventId, replayed);
+        return new(claim.ClaimId, claim.Status, claim.CoverageSource, claim.DenialReason, claim.ChainLength, lines.Select(ClaimQueries.Decision).ToList(), recoveryIds, eventId, replayed,
+            SuccessorItemId: claim.SuccessorItemId);
     }
 }
 

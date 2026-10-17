@@ -34,6 +34,18 @@ public static class ClaimAdjudicationRules
 
     private static bool HoldsRole(ClaimReviewer? reviewer, string actorRef, string requiredRole) =>
         reviewer is not null && reviewer.UserRef == actorRef && reviewer.Roles.Contains(requiredRole, StringComparer.Ordinal);
+
+    public static string? ItemDenialReason(ItemSerialisationProfile? item, DateOnly claimDate, string lineKind)
+    {
+        if (lineKind is not (ClaimLineKind.Parts or ClaimLineKind.Labour)) return null;
+        if (item?.ServiceBlocked == true) return ClaimDenialReason.ItemServiceBlocked;
+        return item?.LastServiceDate is { } lastServiceDate && claimDate > lastServiceDate
+            ? ClaimDenialReason.AfterLastServiceDate
+            : null;
+    }
+
+    public static bool IsDiscontinued(ItemSerialisationProfile? item, DateOnly claimDate) =>
+        item is not null && (item.SalesBlocked || item.ServiceBlocked || item.LastServiceDate is { } lastServiceDate && claimDate > lastServiceDate);
 }
 
 /// <summary>The tenant's reviewer role for low-confidence cover; missing data defaults to the service manager.</summary>
