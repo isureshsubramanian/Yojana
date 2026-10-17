@@ -96,6 +96,31 @@ public sealed record PublishedAssemblyLink(
     string Relation,
     string? Slot);
 
+public sealed record PublishedLateStockCoverage(
+    Guid? LocationId,
+    string LocationKind,
+    int OpenQuantity,
+    int CommissionedQuantity,
+    int ExemptQuantity,
+    string? ExemptReason,
+    DocumentRef SourceDocument);
+
+/// <summary>Serialisation's effective-dated item tracking fact, published without exposing its owned table.</summary>
+public sealed record ItemTrackingModeChanged(
+    PublishedSummaryHeader Header,
+    PublishedCorrection Correction,
+    Guid ItemId,
+    string PreviousTrackingMode,
+    string TrackingMode,
+    DateTime EffectiveAt,
+    bool Reversed,
+    IReadOnlyList<PublishedLateStockCoverage> StockCoverage) : IPublishedSummaryEvent
+{
+    public const string FactType = ItemEventType.TrackingModeChanged;
+    public const string Schema = "Item.TrackingModeChanged";
+    public const string Version = "1.0";
+}
+
 public sealed record UnitVoided(
     PublishedEventHeader Header,
     PublishedCorrection Correction,

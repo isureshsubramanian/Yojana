@@ -43,6 +43,18 @@ public interface IItemQueryPort
     Task<ItemSerialisationProfile?> GetAsync(Guid itemId, CancellationToken cancellationToken);
 }
 
+/// <summary>One on-hand quantity bucket as seen by Inventory; Serialisation never reads an Inventory table.</summary>
+public sealed record OpenStockQuantity(Guid? LocationId, string LocationKind, decimal Quantity);
+
+/// <summary>
+/// Narrow inventory query used to prove a late tracking-mode change covers every open stock unit. The in-house or
+/// connector implementation remains responsible for what counts as open stock at the effective time.
+/// </summary>
+public interface IStockQuantityPort
+{
+    Task<IReadOnlyList<OpenStockQuantity>> GetOpenStockAsync(Guid itemId, DateTime effectiveAt, CancellationToken cancellationToken);
+}
+
 /// <summary>One serialised component the BOM expects inside a parent (Identity rule 12).</summary>
 public sealed record ExpectedComponent(string Slot, Guid ComponentItemId, string ComponentItemCode, int Quantity, Guid? ThroughPhantomItemId = null);
 

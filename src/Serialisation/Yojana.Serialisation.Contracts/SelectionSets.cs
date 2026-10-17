@@ -67,12 +67,18 @@ public sealed record CorrectionPreview(
     IReadOnlyList<CorrectionEntitlementPreview> EntitlementChanges,
     IReadOnlyList<CorrectionCertificatePreview> CertificateVersions,
     IReadOnlyList<CorrectionPrintJobPreview> PrintJobs,
-    CommandRefusal? Refusal = null);
+    CommandRefusal? Refusal = null,
+    IReadOnlyList<CorrectionCommissionPreview>? UnitsToCommission = null,
+    IReadOnlyList<CorrectionExemptionPreview>? Exemptions = null,
+    IReadOnlyList<CorrectionAsBuiltRequirementPreview>? KitsNeedingAsBuiltCapture = null);
 
 public sealed record CorrectionEventPreview(Guid UnitId, string EventType, DateTime EffectiveAt, string? Summary = null);
 public sealed record CorrectionEntitlementPreview(Guid UnitId, string Change, Guid? EntitlementId = null, string? Summary = null);
 public sealed record CorrectionCertificatePreview(Guid UnitId, string CertificateType, string Action, string Reason);
 public sealed record CorrectionPrintJobPreview(Guid UnitId, string JobType, string Reason);
+public sealed record CorrectionCommissionPreview(string Serial, Guid? LocationId, string? LocationKind, DocumentRef SourceDocument, bool ForKit);
+public sealed record CorrectionExemptionPreview(Guid? LocationId, string LocationKind, int Quantity, string Reason);
+public sealed record CorrectionAsBuiltRequirementPreview(Guid ParentUnitId, Guid AssemblyLinkId, int Quantity, bool CapturedByCommand);
 
 /// <summary>Run the named bulk operation over a stored selection without writing; the outcomes are the command's own.</summary>
 /// <see cref="Approval"/> is who previews and the roles they hold (the endpoint sets it from the claims), so the preview judges the set as that person would commit it.

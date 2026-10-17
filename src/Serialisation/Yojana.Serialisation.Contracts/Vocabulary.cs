@@ -255,6 +255,12 @@ public static class UnitEventType
     public const string OwnershipTransferred = "ownership.transferred";
 }
 
+/// <summary>Non-unit facts owned by Serialisation and published across the item boundary.</summary>
+public static class ItemEventType
+{
+    public const string TrackingModeChanged = "item.tracking_mode_changed";
+}
+
 /// <summary>The correction commands governed by the shared correction policy and metadata contract.</summary>
 public static class CorrectionCommand
 {

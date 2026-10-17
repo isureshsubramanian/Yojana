@@ -8,6 +8,7 @@ using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Ledger;
+using Yojana.Serialisation.Ports;
 
 namespace Yojana.Serialisation.Commands;
 
@@ -23,13 +24,27 @@ public static class CommissionUnitsHandler
     public const int BulkThreshold = 500;
     public const string Source = "serialisation.command";
 
-    public static async Task<CommissionUnitsResult> Handle(CommissionUnits command, SerialisationDbContext db, IUnitEventWriter writer, BulkIngestion bulk, IdentifierService identifiers,
-        IItemQueryPort items, SerialRangeService ranges, SerialReuseSettings reuseSettings, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+    public static Task<CommissionUnitsResult> Handle(CommissionUnits command, SerialisationDbContext db, IUnitEventWriter writer, BulkIngestion bulk, IdentifierService identifiers,
+        EffectiveItemProfiles items, SerialRangeService ranges, SerialReuseSettings reuseSettings, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        => HandleCore(command, db, writer, bulk, identifiers, items, ranges, reuseSettings, tenant, clock, false, null, cancellationToken);
+
+    /// <summary>
+    /// P3-T06 seam: LateSerialization is the only caller allowed to bypass the item port's old non-serialised mode.
+    /// It still uses this complete commissioning path, and supplies the outer correction metadata for every fact.
+    /// </summary>
+    internal static Task<CommissionUnitsResult> HandleLateAsync(CommissionUnits command, CorrectionMetadata metadata,
+        SerialisationDbContext db, IUnitEventWriter writer, BulkIngestion bulk, IdentifierService identifiers,
+        EffectiveItemProfiles items, SerialRangeService ranges, SerialReuseSettings reuseSettings, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        => HandleCore(command, db, writer, bulk, identifiers, items, ranges, reuseSettings, tenant, clock, true, metadata, cancellationToken);
+
+    private static async Task<CommissionUnitsResult> HandleCore(CommissionUnits command, SerialisationDbContext db, IUnitEventWriter writer, BulkIngestion bulk, IdentifierService identifiers,
+        EffectiveItemProfiles items, SerialRangeService ranges, SerialReuseSettings reuseSettings, ITenantContext tenant, IClock clock, bool commissionedLate,
+        CorrectionMetadata? correction, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
-        var profile = await items.GetAsync(command.ItemId, cancellationToken)
+        var profile = await items.GetAsync(command.ItemId, command.EventTime, cancellationToken)
             ?? throw new CommandRefusedException("item_unknown", $"Item {command.ItemId} is not known to the host.", "register the item or check the connector's item mapping");
-        if (profile.TrackingMode != ItemSerialisationProfile.TrackingModes.Serial)
+        if (!commissionedLate && profile.TrackingMode != ItemSerialisationProfile.TrackingModes.Serial)
         {
             throw new CommandRefusedException("item_not_serial_tracked", $"Item {profile.ItemCode} is {profile.TrackingMode}-tracked; only serial-tracked items are commissioned.", "change the item's tracking mode (LateSerialization in P3 handles existing stock)");
         }
@@ -57,6 +72,11 @@ public static class CommissionUnitsHandler
 
             if (line.Identifiers.Count == 0)
             {
+                if (commissionedLate)
+                {
+                    results[i] = new CommissionLineResult(i, line.ClientReference, null, CommissionLineResult.Refused, ["late_serial_required"]);
+                    continue;
+                }
                 if (profile.SerialisationPoint == SerialisationPoint.Receipt)
                 {
                     results[i] = new CommissionLineResult(i, line.ClientReference, null, CommissionLineResult.Refused, ["pending_identifier_not_allowed_at_receipt"]);
@@ -210,6 +230,7 @@ public static class CommissionUnitsHandler
                 ["command_id"] = command.CommandId, ["line"] = index, ["item_code"] = profile.ItemCode, ["origin"] = command.Origin,
                 ["identifiers"] = ids.Select(id => new { type = id.Input.Type, scheme = id.Policy.Scheme, value = id.Normalised, issuer_party_ref = id.Input.IssuerPartyRef }).ToList(),
             };
+            if (commissionedLate) attributes["commissioned_late"] = true;
             if (reuseFrom.TryGetValue(index, out var reuse))
             {
                 attributes["derived_from_unit_id"] = reuse.SourceUnit;
@@ -223,7 +244,7 @@ public static class CommissionUnitsHandler
                 LocationId = command.LocationId, LegalEntityId = command.LegalEntityId, ActorRef = command.ActorRef,
                 DocumentType = command.Document?.Type, DocumentId = command.Document?.Id, DocumentLine = command.Document?.Line,
                 IdempotencyKey = lineKeys[index],
-                Attributes = JsonObjectText.Of(attributes),
+                Attributes = correction is null ? JsonObjectText.Of(attributes) : CorrectionLedger.Attributes(correction, attributes),
                 Delta = new CurrentStateDelta
                 {
                     Create = new CreateCurrentState(command.ItemId, status, UnitLifecycle.DispositionFor(status)) { ModelVersionId = command.ModelVersionId, LotId = line.LotId },

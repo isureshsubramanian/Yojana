@@ -16,8 +16,9 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
 {
     public async Task PublishAsync(IReadOnlyList<UnitEvent> written, CancellationToken cancellationToken)
     {
-        // Coupled to EntitlementBulkOperation's dry run: it applies a command in a scope of its own, whose bus is not the
-        // transactional outbox, and rolls the transaction back; publishing there would announce facts that never happened.
+        // Coupled to EntitlementBulkOperation and PreviewLateSerialization dry runs: each applies a command in a scope
+        // of its own, whose bus is not the transactional outbox, and rolls the transaction back; publishing there would
+        // announce facts that never happened. Change their suppression calls and this guard together.
         if (publication.Suppressed) return;
         foreach (var @event in written)
         {
@@ -63,7 +64,8 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                 return new UnitCommissioned(Header(UnitCommissioned.Schema, UnitCommissioned.Version),
                     create.ValueKind == JsonValueKind.Object ? create.GetProperty("item_id").GetGuid() : Guid.Empty,
                     Str(a, "origin") ?? "", create.ValueKind == JsonValueKind.Object ? create.GetProperty("lifecycle_status").GetString() ?? "" : "",
-                    Identifiers(a), GuidOrNull(create, "lot_id"), e.LocationId, state.ValueKind == JsonValueKind.Object ? Optional(state, "location_kind") : null);
+                    Identifiers(a), GuidOrNull(create, "lot_id"), e.LocationId, state.ValueKind == JsonValueKind.Object ? Optional(state, "location_kind") : null,
+                    Bool(a, "commissioned_late"));
             }
 
             case UnitEventType.Released:
@@ -239,8 +241,8 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
 }
 
 /// <summary>
-/// Scoped switch for <see cref="PublishedEventMapper"/>: a scope that only rehearses a command (the bulk preview's dry run,
-/// rolled back) turns publication off. Every other scope publishes.
+/// Scoped switch for <see cref="PublishedEventMapper"/>: a scope that only rehearses a command (the entitlement bulk or
+/// LateSerialization preview, rolled back) turns publication off. Every other scope publishes.
 /// </summary>
 public sealed class LedgerPublication
 {

@@ -61,6 +61,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<CorrectionRecord> Corrections => Set<CorrectionRecord>();
 
+    public DbSet<ItemTrackingModeChange> ItemTrackingModeChanges => Set<ItemTrackingModeChange>();
+
     public DbSet<SearchEntry> SearchEntries => Set<SearchEntry>();
 
     public DbSet<SearchTerm> SearchTerms => Set<SearchTerm>();
@@ -321,6 +323,17 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.Note).HasMaxLength(2000);
             b.HasIndex(c => new { c.TenantId, c.EventTime, c.RootCauseCategory, c.InitiatingRole, c.InitiatedVia });
             b.HasIndex(c => new { c.TenantId, c.CorrectsCorrectionId });
+        });
+
+        modelBuilder.Entity<ItemTrackingModeChange>(b =>
+        {
+            b.ToTable("item_tracking_mode_change", t => t.HasCheckConstraint("ck_item_tracking_mode_change_stock_coverage_json", "ISJSON(stock_coverage) = 1"));
+            b.HasKey(c => new { c.TenantId, c.ChangeId });
+            b.Property(c => c.PreviousTrackingMode).HasMaxLength(20);
+            b.Property(c => c.TrackingMode).HasMaxLength(20);
+            b.Property(c => c.ActorRef).HasMaxLength(200);
+            b.HasIndex(c => new { c.TenantId, c.CorrectionId }).IsUnique();
+            b.HasIndex(c => new { c.TenantId, c.ItemId, c.EffectiveAt });
         });
 
         modelBuilder.Entity<SearchEntry>(b =>

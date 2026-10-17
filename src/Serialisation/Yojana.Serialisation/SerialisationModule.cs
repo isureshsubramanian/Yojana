@@ -48,6 +48,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<EpisodeService>();
         builder.Services.AddScoped<UnitResolver>();
         builder.Services.AddScoped<PostingPeriods>();
+        builder.Services.AddScoped<EffectiveItemProfiles>();
 
         // Selection sets and bulk operations (MOD-11 part built in P1, P1-T18); later phases add their IBulkOperation beside ReleaseUnitsOperation.
         builder.Services.AddScoped<SelectionSetResolver>();
@@ -58,6 +59,8 @@ public static class SerialisationModule
         builder.Services.AddScoped<BulkApprovalRequestQueries>();
         builder.Services.AddScoped<CorrectionLedger>();
         builder.Services.AddScoped<CorrectAsBuiltPlanner>();
+        builder.Services.AddScoped<LateSerializationPlanner>();
+        builder.Services.AddScoped<LateSerializationService>();
         // Coupled to CorrectionApprovalSettings for the same Wolverine constraint documented on that type: replacing
         // this factory with constructor registration exposes PlatformDbContext beside SerialisationDbContext and stops host startup.
         builder.Services.AddScoped(sp => new CorrectionApprovalSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
@@ -129,6 +132,8 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<IBomQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());
         builder.Services.AddSingleton<InMemoryStockReclassificationPort>();
         builder.Services.TryAddSingleton<IStockReclassificationPort>(sp => sp.GetRequiredService<InMemoryStockReclassificationPort>());
+        builder.Services.AddSingleton<InMemoryStockQuantityPort>();
+        builder.Services.TryAddSingleton<IStockQuantityPort>(sp => sp.GetRequiredService<InMemoryStockQuantityPort>());
         builder.Services.AddSingleton<InMemoryWarrantyPorts>();
         builder.Services.TryAddSingleton<IItemPolicyPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
         builder.Services.TryAddSingleton<ICustomerContractPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());

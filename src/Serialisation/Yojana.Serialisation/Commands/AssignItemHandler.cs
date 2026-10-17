@@ -5,6 +5,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
+using Yojana.Serialisation.Ports;
 
 namespace Yojana.Serialisation.Commands;
 
@@ -13,7 +14,7 @@ public static class AssignItemHandler
 {
     private static readonly string[] Reasons = [ItemAssignmentReason.Upgrade, ItemAssignmentReason.Conversion, ItemAssignmentReason.Relabel];
 
-    public static async Task<AssignItemResult> Handle(AssignItem command, SerialisationDbContext db, IUnitEventWriter writer, IItemQueryPort items, ITenantContext tenant, CancellationToken cancellationToken)
+    public static async Task<AssignItemResult> Handle(AssignItem command, SerialisationDbContext db, IUnitEventWriter writer, EffectiveItemProfiles items, ITenantContext tenant, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         if (!Reasons.Contains(command.Reason))
@@ -32,7 +33,7 @@ public static class AssignItemHandler
             return new AssignItemResult(unit.UnitId, closedBefore.AssignmentId, opened.AssignmentId, closedBefore.ItemId, opened.ItemId);
         }
 
-        var profile = await items.GetAsync(command.NewItemId, cancellationToken)
+        var profile = await items.GetAsync(command.NewItemId, command.EventTime, cancellationToken)
             ?? throw new CommandRefusedException("item_unknown", $"Item {command.NewItemId} is not known to the host.");
         if (profile.TrackingMode != ItemSerialisationProfile.TrackingModes.Serial)
         {

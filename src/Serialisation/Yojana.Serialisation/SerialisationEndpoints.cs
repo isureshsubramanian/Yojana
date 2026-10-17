@@ -77,6 +77,10 @@ public static class SerialisationEndpoints
             var secured = preview with { Command = Secure(preview.Command, user) };
             return Invoke<CorrectionPreview>(bus, tenant, secured, ct);
         });
+        corrections.MapPost("/late-serialization", (LateSerialization command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<LateSerializationResult>(bus, tenant, Secure(command, user), ct));
+        corrections.MapPost("/late-serialization/preview", (PreviewLateSerialization preview, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CorrectionPreview>(bus, tenant, preview with { Command = Secure(preview.Command, user) }, ct));
 
         var correctionReference = app.MapGroup("/api/correction-reference").RequireAuthorization(YojanaPolicy.TenantMember);
         correctionReference.MapGet("/approval", async (CorrectionApprovalSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
@@ -325,6 +329,13 @@ public static class SerialisationEndpoints
     };
 
     private static VoidUnit StampVoid(VoidUnit command, ClaimsPrincipal user) => command with
+    {
+        ActorRef = Actor(user),
+        CommittedBy = CorrectionCommitter(user),
+        Correction = ApiCorrection(command.CommandId, command.Reason, command.Note, command.Correction, user),
+    };
+
+    private static LateSerialization Secure(LateSerialization command, ClaimsPrincipal user) => command with
     {
         ActorRef = Actor(user),
         CommittedBy = CorrectionCommitter(user),
