@@ -45,6 +45,10 @@ public interface ITimeZonePort
 public interface IWarrantyClaimsPort
 {
     Task<bool> HasOpenClaimsAsync(Guid unitId, Guid entitlementId, CancellationToken cancellationToken);
+
+    /// <summary>One set-level answer for a unit read model; connectors must not issue one remote query per entitlement.</summary>
+    Task<bool> HasOpenClaimsAsync(Guid unitId, IReadOnlyList<Guid> entitlementIds, CancellationToken cancellationToken);
+
 }
 
 /// <summary>

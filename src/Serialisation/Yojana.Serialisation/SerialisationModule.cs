@@ -54,6 +54,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<SerialRangeQueries>();
         builder.Services.AddScoped<CompletenessQueries>();
         builder.Services.AddScoped<BulkExecutor>();
+        builder.Services.AddScoped<BulkApprovalRequestQueries>();
 
         // Global search (MOD-13, P1-T23): the index table and its maintenance handlers live here; other modules index through ISearchIndex.
         // Warranty policies (MOD-06, P2-T03).

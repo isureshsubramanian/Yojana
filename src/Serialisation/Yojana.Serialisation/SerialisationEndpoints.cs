@@ -78,6 +78,8 @@ public static class SerialisationEndpoints
         var desk = YojanaPolicy.ForRole(YojanaRole.ServiceDesk);
         units.MapGet("/{unitId:guid}/entitlements", async (Guid unitId, DateOnly? on, EntitlementQueries queries, IClock clock, CancellationToken ct) =>
             Results.Ok(await queries.ForUnitAsync(unitId, on ?? DateOnly.FromDateTime(clock.UtcNow), ct)));
+        units.MapGet("/{unitId:guid}/entitlements/detail", async (Guid unitId, DateOnly? on, EntitlementQueries queries, IClock clock, CancellationToken ct) =>
+            await queries.DetailForUnitAsync(unitId, on ?? DateOnly.FromDateTime(clock.UtcNow), ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
         units.MapGet("/{unitId:guid}/warranty-check", async (Guid unitId, DateOnly? on, string? family, EntitlementQueries queries, IClock clock, CancellationToken ct) =>
             await queries.WarrantyCheckAsync(unitId, on ?? DateOnly.FromDateTime(clock.UtcNow), family, ct) is { } result ? Results.Ok(result) : Results.NotFound());
         units.MapGet("/warranty-check", async (string identifier, string? type, DateOnly? on, string? family, UnitQueries unitQueries, EntitlementQueries entitlementQueries, IClock clock, CancellationToken ct) =>
@@ -205,6 +207,18 @@ public static class SerialisationEndpoints
             Invoke<BulkExecutionResult>(bus, tenant, command with { SelectionId = selectionId, Approval = Approver(user, command.Approval)! }, ct));
         selections.MapGet("/{selectionId:guid}/find", async (Guid selectionId, string q, int? skip, int? take, BulkExecutor executor, CancellationToken ct) =>
             Results.Ok(await executor.FindAsync(new FindInSelection(selectionId, q, Math.Max(0, skip ?? 0), take ?? 50), ct)));
+        // P2-T21 approval queue: requester, approver and their roles come from the claims, never the body.
+        var approvals = app.MapGroup("/api/approval-requests").RequireAuthorization(YojanaPolicy.TenantMember);
+        approvals.MapGet("/", async (string? status, int? skip, int? take, BulkApprovalRequestQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.PageAsync(status, skip ?? 0, take ?? 50, ct)));
+        approvals.MapGet("/{requestId:guid}", async (Guid requestId, BulkApprovalRequestQueries queries, CancellationToken ct) =>
+            await queries.GetAsync(requestId, ct) is { } row ? Results.Ok(row) : Results.NotFound());
+        approvals.MapPost("/", (RequestBulkApproval command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<BulkApprovalRequestRow>(bus, tenant, command with { Requester = Approver(user, null) }, ct));
+        approvals.MapPost("/{requestId:guid}/approve", (Guid requestId, ApproveBulkRequest command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<BulkApprovalRequestRow>(bus, tenant, command with { RequestId = requestId, Approver = Approver(user, null) }, ct));
+        approvals.MapPost("/{requestId:guid}/reject", (Guid requestId, RejectBulkRequest command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<BulkApprovalRequestRow>(bus, tenant, command with { RequestId = requestId, Decider = Approver(user, null) }, ct));
         return app;
     }
 

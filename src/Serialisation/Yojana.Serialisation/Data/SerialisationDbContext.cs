@@ -57,6 +57,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<SelectionSetMember> SelectionSetMembers => Set<SelectionSetMember>();
 
+    public DbSet<BulkApprovalRequest> BulkApprovalRequests => Set<BulkApprovalRequest>();
+
     public DbSet<SearchEntry> SearchEntries => Set<SearchEntry>();
 
     public DbSet<SearchTerm> SearchTerms => Set<SearchTerm>();
@@ -461,6 +463,30 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasKey(r => new { r.TenantId, r.RunId });
             b.Property(r => r.RunTrigger).HasMaxLength(20);
             b.HasIndex(r => new { r.TenantId, r.RunAt });
+        });
+
+        modelBuilder.Entity<BulkApprovalRequest>(b =>
+        {
+            b.ToTable("bulk_approval_request", t =>
+            {
+                t.HasCheckConstraint("ck_bulk_approval_request_status", "status IN ('pending', 'approved', 'rejected', 'withdrawn', 'stale')");
+                t.HasCheckConstraint("ck_bulk_approval_request_arguments_json", "ISJSON(arguments_json) = 1");
+            });
+            b.HasKey(r => new { r.TenantId, r.RequestId });
+            b.Property(r => r.Operation).HasMaxLength(60);
+            b.Property(r => r.SourceDocumentType).HasMaxLength(40);
+            b.Property(r => r.Status).HasMaxLength(20);
+            b.Property(r => r.Fingerprint).HasMaxLength(64).IsFixedLength();
+            b.Property(r => r.Rules).HasMaxLength(400);
+            b.Property(r => r.RequestedBy).HasMaxLength(200);
+            b.Property(r => r.RequestedRoles).HasMaxLength(400);
+            b.Property(r => r.Note).HasMaxLength(1000);
+            b.Property(r => r.DecidedBy).HasMaxLength(200);
+            b.Property(r => r.DecisionNote).HasMaxLength(1000);
+            b.HasIndex(r => new { r.TenantId, r.CommandId }).IsUnique();
+            b.HasIndex(r => new { r.TenantId, r.Status, r.RequestedAt });
+            // One open request per selection and operation; a decided one never blocks a new request.
+            b.HasIndex(r => new { r.TenantId, r.SelectionId, r.Operation }).IsUnique().HasFilter("[status] = 'pending'");
         });
 
         modelBuilder.Entity<WarrantyLineException>(b =>

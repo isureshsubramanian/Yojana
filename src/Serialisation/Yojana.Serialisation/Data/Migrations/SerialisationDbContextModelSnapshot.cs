@@ -233,6 +233,142 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.BulkApprovalRequest", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("request_id");
+
+                    b.Property<string>("ArgumentsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("arguments_json");
+
+                    b.Property<int>("BlockCount")
+                        .HasColumnType("int")
+                        .HasColumnName("block_count");
+
+                    b.Property<int>("ChangeCount")
+                        .HasColumnType("int")
+                        .HasColumnName("change_count");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("decided_at");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("decided_by");
+
+                    b.Property<string>("DecisionNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("decision_note");
+
+                    b.Property<Guid?>("ExecutedCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("executed_command_id");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .HasColumnName("fingerprint")
+                        .IsFixedLength();
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("operation");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("requested_at");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("requested_by");
+
+                    b.Property<string>("RequestedRoles")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)")
+                        .HasColumnName("requested_roles");
+
+                    b.Property<string>("Rules")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)")
+                        .HasColumnName("rules");
+
+                    b.Property<Guid>("SelectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("selection_id");
+
+                    b.Property<int>("SkipCount")
+                        .HasColumnType("int")
+                        .HasColumnName("skip_count");
+
+                    b.Property<Guid>("SourceDocumentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_document_id");
+
+                    b.Property<string>("SourceDocumentType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_document_type");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<int>("Total")
+                        .HasColumnType("int")
+                        .HasColumnName("total");
+
+                    b.HasKey("TenantId", "RequestId")
+                        .HasName("pk_bulk_approval_request");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_bulk_approval_request_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "SelectionId", "Operation")
+                        .IsUnique()
+                        .HasDatabaseName("ux_bulk_approval_request_tenant_id_selection_id_operation")
+                        .HasFilter("[status] = 'pending'");
+
+                    b.HasIndex("TenantId", "Status", "RequestedAt")
+                        .HasDatabaseName("ix_bulk_approval_request_tenant_id_status_requested_at");
+
+                    b.ToTable("bulk_approval_request", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_bulk_approval_request_arguments_json", "ISJSON(arguments_json) = 1");
+
+                            t.HasCheckConstraint("ck_bulk_approval_request_status", "status IN ('pending', 'approved', 'rejected', 'withdrawn', 'stale')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CoverageFamily", b =>
                 {
                     b.Property<Guid>("TenantId")

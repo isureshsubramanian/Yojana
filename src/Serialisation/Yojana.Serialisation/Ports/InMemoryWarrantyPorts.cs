@@ -51,5 +51,8 @@ public sealed class InMemoryWarrantyPorts : IItemPolicyPort, ICustomerContractPo
 
     public Task<bool> HasOpenClaimsAsync(Guid unitId, Guid entitlementId, CancellationToken cancellationToken) => Task.FromResult(openClaims.TryGetValue(entitlementId, out var open) && open);
 
+    public Task<bool> HasOpenClaimsAsync(Guid unitId, IReadOnlyList<Guid> entitlementIds, CancellationToken cancellationToken) =>
+        Task.FromResult(entitlementIds.Any(entitlementId => openClaims.TryGetValue(entitlementId, out var open) && open));
+
     public Task<bool> CertificateIssuedAsync(Guid entitlementId, CancellationToken cancellationToken) => Task.FromResult(!certificateIssued.TryGetValue(entitlementId, out var issued) || issued);
 }

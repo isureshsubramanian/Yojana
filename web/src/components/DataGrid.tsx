@@ -102,6 +102,8 @@ export function DataGrid<TRow>({ columns, page, rowId, onPage, selection, dense,
               const classes = [isHit?.(row) ? "hit" : "", onRowClick ? "clickable" : "", activeRowId === id ? "sel" : ""].filter(Boolean).join(" ");
               return (
                 <tr key={id} aria-selected={selection ? selected : undefined} className={classes || undefined}
+                  tabIndex={onRowClick ? 0 : undefined}
+                  onKeyDown={onRowClick ? (e) => { if (!(e.target instanceof HTMLElement && e.target.closest("a, input, button, select, textarea")) && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onRowClick(row); } } : undefined}
                   onClick={onRowClick ? (e) => { if (!(e.target instanceof HTMLElement && e.target.closest("a, input, button, select, textarea"))) onRowClick(row); } : undefined}>
                   {selection && <td className="check"><input type="checkbox" aria-label={`Select ${selection.label(row)}`} checked={selected} onChange={() => toggle(id)} /></td>}
                   {columns.map((c) => (
