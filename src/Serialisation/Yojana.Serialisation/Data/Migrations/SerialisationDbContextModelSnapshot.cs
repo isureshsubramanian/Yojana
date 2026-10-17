@@ -2614,6 +2614,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("supersedes_identifier_id");
 
+                    b.Property<Guid?>("SwappedWithIdentifierId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("swapped_with_identifier_id");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(40)
@@ -2639,6 +2643,9 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ix_unit_identifier_tenant_id_normalised_value");
 
                     SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "NormalisedValue"), new[] { "UnitId", "Type", "ScopeKey", "ValidTo" });
+
+                    b.HasIndex("TenantId", "SwappedWithIdentifierId")
+                        .HasDatabaseName("ix_unit_identifier_tenant_id_swapped_with_identifier_id");
 
                     b.HasIndex("TenantId", "UnitId")
                         .HasDatabaseName("ix_unit_identifier_tenant_id_unit_id");

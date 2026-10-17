@@ -58,6 +58,18 @@ public sealed class CorrectionApprovalRulesTests
     }
 
     [Fact]
+    public void A_shipped_swap_needs_two_distinct_people_from_the_tenant_policy()
+    {
+        var facts = new CorrectionApprovalFacts(UnitHasShipped: true);
+        var committer = new CorrectionCommitter("first", [YojanaRole.SerialAdministrator]);
+        Assert.False(CorrectionApprovalRules.ApprovalsSatisfied(Policy, CorrectionCommand.SwapIdentifiers, facts, committer, []));
+        Assert.False(CorrectionApprovalRules.ApprovalsSatisfied(Policy, CorrectionCommand.SwapIdentifiers, facts, committer,
+            [new("first", [YojanaRole.SerialAdministrator])]));
+        Assert.True(CorrectionApprovalRules.ApprovalsSatisfied(Policy, CorrectionCommand.SwapIdentifiers, facts, committer,
+            [new("second", [YojanaRole.SerialAdministrator])]));
+    }
+
+    [Fact]
     public void Merge_always_needs_a_second_approver_and_live_cover_adds_the_service_manager()
     {
         var ordinary = CorrectionApprovalRules.Evaluate(Policy, CorrectionCommand.MergeUnits, new(), [YojanaRole.SerialAdministrator]);

@@ -97,6 +97,9 @@ public sealed class UnitIdentifier : ITenantScoped
     /// <summary>The identifier this row replaced (asset-tag re-pointing on replacement, re-labelling).</summary>
     public Guid? SupersedesIdentifierId { get; set; }
 
+    /// <summary>The other new identifier row created by the same pairwise swap.</summary>
+    public Guid? SwappedWithIdentifierId { get; set; }
+
     public string? CorrectionReason { get; set; }
 
     /// <summary>Vendor serials known to collide across genuinely different units (case 131), set by the approver.</summary>

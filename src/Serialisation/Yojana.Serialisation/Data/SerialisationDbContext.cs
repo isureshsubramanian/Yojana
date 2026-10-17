@@ -127,6 +127,11 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(i => i.ScopeKey).HasMaxLength(100);
             b.Property(i => i.CorrectionReason).HasMaxLength(40);
             b.Property(i => i.ActorRef).HasMaxLength(200);
+            // TIGHT COUPLING (P3-T03 pairwise identifier swap)
+            // WHAT: these immediate filtered unique indexes are coupled to SwapIdentifiersHandler's close-flush-open
+            // ordering. WHY: SQL Server cannot defer a unique constraint until transaction commit, so both old rows must
+            // be closed before either replacement is inserted. WHAT BREAKS IF SEPARATED: the first insert in a valid
+            // pairwise swap collides with the still-open row on the counterpart. Keep the handler comment in sync.
             // Identity rule 1: one open identifier per (tenant, scheme, scope, normalised value) across all units.
             b.HasIndex(i => new { i.TenantId, i.Scheme, i.ScopeKey, i.NormalisedValue })
                 .IsUnique().HasFilter("[valid_to] IS NULL");
@@ -137,6 +142,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             // answer it, so without this the read range-scanned the tenant: 2.5 s per 100-unit chunk at 1 M units (bench
             // 2026-10-16), starving the receipt it ran beside.
             b.HasIndex(i => new { i.TenantId, i.UnitId });
+            b.HasIndex(i => new { i.TenantId, i.SwappedWithIdentifierId });
             // Lookup by any identifier, open or superseded; prefix search uses LIKE 'value%' on it.
             b.HasIndex(i => new { i.TenantId, i.NormalisedValue })
                 .IncludeProperties(i => new { i.UnitId, i.Type, i.ScopeKey, i.ValidTo });

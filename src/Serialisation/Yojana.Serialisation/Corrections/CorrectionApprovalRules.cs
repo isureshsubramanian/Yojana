@@ -108,6 +108,47 @@ public static class CorrectionApprovalRules
             new("approval_required", $"Workbench choice '{choice}' needs an authorised committer.", $"route the identical preview to {string.Join(" or ", rule.CommitRoles)}"));
     }
 
+    /// <summary>
+    /// Applies the policy's approval layers to named people. A conditional approver is distinct from the person who
+    /// satisfied the base commit role; this is how a shipped swap requires two serial administrators without embedding
+    /// that role in the command handler.
+    /// </summary>
+    public static bool ApprovalsSatisfied(
+        CorrectionApprovalPolicy policy,
+        string command,
+        CorrectionApprovalFacts facts,
+        CorrectionCommitter committer,
+        IReadOnlyList<CorrectionApprover> approvers)
+    {
+        var rule = policy.Commands.FirstOrDefault(r => r.Command == command);
+        if (rule is null) return false;
+
+        var people = new List<CorrectionApprover> { new(committer.UserRef, committer.Roles) };
+        people.AddRange(approvers.Where(a => !string.Equals(a.UserRef, committer.UserRef, StringComparison.Ordinal)));
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        var commitRoles = facts.UnitSold && rule.SoldCommitRoles is { Count: > 0 } sold ? sold : rule.CommitRoles;
+        var committerForRole = people.FirstOrDefault(p => p.Roles.Intersect(commitRoles, StringComparer.Ordinal).Any());
+        if (committerForRole is null) return false;
+        used.Add(committerForRole.UserRef);
+
+        foreach (var role in rule.RequiredRoles ?? [])
+        {
+            var participant = approvers.FirstOrDefault(p => !used.Contains(p.UserRef) && p.Roles.Contains(role, StringComparer.Ordinal));
+            if (participant is null) return false;
+            used.Add(participant.UserRef);
+        }
+
+        foreach (var condition in rule.Conditions ?? [])
+        {
+            if (!Applies(condition.Fact, facts) || condition.Action != CorrectionApprovalCondition.NeedsApprover) continue;
+            var participant = approvers.FirstOrDefault(p => !used.Contains(p.UserRef) && p.Roles.Intersect(condition.Roles, StringComparer.Ordinal).Any());
+            if (participant is null) return false;
+            used.Add(participant.UserRef);
+        }
+
+        return true;
+    }
+
     public static IReadOnlyList<string> Validate(CorrectionApprovalPolicy policy)
     {
         var problems = new List<string>();
