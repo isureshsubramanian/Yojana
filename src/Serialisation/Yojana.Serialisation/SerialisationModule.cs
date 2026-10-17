@@ -137,6 +137,12 @@ public static class SerialisationModule
         builder.Services.AddScoped<LegacyUnknownClaimUnitCreator>();
         builder.Services.AddScoped<RmaSaleFactsResolver>();
         builder.Services.AddScoped<RmaQueries>();
+        // P5 coverage block. ServicePartEntitlementSettings is factory-registered to hide ITenantSettings'
+        // PlatformDbContext from ServicePartInstalledHandler; a direct registration makes Wolverine see two contexts.
+        builder.Services.AddScoped(sp => new ServicePartEntitlementSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped<CoverageDecisionQueries>();
+        builder.Services.TryAddScoped<IServiceOrderQueryPort, DefaultServiceOrderQueryPort>();
+        // End P5 coverage block.
         // Coupled to ClaimReviewSettings and RecoverySettings for the same Wolverine constraint as entitlement approval settings: the
         // factory hides ITenantSettings' PlatformDbContext from AdjudicateClaimHandler's transactional graph.
         builder.Services.AddScoped(sp => new ClaimReviewSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));

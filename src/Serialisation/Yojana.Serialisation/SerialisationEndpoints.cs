@@ -42,6 +42,8 @@ public static class SerialisationEndpoints
             await queries.DetailAsync(unitId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
         units.MapGet("/{unitId:guid}/history", async (Guid unitId, int? skip, int? take, UnitQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.HistoryAsync(unitId, Math.Max(0, skip ?? 0), take ?? 50, ct)));
+        units.MapGet("/{unitId:guid}/coverage-decisions", async (Guid unitId, CoverageDecisionQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.ForUnitAsync(unitId, ct)));
         units.MapPost("/scan", (ScanRequest request) => Results.Ok(ScanParser.Parse(request.Raw)));
         units.MapPost("/completeness", async (CompletenessQuery query, CompletenessQueries queries, CancellationToken ct) => Results.Ok(await queries.QueryAsync(query, ct)));
         units.MapPost("/commission", (CommissionUnits command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CommissionUnitsResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));

@@ -95,7 +95,7 @@ public static class RecordAssemblyHandler
                     UnitId = childUnitId, EventTime = command.EventTime, EventType = UnitEventType.Installed, BizStep = "installing", LegalEntityId = command.LegalEntityId, ActorRef = command.ActorRef,
                     DocumentType = command.Document?.Type, DocumentId = command.Document?.Id, DocumentLine = command.Document?.Line,
                     IdempotencyKey = IdempotencyKey.ForCommand(CommissionUnitsHandler.Source, command.CommandId, childUnitId, UnitEventType.Installed, command.EventTime),
-                    Attributes = JsonObjectText.Of(new { command_id = command.CommandId, parent_unit_id = parent.UnitId, link_id = link.LinkId, slot = child.Slot, relation = child.Relation }),
+                    Attributes = JsonObjectText.Of(new { command_id = command.CommandId, parent_unit_id = parent.UnitId, link_id = link.LinkId, child_item_id = childItem, slot = child.Slot, relation = child.Relation }),
                     Delta = new CurrentStateDelta { Disposition = UnitDisposition.InProgress, Attributes = new Dictionary<string, System.Text.Json.JsonElement?> { ["parent_unit_id"] = System.Text.Json.JsonSerializer.SerializeToElement(parent.UnitId) } },
                 });
             }

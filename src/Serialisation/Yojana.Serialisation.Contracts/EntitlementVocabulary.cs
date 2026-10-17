@@ -152,6 +152,24 @@ public static class EntitlementProvenance
     public const string Backfilled = "backfilled";
     public const string Migrated = "migrated";
     public const string Reconstructed = "reconstructed";
+    public const string ServicePart = "service_part";
+}
+
+public static class CoverageDecisionReason
+{
+    public const string EntitlementChanged = "entitlement_changed";
+}
+
+public static class CoverageWorkType
+{
+    public const string Rma = "rma";
+    public const string Claim = "claim";
+    public const string ServiceOrder = "service_order";
+}
+
+public static class CoverageEventType
+{
+    public const string DecisionChanged = "coverage.decision_changed";
 }
 
 public static class ReplacementRule

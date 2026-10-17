@@ -50,3 +50,10 @@ public sealed record CustodyChanged(PublishedEventHeader Header, Guid EpisodeId,
     public const string Schema = "Custody.Changed";
     public const string Version = "1.0";
 }
+
+/// <summary>A serialised child was installed into a parent; repair policy consumers decide whether service cover follows.</summary>
+public sealed record UnitPartInstalled(PublishedEventHeader Header, Guid ParentUnitId, Guid AssemblyLinkId, Guid ItemId, string Relation, string? Slot) : IPublishedUnitEvent
+{
+    public const string Schema = "Unit.PartInstalled";
+    public const string Version = "1.0";
+}

@@ -64,6 +64,22 @@ public sealed record EntitlementCoverageChanged(PublishedEventHeader Header, IRe
     public const string Version = "1.0";
 }
 
+public sealed record CoverageDecisionSnapshot(decimal CoveragePct, decimal ApprovedAmount, string CoverageSource, Guid? EntitlementId, Guid? PolicyVersionId, string? DenialReason, int ChainLength);
+
+public sealed record CoverageDecisionChanged(
+    PublishedEventHeader Header,
+    Guid CoverageDecisionId,
+    string Reason,
+    string WorkType,
+    Guid WorkId,
+    Guid? WorkLineId,
+    CoverageDecisionSnapshot Before,
+    CoverageDecisionSnapshot After) : IPublishedUnitEvent
+{
+    public const string Schema = "Coverage.DecisionChanged";
+    public const string Version = "1.0";
+}
+
 public sealed record FinanceEntitlementPostingRecorded(Guid MessageId, Guid EntitlementId, Guid SourceEventId, string SourceSchema, string PostingReference, DateTime PostedAt, Guid LedgerEntityId, decimal? Amount, string? Currency)
 {
     public const string Schema = "Finance.EntitlementPostingRecorded";

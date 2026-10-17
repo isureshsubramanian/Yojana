@@ -257,6 +257,15 @@ public sealed class Entitlement : ITenantScoped
 
     public Guid? ReplacementLinkId { get; set; }
 
+    /// <summary>The parent cover from which a serialised service part received its own term; separate from replacement lineage.</summary>
+    public Guid? ServiceParentEntitlementId { get; set; }
+
+    public Guid? InstalledParentUnitId { get; set; }
+
+    public Guid? InstallationLinkId { get; set; }
+
+    public Guid? SourceEventId { get; set; }
+
     public Guid? AccrualCohortId { get; set; }
 
     public string? RevenueScheduleRef { get; set; }

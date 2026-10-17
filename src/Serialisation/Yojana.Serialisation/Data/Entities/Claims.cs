@@ -66,6 +66,7 @@ public sealed class ClaimLine : ITenantScoped
     public string? SettlementFormula { get; set; }
     public string? DenialReason { get; set; }
     public int ChainLength { get; set; }
+    public Guid? CoverageDecisionRef { get; set; }
 }
 
 public sealed class ClaimEvidence : ITenantScoped

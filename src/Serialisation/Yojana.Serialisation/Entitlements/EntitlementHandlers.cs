@@ -248,8 +248,6 @@ public static class ResumeEntitlementHandler
 
 public static class TransferEntitlementHandler
 {
-    private static readonly DateOnly EuEffectiveDate = new(2026, 7, 31);
-
     public static async Task<TransferEntitlementResult> Handle(TransferEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -288,11 +286,11 @@ public static class TransferEntitlementHandler
         var rootId = source.RootEntitlementId ?? source.EntitlementId;
         if (policy.Rule == ReplacementRule.StatutoryExtensionOnce)
         {
-            var scope = JsonSerializer.Deserialize<List<string>>(source.RegionScope, LedgerJson.Options) ?? [];
-            if (source.Type != EntitlementType.Statutory || command.Remedy != "repair" || !command.ConsumerContract || command.ContractDate is not { } contractDate || contractDate < EuEffectiveDate
-                || command.Country is not { } country || !Regions.Contains("EU", country) || !Regions.InScope(scope, country))
+            var eligibility = await StatutoryExtensionGuard.EvaluateAsync(db, tenantId, source, command.ContractDate,
+                command.Country, command.ConsumerContract, command.Remedy, cancellationToken);
+            if (!eligibility.Eligible)
                 throw new CommandRefusedException("statutory_extension_not_applicable", "The one-time statutory extension requires a live statutory entitlement and a repair remedy for an EU consumer contract dated on or after 2026-07-31 within its region scope.");
-            if (await db.Entitlements.AnyAsync(e => e.TenantId == tenantId && (e.EntitlementId == rootId || e.RootEntitlementId == rootId) && e.StatutoryExtensionApplied, cancellationToken))
+            if (eligibility.AlreadyApplied)
                 throw new CommandRefusedException("statutory_extension_already_applied", $"Entitlement chain {rootId} has already received its statutory extension.");
         }
 
