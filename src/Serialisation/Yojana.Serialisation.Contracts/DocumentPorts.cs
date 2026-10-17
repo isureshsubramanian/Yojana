@@ -7,6 +7,23 @@ namespace Yojana.Serialisation.Contracts;
 /// <summary>A serial on a document line as the publisher knows it.</summary>
 public sealed record DocumentSerial(string Value, Guid? IssuerPartyRef = null, string? IdentifierType = null, string? ErpSerialId = null);
 
+public static class SerialCaptureMethodValue
+{
+    public const string Scanned = "scanned";
+    public const string Copied = "copied";
+    public const string Keyed = "keyed";
+    public static readonly IReadOnlySet<string> All = new HashSet<string>([Scanned, Copied, Keyed], StringComparer.Ordinal);
+}
+
+public static class SerialConfirmationMode
+{
+    public const string ScanRequired = "scan_required";
+    public const string CopyAllowed = "copy_allowed";
+    public static readonly IReadOnlySet<string> All = new HashSet<string>([ScanRequired, CopyAllowed], StringComparer.Ordinal);
+}
+
+public sealed record SerialConfirmationSetting(string Mode);
+
 /// <summary>One line of any serial-bearing document.</summary>
 public sealed record DocumentLine(
     int LineNo,
@@ -19,7 +36,8 @@ public sealed record DocumentLine(
     DateOnly? ExpiryDate = null,
     DocumentRef? BaseDocument = null,
     Guid? PartyRef = null,
-    string? ErpLineId = null);
+    string? ErpLineId = null,
+    string? SerialCaptureMethod = null);
 
 /// <summary>A goods receipt or, with <see cref="IsAsn"/>, a vendor's advance shipping notice; an ASN for a drop-ship names the vendor shipment confirmation it carries the serials for in <see cref="VendorShipment"/>.</summary>
 public sealed record ReceiptDocument(DocumentRef Document, Guid VendorPartyRef, DateTime PostedAt, IReadOnlyList<DocumentLine> Lines, DocumentRef? BaseOrder = null, bool IsAsn = false, DocumentRef? VendorShipment = null, bool IsInvoiced = false);

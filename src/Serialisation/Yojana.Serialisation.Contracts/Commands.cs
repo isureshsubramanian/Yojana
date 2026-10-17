@@ -447,7 +447,7 @@ public sealed record ChangeCustodyResult(Guid UnitId, Guid EpisodeId, Guid? Clos
 /// Case 24: a 3PL confirms the serials of a shipment line that was posted without them. The <c>unit.shipped</c> events
 /// take the physical ship time as business time; the document is not re-posted.
 /// </summary>
-public sealed record ConfirmShipmentSerials(Guid CommandId, DocumentRef Document, int Line, IReadOnlyList<DocumentSerial> Serials, DateTime PhysicalShipTime, string ActorRef, Guid LegalEntityId, string Source = "three_pl");
+public sealed record ConfirmShipmentSerials(Guid CommandId, DocumentRef Document, int Line, IReadOnlyList<DocumentSerial> Serials, DateTime PhysicalShipTime, string ActorRef, Guid LegalEntityId, string Source = "three_pl", string? SerialCaptureMethod = null);
 
 public sealed record ConfirmShipmentSerialsResult(Guid PendingId, int Shipped, int Remaining, IReadOnlyList<string> Exceptions);
 
