@@ -15,7 +15,11 @@ public interface ITenantCurrency
     /// <summary>The configured code, or null while the tenant has not set one up.</summary>
     Task<string?> GetAsync(CancellationToken cancellationToken);
 
-    /// <summary>Sets the code; refuses anything that is not a currency of the catalogue.</summary>
+    /// <summary>
+    /// Sets the working currency once, at tenant setup. Refuses anything outside the catalogue, and refuses any different
+    /// code once one is set (<see cref="TenantCurrencyLockedException"/>): stored amounts are in it and are never converted.
+    /// Setting the same code again is a no-op.
+    /// </summary>
     Task<string> SetAsync(string code, CancellationToken cancellationToken);
 
     /// <summary>
@@ -33,4 +37,13 @@ public interface ITenantCurrency
         var trimmed = code?.Trim().ToUpperInvariant();
         return trimmed is { Length: 3 } && trimmed.All(c => c is >= 'A' and <= 'Z') ? trimmed : null;
     }
+}
+
+/// <summary>The tenant's working currency is already set and cannot be changed.</summary>
+public sealed class TenantCurrencyLockedException(string current, string requested)
+    : InvalidOperationException($"The working currency is {current} and cannot be changed to {requested}; every stored amount is in {current}.")
+{
+    public const string Rule = "working_currency_locked";
+
+    public string Current { get; } = current;
 }

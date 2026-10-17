@@ -709,6 +709,12 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("obligor_entity_id");
 
+                    b.Property<string>("RecoveryNotRaisedReason")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("recovery_not_raised_reason");
+
                     b.Property<bool>("RecoveryRaised")
                         .HasColumnType("bit")
                         .HasColumnName("recovery_raised");

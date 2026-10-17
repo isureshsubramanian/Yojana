@@ -345,6 +345,17 @@ public static class SerialisationEndpoints
             await preview.PreviewAsync(claimId, (await settings.GetAsync(ct)).LowConfidenceReviewerRole, ct) is { } model ? Results.Ok(model) : Results.NotFound());
         claims.MapPost("/{claimId:guid}/request-evidence", (Guid claimId, RequestClaimEvidence command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
+        // Read by every claims screen (the recovery list's waiting rule); changed only by the tenant administrator.
+        claims.MapGet("/recovery-policy", async (RecoverySettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
+        claims.MapPut("/recovery-policy", async (RecoveryPolicy policy, RecoverySettings settings, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await settings.SetAsync(policy, ct)); }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+            }
+        }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         claims.MapGet("/review-policy", async (ClaimReviewSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)))
             .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         claims.MapPut("/review-policy", async (ClaimReviewPolicy policy, ClaimReviewSettings settings, CancellationToken ct) =>

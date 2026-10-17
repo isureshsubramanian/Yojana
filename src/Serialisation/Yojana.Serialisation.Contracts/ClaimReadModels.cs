@@ -140,4 +140,5 @@ public sealed record ClaimAdjudicationPreview(
     string? RefusalStep,
     string? RequiredReviewerRole,
     Guid? SuccessorItemId,
-    IReadOnlyList<string> ManualDenialReasons);
+    IReadOnlyList<string> ManualDenialReasons,
+    string? RecoveryNotRaisedReason = null);

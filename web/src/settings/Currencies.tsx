@@ -13,6 +13,8 @@ export function Component() {
   const permitted = session.roles.includes("tenant_administrator");
   const [catalogue, setCatalogue] = useState<CurrencyInfo[]>([]);
   const [working, setWorking] = useState("");
+  // The server refuses to change a working currency once set (working_currency_locked); the page shows it read-only.
+  const [locked, setLocked] = useState(false);
   const [accepted, setAccepted] = useState<Set<string>>(new Set());
   const [workingSearch, setWorkingSearch] = useState("");
   const [acceptedSearch, setAcceptedSearch] = useState("");
@@ -25,7 +27,7 @@ export function Component() {
     if (!permitted) return;
     const controller = new AbortController();
     Promise.all([claimsApi.currency(controller.signal), claimsApi.currencyCatalogue(controller.signal)])
-      .then(([settings, nextCatalogue]) => { setCatalogue(nextCatalogue); setWorking(settings.currency ?? ""); setAccepted(new Set(settings.accepted.filter((code) => code !== settings.currency))); })
+      .then(([settings, nextCatalogue]) => { setCatalogue(nextCatalogue); setWorking(settings.currency ?? ""); setLocked(Boolean(settings.currency)); setAccepted(new Set(settings.accepted.filter((code) => code !== settings.currency))); })
       .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); })
       .finally(() => setLoading(false));
     return () => controller.abort();
@@ -36,7 +38,7 @@ export function Component() {
   const toggle = (code: string) => setAccepted((current) => { const next = new Set(current); if (next.has(code)) next.delete(code); else next.add(code); return next; });
   const save = async () => {
     setBusy(true); setSaved(false); setError(null);
-    try { const result = await claimsApi.saveCurrency(working, [...accepted].filter((code) => code !== working).sort()); setWorking(result.currency ?? working); setAccepted(new Set(result.accepted.filter((code) => code !== result.currency))); setSaved(true); }
+    try { const result = await claimsApi.saveCurrency(working, [...accepted].filter((code) => code !== working).sort()); setWorking(result.currency ?? working); setLocked(Boolean(result.currency)); setAccepted(new Set(result.accepted.filter((code) => code !== result.currency))); setSaved(true); }
     catch (reason) { setError(reason); } finally { setBusy(false); }
   };
 
@@ -44,14 +46,16 @@ export function Component() {
 
   return <main className="content" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Settings", to: "/settings" }, { label: "Currencies" }]} />
-    <div className="page-header"><div><div className="eyebrow">Settings · tenant administrator</div><h1>Currencies</h1><p className="sub">Choose the tenant’s working currency and the other currencies claims, documents and commercial records may use.</p></div><div className="actions"><Link className="btn" to="/settings">Cancel</Link><button type="button" className="btn primary" disabled={loading || busy || !working} aria-busy={busy} onClick={() => void save()}><Icon name="check" />Save</button></div></div>
+    <div className="page-header"><div><div className="eyebrow">Settings · tenant administrator</div><h1>Currencies</h1><p className="sub">The tenant’s working currency, set once at setup, and the other currencies claims, documents and commercial records may use.</p></div><div className="actions"><Link className="btn" to="/settings">Cancel</Link><button type="button" className="btn primary" disabled={loading || busy || !working} aria-busy={busy} onClick={() => void save()}><Icon name="check" />Save</button></div></div>
     <ErrorNote error={error} />
     {saved && <div className="note ok" style={{ marginBottom: 16 }}><strong>Currency settings saved.</strong>&nbsp;New forms now use this working and accepted currency list.</div>}
-    <div className="note warn" style={{ marginBottom: 16 }}><strong>Changing the working currency does not convert values.</strong>&nbsp;Every configured amount—including approval thresholds and policy values—is expressed in the working currency. Review those values separately after any change.</div>
+    {!loading && !locked && <div className="note warn" style={{ marginBottom: 16 }}><strong>The working currency is chosen once and cannot be changed later.</strong>&nbsp;Every configured amount—including approval thresholds and policy values—is stored in it and is never converted.</div>}
     <div className="cols-3-2">
-      <section className="card" aria-labelledby="working-currency"><div className="card-header"><h2 id="working-currency">Working currency</h2><span className="meta">home currency · exactly one</span></div><div className="card-body stack">
+      <section className="card" aria-labelledby="working-currency"><div className="card-header"><h2 id="working-currency">Working currency</h2><span className="meta">{locked ? "locked" : "home currency · exactly one"}</span></div><div className="card-body stack">
+        {locked ? <div className="field"><span className="label">Working currency</span><strong>{describe(catalogue, working)}</strong><span className="help">Set at tenant setup and locked: every stored amount is in {working}. Other currencies are added as accepted currencies.</span></div> : <>
         <div className="field"><label htmlFor="working-currency-search">Find a currency</label><input id="working-currency-search" className="input" type="search" value={workingSearch} onChange={(event) => setWorkingSearch(event.target.value)} placeholder="Code or currency name" /></div>
         <div className="field"><label htmlFor="working-currency-select">Working currency</label><select id="working-currency-select" className="select" value={working} onChange={(event) => { setWorking(event.target.value); setAccepted((current) => { const next = new Set(current); next.delete(event.target.value); return next; }); }}>{workingChoices.map((currency) => <option key={currency.code} value={currency.code}>{currency.code} · {currency.name} · {`\u2068${currency.symbol}\u2069`}</option>)}</select><span className="help">All configured monetary thresholds and policy values are interpreted in this currency.</span></div>
+        </>}
       </div></section>
       <section className="card" aria-labelledby="accepted-currencies"><div className="card-header"><h2 id="accepted-currencies">Accepted currencies <span className="meta">{accepted.size} additional</span></h2></div><div className="card-body stack">
         <div className="field"><label htmlFor="accepted-currency-search">Find accepted currencies</label><input id="accepted-currency-search" className="input" type="search" value={acceptedSearch} onChange={(event) => setAcceptedSearch(event.target.value)} placeholder="Code or currency name" /></div>
@@ -61,6 +65,11 @@ export function Component() {
       </div></section>
     </div>
   </main>;
+}
+
+function describe(catalogue: readonly CurrencyInfo[], code: string): string {
+  const currency = catalogue.find((row) => row.code === code);
+  return currency ? `${currency.code} · ${currency.name} · \u2068${currency.symbol}\u2069` : code;
 }
 
 function filterCurrencies(catalogue: readonly CurrencyInfo[], query: string, include = ""): CurrencyInfo[] {

@@ -80,6 +80,7 @@ public sealed class RecoveryQueries(SerialisationDbContext db, ITenantContext te
         public Guid RootUnitId { get; init; }
         public Guid RootItemId { get; init; }
         public required string CoverageSource { get; init; }
+        public string? PolicyReason { get; init; }
     }
 
     private sealed class AssemblyFact
@@ -207,6 +208,7 @@ public sealed class RecoveryQueries(SerialisationDbContext db, ITenantContext te
                                 {
                                     CustomerClaimId = claim.ClaimId, CustomerClaimNumber = claim.ClaimNumber, ClaimDate = claim.ClaimDate,
                                     ApprovedAt = claim.AdjudicatedAt!.Value, RootUnitId = claim.UnitId, RootItemId = current.ItemId, CoverageSource = claim.CoverageSource,
+                                    PolicyReason = claim.RecoveryNotRaisedReason,
                                 }).ToListAsync(cancellationToken);
         if (candidates.Count == 0) return [];
 
@@ -229,6 +231,14 @@ public sealed class RecoveryQueries(SerialisationDbContext db, ITenantContext te
             {
                 answer.Add(new(claim.CustomerClaimId, claim.CustomerClaimNumber, claim.ClaimDate, claim.ApprovedAt, claim.RootUnitId, Serial(serials, claim.RootUnitId), claim.RootItemId,
                     RecoveryNotRaisedReason.RecallClaim, null, null, null, null, null));
+                continue;
+            }
+
+            // A reason recorded at approval (the tenant's recovery policy declined a live vendor term) is final.
+            if (claim.PolicyReason is { } decidedReason)
+            {
+                answer.Add(new(claim.CustomerClaimId, claim.CustomerClaimNumber, claim.ClaimDate, claim.ApprovedAt, claim.RootUnitId, Serial(serials, claim.RootUnitId), claim.RootItemId,
+                    decidedReason, null, null, null, null, null));
                 continue;
             }
 

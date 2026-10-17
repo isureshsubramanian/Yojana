@@ -11,6 +11,11 @@ public sealed class TenantCurrency(ITenantSettings settings, ICurrencyCatalogue 
     public async Task<string> SetAsync(string code, CancellationToken cancellationToken)
     {
         var known = catalogue.Find(code) ?? throw new ArgumentException($"'{code}' is not an ISO 4217 currency in the catalogue.", nameof(code));
+        if (await GetAsync(cancellationToken) is { } current)
+        {
+            return current == known.Code ? current : throw new TenantCurrencyLockedException(current, known.Code);
+        }
+
         await settings.SetAsync(ITenantCurrency.Key, known.Code, cancellationToken);
         return known.Code;
     }

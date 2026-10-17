@@ -123,7 +123,7 @@ public static class AdjudicateClaimHandler
 {
     public static async Task<AdjudicateClaimResult> Handle(AdjudicateClaim command, SerialisationDbContext db, ClaimLedger ledger, ClaimUnitFacts facts,
         ClaimLineDecider decider, IItemQueryPort items, IEntitlementRecoveryQuery recoveries, ClaimReviewSettings reviewSettings,
-        DocumentNumbers numbers, ITenantContext tenant, CancellationToken cancellationToken)
+        RecoverySettings recoverySettings, DocumentNumbers numbers, ITenantContext tenant, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var claim = await ledger.LoadAsync(command.ClaimId, cancellationToken);
@@ -246,11 +246,15 @@ public static class AdjudicateClaimHandler
         };
 
         var recoveryIds = new List<Guid>();
+        string? notRaisedReason = null;
         if (claim.Status is ClaimStatus.Approved or ClaimStatus.PartiallyApproved)
         {
+            var recoveryPolicy = await recoverySettings.GetAsync(cancellationToken);
             foreach (var line in lines.Where(l => l.ApprovedAmount > 0))
             {
-                foreach (var cover in await recoveries.FindAsync(claim.UnitId, line.UnitId, claim.ClaimDate, cancellationToken))
+                var decision = RecoverySelection.Select(recoveryPolicy, claim.UnitId, line, await recoveries.FindAsync(claim.UnitId, line.UnitId, claim.ClaimDate, cancellationToken));
+                notRaisedReason ??= decision.NotRaisedReason;
+                foreach (var cover in decision.Covers)
                 {
                     var recoveryId = TimeOrderedId.New(command.EventTime);
                     var recoveryEventId = ClaimLedger.EventId(command.EventTime);
@@ -275,6 +279,7 @@ public static class AdjudicateClaimHandler
         }
 
         claim.RecoveryRaised = recoveryIds.Count > 0;
+        claim.RecoveryNotRaisedReason = claim.RecoveryRaised ? null : notRaisedReason;
         var uncovered = lines.Where(l => l.RequestedAmount > l.ApprovedAmount).ToList();
         if (uncovered.Count > 0)
         {

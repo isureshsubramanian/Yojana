@@ -24,6 +24,9 @@ public sealed class Claim : ITenantScoped
     public required string Remedy { get; set; }
     public required string Status { get; set; }
     public bool RecoveryRaised { get; set; }
+
+    /// <summary>Why an approved claim raised no recovery under the policy at approval (<c>RecoveryNotRaisedReason</c>); null when recovered or not decided.</summary>
+    public string? RecoveryNotRaisedReason { get; set; }
     public string EntitlementIds { get; set; } = "[]";
     public string? DenialReason { get; set; }
     public Guid? SuccessorItemId { get; set; }

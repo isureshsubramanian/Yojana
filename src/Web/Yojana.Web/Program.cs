@@ -147,7 +147,8 @@ app.MapGet("/api/auth/me", async (SignInService signIn, PlatformDbContext db, Ht
 app.MapPost("/api/auth/sign-out", async (HttpContext http) => { await http.SignOutAsync(); return Results.NoContent(); }).RequireAuthorization();
 
 // The tenant's currencies: the working currency (every configured amount, approval thresholds and policy values, is
-// in it) and the other currencies documents may be written in, both chosen from the ISO 4217 catalogue at setup.
+// in it) and the other currencies documents may be written in, both chosen from the ISO 4217 catalogue at setup. The
+// working currency is set once per tenant and never changed; accepted currencies may be added or removed later.
 app.MapGet("/api/tenant/currency", async (ITenantCurrency currency, CancellationToken ct) =>
     Results.Ok(new { currency = await currency.GetAsync(ct), accepted = await currency.GetAcceptedAsync(ct) }))
     .RequireAuthorization(YojanaPolicy.TenantMember);
@@ -163,6 +164,11 @@ app.MapPut("/api/tenant/currency", async (TenantCurrencyRequest request, ITenant
     catch (ArgumentException ex)
     {
         return Results.Problem(title: "currency_invalid", detail: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+    }
+    catch (TenantCurrencyLockedException ex)
+    {
+        return Results.Problem(title: TenantCurrencyLockedException.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict,
+            extensions: new Dictionary<string, object?> { ["rule"] = TenantCurrencyLockedException.Rule, ["unblockingStep"] = $"keep {ex.Current} as the working currency; add other currencies as accepted currencies" });
     }
 }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
 

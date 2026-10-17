@@ -1,4 +1,5 @@
 using Xunit;
+using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Tenancy;
 
 namespace Yojana.Platform.Tests;
@@ -28,5 +29,32 @@ public sealed class CurrencyCatalogueTests
         Assert.Equal(Catalogue.All.Count, Catalogue.All.Select(c => c.Code).Distinct().Count());
         Assert.Null(Catalogue.Find("ZZZ"));
         Assert.Null(Catalogue.Find("EU"));
+    }
+
+    [Fact]
+    public async Task Working_currency_is_set_once_and_accepted_currencies_stay_editable()
+    {
+        var currency = new TenantCurrency(new MemorySettings(), Catalogue);
+        Assert.Equal("EUR", await currency.SetAsync("eur", CancellationToken.None));
+        Assert.Equal("EUR", await currency.SetAsync("EUR", CancellationToken.None));
+        var locked = await Assert.ThrowsAsync<TenantCurrencyLockedException>(() => currency.SetAsync("USD", CancellationToken.None));
+        Assert.Equal("EUR", locked.Current);
+        Assert.Equal("EUR", await currency.GetAsync(CancellationToken.None));
+
+        Assert.Equal(["EUR", "GBP", "USD"], await currency.SetAcceptedAsync(["USD", "GBP"], CancellationToken.None));
+        Assert.Equal(["EUR", "GBP"], await currency.SetAcceptedAsync(["GBP"], CancellationToken.None));
+    }
+
+    private sealed class MemorySettings : ITenantSettings
+    {
+        private readonly Dictionary<string, string> values = [];
+
+        public Task<string?> GetAsync(string key, CancellationToken cancellationToken) => Task.FromResult(values.GetValueOrDefault(key));
+
+        public Task SetAsync(string key, string value, CancellationToken cancellationToken)
+        {
+            values[key] = value;
+            return Task.CompletedTask;
+        }
     }
 }

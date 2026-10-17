@@ -208,6 +208,37 @@ public static class RecoveryNotRaisedReason
     public const string VendorTermEnded = "vendor_term_ended";
     public const string NoVendorTerm = "no_vendor_term";
     public const string RecallClaim = "recall_claim";
+
+    /// <summary>A line on the whole unit found live vendor cover on more than one part; the failed part must be named.</summary>
+    public const string SeveralCoveredParts = "several_covered_parts";
+
+    /// <summary>The tenant recovers only from the part named on the line, and the line named the whole unit.</summary>
+    public const string PartNotNamed = "part_not_named";
+
+    /// <summary>The tenant does not recover this kind of line (for example labour or travel).</summary>
+    public const string LineKindNotRecovered = "line_kind_not_recovered";
+}
+
+/// <summary>How a line on the whole unit (rather than a named part) picks the vendor term recovered from.</summary>
+public static class RecoveryWholeUnitRule
+{
+    /// <summary>Recover when exactly one part inside the unit carries live vendor cover; several covered parts raise none.</summary>
+    public const string SingleCoveredPart = "single_covered_part";
+
+    /// <summary>Recover only from the part named on the line; a line on the whole unit recovers only the unit's own vendor term.</summary>
+    public const string NamedPartOnly = "named_part_only";
+
+    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { SingleCoveredPart, NamedPartOnly };
+}
+
+/// <summary>
+/// Tenant-wide supplier-recovery policy, applied when a claim is approved; a change affects later approvals only.
+/// <paramref name="VendorAnswerDueDays"/> is when an unanswered recovery claim shows as waiting on the vendor.
+/// </summary>
+public sealed record RecoveryPolicy(string WholeUnitLines, IReadOnlyList<string> LineKinds, int VendorAnswerDueDays)
+{
+    public static readonly RecoveryPolicy Default = new(RecoveryWholeUnitRule.SingleCoveredPart,
+        [ClaimLineKind.Parts, ClaimLineKind.Labour, ClaimLineKind.Travel], 7);
 }
 
 public sealed record RecoveryNotRaisedRow(

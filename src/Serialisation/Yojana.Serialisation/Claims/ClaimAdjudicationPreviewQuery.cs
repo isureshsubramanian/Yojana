@@ -13,7 +13,7 @@ namespace Yojana.Serialisation.Claims;
 /// offer an approve that the command then refuses, so change both together.
 /// </summary>
 public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext db, ClaimLineDecider decider, ClaimUnitFacts facts, IItemQueryPort items,
-    IEntitlementRecoveryQuery recoveries, ITenantContext tenant)
+    IEntitlementRecoveryQuery recoveries, RecoverySettings recoverySettings, ITenantContext tenant)
 {
     public async Task<ClaimAdjudicationPreview?> PreviewAsync(Guid claimId, string lowConfidenceReviewerRole, CancellationToken cancellationToken)
     {
@@ -80,11 +80,15 @@ public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext
             .AnyAsync(e => e.TenantId == tenantId && entitlementIds.Contains(e.EntitlementId) && e.Confidence == Confidence.Low, cancellationToken);
 
         var recoveryPreviews = new List<RecoveryPreview>();
-        if (source != ClaimCoverageSource.Recall)
+        string? notRaisedReason = decided ? claim.RecoveryNotRaisedReason : null;
+        if (source != ClaimCoverageSource.Recall && !decided)
         {
+            var recoveryPolicy = await recoverySettings.GetAsync(cancellationToken);
             foreach (var (line, outcome) in covered)
             {
-                foreach (var cover in await recoveries.FindAsync(claim.UnitId, line.UnitId, claim.ClaimDate, cancellationToken))
+                var decision = RecoverySelection.Select(recoveryPolicy, claim.UnitId, line, await recoveries.FindAsync(claim.UnitId, line.UnitId, claim.ClaimDate, cancellationToken));
+                notRaisedReason ??= decision.NotRaisedReason;
+                foreach (var cover in decision.Covers)
                 {
                     var (termStart, termEnd) = await TermAsync(cover.EntitlementId, cancellationToken);
                     if (!serials.ContainsKey(cover.UnitId))
@@ -102,7 +106,8 @@ public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext
         return new ClaimAdjudicationPreview(claim.ClaimId, claim.ClaimNumber, outcomeStatus, source, claim.Currency, requested, approved, previews, checks,
             source == ClaimCoverageSource.Recall || cohorts.Count != 1 ? null : cohorts[0], obligors.Count == 1 ? obligors[0] : claim.ObligorEntityId,
             recoveryPreviews, requested - approved, refusal, step, lowConfidence ? lowConfidenceReviewerRole : null,
-            ClaimAdjudicationRules.IsDiscontinued(item, claim.ClaimDate) ? item?.SuccessorItemId : null, ClaimManualDenialReason.All.Order(StringComparer.Ordinal).ToList());
+            ClaimAdjudicationRules.IsDiscontinued(item, claim.ClaimDate) ? item?.SuccessorItemId : null, ClaimManualDenialReason.All.Order(StringComparer.Ordinal).ToList(),
+            recoveryPreviews.Count == 0 ? notRaisedReason : null);
     }
 
     private static List<ClaimCheck> Checks(Claim claim, ClaimUnitFact root, ItemSerialisationProfile? item, List<(ClaimLine Line, ClaimLineOutcome Outcome)> outcomes, List<string> evidence)
