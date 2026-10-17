@@ -250,11 +250,22 @@ public static class TransferEntitlementHandler
 {
     private static readonly DateOnly EuEffectiveDate = new(2026, 7, 31);
 
-    public static async Task<TransferEntitlementResult> Handle(TransferEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
+    public static Task<TransferEntitlementResult> Handle(TransferEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken) =>
+        HandleForDirectionAsync(command, EntitlementDirection.Outbound, db, ledger, tenant, clock, corrections, cancellationToken);
+
+    /// <summary>Vendor replacement uses the same immutable transfer chain for supplier cover; it is not exposed by the public transfer endpoint.</summary>
+    public static Task<TransferEntitlementResult> HandleInboundAsync(TransferEntitlement command, SerialisationDbContext db, EntitlementLedger ledger,
+        ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken) =>
+        HandleForDirectionAsync(command, EntitlementDirection.Inbound, db, ledger, tenant, clock, corrections, cancellationToken);
+
+    private static async Task<TransferEntitlementResult> HandleForDirectionAsync(TransferEntitlement command, string requiredDirection,
+        SerialisationDbContext db, EntitlementLedger ledger, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var source = await ledger.LoadAsync(command.SourceEntitlementId, cancellationToken);
-        if (source.Direction != EntitlementDirection.Outbound) throw new CommandRefusedException("outbound_entitlement_required", "Replacement transfer applies only to customer cover.");
+        if (source.Direction != requiredDirection)
+            throw new CommandRefusedException(requiredDirection == EntitlementDirection.Outbound ? "outbound_entitlement_required" : "inbound_entitlement_required",
+                requiredDirection == EntitlementDirection.Outbound ? "Replacement transfer applies only to customer cover." : "Vendor replacement transfer applies only to inbound supplier cover.");
         var transferKey = EntitlementLedger.Key(command.CommandId, command.TargetUnitId, EntitlementEventType.Transferred, command.EventTime);
         if (await ledger.ReplayedAsync(transferKey, command.EventTime, cancellationToken) is { } replayed)
         {

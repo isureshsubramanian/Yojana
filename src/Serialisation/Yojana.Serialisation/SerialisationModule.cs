@@ -134,6 +134,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<ICampaignCoverPort>(sp => sp.GetRequiredService<Campaigns.CampaignCoverQueries>());
         builder.Services.AddScoped<RecoveryQueries>();
         builder.Services.AddScoped<Replacements.WarrantyReplacementQueries>();
+        builder.Services.AddScoped<Replacements.ReplacementLinkQueries>();
         builder.Services.AddScoped<LegacyUnknownClaimUnitCreator>();
         builder.Services.AddScoped<RmaSaleFactsResolver>();
         builder.Services.AddScoped<RmaQueries>();
@@ -196,8 +197,6 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<IServiceDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.AddSingleton<InMemoryStockUnitEventPort>();
         builder.Services.TryAddSingleton<IStockUnitEventPort>(sp => sp.GetRequiredService<InMemoryStockUnitEventPort>());
-        builder.Services.AddSingleton<InMemoryReplacementIntentPort>();
-        builder.Services.TryAddSingleton<IReplacementIntentPort>(sp => sp.GetRequiredService<InMemoryReplacementIntentPort>());
         builder.Services.TryAddScoped<IReplacementSourceQueryPort, DefaultReplacementSourceQueryPort>();
         builder.Services.TryAddScoped<IReturnReasonQueryPort, DefaultReturnReasonQueryPort>();
         builder.Services.AddScoped<IReleaseGuard, ReleaseCompletenessGuard>();
@@ -229,6 +228,8 @@ public static class SerialisationModule
         builder.Services.AddScoped<UnitCurrentHealer>();
         builder.Services.AddSingleton(RecurringTenantJob.For<UnitCurrentHealerJob>(UnitCurrentHealerJob.JobName, UnitCurrentHealerJob.Cron));
         builder.Services.AddSingleton(RecurringTenantJob.For<Entitlements.EntitlementRequirementJob>(Entitlements.EntitlementRequirementJob.JobName, Entitlements.EntitlementRequirementJob.Cron));
+        // P5 advance-replacement block: one tenant-local nightly sweep, with publication through Wolverine's outbox.
+        builder.Services.AddSingleton(RecurringTenantJob.For<Replacements.ReplacementOverdueJob>(Replacements.ReplacementOverdueJob.JobName, Replacements.ReplacementOverdueJob.Cron));
 
         // Ledger partition lifecycle (MOD-04, P1-T03): options from configuration, the service per scope, one
         // database-wide Quartz job scheduled after the platform has migrated and started its scheduler.

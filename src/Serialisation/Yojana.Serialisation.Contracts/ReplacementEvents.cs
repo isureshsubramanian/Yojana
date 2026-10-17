@@ -40,3 +40,17 @@ public sealed record ReplacementAssetTagPrintRequested(
     public const string Version = "1.0";
 }
 
+public sealed record ReplacementReturnOverdue(
+    PublishedEventHeader Header,
+    Guid ReplacementLinkId,
+    Guid OriginalUnitId,
+    Guid ReplacementUnitId,
+    Guid PartyRef,
+    DateOnly ReturnDue,
+    string NonReturnPriceBasis,
+    int DaysOverdue) : IPublishedUnitEvent
+{
+    public const string Schema = "Replacement.ReturnOverdue";
+    public const string Version = "1.0";
+}
+

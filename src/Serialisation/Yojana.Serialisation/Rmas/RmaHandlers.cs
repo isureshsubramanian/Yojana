@@ -261,7 +261,7 @@ public static class ReceiveReturnHandler
 public static class DispositionRmaHandler
 {
     public static async Task<DispositionRmaResult> Handle(DispositionRma command, SerialisationDbContext db, EpisodeService episodes,
-        EntitlementLedger entitlementLedger, CorrectionLedger corrections, IReplacementIntentPort replacements, IUnitEventWriter writer,
+        EntitlementLedger entitlementLedger, CorrectionLedger corrections, IUnitEventWriter writer,
         ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -280,6 +280,8 @@ public static class DispositionRmaHandler
         if (command.Lines.Count != lines.Count || command.Lines.Select(x => x.RmaLineId).Distinct().Count() != lines.Count || command.Lines.Any(x => lines.All(l => l.RmaLineId != x.RmaLineId)))
             throw new CommandRefusedException("rma_disposition_lines_incomplete", "Disposition must account for every RMA line exactly once.");
         if (command.Lines.Any(x => !RmaDisposition.All.Contains(x.Disposition))) throw new CommandRefusedException("rma_disposition_invalid", "Every line needs a known disposition.");
+        if (command.Lines.Any(x => x.Disposition == RmaDisposition.ReturnToVendor && x.VendorPartyRef is null))
+            throw new CommandRefusedException("vendor_required", "Return-to-vendor disposition needs the vendor party.");
         if (lines.Any(l => l.ReceiptOutcome is ReturnOutcome.Mismatch or ReturnOutcome.Unauthorised or ReturnOutcome.Counterfeit))
             throw new CommandRefusedException("rma_receipt_exception_open", "Mismatch, unauthorised and counterfeit receipts cannot be dispositioned silently.", "resolve the receipt exception first");
 
@@ -325,7 +327,9 @@ public static class DispositionRmaHandler
             }
             else if (input.Disposition == RmaDisposition.Replace)
             {
-                replacementIntentId = await replacements.RecordAsync(new ReplacementIntent(command.CommandId, rma.RmaId, line.RmaLineId, unitId, command.EffectiveDate, command.EventTime), cancellationToken);
+                // The durable intent is the RMA line itself. A WarrantyReplacement clears it by referring to this
+                // line's RMA and entitlement; no process-local queue or ordering dependency is involved.
+                replacementIntentId = line.RmaLineId;
             }
 
             if (ReturnsOwnershipToUs(input.Disposition))
@@ -333,6 +337,17 @@ public static class DispositionRmaHandler
                 if (!receiptTimes.TryGetValue(line.RmaLineId, out var receivedAt))
                     throw new CommandRefusedException("return_receipt_required", $"Line {line.RmaLineId} has no return receipt business time.");
                 await PrepareReturnedOwnershipAsync(unitId, line, rma, command, document, receivedAt, episodes, drafts, cancellationToken);
+            }
+
+            if (input.Disposition == RmaDisposition.ReturnToVendor)
+            {
+                var vendorPartyRef = input.VendorPartyRef!.Value;
+                var vendorOwnership = await episodes.PrepareOwnershipOpenAsync(unitId,
+                    new OwnershipTarget(vendorPartyRef, PartyType.Vendor, RmaDisposition.ReturnToVendor, Source: "rma"),
+                    IdempotencyKey.Derive(command.CommandId.ToString("N"), $"vendor-ownership:{line.RmaLineId:N}"), command.EventTime,
+                    command.ActorRef, rma.ServiceEntityId, document, RmaDisposition.ReturnToVendor, cancellationToken);
+                if (vendorOwnership.CloseDraft is not null) drafts.Add(vendorOwnership.CloseDraft);
+                drafts.Add(vendorOwnership.Draft);
             }
 
             var target = input.Disposition switch
@@ -345,7 +360,6 @@ public static class DispositionRmaHandler
             };
             if (target is not null)
             {
-                if (target == LocationKind.Vendor && input.VendorPartyRef is null) throw new CommandRefusedException("vendor_required", "Return-to-vendor disposition needs the vendor party.");
                 var move = await episodes.PrepareCustodyMoveAsync(unitId,
                     new CustodyTarget(target, PartyRef: input.VendorPartyRef, PartyType: target == LocationKind.Vendor ? PartyType.Vendor : null, Reason: input.Disposition, Source: "rma"),
                     UnitEventType.CustodyChanged, IdempotencyKey.Derive(command.CommandId.ToString("N"), $"custody:{line.RmaLineId:N}"), command.EventTime,
@@ -396,8 +410,8 @@ public static class DispositionRmaHandler
         var current = await episodes.OpenAsync(unitId, EpisodeKind.Ownership, cancellationToken);
         if (current?.PartyType == PartyType.Us) return;
 
-        // Return-to-vendor first returns customer ownership to us at receipt. The later vendor-facing move belongs
-        // to P5-T08; moving ownership directly to the vendor here would skip the legally relevant customer return.
+        // Return-to-vendor first returns customer ownership to us at receipt; the disposition then opens the
+        // vendor episode. Both facts remain visible instead of collapsing the customer return into a direct transfer.
         var ownership = await episodes.PrepareOwnershipOpenAsync(unitId,
             new OwnershipTarget(rma.ServiceEntityId, PartyType.Us, EpisodeReason.Return, Source: "rma"),
             IdempotencyKey.Derive(command.CommandId.ToString("N"), $"ownership:{line.RmaLineId:N}"), receivedAt,

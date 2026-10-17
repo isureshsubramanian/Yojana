@@ -4,7 +4,8 @@ public static class ReplacementSourceKind
 {
     public const string Claim = "claim";
     public const string Rma = "rma";
-    public static readonly IReadOnlyList<string> All = [Claim, Rma];
+    public const string Loan = "loan";
+    public static readonly IReadOnlyList<string> All = [Claim, Rma, Loan];
 }
 
 public static class ReplacementDirection
@@ -95,7 +96,8 @@ public sealed record CreateWarrantyReplacement(
     DateOnly? ReturnDue = null,
     string? NonReturnPriceBasis = null,
     string? ReturnReasonCode = null,
-    decimal RestockingFeeBasis = 0m);
+    decimal RestockingFeeBasis = 0m,
+    decimal? NonReturnAmount = null);
 
 public sealed record CreateWarrantyReplacementResult(WarrantyReplacementDetail Document, bool Replayed);
 
@@ -176,4 +178,117 @@ public sealed record WarrantyReplacementDetail(
     IReadOnlyList<WarrantyReplacementLineRow> Lines);
 
 public sealed record WarrantyReplacementPage(IReadOnlyList<WarrantyReplacementRow> Rows, int Total, int Skip, int Take);
+
+public sealed record PendingWarrantyReplacementRow(
+    Guid RmaId,
+    Guid RmaLineId,
+    string RmaNumber,
+    Guid OriginalUnitId,
+    Guid SourceEntitlementId,
+    string CoverageFamily,
+    DateTime DispositionedAt);
+
+public sealed record PendingWarrantyReplacementPage(IReadOnlyList<PendingWarrantyReplacementRow> Rows, int Total, int Skip, int Take);
+
+public sealed record ExtendReturnDue(
+    Guid CommandId,
+    Guid ReplacementLinkId,
+    DateOnly NewReturnDue,
+    string Reason,
+    DateTime EventTime,
+    string ActorRef = "");
+
+public sealed record ExtendReturnDueResult(Guid ReplacementLinkId, DateOnly PreviousReturnDue, DateOnly NewReturnDue, Guid EventId, bool Replayed);
+
+public sealed record BillNonReturn(
+    Guid CommandId,
+    Guid ReplacementLinkId,
+    string PriceBasis,
+    decimal Amount,
+    DateOnly BillingDate,
+    DateTime EventTime,
+    string ActorRef = "");
+
+public sealed record BillNonReturnResult(Guid ReplacementLinkId, string State, string PriceBasis, decimal Amount, string Currency, Guid EventId, bool Replayed);
+
+public sealed record LiftReplacementHold(
+    Guid CommandId,
+    Guid PartyRef,
+    string Reason,
+    DateTime EventTime,
+    string ActorRef = "");
+
+public sealed record LiftReplacementHoldResult(Guid HoldId, Guid PartyRef, DateTime LiftedAt, bool Replayed);
+
+public sealed record ConvertLoanToReplacement(
+    Guid CommandId,
+    DocumentRef LoanerIssue,
+    Guid OriginalUnitId,
+    Guid SourceEntitlementId,
+    Guid LoanerUnitId,
+    string ReplacementReason,
+    DateOnly ReplacementDate,
+    DateTime EventTime,
+    Guid LegalEntityId,
+    string ServiceCountry,
+    bool ConsumerContract,
+    bool ConsentRefurbished,
+    string ReplacementConditionAllowed = Yojana.Serialisation.Contracts.ReplacementConditionAllowed.Any,
+    string? ReplacementPolicyCode = null,
+    string ActorRef = "");
+
+public sealed record ConvertLoanToReplacementResult(
+    Guid WarrantyReplacementId,
+    string ReplacementNumber,
+    Guid ReplacementLinkId,
+    Guid TargetEntitlementId,
+    string PolicyApplied,
+    DateOnly ComputedEnd,
+    Guid EventId,
+    bool Replayed);
+
+public sealed record ReceiveVendorReplacement(
+    Guid CommandId,
+    Guid RmaLineId,
+    Guid SourceEntitlementId,
+    Guid ReplacementUnitId,
+    Guid ReceivingLocationId,
+    DateOnly ReplacementDate,
+    DateTime ReceivedAt,
+    Guid LegalEntityId,
+    string ReplacementReason = Yojana.Serialisation.Contracts.ReplacementReason.WarrantyDefect,
+    string ReplacementConditionAllowed = Yojana.Serialisation.Contracts.ReplacementConditionAllowed.Any,
+    string? ReplacementPolicyCode = null,
+    string ActorRef = "");
+
+public sealed record ReceiveVendorReplacementResult(
+    Guid WarrantyReplacementId,
+    string ReplacementNumber,
+    Guid ReplacementLinkId,
+    Guid TargetEntitlementId,
+    string PolicyApplied,
+    DateOnly ComputedEnd,
+    Guid EventId,
+    bool Replayed);
+
+public sealed record ReplacementLinkKpis(int Awaiting, int Overdue, int DueInSevenDays, int CustomersOnHold);
+
+public sealed record ReplacementLinkRow(
+    Guid ReplacementLinkId,
+    Guid WarrantyReplacementId,
+    string ReplacementNumber,
+    string Direction,
+    string State,
+    Guid OriginalUnitId,
+    Guid ReplacementUnitId,
+    Guid? CounterpartyPartyRef,
+    DateOnly? ReturnDue,
+    int? DaysOverdue,
+    string? NonReturnPriceBasis,
+    decimal? NonReturnAmount,
+    string Currency,
+    DateTime? OverduePublishedAt,
+    bool PartyOnHold);
+
+public sealed record ReplacementLinkPage(IReadOnlyList<ReplacementLinkRow> Rows, ReplacementLinkKpis Kpis, int Total, int Skip, int Take);
 

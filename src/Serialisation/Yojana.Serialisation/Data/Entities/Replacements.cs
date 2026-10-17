@@ -20,6 +20,7 @@ public sealed class ReplacementLink : ITenantScoped
     public Guid ReplacementItemId { get; set; }
     public Guid SourceEntitlementId { get; set; }
     public Guid? TargetEntitlementId { get; set; }
+    public Guid? CounterpartyPartyRef { get; set; }
     public string? PolicyApplied { get; set; }
     public DateOnly? ComputedEnd { get; set; }
     public required string PricePolicy { get; set; }
@@ -27,6 +28,16 @@ public sealed class ReplacementLink : ITenantScoped
     public required string Currency { get; set; }
     public DateOnly? ReturnDue { get; set; }
     public string? NonReturnPriceBasis { get; set; }
+    public decimal? NonReturnAmount { get; set; }
+    public DateTime? OverduePublishedAt { get; set; }
+    public Guid? OverdueEventId { get; set; }
+    public Guid? ReturnDueCommandId { get; set; }
+    public Guid? BillCommandId { get; set; }
+    public DateOnly? BilledOn { get; set; }
+    public string? BilledPriceBasis { get; set; }
+    public decimal? BilledAmount { get; set; }
+    public DateTime? BilledAt { get; set; }
+    public string? BilledBy { get; set; }
     public required string ReplacementConditionAllowed { get; set; }
     public string? ReplacementCondition { get; set; }
     public bool ConsentRefurbished { get; set; }
@@ -35,6 +46,21 @@ public sealed class ReplacementLink : ITenantScoped
     public DateTime? ShippedAt { get; set; }
     public string? ShippedBy { get; set; }
     public Guid? ShippedEventId { get; set; }
+}
+
+public sealed class PartyReplacementHold : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid PartyReplacementHoldId { get; set; }
+    public Guid PartyRef { get; set; }
+    public required string Reason { get; set; }
+    public DateTime SetAt { get; set; }
+    public required string SetBy { get; set; }
+    public Guid SetCommandId { get; set; }
+    public DateTime? LiftedAt { get; set; }
+    public string? LiftedBy { get; set; }
+    public string? LiftReason { get; set; }
+    public Guid? LiftCommandId { get; set; }
 }
 
 public sealed class WarrantyReplacement : ITenantScoped

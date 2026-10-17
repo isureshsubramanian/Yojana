@@ -33,10 +33,11 @@ public sealed class DefaultReplacementSourceQueryPort(SerialisationDbContext db,
     {
         var tenantId = tenant.TenantId;
         var rma = await db.Rmas.AsNoTracking().FirstOrDefaultAsync(row => row.TenantId == tenantId && row.RmaId == rmaId, cancellationToken);
-        if (rma?.RmaNumber is null || rma.Stage is RmaStage.Requested or RmaStage.Closed) return null;
+        if (rma?.RmaNumber is null || rma.Stage == RmaStage.Requested) return null;
         var line = await db.RmaLines.AsNoTracking().Where(row => row.TenantId == tenantId && row.RmaId == rmaId && row.EntitlementId == sourceEntitlementId)
             .OrderBy(row => row.Sequence).FirstOrDefaultAsync(cancellationToken);
         if (line?.AuthorisedUnitId is not { } authorised) return null;
+        if (rma.Stage == RmaStage.Closed && line.Disposition != RmaDisposition.Replace) return null;
         if (line.ReceiptOutcome is not null && line.ReceiptOutcome != ReturnOutcome.Accepted) return null;
         var original = line.ReceivedUnitId ?? authorised;
         var sale = new DocumentRef(line.OriginalSaleDocumentType, line.OriginalSaleDocumentId, line.OriginalSaleDocumentLine);

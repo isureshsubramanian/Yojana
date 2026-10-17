@@ -170,14 +170,6 @@ public sealed record StockReturnPosting(
     DateTime ReceivedAt,
     string PostingPeriod);
 
-/// <summary>Handoff to the sibling-owned replacement document without taking a dependency on its tables or command.</summary>
-public interface IReplacementIntentPort
-{
-    Task<Guid> RecordAsync(ReplacementIntent request, CancellationToken cancellationToken);
-}
-
-public sealed record ReplacementIntent(Guid CommandId, Guid RmaId, Guid RmaLineId, Guid ReturnedUnitId, DateOnly EffectiveDate, DateTime EventTime);
-
 /// <summary>Facts resolved from the source aggregate; RMA supplies its implementation when that sibling module is merged.</summary>
 public sealed record ReplacementSource(
     string Kind,

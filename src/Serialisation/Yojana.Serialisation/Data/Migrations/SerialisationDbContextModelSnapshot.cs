@@ -2379,6 +2379,82 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PartyReplacementHold", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PartyReplacementHoldId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("party_replacement_hold_id");
+
+                    b.Property<Guid?>("LiftCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("lift_command_id");
+
+                    b.Property<string>("LiftReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("lift_reason");
+
+                    b.Property<DateTime?>("LiftedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("lifted_at");
+
+                    b.Property<string>("LiftedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("lifted_by");
+
+                    b.Property<Guid>("PartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("party_ref");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTime>("SetAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("set_at");
+
+                    b.Property<string>("SetBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("set_by");
+
+                    b.Property<Guid>("SetCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("set_command_id");
+
+                    b.HasKey("TenantId", "PartyReplacementHoldId")
+                        .HasName("pk_party_replacement_hold");
+
+                    b.HasIndex("TenantId", "LiftCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_party_replacement_hold_tenant_id_lift_command_id")
+                        .HasFilter("[lift_command_id] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "PartyRef")
+                        .IsUnique()
+                        .HasDatabaseName("ux_party_replacement_hold_tenant_id_party_ref")
+                        .HasFilter("[lifted_at] IS NULL");
+
+                    b.HasIndex("TenantId", "SetCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_party_replacement_hold_tenant_id_set_command_id");
+
+                    b.HasIndex("TenantId", "PartyRef", "LiftedAt")
+                        .HasDatabaseName("ix_party_replacement_hold_tenant_id_party_ref_lifted_at");
+
+                    b.ToTable("party_replacement_hold", "serialisation");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PendingShipmentLine", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -2588,6 +2664,34 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("replacement_link_id");
 
+                    b.Property<Guid?>("BillCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("bill_command_id");
+
+                    b.Property<decimal?>("BilledAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("billed_amount");
+
+                    b.Property<DateTime?>("BilledAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("billed_at");
+
+                    b.Property<string>("BilledBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("billed_by");
+
+                    b.Property<DateOnly?>("BilledOn")
+                        .HasColumnType("date")
+                        .HasColumnName("billed_on");
+
+                    b.Property<string>("BilledPriceBasis")
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("billed_price_basis");
+
                     b.Property<DateOnly?>("ComputedEnd")
                         .HasColumnType("date")
                         .HasColumnName("computed_end");
@@ -2595,6 +2699,10 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<bool>("ConsentRefurbished")
                         .HasColumnType("bit")
                         .HasColumnName("consent_refurbished");
+
+                    b.Property<Guid?>("CounterpartyPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("counterparty_party_ref");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2(3)")
@@ -2626,6 +2734,11 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("varchar(20)")
                         .HasColumnName("direction");
 
+                    b.Property<decimal?>("NonReturnAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("non_return_amount");
+
                     b.Property<string>("NonReturnPriceBasis")
                         .HasMaxLength(30)
                         .IsUnicode(false)
@@ -2639,6 +2752,14 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<Guid>("OriginalUnitId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("original_unit_id");
+
+                    b.Property<Guid?>("OverdueEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("overdue_event_id");
+
+                    b.Property<DateTime?>("OverduePublishedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("overdue_published_at");
 
                     b.Property<string>("PolicyApplied")
                         .HasMaxLength(60)
@@ -2687,6 +2808,10 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<DateOnly?>("ReturnDue")
                         .HasColumnType("date")
                         .HasColumnName("return_due");
+
+                    b.Property<Guid?>("ReturnDueCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("return_due_command_id");
 
                     b.Property<DateTime?>("ShippedAt")
                         .HasColumnType("datetime2(3)")
@@ -2740,8 +2865,23 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasKey("TenantId", "ReplacementLinkId")
                         .HasName("pk_replacement_link");
 
+                    b.HasIndex("TenantId", "BillCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_replacement_link_tenant_id_bill_command_id")
+                        .HasFilter("[bill_command_id] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "OverdueEventId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_replacement_link_tenant_id_overdue_event_id")
+                        .HasFilter("[overdue_event_id] IS NOT NULL");
+
                     b.HasIndex("TenantId", "PreviousReplacementLinkId")
                         .HasDatabaseName("ix_replacement_link_tenant_id_previous_replacement_link_id");
+
+                    b.HasIndex("TenantId", "ReturnDueCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_replacement_link_tenant_id_return_due_command_id")
+                        .HasFilter("[return_due_command_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "WarrantyReplacementId")
                         .IsUnique()
@@ -2769,7 +2909,7 @@ namespace Yojana.Serialisation.Data.Migrations
 
                             t.HasCheckConstraint("ck_replacement_link_reason", "replacement_reason IN ('warranty_defect', 'dead_on_arrival', 'seller_error', 'goodwill', 'recall')");
 
-                            t.HasCheckConstraint("ck_replacement_link_source_kind", "source_kind IN ('claim', 'rma')");
+                            t.HasCheckConstraint("ck_replacement_link_source_kind", "source_kind IN ('claim', 'rma', 'loan')");
 
                             t.HasCheckConstraint("ck_replacement_link_state", "state IN ('proposed', 'awaiting_return', 'closed_returned', 'closed_billed', 'cancelled', 'corrected')");
 
@@ -5647,7 +5787,7 @@ namespace Yojana.Serialisation.Data.Migrations
                         {
                             t.HasCheckConstraint("ck_warranty_replacement_fee", "restocking_fee_amount >= 0");
 
-                            t.HasCheckConstraint("ck_warranty_replacement_source_kind", "source_kind IN ('claim', 'rma')");
+                            t.HasCheckConstraint("ck_warranty_replacement_source_kind", "source_kind IN ('claim', 'rma', 'loan')");
 
                             t.HasCheckConstraint("ck_warranty_replacement_status", "status IN ('proposed', 'shipped', 'cancelled')");
                         });

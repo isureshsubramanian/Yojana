@@ -39,6 +39,9 @@ public static class CreateWarrantyReplacementHandler
         if (entitlement.UnitId != source.OriginalUnitId) throw new CommandRefusedException("replacement_source_mismatch", "The source entitlement belongs to another unit.");
         if (entitlement.Direction != EntitlementDirection.Outbound) throw new CommandRefusedException("outbound_entitlement_required", "A customer replacement requires outbound cover.");
         if (entitlement.Status != EntitlementStatus.Active) throw new CommandRefusedException("entitlement_not_active", $"Entitlement {entitlement.EntitlementId} is {entitlement.Status}.");
+        if (command.ReturnDue is not null && entitlement.OwnerPartyRef is { } advanceParty
+            && await db.PartyReplacementHolds.AnyAsync(row => row.TenantId == tenantId && row.PartyRef == advanceParty && row.LiftedAt == null, cancellationToken))
+            throw new CommandRefusedException("advance_replacement_hold", "This party has an open replacement hold and cannot receive another advance replacement.", "resolve the overdue return or lift the hold with a recorded reason");
 
         var current = await db.Current.AsNoTracking().Where(row => row.TenantId == tenantId && (row.UnitId == source.OriginalUnitId || row.UnitId == command.ReplacementUnitId))
             .Select(row => new { row.UnitId, row.ItemId, row.OwnerPartyRef }).ToListAsync(cancellationToken);
@@ -84,8 +87,10 @@ public static class CreateWarrantyReplacementHandler
             Direction = ReplacementDirection.CustomerFacing, ReplacementReason = command.ReplacementReason, State = ReplacementLinkState.Proposed,
             SourceKind = source.Kind, SourceId = source.Id, SourceNumber = source.Number, OriginalUnitId = source.OriginalUnitId,
             ReplacementUnitId = command.ReplacementUnitId, OriginalItemId = original.ItemId, ReplacementItemId = replacement.ItemId,
-            SourceEntitlementId = entitlement.EntitlementId, PricePolicy = command.PricePolicy, DifferenceAmount = command.DifferenceAmount,
+            SourceEntitlementId = entitlement.EntitlementId, CounterpartyPartyRef = entitlement.OwnerPartyRef,
+            PricePolicy = command.PricePolicy, DifferenceAmount = command.DifferenceAmount,
             Currency = command.Currency.ToUpperInvariant(), ReturnDue = command.ReturnDue, NonReturnPriceBasis = command.NonReturnPriceBasis,
+            NonReturnAmount = command.NonReturnAmount,
             ReplacementConditionAllowed = conditionAllowed, ConsentRefurbished = command.ConsentRefurbished, CreatedAt = now, CreatedBy = command.ActorRef,
         };
         db.WarrantyReplacements.Add(document);
@@ -109,7 +114,7 @@ public static class CreateWarrantyReplacementHandler
         return new(await WarrantyReplacementQueries.DetailAsync(db, tenantId, documentId, cancellationToken), false);
     }
 
-    private static async Task<ReplacementPolicy> ResolveReplacementPolicyAsync(CreateWarrantyReplacement command, Entitlement entitlement,
+    internal static async Task<ReplacementPolicy> ResolveReplacementPolicyAsync(CreateWarrantyReplacement command, Entitlement entitlement,
         SerialisationDbContext db, TenantId tenantId, CancellationToken cancellationToken)
     {
         var version = await db.PolicyVersions.AsNoTracking().SingleAsync(row => row.TenantId == tenantId && row.PolicyVersionId == entitlement.PolicyVersionId, cancellationToken);
@@ -142,6 +147,7 @@ public static class CreateWarrantyReplacementHandler
         if (command.Currency.Length != 3 || !command.Currency.All(char.IsAsciiLetter)) throw new CommandRefusedException("currency_invalid", "Currency must be a three-letter code.");
         if (command.ServiceCountry.Length != 2 || !command.ServiceCountry.All(char.IsAsciiLetter)) throw new CommandRefusedException("service_country_invalid", "Service country must be a two-letter code.");
         if (command.RestockingFeeBasis < 0) throw new CommandRefusedException("restocking_fee_basis_invalid", "The restocking fee basis cannot be negative.");
+        if (command.NonReturnAmount is < 0) throw new CommandRefusedException("non_return_amount_invalid", "The non-return amount cannot be negative.");
         if (command.ReturnDue is not null && string.IsNullOrWhiteSpace(command.NonReturnPriceBasis)) throw new CommandRefusedException("non_return_price_basis_required", "An advance replacement with a return due date needs its non-return price basis.");
         if (command.NonReturnPriceBasis is not null && !NonReturnPriceBasis.All.Contains(command.NonReturnPriceBasis)) throw new CommandRefusedException("non_return_price_basis_unknown", $"'{command.NonReturnPriceBasis}' is not one of {string.Join(", ", NonReturnPriceBasis.All)}.");
         if (command.ReturnDue is { } due && due < DateOnly.FromDateTime(command.EventTime)) throw new CommandRefusedException("return_due_before_creation", "The return due date cannot be before the document date.");
@@ -220,7 +226,10 @@ public sealed class ShipWarrantyReplacementHandler
         document.ShippedAt = clock.UtcNow;
         document.ShippedBy = command.ActorRef;
         document.StockPostingReference = stockResult.PostingReference;
-        link.State = link.ReturnDue is null ? ReplacementLinkState.ClosedReturned : ReplacementLinkState.AwaitingReturn;
+        var alreadyReturned = link.SourceKind == ReplacementSourceKind.Rma
+            && await db.ReturnReceipts.AsNoTracking().AnyAsync(row => row.TenantId == tenantId && row.RmaId == link.SourceId
+                && row.ReceivedUnitId == link.OriginalUnitId && row.Outcome == ReturnOutcome.Accepted, cancellationToken);
+        link.State = link.ReturnDue is null || alreadyReturned ? ReplacementLinkState.ClosedReturned : ReplacementLinkState.AwaitingReturn;
         link.TargetEntitlementId = transfer.TargetEntitlementId;
         link.PolicyApplied = transfer.PolicyApplied;
         link.ComputedEnd = transfer.ComputedEnd;
@@ -337,4 +346,9 @@ public static class ReplacementEventType
     public const string Shipped = "replacement.shipped";
     public const string AssetTagRepointed = "replacement.asset_tag_repointed";
     public const string AssetTagPrintRequested = "replacement.asset_tag_print_requested";
+    public const string ReturnOverdue = "replacement.return_overdue";
+    public const string ReturnDueExtended = "replacement.return_due_extended";
+    public const string NonReturnBilled = "replacement.non_return_billed";
+    public const string LoanConverted = "replacement.loan_converted";
+    public const string VendorReceived = "replacement.vendor_received";
 }

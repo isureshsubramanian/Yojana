@@ -432,12 +432,32 @@ public static class SerialisationEndpoints
         var replacements = app.MapGroup("/api/warranty-replacements").RequireAuthorization(YojanaPolicy.TenantMember);
         replacements.MapGet("/", async (string? status, int? skip, int? take, Replacements.WarrantyReplacementQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.ListAsync(status, skip ?? 0, take ?? 50, ct)));
+        replacements.MapGet("/pending", async (int? skip, int? take, Replacements.ReplacementLinkQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.PendingAsync(skip ?? 0, take ?? 50, ct)));
         replacements.MapGet("/{warrantyReplacementId:guid}", async (Guid warrantyReplacementId, Replacements.WarrantyReplacementQueries queries, CancellationToken ct) =>
             await queries.DetailAsync(warrantyReplacementId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
         replacements.MapPost("/", (CreateWarrantyReplacement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<CreateWarrantyReplacementResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
         replacements.MapPost("/{warrantyReplacementId:guid}/ship", (Guid warrantyReplacementId, ShipWarrantyReplacement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<ShipWarrantyReplacementResult>(bus, tenant, command with { WarrantyReplacementId = warrantyReplacementId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
+        replacements.MapPost("/convert-loan", (ConvertLoanToReplacement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<ConvertLoanToReplacementResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.ServiceSupervisor);
+        replacements.MapPost("/vendor-receipt", (ReceiveVendorReplacement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<ReceiveVendorReplacementResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.WarehouseLead);
+
+        // P5 advance-replacement block kept separate so sibling endpoint additions merge mechanically.
+        var replacementLinks = app.MapGroup("/api/replacement-links").RequireAuthorization(YojanaPolicy.TenantMember);
+        replacementLinks.MapGet("/", async (string? state, bool? overdue, int? skip, int? take, Replacements.ReplacementLinkQueries queries, IClock clock, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await queries.PageAsync(state, overdue ?? false, DateOnly.FromDateTime(clock.UtcNow), skip ?? 0, take ?? 50, ct)); }
+            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "filters_invalid", detail = ex.Message }); }
+        });
+        replacementLinks.MapPost("/{replacementLinkId:guid}/extend-return-due", (Guid replacementLinkId, ExtendReturnDue command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<ExtendReturnDueResult>(bus, tenant, command with { ReplacementLinkId = replacementLinkId, ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.ServiceSupervisor);
+        replacementLinks.MapPost("/{replacementLinkId:guid}/bill-non-return", (Guid replacementLinkId, BillNonReturn command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<BillNonReturnResult>(bus, tenant, command with { ReplacementLinkId = replacementLinkId, ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.ServiceSupervisor);
+        replacementLinks.MapPost("/holds/{partyRef:guid}/lift", (Guid partyRef, LiftReplacementHold command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<LiftReplacementHoldResult>(bus, tenant, command with { PartyRef = partyRef, ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.ServiceSupervisor);
 
         var recoveryClaims = app.MapGroup("/api/recovery-claims").RequireAuthorization(YojanaPolicy.TenantMember);
         recoveryClaims.MapGet("/", async (string? status, Guid? vendor, Guid? childItem, string? find, int? skip, int? take, RecoveryQueries queries, IPartyNamePort parties, IClock clock, CancellationToken ct) =>

@@ -271,7 +271,7 @@ public sealed class RmaTests(SerialisationHostFixture fixture)
     [InlineData(RmaDisposition.Reject, LocationKind.Quarantine, null, false)]
     [InlineData(RmaDisposition.RestockAsNew, LocationKind.Warehouse, null, true)]
     public async Task Every_disposition_has_the_specified_custody_entitlement_and_ownership_effect(
-        string disposition, string expectedLocation, string? closeReason, bool ownershipReturnsToUs)
+        string disposition, string expectedLocation, string? closeReason, bool ownershipLeavesCustomer)
     {
         var setup = await SetUpReturnedUnitAsync("rma-d-" + disposition[..Math.Min(5, disposition.Length)]);
         if (disposition == RmaDisposition.ReturnToStock)
@@ -313,13 +313,14 @@ public sealed class RmaTests(SerialisationHostFixture fixture)
         var line = await db.RmaLines.AsNoTracking().SingleAsync(l => l.RmaLineId == requested.LineIds[0]);
         var customerEpisode = await db.Episodes.AsNoTracking().SingleAsync(e => e.EpisodeId == line.OwnershipEpisodeId);
         var currentOwner = await db.Episodes.AsNoTracking().SingleAsync(e => e.UnitId == setup.Unit && e.Kind == EpisodeKind.Ownership && e.ValidTo == null);
-        if (ownershipReturnsToUs)
+        if (ownershipLeavesCustomer)
         {
-            Assert.Equal((PartyType.Us, Entity), (currentOwner.PartyType, currentOwner.PartyRef));
+            Assert.Equal(disposition == RmaDisposition.ReturnToVendor ? (PartyType.Vendor, vendor!.Value) : (PartyType.Us, Entity),
+                (currentOwner.PartyType, currentOwner.PartyRef));
             Assert.Equal(At.AddHours(3), customerEpisode.ValidTo);
             Assert.Equal(("rma", requested.RmaId, 1), (customerEpisode.ClosingDocumentType, customerEpisode.ClosingDocumentId, customerEpisode.ClosingDocumentLine));
             var closed = await db.Events.AsNoTracking().SingleAsync(e => e.UnitId == setup.Unit
-                && e.EventType == UnitEventType.OwnershipClosed && e.DocumentId == requested.RmaId);
+                && e.EventType == UnitEventType.OwnershipClosed && e.DocumentId == requested.RmaId && e.EventTime == At.AddHours(3));
             Assert.Equal(At.AddHours(3), closed.EventTime);
             using var attributes = JsonDocument.Parse(closed.Attributes!);
             Assert.Equal(EpisodeReason.Return, attributes.RootElement.GetProperty("reason").GetString());

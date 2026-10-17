@@ -14,6 +14,7 @@ public sealed class ReplacementEventSchemaTests
         {
             (ReplacementShipped.Schema, ReplacementShipped.Version, typeof(ReplacementShipped)),
             (ReplacementAssetTagPrintRequested.Schema, ReplacementAssetTagPrintRequested.Version, typeof(ReplacementAssetTagPrintRequested)),
+            (ReplacementReturnOverdue.Schema, ReplacementReturnOverdue.Version, typeof(ReplacementReturnOverdue)),
         };
         var nullability = new NullabilityInfoContext();
         foreach (var (schema, version, type) in contracts)

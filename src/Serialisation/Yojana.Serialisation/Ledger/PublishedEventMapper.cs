@@ -241,6 +241,11 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                 return new ReplacementAssetTagPrintRequested(Header(ReplacementAssetTagPrintRequested.Schema, ReplacementAssetTagPrintRequested.Version),
                     GuidOrNull(a, "warranty_replacement_id") ?? Guid.Empty, GuidOrNull(a, "replacement_link_id") ?? Guid.Empty,
                     GuidOrNull(a, "identifier_id") ?? Guid.Empty, Str(a, "asset_tag") ?? "");
+            case ReplacementEventType.ReturnOverdue:
+                return new ReplacementReturnOverdue(Header(ReplacementReturnOverdue.Schema, ReplacementReturnOverdue.Version),
+                    GuidOrNull(a, "replacement_link_id") ?? Guid.Empty, GuidOrNull(a, "original_unit_id") ?? Guid.Empty,
+                    GuidOrNull(a, "replacement_unit_id") ?? Guid.Empty, GuidOrNull(a, "party_ref") ?? Guid.Empty,
+                    Date(a, "return_due") ?? default, Str(a, "non_return_price_basis") ?? "", Int(a, "days_overdue") ?? 0);
             default:
                 return null;
         }
