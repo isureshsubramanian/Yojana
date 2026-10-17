@@ -44,6 +44,7 @@ web-lcp: ## Measure largest contentful paint of the shell against a running host
 	node tools/web-perf/lcp.mjs --base "$${YOJANA_LCP_BASE:-http://localhost:5080}" --budget-ms 2000 $(LCP_ARGS)
 
 test: build ## Unit and architecture tests (no database)
+	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Demo.Tests -c $(CONFIG) --no-build -nodeReuse:false -p:UseSharedCompilation=false -p:NuGetAudit=false
 	dotnet test tests/Yojana.Architecture.Tests -c $(CONFIG) --no-build
 	dotnet test tests/Yojana.Platform.Tests -c $(CONFIG) --no-build
 	dotnet test tests/Yojana.Serialisation.Tests -c $(CONFIG) --no-build
@@ -89,8 +90,9 @@ migrate: build ## Apply migrations to the development database
 seed: build ## Migrate and seed the DEV tenant and its users
 	dotnet run --project $(WEB) -c $(CONFIG) --no-build -- --seed
 
-demo: ## Load the IT-hardware demo dataset into the running development host
-	node tools/demo-data/it-hardware.mjs --base "$${YOJANA_DEMO_BASE:-http://localhost:5080}"
+demo: ## Load the IT-hardware demo dataset into the development database through module commands
+	MSBUILDDISABLENODEREUSE=1 dotnet build tools/Yojana.Demo -c $(CONFIG) -nodeReuse:false -p:UseSharedCompilation=false -p:NuGetAudit=false
+	dotnet run --project tools/Yojana.Demo -c $(CONFIG) --no-build -- $(DEMO_ARGS)
 
 bench: build ## P1-T21 storage benchmark against YOJANA_BENCH_SQL_HOST / YOJANA_BENCH_SQL_PASSWORD (BENCH_ARGS="measure --samples 500 ...")
 	@test -n "$(YOJANA_BENCH_SQL_HOST)" || { echo "YOJANA_BENCH_SQL_HOST is not set (see .env.example)"; exit 1; }

@@ -16,7 +16,9 @@ public static class DevReferenceCatalogue
     public static DevReferenceCatalogueCounts Load(
         IHostEnvironment environment,
         string path,
+        InMemoryItemPorts itemProfiles,
         InMemoryItemNamePort items,
+        InMemoryWarrantyPorts warranties,
         InMemoryPartyNamePort parties,
         InMemoryDocumentNumberRegistry documents)
     {
@@ -33,6 +35,20 @@ public static class DevReferenceCatalogue
         {
             Require(item.Code, "item code");
             items.Register(new ItemLabel(item.Id, item.Code, item.Name));
+            if (item.Serialisation is { } profile)
+            {
+                itemProfiles.Register(new ItemSerialisationProfile(item.Id, item.Code, profile.TrackingMode,
+                    profile.SerialisationPoint, profile.RetentionClass, profile.SerialReusePolicy,
+                    profile.AsBuiltCompleteness, profile.SerialScheme, profile.ExpiryRequired, profile.ItemClass));
+            }
+
+            foreach (var policy in item.WarrantyPolicies ?? [])
+            {
+                Require(policy.CoverageFamily, "item warranty coverage family");
+                Require(policy.PolicyCode, "item warranty policy code");
+                warranties.Register(new ItemWarrantyPolicy(item.Id, policy.CoverageFamily, policy.PolicyCode,
+                    policy.EntitlementRequiredOnSale));
+            }
         }
 
         foreach (var party in catalogue.Parties)
@@ -63,12 +79,34 @@ public static class DevReferenceCatalogue
         if (string.IsNullOrWhiteSpace(value)) throw new InvalidDataException($"Development reference catalogue has a blank {field}.");
     }
 
+    // Shared JSON contract: tools/Yojana.Demo/DemoCatalogue.cs reads the same development-only file so the loader and
+    // the restarted host see identical labels, item profiles and product-policy mappings. Change both readers together.
     public sealed record DevReferenceCatalogueFile(
         IReadOnlyList<DevItemLabel> Items,
         IReadOnlyList<DevPartyLabel> Parties,
         IReadOnlyList<DevDocumentLabel> Documents);
 
-    public sealed record DevItemLabel(Guid Id, string Code, string? Name);
+    public sealed record DevItemLabel(
+        Guid Id,
+        string Code,
+        string? Name,
+        DevItemSerialisation? Serialisation = null,
+        IReadOnlyList<DevItemWarrantyPolicy>? WarrantyPolicies = null);
+
+    public sealed record DevItemSerialisation(
+        string TrackingMode,
+        string SerialisationPoint,
+        string RetentionClass,
+        string SerialReusePolicy,
+        string AsBuiltCompleteness,
+        string SerialScheme,
+        bool ExpiryRequired = false,
+        string? ItemClass = null);
+
+    public sealed record DevItemWarrantyPolicy(
+        string CoverageFamily,
+        string PolicyCode,
+        bool EntitlementRequiredOnSale = true);
 
     public sealed record DevPartyLabel(Guid Id, string Code, string? Name, string PartyType);
 

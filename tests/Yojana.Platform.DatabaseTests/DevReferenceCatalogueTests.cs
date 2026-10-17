@@ -18,16 +18,25 @@ public sealed class DevReferenceCatalogueTests
         var path = Path.Combine(AppContext.BaseDirectory, "DevData", "reference-labels.json");
         var expected = JsonSerializer.Deserialize<DevReferenceCatalogue.DevReferenceCatalogueFile>(
             await File.ReadAllTextAsync(path), JsonOptions)!;
-        var itemPort = new InMemoryItemNamePort(new InMemoryItemPorts());
+        var itemProfiles = new InMemoryItemPorts();
+        var itemPort = new InMemoryItemNamePort(itemProfiles);
+        var warranties = new InMemoryWarrantyPorts();
         var partyPort = new InMemoryPartyNamePort();
         var documents = new InMemoryDocumentNumberRegistry();
 
-        var counts = DevReferenceCatalogue.Load(new TestEnvironment(Environments.Development), path, itemPort, partyPort, documents);
+        var counts = DevReferenceCatalogue.Load(new TestEnvironment(Environments.Development), path, itemProfiles, itemPort, warranties, partyPort, documents);
 
         Assert.Equal(new DevReferenceCatalogueCounts(expected.Items.Count, expected.Parties.Count, expected.Documents.Count), counts);
         var itemLabels = await itemPort.NamesAsync(expected.Items.Select(row => row.Id).ToList(), CancellationToken.None);
         var partyLabels = await partyPort.NamesAsync(expected.Parties.Select(row => row.Id).ToList(), CancellationToken.None);
         Assert.All(expected.Items, row => Assert.Equal((row.Code, row.Name), (itemLabels[row.Id].Code, itemLabels[row.Id].Name)));
+        foreach (var row in expected.Items.Where(row => row.Serialisation is not null))
+        {
+            var profile = await itemProfiles.GetAsync(row.Id, CancellationToken.None);
+            Assert.Equal((row.Code, row.Serialisation!.SerialisationPoint), (profile!.ItemCode, profile.SerialisationPoint));
+            var registeredPolicies = await warranties.PoliciesForAsync(row.Id, CancellationToken.None);
+            Assert.Equal((row.WarrantyPolicies ?? []).Select(policy => policy.PolicyCode).Order(), registeredPolicies.Select(policy => policy.PolicyCode).Order());
+        }
         Assert.All(expected.Parties, row => Assert.Equal((row.Code, row.Name, row.PartyType),
             (partyLabels[row.Id].Code, partyLabels[row.Id].Name, partyLabels[row.Id].PartyType)));
         Assert.All(expected.Documents, row =>
@@ -43,11 +52,13 @@ public sealed class DevReferenceCatalogueTests
     public async Task Non_development_environments_never_open_or_register_the_catalogue(string environmentName)
     {
         var unknown = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
-        var itemPort = new InMemoryItemNamePort(new InMemoryItemPorts());
+        var itemProfiles = new InMemoryItemPorts();
+        var itemPort = new InMemoryItemNamePort(itemProfiles);
+        var warranties = new InMemoryWarrantyPorts();
         var partyPort = new InMemoryPartyNamePort();
         var documents = new InMemoryDocumentNumberRegistry();
 
-        var counts = DevReferenceCatalogue.Load(new TestEnvironment(environmentName), "file-must-not-be-opened.json", itemPort, partyPort, documents);
+        var counts = DevReferenceCatalogue.Load(new TestEnvironment(environmentName), "file-must-not-be-opened.json", itemProfiles, itemPort, warranties, partyPort, documents);
 
         Assert.Equal(new DevReferenceCatalogueCounts(0, 0, 0), counts);
         Assert.Null((await itemPort.NamesAsync([unknown], CancellationToken.None))[unknown].Name);

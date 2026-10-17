@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
@@ -6,7 +5,6 @@ using Xunit;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
-using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Campaigns;
 using Yojana.Serialisation.Data.Entities;
 
@@ -259,25 +257,7 @@ public sealed class CampaignTests(SerialisationHostFixture fixture)
 
     private async Task FirmwareAsync(TenantId tenant, Guid unitId, string value, DateTime at)
     {
-        using var scope = fixture.ScopeFor(tenant);
-        var writer = scope.ServiceProvider.GetRequiredService<IUnitEventWriter>();
-        await writer.AppendAsync(
-        [
-            new UnitEventDraft
-            {
-                UnitId = unitId,
-                EventTime = at,
-                EventType = "unit.attribute_changed",
-                LegalEntityId = Entity,
-                ActorRef = "device-management",
-                IdempotencyKey = "firmware:" + unitId.ToString("N") + ":" + value,
-                Attributes = JsonObjectText.Of(new { attribute = "firmware", value }),
-                Delta = new CurrentStateDelta
-                {
-                    Attributes = new Dictionary<string, JsonElement?> { ["firmware"] = JsonSerializer.SerializeToElement(value) },
-                },
-            },
-        ], CancellationToken.None);
-        await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().SaveChangesAsync();
+        await InvokeAsync<RecordUnitAttributesResult>(tenant, new RecordUnitAttributes(Guid.NewGuid(), unitId,
+            new Dictionary<string, string?> { ["firmware"] = value }, at, "device-management", Entity));
     }
 }

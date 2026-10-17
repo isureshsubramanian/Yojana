@@ -82,7 +82,7 @@ public sealed record AdjudicateClaimResult(
     bool Replayed,
     Guid? SuccessorItemId = null);
 
-public sealed record ApproveRecoveryClaim(Guid CommandId, Guid RecoveryClaimId, decimal ApprovedAmount, DateTime EventTime, string ActorRef);
+public sealed record ApproveRecoveryClaim(Guid CommandId, Guid RecoveryClaimId, decimal ApprovedAmount, DateTime EventTime, string ActorRef, string? Note = null);
 
 public sealed record RecoveryClaimChangeResult(Guid RecoveryClaimId, string Status, decimal RequestedAmount, decimal? ApprovedAmount, Guid EventId, bool Replayed);
 

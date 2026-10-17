@@ -313,6 +313,7 @@ public static class ApproveRecoveryClaimHandler
         if (await ledger.ReplayedAsync(key, command.EventTime, cancellationToken) is { } replayed) return new(recovery.RecoveryClaimId, recovery.Status, recovery.RequestedAmount, recovery.ApprovedAmount, replayed.EventId, true);
         if (recovery.Status != RecoveryClaimStatus.Raised) throw new CommandRefusedException("recovery_claim_transition_not_allowed", $"Recovery claim {recovery.RecoveryClaimId} is {recovery.Status}; only raised claims can be approved.");
         if (command.ApprovedAmount < 0 || command.ApprovedAmount > recovery.RequestedAmount) throw new CommandRefusedException("recovery_amount_invalid", "The approved recovery amount must be between zero and the requested amount.");
+        if (command.Note is { Length: > 1000 }) throw new CommandRefusedException("recovery_note_too_long", "A vendor-answer note is limited to 1,000 characters.");
         var claim = await ledger.LoadAsync(recovery.CustomerClaimId, cancellationToken);
         var eventId = ClaimLedger.EventId(command.EventTime);
         recovery.ApprovedAmount = command.ApprovedAmount;
@@ -326,7 +327,7 @@ public static class ApproveRecoveryClaimHandler
             {
                 UnitId = recovery.ChildUnitId, EventTime = command.EventTime, EventType = ClaimEventType.RecoveryApproved, PresetEventId = eventId,
                 LegalEntityId = claim.ServiceEntityId, ActorRef = command.ActorRef, IdempotencyKey = key,
-                Attributes = JsonObjectText.Of(new { recovery_claim_id = recovery.RecoveryClaimId, vendor_party_ref = recovery.VendorPartyRef, amount = command.ApprovedAmount, currency = recovery.Currency }),
+                Attributes = JsonObjectText.Of(new { recovery_claim_id = recovery.RecoveryClaimId, vendor_party_ref = recovery.VendorPartyRef, amount = command.ApprovedAmount, currency = recovery.Currency, note = command.Note?.Trim() }),
             },
         ], cancellationToken);
         return new(recovery.RecoveryClaimId, recovery.Status, recovery.RequestedAmount, recovery.ApprovedAmount, eventId, false);
