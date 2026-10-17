@@ -9,7 +9,7 @@ CLIENT := web
 GATES := dotnet run --project tools/Yojana.Gates --
 CONFIG ?= Debug
 
-.PHONY: help env build test test-db gate bench licences notices names budget self-test db-up db-down db-wait migrate seed run restore clean db-reset web-install web-check web-test web web-dev web-lcp
+.PHONY: help env hooks build test test-db gate bench licences notices names budget self-test db-up db-down db-wait migrate seed run restore clean db-reset web-install web-check web-test web web-dev web-lcp
 
 help:
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -98,3 +98,6 @@ run: build ## Run the web host on http://localhost:5080
 
 clean:
 	dotnet clean $(SLN) >/dev/null; find . -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} +
+
+hooks: ## Install the pre-push guard that keeps internal-only paths off the remote
+	ln -sf ../../scripts/check-push.sh .git/hooks/pre-push

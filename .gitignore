@@ -21,3 +21,27 @@ web/.dev/
 docs/
 reports/
 research_notes/
+
+# Anything else that is internal stays local too (owner direction, 2026-10-17):
+# mockups, screenshots, sample data, benchmark results, plans, ADRs, reports.
+# scripts/check-push.sh enforces the same list on every push.
+.claude/
+mockups/
+screenshots/
+shots*/
+research/
+plan/
+plans/
+adr/
+adrs/
+benchmarks/
+bench-*.md
+bench-*.json
+sample-data/
+samples/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.pdf
