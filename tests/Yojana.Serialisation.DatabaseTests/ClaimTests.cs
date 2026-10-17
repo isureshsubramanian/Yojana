@@ -135,6 +135,15 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
         var expired = await InvokeAsync<AdjudicateClaimResult>(setup.Tenant, new AdjudicateClaim(Guid.NewGuid(), month15.ClaimId, new DateTime(2026, 3, 1, 10, 0, 0, DateTimeKind.Utc), "service.manager"));
         Assert.Empty(expired.RecoveryClaimIds);
 
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var numbers = await db.Claims.Where(c => c.ClaimId == month9.ClaimId || c.ClaimId == month15.ClaimId).OrderBy(c => c.SubmittedAt).Select(c => c.ClaimNumber).ToListAsync();
+            Assert.Equal(["CLM-2025-00001", "CLM-2026-00001"], numbers);
+            var recovery = Assert.Single(await scope.ServiceProvider.GetRequiredService<Claims.ClaimQueries>().RecoveryListAsync(null, CancellationToken.None));
+            Assert.Equal(("RCV-2025-0001", "CLM-2025-00001"), (recovery.RecoveryNumber, recovery.CustomerClaimNumber));
+        }
+
         var raised = Assert.Single(await PublishedEventSink.WaitForAsync<RecoveryClaimRaised>(e => e.CustomerClaimId == month9.ClaimId, 1, TimeSpan.FromSeconds(20)));
         Assert.Equal(setup.Units[1], raised.ChildUnitId);
         Assert.DoesNotContain(PublishedEventSink.Received.OfType<RecoveryClaimRaised>(), e => e.CustomerClaimId == month15.ClaimId);

@@ -43,7 +43,8 @@ public sealed class ClaimQueries(SerialisationDbContext db, ITenantContext tenan
         var rows = db.RecoveryClaims.AsNoTracking().Where(r => r.TenantId == tenantId);
         if (!string.IsNullOrWhiteSpace(status)) rows = rows.Where(r => r.Status == status);
         return rows.OrderBy(r => r.Status).ThenBy(r => r.RaisedAt).Select(r => new RecoveryClaimRow(r.RecoveryClaimId, r.CustomerClaimId, r.ClaimLineId,
-            r.InboundEntitlementId, r.ChildUnitId, r.VendorPartyRef, r.RequestedAmount, r.ApprovedAmount, r.Currency, r.Status, r.RaisedAt, r.ApprovedAt, r.ApprovedBy)).ToListAsync(cancellationToken);
+            r.InboundEntitlementId, r.ChildUnitId, r.VendorPartyRef, r.RequestedAmount, r.ApprovedAmount, r.Currency, r.Status, r.RaisedAt, r.ApprovedAt, r.ApprovedBy,
+            r.RecoveryNumber, db.Claims.Where(c => c.TenantId == tenantId && c.ClaimId == r.CustomerClaimId).Select(c => c.ClaimNumber).First())).ToListAsync(cancellationToken);
     }
 
     public Task<bool> HasOpenClaimsAsync(Guid unitId, Guid entitlementId, CancellationToken cancellationToken) =>

@@ -32,7 +32,7 @@ public sealed class ClaimRulesTests
     {
         var claim = new Claim
         {
-            TenantId = new TenantId(Guid.NewGuid()), ClaimId = Guid.NewGuid(), CommandId = Guid.NewGuid(), UnitId = Guid.NewGuid(),
+            TenantId = new TenantId(Guid.NewGuid()), ClaimId = Guid.NewGuid(), ClaimNumber = "CLM-2026-00001", CommandId = Guid.NewGuid(), UnitId = Guid.NewGuid(),
             ServiceCountry = "DE", Currency = "EUR", CoverageSource = ClaimCoverageSource.Warranty, Remedy = ClaimRemedy.Repair,
             Status = ClaimStatus.Submitted, SubmittedBy = "test",
         };
@@ -140,6 +140,12 @@ public sealed class ClaimRulesTests
         Assert.True(RecoveryEligibility.IsLive(entitlement, new DateOnly(2025, 9, 1)));
         Assert.False(RecoveryEligibility.IsLive(entitlement, new DateOnly(2026, 3, 1)));
     }
+
+    [Theory]
+    [InlineData(DocumentNumbers.Claim, 412, "CLM-2026-00412")]
+    [InlineData(DocumentNumbers.Recovery, 31, "RCV-2026-0031")]
+    public void Document_numbers_carry_series_year_and_padded_value(string series, int value, string expected) =>
+        Assert.Equal(expected, DocumentNumbers.Format(series, 2026, value));
 
     private static ItemSerialisationProfile Item() => new(Guid.NewGuid(), "ITEM-1", ItemSerialisationProfile.TrackingModes.Serial,
         SerialisationPoint.ProductionRelease, "standard_10y", ItemSerialisationProfile.ReusePolicies.Never,

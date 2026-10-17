@@ -123,5 +123,7 @@ public sealed record RecoveryClaimRow(
     string Status,
     DateTime RaisedAt,
     DateTime? ApprovedAt,
-    string? ApprovedBy);
+    string? ApprovedBy,
+    string RecoveryNumber = "",
+    string CustomerClaimNumber = "");
 

@@ -650,6 +650,13 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("date")
                         .HasColumnName("claim_date");
 
+                    b.Property<string>("ClaimNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("claim_number");
+
                     b.Property<Guid>("ClaimantPartyRef")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("claimant_party_ref");
@@ -753,6 +760,10 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasKey("TenantId", "ClaimId")
                         .HasName("pk_claim");
+
+                    b.HasIndex("TenantId", "ClaimNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ux_claim_tenant_id_claim_number");
 
                     b.HasIndex("TenantId", "CommandId")
                         .IsUnique()
@@ -2192,6 +2203,35 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.NumberSeries", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Series")
+                        .HasMaxLength(10)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(10)")
+                        .HasColumnName("series");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int")
+                        .HasColumnName("year");
+
+                    b.Property<int>("LastValue")
+                        .HasColumnType("int")
+                        .HasColumnName("last_value");
+
+                    b.HasKey("TenantId", "Series", "Year")
+                        .HasName("pk_number_series");
+
+                    b.ToTable("number_series", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_number_series_last_value", "last_value >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PendingShipmentLine", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -2334,6 +2374,13 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("raised_event_id");
 
+                    b.Property<string>("RecoveryNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("recovery_number");
+
                     b.Property<decimal>("RequestedAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)")
@@ -2351,6 +2398,10 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasKey("TenantId", "RecoveryClaimId")
                         .HasName("pk_recovery_claim");
+
+                    b.HasIndex("TenantId", "RecoveryNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ux_recovery_claim_tenant_id_recovery_number");
 
                     b.HasIndex("TenantId", "Status", "RaisedAt")
                         .HasDatabaseName("ix_recovery_claim_tenant_id_status_raised_at");

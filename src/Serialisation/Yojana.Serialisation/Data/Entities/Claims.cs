@@ -9,6 +9,8 @@ public sealed class Claim : ITenantScoped
 {
     public TenantId TenantId { get; set; }
     public Guid ClaimId { get; set; }
+    /// <summary>Human claim number, CLM-yyyy-nnnnn, allocated from <see cref="NumberSeries"/> at submission.</summary>
+    public required string ClaimNumber { get; set; }
     public Guid CommandId { get; set; }
     public Guid UnitId { get; set; }
     public DateOnly ClaimDate { get; set; }
@@ -75,6 +77,8 @@ public sealed class RecoveryClaim : ITenantScoped
 {
     public TenantId TenantId { get; set; }
     public Guid RecoveryClaimId { get; set; }
+    /// <summary>Human recovery number, RCV-yyyy-nnnn, allocated from <see cref="NumberSeries"/> when raised.</summary>
+    public required string RecoveryNumber { get; set; }
     public Guid CustomerClaimId { get; set; }
     public Guid ClaimLineId { get; set; }
     public Guid InboundEntitlementId { get; set; }
@@ -89,4 +93,16 @@ public sealed class RecoveryClaim : ITenantScoped
     public string? ApprovedBy { get; set; }
     public Guid RaisedEventId { get; set; }
     public Guid? ApprovedEventId { get; set; }
+}
+
+/// <summary>
+/// The last number issued in one tenant's document series for one year. Claims and recovery claims draw from it today;
+/// later documents (RMA, certificates) add their own series codes rather than their own counters.
+/// </summary>
+public sealed class NumberSeries : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public required string Series { get; set; }
+    public int Year { get; set; }
+    public int LastValue { get; set; }
 }

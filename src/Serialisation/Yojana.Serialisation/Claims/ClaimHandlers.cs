@@ -16,7 +16,7 @@ namespace Yojana.Serialisation.Claims;
 public static class SubmitClaimHandler
 {
     public static async Task<SubmitClaimResult> Handle(SubmitClaim command, SerialisationDbContext db, UnitQueries units, ClaimUnitFacts facts,
-        ClaimLedger ledger, LegacyUnknownClaimUnitCreator legacyUnits, ITenantContext tenant, CancellationToken cancellationToken)
+        ClaimLedger ledger, LegacyUnknownClaimUnitCreator legacyUnits, DocumentNumbers numbers, ITenantContext tenant, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         if (await db.Claims.AsNoTracking().FirstOrDefaultAsync(c => c.TenantId == tenantId && c.CommandId == command.CommandId, cancellationToken) is { } replay)
@@ -64,7 +64,8 @@ public static class SubmitClaimHandler
         var eventId = ClaimLedger.EventId(command.EventTime);
         var claim = new Claim
         {
-            TenantId = tenantId, ClaimId = claimId, CommandId = command.CommandId, UnitId = unitId.Value, ClaimDate = command.ClaimDate,
+            TenantId = tenantId, ClaimId = claimId, ClaimNumber = await numbers.NextAsync(DocumentNumbers.Claim, command.EventTime, cancellationToken),
+            CommandId = command.CommandId, UnitId = unitId.Value, ClaimDate = command.ClaimDate,
             ClaimantPartyRef = command.ClaimantPartyRef, SettlementPartyRef = command.SettlementPartyRef, ServiceEntityId = command.ServiceEntityId,
             ObligorEntityId = command.ObligorEntityId, ServiceCountry = command.ServiceCountry.Trim().ToUpperInvariant(), Currency = command.Currency.Trim().ToUpperInvariant(),
             CoverageSource = ClaimCoverageSource.Chargeable, Remedy = command.Remedy, Status = ClaimStatus.Submitted, SubmittedAt = command.EventTime,
@@ -108,7 +109,7 @@ public static class AdjudicateClaimHandler
 {
     public static async Task<AdjudicateClaimResult> Handle(AdjudicateClaim command, SerialisationDbContext db, ClaimLedger ledger, ClaimUnitFacts facts,
         PolicyResolver policies, ISettlementFormulaPort formulas, IItemQueryPort items, IEntitlementRecoveryQuery recoveries, ClaimReviewSettings reviewSettings,
-        ITenantContext tenant, CancellationToken cancellationToken)
+        DocumentNumbers numbers, ITenantContext tenant, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var claim = await ledger.LoadAsync(command.ClaimId, cancellationToken);
@@ -272,7 +273,8 @@ public static class AdjudicateClaimHandler
                     var recoveryEventId = ClaimLedger.EventId(command.EventTime);
                     db.RecoveryClaims.Add(new RecoveryClaim
                     {
-                        TenantId = tenantId, RecoveryClaimId = recoveryId, CustomerClaimId = claim.ClaimId, ClaimLineId = line.ClaimLineId,
+                        TenantId = tenantId, RecoveryClaimId = recoveryId, RecoveryNumber = await numbers.NextAsync(DocumentNumbers.Recovery, command.EventTime, cancellationToken),
+                        CustomerClaimId = claim.ClaimId, ClaimLineId = line.ClaimLineId,
                         InboundEntitlementId = cover.EntitlementId, ChildUnitId = cover.UnitId, VendorPartyRef = cover.VendorPartyRef,
                         RequestedAmount = line.ApprovedAmount, Currency = claim.Currency, Status = RecoveryClaimStatus.Raised,
                         RaisedAt = command.EventTime, RaisedEventId = recoveryEventId,

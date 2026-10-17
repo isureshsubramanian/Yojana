@@ -108,6 +108,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<ClaimEvidence> ClaimEvidence => Set<ClaimEvidence>();
 
     public DbSet<RecoveryClaim> RecoveryClaims => Set<RecoveryClaim>();
+    public DbSet<NumberSeries> NumberSeries => Set<NumberSeries>();
 
     public DbSet<Campaign> Campaigns => Set<Campaign>();
 
@@ -742,7 +743,9 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.SubmittedBy).HasMaxLength(200);
             b.Property(c => c.AdjudicatedBy).HasMaxLength(200);
             b.Property(c => c.ReviewerRole).HasMaxLength(80);
+            b.Property(c => c.ClaimNumber).HasMaxLength(20).IsUnicode(false);
             b.HasIndex(c => new { c.TenantId, c.CommandId }).IsUnique();
+            b.HasIndex(c => new { c.TenantId, c.ClaimNumber }).IsUnique();
             b.HasIndex(c => new { c.TenantId, c.UnitId, c.Status, c.ClaimDate });
             b.HasIndex(c => new { c.TenantId, c.Status, c.SubmittedAt });
         });
@@ -796,10 +799,19 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(r => r.Currency).HasMaxLength(3).IsUnicode(false);
             b.Property(r => r.Status).HasMaxLength(20);
             b.Property(r => r.ApprovedBy).HasMaxLength(200);
+            b.Property(r => r.RecoveryNumber).HasMaxLength(20).IsUnicode(false);
+            b.HasIndex(r => new { r.TenantId, r.RecoveryNumber }).IsUnique();
             b.HasIndex(r => new { r.TenantId, r.CustomerClaimId, r.ClaimLineId, r.InboundEntitlementId, r.ChildUnitId }).IsUnique();
             b.HasIndex(r => new { r.TenantId, r.Status, r.RaisedAt });
             b.HasIndex(r => new { r.TenantId, r.VendorPartyRef, r.Status });
             b.HasOne<Claim>().WithMany().HasForeignKey(r => new { r.TenantId, r.CustomerClaimId }).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<NumberSeries>(b =>
+        {
+            b.ToTable("number_series", t => t.HasCheckConstraint("ck_number_series_last_value", "last_value >= 0"));
+            b.HasKey(n => new { n.TenantId, n.Series, n.Year });
+            b.Property(n => n.Series).HasMaxLength(10).IsUnicode(false);
         });
 
         // MOD-07 campaign half (P4-T02/P4-T07). Selected recipients are snapshots, not navigation-backed live values:
