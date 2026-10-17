@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/recoveryclaim.raised.json",
+  "title": "RecoveryClaim.Raised",
+  "type": "object",
+  "required": ["header", "recovery_claim_id", "customer_claim_id", "claim_line_id", "inbound_entitlement_id", "child_unit_id", "vendor_party_ref", "requested_amount", "currency"],
+  "properties": {
+    "header": { "type": "object" },
+    "recovery_claim_id": { "type": "string", "format": "uuid" },
+    "customer_claim_id": { "type": "string", "format": "uuid" },
+    "claim_line_id": { "type": "string", "format": "uuid" },
+    "inbound_entitlement_id": { "type": "string", "format": "uuid" },
+    "child_unit_id": { "type": "string", "format": "uuid" },
+    "vendor_party_ref": { "type": "string", "format": "uuid" },
+    "requested_amount": { "type": "number" },
+    "currency": { "type": "string" }
+  }
+}

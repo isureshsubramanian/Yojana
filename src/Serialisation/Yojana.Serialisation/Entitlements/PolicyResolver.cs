@@ -1,8 +1,10 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation.Entitlements;
 
@@ -21,7 +23,7 @@ public sealed class PolicyResolver(SerialisationDbContext db, ITenantContext ten
         var tenantId = tenant.TenantId;
         var trail = new List<string>();
 
-        var own = await LiveAsync(question.UnitId, question.CoverageFamily, cancellationToken);
+        var own = await ApplicableAsync(question.UnitId, question, cancellationToken);
         if (own is not null)
         {
             trail.Add($"unit: live {own.CoverageFamily} entitlement {own.EntitlementId}");
@@ -32,9 +34,17 @@ public sealed class PolicyResolver(SerialisationDbContext db, ITenantContext ten
         var child = question.UnitId;
         for (var depth = 0; depth < MaxParentDepth; depth++)
         {
-            var parent = await db.AssemblyLinks.AsNoTracking().Where(l => l.TenantId == tenantId && l.ChildUnitId == child && l.RemovedAt == null).Select(l => (Guid?)l.ParentUnitId).FirstOrDefaultAsync(cancellationToken);
+            var links = db.AssemblyLinks.AsNoTracking().Where(l => l.TenantId == tenantId && l.ChildUnitId == child);
+            if (question.CoverageDate is { } coverageDate)
+            {
+                var from = coverageDate.ToDateTime(TimeOnly.MinValue);
+                var until = from.AddDays(1);
+                links = links.Where(l => l.InstalledAt < until && (l.RemovedAt == null || l.RemovedAt >= from));
+            }
+            else links = links.Where(l => l.RemovedAt == null);
+            var parent = await links.Select(l => (Guid?)l.ParentUnitId).FirstOrDefaultAsync(cancellationToken);
             if (parent is null) break;
-            var covering = await LiveAsync(parent.Value, question.CoverageFamily, cancellationToken);
+            var covering = await ApplicableAsync(parent.Value, question, cancellationToken);
             if (covering is not null && covering.Scope is EntitlementScope.Kit or EntitlementScope.Component && (covering.ScopeChildUnitId is null || covering.ScopeChildUnitId == question.UnitId))
             {
                 trail.Add($"parent {parent}: {covering.Scope} entitlement {covering.EntitlementId} covers this child");
@@ -92,10 +102,18 @@ public sealed class PolicyResolver(SerialisationDbContext db, ITenantContext ten
             .OrderByDescending(v => v.AppliesToContractsFrom).ThenByDescending(v => v.Version).FirstOrDefaultAsync(cancellationToken);
     }
 
-    private Task<Entitlement?> LiveAsync(Guid unitId, string family, CancellationToken cancellationToken)
+    private Task<Entitlement?> ApplicableAsync(Guid unitId, PolicyQuestion question, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
-        return db.Entitlements.AsNoTracking().FirstOrDefaultAsync(e => e.TenantId == tenantId && e.UnitId == unitId && e.CoverageFamily == family && e.Status != EntitlementStatus.Closed, cancellationToken);
+        var rows = db.Entitlements.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == unitId && e.CoverageFamily == question.CoverageFamily);
+        if (question.Direction is { } direction) rows = rows.Where(e => e.Direction == direction);
+        if (question.CoverageDate is { } on)
+        {
+            rows = rows.Where(e => e.StartDate != null && e.StartDate <= on && (e.EndDate == null || e.EndDate >= on)
+                && (e.Status != EntitlementStatus.Closed || e.ClosedEffective == null || e.ClosedEffective >= on));
+        }
+        else rows = rows.Where(e => e.Status != EntitlementStatus.Closed);
+        return rows.OrderByDescending(e => e.StartDate).ThenByDescending(e => e.CreatedAt).FirstOrDefaultAsync(cancellationToken);
     }
 
     private async Task<PolicyResolution> FromEntitlementAsync(string level, Entitlement entitlement, PolicyQuestion question, List<string> trail, CancellationToken cancellationToken)
@@ -104,7 +122,10 @@ public sealed class PolicyResolver(SerialisationDbContext db, ITenantContext ten
         var version = await db.PolicyVersions.AsNoTracking().FirstOrDefaultAsync(v => v.TenantId == tenantId && v.PolicyVersionId == entitlement.PolicyVersionId, cancellationToken);
         var outOfRegion = question.Country is { } country && !Regions.InScope(System.Text.Json.JsonSerializer.Deserialize<List<string>>(entitlement.RegionScope) ?? [], country);
         if (outOfRegion) trail.Add($"region: {question.Country} is outside the entitlement's scope");
-        return new PolicyResolution(level, entitlement.EntitlementId, entitlement.PolicyVersionId, version?.PolicyCode, version?.Version, null, outOfRegion, trail);
+        var coverage = JsonSerializer.Deserialize<CoverageTerms>(entitlement.Coverage, LedgerJson.Options);
+        return new PolicyResolution(level, entitlement.EntitlementId, entitlement.PolicyVersionId, version?.PolicyCode, version?.Version, null, outOfRegion, trail,
+            entitlement.Type, entitlement.Status, entitlement.Direction, coverage, version?.SettlementFormula, entitlement.AccrualCohortId,
+            entitlement.ObligorEntityId, entitlement.PayerPartyRef, entitlement.StartDate, entitlement.EndDate, await ChainLengthAsync(entitlement, cancellationToken));
     }
 
     private Task<PolicyResolution> FromVersionAsync(string level, WarrantyPolicyVersion version, string? contractRef, PolicyQuestion question, List<string> trail, CancellationToken cancellationToken)
@@ -112,6 +133,23 @@ public sealed class PolicyResolver(SerialisationDbContext db, ITenantContext ten
         var scope = System.Text.Json.JsonSerializer.Deserialize<List<string>>(version.RegionScope) ?? [];
         var outOfRegion = question.Country is { } country && !Regions.InScope(scope, country);
         if (outOfRegion) trail.Add($"region: {question.Country} is outside {version.PolicyCode} v{version.Version} ({string.Join(", ", scope)})");
-        return Task.FromResult(new PolicyResolution(level, null, version.PolicyVersionId, version.PolicyCode, version.Version, contractRef, outOfRegion, trail));
+        var coverage = JsonSerializer.Deserialize<CoverageTerms>(version.Coverage, LedgerJson.Options);
+        return Task.FromResult(new PolicyResolution(level, null, version.PolicyVersionId, version.PolicyCode, version.Version, contractRef, outOfRegion, trail,
+            version.EntitlementType, EntitlementStatus.Active, EntitlementDirection.Outbound, coverage, version.SettlementFormula));
+    }
+
+    private async Task<int> ChainLengthAsync(Entitlement entitlement, CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        var length = 0;
+        var parent = entitlement.ParentEntitlementId;
+        while (parent is { } parentId && length < 100)
+        {
+            length++;
+            parent = await db.Entitlements.AsNoTracking().Where(e => e.TenantId == tenantId && e.EntitlementId == parentId)
+                .Select(e => e.ParentEntitlementId).FirstOrDefaultAsync(cancellationToken);
+        }
+
+        return length;
     }
 }

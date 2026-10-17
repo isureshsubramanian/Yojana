@@ -51,6 +51,24 @@ public interface IWarrantyClaimsPort
 
 }
 
+/// <summary>Settlement arithmetic stays behind this port so MOD-22 can add measured formulas without changing claims.</summary>
+public interface ISettlementFormulaPort
+{
+    Task<SettlementFormulaResult> CalculateAsync(SettlementFormulaQuestion question, CancellationToken cancellationToken);
+}
+
+public sealed record SettlementFormulaQuestion(string Formula, decimal RequestedAmount, decimal CoveragePct, IReadOnlyDictionary<string, decimal> Measurements);
+
+public sealed record SettlementFormulaResult(decimal ApprovedAmount);
+
+/// <summary>Historical inbound cover for supplier recovery, including children installed on the claim date.</summary>
+public interface IEntitlementRecoveryQuery
+{
+    Task<IReadOnlyList<InboundRecoveryCoverage>> FindAsync(Guid rootUnitId, Guid lineUnitId, DateOnly claimDate, CancellationToken cancellationToken);
+}
+
+public sealed record InboundRecoveryCoverage(Guid EntitlementId, Guid UnitId, Guid VendorPartyRef);
+
 /// <summary>
 /// Whether a warranty certificate carrying this entitlement has been issued to the customer (certificates, P6). A
 /// reduction after issue needs the higher approval and a customer notification reference (case 140).

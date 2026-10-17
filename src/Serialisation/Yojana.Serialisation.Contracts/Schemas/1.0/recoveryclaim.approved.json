@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/recoveryclaim.approved.json",
+  "title": "RecoveryClaim.Approved",
+  "type": "object",
+  "required": ["header", "recovery_claim_id", "vendor_party_ref", "amount", "currency"],
+  "properties": {
+    "header": { "type": "object" },
+    "recovery_claim_id": { "type": "string", "format": "uuid" },
+    "vendor_party_ref": { "type": "string", "format": "uuid" },
+    "amount": { "type": "number" },
+    "currency": { "type": "string" }
+  }
+}

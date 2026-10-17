@@ -8,6 +8,7 @@ using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Documents;
@@ -325,6 +326,27 @@ public static class SerialisationEndpoints
         entitlements.MapPost("/{entitlementId:guid}/supersede", (Guid entitlementId, SupersedeEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<SupersedeEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId, CommittedBy = Committer(user), Correction = ApiCorrection(command.CommandId, command.ReasonCode, null, command.Correction, user) }, ct));
         entitlements.MapPost("/{entitlementId:guid}/transfer", (Guid entitlementId, TransferEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<TransferEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user), SourceEntitlementId = entitlementId, Correction = ApiCorrection(command.CommandId, EntitlementTransferReason.Replacement, null, command.Correction, user) }, ct)).RequireAuthorization(editor);
+
+        // Claims and supplier recovery (MOD-07, P4). Identity comes from the session; approval commands carry no
+        // approver field that a request body could forge.
+        var claims = app.MapGroup("/api/claims").RequireAuthorization(YojanaPolicy.TenantMember);
+        claims.MapGet("/", async (string? status, int? skip, int? take, ClaimQueries queries, IClock clock, CancellationToken ct) =>
+            Results.Ok(await queries.ListAsync(status, DateOnly.FromDateTime(clock.UtcNow), Math.Max(0, skip ?? 0), take ?? 50, ct)));
+        claims.MapGet("/{claimId:guid}", async (Guid claimId, ClaimQueries queries, CancellationToken ct) =>
+            await queries.DetailAsync(claimId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
+        claims.MapPost("/", (SubmitClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<SubmitClaimResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
+        claims.MapPost("/{claimId:guid}/adjudicate", (Guid claimId, AdjudicateClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<AdjudicateClaimResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(editor);
+        claims.MapPost("/{claimId:guid}/settle", (Guid claimId, SettleClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
+        claims.MapPost("/{claimId:guid}/close", (Guid claimId, CloseClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
+
+        var recoveryClaims = app.MapGroup("/api/recovery-claims").RequireAuthorization(YojanaPolicy.TenantMember);
+        recoveryClaims.MapGet("/", async (string? status, ClaimQueries queries, CancellationToken ct) => Results.Ok(await queries.RecoveryListAsync(status, ct)));
+        recoveryClaims.MapPost("/{recoveryClaimId:guid}/approve", (Guid recoveryClaimId, ApproveRecoveryClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RecoveryClaimChangeResult>(bus, tenant, command with { RecoveryClaimId = recoveryClaimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(editor);
         entitlements.MapGet("/requirements", async (string? status, string? documentType, Guid? document, int? skip, int? take, EntitlementRequirementQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.PageAsync(status, documentType, document, skip ?? 0, take ?? 50, ct)));
         entitlements.MapGet("/requirements/check", async (string documentType, Guid documentId, EntitlementRequirementQueries queries, CancellationToken ct) =>

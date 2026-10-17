@@ -387,6 +387,306 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.Claim", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ClaimId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("claim_id");
+
+                    b.Property<DateTime?>("AdjudicatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("adjudicated_at");
+
+                    b.Property<int>("ChainLength")
+                        .HasColumnType("int")
+                        .HasColumnName("chain_length");
+
+                    b.Property<DateOnly>("ClaimDate")
+                        .HasColumnType("date")
+                        .HasColumnName("claim_date");
+
+                    b.Property<Guid>("ClaimantPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("claimant_party_ref");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("closed_at");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<string>("CoverageSource")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("coverage_source");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<string>("DenialReason")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("denial_reason");
+
+                    b.Property<string>("EntitlementIds")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("entitlement_ids");
+
+                    b.Property<Guid>("LastEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("last_event_id");
+
+                    b.Property<Guid>("ObligorEntityId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("obligor_entity_id");
+
+                    b.Property<bool>("RecoveryRaised")
+                        .HasColumnType("bit")
+                        .HasColumnName("recovery_raised");
+
+                    b.Property<string>("Remedy")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("remedy");
+
+                    b.Property<string>("ServiceCountry")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(2)")
+                        .HasColumnName("service_country");
+
+                    b.Property<Guid>("ServiceEntityId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("service_entity_id");
+
+                    b.Property<DateTime?>("SettledAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("settled_at");
+
+                    b.Property<Guid>("SettlementPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("settlement_party_ref");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime>("SubmittedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("submitted_at");
+
+                    b.Property<string>("SubmittedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("submitted_by");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("TenantId", "ClaimId")
+                        .HasName("pk_claim");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_claim_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "Status", "SubmittedAt")
+                        .HasDatabaseName("ix_claim_tenant_id_status_submitted_at");
+
+                    b.HasIndex("TenantId", "UnitId", "Status", "ClaimDate")
+                        .HasDatabaseName("ix_claim_tenant_id_unit_id_status_claim_date");
+
+                    b.ToTable("claim", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_claim_coverage_source", "coverage_source IN ('warranty', 'recall', 'goodwill', 'contract', 'chargeable')");
+
+                            t.HasCheckConstraint("ck_claim_entitlement_ids_json", "ISJSON(entitlement_ids) = 1");
+
+                            t.HasCheckConstraint("ck_claim_status", "status IN ('submitted', 'adjudicating', 'approved', 'partially_approved', 'denied', 'settled', 'closed')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ClaimEvidence", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("EvidenceId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("evidence_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<Guid>("ClaimId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("claim_id");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("recorded_at");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("reference");
+
+                    b.HasKey("TenantId", "EvidenceId")
+                        .HasName("pk_claim_evidence");
+
+                    b.HasIndex("TenantId", "ClaimId", "RecordedAt")
+                        .HasDatabaseName("ix_claim_evidence_tenant_id_claim_id_recorded_at");
+
+                    b.ToTable("claim_evidence", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ClaimLine", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ClaimLineId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("claim_line_id");
+
+                    b.Property<Guid?>("AccrualCohortId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("accrual_cohort_id");
+
+                    b.Property<decimal>("ApprovedAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("approved_amount");
+
+                    b.Property<int>("ChainLength")
+                        .HasColumnType("int")
+                        .HasColumnName("chain_length");
+
+                    b.Property<Guid>("ClaimId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("claim_id");
+
+                    b.Property<string>("CoverageFamily")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("coverage_family");
+
+                    b.Property<decimal>("CoveragePct")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)")
+                        .HasColumnName("coverage_pct");
+
+                    b.Property<string>("CoverageSource")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("coverage_source");
+
+                    b.Property<string>("DenialReason")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("denial_reason");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("description");
+
+                    b.Property<Guid?>("EntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entitlement_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Measurements")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("measurements");
+
+                    b.Property<Guid?>("PolicyVersionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("policy_version_id");
+
+                    b.Property<decimal>("RequestedAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("requested_amount");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("int")
+                        .HasColumnName("sequence");
+
+                    b.Property<string>("SettlementFormula")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("settlement_formula");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("TenantId", "ClaimLineId")
+                        .HasName("pk_claim_line");
+
+                    b.HasIndex("TenantId", "ClaimId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_claim_line_tenant_id_claim_id_sequence");
+
+                    b.HasIndex("TenantId", "UnitId", "EntitlementId")
+                        .HasDatabaseName("ix_claim_line_tenant_id_unit_id_entitlement_id");
+
+                    b.ToTable("claim_line", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_claim_line_amounts", "requested_amount >= 0 AND approved_amount >= 0 AND approved_amount <= requested_amount");
+
+                            t.HasCheckConstraint("ck_claim_line_coverage_pct", "coverage_pct >= 0 AND coverage_pct <= 100");
+
+                            t.HasCheckConstraint("ck_claim_line_coverage_source", "coverage_source IN ('warranty', 'recall', 'goodwill', 'contract', 'chargeable')");
+
+                            t.HasCheckConstraint("ck_claim_line_measurements_json", "ISJSON(measurements) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CorrectionRecord", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -1723,6 +2023,101 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ux_pending_shipment_line_tenant_id_document_type_document_id_document_line");
 
                     b.ToTable("pending_shipment_line", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RecoveryClaim", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RecoveryClaimId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("recovery_claim_id");
+
+                    b.Property<decimal?>("ApprovedAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("approved_amount");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("approved_at");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("approved_by");
+
+                    b.Property<Guid?>("ApprovedEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("approved_event_id");
+
+                    b.Property<Guid>("ChildUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("child_unit_id");
+
+                    b.Property<Guid>("ClaimLineId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("claim_line_id");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<Guid>("CustomerClaimId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("customer_claim_id");
+
+                    b.Property<Guid>("InboundEntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("inbound_entitlement_id");
+
+                    b.Property<DateTime>("RaisedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("raised_at");
+
+                    b.Property<Guid>("RaisedEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("raised_event_id");
+
+                    b.Property<decimal>("RequestedAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("requested_amount");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("VendorPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("vendor_party_ref");
+
+                    b.HasKey("TenantId", "RecoveryClaimId")
+                        .HasName("pk_recovery_claim");
+
+                    b.HasIndex("TenantId", "Status", "RaisedAt")
+                        .HasDatabaseName("ix_recovery_claim_tenant_id_status_raised_at");
+
+                    b.HasIndex("TenantId", "VendorPartyRef", "Status")
+                        .HasDatabaseName("ix_recovery_claim_tenant_id_vendor_party_ref_status");
+
+                    b.HasIndex("TenantId", "CustomerClaimId", "ClaimLineId", "InboundEntitlementId", "ChildUnitId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_recovery_claim_tenant_id_customer_claim_id_claim_line_id_inbound_entitlement_id_child_unit_id");
+
+                    b.ToTable("recovery_claim", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_recovery_claim_amounts", "requested_amount >= 0 AND (approved_amount IS NULL OR (approved_amount >= 0 AND approved_amount <= requested_amount))");
+
+                            t.HasCheckConstraint("ck_recovery_claim_status", "status IN ('raised', 'approved')");
+                        });
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReplacementPolicy", b =>
@@ -3663,11 +4058,6 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(2000)")
                         .HasColumnName("decision_note");
 
-                    b.Property<string>("EvidenceJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("evidence_json");
-
                     b.Property<DateTime?>("EscalatedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("escalated_at");
@@ -3676,6 +4066,11 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("escalated_by");
+
+                    b.Property<string>("EvidenceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("evidence_json");
 
                     b.Property<DateTime>("InitiatedAt")
                         .HasColumnType("datetime2(3)")
@@ -3781,6 +4176,26 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ClaimEvidence", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.Claim", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ClaimId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_claim_evidence_tenant_id_claim_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ClaimLine", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.Claim", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ClaimId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_claim_line_tenant_id_claim_id");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CorrectionRecordUnit", b =>
                 {
                     b.HasOne("Yojana.Serialisation.Data.Entities.CorrectionRecord", null)
@@ -3789,6 +4204,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_correction_record_unit_tenant_id_correction_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RecoveryClaim", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.Claim", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CustomerClaimId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_recovery_claim_tenant_id_customer_claim_id");
                 });
 #pragma warning restore 612, 618
         }

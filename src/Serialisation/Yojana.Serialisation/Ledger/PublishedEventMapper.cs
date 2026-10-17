@@ -180,6 +180,28 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
             case EntitlementEventType.Closed or EntitlementEventType.Voided:
                 return new EntitlementClosed(Header(EntitlementClosed.Schema, EntitlementClosed.Version), GuidOrNull(a, "entitlement_id") ?? Guid.Empty, Str(a, "coverage_family") ?? "", Str(a, "reason") ?? "",
                     Date(a, "effective") ?? DateOnly.FromDateTime(e.EventTime), GuidOrNull(a, "successor_entitlement_id"), GuidOrNull(a, "successor_unit_id"));
+            case ClaimEventType.Adjudicated:
+                return new ClaimAdjudicated(Header(ClaimAdjudicated.Schema, ClaimAdjudicated.Version), GuidOrNull(a, "claim_id") ?? Guid.Empty,
+                    GuidOrNull(a, "cohort_id"), Str(a, "coverage_source") ?? ClaimCoverageSource.Chargeable,
+                    a?.TryGetProperty("approved_amounts_by_line", out var approved) == true && approved.ValueKind == JsonValueKind.Array
+                        ? approved.EnumerateArray().Select(l => new PublishedClaimLineAmount(GuidOrNull(l, "claim_line_id") ?? Guid.Empty,
+                            Decimal(l, "requested_amount"), Decimal(l, "approved_amount"), Decimal(l, "coverage_pct"),
+                            Str(l, "coverage_source") ?? ClaimCoverageSource.Chargeable, GuidOrNull(l, "entitlement_id"))).ToList() : [],
+                    GuidOrNull(a, "service_entity_id") ?? Guid.Empty, GuidOrNull(a, "obligor_entity_id") ?? Guid.Empty);
+            case ClaimEventType.RecoveryRaised:
+                return new RecoveryClaimRaised(Header(RecoveryClaimRaised.Schema, RecoveryClaimRaised.Version), GuidOrNull(a, "recovery_claim_id") ?? Guid.Empty,
+                    GuidOrNull(a, "customer_claim_id") ?? Guid.Empty, GuidOrNull(a, "claim_line_id") ?? Guid.Empty,
+                    GuidOrNull(a, "inbound_entitlement_id") ?? Guid.Empty, GuidOrNull(a, "child_unit_id") ?? Guid.Empty,
+                    GuidOrNull(a, "vendor_party_ref") ?? Guid.Empty, Decimal(a, "requested_amount"), Str(a, "currency") ?? "");
+            case ClaimEventType.RecoveryApproved:
+                return new RecoveryClaimApproved(Header(RecoveryClaimApproved.Schema, RecoveryClaimApproved.Version), GuidOrNull(a, "recovery_claim_id") ?? Guid.Empty,
+                    GuidOrNull(a, "vendor_party_ref") ?? Guid.Empty, Decimal(a, "amount"), Str(a, "currency") ?? "");
+            case ClaimEventType.ChargeableQuoteRequested:
+                return new ChargeableQuoteRequested(Header(ChargeableQuoteRequested.Schema, ChargeableQuoteRequested.Version), GuidOrNull(a, "claim_id") ?? Guid.Empty,
+                    GuidOrNull(a, "claimant_party_ref") ?? Guid.Empty, GuidOrNull(a, "settlement_party_ref") ?? Guid.Empty, Str(a, "currency") ?? "",
+                    a?.TryGetProperty("lines", out var quoteLines) == true && quoteLines.ValueKind == JsonValueKind.Array
+                        ? quoteLines.EnumerateArray().Select(l => new ChargeableQuoteLine(GuidOrNull(l, "claim_line_id") ?? Guid.Empty, Str(l, "kind") ?? "",
+                            Decimal(l, "uncovered_amount"), Str(l, "reason"))).ToList() : []);
             default:
                 return null;
         }
@@ -189,6 +211,8 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
         new(schema, version, e.EventId, e.UnitId, e.EventTime, e.RecordedTime, e.Seq, e.LegalEntityId, e.ActorRef, e.DocumentType is null || e.DocumentId is null ? null : new DocumentRef(e.DocumentType, e.DocumentId.Value, e.DocumentLine));
 
     private static int? Int(JsonElement? element, string name) => element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt32() : null;
+
+    private static decimal Decimal(JsonElement? element, string name) => element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Number ? p.GetDecimal() : 0m;
 
     private static bool Bool(JsonElement? element, string name) => element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.True;
 
