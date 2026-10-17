@@ -21,6 +21,7 @@ using Yojana.Serialisation.Workbench;
 using Yojana.Serialisation.Campaigns;
 using Yojana.Serialisation.Rmas;
 using Yojana.Serialisation.Condition;
+using Yojana.Serialisation.Refurbishments;
 
 namespace Yojana.Serialisation;
 
@@ -429,6 +430,71 @@ public static class SerialisationEndpoints
             Invoke<ReceiveReturnResult>(bus, tenant, command with { RmaId = rmaId, ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.WarehouseLead);
         rmas.MapPost("/{rmaId:guid}/disposition", (Guid rmaId, DispositionRma command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<DispositionRmaResult>(bus, tenant, command with { RmaId = rmaId, ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.ServiceSupervisor);
+
+        // P5 refurbishment endpoints — kept as one block so sibling endpoint additions merge mechanically.
+        var refurbishments = app.MapGroup("/api/refurbishments").RequireAuthorization(YojanaPolicy.TenantMember);
+        refurbishments.MapGet("/", async (string? status, string? kind, Guid? unitId, int? skip, int? take,
+            RefurbishmentQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.PageAsync(status, kind, unitId, Math.Max(0, skip ?? 0), take ?? 50, ct)));
+        refurbishments.MapGet("/{workOrderId:guid}", async (Guid workOrderId, RefurbishmentQueries queries, CancellationToken ct) =>
+            await queries.DetailAsync(workOrderId, ct) is { } row ? Results.Ok(row) : Results.NotFound());
+        refurbishments.MapPost("/", (OpenRefurbishmentRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<OpenRefurbishmentResult>(bus, tenant, new OpenRefurbishment(request.CommandId, request.TargetUnitId,
+                request.Kind, request.OpenedAt, Actor(user), request.LegalEntityId, request.RepairLocationId,
+                request.SourceRmaLineId, request.SourceDocument), ct)).RequireAuthorization(YojanaPolicy.ServiceSupervisor);
+        refurbishments.MapPost("/rework", (OpenReworkRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<OpenReworkResult>(bus, tenant, new OpenRework(request.CommandId, request.TargetUnitIds,
+                request.SelectionKind, request.SelectionReference, request.OpenedAt, Actor(user), request.LegalEntityId,
+                request.RepairLocationId, request.SourceDocument), ct)).RequireAuthorization(YojanaPolicy.ProductionSupervisor);
+        refurbishments.MapPost("/{workOrderId:guid}/operations", (Guid workOrderId, AddRefurbishmentOperationRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RefurbishmentOperationResult>(bus, tenant, new AddRefurbishmentOperation(request.CommandId,
+                workOrderId, request.Sequence, request.Description, request.TechnicianRef, request.PlannedHours,
+                request.EventTime, Actor(user), request.LegalEntityId), ct)).RequireAuthorization(YojanaPolicy.Technician);
+        refurbishments.MapPost("/{workOrderId:guid}/operations/{operationId:guid}/complete", (Guid workOrderId,
+            Guid operationId, CompleteRefurbishmentOperationRequest request, ClaimsPrincipal user, IMessageBus bus,
+            ITenantContext tenant, CancellationToken ct) => Invoke<RefurbishmentOperationResult>(bus, tenant,
+                new CompleteRefurbishmentOperation(request.CommandId, workOrderId, operationId, request.ActualHours,
+                    request.CompletedAt, Actor(user), request.LegalEntityId), ct)).RequireAuthorization(YojanaPolicy.Technician);
+        refurbishments.MapPost("/{workOrderId:guid}/parts/remove", (Guid workOrderId, RemoveRefurbishmentPartRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RefurbishmentPartResult>(bus, tenant, new RemoveRefurbishmentPart(request.CommandId, workOrderId,
+                request.AssemblyLinkId, request.Destination, request.EventTime, Actor(user), request.LegalEntityId,
+                request.DestinationLocationId, request.VendorPartyRef), ct)).RequireAuthorization(YojanaPolicy.Technician);
+        refurbishments.MapPost("/{workOrderId:guid}/parts/install", (Guid workOrderId, InstallRefurbishmentPartRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RefurbishmentPartResult>(bus, tenant, new InstallRefurbishmentPart(request.CommandId, workOrderId,
+                request.Part, request.UnitCost, request.Currency, request.EventTime, Actor(user), request.LegalEntityId,
+                request.RepairLocationId), ct)).RequireAuthorization(YojanaPolicy.Technician);
+        refurbishments.MapPost("/{workOrderId:guid}/labour", (Guid workOrderId, RecordRefurbishmentLabourRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RefurbishmentLabourResult>(bus, tenant, new RecordRefurbishmentLabour(request.CommandId, workOrderId,
+                request.OperationId, request.Hours, request.HourlyRate, request.Currency, request.EventTime,
+                Actor(user), request.LegalEntityId), ct)).RequireAuthorization(YojanaPolicy.Technician);
+        refurbishments.MapPost("/{workOrderId:guid}/costs", (Guid workOrderId, RecordRefurbishmentCostRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RefurbishmentCostResult>(bus, tenant, new RecordRefurbishmentCost(request.CommandId, workOrderId,
+                request.Kind, request.Amount, request.Currency, request.Description, request.EventTime,
+                Actor(user), request.LegalEntityId), ct)).RequireAuthorization(YojanaPolicy.InventoryController);
+        refurbishments.MapPost("/{workOrderId:guid}/release", (Guid workOrderId, ReleaseRefurbishmentRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<ReleaseRefurbishmentResult>(bus, tenant, new ReleaseRefurbishment(request.CommandId, workOrderId,
+                request.Grade, request.ValuationRule, request.ReleasedAt, Actor(user), request.LegalEntityId,
+                request.WarehouseLocationId, request.NewSerial, request.FCode, request.CCode), ct)).RequireAuthorization(YojanaPolicy.ServiceSupervisor);
+        refurbishments.MapPost("/{workOrderId:guid}/cancel", (Guid workOrderId, CancelRefurbishmentRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CancelRefurbishmentResult>(bus, tenant, new CancelRefurbishment(request.CommandId, workOrderId,
+                request.Reason, request.CancelledAt, Actor(user), request.LegalEntityId, request.WarehouseLocationId), ct))
+            .RequireAuthorization(YojanaPolicy.ServiceSupervisor);
+        refurbishments.MapGet("/policy", async (RefurbishmentPolicySettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        refurbishments.MapPut("/policy", async (RefurbishmentPolicy policy, RefurbishmentPolicySettings settings, CancellationToken ct) =>
+        {
+            try { await settings.SetAsync(policy, ct); return Results.Ok(policy); }
+            catch (CommandRefusedException ex) { return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest); }
+        }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        // End P5 refurbishment endpoints.
+
         var replacements = app.MapGroup("/api/warranty-replacements").RequireAuthorization(YojanaPolicy.TenantMember);
         replacements.MapGet("/", async (string? status, int? skip, int? take, Replacements.WarrantyReplacementQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.ListAsync(status, skip ?? 0, take ?? 50, ct)));

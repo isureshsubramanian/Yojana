@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/refurbishment.costposted.json",
+  "title": "Refurbishment.CostPosted",
+  "type": "object",
+  "required": ["header", "work_order_id", "cost_id", "kind", "amount", "currency", "description"],
+  "properties": {
+    "header": { "type": "object" },
+    "work_order_id": { "type": "string", "format": "uuid" },
+    "cost_id": { "type": "string", "format": "uuid" },
+    "kind": { "type": "string", "enum": ["graded_receipt", "part", "labour", "other"] },
+    "amount": { "type": "number", "minimum": 0 },
+    "currency": { "type": "string" },
+    "description": { "type": "string" }
+  }
+}

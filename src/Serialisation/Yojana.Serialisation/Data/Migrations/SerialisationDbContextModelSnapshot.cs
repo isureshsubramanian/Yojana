@@ -2654,6 +2654,566 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RefurbishmentCost", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CostId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("cost_id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency")
+                        .IsFixedLength();
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("description");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTime>("PostedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("posted_at");
+
+                    b.Property<string>("PostedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("posted_by");
+
+                    b.Property<Guid>("WorkOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("work_order_id");
+
+                    b.HasKey("TenantId", "CostId")
+                        .HasName("pk_refurbishment_cost");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_refurbishment_cost_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "WorkOrderId", "PostedAt")
+                        .HasDatabaseName("ix_refurbishment_cost_tenant_id_work_order_id_posted_at");
+
+                    b.ToTable("refurbishment_cost", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_refurbishment_cost_amount", "amount >= 0");
+
+                            t.HasCheckConstraint("ck_refurbishment_cost_kind", "kind IN ('graded_receipt', 'part', 'labour', 'other')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RefurbishmentLabour", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("LabourId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("labour_id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<Guid>("CostId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("cost_id");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency")
+                        .IsFixedLength();
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<decimal>("HourlyRate")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("hourly_rate");
+
+                    b.Property<decimal>("Hours")
+                        .HasPrecision(9, 2)
+                        .HasColumnType("decimal(9,2)")
+                        .HasColumnName("hours");
+
+                    b.Property<Guid?>("OperationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("operation_id");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("recorded_at");
+
+                    b.Property<string>("TechnicianRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("technician_ref");
+
+                    b.Property<Guid>("WorkOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("work_order_id");
+
+                    b.HasKey("TenantId", "LabourId")
+                        .HasName("pk_refurbishment_labour");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_refurbishment_labour_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "WorkOrderId", "RecordedAt")
+                        .HasDatabaseName("ix_refurbishment_labour_tenant_id_work_order_id_recorded_at");
+
+                    b.ToTable("refurbishment_labour", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_refurbishment_labour_amounts", "hours > 0 AND hourly_rate >= 0 AND amount >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RefurbishmentOperation", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("operation_id");
+
+                    b.Property<decimal?>("ActualHours")
+                        .HasPrecision(9, 2)
+                        .HasColumnType("decimal(9,2)")
+                        .HasColumnName("actual_hours");
+
+                    b.Property<Guid>("AddedEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("added_event_id");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<Guid?>("CompleteCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("complete_command_id");
+
+                    b.Property<Guid?>("CompletedEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("completed_event_id");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("description");
+
+                    b.Property<decimal>("PlannedHours")
+                        .HasPrecision(9, 2)
+                        .HasColumnType("decimal(9,2)")
+                        .HasColumnName("planned_hours");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("int")
+                        .HasColumnName("sequence");
+
+                    b.Property<DateTime?>("SignedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("signed_at");
+
+                    b.Property<string>("SignedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("signed_by");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TechnicianRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("technician_ref");
+
+                    b.Property<Guid>("WorkOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("work_order_id");
+
+                    b.HasKey("TenantId", "OperationId")
+                        .HasName("pk_refurbishment_operation");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_refurbishment_operation_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "CompleteCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_refurbishment_operation_tenant_id_complete_command_id")
+                        .HasFilter("[complete_command_id] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "WorkOrderId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_refurbishment_operation_tenant_id_work_order_id_sequence");
+
+                    b.ToTable("refurbishment_operation", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_refurbishment_operation_status", "status IN ('open', 'completed')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RefurbishmentPart", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PartId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("part_id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("action");
+
+                    b.Property<Guid?>("AssemblyLinkId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("assembly_link_id");
+
+                    b.Property<Guid?>("ChildItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("child_item_id");
+
+                    b.Property<Guid?>("ChildLotId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("child_lot_id");
+
+                    b.Property<Guid?>("ChildUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("child_unit_id");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency")
+                        .IsFixedLength();
+
+                    b.Property<string>("Destination")
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("destination");
+
+                    b.Property<Guid?>("DestinationLocationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("destination_location_id");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<decimal?>("Quantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)")
+                        .HasColumnName("quantity");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("recorded_at");
+
+                    b.Property<string>("Slot")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("slot");
+
+                    b.Property<decimal?>("UnitCost")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("unit_cost");
+
+                    b.Property<Guid?>("VendorPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("vendor_party_ref");
+
+                    b.Property<Guid>("WorkOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("work_order_id");
+
+                    b.HasKey("TenantId", "PartId")
+                        .HasName("pk_refurbishment_part");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_refurbishment_part_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "ChildUnitId", "RecordedAt")
+                        .HasDatabaseName("ix_refurbishment_part_tenant_id_child_unit_id_recorded_at");
+
+                    b.HasIndex("TenantId", "WorkOrderId", "RecordedAt")
+                        .HasDatabaseName("ix_refurbishment_part_tenant_id_work_order_id_recorded_at");
+
+                    b.ToTable("refurbishment_part", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_refurbishment_part_action", "action IN ('removed', 'installed')");
+
+                            t.HasCheckConstraint("ck_refurbishment_part_destination", "destination IS NULL OR destination IN ('spares', 'scrap', 'vendor_return')");
+
+                            t.HasCheckConstraint("ck_refurbishment_part_identity", "(child_unit_id IS NOT NULL AND child_item_id IS NULL) OR (child_unit_id IS NULL AND child_item_id IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RefurbishmentWorkOrder", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("WorkOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("work_order_id");
+
+                    b.Property<bool>("AsBuiltChanged")
+                        .HasColumnType("bit")
+                        .HasColumnName("as_built_changed");
+
+                    b.Property<Guid?>("CancelCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("cancel_command_id");
+
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("cancellation_reason");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<string>("CancelledBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("cancelled_by");
+
+                    b.Property<Guid?>("CancelledEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("cancelled_event_id");
+
+                    b.Property<int>("CycleNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("cycle_number");
+
+                    b.Property<string>("Grade")
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("grade");
+
+                    b.Property<string>("IdentityPolicy")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("identity_policy");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("item_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("LifeEpisodeId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("life_episode_id");
+
+                    b.Property<int>("MaxCycles")
+                        .HasColumnType("int")
+                        .HasColumnName("max_cycles");
+
+                    b.Property<Guid>("OpenCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("open_command_id");
+
+                    b.Property<DateTime>("OpenedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("opened_at");
+
+                    b.Property<string>("OpenedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("opened_by");
+
+                    b.Property<Guid>("OpeningEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("opening_event_id");
+
+                    b.Property<Guid?>("ReleaseCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("release_command_id");
+
+                    b.Property<DateTime?>("ReleasedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("released_at");
+
+                    b.Property<string>("ReleasedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("released_by");
+
+                    b.Property<Guid?>("ReleasedEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("released_event_id");
+
+                    b.Property<Guid?>("ReleasedUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("released_unit_id");
+
+                    b.Property<string>("ReplacementPolicyCode")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("replacement_policy_code");
+
+                    b.Property<string>("SelectionKind")
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("selection_kind");
+
+                    b.Property<string>("SelectionReference")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("selection_reference");
+
+                    b.Property<Guid?>("SourceDocumentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_document_id");
+
+                    b.Property<int?>("SourceDocumentLine")
+                        .HasColumnType("int")
+                        .HasColumnName("source_document_line");
+
+                    b.Property<string>("SourceDocumentType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_document_type");
+
+                    b.Property<Guid?>("SourceRmaLineId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_rma_line_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TargetUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("target_unit_id");
+
+                    b.Property<string>("WorkOrderNumber")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(24)")
+                        .HasColumnName("work_order_number");
+
+                    b.HasKey("TenantId", "WorkOrderId")
+                        .HasName("pk_refurbishment_work_order");
+
+                    b.HasIndex("TenantId", "CancelCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_refurbishment_work_order_tenant_id_cancel_command_id")
+                        .HasFilter("[cancel_command_id] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "ReleaseCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_refurbishment_work_order_tenant_id_release_command_id")
+                        .HasFilter("[release_command_id] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "SourceRmaLineId")
+                        .HasDatabaseName("ix_refurbishment_work_order_tenant_id_source_rma_line_id");
+
+                    b.HasIndex("TenantId", "WorkOrderNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ux_refurbishment_work_order_tenant_id_work_order_number");
+
+                    b.HasIndex("TenantId", "OpenCommandId", "TargetUnitId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_refurbishment_work_order_tenant_id_open_command_id_target_unit_id");
+
+                    b.HasIndex("TenantId", "Status", "OpenedAt")
+                        .HasDatabaseName("ix_refurbishment_work_order_tenant_id_status_opened_at");
+
+                    b.HasIndex("TenantId", "TargetUnitId", "OpenedAt")
+                        .HasDatabaseName("ix_refurbishment_work_order_tenant_id_target_unit_id_opened_at");
+
+                    b.ToTable("refurbishment_work_order", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_refurbishment_work_order_cycles", "cycle_number >= 1 AND max_cycles >= 1");
+
+                            t.HasCheckConstraint("ck_refurbishment_work_order_identity", "identity_policy IN ('same_unit_same_serial', 'same_unit_new_serial', 'new_unit')");
+
+                            t.HasCheckConstraint("ck_refurbishment_work_order_kind", "kind IN ('refurbish', 'remanufacture', 'rework')");
+
+                            t.HasCheckConstraint("ck_refurbishment_work_order_status", "status IN ('open', 'released', 'cancelled')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReplacementLink", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -6116,6 +6676,46 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_recovery_claim_tenant_id_customer_claim_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RefurbishmentCost", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.RefurbishmentWorkOrder", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "WorkOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_refurbishment_cost_tenant_id_work_order_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RefurbishmentLabour", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.RefurbishmentWorkOrder", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "WorkOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_refurbishment_labour_tenant_id_work_order_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RefurbishmentOperation", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.RefurbishmentWorkOrder", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "WorkOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_refurbishment_operation_tenant_id_work_order_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RefurbishmentPart", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.RefurbishmentWorkOrder", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "WorkOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_refurbishment_part_tenant_id_work_order_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReplacementLink", b =>

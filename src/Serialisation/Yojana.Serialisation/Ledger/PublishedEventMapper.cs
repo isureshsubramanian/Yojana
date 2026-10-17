@@ -246,6 +246,21 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     GuidOrNull(a, "replacement_link_id") ?? Guid.Empty, GuidOrNull(a, "original_unit_id") ?? Guid.Empty,
                     GuidOrNull(a, "replacement_unit_id") ?? Guid.Empty, GuidOrNull(a, "party_ref") ?? Guid.Empty,
                     Date(a, "return_due") ?? default, Str(a, "non_return_price_basis") ?? "", Int(a, "days_overdue") ?? 0);
+            // P5 refurbishment published contracts — keep this block separate for mechanical sibling merges.
+            case RefurbishmentEventType.CostPosted:
+                return new RefurbishmentCostPosted(Header(RefurbishmentCostPosted.Schema, RefurbishmentCostPosted.Version),
+                    GuidOrNull(a, "work_order_id") ?? Guid.Empty, GuidOrNull(a, "cost_id") ?? Guid.Empty,
+                    Str(a, "kind") ?? "", Decimal(a, "amount"), Str(a, "currency") ?? "", Str(a, "description") ?? "");
+            case RefurbishmentEventType.Released:
+                return new RefurbishmentReleased(Header(RefurbishmentReleased.Schema, RefurbishmentReleased.Version),
+                    GuidOrNull(a, "work_order_id") ?? Guid.Empty, Str(a, "work_order_number") ?? "",
+                    GuidOrNull(a, "source_unit_id") ?? Guid.Empty, GuidOrNull(a, "released_unit_id") ?? e.UnitId,
+                    Str(a, "kind") ?? "", Str(a, "grade") ?? "", Int(a, "cycle_number") ?? 0,
+                    Str(a, "identity_policy") ?? "", Decimal(a, "total_cost"), Str(a, "currency") ?? "");
+            case RefurbishmentEventType.ReleaseRecordReissueRequested:
+                return new ReleaseRecordReissueRequested(Header(ReleaseRecordReissueRequested.Schema, ReleaseRecordReissueRequested.Version),
+                    GuidOrNull(a, "work_order_id") ?? Guid.Empty, Str(a, "reason") ?? "");
+            // End P5 refurbishment published contracts.
             default:
                 return null;
         }

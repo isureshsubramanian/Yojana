@@ -261,7 +261,7 @@ public static class ReceiveReturnHandler
 public static class DispositionRmaHandler
 {
     public static async Task<DispositionRmaResult> Handle(DispositionRma command, SerialisationDbContext db, EpisodeService episodes,
-        EntitlementLedger entitlementLedger, CorrectionLedger corrections, IUnitEventWriter writer,
+        EntitlementLedger entitlementLedger, CorrectionLedger corrections, IRefurbishmentOpener refurbishments, IUnitEventWriter writer,
         ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -350,10 +350,20 @@ public static class DispositionRmaHandler
                 drafts.Add(vendorOwnership.Draft);
             }
 
+            Guid? refurbishmentWorkOrderId = null;
+            if (input.Disposition == RmaDisposition.Refurbish)
+            {
+                // RMA knows only this opening contract. The refurbishment module owns its tables, lifecycle episode and
+                // custody move; retaining this seam prevents either aggregate from depending on the other's internals.
+                var opened = await refurbishments.OpenAsync(new RefurbishmentOpenRequest(command.CommandId, unitId,
+                    line.RmaLineId, document, command.EventTime, command.ActorRef, rma.ServiceEntityId), cancellationToken);
+                refurbishmentWorkOrderId = opened.WorkOrderId;
+            }
+
             var target = input.Disposition switch
             {
                 RmaDisposition.ReturnToStock or RmaDisposition.RestockAsNew or RmaDisposition.Credit or RmaDisposition.Refund => LocationKind.Warehouse,
-                RmaDisposition.Refurbish or RmaDisposition.RepairAndReturn => LocationKind.InRepair,
+                RmaDisposition.RepairAndReturn => LocationKind.InRepair,
                 RmaDisposition.ReturnToVendor => LocationKind.Vendor,
                 RmaDisposition.Scrap => LocationKind.Scrapped,
                 _ => null,
@@ -388,7 +398,7 @@ public static class DispositionRmaHandler
                 UnitId = unitId, EventTime = command.EventTime, EventType = RmaEventType.Dispositioned, PresetEventId = eventId,
                 LegalEntityId = rma.ServiceEntityId, ActorRef = command.ActorRef, DocumentType = document.Type, DocumentId = document.Id, DocumentLine = document.Line,
                 IdempotencyKey = IdempotencyKey.ForCommand(CommissionUnitsHandler.Source, command.CommandId, unitId, RmaEventType.Dispositioned, command.EventTime),
-                Attributes = JsonObjectText.Of(new { rma_id = rma.RmaId, rma_line_id = line.RmaLineId, unit_id = unitId, disposition = input.Disposition, entitlement_closed_reason = closedReason, replacement_intent_id = replacementIntentId }),
+                Attributes = JsonObjectText.Of(new { rma_id = rma.RmaId, rma_line_id = line.RmaLineId, unit_id = unitId, disposition = input.Disposition, entitlement_closed_reason = closedReason, replacement_intent_id = replacementIntentId, refurbishment_work_order_id = refurbishmentWorkOrderId }),
             });
         }
         RmaStateMachine.Transition(rma, RmaStage.Closed);

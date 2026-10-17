@@ -79,6 +79,9 @@ public static class PublishedEventSinkHandler
     public static void Handle(ReplacementShipped e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(ReplacementAssetTagPrintRequested e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(ReplacementReturnOverdue e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(RefurbishmentReleased e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(RefurbishmentCostPosted e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(ReleaseRecordReissueRequested e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitIdentifiersSwapped e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitItemCorrected e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitAsBuiltCorrected e) => PublishedEventSink.Received.Enqueue(e);

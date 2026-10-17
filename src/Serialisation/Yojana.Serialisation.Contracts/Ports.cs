@@ -193,3 +193,23 @@ public interface IReturnReasonQueryPort
 {
     Task<RestockingFeeQuote> QuoteAsync(string? returnReasonCode, decimal basis, CancellationToken cancellationToken);
 }
+
+// P5 refurbishment hand-off — keep this block separate so sibling port additions merge mechanically.
+/// <summary>RMA asks refurbishment to open work without knowing its tables or handler implementation.</summary>
+public interface IRefurbishmentOpener
+{
+    Task<RefurbishmentOpenReceipt> OpenAsync(RefurbishmentOpenRequest request, CancellationToken cancellationToken);
+}
+
+public sealed record RefurbishmentOpenRequest(
+    Guid CommandId,
+    Guid TargetUnitId,
+    Guid SourceRmaLineId,
+    DocumentRef SourceDocument,
+    DateTime OpenedAt,
+    string ActorRef,
+    Guid LegalEntityId,
+    Guid? RepairLocationId = null);
+
+public sealed record RefurbishmentOpenReceipt(Guid WorkOrderId, string WorkOrderNumber, bool Replayed);
+// End P5 refurbishment hand-off.
