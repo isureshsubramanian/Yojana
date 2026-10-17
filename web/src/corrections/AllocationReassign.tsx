@@ -18,8 +18,8 @@ export function Component() {
   const [commandId, setCommandId] = useState(newCommandId);
   const [fromOrder, setFromOrder] = useState(params.get("from") ?? "");
   const [toOrder, setToOrder] = useState(params.get("to") ?? "");
-  const [fromLabel, setFromLabel] = useState(params.get("fromLabel") ?? "From work order");
-  const [toLabel, setToLabel] = useState(params.get("toLabel") ?? "To work order");
+  const [fromLabel, setFromLabel] = useState(params.get("fromLabel") ?? "order A");
+  const [toLabel, setToLabel] = useState(params.get("toLabel") ?? "order B");
   const [scheme, setScheme] = useState(params.get("scheme") ?? "default");
   const [mode, setMode] = useState("pairwise_exchange");
   const [fromSerials, setFromSerials] = useState(params.get("fromSerials") ?? "");
