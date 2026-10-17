@@ -10,13 +10,15 @@ import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDate, humanise, shortId, statusLabel } from "../units/format";
 import { correctionsApi } from "./api";
 import { GUID } from "./format";
+import { workbenchApi } from "./workbenchApi";
 import type { MergeUnits, MergeUnitsPreviewResult, MergeUnitsResult } from "./types";
 
 interface IdentifierView extends IdentifierRow { record: "A" | "B"; unitId: string; after: string }
 
 export function Component() {
   const [params] = useSearchParams();
-  const [firstId, setFirstId] = useState(params.get("first") ?? "");
+  // The workbench hands over ?unit=<id>; a person types or scans a serial, asset tag or unit id for either record.
+  const [firstId, setFirstId] = useState(params.get("first") ?? params.get("unit") ?? "");
   const [secondId, setSecondId] = useState(params.get("second") ?? "");
   const [records, setRecords] = useState<{ first: UnitDetail; second: UnitDetail } | null>(null);
   const [survivorId, setSurvivorId] = useState("");
@@ -32,11 +34,15 @@ export function Component() {
   const person = usePeople(peopleRefs);
 
   const load = async () => {
-    if (!GUID.test(firstId) || !GUID.test(secondId) || firstId === secondId) return;
+    if (!firstId.trim() || !secondId.trim() || firstId.trim() === secondId.trim()) return;
     setBusy(true); setError(null); setPreview(null); setCommitted(null);
-    try { const [first, second] = await Promise.all([units.detail(firstId), units.detail(secondId)]); setRecords({ first, second }); setSurvivorId(first.unitId); } catch (reason) { setError(reason); } finally { setBusy(false); }
+    try {
+      const [a, b] = await Promise.all([unitIdFor(firstId), unitIdFor(secondId)]);
+      if (a === b) throw new Error("Both entries resolve to the same unit.");
+      const [first, second] = await Promise.all([units.detail(a), units.detail(b)]); setRecords({ first, second }); setSurvivorId(first.unitId);
+    } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
-  useEffect(() => { if (GUID.test(firstId) && GUID.test(secondId) && firstId !== secondId) void load(); }, []); // route parameters are an initial handoff from the workbench
+  useEffect(() => { if (firstId && secondId && firstId !== secondId) void load(); }, []); // route parameters are an initial handoff from the workbench
 
   const runPreview = async () => {
     if (!records || !survivorId) return; setBusy(true); setError(null); setCommitted(null);
@@ -66,7 +72,7 @@ export function Component() {
       <div className="page-header"><div><div className="eyebrow">MergeUnits · two records are the same physical unit · nothing is deleted</div><h1>Merge units</h1><p className="sub">Choose the survivor. Every event, identifier, episode, entitlement and link of the other record moves to it with merged_from provenance; the absorbed record stays readable as an alias so outside references still resolve.</p></div><div className="actions"><Link className="btn ghost" to="/corrections">Back to workbench</Link><button type="button" className="btn" disabled={!records || busy} onClick={() => void runPreview()}>Preview merge</button>{needsApproval ? <Link className="btn primary" to={`/corrections?first=${encodeURIComponent(firstId)}&second=${encodeURIComponent(secondId)}&choice=duplicate_unit`}>Submit for approval<kbd className="key">⌘↵</kbd></Link> : <button type="button" className="btn primary" disabled={!command || !preview || approval?.status !== "allowed" || preview.preview.block > 0 || busy} onClick={() => void commit()}>Commit merge<kbd className="key">⌘↵</kbd></button>}</div></div>
       <ErrorNote error={error} />
       <div className="stack">
-        <section className="card" aria-labelledby="merge-records"><div className="card-header"><h2 id="merge-records">Records to compare</h2><span className="meta">stable unit UUIDs · identifiers stay as aliases</span></div><div className="card-body"><div className="correction-source-fields"><div className="field"><label htmlFor="merge-first">Record A · unit UUID</label><input id="merge-first" className="input serial" value={firstId} onChange={(event) => { setFirstId(event.target.value); setRecords(null); setPreview(null); }} placeholder="00000000-0000-0000-0000-000000000000" /></div><div className="field"><label htmlFor="merge-second">Record B · unit UUID</label><input id="merge-second" className="input serial" value={secondId} onChange={(event) => { setSecondId(event.target.value); setRecords(null); setPreview(null); }} placeholder="00000000-0000-0000-0000-000000000000" /></div></div><button type="button" className="btn" disabled={!GUID.test(firstId) || !GUID.test(secondId) || firstId === secondId || busy} onClick={() => void load()}>Load both records</button></div></section>
+        <section className="card" aria-labelledby="merge-records"><div className="card-header"><h2 id="merge-records">Records to compare</h2><span className="meta">serial, asset tag or unit id · identifiers stay as aliases</span></div><div className="card-body"><div className="correction-source-fields"><div className="field"><label htmlFor="merge-first">Record A · serial or unit</label><input id="merge-first" className="input serial" value={firstId} onChange={(event) => { setFirstId(event.target.value); setRecords(null); setPreview(null); }} placeholder="Scan or type a serial" /></div><div className="field"><label htmlFor="merge-second">Record B · serial or unit</label><input id="merge-second" className="input serial" value={secondId} onChange={(event) => { setSecondId(event.target.value); setRecords(null); setPreview(null); }} placeholder="Scan or type a serial" /></div></div><button type="button" className="btn" disabled={!firstId.trim() || !secondId.trim() || firstId.trim() === secondId.trim() || busy} onClick={() => void load()}>Load both records</button></div></section>
         {records && <><div className="correction-records"><RecordCard label="A" unit={records.first} survivor={survivorId === records.first.unitId} onKeep={() => { setSurvivorId(records.first.unitId); setPreview(null); }} /><RecordCard label="B" unit={records.second} survivor={survivorId === records.second.unitId} onKeep={() => { setSurvivorId(records.second.unitId); setPreview(null); }} /></div>
           <section className="card" aria-labelledby="merge-identifiers"><div className="card-header"><h2 id="merge-identifiers">Identifiers after the merge <span className="meta">both sets kept on the survivor</span></h2></div><DataGrid dense columns={columns} page={{ rows: identifiers, total: identifiers.length, page: 1, pageSize: Math.max(1, identifiers.length), continuation: null }} rowId={(row) => row.identifierId} onPage={() => undefined} onRowClick={openIdentifier} activeRowId={active} emptyText="Neither record has an identifier." viewportHeight={300} /></section>
           <div className="cols-3-2" style={{ alignItems: "start" }}><section className="card" aria-labelledby="merge-preview"><div className="card-header"><h2 id="merge-preview">Preview <span className="meta">computed by the command</span></h2></div>{preview ? <><div className="preview-summary"><Figure label="Units" value={preview.preview.unitCount} /><Figure label="Will change" value={preview.preview.change} tone="ok" /><Figure label="Blocked" value={preview.preview.block} tone="bad" /><Figure label="Events" value={preview.preview.unitEvents.length} /></div><table className="table dense"><thead><tr><th>Re-pointed or recorded</th><th>Detail</th><th className="num">Count</th></tr></thead><tbody><PreviewRow label="Unit events" detail="recorded on the survivor and absorbed alias" count={preview.preview.unitEvents.length} /><PreviewRow label="Entitlement changes" detail="superseded or re-pointed by the command" count={preview.preview.entitlementChanges.length} /><PreviewRow label="Certificate versions" detail="new immutable versions" count={preview.preview.certificateVersions.length} /><PreviewRow label="Print jobs" detail="labels requested by the command" count={preview.preview.printJobs.length} /></tbody></table>{preview.preview.refusal && <div className="note bad"><strong>{humanise(preview.preview.refusal.rule)}.</strong>&nbsp;{preview.preview.refusal.message}</div>}</> : <div className="empty"><h2>Preview before deciding</h2><p className="hint">The merge command compares both records, recommends a survivor and computes every affected record.</p></div>}</section>
@@ -87,3 +93,14 @@ function RecordCard({ label, unit, survivor, onKeep }: { label: "A" | "B"; unit:
 }
 function Figure({ label, value, tone }: { label: string; value: number; tone?: "ok" | "bad" }) { return <span className="figure"><span className="k">{label}</span><span className={`v${tone ? ` ${tone}-text` : ""}`}>{value.toLocaleString()}</span></span>; }
 function PreviewRow({ label, detail, count }: { label: string; detail: string; count: number }) { return <tr><td className="primary">{label}</td><td>{detail}</td><td className="num">{count.toLocaleString()}</td></tr>; }
+
+/** A unit id as typed, or the unit a serial, superseded serial or asset tag resolves to through the workbench resolver. */
+async function unitIdFor(entry: string): Promise<string> {
+  const value = entry.trim();
+  if (GUID.test(value)) return value;
+  const result = await workbenchApi.resolve({ kind: "identifier", value });
+  const hit = result.candidates[0];
+  if (!hit) throw new Error(`Nothing resolves from "${value}".`);
+  if (result.candidates.length > 1) throw new Error(`"${value}" matches ${result.candidates.length} units; use the unit id.`);
+  return hit.resolvedUnitId;
+}

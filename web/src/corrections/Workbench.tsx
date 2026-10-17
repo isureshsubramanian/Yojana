@@ -307,6 +307,7 @@ export function Component() {
     </main>
     <Rail label="Routing">
       <Section title="This choice">{choice ? <Kv rows={[["Choice", choice.label], ["Command", command ? commandName(command) : "—"], ["May initiate", (choice.initiateRoles ?? []).map(humanise).join(", ") || "any member"], ["May commit", (choice.commitRoles ?? []).map(humanise).join(", ") || "—"], ["Root cause", String(choice.rootCause)]]} /> : <p className="muted">Pick what is wrong to see who may initiate and who must approve.</p>}</Section>
+      <Section title="Correction screens"><div className="act" style={{ display: "grid", gap: 6 }}><Link className="btn block" to="/corrections/kpi">Correction volume</Link><Link className="btn block" to="/corrections/merge">Merge units</Link><Link className="btn block" to="/corrections/reassign-allocation">Reassign allocation</Link><Link className="btn block" to="/corrections/vendor-serials">Assign vendor serials</Link></div></Section>
       <Section title="Rules applied"><p className="muted">The preview is the command's own dry run. Submitting stores this exact preview; an approver sees the same one, and the command runs only if it is unchanged when they approve.</p></Section>
     </Rail>
   </>;
