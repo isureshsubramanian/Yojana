@@ -3,25 +3,30 @@ using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation.Commands;
 
+// TIGHT COUPLING (P3-T02 correction audit projection)
+// WHAT: this handler appends the correction ledger fact and asks CorrectionLedger to add its correction_record row in
+// the same SerialisationDbContext transaction. WHY: a reversal link must never name a correction whose fact failed, and
+// a multi-event correction must count once in the KPI. WHAT BREAKS IF SEPARATED: committed corrections can disappear
+// from KPI/approval history, or correction-of links can dangle. Keep this pairing inside CorrectionLedger's narrow seam.
+
 /// <summary>
 /// <see cref="CorrectIdentifier"/> (Identity rule 5, cases 4, 5, 100): a new row with the reason replaces the open row of
 /// that type, which closes pointing at its successor; the unit key, the events and the stock stay untouched. A unit that
-/// has shipped needs a second approver (ADR-0001 correction table); the approval policy as tenant data arrives in P3.
+/// has shipped needs a second approver (ADR-0001 correction table). Common correction metadata is written on the ledger
+/// fact and its indexed correction projection in the same unit of work.
 /// </summary>
 public static class CorrectIdentifierHandler
 {
-    public static async Task<CorrectIdentifierResult> Handle(CorrectIdentifier command, SerialisationDbContext db, IUnitEventWriter writer, IdentifierService identifiers, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+    public static async Task<CorrectIdentifierResult> Handle(CorrectIdentifier command, SerialisationDbContext db, IUnitEventWriter writer, IdentifierService identifiers, CorrectionLedger corrections, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
-        if (!IdentifierCorrectionReason.All.Contains(command.Reason))
-        {
-            throw new CommandRefusedException("reason_unknown", $"Reason '{command.Reason}' is not one of {string.Join(", ", IdentifierCorrectionReason.All)}.");
-        }
+        CorrectionRules.ValidateReason(CorrectionCommand.CorrectIdentifier, command.Reason);
 
         var unit = await db.Units.AsNoTracking().FirstOrDefaultAsync(u => u.TenantId == tenantId && u.UnitId == command.UnitId, cancellationToken)
             ?? throw new CommandRefusedException("unit_unknown", $"Unit {command.UnitId} does not exist.");
@@ -32,7 +37,8 @@ public static class CorrectIdentifierHandler
         {
             var current = open ?? throw new CommandRefusedException("replay_inconsistent", "The correction was recorded but the unit has no open identifier of that type.");
             var previous = await db.Identifiers.AsNoTracking().FirstAsync(i => i.TenantId == tenantId && i.SupersededByIdentifierId == current.IdentifierId, cancellationToken);
-            return new CorrectIdentifierResult(unit.UnitId, previous.IdentifierId, current.IdentifierId, previous.NormalisedValue, current.NormalisedValue);
+            var replayedCorrectionId = command.Correction?.CorrectionId ?? command.CommandId;
+            return new CorrectIdentifierResult(unit.UnitId, previous.IdentifierId, current.IdentifierId, previous.NormalisedValue, current.NormalisedValue, replayedCorrectionId);
         }
 
         if (open is null)
@@ -59,11 +65,17 @@ public static class CorrectIdentifierHandler
             throw new CommandRefusedException("identifier_in_use", $"'{prepared.Normalised}' is open on unit {holder.UnitId} ({holder.LifecycleStatus}).", "if the two units are crossed use SwapIdentifiers (P3); if they are the same physical unit use MergeUnits (P3)");
         }
 
-        var shipped = await db.Events.AsNoTracking().AnyAsync(e => e.TenantId == tenantId && e.UnitId == unit.UnitId && e.EventType == UnitEventType.Shipped, cancellationToken);
-        if (shipped && string.IsNullOrWhiteSpace(command.ApproverRef))
+        // P1 behaviour is retained: shipment is the existing command's evidence that the identifier appeared externally.
+        // Later correction commands pass the richer external-document fact to CorrectionApprovalRules directly.
+        var external = await db.Events.AsNoTracking().AnyAsync(e => e.TenantId == tenantId && e.UnitId == unit.UnitId && e.EventType == UnitEventType.Shipped, cancellationToken);
+        var hasApprover = !string.IsNullOrWhiteSpace(command.ApproverRef) || command.Correction?.Approvers is { Count: > 0 };
+        if (external && !hasApprover)
         {
             throw new CommandRefusedException("approval_required", "The unit has appeared on an external document; a second approver is required.", "route through the correction workbench with an approver");
         }
+
+        var metadata = await corrections.PrepareAsync(CorrectionCommand.CorrectIdentifier, command.Correction, command.CommandId, command.Reason, command.Note,
+            command.ApproverRef, command.EventTime, CorrectionInitiatingRole.SerialAdministrator, cancellationToken);
 
         var eventId = TimeOrderedId.New(command.EventTime);
         var now = clock.UtcNow;
@@ -79,16 +91,16 @@ public static class CorrectIdentifierHandler
             {
                 UnitId = unit.UnitId, EventTime = command.EventTime, EventType = UnitEventType.IdentifierCorrected, PresetEventId = eventId,
                 LegalEntityId = command.LegalEntityId, ActorRef = command.ActorRef, IdempotencyKey = key,
-                Attributes = JsonObjectText.Of(new
+                Attributes = CorrectionLedger.Attributes(metadata, new
                 {
                     command_id = command.CommandId, identifier_type = command.IdentifierType, reason = command.Reason, approver_ref = command.ApproverRef, note = command.Note,
                     before = new { identifier_id = open.IdentifierId, raw_value = open.RawValue, normalised_value = open.NormalisedValue },
                     after = new { identifier_id = replacement.IdentifierId, raw_value = replacement.RawValue, normalised_value = replacement.NormalisedValue },
-                    initiated_via = "command",
                 }),
                 Delta = null,
             },
         ], cancellationToken);
-        return new CorrectIdentifierResult(unit.UnitId, open.IdentifierId, replacement.IdentifierId, open.NormalisedValue, replacement.NormalisedValue);
+        corrections.Record(CorrectionCommand.CorrectIdentifier, metadata, command.ActorRef, command.EventTime, 1);
+        return new CorrectIdentifierResult(unit.UnitId, open.IdentifierId, replacement.IdentifierId, open.NormalisedValue, replacement.NormalisedValue, metadata.CorrectionId);
     }
 }

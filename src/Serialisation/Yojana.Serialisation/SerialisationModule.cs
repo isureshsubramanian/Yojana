@@ -6,6 +6,7 @@ using Wolverine;
 using Yojana.Platform.Scheduling;
 using Yojana.Platform;
 using Yojana.Serialisation.Commands;
+using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Documents;
@@ -55,6 +56,12 @@ public static class SerialisationModule
         builder.Services.AddScoped<CompletenessQueries>();
         builder.Services.AddScoped<BulkExecutor>();
         builder.Services.AddScoped<BulkApprovalRequestQueries>();
+        builder.Services.AddScoped<CorrectionLedger>();
+        // Coupled to CorrectionApprovalSettings for the same Wolverine constraint documented on that type: replacing
+        // this factory with constructor registration exposes PlatformDbContext beside SerialisationDbContext and stops host startup.
+        builder.Services.AddScoped(sp => new CorrectionApprovalSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        // Coupled to SerialReuseSettings for the same reason as correction approvals: keep PlatformDbContext hidden from Wolverine.
+        builder.Services.AddScoped(sp => new SerialReuseSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
 
         // Global search (MOD-13, P1-T23): the index table and its maintenance handlers live here; other modules index through ISearchIndex.
         // Warranty policies (MOD-06, P2-T03).

@@ -42,7 +42,7 @@ public sealed record ResolveSelectionSet(Guid CommandId, SelectionSource Source,
 public sealed record ResolveSelectionSetResult(Guid SelectionId, int Resolved, IReadOnlyList<string> Unknown, IReadOnlyList<string> Rejected, SelectionSource Source);
 
 /// <summary>Per-unit result of a preview or an execution: what the command would do or did, and why not when it would not.</summary>
-public sealed record UnitOutcome(Guid UnitId, string? Serial, string Outcome, string? Reason, string? Detail = null)
+public sealed record UnitOutcome(Guid UnitId, string? Serial, string Outcome, string? Reason, string? Detail = null, string? UnblockingStep = null)
 {
     public static class Outcomes
     {
@@ -53,6 +53,26 @@ public sealed record UnitOutcome(Guid UnitId, string? Serial, string Outcome, st
         public const string Failed = "failed";
     }
 }
+
+/// <summary>The common correction preview used by command, workbench and approver views.</summary>
+public sealed record CorrectionPreview(
+    Guid? SelectionId,
+    string Command,
+    int UnitCount,
+    int Change,
+    int Skip,
+    int Block,
+    IReadOnlyList<UnitOutcome> Units,
+    IReadOnlyList<CorrectionEventPreview> UnitEvents,
+    IReadOnlyList<CorrectionEntitlementPreview> EntitlementChanges,
+    IReadOnlyList<CorrectionCertificatePreview> CertificateVersions,
+    IReadOnlyList<CorrectionPrintJobPreview> PrintJobs,
+    CommandRefusal? Refusal = null);
+
+public sealed record CorrectionEventPreview(Guid UnitId, string EventType, DateTime EffectiveAt, string? Summary = null);
+public sealed record CorrectionEntitlementPreview(Guid UnitId, string Change, Guid? EntitlementId = null, string? Summary = null);
+public sealed record CorrectionCertificatePreview(Guid UnitId, string CertificateType, string Action, string Reason);
+public sealed record CorrectionPrintJobPreview(Guid UnitId, string JobType, string Reason);
 
 /// <summary>Run the named bulk operation over a stored selection without writing; the outcomes are the command's own.</summary>
 /// <see cref="Approval"/> is who previews and the roles they hold (the endpoint sets it from the claims), so the preview judges the set as that person would commit it.
