@@ -1482,6 +1482,87 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("finance_period", "serialisation");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ItemTrackingModeChange", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ChangeId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("change_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<int>("CommissionedCount")
+                        .HasColumnType("int")
+                        .HasColumnName("commissioned_count");
+
+                    b.Property<Guid>("CorrectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("correction_id");
+
+                    b.Property<Guid?>("CorrectsCorrectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("corrects_correction_id");
+
+                    b.Property<DateTime>("EffectiveAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("effective_at");
+
+                    b.Property<int>("ExemptedCount")
+                        .HasColumnType("int")
+                        .HasColumnName("exempted_count");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("item_id");
+
+                    b.Property<int>("KitsCaptured")
+                        .HasColumnType("int")
+                        .HasColumnName("kits_captured");
+
+                    b.Property<string>("PreviousTrackingMode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("previous_tracking_mode");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("recorded_at");
+
+                    b.Property<string>("StockCoverage")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("stock_coverage");
+
+                    b.Property<string>("TrackingMode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("tracking_mode");
+
+                    b.HasKey("TenantId", "ChangeId")
+                        .HasName("pk_item_tracking_mode_change");
+
+                    b.HasIndex("TenantId", "CorrectionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_item_tracking_mode_change_tenant_id_correction_id");
+
+                    b.HasIndex("TenantId", "ItemId", "EffectiveAt")
+                        .HasDatabaseName("ix_item_tracking_mode_change_tenant_id_item_id_effective_at");
+
+                    b.ToTable("item_tracking_mode_change", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_item_tracking_mode_change_stock_coverage_json", "ISJSON(stock_coverage) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PendingShipmentLine", b =>
                 {
                     b.Property<Guid>("TenantId")

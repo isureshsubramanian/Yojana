@@ -317,6 +317,64 @@ public sealed record CorrectAsBuiltResult(
     IReadOnlyList<CorrectedAsBuiltParentResult> Parents,
     bool Replayed = false);
 
+/// <summary>Existing open stock at one location, supplied as one serial per unit or covered by an explicit exemption.</summary>
+public sealed record LateSerializationStockLocation(
+    Guid CommissionCommandId,
+    Guid? LocationId,
+    string LocationKind,
+    DocumentRef SourceDocument,
+    IReadOnlyList<CommissionLine> Units,
+    int ExemptQuantity = 0,
+    string? ExemptReason = null,
+    string Origin = UnitOrigin.Purchased);
+
+/// <summary>
+/// A non-serialised component line already fitted in a kit. LateSerialization commissions the supplied units, then
+/// replaces this quantity link through the existing CorrectAsBuilt planner and writer.
+/// </summary>
+public sealed record LateSerializationKitCapture(
+    Guid CommissionCommandId,
+    Guid ExistingLinkId,
+    DateTime FittedAt,
+    DocumentRef SourceDocument,
+    IReadOnlyList<CommissionLine> Units,
+    string Origin = UnitOrigin.Purchased);
+
+/// <summary>
+/// Changes an item's effective tracking mode from non-serialised to serialised after stock exists. A later command
+/// references this correction to reverse only the tracking change, and is refused once serialised activity exists.
+/// </summary>
+public sealed record LateSerialization(
+    Guid CommandId,
+    Guid ItemId,
+    DateTime EffectiveAt,
+    string Reason,
+    string ActorRef,
+    Guid LegalEntityId,
+    DocumentRef SourceDocument,
+    IReadOnlyList<LateSerializationStockLocation> Stock,
+    IReadOnlyList<LateSerializationKitCapture> KitCaptures,
+    CorrectionMetadata Correction,
+    CorrectionCommitter CommittedBy,
+    Guid? AsBuiltCommandId = null,
+    string? Note = null);
+
+/// <summary>Dry run of <see cref="LateSerialization"/> through the real command in a rolled-back transaction.</summary>
+public sealed record PreviewLateSerialization(LateSerialization Command);
+
+public sealed record LateSerializationResult(
+    Guid TrackingModeChangeId,
+    Guid CorrectionId,
+    Guid ItemId,
+    string PreviousTrackingMode,
+    string TrackingMode,
+    int Commissioned,
+    int Exempted,
+    int KitsCaptured,
+    int KitsNeedingAsBuiltCapture,
+    bool Reversed,
+    bool Replayed = false);
+
 /// <summary>
 /// Change the item or model version a unit is (case 42): upgrade, conversion or relabel close the current
 /// UnitItemAssignment and open the next one; the serial stays. Warranty rules decide later whether they evaluate the

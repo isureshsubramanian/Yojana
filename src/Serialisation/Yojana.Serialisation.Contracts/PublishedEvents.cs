@@ -13,10 +13,10 @@ public interface IPublishedUnitEvent
     PublishedEventHeader Header { get; }
 }
 
-public sealed record UnitCommissioned(PublishedEventHeader Header, Guid ItemId, string Origin, string LifecycleStatus, IReadOnlyList<PublishedIdentifier> Identifiers, Guid? LotId, Guid? LocationId, string? LocationKind) : IPublishedUnitEvent
+public sealed record UnitCommissioned(PublishedEventHeader Header, Guid ItemId, string Origin, string LifecycleStatus, IReadOnlyList<PublishedIdentifier> Identifiers, Guid? LotId, Guid? LocationId, string? LocationKind, bool CommissionedLate = false) : IPublishedUnitEvent
 {
     public const string Schema = "Unit.Commissioned";
-    public const string Version = "1.0";
+    public const string Version = "1.1";
 }
 
 public sealed record PublishedIdentifier(string Type, string Scheme, string Value, Guid? IssuerPartyRef);

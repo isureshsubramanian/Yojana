@@ -63,6 +63,7 @@ public static class PublishedEventSinkHandler
     public static void Handle(UnitIdentifiersSwapped e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitItemCorrected e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitAsBuiltCorrected e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(ItemTrackingModeChanged e) => PublishedEventSink.Summaries.Enqueue(e);
     public static void Handle(UnitVoided e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitVoidReversed e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitMerged e) => PublishedEventSink.Received.Enqueue(e);

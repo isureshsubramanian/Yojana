@@ -8,13 +8,14 @@ using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Ledger;
+using Yojana.Serialisation.Ports;
 using Wolverine;
 
 namespace Yojana.Serialisation.Documents;
 
 /// <summary>Everything a document handler reaches for, resolved once per message scope so the handlers stay readable.</summary>
 public sealed class DocumentContext(
-    SerialisationDbContext db, IUnitEventWriter writer, BulkIngestion bulk, IdentifierService identifiers, IItemQueryPort items, SerialRangeService ranges, SerialReuseSettings reuseSettings, ITenantContext tenant, IClock clock,
+    SerialisationDbContext db, IUnitEventWriter writer, BulkIngestion bulk, IdentifierService identifiers, EffectiveItemProfiles items, SerialRangeService ranges, SerialReuseSettings reuseSettings, ITenantContext tenant, IClock clock,
     EpisodeService episodes, UnitResolver resolver, DocumentOptions options, PostingPeriods periods, AsBuiltCompleteness completeness,
     IPurchasingDocumentQueryPort purchasing, IManufacturingDocumentQueryPort manufacturing, IInventoryDocumentQueryPort inventory, ISalesDocumentQueryPort sales, IServiceDocumentQueryPort service,
     IItemPolicyPort itemPolicies, IMessageBus bus)

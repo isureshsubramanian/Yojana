@@ -8,6 +8,7 @@ using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
+using Yojana.Serialisation.Ports;
 
 namespace Yojana.Serialisation.Commands;
 
@@ -28,7 +29,7 @@ public static class CorrectItemHandler
         SerialisationDbContext db,
         IUnitEventWriter writer,
         IStockReclassificationPort stock,
-        IItemQueryPort items,
+        EffectiveItemProfiles items,
         IItemPolicyPort itemPolicies,
         ICustomerContractPort contracts,
         CorrectionApprovalSettings approvals,
@@ -148,7 +149,7 @@ public static class PreviewCorrectItemHandler
     public static async Task<CorrectionPreview> Handle(
         PreviewCorrectItem preview,
         SerialisationDbContext db,
-        IItemQueryPort items,
+        EffectiveItemProfiles items,
         IItemPolicyPort itemPolicies,
         ICustomerContractPort contracts,
         CorrectionApprovalSettings approvals,
@@ -220,7 +221,7 @@ internal static class CorrectItemPlanning
         CorrectItem command,
         CorrectionCommitter committer,
         SerialisationDbContext db,
-        IItemQueryPort items,
+        EffectiveItemProfiles items,
         IItemPolicyPort itemPolicies,
         ICustomerContractPort contracts,
         CorrectionApprovalSettings approvals,
@@ -240,7 +241,7 @@ internal static class CorrectItemPlanning
         if (command.EventTime < assignment.ValidFrom)
             throw new CommandRefusedException("effective_before_current", $"The correction is dated {command.EventTime:O}, before the current assignment started ({assignment.ValidFrom:O}).", "date the correction on or after the current assignment");
 
-        var profile = await items.GetAsync(command.CorrectedItemId, cancellationToken)
+        var profile = await items.GetAsync(command.CorrectedItemId, command.EventTime, cancellationToken)
             ?? throw new CommandRefusedException("item_unknown", $"Item {command.CorrectedItemId} is not known to the host.");
         if (profile.TrackingMode != ItemSerialisationProfile.TrackingModes.Serial)
             throw new CommandRefusedException("item_not_serial_tracked", $"Item {profile.ItemCode} is {profile.TrackingMode}-tracked.");

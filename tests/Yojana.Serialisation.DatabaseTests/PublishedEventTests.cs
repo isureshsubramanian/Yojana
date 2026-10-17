@@ -36,7 +36,7 @@ public sealed class PublishedEventTests(SerialisationHostFixture fixture)
         var timeout = TimeSpan.FromSeconds(20);
         var commissioned = Assert.Single(await PublishedEventSink.WaitForAsync<UnitCommissioned>(e => e.Header.UnitId == unit, 1, timeout));
         Assert.Equal(UnitCommissioned.Schema, commissioned.Header.Schema);
-        Assert.Equal("1.0", commissioned.Header.Version);
+        Assert.Equal("1.1", commissioned.Header.Version); // 1.1 adds commissioned_late (P3-T06)
         Assert.Equal(item, commissioned.ItemId);
         Assert.Equal($"{p}001", commissioned.Identifiers.Single().Value);
         var released = Assert.Single(await PublishedEventSink.WaitForAsync<UnitReleased>(e => e.Header.UnitId == unit, 1, timeout));

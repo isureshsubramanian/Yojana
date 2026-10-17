@@ -49,6 +49,29 @@ public static class CorrectAsBuiltHandler
         if (await CorrectAsBuiltApproval.RefusalAsync(command, metadata, plan.Parents.Any(p => p.HasShipped), approvalSettings, cancellationToken) is { } approvalRefusal)
             throw new CommandRefusedException(approvalRefusal.Rule, approvalRefusal.Message, approvalRefusal.UnblockingStep);
 
+        return await ExecuteApprovedAsync(command, plan, metadata, db, writer, corrections, tenant, clock, true, cancellationToken);
+    }
+
+    // TIGHT COUPLING (P3-T06 LateSerialization composition)
+    // WHAT: LateSerialization calls this executor after its own item-owner + inventory-controller policy has approved
+    // the whole correction; this method deliberately does not evaluate CorrectAsBuilt's separate commit roles.
+    // WHY: the ADR gives LateSerialization one approval policy and one KPI correction even when it captures kit links.
+    // WHAT BREAKS IF SEPARATED: copying this writer would let late link rules drift; applying both policies would add
+    // roles the ADR does not require. Keep the matching comment in LateSerializationService and never call this seam
+    // without an already-approved outer correction.
+    internal static async Task<CorrectAsBuiltResult> ExecuteApprovedAsync(
+        CorrectAsBuilt command,
+        CorrectAsBuiltPlan plan,
+        CorrectionMetadata metadata,
+        SerialisationDbContext db,
+        IUnitEventWriter writer,
+        CorrectionLedger corrections,
+        ITenantContext tenant,
+        IClock clock,
+        bool recordCorrection,
+        CancellationToken cancellationToken)
+    {
+
         var recordedAt = clock.UtcNow;
         var drafts = new List<UnitEventDraft>();
         var results = new List<CorrectedAsBuiltParentResult>();
@@ -143,7 +166,8 @@ public static class CorrectAsBuiltHandler
 
         await ApplyFinalChildStateAsync(db, tenant.TenantId, drafts, affectedChildren, originalOpenParents, plan, cancellationToken);
         await writer.AppendAsync(drafts, cancellationToken);
-        corrections.Record(CorrectionCommand.CorrectAsBuilt, metadata, command.ActorRef, plan.Parents.Min(p => p.EffectiveAt), plan.Parents.Count);
+        if (recordCorrection)
+            corrections.Record(CorrectionCommand.CorrectAsBuilt, metadata, command.ActorRef, plan.Parents.Min(p => p.EffectiveAt), plan.Parents.Count);
 
         // P6 hook: Unit.AsBuiltCorrected is the release-record reissue trigger. Certificate work does not run here.
         return new(metadata.CorrectionId, plan.Parents.Count, plan.Parents.Sum(p => p.Changes.Count), results);
