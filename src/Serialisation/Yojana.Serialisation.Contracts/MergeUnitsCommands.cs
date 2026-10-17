@@ -8,7 +8,13 @@ public static class MergeUnitsResolution
 }
 
 /// <summary>Preview two records before deciding whether they are one unit or a genuine vendor-serial collision.</summary>
-public sealed record PreviewMergeUnits(Guid FirstUnitId, Guid SecondUnitId, DateTime EventTime, Guid? SurvivorUnitId = null, CorrectionCommitter? CommittedBy = null);
+public sealed record PreviewMergeUnits(
+    Guid FirstUnitId,
+    Guid SecondUnitId,
+    DateTime EventTime,
+    Guid? SurvivorUnitId = null,
+    CorrectionCommitter? CommittedBy = null,
+    IReadOnlyList<CorrectionApprover>? Approvers = null);
 
 public sealed record MergeUnitsAlternative(string Resolution, bool Available, string Summary, CommandRefusal? Refusal = null);
 

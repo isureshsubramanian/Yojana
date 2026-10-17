@@ -73,6 +73,9 @@ public sealed record CorrectionMetadata(
 /// </summary>
 public sealed record CorrectIdentifier(Guid CommandId, Guid UnitId, string IdentifierType, string NewRawValue, string Reason, DateTime EventTime, string ActorRef, Guid LegalEntityId, string? ApproverRef = null, string? Note = null, Guid? IssuerPartyRef = null, string? Qualifier = null, CorrectionMetadata? Correction = null);
 
+/// <summary>Rehearses <see cref="CorrectIdentifier"/> through the real handler in a rolled-back transaction.</summary>
+public sealed record PreviewCorrectIdentifier(CorrectIdentifier Command);
+
 public sealed record CorrectIdentifierResult(Guid UnitId, Guid SupersededIdentifierId, Guid NewIdentifierId, string OldNormalisedValue, string NewNormalisedValue, Guid CorrectionId = default);
 
 /// <summary>

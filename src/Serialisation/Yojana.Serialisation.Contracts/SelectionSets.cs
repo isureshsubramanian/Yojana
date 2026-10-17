@@ -114,11 +114,15 @@ public sealed record BulkOperationArguments(
     Guid? CorrectsCorrectionId = null);
 
 /// <summary>
-/// Approval of a bulk execution: who approved, or that the policy needed none (the policy as tenant data is P3; P1 records
-/// what was given). <see cref="Roles"/> are the approver's roles in the tenant; the HTTP endpoints always set approver and
-/// roles from the signed-in user's claims, whatever the body says.
+/// Trusted approval context for a bulk execution. <see cref="Roles"/>, recorded approvers and evidence are stamped by
+/// the HTTP or workbench boundary; request-body values are discarded before an operation receives them.
 /// </summary>
-public sealed record BulkApproval(string? ApproverRef, bool Required = false, IReadOnlyList<string>? Roles = null);
+public sealed record BulkApproval(
+    string? ApproverRef,
+    bool Required = false,
+    IReadOnlyList<string>? Roles = null,
+    IReadOnlyList<CorrectionApprover>? Approvers = null,
+    IReadOnlyList<string>? EvidenceRefs = null);
 
 /// <summary>Execute the operation over the selection in one transaction, one source document, one approval. Blocked and skipped units stay as they are; the report lists every unit.</summary>
 public sealed record ExecuteBulkOperation(Guid CommandId, Guid SelectionId, string Operation, BulkOperationArguments Arguments, BulkApproval Approval);

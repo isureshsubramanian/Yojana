@@ -15,6 +15,7 @@ using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Queries;
 using Yojana.Serialisation.Search;
 using Yojana.Serialisation.Selection;
+using Yojana.Serialisation.Workbench;
 
 namespace Yojana.Serialisation;
 
@@ -61,7 +62,7 @@ public static class SerialisationEndpoints
         units.MapPost("/{unitId:guid}/void", (Guid unitId, VoidUnit command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<VoidUnitResult>(bus, tenant, StampVoid(command with { UnitId = unitId }, user), ct));
         units.MapPost("/merge/preview", (PreviewMergeUnits command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<MergeUnitsPreviewResult>(bus, tenant, command with { CommittedBy = CorrectionCommitter(user) }, ct));
+            Invoke<MergeUnitsPreviewResult>(bus, tenant, command with { CommittedBy = CorrectionCommitter(user), Approvers = [] }, ct));
         units.MapPost("/merge", (MergeUnits command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<MergeUnitsResult>(bus, tenant, command with
             {
@@ -355,7 +356,38 @@ public static class SerialisationEndpoints
             Invoke<BulkApprovalRequestRow>(bus, tenant, command with { RequestId = requestId, Approver = Approver(user, null) }, ct));
         approvals.MapPost("/{requestId:guid}/reject", (Guid requestId, RejectBulkRequest command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<BulkApprovalRequestRow>(bus, tenant, command with { RequestId = requestId, Decider = Approver(user, null) }, ct));
+
+        var workbench = app.MapGroup("/api/workbench").RequireAuthorization(YojanaPolicy.TenantMember);
+        workbench.MapGet("/choices", (IWorkbenchChoiceCatalog choices) => Results.Ok(choices.GetChoices()));
+        workbench.MapPost("/resolve", (ResolveWorkbenchEntry command, ClaimsPrincipal user, WorkbenchEntryResolver resolver, CancellationToken ct) =>
+            WorkbenchInvoke(() => resolver.ResolveAsync(command with { ActorRef = Actor(user) }, ct)));
+        workbench.MapGet("/units/{unitId:guid}/lineage", async (Guid unitId, WorkbenchLineageQueries queries, CancellationToken ct) =>
+            await queries.ReadAsync(unitId, ct) is { } lineage ? Results.Ok(lineage) : Results.NotFound());
+        workbench.MapPost("/preview", (WorkbenchPreviewRequest request, WorkbenchRequestService service, CancellationToken ct) =>
+            WorkbenchInvoke(() => service.PreviewAsync(request, ct)));
+        workbench.MapPost("/requests/{requestId:guid}", (Guid requestId, WorkbenchPreviewRequest request, ClaimsPrincipal user, WorkbenchRequestService service, CancellationToken ct) =>
+            WorkbenchInvoke(() => service.InitiateAsync(requestId, request, WorkbenchActorFrom(user), ct)));
+        workbench.MapGet("/requests/{requestId:guid}", async (Guid requestId, WorkbenchRequestQueries queries, CancellationToken ct) =>
+            await queries.GetAsync(requestId, ct) is { } request ? Results.Ok(request) : Results.NotFound());
+        workbench.MapGet("/inbox", (int? skip, int? take, ClaimsPrincipal user, WorkbenchRequestQueries queries, CancellationToken ct) =>
+            WorkbenchInvoke(() => queries.InboxAsync(Roles(user), Math.Max(0, skip ?? 0), take ?? 50, ct)));
+        workbench.MapPost("/requests/{requestId:guid}/approve", (Guid requestId, ApproveWorkbenchRequest command, ClaimsPrincipal user, WorkbenchRequestService service, CancellationToken ct) =>
+            WorkbenchInvoke(() => service.ApproveAsync(requestId, WorkbenchActorFrom(user), command.Note, ct)));
+        workbench.MapPost("/requests/{requestId:guid}/reject", (Guid requestId, RejectWorkbenchRequest command, ClaimsPrincipal user, WorkbenchRequestService service, CancellationToken ct) =>
+            WorkbenchInvoke(() => service.RejectAsync(requestId, WorkbenchActorFrom(user), command.Note, ct)));
+        workbench.MapPost("/requests/{requestId:guid}/commit", (Guid requestId, ClaimsPrincipal user, WorkbenchRequestService service, CancellationToken ct) =>
+            WorkbenchInvoke(() => service.CommitAsync(requestId, WorkbenchActorFrom(user), ct)));
         return app;
+    }
+
+    private static async Task<IResult> WorkbenchInvoke<TResult>(Func<Task<TResult>> action)
+    {
+        try { return Results.Ok(await action()); }
+        catch (CommandRefusedException ex)
+        {
+            return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict,
+                extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+        }
     }
 
     private static async Task<IResult> Invoke<TResult>(IMessageBus bus, ITenantContext tenant, object command, CancellationToken ct) where TResult : class
@@ -383,6 +415,10 @@ public static class SerialisationEndpoints
 
     private static CorrectionCommitter CorrectionCommitter(ClaimsPrincipal user) =>
         new(user.FindFirstValue(YojanaClaim.UserId) ?? throw new InvalidOperationException("A signed-in user carries a user id claim."), user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToList());
+
+    private static List<string> Roles(ClaimsPrincipal user) => user.FindAll(YojanaClaim.Role).Select(c => c.Value).Distinct(StringComparer.Ordinal).ToList();
+
+    private static WorkbenchActor WorkbenchActorFrom(ClaimsPrincipal user) => new(Actor(user), Roles(user));
 
     private static BulkApproval Approver(ClaimsPrincipal user, BulkApproval? given)
     {

@@ -59,6 +59,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<BulkApprovalRequest> BulkApprovalRequests => Set<BulkApprovalRequest>();
 
+    public DbSet<WorkbenchRequest> WorkbenchRequests => Set<WorkbenchRequest>();
+
     public DbSet<CorrectionRecord> Corrections => Set<CorrectionRecord>();
 
     public DbSet<UnitMergeRecord> UnitMerges => Set<UnitMergeRecord>();
@@ -600,6 +602,33 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(r => new { r.TenantId, r.Status, r.RequestedAt });
             // One open request per selection and operation; a decided one never blocks a new request.
             b.HasIndex(r => new { r.TenantId, r.SelectionId, r.Operation }).IsUnique().HasFilter("[status] = 'pending'");
+        });
+
+        modelBuilder.Entity<WorkbenchRequest>(b =>
+        {
+            b.ToTable("workbench_request", t =>
+            {
+                t.HasCheckConstraint("ck_workbench_request_status", "status IN ('draft', 'awaiting_approval', 'approved', 'rejected', 'committed', 'superseded')");
+                foreach (var column in new[] { "target_json", "answers_json", "evidence_json", "preview_json", "initiator_roles_json", "required_approver_roles_json", "approvals_json" })
+                {
+                    t.HasCheckConstraint($"ck_workbench_request_{column}", $"ISJSON({column}) = 1");
+                }
+
+                t.HasCheckConstraint("ck_workbench_request_result_json", "result_json IS NULL OR ISJSON(result_json) = 1");
+            });
+            b.HasKey(r => new { r.TenantId, r.RequestId });
+            b.Property(r => r.Choice).HasMaxLength(60);
+            b.Property(r => r.Command).HasMaxLength(60);
+            b.Property(r => r.Reason).HasMaxLength(60);
+            b.Property(r => r.Note).HasMaxLength(2000);
+            b.Property(r => r.PreviewHash).HasMaxLength(64).IsFixedLength();
+            b.Property(r => r.Status).HasMaxLength(30);
+            b.Property(r => r.InitiatedBy).HasMaxLength(200);
+            b.Property(r => r.RejectedBy).HasMaxLength(200);
+            b.Property(r => r.DecisionNote).HasMaxLength(2000);
+            b.Property(r => r.CommittedBy).HasMaxLength(200);
+            b.HasIndex(r => new { r.TenantId, r.CommandId }).IsUnique();
+            b.HasIndex(r => new { r.TenantId, r.Status, r.InitiatedAt });
         });
 
         modelBuilder.Entity<WarrantyLineException>(b =>

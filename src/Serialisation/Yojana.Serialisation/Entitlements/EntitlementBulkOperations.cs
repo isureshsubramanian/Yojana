@@ -103,8 +103,11 @@ public abstract class EntitlementBulkOperation(SerialisationDbContext db, ITenan
     protected static CorrectionMetadata Correction(Guid commandId, string reason, BulkOperationArguments arguments, IReadOnlyList<string>? evidenceRefs = null)
     {
         var committer = Committer(arguments);
-        return new(commandId, reason, arguments.Note, evidenceRefs ?? [], arguments.InitiatedVia, arguments.CorrectsCorrectionId,
-            arguments.InitiatingRole ?? CorrectionRules.InitiatingRole(committer.Roles), [new CorrectionApprover(committer.UserRef, committer.Roles)]);
+        var approvers = BulkApprovalArguments.Approvers(arguments);
+        var evidence = (evidenceRefs ?? []).Concat(BulkApprovalArguments.EvidenceRefs(arguments)).Distinct(StringComparer.Ordinal).ToList();
+        return new(commandId, reason, arguments.Note, evidence, arguments.InitiatedVia, arguments.CorrectsCorrectionId,
+            arguments.InitiatingRole ?? CorrectionRules.InitiatingRole(committer.Roles),
+            approvers.Count > 0 ? approvers : [new CorrectionApprover(committer.UserRef, committer.Roles)]);
     }
 }
 
