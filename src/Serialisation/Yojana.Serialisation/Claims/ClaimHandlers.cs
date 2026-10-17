@@ -203,7 +203,8 @@ public static class AdjudicateClaimHandler
                 {
                     claim_id = claim.ClaimId, cohort_id = claim.CoverageSource == ClaimCoverageSource.Recall || cohorts.Count == 0 ? (Guid?)null : cohorts.Single(), coverage_source = claim.CoverageSource,
                     approved_amounts_by_line = lines.Select(l => new { claim_line_id = l.ClaimLineId, requested_amount = l.RequestedAmount, approved_amount = l.ApprovedAmount, coverage_pct = l.CoveragePct, coverage_source = l.CoverageSource, entitlement_id = l.EntitlementId }),
-                    service_entity_id = claim.ServiceEntityId, obligor_entity_id = claim.ObligorEntityId, status = claim.Status, denial_reason = claim.DenialReason,
+                    service_entity_id = claim.ServiceEntityId, obligor_entity_id = claim.ObligorEntityId, claimant_party_ref = claim.ClaimantPartyRef,
+                    settlement_party_ref = claim.SettlementPartyRef, status = claim.Status, denial_reason = claim.DenialReason,
                     chain_length = claim.ChainLength, remedy = claim.Remedy,
                 }),
             },
