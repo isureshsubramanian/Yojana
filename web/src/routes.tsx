@@ -53,12 +53,18 @@ export const router = createBrowserRouter([
           { path: "corrections/reassign-allocation", lazy: () => import("./corrections/AllocationReassign") },
           { path: "corrections/merge", lazy: () => import("./corrections/MergeUnits") },
           { path: "corrections/vendor-serials", lazy: () => import("./corrections/VendorSerials") },
+          { path: "claims", lazy: () => import("./claims/Claims") },
+          // Claim collection routes (new, campaigns, recovery) stay above the id route. React Router ranks literals first
+          // too; the order documents the boundary so "campaigns" or "recovery" is never treated as a claim id.
+          { path: "claims/new", lazy: () => import("./claims/ClaimIntake") },
           { path: "claims/recovery", lazy: () => import("./recovery/RecoveryClaims") },
+          { path: "settings/currencies", lazy: () => import("./settings/Currencies") },
           { path: "settings/workbench-choices", lazy: () => import("./corrections/WorkbenchChoices") },
           { path: "claims/campaigns", lazy: () => import("./campaigns/Campaigns") },
           { path: "claims/campaigns/new", lazy: () => import("./campaigns/CampaignEditor") },
           { path: "claims/campaigns/:campaignId", lazy: () => import("./campaigns/CampaignEditor") },
           { path: "claims/campaigns/:campaignId/units", lazy: () => import("./campaigns/CampaignUnits") },
+          { path: "claims/:claimId", lazy: () => import("./claims/ClaimAdjudication") },
           ...patterns,
           ...placeholders,
           { path: "*", lazy: () => import("./pages/Placeholder") },

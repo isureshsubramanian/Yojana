@@ -35,7 +35,9 @@ export function ErrorNote({ error }: { error: unknown }) {
   if (!error) return null;
   const message = error instanceof Error ? error.message : String(error);
   const status = error instanceof ApiError ? error.status : null;
-  return <div className="form-error" role="alert">{status === 409 ? "Refused · " : ""}{message}</div>;
+  const rule = error instanceof ApiError ? error.rule : null;
+  const step = error instanceof ApiError ? error.unblockingStep : null;
+  return <div className="form-error" role="alert">{status === 409 ? `Refused${rule ? ` · ${rule.replace(/_/g, " ")}` : ""} · ` : ""}{message}{step ? ` To unblock: ${step}.` : ""}</div>;
 }
 
 export function UnitLink({ unitId, children, className = "serial" }: { unitId: string; children: ReactNode; className?: string }) {

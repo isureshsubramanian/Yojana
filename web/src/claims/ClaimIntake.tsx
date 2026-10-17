@@ -1,0 +1,172 @@
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router";
+import { DEFAULT_LEGAL_ENTITY, units, type AsBuiltRow, type LookupHit, type UnitDetail } from "../api/units";
+import { ScanInput } from "../components";
+import { ItemField, PartyField, useReferenceNames } from "../corrections/ReferenceFields";
+import { entitlementApi } from "../entitlements/api";
+import type { UnitEntitlementDetail } from "../entitlements/types";
+import { Icon } from "../shell/Icons";
+import { Rail } from "../shell/Drawer";
+import { openDrawer } from "../shell/drawerStore";
+import { Breadcrumbs } from "../shell/PageHeader";
+import { ErrorNote, Kv, Section } from "../units/common";
+import { claimsApi } from "./api";
+import { COUNTRY_CODES, LINE_KINDS, REMEDIES, countryName, humanise, money } from "./format";
+import type { ClaimEvidenceInput, CoverageFamily, CurrencyInfo, SubmitClaim, TenantCurrency } from "./types";
+import "./claims.css";
+
+type IntakeMode = "unit" | "proof" | "no_record";
+type DraftLine = { id: string; kind: string; description: string; childUnitId: string; coverageFamily: string; requestedAmount: string; measurements: string };
+type DraftEvidence = { id: string; kind: string; reference: string; description: string };
+
+function draftLine(family = ""): DraftLine { return { id: crypto.randomUUID(), kind: "parts", description: "", childUnitId: "", coverageFamily: family, requestedAmount: "", measurements: "" }; }
+function draftEvidence(): DraftEvidence { return { id: crypto.randomUUID(), kind: "attachment", reference: "", description: "" }; }
+
+export function Component() {
+  const navigate = useNavigate();
+  const [mode, setMode] = useState<IntakeMode>("unit");
+  const [identifier, setIdentifier] = useState("");
+  const [hit, setHit] = useState<LookupHit | null>(null);
+  const [unit, setUnit] = useState<UnitDetail | null>(null);
+  const [entitlements, setEntitlements] = useState<UnitEntitlementDetail | null>(null);
+  const [itemId, setItemId] = useState<string | null>(null);
+  const [proofRef, setProofRef] = useState("");
+  const [proofDate, setProofDate] = useState("");
+  const [claimant, setClaimant] = useState<string | null>(null);
+  const [settlement, setSettlement] = useState<string | null>(null);
+  const [serviceCountry, setServiceCountry] = useState("GB");
+  const [currency, setCurrency] = useState("");
+  const [currencySettings, setCurrencySettings] = useState<TenantCurrency | null>(null);
+  const [catalogue, setCatalogue] = useState<CurrencyInfo[]>([]);
+  const [families, setFamilies] = useState<CoverageFamily[]>([]);
+  const [lines, setLines] = useState<DraftLine[]>([draftLine()]);
+  const [evidence, setEvidence] = useState<DraftEvidence[]>([draftEvidence()]);
+  const [remedy, setRemedy] = useState("repair");
+  const [choiceEvidence, setChoiceEvidence] = useState("");
+  const [coverageExplanation] = useState("Warranty");
+  const [busy, setBusy] = useState(false);
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    Promise.all([claimsApi.currency(controller.signal), claimsApi.currencyCatalogue(controller.signal), claimsApi.coverageFamilies(controller.signal)])
+      .then(([settings, nextCatalogue, nextFamilies]) => {
+        setCurrencySettings(settings); setCatalogue(nextCatalogue); setFamilies(nextFamilies.filter((family) => family.active));
+        setCurrency(settings.currency ?? settings.accepted[0] ?? "");
+        setLines((current) => current.map((line, index) => index === 0 && !line.coverageFamily ? { ...line, coverageFamily: nextFamilies.find((family) => family.active)?.familyCode ?? "" } : line));
+      }).catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); void submit(); }
+    };
+    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
+  });
+
+  const names = useReferenceNames({ items: [unit?.itemId, itemId, ...(unit?.asBuilt ?? []).map((child) => child.childItemId)], parties: [unit?.ownerPartyRef, unit?.custodyPartyRef, claimant, settlement, DEFAULT_LEGAL_ENTITY] });
+  const resolve = async (value: string) => {
+    setIdentifier(value); setLookupBusy(true); setError(null); setHit(null); setUnit(null); setEntitlements(null);
+    try {
+      const lookup = await units.lookup(value);
+      if (lookup.hits.length !== 1 || !["exact", "superseded"].includes(lookup.resolution)) throw new Error(lookup.hits.length ? "This identifier is ambiguous. Open Unit search and choose the unit before claiming." : "No unit resolves from this identifier. Use Proof of purchase or No record to reconstruct it.");
+      const match = lookup.hits[0]!;
+      const [detail, cover] = await Promise.all([units.detail(match.unitId), entitlementApi.detailForUnit(match.unitId)]);
+      setHit(match); setUnit(detail); setEntitlements(cover); setItemId(detail.itemId);
+      setClaimant(detail.ownerPartyRef); setSettlement(detail.ownerPartyRef);
+      setLines((current) => current.map((line) => ({ ...line, childUnitId: "" })));
+    } catch (reason) { setError(reason); } finally { setLookupBusy(false); }
+  };
+  const switchMode = (next: IntakeMode) => {
+    setMode(next); setError(null);
+    if (next !== "unit") { setHit(null); setUnit(null); setEntitlements(null); setClaimant(null); setSettlement(null); setItemId(null); setLines((current) => current.map((line) => ({ ...line, childUnitId: "" }))); }
+  };
+  const updateLine = (id: string, patch: Partial<DraftLine>) => setLines((current) => current.map((line) => line.id === id ? { ...line, ...patch } : line));
+  const updateEvidence = (id: string, patch: Partial<DraftEvidence>) => setEvidence((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row));
+  const showChild = (child: AsBuiltRow) => openDrawer({ eyebrow: "Claim line · child unit", title: child.childSerial ?? child.slot ?? "Child unit", mono: !!child.childSerial }, <><h3>As-built child</h3><Kv rows={[["Serial", child.childSerial ?? "No serial recorded"], ["Item", names.item(child.childItemId)], ["Slot", child.slot ?? "—"], ["Relation", humanise(child.relation)], ["Installed", child.installedAt.slice(0, 10)], ["Release status", humanise(child.releaseStatus)]]} /><p className="muted" style={{ marginTop: 16 }}>Adjudication checks inbound cover on this child. If it is live on the claim date, approval raises supplier recovery automatically.</p></>);
+  const total = lines.reduce((sum, line) => sum + (Number(line.requestedAmount) || 0), 0);
+  const children = unit?.asBuilt.filter((child) => child.childUnitId && !child.removedAt) ?? [];
+  const activeCover = entitlements?.entitlements.filter((cover) => cover.effectiveStatus === "active") ?? [];
+  const currencyChoices = currencySettings?.accepted ?? [];
+  const canSubmit = !!currency && !!claimant && !!settlement && !!serviceCountry && !!choiceEvidence.trim() && lines.length > 0 && lines.every((line) => line.description.trim() && line.coverageFamily && line.requestedAmount !== "" && Number(line.requestedAmount) >= 0)
+    && (mode === "unit" ? !!unit : !!identifier.trim() && !!itemId && !!proofRef.trim() && !!proofDate);
+
+  const submit = async () => {
+    if (!canSubmit || busy) return;
+    setBusy(true); setError(null);
+    const body: SubmitClaim = {
+      commandId: crypto.randomUUID(), unitId: mode === "unit" ? unit!.unitId : null,
+      identifier: mode === "unit" ? null : { value: identifier.trim(), issuerPartyRef: null, identifierType: null, erpSerialId: null },
+      claimDate: new Date().toISOString().slice(0, 10), claimantPartyRef: claimant!, settlementPartyRef: settlement!,
+      serviceEntityId: DEFAULT_LEGAL_ENTITY, obligorEntityId: DEFAULT_LEGAL_ENTITY, serviceCountry, currency,
+      lines: lines.map((line) => ({ kind: line.kind, coverageFamily: line.coverageFamily, requestedAmount: Number(line.requestedAmount), unitId: line.childUnitId || null, description: line.description.trim(), measurements: parseMeasurements(line.measurements) })),
+      evidence: evidence.filter((row) => row.reference.trim()).map<ClaimEvidenceInput>((row) => ({ kind: row.kind, reference: row.reference.trim(), description: row.description.trim() || null })),
+      remedy, consumerChoiceEvidenceRef: choiceEvidence.trim(), eventTime: new Date().toISOString(), actorRef: "",
+      proofOfPurchaseRef: mode === "unit" ? null : proofRef.trim(), proofOfPurchaseDate: mode === "unit" ? null : proofDate, itemId: mode === "unit" ? null : itemId,
+    };
+    try { const result = await claimsApi.submit(body); navigate(`/claims/${result.claimId}`); } catch (reason) { setError(reason); } finally { setBusy(false); }
+  };
+
+  return <><main className="content" id="main" tabIndex={-1}>
+    <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Claims", to: "/claims" }, { label: "New claim" }]} />
+    <div className="page-header"><div><h1>New claim</h1><p className="sub">Find the unit by any identifier or by proof of purchase · the claimant may differ from the party that settles · nothing is decided here; adjudication runs next</p></div><div className="actions"><Link className="btn" to="/claims">Cancel</Link><button type="button" className="btn primary" disabled={!canSubmit || busy} aria-busy={busy} onClick={() => void submit()}><Icon name="check" />Submit and adjudicate<kbd className="key">⌘↵</kbd></button></div></div>
+    <div className="stack">
+      <section className="card" aria-labelledby="claim-find"><div className="card-body"><div className="toolbar">
+        <ScanInput size="lg" primary value={identifier} onChange={(value) => { setIdentifier(value); if (unit) { setUnit(null); setHit(null); setEntitlements(null); } }} onSubmit={(scan) => { if (mode === "unit") void resolve(scan.value); }} ariaLabel="Scan or enter a serial, asset tag or licence id" placeholder={mode === "unit" ? "Scan or enter any unit identifier" : "Identifier on the product or proof"} hint={lookupBusy ? <span>…</span> : <kbd className="key">F2</kbd>} />
+        <div className="segmented plain" role="group" aria-label="Find by">{([['unit', 'Unit identifier'], ['proof', 'Proof of purchase'], ['no_record', 'No record']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={mode === value} onClick={() => switchMode(value)}>{label}</button>)}</div>
+        <span className="grow" /><span className="hint" id="claim-find">{mode === "unit" ? "Superseded serials and asset tags resolve to the same unit." : "A low-confidence unit and entitlement are reconstructed from the proof supplied."}</span>
+      </div>{mode === "unit" && identifier && !unit && <div style={{ marginTop: 10 }}><button type="button" className="btn sm" disabled={lookupBusy} onClick={() => void resolve(identifier)}>Resolve unit</button></div>}
+      {mode !== "unit" && <div className="form-grid" style={{ marginTop: 16 }}><ItemField id="claim-item" label="Item" value={itemId} onChange={setItemId} hint="Required to reconstruct the unit without an existing record" /><div className="field"><label htmlFor="claim-proof-ref">Proof-of-purchase reference</label><input id="claim-proof-ref" className="input" value={proofRef} onChange={(event) => setProofRef(event.target.value)} /></div><div className="field"><label htmlFor="claim-proof-date">Proof-of-purchase date</label><input id="claim-proof-date" className="input" type="date" value={proofDate} onChange={(event) => setProofDate(event.target.value)} /></div></div>}
+      </div></section>
+      <ErrorNote error={error} />
+      {!currencyChoices.length && <div className="note warn"><strong>No accepted currencies are configured.</strong>&nbsp;Set a working currency and accepted claim currencies in <Link to="/settings/currencies">Currencies settings</Link>. Claim submission is disabled until then.</div>}
+      <div className="cols-3-2">
+        <div className="stack">
+          <section className="card" aria-labelledby="claim-unit"><div className="card-header"><h2 id="claim-unit">Unit <span className="meta">{unit ? `resolved from ${hit?.identifierType ?? "identifier"}` : mode === "unit" ? "waiting for an identifier" : "will be reconstructed"}</span></h2>{unit && <Link className="btn ghost sm" to={`/units/${unit.unitId}`}>Open unit</Link>}</div><div className="card-body">
+            {unit ? <Kv rows={[
+              ["Serial", <span className="serial">{hit?.rawValue ?? identifier}</span>], ["Item", names.item(unit.itemId)], ["Owner now", names.party(unit.ownerPartyRef)],
+              ["Custody", unit.custodyPartyRef ? names.party(unit.custodyPartyRef) : unit.locationKind ? `${humanise(unit.locationKind)}${unit.locationId ? " · location recorded" : ""}` : "—"],
+              ["Live coverage", activeCover.length ? activeCover.map((cover) => `${cover.coverageFamilyName} · ${cover.startDate ?? "open"} → ${cover.endDate ?? "open"} · region ${cover.regionScope.join(", ") || "any"}`).join("; ") : "No active cover returned"],
+              ["Overlay flags", unit.overlayFlags || "None"], ["As-built children", children.length.toLocaleString()],
+            ]} /> : <p className="muted">{mode === "unit" ? "Scan or enter an identifier above, then resolve it. Only facts returned by the unit and entitlement APIs appear here." : "The submitted identifier, item and proof of purchase let the server reconstruct a low-confidence record. No sale, shipment or delivery facts are inferred."}</p>}
+          </div></section>
+          <section className="card" aria-labelledby="claim-lines"><div className="card-header"><h2 id="claim-lines">What is claimed <span className="meta">{lines.length} {lines.length === 1 ? "line" : "lines"} · coverage is decided per line</span></h2><button type="button" className="btn sm" onClick={() => setLines((current) => [...current, draftLine(families[0]?.familyCode ?? "")])}><Icon name="plus" />Add line</button></div>
+            <div className="grid-viewport"><table className="table claims-lines"><colgroup><col style={{ width: "12%" }} /><col style={{ width: "25%" }} /><col style={{ width: "15%" }} /><col style={{ width: "17%" }} /><col style={{ width: "12%" }} /><col style={{ width: "14%" }} /><col style={{ width: "5%" }} /></colgroup><thead><tr><th>Kind</th><th>Description</th><th>Child unit</th><th>Coverage family</th><th className="num">Requested</th><th>Measured</th><th /></tr></thead><tbody>{lines.map((line, index) => <tr key={line.id}>
+              <td><select className="select" aria-label={`Line ${index + 1} kind`} value={line.kind} onChange={(event) => updateLine(line.id, { kind: event.target.value })}>{LINE_KINDS.map((kind) => <option key={kind} value={kind}>{humanise(kind)}</option>)}</select></td>
+              <td><input className="input" aria-label={index === 0 ? "Fault as reported" : `Line ${index + 1} description`} placeholder={index === 0 ? "Fault as reported" : "Work or item claimed"} value={line.description} onChange={(event) => updateLine(line.id, { description: event.target.value })} /></td>
+              <td><select className="select" aria-label={`Line ${index + 1} child unit`} value={line.childUnitId} onChange={(event) => { updateLine(line.id, { childUnitId: event.target.value }); const child = children.find((candidate) => candidate.childUnitId === event.target.value); if (child) showChild(child); }}><option value="">Root unit</option>{children.map((child) => <option key={child.childUnitId!} value={child.childUnitId!}>{child.childSerial ?? child.slot ?? "Child unit"}</option>)}</select></td>
+              <td><select className="select" aria-label={`Line ${index + 1} coverage family`} value={line.coverageFamily} onChange={(event) => updateLine(line.id, { coverageFamily: event.target.value })}><option value="">Choose…</option>{families.map((family) => <option key={family.familyCode} value={family.familyCode}>{family.name}</option>)}</select></td>
+              <td><input className="input num" aria-label={`Line ${index + 1} requested amount`} type="number" min="0" step="0.01" value={line.requestedAmount} onChange={(event) => updateLine(line.id, { requestedAmount: event.target.value })} /></td>
+              <td><input className="input" aria-label={`Line ${index + 1} measurements`} placeholder="flow=0" value={line.measurements} onChange={(event) => updateLine(line.id, { measurements: event.target.value })} /></td>
+              <td><button type="button" className="btn sm" aria-label={`Remove line ${index + 1}`} disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((candidate) => candidate.id !== line.id))}>×</button></td>
+            </tr>)}</tbody></table></div><div className="card-footer"><span>Requested {currency ? money(total, currency, catalogue) : "—"} · enter the fault as reported in the first line’s description</span></div>
+          </section>
+        </div>
+        <div className="stack">
+          <section className="card" aria-labelledby="claim-parties"><div className="card-header"><h2 id="claim-parties">Parties</h2></div><div className="card-body"><div className="form-grid">
+            <div className="span"><PartyField id="claim-claimant" label="Claimant" value={claimant} onChange={setClaimant} hint="Who reported it · defaults to the current owner" /></div>
+            <div className="span"><PartyField id="claim-settlement" label="Settles with" value={settlement} onChange={setSettlement} hint="Who is credited; this may differ from the claimant" /></div>
+            <div className="field"><label htmlFor="claim-country">Service country</label><select id="claim-country" className="select" value={serviceCountry} onChange={(event) => setServiceCountry(event.target.value)}>{COUNTRY_CODES.map((code) => <option key={code} value={code}>{code} · {countryName(code)}</option>)}</select></div>
+            <div className="field"><label htmlFor="claim-currency">Currency</label><select id="claim-currency" className="select" value={currency} disabled={!currencyChoices.length} onChange={(event) => setCurrency(event.target.value)}>{currencyChoices.map((code) => <option key={code} value={code}>{code}{code === currencySettings?.currency ? " · working currency" : ""}</option>)}</select></div>
+            <div className="field span"><label>Service entity</label><div className="reference-selected"><span>{names.party(DEFAULT_LEGAL_ENTITY)}</span></div><span className="help">The tenant’s legal entity; read-only.</span></div>
+            <div className="field span"><label>Obligor entity</label><div className="reference-selected"><span>{names.party(DEFAULT_LEGAL_ENTITY)}</span></div><span className="help">Adjudication records the obligor on the event.</span></div>
+          </div></div></section>
+          <section className="card" aria-labelledby="claim-source"><div className="card-header"><h2 id="claim-source">Coverage source asked for</h2><span className="meta">adjudication decides it</span></div><div className="card-body"><div className="claims-segmented" aria-label="Coverage source explanation">{["Warranty", "Recall", "Goodwill", "Contract", "Chargeable"].map((source) => <span key={source} className={`chip${source === coverageExplanation ? " on" : ""}`}>{source}</span>)}</div><p className="hint" style={{ marginTop: 10 }}>Informational only. SubmitClaim has no requested-source field; the policy stack determines the source per line.</p></div></section>
+          <section className="card" aria-labelledby="claim-remedy"><div className="card-header"><h2 id="claim-remedy">Remedy and informed choice</h2></div><div className="card-body"><div className="claims-remedy">{REMEDIES.map((value) => <label key={value} className={remedy === value ? "on" : ""}><input type="radio" name="claim-remedy" value={value} checked={remedy === value} onChange={() => setRemedy(value)} /><span>{humanise(value)}<span className="help">The consumer’s requested outcome; coverage is still adjudicated.</span></span></label>)}</div><div className="field" style={{ marginTop: 12 }}><label htmlFor="claim-choice">Consumer’s informed choice evidence reference</label><input id="claim-choice" className="input" value={choiceEvidence} onChange={(event) => setChoiceEvidence(event.target.value)} placeholder="Call, e-mail or signed choice reference" /><span className="help">Required and stored as consumer remedy-choice evidence.</span></div></div></section>
+          <section className="card" aria-labelledby="claim-evidence"><div className="card-header"><h2 id="claim-evidence">Evidence <span className="meta">{evidence.filter((row) => row.reference.trim()).length} items</span></h2><button type="button" className="btn sm" onClick={() => setEvidence((current) => [...current, draftEvidence()])}><Icon name="plus" />Add</button></div><div className="card-body stack">{evidence.map((row, index) => <div className="form-grid" key={row.id}>
+            <div className="field"><label htmlFor={`evidence-kind-${row.id}`}>Kind</label><select id={`evidence-kind-${row.id}`} className="select" value={row.kind} onChange={(event) => updateEvidence(row.id, { kind: event.target.value })}><option value="attachment">Attachment</option><option value="proof_of_purchase">Proof of purchase</option></select></div>
+            <div className="field"><label htmlFor={`evidence-ref-${row.id}`}>Reference</label><input id={`evidence-ref-${row.id}`} className="input" value={row.reference} onChange={(event) => updateEvidence(row.id, { reference: event.target.value })} placeholder="File or document reference" /></div>
+            <div className="field span"><label htmlFor={`evidence-desc-${row.id}`}>Description</label><input id={`evidence-desc-${row.id}`} className="input" value={row.description} onChange={(event) => updateEvidence(row.id, { description: event.target.value })} /><button type="button" className="btn ghost sm" disabled={evidence.length === 1} onClick={() => setEvidence((current) => current.filter((candidate) => candidate.id !== row.id))}>Remove evidence {index + 1}</button></div>
+          </div>)}</div></section>
+        </div>
+      </div>
+    </div>
+  </main><Rail label="Claim intake"><Section title="Submission boundary"><p className="muted">This form records the facts and evidence supplied. Coverage source, percentages, obligor and recovery are determined by adjudication after submission.</p></Section></Rail></>;
+}
+
+function parseMeasurements(text: string): Record<string, number> | null {
+  const entries = text.split(",").map((entry) => entry.trim()).filter(Boolean).map((entry) => { const [key, raw] = entry.split("=").map((part) => part.trim()); return key && raw !== undefined && Number.isFinite(Number(raw)) ? [key, Number(raw)] as const : null; }).filter((entry): entry is readonly [string, number] => entry !== null);
+  return entries.length ? Object.fromEntries(entries) : null;
+}

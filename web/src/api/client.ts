@@ -1,6 +1,11 @@
 // The one place the client talks HTTP. Same-origin cookies; JSON in and out; non-2xx becomes ApiError.
 export class ApiError extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly rule: string | null = null,
+    public readonly unblockingStep: string | null = null,
+  ) {
     super(message);
     this.name = "ApiError";
   }
@@ -15,7 +20,8 @@ export async function api<T>(path: string, init?: { method?: "GET" | "POST" | "P
     ...(init?.signal ? { signal: init.signal } : {}),
   });
   if (!response.ok) {
-    throw new ApiError(response.status, await describe(response));
+    const problem = await describe(response);
+    throw new ApiError(response.status, problem.message, problem.rule, problem.unblockingStep);
   }
   if (response.status === 204) {
     return undefined as T;
@@ -23,17 +29,17 @@ export async function api<T>(path: string, init?: { method?: "GET" | "POST" | "P
   return (await response.json()) as T;
 }
 
-async function describe(response: Response): Promise<string> {
+async function describe(response: Response): Promise<{ message: string; rule: string | null; unblockingStep: string | null }> {
   try {
     const text = await response.text();
-    if (!text) return response.statusText || `HTTP ${response.status}`;
+    if (!text) return { message: response.statusText || `HTTP ${response.status}`, rule: null, unblockingStep: null };
     try {
-      const problem = JSON.parse(text) as { title?: string; detail?: string };
-      return problem.detail ?? problem.title ?? text;
+      const problem = JSON.parse(text) as { title?: string; detail?: string; rule?: string; unblockingStep?: string };
+      return { message: problem.detail ?? problem.title ?? text, rule: problem.rule ?? problem.title ?? null, unblockingStep: problem.unblockingStep ?? null };
     } catch {
-      return text;
+      return { message: text, rule: null, unblockingStep: null };
     }
   } catch {
-    return `HTTP ${response.status}`;
+    return { message: `HTTP ${response.status}`, rule: null, unblockingStep: null };
   }
 }
