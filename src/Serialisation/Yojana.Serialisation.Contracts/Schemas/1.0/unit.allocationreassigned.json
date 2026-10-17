@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/unit.allocationreassigned.json",
+  "title": "Unit.AllocationReassigned",
+  "type": "object",
+  "required": [
+    "header",
+    "correction",
+    "reassignments"
+  ],
+  "properties": {
+    "header": {
+      "$ref": "#/$defs/header"
+    },
+    "correction": {
+      "$ref": "#/$defs/correction"
+    },
+    "reassignments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/reassignment"
+      }
+    }
+  },
+  "$defs": {
+    "header": {
+      "type": "object",
+      "required": [
+        "schema",
+        "version",
+        "event_id",
+        "event_time",
+        "recorded_time",
+        "legal_entity_id",
+        "actor_ref"
+      ],
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "recorded_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "legal_entity_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actor_ref": {
+          "type": "string"
+        },
+        "document": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/document_ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "correction": {
+      "type": "object",
+      "required": [
+        "correction_id",
+        "reason_code",
+        "initiated_via",
+        "approver_refs"
+      ],
+      "properties": {
+        "correction_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "reason_code": {
+          "type": "string"
+        },
+        "initiated_via": {
+          "type": "string",
+          "enum": [
+            "workbench",
+            "api",
+            "migration",
+            "system"
+          ]
+        },
+        "corrects_correction_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "approver_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "document_ref": {
+      "type": "object",
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "line": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "reassignment": {
+      "type": "object",
+      "required": [
+        "serial_range_id",
+        "previous_production_order",
+        "new_production_order"
+      ],
+      "properties": {
+        "serial_range_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "previous_production_order": {
+          "$ref": "#/$defs/document_ref"
+        },
+        "new_production_order": {
+          "$ref": "#/$defs/document_ref"
+        }
+      }
+    }
+  }
+}

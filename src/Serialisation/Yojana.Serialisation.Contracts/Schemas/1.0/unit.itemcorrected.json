@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/unit.itemcorrected.json",
+  "title": "Unit.ItemCorrected",
+  "type": "object",
+  "required": [
+    "header",
+    "correction",
+    "previous_item_id",
+    "corrected_item_id",
+    "previous_assignment_id",
+    "new_assignment_id",
+    "document_mismatch",
+    "warranty_policy_changed"
+  ],
+  "properties": {
+    "header": {
+      "$ref": "#/$defs/header"
+    },
+    "correction": {
+      "$ref": "#/$defs/correction"
+    },
+    "previous_item_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "corrected_item_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "previous_assignment_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "new_assignment_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "document_mismatch": {
+      "type": "boolean"
+    },
+    "inventory_reclassification_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "warranty_policy_changed": {
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "header": {
+      "type": "object",
+      "required": [
+        "schema",
+        "version",
+        "event_id",
+        "unit_id",
+        "event_time",
+        "recorded_time",
+        "seq",
+        "legal_entity_id",
+        "actor_ref"
+      ],
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "unit_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "recorded_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "legal_entity_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actor_ref": {
+          "type": "string"
+        },
+        "document": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/document_ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "correction": {
+      "type": "object",
+      "required": [
+        "correction_id",
+        "reason_code",
+        "initiated_via",
+        "approver_refs"
+      ],
+      "properties": {
+        "correction_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "reason_code": {
+          "type": "string"
+        },
+        "initiated_via": {
+          "type": "string",
+          "enum": [
+            "workbench",
+            "api",
+            "migration",
+            "system"
+          ]
+        },
+        "corrects_correction_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "approver_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "document_ref": {
+      "type": "object",
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "line": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/unit.identifiersswapped.json",
+  "title": "Unit.IdentifiersSwapped",
+  "type": "object",
+  "required": [
+    "header",
+    "correction",
+    "swap_id",
+    "counterpart_unit_id",
+    "given_identifier",
+    "received_identifier"
+  ],
+  "properties": {
+    "header": {
+      "$ref": "#/$defs/header"
+    },
+    "correction": {
+      "$ref": "#/$defs/correction"
+    },
+    "swap_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "counterpart_unit_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "given_identifier": {
+      "$ref": "#/$defs/swapped_identifier"
+    },
+    "received_identifier": {
+      "$ref": "#/$defs/swapped_identifier"
+    }
+  },
+  "$defs": {
+    "header": {
+      "type": "object",
+      "required": [
+        "schema",
+        "version",
+        "event_id",
+        "unit_id",
+        "event_time",
+        "recorded_time",
+        "seq",
+        "legal_entity_id",
+        "actor_ref"
+      ],
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "unit_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "recorded_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "legal_entity_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actor_ref": {
+          "type": "string"
+        },
+        "document": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/document_ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "correction": {
+      "type": "object",
+      "required": [
+        "correction_id",
+        "reason_code",
+        "initiated_via",
+        "approver_refs"
+      ],
+      "properties": {
+        "correction_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "reason_code": {
+          "type": "string"
+        },
+        "initiated_via": {
+          "type": "string",
+          "enum": [
+            "workbench",
+            "api",
+            "migration",
+            "system"
+          ]
+        },
+        "corrects_correction_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "approver_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "document_ref": {
+      "type": "object",
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "line": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "swapped_identifier": {
+      "type": "object",
+      "required": [
+        "identifier_id",
+        "type",
+        "scheme",
+        "value"
+      ],
+      "properties": {
+        "identifier_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "type": {
+          "type": "string"
+        },
+        "scheme": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "issuer_party_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        }
+      }
+    }
+  }
+}

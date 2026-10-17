@@ -7,6 +7,7 @@ namespace Yojana.Serialisation.DatabaseTests;
 public static class PublishedEventSink
 {
     public static readonly ConcurrentQueue<IPublishedUnitEvent> Received = new();
+    public static readonly ConcurrentQueue<IPublishedSummaryEvent> Summaries = new();
 
     public static Task<IReadOnlyList<T>> WaitForAsync<T>(Func<T, bool> match, int count, TimeSpan timeout) where T : IPublishedUnitEvent
     {
@@ -42,4 +43,13 @@ public static class PublishedEventSinkHandler
     public static void Handle(EntitlementBackfilled e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(EntitlementClosed e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(EntitlementCoverageChanged e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(UnitIdentifiersSwapped e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(UnitItemCorrected e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(UnitAsBuiltCorrected e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(UnitVoided e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(UnitMerged e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(UnitIdentifiersAssigned e) => PublishedEventSink.Summaries.Enqueue(e);
+    public static void Handle(UnitAllocationReassigned e) => PublishedEventSink.Summaries.Enqueue(e);
+    public static void Handle(DocumentSerialsCorrected e) => PublishedEventSink.Summaries.Enqueue(e);
+    public static void Handle(OwnershipSourceDocumentCorrected e) => PublishedEventSink.Summaries.Enqueue(e);
 }
