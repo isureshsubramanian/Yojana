@@ -456,6 +456,8 @@ public static class SerialisationEndpoints
         // Campaign recipients are selected from current ownership and custody by the handler. The body can never name
         // the acting user; the authenticated claim is stamped at this boundary like every other command endpoint.
         var campaigns = app.MapGroup("/api/campaigns").RequireAuthorization(YojanaPolicy.TenantMember);
+        campaigns.MapGet("/", async (string? status, int? skip, int? take, CampaignQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.ListAsync(status, skip ?? 0, take ?? 50, ct)));
         campaigns.MapGet("/{campaignId:guid}", async (Guid campaignId, CampaignQueries queries, CancellationToken ct) =>
             await queries.DetailAsync(campaignId, ct) is { } campaign ? Results.Ok(campaign) : Results.NotFound());
         campaigns.MapPost("/", (CreateCampaign command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
@@ -466,8 +468,27 @@ public static class SerialisationEndpoints
             Invoke<CampaignPreview>(bus, tenant, command with { CampaignId = campaignId }, ct));
         campaigns.MapPost("/{campaignId:guid}/select", (Guid campaignId, SelectCampaignUnits command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<SelectCampaignUnitsResult>(bus, tenant, command with { CampaignId = campaignId, ActorRef = Actor(user) }, ct)).RequireAuthorization(editor);
-        campaigns.MapGet("/{campaignId:guid}/units", async (Guid campaignId, int? skip, int? take, CampaignQueries queries, CancellationToken ct) =>
-            Results.Ok(await queries.UnitsAsync(campaignId, skip ?? 0, take ?? 50, ct)));
+        campaigns.MapGet("/{campaignId:guid}/funnel", async (Guid campaignId, CampaignQueries queries, CancellationToken ct) =>
+            await queries.FunnelAsync(campaignId, ct) is { } funnel ? Results.Ok(funnel) : Results.NotFound());
+        campaigns.MapGet("/{campaignId:guid}/units/{unitId:guid}/match", async (Guid campaignId, Guid unitId, CampaignQueries queries, CancellationToken ct) =>
+            await queries.MatchAsync(campaignId, unitId, ct) is { } evidence ? Results.Ok(evidence) : Results.NotFound());
+        campaigns.MapGet("/{campaignId:guid}/units", async (Guid campaignId, string? serial, Guid? owner, string? custody,
+            bool? ownerDiffersInvoice, string? repair, int? skip, int? take, CampaignQueries queries, CancellationToken ct) =>
+            await queries.UnitsAsync(campaignId, serial, owner, custody, ownerDiffersInvoice, repair, skip ?? 0, take ?? 50, ct) is { } page
+                ? Results.Ok(page) : Results.NotFound());
+        campaigns.MapGet("/{campaignId:guid}/units/summary", async (Guid campaignId, CampaignQueries queries, CancellationToken ct) =>
+            await queries.UnitsSummaryAsync(campaignId, ct) is { } summary ? Results.Ok(summary) : Results.NotFound());
+        campaigns.MapGet("/{campaignId:guid}/units/export", (Guid campaignId, CampaignQueries queries, IPartyNamePort parties, CancellationToken ct) =>
+            Results.Stream(async stream =>
+            {
+                var names = await parties.NamesAsync(await queries.RecipientPartyRefsAsync(campaignId, ct), ct);
+                await using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false), leaveOpen: true);
+                await writer.WriteAsync(CampaignRecipientCsv.Header.AsMemory(), ct);
+                await foreach (var row in queries.ExportUnitsAsync(campaignId, ct))
+                    await writer.WriteAsync(CampaignRecipientCsv.Row(row, PartyName(row.OwnerPartyRef, names),
+                        row.CustodianPartyRef == row.OwnerPartyRef ? null : PartyName(row.CustodianPartyRef, names)).AsMemory(), ct);
+                await writer.FlushAsync(ct);
+            }, "text/csv; charset=utf-8", $"campaign-{campaignId:N}-recipients.csv"));
 
         var selections = app.MapGroup("/api/selections").RequireAuthorization(YojanaPolicy.TenantMember);
         selections.MapPost("/", (ResolveSelectionSet command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ResolveSelectionSetResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
@@ -565,6 +586,12 @@ public static class SerialisationEndpoints
         new(user.FindFirstValue(YojanaClaim.UserId) ?? throw new InvalidOperationException("A signed-in user carries a user id claim."), user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToList());
 
     private static List<string> Roles(ClaimsPrincipal user) => user.FindAll(YojanaClaim.Role).Select(c => c.Value).Distinct(StringComparer.Ordinal).ToList();
+
+    private static string? PartyName(Guid? partyRef, IReadOnlyDictionary<Guid, PartyLabel> names)
+    {
+        if (partyRef is null || !names.TryGetValue(partyRef.Value, out var label)) return null;
+        return string.IsNullOrWhiteSpace(label.Name) ? label.Code : $"{label.Name} ({label.Code})";
+    }
 
     private static WorkbenchActor WorkbenchActorFrom(ClaimsPrincipal user) => new(Actor(user), Roles(user));
 

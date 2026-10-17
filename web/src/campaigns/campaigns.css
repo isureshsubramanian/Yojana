@@ -1,0 +1,10 @@
+.campaign-criterion { display: grid; grid-template-columns: 142px minmax(0, 1fr) 32px; gap: 10px; align-items: start; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.campaign-criterion:last-child { border-bottom: 0; }
+.campaign-criterion > .kind { padding-top: 8px; font-size: 13px; font-weight: 600; }
+.campaign-criterion .values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: end; }
+.campaign-criterion .values .wide { grid-column: 1 / -1; }
+.campaign-criterion .field label { font-size: 11px; color: var(--text-3); }
+.campaign-add { display: flex; align-items: center; gap: 8px; }
+.campaign-funnel .job .t { font-variant-numeric: tabular-nums; }
+.campaign-funnel .job:last-child .badge { color: var(--success); background: var(--success-soft); }
+@media (max-width: 780px) { .campaign-criterion { grid-template-columns: 1fr 32px; } .campaign-criterion > .kind { grid-column: 1 / -1; } .campaign-criterion .values { grid-template-columns: 1fr; } }

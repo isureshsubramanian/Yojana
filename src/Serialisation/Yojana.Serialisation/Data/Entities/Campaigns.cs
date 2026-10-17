@@ -58,6 +58,10 @@ public sealed class CampaignCriterion : ITenantScoped
 
     public Guid? ChildItemId { get; set; }
 
+    public Guid? ChildLotId { get; set; }
+
+    public string? FirmwareKey { get; set; }
+
     public string? FirmwareValue { get; set; }
 
     public DateTime? EffectiveAt { get; set; }

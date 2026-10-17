@@ -7,6 +7,8 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Ledger;
+using Yojana.Serialisation.Campaigns;
+using Yojana.Serialisation.Data.Entities;
 
 namespace Yojana.Serialisation.DatabaseTests;
 
@@ -157,6 +159,102 @@ public sealed class CampaignTests(SerialisationHostFixture fixture)
             Assert.Empty(await db.CampaignCriteria.Where(c => c.CampaignId == campaign.Campaign.CampaignId).ToListAsync());
             Assert.Empty(await db.CampaignUnits.Where(c => c.CampaignId == campaign.Campaign.CampaignId).ToListAsync());
         }
+    }
+
+    [DatabaseFact]
+    public async Task Campaign_list_includes_selected_unit_count_and_status_filter()
+    {
+        var tenant = await fixture.NewTenantAsync("cl");
+        var lot = Guid.NewGuid();
+        await UnitAsync(tenant, "51000001", Guid.NewGuid(), lot);
+        var campaign = await CampaignAsync(tenant, "LIST-" + Guid.NewGuid().ToString("N")[..6],
+            new CampaignCriterionInput(CampaignCriterionKind.Lot, LotId: lot));
+        await InvokeAsync<SelectCampaignUnitsResult>(tenant,
+            new SelectCampaignUnits(Guid.NewGuid(), campaign.Campaign.CampaignId, At.AddDays(11), Entity, "service-manager"));
+
+        using var scope = fixture.ScopeFor(tenant);
+        var page = await scope.ServiceProvider.GetRequiredService<CampaignQueries>()
+            .ListAsync(CampaignStatus.Selected, 0, 20, CancellationToken.None);
+
+        var row = Assert.Single(page.Items, value => value.CampaignId == campaign.Campaign.CampaignId);
+        Assert.Equal(1, row.SelectedUnits);
+        Assert.Equal(CampaignStatus.Selected, row.Status);
+    }
+
+    [DatabaseFact]
+    public async Task Funnel_counts_apply_kinds_cumulatively_in_the_screen_order()
+    {
+        var tenant = await fixture.NewTenantAsync("cn");
+        var item = Guid.NewGuid();
+        var includedLot = Guid.NewGuid();
+        await UnitAsync(tenant, "52000001", item, includedLot);
+        await UnitAsync(tenant, "52000002", item, Guid.NewGuid());
+        await UnitAsync(tenant, "53000001", item, includedLot);
+        var campaign = await CampaignAsync(tenant, "FUNNEL-" + Guid.NewGuid().ToString("N")[..6],
+            new CampaignCriterionInput(CampaignCriterionKind.IdentifierRange, Scheme: "internal", RangeStart: "52000001", RangeEnd: "52000002"),
+            new CampaignCriterionInput(CampaignCriterionKind.Lot, LotId: includedLot));
+
+        using var scope = fixture.ScopeFor(tenant);
+        var steps = await scope.ServiceProvider.GetRequiredService<CampaignQueries>()
+            .FunnelAsync(campaign.Campaign.CampaignId, CancellationToken.None);
+
+        Assert.Collection(Assert.IsAssignableFrom<IReadOnlyList<CampaignFunnelStep>>(steps),
+            range => { Assert.Equal(CampaignCriterionKind.IdentifierRange, range.Kind); Assert.Equal(2, range.Count); },
+            lot => { Assert.Equal(CampaignCriterionKind.Lot, lot.Kind); Assert.Equal(1, lot.Count); });
+    }
+
+    [DatabaseFact]
+    public async Task Unit_filters_summary_and_invoice_party_use_selection_and_first_sale_facts()
+    {
+        var tenant = await fixture.NewTenantAsync("cu");
+        var lot = Guid.NewGuid();
+        var unit = await UnitAsync(tenant, "54000001", Guid.NewGuid(), lot);
+        var invoiceParty = Guid.NewGuid();
+        var owner = Guid.NewGuid();
+        await InvokeAsync<OpenOwnershipResult>(tenant, new OpenOwnership(Guid.NewGuid(), unit, invoiceParty, PartyType.Distributor,
+            EpisodeReason.Sale, At.AddDays(1), "sales", Entity, Document: new DocumentRef("invoice", Guid.NewGuid())));
+        await InvokeAsync<OpenOwnershipResult>(tenant, new OpenOwnership(Guid.NewGuid(), unit, owner, PartyType.EndUser,
+            EpisodeReason.Sale, At.AddDays(2), "registration", Entity, Source: EpisodeSource.Registration));
+        await InvokeAsync<ChangeCustodyResult>(tenant, new ChangeCustody(Guid.NewGuid(), unit, LocationKind.InRepair,
+            EpisodeReason.Return, At.AddDays(3), "service", Entity));
+        var campaign = await CampaignAsync(tenant, "UNITS-" + Guid.NewGuid().ToString("N")[..6],
+            new CampaignCriterionInput(CampaignCriterionKind.Lot, LotId: lot));
+        var selectedAt = At.AddDays(11);
+        await InvokeAsync<SelectCampaignUnitsResult>(tenant,
+            new SelectCampaignUnits(Guid.NewGuid(), campaign.Campaign.CampaignId, selectedAt, Entity, "service-manager"));
+        using (var writeScope = fixture.ScopeFor(tenant))
+        {
+            var db = writeScope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            db.Claims.Add(new Claim
+            {
+                TenantId = tenant, ClaimId = Guid.NewGuid(), CommandId = Guid.NewGuid(), UnitId = unit,
+                ClaimDate = DateOnly.FromDateTime(selectedAt), ClaimantPartyRef = owner, SettlementPartyRef = owner,
+                ServiceEntityId = Entity, ObligorEntityId = Entity, ServiceCountry = "GB", Currency = "GBP",
+                CoverageSource = CampaignCoverageSource.Recall, Remedy = ClaimRemedy.Repair, Status = ClaimStatus.Settled,
+                SubmittedAt = selectedAt.AddHours(1), SubmittedBy = "service", LastEventId = Guid.NewGuid(),
+            });
+            await db.SaveChangesAsync();
+        }
+
+        using var scope = fixture.ScopeFor(tenant);
+        var queries = scope.ServiceProvider.GetRequiredService<CampaignQueries>();
+        var page = await queries.UnitsAsync(campaign.Campaign.CampaignId, "5400", owner, LocationKind.InRepair,
+            true, "repaired", 0, 20, CancellationToken.None);
+        var row = Assert.Single(Assert.IsAssignableFrom<Page<CampaignUnitDetailRow>>(page).Items);
+        Assert.Equal(invoiceParty, row.InvoicePartyRef);
+        Assert.Equal(owner, row.OwnerPartyRef);
+        Assert.Equal(ClaimStatus.Settled, row.ClaimStatus);
+        var summary = Assert.IsType<CampaignUnitsSummary>(await queries.UnitsSummaryAsync(campaign.Campaign.CampaignId, CancellationToken.None));
+        Assert.Equal(1, summary.UnitsSelected);
+        Assert.Equal(1, summary.OwnerDiffersFromInvoice);
+        Assert.Equal(1, summary.Repaired);
+        Assert.Equal(1, summary.InOurHands);
+    }
+
+    [Fact]
+    public void Recipient_export_has_a_stable_csv_header()
+    {
+        Assert.Equal("serial,owner,custodian,selected_at\r\n", CampaignRecipientCsv.Header);
     }
 
     private async Task FirmwareAsync(TenantId tenant, Guid unitId, string value, DateTime at)
