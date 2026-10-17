@@ -1,5 +1,5 @@
 import type { Tone } from "../components";
-import type { CurrencyInfo, MoneyTotal, PolicyStackStep } from "./types";
+import type { CampaignCoverageSource, CampaignCoverReason, ClaimCampaignOption, CurrencyInfo, MoneyTotal, PolicyStackStep } from "./types";
 
 export const CLAIM_STATUSES = ["submitted", "adjudicating", "approved", "partially_approved", "denied", "settled", "closed"] as const;
 export const COVERAGE_SOURCES = ["warranty", "recall", "goodwill", "contract", "chargeable"] as const;
@@ -83,4 +83,27 @@ export function checkValue(key: string, value: string): string {
 
 export function countryName(code: string): string {
   try { return new Intl.DisplayNames(undefined, { type: "region" }).of(code) ?? code; } catch { return code; }
+}
+
+export function campaignOptionHint(options: readonly ClaimCampaignOption[], source: CampaignCoverageSource): string {
+  const label = humanise(source);
+  const forSource = options.filter((option) => option.coverageSource === source);
+  if (forSource.some((option) => option.coversOnDate)) return `${label} cover is available through a campaign selecting this unit.`;
+  const ended = forSource.find((option) => option.notCoveredReason === "campaign_ended");
+  if (ended?.runsUntil) return `${ended.code} ended on ${ended.runsUntil}; a claim dated after it is decided under normal warranty.`;
+  return `${label} needs an active campaign selecting this unit; none does.`;
+}
+
+export function campaignCoverTerms(option: Pick<ClaimCampaignOption, "partsPct" | "labourPct" | "travelPct">): string | null {
+  if (option.partsPct === 100 && option.labourPct === 100 && option.travelPct === 100) return null;
+  return `covers parts ${option.partsPct}% · labour ${option.labourPct}% · travel ${option.travelPct}%`;
+}
+
+export function campaignCoverNote(code: string, reason: CampaignCoverReason, runsUntil: string | null): string {
+  const why = reason === "campaign_closed" ? "was closed" : runsUntil ? `ended on ${runsUntil}` : "had ended";
+  return `Named campaign ${code} gave no cover: ${why} — lines decided under the policy stack.`;
+}
+
+export function coverageSourceLabel(source: string, campaignCode: string | null): string {
+  return `${humanise(source)}${campaignCode ? ` · ${campaignCode}` : ""}`;
 }

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { DataGrid, FindBar, KpiStrip, StatusBadge, type GridColumn } from "../components";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 import { MAX_REFERENCE_NAMES, type PartyReferenceLabel } from "../corrections/referenceStore";
+import { campaignApi } from "../campaigns/api";
+import type { CampaignListRow } from "../campaigns/types";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
 import { openDrawer, updateDrawer } from "../shell/drawerStore";
@@ -11,16 +13,19 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDate } from "../units/format";
 import { claimsApi, type ClaimFilters } from "./api";
-import { CLAIM_STATUSES, COVERAGE_SOURCES, ageBucketLabel, claimTone, csvCell, evidenceCue, humanise, money, moneyTotals } from "./format";
+import { CLAIM_STATUSES, COVERAGE_SOURCES, ageBucketLabel, claimTone, coverageSourceLabel, csvCell, evidenceCue, humanise, money, moneyTotals } from "./format";
 import type { ClaimDetail, ClaimListRow, ClaimPage, ClaimSummary, CurrencyInfo } from "./types";
 import "./claims.css";
 
 const PAGE_SIZE = 50;
-const INITIAL_FILTERS: ClaimFilters = { status: "open", coverageSource: "", serviceCountry: "", recovery: "", q: "" };
+const INITIAL_FILTERS: ClaimFilters = { status: "open", coverageSource: "", serviceCountry: "", recovery: "", q: "", campaignId: "" };
 
 export function Component() {
   const navigate = useNavigate();
-  const [filters, setFilters] = useState(INITIAL_FILTERS);
+  const [params, setParams] = useSearchParams();
+  const campaignParam = params.get("campaignId") ?? "";
+  const [filters, setFilters] = useState<ClaimFilters>(() => ({ ...INITIAL_FILTERS, campaignId: campaignParam }));
+  const [campaigns, setCampaigns] = useState<CampaignListRow[]>([]);
   const [pageNumber, setPageNumber] = useState(1);
   const [page, setPage] = useState<ClaimPage | null>(null);
   const [summary, setSummary] = useState<ClaimSummary | null>(null);
@@ -42,6 +47,23 @@ export function Component() {
   }, [filters, pageNumber]);
 
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);
+  useEffect(() => { setFilters((current) => current.campaignId === campaignParam ? current : { ...current, campaignId: campaignParam }); setPageNumber(1); }, [campaignParam]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadCampaigns = async () => {
+      const all: CampaignListRow[] = [];
+      let skip = 0;
+      while (true) {
+        const result = await campaignApi.list(null, skip, 200, controller.signal);
+        all.push(...result.items); skip += result.items.length;
+        if (!result.items.length || skip >= result.total) break;
+      }
+      setCampaigns(all);
+    };
+    void loadCampaigns()
+      .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
+    return () => controller.abort();
+  }, []);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() === "n" && !(event.metaKey || event.ctrlKey || event.altKey) && !(event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable]"))) navigate("/claims/new");
@@ -51,7 +73,14 @@ export function Component() {
 
   const rows = page?.items ?? [];
   const names = useReferenceNames({ items: rows.map((row) => row.itemId), parties: rows.flatMap((row) => [row.claimantPartyRef, row.settlementPartyRef]) });
-  const setFilter = (patch: Partial<ClaimFilters>) => { setFilters((current) => ({ ...current, ...patch })); setPageNumber(1); };
+  const setFilter = (patch: Partial<ClaimFilters>) => {
+    setFilters((current) => ({ ...current, ...patch })); setPageNumber(1);
+    if (patch.campaignId !== undefined) {
+      const next = new URLSearchParams(params);
+      if (patch.campaignId) next.set("campaignId", patch.campaignId); else next.delete("campaignId");
+      setParams(next, { replace: true });
+    }
+  };
   const openClaim = async (row: ClaimListRow) => {
     setActive(row.claimId);
     openDrawer({ eyebrow: "Claim", title: row.claimNumber, mono: true }, <p className="muted">Loading claim…</p>);
@@ -80,7 +109,7 @@ export function Component() {
       }
       const partyName = (id: string) => exportParties[id]?.name ?? exportParties[id]?.code ?? "Name unavailable";
       const header = ["Claim", "Serial", "Claimant", "Settlement party", "Coverage source", "Status", "Service country", "Currency", "Requested", "Approved", "Age days"];
-      const lines = [header, ...all.map((row) => [row.claimNumber, row.serial, partyName(row.claimantPartyRef), partyName(row.settlementPartyRef), row.coverageSource, row.status, row.serviceCountry, row.currency, row.requestedAmount, row.approvedAmount, row.ageDays])]
+      const lines = [header, ...all.map((row) => [row.claimNumber, row.serial, partyName(row.claimantPartyRef), partyName(row.settlementPartyRef), coverageSourceLabel(row.coverageSource, row.campaignCode), row.status, row.serviceCountry, row.currency, row.requestedAmount, row.approvedAmount, row.ageDays])]
         .map((line) => line.map(csvCell).join(",")).join("\n");
       const url = URL.createObjectURL(new Blob([lines], { type: "text/csv;charset=utf-8" }));
       const anchor = document.createElement("a"); anchor.href = url; anchor.download = "claims.csv"; anchor.click(); URL.revokeObjectURL(url);
@@ -91,7 +120,7 @@ export function Component() {
     { key: "claim", label: "Claim", width: 12, render: (row) => <span className="primary"><span className="t serial">{row.claimNumber}</span><span className="sub">{row.evidenceRequested ? "evidence requested" : humanise(row.remedy)}</span></span> },
     { key: "serial", label: "Serial", width: 13, render: (row) => <><UnitLink unitId={row.unitId}>{row.serial ?? "No serial recorded"}</UnitLink><span className="sub">{names.item(row.itemId)}</span></> },
     { key: "party", label: "Claimant · settlement", width: 20, render: (row) => <>{names.party(row.claimantPartyRef)}<span className="sub">settles: {row.claimantPartyRef === row.settlementPartyRef ? "same" : names.party(row.settlementPartyRef)}</span></> },
-    { key: "source", label: "Source", width: 9, render: (row) => humanise(row.coverageSource) },
+    { key: "source", label: "Source", width: 9, render: (row) => coverageSourceLabel(row.coverageSource, row.campaignCode) },
     { key: "status", label: "Status", width: 15, render: (row) => <><StatusBadge tone={claimTone(row.status)}>{humanise(row.status)}</StatusBadge><span className="sub">{evidenceCue(row.status, row.evidenceRequested, row.denialReason, row.recoveryRaised, row.linesDecided, row.lineCount)}</span></> },
     { key: "requested", label: "Requested", width: 12, numeric: true, render: (row) => money(row.requestedAmount, row.currency, catalogue) },
     { key: "approved", label: "Approved", width: 12, numeric: true, render: (row) => ["submitted", "adjudicating"].includes(row.status) ? <span className="muted">—</span> : money(row.approvedAmount, row.currency, catalogue) },
@@ -124,6 +153,7 @@ export function Component() {
           <FindBar compact query={filters.q} onQuery={(q) => setFilter({ q })} facets={[]} activeFacet={null} onFacet={() => undefined} ariaLabel="Find a claim" placeholder="Claim number or any serial" />
           <FilterSelect label="Status" value={filters.status} onChange={(status) => setFilter({ status })} options={["open", "all", ...CLAIM_STATUSES]} />
           <FilterSelect label="Coverage source" value={filters.coverageSource} onChange={(coverageSource) => setFilter({ coverageSource })} options={["", ...(summary?.coverageSources.length ? summary.coverageSources : COVERAGE_SOURCES)]} empty="All" />
+          <select className={`chip-select${filters.campaignId ? " on" : ""}`} aria-label="Campaign" value={filters.campaignId} onChange={(event) => setFilter({ campaignId: event.target.value })}><option value="">Campaign · All</option>{campaigns.map((campaign) => <option value={campaign.campaignId} key={campaign.campaignId}>Campaign · {campaign.code} · {campaign.name}</option>)}</select>
           <FilterSelect label="Service country" value={filters.serviceCountry} onChange={(serviceCountry) => setFilter({ serviceCountry })} options={["", ...(summary?.serviceCountries ?? [])]} empty="All" />
           <FilterSelect label="Recovery" value={filters.recovery} onChange={(recovery) => setFilter({ recovery })} options={["", "raised", "none"]} empty="Any" />
         </div></div></section>
@@ -136,7 +166,7 @@ export function Component() {
   </>;
 }
 
-function FilterSelect({ label, value, options, empty, onChange }: { label: string; value: string; options: readonly string[]; empty?: string; onChange: (value: string) => void }) {
+function FilterSelect({ label, value, options, empty, onChange }: { label: string; value: string; options: readonly string[]; empty?: string | undefined; onChange: (value: string) => void }) {
   return <select className={`chip-select${value ? " on" : ""}`} aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>{[...new Set(options)].map((option) => <option key={option || "all"} value={option}>{label} · {option ? humanise(option) : empty}</option>)}</select>;
 }
 

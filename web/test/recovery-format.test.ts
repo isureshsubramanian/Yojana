@@ -28,6 +28,7 @@ test("term and not-raised explanations mirror the approved wording", () => {
 });
 
 test("policy reasons explain why a live vendor term did not raise recovery", () => {
+  assert.equal(noRecoveryExplanation("campaign_claim"), "Claim under a campaign; tenant policy recovers nothing from suppliers for campaign claims.");
   assert.equal(noRecoveryExplanation("several_covered_parts"), "several parts inside the unit carry live vendor terms · name the part on the line to recover");
   assert.equal(noRecoveryExplanation("part_not_named"), "policy recovers only from a named part · the line names none");
   assert.equal(noRecoveryExplanation("line_kind_not_recovered"), "the approved line kinds are not recovered under the tenant policy");

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { StatusBadge } from "../components";
+import { campaignApi } from "../campaigns/api";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 import { usePeople } from "../people/people";
 import { noRecoveryExplanation } from "../recovery/format";
@@ -11,7 +12,7 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDate, fmtDateTime } from "../units/format";
 import { claimsApi } from "./api";
-import { checkLabel, checkValue, claimTone, humanise, money, stackOutcome } from "./format";
+import { campaignCoverNote, checkLabel, checkValue, claimTone, humanise, money, stackOutcome } from "./format";
 import type { ClaimAdjudicationPreview, ClaimDetail, ClaimLinePreview, CurrencyInfo } from "./types";
 import "./claims.css";
 
@@ -23,6 +24,7 @@ export function Component() {
   const [detail, setDetail] = useState<ClaimDetail | null>(null);
   const [preview, setPreview] = useState<ClaimAdjudicationPreview | null>(null);
   const [catalogue, setCatalogue] = useState<CurrencyInfo[]>([]);
+  const [campaignRunsUntil, setCampaignRunsUntil] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -36,6 +38,11 @@ export function Component() {
       const [nextDetail, nextPreview, nextCatalogue] = await Promise.all([claimsApi.detail(claimId, signal), claimsApi.preview(claimId, signal), claimsApi.currencyCatalogue(signal)]);
       setDetail(nextDetail); setPreview(nextPreview); setCatalogue(nextCatalogue);
       setDenialReason(nextPreview.manualDenialReasons[0] ?? "");
+      setCampaignRunsUntil(null);
+      if (nextDetail.campaignId && nextDetail.campaignCoverReason === "campaign_ended") {
+        const campaign = await campaignApi.detail(nextDetail.campaignId, signal);
+        setCampaignRunsUntil(campaign.runsUntil);
+      }
     } catch (reason) { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); } finally { setLoading(false); }
   }, [claimId]);
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);
@@ -69,7 +76,7 @@ export function Component() {
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Claims", to: "/claims" }, { label: detail.claimNumber }]} />
-      <div className="page-header"><div><div className="eyebrow">Claim {detail.claimNumber} · {humanise(decided ? detail.coverageSource : preview.coverageSource)} · {humanise(detail.status)} · submitted {fmtDate(detail.submittedAt)} by {person(detail.submittedBy)}</div><h1>{detail.serial ?? "No serial recorded"} · {fault}</h1><p className="sub">{names.party(detail.claimantPartyRef)} claims, {names.party(detail.settlementPartyRef)} settles · each line is decided against the policy stack on the claim date{decided ? " · recorded decisions are read-only" : " · approving publishes Claim.Adjudicated"}</p></div><div className="actions">
+      <div className="page-header"><div><div className="eyebrow">Claim {detail.claimNumber} · {humanise(decided ? detail.coverageSource : preview.coverageSource)} · {humanise(detail.status)} · submitted {fmtDate(detail.submittedAt)} by {person(detail.submittedBy)}</div><h1>{detail.serial ?? "No serial recorded"} · {fault}</h1><p className="sub">{names.party(detail.claimantPartyRef)} claims, {names.party(detail.settlementPartyRef)} settles · each line is decided against the policy stack on the claim date{decided ? " · recorded decisions are read-only" : " · approving publishes Claim.Adjudicated"}</p>{detail.campaignId && <div className="claims-header-facts"><span><strong>Campaign</strong> {detail.campaignCode} · {detail.campaignName}</span><span><strong>Reserve</strong> {detail.reserveTag}</span></div>}{detail.campaignCode && detail.campaignCoverReason && <p className="muted claims-campaign-cover-note">{campaignCoverNote(detail.campaignCode, detail.campaignCoverReason, campaignRunsUntil)}</p>}</div><div className="actions">
         {!decided && <><button type="button" className="btn" onClick={() => { setNote(""); setDialog("evidence"); }}>Ask for evidence</button><button type="button" className="btn" onClick={() => { setNote(""); setDialog("deny"); }}>Deny…</button><button type="button" className="btn primary" disabled={busy || !!preview.refusal} title={preview.refusal ? humanise(preview.refusal) : undefined} onClick={() => void approve()}><Icon name="check" />Approve {approvedLines} of {preview.lines.length} lines<kbd className="key">⌘↵</kbd></button></>}
         {["approved", "partially_approved", "denied"].includes(detail.status) && <button type="button" className="btn primary" disabled={busy} onClick={() => void change("settle")}>Settle claim</button>}
         {detail.status === "settled" && <button type="button" className="btn primary" disabled={busy} onClick={() => void change("close")}>Close claim</button>}

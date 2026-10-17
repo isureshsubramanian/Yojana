@@ -6,6 +6,8 @@ export interface ClaimListRow {
   serviceCountry: string; currency: string; claimDate: string; submittedAt: string; requestedAmount: number;
   approvedAmount: number; ageDays: number; denialReason: string | null; recoveryRaised: boolean;
   evidenceRequested: boolean; lineCount: number; linesDecided: number; recoveryVendorNote: string | null;
+  campaignId: string | null; campaignCode: string | null; campaignName: string | null; reserveTag: string | null;
+  campaignCoverReason: CampaignCoverReason | null;
 }
 
 export interface ClaimPage { items: ClaimListRow[]; total: number; skip: number; take: number }
@@ -38,6 +40,8 @@ export interface ClaimDetail {
   lines: ClaimLineDecision[]; evidence: ClaimEvidenceRow[]; adjudicatedBy: string | null; reviewerRole: string | null;
   successorItemId: string | null; claimNumber: string; serial: string | null; itemId: string | null; submittedAt: string;
   submittedBy: string; adjudicatedAt: string | null; lineRows: ClaimLineRow[] | null; recoveries: ClaimRecoveryRef[] | null; openWork: string | null;
+  campaignId: string | null; campaignCode: string | null; campaignName: string | null; reserveTag: string | null;
+  campaignCoverReason: CampaignCoverReason | null;
 }
 
 export interface PolicyStackStep { level: string; outcome: string; detail: string }
@@ -58,6 +62,8 @@ export interface ClaimAdjudicationPreview {
   recoveries: RecoveryPreview[]; chargeableAmount: number; refusal: string | null; refusalStep: string | null;
   requiredReviewerRole: string | null; successorItemId: string | null; manualDenialReasons: string[];
   recoveryNotRaisedReason: RecoveryNotRaisedReason | null;
+  campaignId: string | null; campaignCode: string | null; campaignName: string | null; reserveTag: string | null;
+  campaignCoverReason: CampaignCoverReason | null;
 }
 
 export interface ClaimLineInput {
@@ -69,8 +75,9 @@ export interface SubmitClaim {
   commandId: string; unitId: string | null; identifier: { value: string; issuerPartyRef: string | null; identifierType: string | null; erpSerialId: string | null } | null;
   claimDate: string; claimantPartyRef: string; settlementPartyRef: string; serviceEntityId: string; obligorEntityId: string;
   serviceCountry: string; currency: string; lines: ClaimLineInput[]; evidence: ClaimEvidenceInput[]; remedy: string;
-  consumerChoiceEvidenceRef: string; eventTime: string; actorRef: string; proofOfPurchaseRef: string | null;
+  consumerChoiceEvidenceRef: string; eventTime: string; proofOfPurchaseRef: string | null;
   proofOfPurchaseDate: string | null; itemId: string | null;
+  campaignId?: string | undefined;
 }
 export interface SubmitClaimResult { claimId: string; unitId: string; status: string; claimLineIds: string[]; eventId: string; replayed: boolean }
 export interface ClaimChangeResult { claimId: string; status: string; eventId: string; replayed: boolean }
@@ -78,4 +85,12 @@ export interface ClaimChangeResult { claimId: string; status: string; eventId: s
 export interface TenantCurrency { currency: string | null; accepted: string[] }
 export interface CurrencyInfo { code: string; name: string; symbol: string; minorDigits: number }
 export interface CoverageFamily { familyCode: string; name: string; stacking: boolean; accountingTag: string; active: boolean }
+
+export type CampaignCoverageSource = "recall" | "goodwill";
+export type CampaignCoverReason = "campaign_ended" | "campaign_closed";
+export interface ClaimCampaignOption {
+  campaignId: string; code: string; name: string; coverageSource: CampaignCoverageSource; reserveTag: string;
+  partsPct: number; labourPct: number; travelPct: number;
+  reasonCode: string; runsUntil: string | null; coversOnDate: boolean; notCoveredReason: CampaignCoverReason | null;
+}
 
