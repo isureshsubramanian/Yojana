@@ -1,7 +1,8 @@
 // One inline SVG sprite for the whole product (MOD-02 invariant 2). Symbols are the vetted mockup set.
 export type IconName =
   | "units" | "ent" | "corr" | "claim" | "rma" | "cert" | "import" | "int" | "set" | "scan" | "chev" | "bell"
-  | "home" | "plus" | "filter" | "print" | "x" | "down" | "search" | "range" | "tree" | "check" | "panel";
+  | "home" | "plus" | "filter" | "print" | "x" | "down" | "search" | "range" | "tree" | "check" | "panel"
+  | "campaign" | "recover" | "policy" | "layers" | "upload" | "coins" | "sliders" | "list" | "grid";
 
 export function IconSprite() {
   return (
@@ -12,6 +13,15 @@ export function IconSprite() {
       <symbol id="i-claim" viewBox="0 0 24 24"><path d="M6 3h9l5 5v13H6z" /><path d="M15 3v5h5" /><path d="M9 13h6M9 17h6" /></symbol>
       <symbol id="i-rma" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7" /><path d="M4 4v5h5" /></symbol>
       <symbol id="i-cert" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5" /><path d="M8.5 13.5L7 21l5-2 5 2-1.5-7.5" /></symbol>
+      <symbol id="i-campaign" viewBox="0 0 24 24"><path d="M3 10v4h3l8 4V6l-8 4H3z" /><path d="M17 9a4 4 0 0 1 0 6" /><path d="M6 14l1.5 5h2.5l-1-4" /></symbol>
+      <symbol id="i-recover" viewBox="0 0 24 24"><circle cx="15" cy="12" r="5" /><circle cx="15" cy="12" r="2" /><path d="M3 12h7" /><path d="M6 9l-3 3 3 3" /></symbol>
+      <symbol id="i-policy" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2z" /><path d="M5 20a2 2 0 0 0 2 1h12v-3" /><path d="M9 8h6M9 11h4" /></symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 4.5-9 4.5-9-4.5z" /><path d="M3 12l9 4.5 9-4.5" /><path d="M3 16.5l9 4.5 9-4.5" /></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24"><path d="M6 3h9l5 5v13H6z" /><path d="M15 3v5h5" /><path d="M12 18v-7" /><path d="M9 14l3-3 3 3" /></symbol>
+      <symbol id="i-coins" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3" /><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6" /><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" /></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12" /><circle cx="16" cy="6" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="18" r="2" /></symbol>
+      <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6h.01M4 12h.01M4 18h.01" /></symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1" /><rect x="13" y="4" width="7" height="7" rx="1" /><rect x="4" y="13" width="7" height="7" rx="1" /><rect x="13" y="13" width="7" height="7" rx="1" /></symbol>
       <symbol id="i-import" viewBox="0 0 24 24"><path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M4 21h16" /></symbol>
       <symbol id="i-int" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2" /><circle cx="19" cy="6" r="2" /><circle cx="19" cy="18" r="2" /><path d="M7 11l10-4M7 13l10 4" /></symbol>
       <symbol id="i-set" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" /></symbol>
