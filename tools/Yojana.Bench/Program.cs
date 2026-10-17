@@ -1,7 +1,7 @@
 // P1-T21 storage benchmark (ADR-0001 AI 1, 53). Loads the reference layout at scale on a named SQL Server through the
 // real schema (migrations), with row-level security on, then measures the SLO table through the module's own
 // services and through server-side timing loops. Usage:
-//   dotnet run --project tools/Yojana.Bench -- prepare|load|measure|backfill|warranty|all [--units N] [--events N] [--tenants N]
+//   dotnet run --project tools/Yojana.Bench -- prepare|load|measure|backfill|entitlements|warranty|all [--units N] [--events N] [--tenants N]
 //        [--small-units N] [--small-events N] [--samples N] [--out dir] [--database name] [--skip-lifecycle]
 // Connection: YOJANA_BENCH_SQL_HOST and YOJANA_BENCH_SQL_PASSWORD (sa), or YOJANA_BENCH_SQL as a full connection string.
 using System.Globalization;
@@ -88,6 +88,11 @@ try
         scope.ServiceProvider.GetRequiredService<Yojana.Platform.Tenancy.ITenantContextSetter>().Set(new Yojana.Platform.Contracts.Tenancy.TenantId(BenchOptions.TenantId(1)));
         var result = await scope.ServiceProvider.GetRequiredService<Yojana.Serialisation.Search.SearchBackfill>().BackfillUnitsAsync(CancellationToken.None);
         report.Measure("Set-based search backfill", "informative", $"{result.Units:N0} units in {result.Elapsed.TotalSeconds:N1} s ({result.Units / Math.Max(0.001, result.Elapsed.TotalSeconds):N0} units/s)", "INFO", $"{result.Batches:N0} batches");
+    }
+
+    if (options.Command is "entitlements" or "all")
+    {
+        await new EntitlementLoader(options, report).RunAsync();
     }
 
     if (options.Command is "measure" or "all")

@@ -10,6 +10,8 @@ namespace Yojana.Serialisation.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // tools/Yojana.Bench/EntitlementLoader.cs writes entitlement rows and live_entitlement_ids for this view directly
+            // (set-based bench load): a change to how the view finds live rows must change that loader too.
             // Both source tables are covered by serialisation.tenant_policy. SQL Server expands a normal view before
             // applying their RLS filter predicates, so callers cannot expose another tenant's JSON ids or entitlement.
             migrationBuilder.Sql("""
