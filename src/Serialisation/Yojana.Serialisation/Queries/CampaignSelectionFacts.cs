@@ -202,8 +202,9 @@ public sealed class CampaignSelectionFacts(SerialisationDbContext db, ITenantCon
         var result = new List<RecipientFact>();
         foreach (var ids in unitIds.Distinct().Chunk(QueryChunk))
         {
+            // Custody for a recipient is WHERE the unit is (location kind); unit_current.custody_kind only names the episode type.
             var current = await db.Current.AsNoTracking().Where(c => c.TenantId == tenant.TenantId && ids.Contains(c.UnitId))
-                .Select(c => new { c.UnitId, c.ItemId, c.OwnerPartyRef, c.CustodyPartyRef, c.CustodyKind, c.OpenOwnershipEpisodeId, c.OpenCustodyEpisodeId }).ToListAsync(cancellationToken);
+                .Select(c => new { c.UnitId, c.ItemId, c.OwnerPartyRef, c.CustodyPartyRef, CustodyKind = c.LocationKind, c.OpenOwnershipEpisodeId, c.OpenCustodyEpisodeId }).ToListAsync(cancellationToken);
             var episodeIds = current.SelectMany(c => new[] { c.OpenOwnershipEpisodeId, c.OpenCustodyEpisodeId }).OfType<Guid>().Distinct().ToList();
             var episodes = episodeIds.Count == 0
                 ? new Dictionary<Guid, string?>()

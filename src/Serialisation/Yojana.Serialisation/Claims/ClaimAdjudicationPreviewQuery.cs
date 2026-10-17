@@ -29,6 +29,11 @@ public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext
         var itemIds = await db.Current.AsNoTracking().Where(u => u.TenantId == tenantId && unitIds.Contains(u.UnitId)).ToDictionaryAsync(u => u.UnitId, u => u.ItemId, cancellationToken);
         var decided = claim.Status is not (ClaimStatus.Submitted or ClaimStatus.Adjudicating);
 
+        // A recorded line keeps only its policy version id; name it so the screen shows which policy covered it.
+        var recordedVersionIds = decided ? lines.Select(l => l.PolicyVersionId).OfType<Guid>().Distinct().ToList() : [];
+        var recordedPolicies = await db.PolicyVersions.AsNoTracking()
+            .Where(v => v.TenantId == tenantId && recordedVersionIds.Contains(v.PolicyVersionId))
+            .ToDictionaryAsync(v => v.PolicyVersionId, v => (v.PolicyCode, v.Version), cancellationToken);
         var previews = new List<ClaimLinePreview>();
         var outcomes = new List<(ClaimLine Line, ClaimLineOutcome Outcome)>();
         foreach (var line in lines)
@@ -43,9 +48,12 @@ public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext
             previews.Add(new ClaimLinePreview(line.ClaimLineId, line.Sequence, line.UnitId, serials.GetValueOrDefault(line.UnitId),
                 itemIds.TryGetValue(line.UnitId, out var itemId) ? itemId : null, line.UnitId != claim.UnitId, line.Kind, line.CoverageFamily, line.Description,
                 line.RequestedAmount, outcome.CoveragePct, outcome.ApprovedAmount, outcome.CoverageSource, resolution?.Level ?? (outcome.EntitlementId is null ? PolicyLevel.None : PolicyLevel.UnitEntitlement),
-                resolution?.PolicyCode, resolution?.Version, outcome.EntitlementId, start ?? resolution?.StartDate, end ?? resolution?.EndDate, outcome.DenialReason,
+                resolution?.PolicyCode ?? Recorded(outcome.PolicyVersionId)?.PolicyCode, resolution?.Version ?? Recorded(outcome.PolicyVersionId)?.Version, outcome.EntitlementId, start ?? resolution?.StartDate, end ?? resolution?.EndDate, outcome.DenialReason,
                 resolution is null ? [] : Stack(resolution, serials)));
         }
+
+        (string PolicyCode, int Version)? Recorded(Guid? versionId) =>
+            versionId is { } id && recordedPolicies.TryGetValue(id, out var policy) ? policy : null;
 
         var covered = outcomes.Where(o => o.Outcome.ApprovedAmount > 0).ToList();
         var sources = covered.Select(o => o.Outcome.CoverageSource).Distinct().ToList();

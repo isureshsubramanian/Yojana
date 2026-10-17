@@ -19,6 +19,11 @@ type IntakeMode = "unit" | "proof" | "no_record";
 type DraftLine = { id: string; kind: string; description: string; childUnitId: string; coverageFamily: string; requestedAmount: string; measurements: string };
 type DraftEvidence = { id: string; kind: string; reference: string; description: string };
 
+// Base warranty is what most claims are made under; other families are a deliberate choice on the line.
+function defaultFamily(families: { familyCode: string; active: boolean }[]): string {
+  const active = families.filter((family) => family.active);
+  return (active.find((family) => family.familyCode === "base_warranty") ?? active[0])?.familyCode ?? "";
+}
 function draftLine(family = ""): DraftLine { return { id: crypto.randomUUID(), kind: "parts", description: "", childUnitId: "", coverageFamily: family, requestedAmount: "", measurements: "" }; }
 function draftEvidence(): DraftEvidence { return { id: crypto.randomUUID(), kind: "attachment", reference: "", description: "" }; }
 
@@ -53,7 +58,7 @@ export function Component() {
       .then(([settings, nextCatalogue, nextFamilies]) => {
         setCurrencySettings(settings); setCatalogue(nextCatalogue); setFamilies(nextFamilies.filter((family) => family.active));
         setCurrency(settings.currency ?? settings.accepted[0] ?? "");
-        setLines((current) => current.map((line, index) => index === 0 && !line.coverageFamily ? { ...line, coverageFamily: nextFamilies.find((family) => family.active)?.familyCode ?? "" } : line));
+        setLines((current) => current.map((line, index) => index === 0 && !line.coverageFamily ? { ...line, coverageFamily: defaultFamily(nextFamilies) } : line));
       }).catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
     return () => controller.abort();
   }, []);
@@ -134,14 +139,14 @@ export function Component() {
               ["Overlay flags", unit.overlayFlags || "None"], ["As-built children", children.length.toLocaleString()],
             ]} /> : <p className="muted">{mode === "unit" ? "Scan or enter an identifier above, then resolve it. Only facts returned by the unit and entitlement APIs appear here." : "The submitted identifier, item and proof of purchase let the server reconstruct a low-confidence record. No sale, shipment or delivery facts are inferred."}</p>}
           </div></section>
-          <section className="card" aria-labelledby="claim-lines"><div className="card-header"><h2 id="claim-lines">What is claimed <span className="meta">{lines.length} {lines.length === 1 ? "line" : "lines"} · coverage is decided per line</span></h2><button type="button" className="btn sm" onClick={() => setLines((current) => [...current, draftLine(families[0]?.familyCode ?? "")])}><Icon name="plus" />Add line</button></div>
+          <section className="card" aria-labelledby="claim-lines"><div className="card-header"><h2 id="claim-lines">What is claimed <span className="meta">{lines.length} {lines.length === 1 ? "line" : "lines"} · coverage is decided per line</span></h2><button type="button" className="btn sm" onClick={() => setLines((current) => [...current, draftLine(defaultFamily(families))])}><Icon name="plus" />Add line</button></div>
             <div className="grid-viewport"><table className="table claims-lines"><colgroup><col style={{ width: "12%" }} /><col style={{ width: "25%" }} /><col style={{ width: "15%" }} /><col style={{ width: "17%" }} /><col style={{ width: "12%" }} /><col style={{ width: "14%" }} /><col style={{ width: "5%" }} /></colgroup><thead><tr><th>Kind</th><th>Description</th><th>Child unit</th><th>Coverage family</th><th className="num">Requested</th><th>Measured</th><th /></tr></thead><tbody>{lines.map((line, index) => <tr key={line.id}>
               <td><select className="select" aria-label={`Line ${index + 1} kind`} value={line.kind} onChange={(event) => updateLine(line.id, { kind: event.target.value })}>{LINE_KINDS.map((kind) => <option key={kind} value={kind}>{humanise(kind)}</option>)}</select></td>
               <td><input className="input" aria-label={index === 0 ? "Fault as reported" : `Line ${index + 1} description`} placeholder={index === 0 ? "Fault as reported" : "Work or item claimed"} value={line.description} onChange={(event) => updateLine(line.id, { description: event.target.value })} /></td>
               <td><select className="select" aria-label={`Line ${index + 1} child unit`} value={line.childUnitId} onChange={(event) => { updateLine(line.id, { childUnitId: event.target.value }); const child = children.find((candidate) => candidate.childUnitId === event.target.value); if (child) showChild(child); }}><option value="">Root unit</option>{children.map((child) => <option key={child.childUnitId!} value={child.childUnitId!}>{child.childSerial ?? child.slot ?? "Child unit"}</option>)}</select></td>
               <td><select className="select" aria-label={`Line ${index + 1} coverage family`} value={line.coverageFamily} onChange={(event) => updateLine(line.id, { coverageFamily: event.target.value })}><option value="">Choose…</option>{families.map((family) => <option key={family.familyCode} value={family.familyCode}>{family.name}</option>)}</select></td>
               <td><input className="input num" aria-label={`Line ${index + 1} requested amount`} type="number" min="0" step="0.01" value={line.requestedAmount} onChange={(event) => updateLine(line.id, { requestedAmount: event.target.value })} /></td>
-              <td><input className="input" aria-label={`Line ${index + 1} measurements`} placeholder="flow=0" value={line.measurements} onChange={(event) => updateLine(line.id, { measurements: event.target.value })} /></td>
+              <td><input className="input" aria-label={`Line ${index + 1} measurements`} placeholder="print_hours=1840" value={line.measurements} onChange={(event) => updateLine(line.id, { measurements: event.target.value })} /></td>
               <td><button type="button" className="btn sm" aria-label={`Remove line ${index + 1}`} disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((candidate) => candidate.id !== line.id))}>×</button></td>
             </tr>)}</tbody></table></div><div className="card-footer"><span>Requested {currency ? money(total, currency, catalogue) : "—"} · enter the fault as reported in the first line’s description</span></div>
           </section>
