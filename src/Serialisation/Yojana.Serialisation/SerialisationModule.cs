@@ -19,6 +19,7 @@ using Yojana.Serialisation.Selection;
 using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Projections;
 using Yojana.Serialisation.Workbench;
+using Yojana.Serialisation.Campaigns;
 
 namespace Yojana.Serialisation;
 
@@ -59,6 +60,8 @@ public static class SerialisationModule
         builder.Services.AddScoped<SerialRangeQueries>();
         builder.Services.AddScoped<CompletenessQueries>();
         builder.Services.AddScoped<AwaitingVendorSerialQueries>();
+        builder.Services.AddScoped<CampaignSelectionFacts>();
+        builder.Services.AddScoped<CampaignQueries>();
         builder.Services.AddScoped<BulkExecutor>();
         builder.Services.AddScoped<BulkApprovalRequestQueries>();
         builder.Services.AddScoped<CorrectionLedger>();

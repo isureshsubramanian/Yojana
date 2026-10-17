@@ -109,6 +109,12 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<RecoveryClaim> RecoveryClaims => Set<RecoveryClaim>();
 
+    public DbSet<Campaign> Campaigns => Set<Campaign>();
+
+    public DbSet<CampaignCriterion> CampaignCriteria => Set<CampaignCriterion>();
+
+    public DbSet<CampaignUnit> CampaignUnits => Set<CampaignUnit>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasSequence<long>(EventSequence, SchemaName).StartsAt(1).IncrementsBy(1);
@@ -717,7 +723,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(w => w.DurationBasis).HasMaxLength(10);
         });
 
-        // MOD-07 claim half (P4-T02). Campaign tables are deliberately absent: P4-T07 owns them in its worktree.
+        // MOD-07 claim half (P4-T02).
         modelBuilder.Entity<Claim>(b =>
         {
             b.ToTable("claim", t =>
@@ -792,6 +798,63 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(r => new { r.TenantId, r.Status, r.RaisedAt });
             b.HasIndex(r => new { r.TenantId, r.VendorPartyRef, r.Status });
             b.HasOne<Claim>().WithMany().HasForeignKey(r => new { r.TenantId, r.CustomerClaimId }).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // MOD-07 campaign half (P4-T02/P4-T07). Selected recipients are snapshots, not navigation-backed live values:
+        // changing ownership later must not silently rewrite who received an already-selected campaign notice.
+        modelBuilder.Entity<Campaign>(b =>
+        {
+            b.ToTable("campaign", t =>
+            {
+                t.HasCheckConstraint("ck_campaign_coverage_source", "coverage_source IN ('recall', 'goodwill')");
+                t.HasCheckConstraint("ck_campaign_status", "status IN ('draft', 'selected', 'active', 'closed')");
+            });
+            b.HasKey(c => new { c.TenantId, c.CampaignId });
+            b.Property(c => c.Code).HasMaxLength(60);
+            b.Property(c => c.Name).HasMaxLength(200);
+            b.Property(c => c.CoverageSource).HasMaxLength(20);
+            b.Property(c => c.ReserveTag).HasMaxLength(100);
+            b.Property(c => c.Status).HasMaxLength(20);
+            b.Property(c => c.CreatedBy).HasMaxLength(200);
+            b.Property(c => c.UpdatedBy).HasMaxLength(200);
+            b.HasIndex(c => new { c.TenantId, c.Code }).IsUnique();
+            b.HasIndex(c => new { c.TenantId, c.Status, c.UpdatedAt });
+        });
+
+        modelBuilder.Entity<CampaignCriterion>(b =>
+        {
+            b.ToTable("campaign_criteria", t => t.HasCheckConstraint("ck_campaign_criteria_shape", """
+                (kind = 'identifier_range' AND scheme IS NOT NULL AND identifier_type IS NOT NULL AND range_start IS NOT NULL AND range_end IS NOT NULL AND range_start_ordinal IS NOT NULL AND range_end_ordinal IS NOT NULL AND lot_id IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL AND firmware_value IS NULL AND effective_at IS NULL)
+                OR (kind = 'lot' AND lot_id IS NOT NULL AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL AND firmware_value IS NULL AND effective_at IS NULL)
+                OR (kind = 'child' AND ((child_unit_id IS NOT NULL AND child_item_id IS NULL) OR (child_unit_id IS NULL AND child_item_id IS NOT NULL)) AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND lot_id IS NULL AND firmware_value IS NULL AND effective_at IS NULL)
+                OR (kind = 'firmware' AND firmware_value IS NOT NULL AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND lot_id IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL)
+                """));
+            b.HasKey(c => new { c.TenantId, c.CriterionId });
+            b.Property(c => c.Kind).HasMaxLength(30);
+            b.Property(c => c.Scheme).HasMaxLength(80);
+            b.Property(c => c.IdentifierType).HasMaxLength(40);
+            b.Property(c => c.RangeStart).HasMaxLength(100);
+            b.Property(c => c.RangeEnd).HasMaxLength(100);
+            b.Property(c => c.FirmwareValue).HasMaxLength(200);
+            b.HasOne<Campaign>().WithMany().HasForeignKey(c => new { c.TenantId, c.CampaignId }).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(c => new { c.TenantId, c.CampaignId, c.Kind });
+            b.HasIndex(c => new { c.TenantId, c.LotId, c.CampaignId });
+            b.HasIndex(c => new { c.TenantId, c.ChildUnitId, c.CampaignId });
+            b.HasIndex(c => new { c.TenantId, c.ChildItemId, c.CampaignId });
+        });
+
+        modelBuilder.Entity<CampaignUnit>(b =>
+        {
+            b.ToTable("campaign_unit");
+            b.HasKey(u => new { u.TenantId, u.CampaignId, u.UnitId });
+            b.Property(u => u.OwnerPartyType).HasMaxLength(30);
+            b.Property(u => u.CustodianPartyType).HasMaxLength(30);
+            b.Property(u => u.SelectedBy).HasMaxLength(200);
+            b.HasOne<Campaign>().WithMany().HasForeignKey(u => new { u.TenantId, u.CampaignId }).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(u => new { u.TenantId, u.CampaignId, u.SelectedAt });
+            b.HasIndex(u => new { u.TenantId, u.OwnerPartyRef, u.CampaignId });
+            b.HasIndex(u => new { u.TenantId, u.CustodianPartyRef, u.CampaignId });
+            b.HasIndex(u => new { u.TenantId, u.SelectionCommandId });
         });
 
         base.OnModelCreating(modelBuilder);

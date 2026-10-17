@@ -82,6 +82,7 @@ public static class PublishedEventSinkHandler
     public static void Handle(DocumentSerialsCorrected e) => PublishedEventSink.Summaries.Enqueue(e);
     public static void Handle(OwnershipSourceDocumentCorrected e) => PublishedEventSink.Summaries.Enqueue(e);
     public static void Handle(UnitProductionOrderReconciled e) => PublishedEventSink.Summaries.Enqueue(e);
+    public static void Handle(CampaignUnitsSelected e) => PublishedEventSink.Summaries.Enqueue(e);
     public static void Handle(AssetTagPrintJobRequested e) => PublishedEventSink.PrintJobRequests.Enqueue(e);
     public static void Handle(LabelReprintJobRequested e) => PublishedEventSink.LabelReprintRequests.Enqueue(e);
 }
