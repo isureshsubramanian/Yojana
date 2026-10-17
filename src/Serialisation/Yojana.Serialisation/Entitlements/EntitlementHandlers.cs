@@ -130,7 +130,8 @@ public static class CreateEntitlementHandler
             status = entitlement.Status, start_basis = entitlement.StartBasis, start = start.Explanation, start_date = entitlement.StartDate, end_date = entitlement.EndDate, cap_applied = start.CapApplied, floor_applied = duration.FloorApplied,
             matched_refurbished_row = disclosure?.MatchedRow, term_months = disclosure?.TermMonths, floor_months = disclosure?.FloorMonths, floor_source = disclosure?.FloorSource, refurbisher_party_ref = disclosure?.RefurbisherPartyRef, statement_kind = disclosure?.StatementKind,
             time_zone = zone, accrual_cohort_id = cohortId, assurance_or_service = entitlement.AssuranceOrService,
-            accrual_suppressed = entitlement.AssuranceOrService == AssuranceOrService.Assurance && cohortId is null, provenance = command.Provenance, owner_party_ref = command.OwnerPartyRef, rule_version = version.RuleVersion, trail,
+            accrual_suppressed = entitlement.AssuranceOrService == AssuranceOrService.Assurance && cohortId is null, provenance = command.Provenance, confidence = command.Confidence,
+            owner_party_ref = command.OwnerPartyRef, rule_version = version.RuleVersion, trail,
             evidence_refs = evidenceRefs, finance_review_required = financeReviewRequired, reason_code = reasonCode, finance_review_ref = financeReviewRef,
         }, command.SourceDocument, cancellationToken, eventId, correction);
         return new CreateEntitlementResult(entitlement.EntitlementId, entitlement.Status, level, version.PolicyCode, version.Version, entitlement.StartDate, entitlement.EndDate, entitlement.StartBasis, start.CapApplied, duration.FloorApplied, zone, cohortId, trail, disclosure);

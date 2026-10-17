@@ -740,6 +740,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.Status).HasMaxLength(30);
             b.Property(c => c.DenialReason).HasMaxLength(100);
             b.Property(c => c.SubmittedBy).HasMaxLength(200);
+            b.Property(c => c.AdjudicatedBy).HasMaxLength(200);
+            b.Property(c => c.ReviewerRole).HasMaxLength(80);
             b.HasIndex(c => new { c.TenantId, c.CommandId }).IsUnique();
             b.HasIndex(c => new { c.TenantId, c.UnitId, c.Status, c.ClaimDate });
             b.HasIndex(c => new { c.TenantId, c.Status, c.SubmittedAt });

@@ -151,6 +151,7 @@ public static class EntitlementProvenance
     public const string Superseding = "superseding";
     public const string Backfilled = "backfilled";
     public const string Migrated = "migrated";
+    public const string Reconstructed = "reconstructed";
 }
 
 public static class ReplacementRule

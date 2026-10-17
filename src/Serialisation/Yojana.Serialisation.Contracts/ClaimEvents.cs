@@ -55,3 +55,28 @@ public sealed record ChargeableQuoteRequested(
     public const string Version = "1.0";
 }
 
+/// <summary>
+/// Transactional-outbox request for P6's certificate service. P4 records the truthful reconstruction provenance and
+/// evidence only; it does not create a certificate instance, payload, signature or fictional build history.
+/// </summary>
+public sealed record CertificateIssueRequested(
+    Guid RequestId,
+    Guid UnitId,
+    string DocumentKind,
+    string Provenance,
+    Guid TriggeringClaimId,
+    IReadOnlyList<string> EvidenceRefs,
+    DateTime RequestedAt,
+    Guid LegalEntityId,
+    string ActorRef);
+
+public static class CertificateDocumentKind
+{
+    public const string ReleaseRecord = "release_record";
+}
+
+public static class CertificateProvenance
+{
+    public const string Reconstructed = "reconstructed";
+}
+

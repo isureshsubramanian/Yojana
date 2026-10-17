@@ -3,11 +3,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Xunit;
 using Yojana.Platform.Contracts.Identifiers;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
+using Yojana.Serialisation.Ports;
 
 namespace Yojana.Serialisation.DatabaseTests;
 
@@ -41,6 +43,81 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var choice = await db.ClaimEvidence.SingleAsync(e => e.ClaimId == claim.ClaimId && e.Kind == ClaimEvidenceKind.ConsumerRemedyChoice);
         Assert.Equal(ClaimRemedy.Replacement, choice.Description);
+    }
+
+    [DatabaseFact]
+    public async Task Unknown_serial_reconstructs_once_and_low_confidence_cover_needs_the_named_reviewer()
+    {
+        var tenant = await fixture.NewTenantAsync("legacy-claim");
+        var item = Guid.NewGuid();
+        var obligor = Guid.NewGuid();
+        var claimant = Guid.NewGuid();
+        var settlement = Guid.NewGuid();
+        var at = new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+        var purchaseDate = new DateOnly(2025, 1, 1);
+        var claimDate = new DateOnly(2026, 9, 1);
+        var serial = "LEG-" + Guid.NewGuid().ToString("N")[..10].ToUpperInvariant();
+
+        await InvokeAsync<CoverageFamilyRow>(tenant, new DefineCoverageFamily(CoverageFamilyCode.Base, "Base warranty", false, AssuranceOrService.Assurance));
+        await InvokeAsync<ReplacementPolicyRow>(tenant, new DefineReplacementPolicy("LEGACY-90", ReplacementRule.MaxRemainingOrMinDays, 90, null, null));
+        var terms = PolicyValidatorTestsTerms.Standard24() with { ReferenceTimeZoneRule = PolicyTerms.TimeZoneUtc, ReplacementPolicyCode = "LEGACY-90" };
+        var code = "LG-" + Guid.NewGuid().ToString("N")[..6];
+        var draft = await InvokeAsync<PolicyDraftResult>(tenant, new CreatePolicyDraft(Guid.NewGuid(), code, code, CoverageFamilyCode.Base,
+            EntitlementType.Manufacturer, new DateOnly(2024, 1, 1), terms, "test"));
+        await InvokeAsync<PolicyDraftResult>(tenant, new PublishPolicyVersion(draft.PolicyVersionId, "test"));
+        fixture.Services.GetRequiredService<InMemoryWarrantyPorts>().Register(new ItemWarrantyPolicy(item, CoverageFamilyCode.Base, code, true));
+
+        SubmitClaim Command(Guid commandId, DateTime eventTime) => new(commandId, null,
+            new DocumentSerial(serial, IdentifierType: IdentifierType.InternalSerial), claimDate, claimant, settlement,
+            obligor, obligor, "DE", "EUR", [new ClaimLineInput(ClaimLineKind.Parts, CoverageFamilyCode.Base, 100m)],
+            [new ClaimEvidenceInput(ClaimEvidenceKind.Attachment, "FAULT-PHOTO")], ClaimRemedy.Repair,
+            "CHOICE-RECORDED", eventTime, "service-desk", ProofOfPurchaseRef: "POP-2025-1",
+            ProofOfPurchaseDate: purchaseDate, ItemId: item);
+
+        var submitted = await InvokeAsync<SubmitClaimResult>(tenant, Command(Guid.NewGuid(), at));
+        Assert.Equal(ClaimStatus.Submitted, submitted.Status);
+
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var unit = await db.Units.SingleAsync(u => u.UnitId == submitted.UnitId);
+            var entitlement = await db.Entitlements.SingleAsync(e => e.UnitId == submitted.UnitId && e.CoverageFamily == CoverageFamilyCode.Base);
+            var cohortPeriod = await db.AccrualCohorts.Where(c => c.CohortId == entitlement.AccrualCohortId).Select(c => c.Period).SingleAsync();
+            var facts = await db.Events.Where(e => e.UnitId == submitted.UnitId).Select(e => e.EventType).ToListAsync();
+
+            Assert.Equal((UnitOrigin.LegacyUnknown, HistoryDepth.OpeningOnly), (unit.Origin, unit.HistoryDepth));
+            Assert.Equal((Confidence.Low, EntitlementProvenance.Reconstructed, "2025-01"), (entitlement.Confidence, entitlement.Provenance, cohortPeriod));
+            Assert.DoesNotContain(UnitEventType.Shipped, facts);
+            Assert.DoesNotContain(UnitEventType.Delivered, facts);
+            Assert.DoesNotContain(UnitEventType.Released, facts);
+        }
+
+        var certificate = Assert.Single(await PublishedEventSink.WaitForAsync<CertificateIssueRequested>(
+            e => e.TriggeringClaimId == submitted.ClaimId, 1, TimeSpan.FromSeconds(20)));
+        Assert.Equal((submitted.UnitId, CertificateDocumentKind.ReleaseRecord, CertificateProvenance.Reconstructed),
+            (certificate.UnitId, certificate.DocumentKind, certificate.Provenance));
+        Assert.Equal(["POP-2025-1"], certificate.EvidenceRefs);
+
+        var refused = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<AdjudicateClaimResult>(tenant,
+            new AdjudicateClaim(Guid.NewGuid(), submitted.ClaimId, at.AddHours(1), "service-manager")));
+        Assert.Equal("low_confidence_reviewer_required", refused.Rule);
+        Assert.Contains(YojanaRole.ServiceManager, refused.Message);
+
+        var approved = await InvokeAsync<AdjudicateClaimResult>(tenant,
+            new AdjudicateClaim(Guid.NewGuid(), submitted.ClaimId, at.AddHours(2), "service-manager",
+                new ClaimReviewer("service-manager", [YojanaRole.ServiceManager])));
+        Assert.Equal(ClaimStatus.Approved, approved.Status);
+
+        var second = await InvokeAsync<SubmitClaimResult>(tenant, Command(Guid.NewGuid(), at.AddDays(1)));
+        Assert.Equal(submitted.UnitId, second.UnitId);
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            Assert.Equal(1, await db.Units.CountAsync(u => u.UnitId == submitted.UnitId));
+            Assert.Equal(1, await db.Entitlements.CountAsync(e => e.UnitId == submitted.UnitId && e.CoverageFamily == CoverageFamilyCode.Base));
+            var claim = await db.Claims.SingleAsync(c => c.ClaimId == submitted.ClaimId);
+            Assert.Equal(("service-manager", YojanaRole.ServiceManager), (claim.AdjudicatedBy, claim.ReviewerRole));
+        }
     }
 
     [DatabaseFact]

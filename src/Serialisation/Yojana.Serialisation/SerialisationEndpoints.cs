@@ -328,17 +328,28 @@ public static class SerialisationEndpoints
             Invoke<SupersedeEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId, CommittedBy = Committer(user), Correction = ApiCorrection(command.CommandId, command.ReasonCode, null, command.Correction, user) }, ct));
         entitlements.MapPost("/{entitlementId:guid}/transfer", (Guid entitlementId, TransferEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<TransferEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user), SourceEntitlementId = entitlementId, Correction = ApiCorrection(command.CommandId, EntitlementTransferReason.Replacement, null, command.Correction, user) }, ct)).RequireAuthorization(editor);
 
-        // Claims and supplier recovery (MOD-07, P4). Identity comes from the session; approval commands carry no
-        // approver field that a request body could forge.
+        // Claims and supplier recovery (MOD-07, P4). Identity and reviewer roles come from the session; the endpoint
+        // overwrites both values so a request body cannot forge the low-confidence review evidence.
         var claims = app.MapGroup("/api/claims").RequireAuthorization(YojanaPolicy.TenantMember);
         claims.MapGet("/", async (string? status, int? skip, int? take, ClaimQueries queries, IClock clock, CancellationToken ct) =>
             Results.Ok(await queries.ListAsync(status, DateOnly.FromDateTime(clock.UtcNow), Math.Max(0, skip ?? 0), take ?? 50, ct)));
+        claims.MapGet("/review-policy", async (ClaimReviewSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)))
+            .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+        claims.MapPut("/review-policy", async (ClaimReviewPolicy policy, ClaimReviewSettings settings, CancellationToken ct) =>
+        {
+            try { await settings.SetAsync(policy, ct); return Results.Ok(policy); }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+            }
+        }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         claims.MapGet("/{claimId:guid}", async (Guid claimId, ClaimQueries queries, CancellationToken ct) =>
             await queries.DetailAsync(claimId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
         claims.MapPost("/", (SubmitClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<SubmitClaimResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
         claims.MapPost("/{claimId:guid}/adjudicate", (Guid claimId, AdjudicateClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<AdjudicateClaimResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(editor);
+            Invoke<AdjudicateClaimResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user), ReviewedBy = ClaimReviewer(user) }, ct));
         claims.MapPost("/{claimId:guid}/settle", (Guid claimId, SettleClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
         claims.MapPost("/{claimId:guid}/close", (Guid claimId, CloseClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
@@ -548,6 +559,9 @@ public static class SerialisationEndpoints
         new(user.FindFirstValue(YojanaClaim.UserId) ?? throw new InvalidOperationException("A signed-in user carries a user id claim."), user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToList());
 
     private static CorrectionCommitter CorrectionCommitter(ClaimsPrincipal user) =>
+        new(user.FindFirstValue(YojanaClaim.UserId) ?? throw new InvalidOperationException("A signed-in user carries a user id claim."), user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToList());
+
+    private static ClaimReviewer ClaimReviewer(ClaimsPrincipal user) =>
         new(user.FindFirstValue(YojanaClaim.UserId) ?? throw new InvalidOperationException("A signed-in user carries a user id claim."), user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToList());
 
     private static List<string> Roles(ClaimsPrincipal user) => user.FindAll(YojanaClaim.Role).Select(c => c.Value).Distinct(StringComparer.Ordinal).ToList();

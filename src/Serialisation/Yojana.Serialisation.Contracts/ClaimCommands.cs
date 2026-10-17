@@ -12,8 +12,9 @@ public sealed record ClaimLineInput(
 public sealed record ClaimEvidenceInput(string Kind, string Reference, string? Description = null);
 
 /// <summary>
-/// Opens a claim against an existing unit, resolved either directly or through any identifier. Proof of purchase is
-/// evidence for the claim; creating a missing legacy unit remains P4-T04.
+/// Opens a claim against a unit, resolved either directly or through any identifier. When an identifier has no unit,
+/// <see cref="ItemId"/>, <see cref="ProofOfPurchaseRef"/> and <see cref="ProofOfPurchaseDate"/> are the evidence needed
+/// to reconstruct the low-confidence unit and entitlement; no shipment or delivery facts are inferred from them.
 /// </summary>
 public sealed record SubmitClaim(
     Guid CommandId,
@@ -32,11 +33,19 @@ public sealed record SubmitClaim(
     string ConsumerChoiceEvidenceRef,
     DateTime EventTime,
     string ActorRef,
-    string? ProofOfPurchaseRef = null);
+    string? ProofOfPurchaseRef = null,
+    DateOnly? ProofOfPurchaseDate = null,
+    Guid? ItemId = null);
 
 public sealed record SubmitClaimResult(Guid ClaimId, Guid UnitId, string Status, IReadOnlyList<Guid> ClaimLineIds, Guid EventId, bool Replayed);
 
-public sealed record AdjudicateClaim(Guid CommandId, Guid ClaimId, DateTime EventTime, string ActorRef);
+/// <summary>The signed-in adjudicator and the tenant roles established by the trusted entry point.</summary>
+public sealed record ClaimReviewer(string UserRef, IReadOnlyList<string> Roles);
+
+public sealed record AdjudicateClaim(Guid CommandId, Guid ClaimId, DateTime EventTime, string ActorRef, ClaimReviewer? ReviewedBy = null);
+
+/// <summary>The tenant-selected role that must review adjudication based on low-confidence cover.</summary>
+public sealed record ClaimReviewPolicy(string LowConfidenceReviewerRole);
 
 public sealed record ClaimLineDecision(
     Guid ClaimLineId,
@@ -95,7 +104,9 @@ public sealed record ClaimDetail(
     int ChainLength,
     IReadOnlyList<Guid> EntitlementIds,
     IReadOnlyList<ClaimLineDecision> Lines,
-    IReadOnlyList<ClaimEvidenceRow> Evidence);
+    IReadOnlyList<ClaimEvidenceRow> Evidence,
+    string? AdjudicatedBy = null,
+    string? ReviewerRole = null);
 
 public sealed record RecoveryClaimRow(
     Guid RecoveryClaimId,

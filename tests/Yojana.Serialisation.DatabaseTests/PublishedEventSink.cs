@@ -10,6 +10,7 @@ public static class PublishedEventSink
     public static readonly ConcurrentQueue<IPublishedSummaryEvent> Summaries = new();
     public static readonly ConcurrentQueue<AssetTagPrintJobRequested> PrintJobRequests = new();
     public static readonly ConcurrentQueue<LabelReprintJobRequested> LabelReprintRequests = new();
+    public static readonly ConcurrentQueue<CertificateIssueRequested> CertificateRequests = new();
 
     public static Task<IReadOnlyList<T>> WaitForAsync<T>(Func<T, bool> match, int count, TimeSpan timeout)
     {
@@ -30,7 +31,8 @@ public static class PublishedEventSink
     private static IEnumerable<T> All<T>() => Received.OfType<T>()
         .Concat(Summaries.OfType<T>())
         .Concat(PrintJobRequests.OfType<T>())
-        .Concat(LabelReprintRequests.OfType<T>());
+        .Concat(LabelReprintRequests.OfType<T>())
+        .Concat(CertificateRequests.OfType<T>());
 
     public static Task<IReadOnlyList<T>> WaitForSummaryAsync<T>(Func<T, bool> match, int count, TimeSpan timeout) where T : IPublishedSummaryEvent
     {
@@ -85,4 +87,5 @@ public static class PublishedEventSinkHandler
     public static void Handle(CampaignUnitsSelected e) => PublishedEventSink.Summaries.Enqueue(e);
     public static void Handle(AssetTagPrintJobRequested e) => PublishedEventSink.PrintJobRequests.Enqueue(e);
     public static void Handle(LabelReprintJobRequested e) => PublishedEventSink.LabelReprintRequests.Enqueue(e);
+    public static void Handle(CertificateIssueRequested e) => PublishedEventSink.CertificateRequests.Enqueue(e);
 }
