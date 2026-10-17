@@ -185,4 +185,39 @@ public sealed class CorrectAsBuiltTests(SerialisationHostFixture fixture)
         Assert.Equal(At.AddDays(4), (await db.AssemblyLinks.SingleAsync(l => l.LinkId == assembled.LinkIds[0])).RemovedAt);
         Assert.Equal(firstId, (await db.Corrections.SingleAsync(c => c.CorrectionId == secondId)).CorrectsCorrectionId);
     }
+
+    [DatabaseFact]
+    public async Task A_later_correction_restores_the_original_open_component_relationship()
+    {
+        var tenant = await fixture.NewTenantAsync("carestore");
+        var prefix = "CRS" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
+        var parent = await UnitAsync(tenant, $"{prefix}-P");
+        var child = await UnitAsync(tenant, $"{prefix}-C");
+        var assembled = await InvokeAsync<RecordAssemblyResult>(tenant, new RecordAssembly(Guid.NewGuid(), parent,
+            [new ChildInput(child, Slot: "drive-1")], At.AddHours(1), "line", Entity));
+
+        var firstId = Guid.NewGuid();
+        await InvokeAsync<CorrectAsBuiltResult>(tenant, new CorrectAsBuilt(Guid.NewGuid(),
+            [new(new(UnitId: parent), At.AddDays(1), [new(AsBuiltCorrectionChange.Remove, assembled.LinkIds[0])])],
+            CorrectAsBuiltReason.WrongComponentRecorded, "production-1", Entity,
+            new(firstId, CorrectAsBuiltReason.WrongComponentRecorded,
+                InitiatingRole: CorrectionInitiatingRole.ProductionSupervisor), Production()));
+
+        var reversalId = Guid.NewGuid();
+        await InvokeAsync<CorrectAsBuiltResult>(tenant, new CorrectAsBuilt(Guid.NewGuid(),
+            [new(new(UnitId: parent), At.AddDays(2),
+                [new(AsBuiltCorrectionChange.Add, Installed: new(Unit: new(UnitId: child), Slot: "drive-1"))])],
+            CorrectAsBuiltReason.WrongComponentRecorded, "production-1", Entity,
+            new(reversalId, CorrectAsBuiltReason.WrongComponentRecorded, CorrectsCorrectionId: firstId,
+                InitiatingRole: CorrectionInitiatingRole.ProductionSupervisor), Production()));
+
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        Assert.NotNull((await db.AssemblyLinks.SingleAsync(link => link.LinkId == assembled.LinkIds[0])).RemovedAt);
+        var restored = await db.AssemblyLinks.SingleAsync(link => link.ParentUnitId == parent
+            && link.ChildUnitId == child && link.RemovedAt == null);
+        Assert.Equal("drive-1", restored.Slot);
+        Assert.Equal(UnitDisposition.InProgress, (await db.Current.SingleAsync(row => row.UnitId == child)).Disposition);
+        Assert.Equal(firstId, (await db.Corrections.SingleAsync(c => c.CorrectionId == reversalId)).CorrectsCorrectionId);
+    }
 }
