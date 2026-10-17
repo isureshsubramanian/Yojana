@@ -207,6 +207,78 @@ public static class AuthoriseRmaHandler
             l.CoveragePct ?? 0, l.ApprovedAmount ?? 0, l.CoverageSource ?? ClaimCoverageSource.Chargeable, l.EntitlementId, l.PolicyVersionId, l.DenialReason)).ToList(), eventId, replayed);
 }
 
+public static class RecordReturnDispatchedHandler
+{
+    public static async Task<RecordReturnDispatchedResult> Handle(RecordReturnDispatched command,
+        SerialisationDbContext db, EpisodeService episodes, IUnitEventWriter writer, ITenantContext tenant,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        var rma = await db.Rmas.SingleOrDefaultAsync(row => row.TenantId == tenantId && row.RmaId == command.RmaId, cancellationToken)
+            ?? throw new CommandRefusedException("rma_unknown", $"RMA {command.RmaId} does not exist.");
+        var lines = await db.RmaLines.Where(row => row.TenantId == tenantId && row.RmaId == rma.RmaId)
+            .OrderBy(row => row.Sequence).ToListAsync(cancellationToken);
+        var firstUnitId = lines.Select(row => row.AuthorisedUnitId).OfType<Guid>().FirstOrDefault();
+        if (firstUnitId != Guid.Empty)
+        {
+            var key = IdempotencyKey.ForCommand(CommissionUnitsHandler.Source, command.CommandId, firstUnitId,
+                RmaEventType.Dispatched, command.DispatchedAt);
+            if (await db.Events.AsNoTracking().SingleOrDefaultAsync(row => row.TenantId == tenantId
+                && row.IdempotencyKey == key && row.EventTime == command.DispatchedAt, cancellationToken) is { } replay)
+                return Result(rma.RmaId, command, replay.EventId, true);
+        }
+
+        if (lines.Count == 0 || lines.Any(row => row.AuthorisedUnitId is null))
+            throw new CommandRefusedException("rma_line_not_authorised", "Every RMA line must be authorised before dispatch is recorded.");
+        if (rma.AuthorisedAt is { } authorisedAt && command.DispatchedAt < authorisedAt)
+            throw new CommandRefusedException("return_time_invalid", "A return cannot be dispatched before it was authorised.");
+        var carrier = Clean(command.CarrierName, 160, "carrier_name_invalid", "Carrier name");
+        var tracking = Clean(command.TrackingReference, 160, "tracking_reference_invalid", "Tracking reference");
+
+        RmaStateMachine.Transition(rma, RmaStage.InTransit);
+        rma.InTransitAt = command.DispatchedAt;
+        var unitIds = lines.Select(row => row.AuthorisedUnitId!.Value).Distinct().ToList();
+        await episodes.PreloadOpenAsync(unitIds, cancellationToken);
+        var drafts = new List<UnitEventDraft>();
+        foreach (var line in lines)
+        {
+            var unitId = line.AuthorisedUnitId!.Value;
+            var document = new DocumentRef("rma", rma.RmaId, line.Sequence);
+            var move = await episodes.PrepareCustodyMoveAsync(unitId,
+                new CustodyTarget(LocationKind.Returning, PartyRef: rma.ReturningPartyRef, PartyType: PartyType.Customer,
+                    Reason: EpisodeReason.Return, Source: "rma"),
+                RmaEventType.Dispatched,
+                IdempotencyKey.ForCommand(CommissionUnitsHandler.Source, command.CommandId, unitId,
+                    RmaEventType.Dispatched, command.DispatchedAt),
+                command.DispatchedAt, command.ActorRef, rma.ServiceEntityId, document,
+                new Dictionary<string, object?>
+                {
+                    ["rma_id"] = rma.RmaId,
+                    ["rma_line_id"] = line.RmaLineId,
+                    ["carrier_name"] = carrier,
+                    ["tracking_reference"] = tracking,
+                }, null, true, cancellationToken);
+            drafts.Add(move.Draft);
+        }
+
+        rma.LastActorRef = command.ActorRef;
+        rma.LastEventId = drafts[0].PresetEventId!.Value;
+        await writer.AppendAsync(drafts, cancellationToken);
+        return new(rma.RmaId, rma.Stage, command.DispatchedAt, carrier, tracking, rma.LastEventId, false);
+    }
+
+    private static string? Clean(string? value, int maximum, string rule, string label)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var clean = value.Trim();
+        if (clean.Length > maximum) throw new CommandRefusedException(rule, $"{label} cannot exceed {maximum} characters.");
+        return clean;
+    }
+
+    private static RecordReturnDispatchedResult Result(Guid rmaId, RecordReturnDispatched command, Guid eventId, bool replayed) =>
+        new(rmaId, RmaStage.InTransit, command.DispatchedAt, command.CarrierName?.Trim(), command.TrackingReference?.Trim(), eventId, replayed);
+}
+
 public static class ReceiveReturnHandler
 {
     public static async Task<ReceiveReturnResult> Handle(ReceiveReturn command, SerialisationDbContext db, UnitResolver units,
@@ -221,11 +293,11 @@ public static class ReceiveReturnHandler
             throw new CommandRefusedException("rma_receipt_lines_incomplete", "Receipt must account for every RMA line exactly once.");
         var replayReceipts = await db.ReturnReceipts.AsNoTracking().Where(x => x.TenantId == tenantId && x.CommandId == command.CommandId && x.RmaId == rma.RmaId).OrderBy(x => x.RmaLineId).ToListAsync(cancellationToken);
         if (replayReceipts.Count == lines.Count) return Result(rma, replayReceipts, rma.LastEventId, true);
-        if (command.DispatchedAt > command.ReceivedAt)
+        if (command.DispatchedAt is { } dispatchedAt && dispatchedAt > command.ReceivedAt)
             throw new CommandRefusedException("return_time_invalid", "A return cannot be received before it was dispatched.");
-        RmaStateMachine.Transition(rma, RmaStage.InTransit);
-        rma.InTransitAt = command.DispatchedAt;
-        RmaStateMachine.Transition(rma, RmaStage.Received);
+        if (rma.InTransitAt is { } recordedDispatch && recordedDispatch > command.ReceivedAt)
+            throw new CommandRefusedException("return_time_invalid", "A return cannot be received before its recorded dispatch.");
+        RmaStateMachine.Receive(rma);
         rma.ReceivedAt = command.ReceivedAt;
         var postingPeriod = await periods.ResolveAsync(command.ReceivedAt, cancellationToken);
         var resolved = new Dictionary<Guid, Guid?>();
@@ -249,15 +321,6 @@ public static class ReceiveReturnHandler
             var eventId = TimeOrderedId.New(command.ReceivedAt);
             if (receivedUnit is { } unitId)
             {
-                var current = await episodes.OpenAsync(unitId, EpisodeKind.Custody, cancellationToken);
-                if (current?.LocationKind != LocationKind.Returning
-                    && CustodyTransitions.CustodyAllowed(current?.LocationKind, LocationKind.Returning))
-                {
-                    var returning = await episodes.PrepareCustodyMoveAsync(unitId, new CustodyTarget(LocationKind.Returning, PartyRef: rma.ReturningPartyRef, PartyType: PartyType.Customer, Reason: EpisodeReason.Return, Source: "rma"),
-                        UnitEventType.CustodyChanged, IdempotencyKey.Derive(command.CommandId.ToString("N"), $"returning:{line.RmaLineId:N}"), command.DispatchedAt,
-                        command.ActorRef, rma.ServiceEntityId, null, new Dictionary<string, object?> { ["rma_id"] = rma.RmaId, ["rma_line_id"] = line.RmaLineId }, null, true, cancellationToken);
-                    drafts.Add(returning.Draft);
-                }
                 if (!CustodyTransitions.CustodyAllowed(
                         (await episodes.OpenAsync(unitId, EpisodeKind.Custody, cancellationToken))?.LocationKind,
                         LocationKind.Quarantine))
@@ -312,14 +375,13 @@ public static class DispositionRmaHandler
         var rma = await db.Rmas.SingleOrDefaultAsync(r => r.TenantId == tenantId && r.RmaId == command.RmaId, cancellationToken)
             ?? throw new CommandRefusedException("rma_unknown", $"RMA {command.RmaId} does not exist.");
         var lines = await db.RmaLines.Where(l => l.TenantId == tenantId && l.RmaId == rma.RmaId).OrderBy(l => l.Sequence).ToListAsync(cancellationToken);
-        if (rma.Stage == RmaStage.Closed && lines.All(l => l.Disposition is not null))
+        if (lines.All(l => l.Disposition is not null) && lines[0].ReceivedUnitId is { } replayUnitId)
         {
-            var replayUnitId = lines[0].ReceivedUnitId;
-            var replayed = replayUnitId is { } unitId && await db.Events.AsNoTracking().AnyAsync(e => e.TenantId == tenantId
+            var replayed = await db.Events.AsNoTracking().AnyAsync(e => e.TenantId == tenantId
                 && e.EventType == RmaEventType.Dispositioned && e.EventTime == command.EventTime
-                && e.IdempotencyKey == IdempotencyKey.ForCommand(CommissionUnitsHandler.Source, command.CommandId, unitId, RmaEventType.Dispositioned, command.EventTime), cancellationToken);
-            if (replayed) return Result(rma, lines, rma.LastEventId, true);
-            RmaStateMachine.Transition(rma, RmaStage.Dispositioned);
+                && e.IdempotencyKey == IdempotencyKey.ForCommand(CommissionUnitsHandler.Source, command.CommandId,
+                    replayUnitId, RmaEventType.Dispositioned, command.EventTime), cancellationToken);
+            if (replayed) return Result(rma, lines, rma.LastEventId, true, RmaStage.Dispositioned);
         }
         if (command.Lines.Count != lines.Count || command.Lines.Select(x => x.RmaLineId).Distinct().Count() != lines.Count || command.Lines.Any(x => lines.All(l => l.RmaLineId != x.RmaLineId)))
             throw new CommandRefusedException("rma_disposition_lines_incomplete", "Disposition must account for every RMA line exactly once.");
@@ -445,8 +507,6 @@ public static class DispositionRmaHandler
                 Attributes = JsonObjectText.Of(new { rma_id = rma.RmaId, rma_line_id = line.RmaLineId, unit_id = unitId, disposition = input.Disposition, entitlement_closed_reason = closedReason, replacement_intent_id = replacementIntentId, refurbishment_work_order_id = refurbishmentWorkOrderId }),
             });
         }
-        RmaStateMachine.Transition(rma, RmaStage.Closed);
-        rma.ClosedAt = command.EventTime;
         rma.LastActorRef = command.ActorRef;
         rma.LastEventId = drafts.Last(d => d.EventType == RmaEventType.Dispositioned).PresetEventId!.Value;
         await writer.AppendAsync(drafts, cancellationToken);
@@ -483,6 +543,6 @@ public static class DispositionRmaHandler
         return reason;
     }
 
-    private static DispositionRmaResult Result(Rma rma, IReadOnlyList<RmaLine> lines, Guid eventId, bool replayed) =>
-        new(rma.RmaId, rma.Stage, lines.Select(l => new RmaDispositionResultLine(l.RmaLineId, l.Disposition!, l.ReplacementIntentId, l.EntitlementClosedReason)).ToList(), eventId, replayed);
+    private static DispositionRmaResult Result(Rma rma, IReadOnlyList<RmaLine> lines, Guid eventId, bool replayed, string? stage = null) =>
+        new(rma.RmaId, stage ?? rma.Stage, lines.Select(l => new RmaDispositionResultLine(l.RmaLineId, l.Disposition!, l.ReplacementIntentId, l.EntitlementClosedReason)).ToList(), eventId, replayed);
 }

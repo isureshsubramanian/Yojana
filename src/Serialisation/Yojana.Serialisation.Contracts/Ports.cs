@@ -213,3 +213,11 @@ public sealed record RefurbishmentOpenRequest(
 
 public sealed record RefurbishmentOpenReceipt(Guid WorkOrderId, string WorkOrderNumber, bool Replayed);
 // End P5 refurbishment hand-off.
+
+// P5 RMA follow-up hand-off — RMA closure depends only on these completion facts, not sibling tables.
+/// <summary>Reports the incomplete external work that prevents an RMA from closing.</summary>
+public interface IRmaFollowUpQueryPort
+{
+    Task<IReadOnlyList<RmaOpenFollowUp>> OpenAsync(Guid rmaId, CancellationToken cancellationToken);
+}
+// End P5 RMA follow-up hand-off.

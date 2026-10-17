@@ -23,8 +23,12 @@ export interface RmaDetail {
   rmaId: string; rmaNumber: string | null; stage: string; requestDate: string; returningPartyRef: string; settlementPartyRef: string;
   serviceEntityId: string; serviceCountry: string; currency: string; requestedAt: string; authorisedAt: string | null;
   inTransitAt: string | null; receivedAt: string | null; dispositionedAt: string | null; closedAt: string | null;
-  requestedBy: string; lastActorRef: string | null; lines: RmaDetailLine[];
+  requestedBy: string; lastActorRef: string | null; lines: RmaDetailLine[]; dispatch: RmaDispatchDetail | null;
+  openFollowUps: RmaOpenFollowUp[];
 }
+export interface RmaDispatchDetail { dispatchedAt: string; carrierName: string | null; trackingReference: string | null; dispatchedBy: string }
+export interface RmaOpenFollowUp { rmaLineId: string; sequence: number; disposition: string; code: string; detail: string }
+export interface CloseRmaResult { rmaId: string; stage: string; closed: boolean; openFollowUps: RmaOpenFollowUp[]; eventId: string | null; replayed: boolean }
 
 export interface WarrantyReplacementRow {
   warrantyReplacementId: string; replacementNumber: string; sourceKind: string; sourceId: string; sourceNumber: string;

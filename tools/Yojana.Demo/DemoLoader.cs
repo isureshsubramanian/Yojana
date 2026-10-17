@@ -656,11 +656,17 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         var bank = Party("C-ASHVANE");
         var engineering = Party("C-TORRENFOLD");
         var cloudmere = Party("C-CLOUDMERE");
+        var hospital = Party("C-VELMORA");
 
         await RequestRmaAsync("stage-requested", Units("DW-300")[11], bank,
             DemoDates.At(today.AddDays(-2), 9), CoverageFamilyCode.Base, "Awaiting coverage review", cancellationToken);
         await RequestAndAuthoriseRmaAsync("stage-authorised", Units("DW-300")[12], bank,
             DemoDates.At(today.AddDays(-3), 9), CoverageFamilyCode.Base, "Return authorised; customer arranging collection", cancellationToken);
+
+        var inTransit = await RequestAndAuthoriseRmaAsync("stage-in-transit", Units("DW-300")[25], hospital,
+            DemoDates.At(today.AddDays(-4), 9), CoverageFamilyCode.Base, "Return collected and travelling to the warehouse", cancellationToken);
+        await DispatchRmaAsync("stage-in-transit", inTransit, DemoDates.At(today.AddDays(-2), 14),
+            "Asterline Freight", "AF-204781", cancellationToken);
 
         var received = await RequestAndAuthoriseRmaAsync("stage-received", Units("DW-300")[17], engineering,
             DemoDates.At(today.AddDays(-5), 9), CoverageFamilyCode.Base, "Workstation intermittently restarts", cancellationToken);
@@ -673,6 +679,14 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             "open_box_value", DemoDates.At(today.AddDays(-5), 10), ReturnOutcome.Accepted, QuarantineOverflowId, cancellationToken);
         await DispositionRmaAsync("stage-closed", closed, RmaDisposition.ReturnToStock,
             DemoDates.At(today.AddDays(-4), 11), cancellationToken);
+        await CloseRmaAsync("stage-closed", closed, DemoDates.At(today.AddDays(-4), 12), cancellationToken);
+
+        var dispositioned = await RequestAndAuthoriseRmaAsync("stage-dispositioned", Units("DW-300")[26], hospital,
+            DemoDates.At(today.AddDays(-6), 9), CoverageFamilyCode.Base, "Replacement approved and awaiting shipment", cancellationToken);
+        await ReceiveRmaAsync("stage-dispositioned", dispositioned, Units("DW-300")[26], ConditionGrades.Defective,
+            "repairable_value", DemoDates.At(today.AddDays(-4), 10), ReturnOutcome.Accepted, QuarantineOverflowId, cancellationToken);
+        await DispositionRmaAsync("stage-dispositioned", dispositioned, RmaDisposition.Replace,
+            DemoDates.At(today.AddDays(-3), 11), cancellationToken);
 
         var provisional = await RequestAndAuthoriseRmaAsync("unauthorised-provisional", Units("DW-300")[21], cloudmere,
             DemoDates.At(today.AddDays(-6), 9), CoverageFamilyCode.Base, "Carton received without a readable unit label", cancellationToken);
@@ -932,12 +946,28 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             actor), cancellationToken);
     }
 
+    private async Task DispatchRmaAsync(string key, RmaScenario rma, DateTime dispatchedAt,
+        string? carrierName, string? trackingReference, CancellationToken cancellationToken)
+    {
+        await InvokeAsync<RecordReturnDispatchedResult>(new RecordReturnDispatched(
+            DemoIds.FromName("p5:rma-dispatch:" + key), rma.RmaId, dispatchedAt, carrierName,
+            trackingReference, actor), cancellationToken);
+    }
+
     private async Task DispositionRmaAsync(string key, RmaScenario rma, string disposition, DateTime at,
         CancellationToken cancellationToken, Guid? vendorPartyRef = null)
     {
         await InvokeAsync<DispositionRmaResult>(new DispositionRma(DemoIds.FromName("p5:rma-disposition:" + key),
             rma.RmaId, [new RmaDispositionLineInput(rma.RmaLineId, disposition, vendorPartyRef)],
             DateOnly.FromDateTime(at), at, actor), cancellationToken);
+    }
+
+    private async Task CloseRmaAsync(string key, RmaScenario rma, DateTime at, CancellationToken cancellationToken)
+    {
+        var result = await InvokeAsync<CloseRmaResult>(new CloseRma(DemoIds.FromName("p5:rma-close:" + key),
+            rma.RmaId, at, actor), cancellationToken);
+        if (!result.Closed)
+            throw new InvalidOperationException($"RMA demo '{key}' has open follow-ups: {string.Join(", ", result.OpenFollowUps.Select(row => row.Code))}");
     }
 
     private async Task<ShipWarrantyReplacementResult> CreateAndShipReplacementAsync(string key, string sourceKind,

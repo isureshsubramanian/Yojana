@@ -254,7 +254,7 @@ public sealed class RefurbishmentTests(SerialisationHostFixture fixture)
         var workOrder = Assert.Single(await db.RefurbishmentWorkOrders.Where(w => w.SourceRmaLineId == requested.LineIds[0]).ToListAsync());
         Assert.Equal((setup.UnitId, RefurbishmentStatus.Open, RefurbishmentKind.Refurbish),
             (workOrder.TargetUnitId, workOrder.Status, workOrder.Kind));
-        Assert.Equal(RmaStage.Closed, result.Stage);
+        Assert.Equal(RmaStage.Dispositioned, result.Stage);
         await AssertOwnerAndHolderAsync(db, setup.UnitId, Entity, LocationKind.InRepair, receiving);
         var entitlement = await db.Entitlements.SingleAsync(e => e.EntitlementId == setup.EntitlementId);
         Assert.NotEqual(EntitlementStatus.Closed, entitlement.Status);

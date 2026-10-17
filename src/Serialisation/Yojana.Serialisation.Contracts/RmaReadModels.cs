@@ -29,7 +29,22 @@ public sealed record RmaDetail(
     DateTime? ClosedAt,
     string RequestedBy,
     string? LastActorRef,
-    IReadOnlyList<RmaDetailLine> Lines);
+    IReadOnlyList<RmaDetailLine> Lines,
+    RmaDispatchDetail? Dispatch,
+    IReadOnlyList<RmaOpenFollowUp> OpenFollowUps);
+
+public sealed record RmaDispatchDetail(
+    DateTime DispatchedAt,
+    string? CarrierName,
+    string? TrackingReference,
+    string DispatchedBy);
+
+public sealed record RmaOpenFollowUp(
+    Guid RmaLineId,
+    int Sequence,
+    string Disposition,
+    string Code,
+    string Detail);
 
 public sealed record RmaDetailLine(
     Guid RmaLineId,

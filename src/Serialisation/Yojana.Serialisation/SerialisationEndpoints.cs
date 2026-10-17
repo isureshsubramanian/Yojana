@@ -451,10 +451,15 @@ public static class SerialisationEndpoints
             Invoke<RequestRmaResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
         rmas.MapPost("/{rmaId:guid}/authorise", (Guid rmaId, AuthoriseRma command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<AuthoriseRmaResult>(bus, tenant, command with { RmaId = rmaId, ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.ServiceSupervisor);
+        rmas.MapPost("/{rmaId:guid}/dispatch", (Guid rmaId, RecordReturnDispatched command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RecordReturnDispatchedResult>(bus, tenant, command with { RmaId = rmaId, ActorRef = Actor(user) }, ct))
+            .RequireAuthorization(policy => policy.RequireClaim(YojanaClaim.Role, YojanaRole.ServiceDesk, YojanaRole.WarehouseLead));
         rmas.MapPost("/{rmaId:guid}/receive", (Guid rmaId, ReceiveReturn command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<ReceiveReturnResult>(bus, tenant, command with { RmaId = rmaId, ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.WarehouseLead);
         rmas.MapPost("/{rmaId:guid}/disposition", (Guid rmaId, DispositionRma command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<DispositionRmaResult>(bus, tenant, command with { RmaId = rmaId, ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.ServiceSupervisor);
+        rmas.MapPost("/{rmaId:guid}/close", (Guid rmaId, CloseRma command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            InvokeCloseRma(bus, tenant, command with { RmaId = rmaId, ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.ServiceSupervisor);
 
         // P5 refurbishment endpoints — kept as one block so sibling endpoint additions merge mechanically.
         var refurbishments = app.MapGroup("/api/refurbishments").RequireAuthorization(YojanaPolicy.TenantMember);
@@ -802,6 +807,21 @@ public static class SerialisationEndpoints
         catch (CommandRefusedException ex)
         {
             return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict, extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+        }
+    }
+
+    private static async Task<IResult> InvokeCloseRma(IMessageBus bus, ITenantContext tenant, CloseRma command, CancellationToken ct)
+    {
+        try
+        {
+            var result = await bus.InvokeAsync<CloseRmaResult>(command,
+                new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, ct);
+            return result.Closed ? Results.Ok(result) : Results.Json(result, statusCode: StatusCodes.Status409Conflict);
+        }
+        catch (CommandRefusedException ex)
+        {
+            return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict,
+                extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
         }
     }
 

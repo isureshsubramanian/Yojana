@@ -55,7 +55,7 @@ public static class RmaEventType
 {
     public const string Requested = "rma.requested";
     public const string Authorised = "rma.authorised";
-    public const string InTransit = "rma.in_transit";
+    public const string Dispatched = "rma.dispatched";
     public const string Received = "rma.received";
     public const string Dispositioned = "rma.dispositioned";
     public const string Closed = "rma.closed";

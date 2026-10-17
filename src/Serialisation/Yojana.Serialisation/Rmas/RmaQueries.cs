@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Contracts;
@@ -7,7 +8,8 @@ using Yojana.Serialisation.Identity;
 
 namespace Yojana.Serialisation.Rmas;
 
-public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySource identifierPolicies, ITenantContext tenant)
+public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySource identifierPolicies,
+    IRmaFollowUpQueryPort followUps, ITenantContext tenant)
 {
     public async Task<RmaListResult> ListAsync(RmaListFilter filter, DateTime now, int skip, int take, CancellationToken cancellationToken)
     {
@@ -98,6 +100,15 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
         var serials = await UnitSerials.DisplayAsync(db, tenantId, unitIds, cancellationToken);
         var items = await db.Current.AsNoTracking().Where(row => row.TenantId == tenantId && unitIds.Contains(row.UnitId))
             .ToDictionaryAsync(row => row.UnitId, row => row.ItemId, cancellationToken);
+        var dispatched = await db.Events.AsNoTracking()
+            .Where(row => row.TenantId == tenantId && row.EventType == RmaEventType.Dispatched && row.DocumentId == rmaId)
+            .OrderBy(row => row.Seq)
+            .Select(row => new { row.EventTime, row.ActorRef, row.Attributes })
+            .FirstOrDefaultAsync(cancellationToken);
+        var dispatch = Dispatch(dispatched?.EventTime, dispatched?.ActorRef, dispatched?.Attributes);
+        var openFollowUps = rma.Stage == RmaStage.Dispositioned
+            ? await followUps.OpenAsync(rmaId, cancellationToken)
+            : [];
         return new RmaDetail(rma.RmaId, rma.RmaNumber, rma.Stage, rma.RequestDate, rma.ReturningPartyRef, rma.SettlementPartyRef,
             rma.ServiceEntityId, rma.ServiceCountry, rma.Currency, rma.RequestedAt, rma.AuthorisedAt, rma.InTransitAt,
             rma.ReceivedAt, rma.DispositionedAt, rma.ClosedAt, rma.RequestedBy, rma.LastActorRef, lines.Select(l =>
@@ -113,6 +124,18 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
                     l.ReceivedUnitId is { } received && items.TryGetValue(received, out var receivedItem) ? receivedItem : null,
                     l.ReceivedUnitId is { } receivedId ? serials.GetValueOrDefault(receivedId) : null,
                     receipt?.BusinessTime, receipt?.PostingPeriod, receipt?.ReceivedBy, receipt?.ReceivingLocationId, receipt?.ExceptionNote);
-            }).ToList());
+            }).ToList(), dispatch, openFollowUps);
     }
+
+    private static RmaDispatchDetail? Dispatch(DateTime? at, string? actor, string? attributes)
+    {
+        if (at is null || actor is null) return null;
+        if (attributes is null) return new(at.Value, null, null, actor);
+        using var json = JsonDocument.Parse(attributes);
+        var root = json.RootElement;
+        return new(at.Value, Text(root, "carrier_name"), Text(root, "tracking_reference"), actor);
+    }
+
+    private static string? Text(JsonElement root, string name) => root.TryGetProperty(name, out var value)
+        && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 }
