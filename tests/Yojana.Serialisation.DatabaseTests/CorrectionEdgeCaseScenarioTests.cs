@@ -301,11 +301,13 @@ public sealed class CorrectionEdgeCaseScenarioTests(SerialisationHostFixture fix
                 Approvers: [new("inventory-controller", [YojanaRole.InventoryController]), new("quality", [YojanaRole.Quality])]),
             new("item-owner", [YojanaRole.ItemMasterOwner]));
 
-        var itemOwner = new WorkbenchActor("item-owner",
-            [YojanaRole.ItemMasterOwner, YojanaRole.InventoryController, YojanaRole.Quality]);
+        // Separation of duties: the item-master owner signs and commits; the inventory controller and the quality approver
+        // for the exemption are other people.
+        var itemOwner = new WorkbenchActor("item-owner", [YojanaRole.ItemMasterOwner]);
         var (result, _) = await CommitWorkbenchAsync<LateSerializationResult>(tenant,
             WorkbenchRequest(correctionId, CorrectionWorkbenchChoice.WrongComponents, CorrectionCommand.LateSerialization,
-                new(WorkbenchTargetKind.DocumentLine, Document: source), command.Reason, command), itemOwner, itemOwner);
+                new(WorkbenchTargetKind.DocumentLine, Document: source), command.Reason, command), itemOwner,
+            new WorkbenchActor("inventory-controller", [YojanaRole.InventoryController]), new WorkbenchActor("quality", [YojanaRole.Quality]), itemOwner);
         Assert.Equal((1, 1, false), (result.Commissioned, result.Exempted, result.Reversed));
         await AssertKpiAsync(tenant, correctionId, CorrectionCommand.LateSerialization, 1);
         var published = Assert.Single(await PublishedEventSink.WaitForSummaryAsync<ItemTrackingModeChanged>(
