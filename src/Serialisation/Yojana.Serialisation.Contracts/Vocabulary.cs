@@ -217,6 +217,7 @@ public static class UnitEventType
     public const string CreatedPendingIdentifier = "unit.created_pending_identifier";
     public const string IdentifierAssigned = "unit.identifier_assigned";
     public const string IdentifierCorrected = "unit.identifier_corrected";
+    public const string IdentifiersSwapped = "unit.identifiers_swapped";
     public const string ItemAssigned = "unit.item_assigned";
     public const string Assembled = "unit.assembled";
     public const string Disassembled = "unit.disassembled";

@@ -41,6 +41,22 @@ public sealed record UnitIdentifiersSwapped(
 
 public sealed record PublishedSwappedIdentifier(Guid IdentifierId, string Type, string Scheme, string Value, Guid? IssuerPartyRef);
 
+/// <summary>
+/// Transactional-outbox request for P6's label service. P3 records the request only; it does not select a template,
+/// render a label or report a print outcome.
+/// </summary>
+public sealed record AssetTagPrintJobRequested(
+    Guid RequestId,
+    Guid UnitId,
+    Guid IdentifierId,
+    string AssetTag,
+    Guid SwapId,
+    Guid CorrectionId,
+    Guid TriggeringEventId,
+    DateTime RequestedAt,
+    Guid LegalEntityId,
+    string ActorRef);
+
 public sealed record UnitItemCorrected(
     PublishedEventHeader Header,
     PublishedCorrection Correction,

@@ -53,6 +53,9 @@ public sealed record AssignIdentifierResult(Guid UnitId, Guid IdentifierId, stri
 /// <summary>One approval attached to a correction; roles are recorded as evidence, never inferred later.</summary>
 public sealed record CorrectionApprover(string UserRef, IReadOnlyList<string> Roles);
 
+/// <summary>Who asks to commit a correction and the tenant roles established by its trusted entry point.</summary>
+public sealed record CorrectionCommitter(string UserRef, IReadOnlyList<string> Roles);
+
 /// <summary>Metadata shared by every correction command and every ledger fact it writes.</summary>
 public sealed record CorrectionMetadata(
     Guid CorrectionId,
@@ -71,6 +74,39 @@ public sealed record CorrectionMetadata(
 public sealed record CorrectIdentifier(Guid CommandId, Guid UnitId, string IdentifierType, string NewRawValue, string Reason, DateTime EventTime, string ActorRef, Guid LegalEntityId, string? ApproverRef = null, string? Note = null, Guid? IssuerPartyRef = null, string? Qualifier = null, CorrectionMetadata? Correction = null);
 
 public sealed record CorrectIdentifierResult(Guid UnitId, Guid SupersededIdentifierId, Guid NewIdentifierId, string OldNormalisedValue, string NewNormalisedValue, Guid CorrectionId = default);
+
+/// <summary>
+/// Correct two units whose identifiers were cross-recorded. Both current rows close and both values reopen on the
+/// opposite unit in one transaction; <see cref="CorrectionMetadata.CorrectsCorrectionId"/> names an earlier swap when
+/// this swap reverses it.
+/// </summary>
+public sealed record SwapIdentifiers(
+    Guid CommandId,
+    Guid FirstUnitId,
+    Guid SecondUnitId,
+    string IdentifierType,
+    string Reason,
+    DateTime EventTime,
+    string ActorRef,
+    Guid LegalEntityId,
+    string? Note = null,
+    DocumentRef? Document = null,
+    CorrectionMetadata? Correction = null,
+    CorrectionCommitter? CommittedBy = null,
+    Guid? SwapId = null);
+
+/// <summary>The dry-run path used by the workbench and the approver view; it writes nothing.</summary>
+public sealed record PreviewSwapIdentifiers(SwapIdentifiers Command);
+
+public sealed record SwapIdentifiersResult(
+    Guid SwapId,
+    Guid FirstUnitId,
+    Guid SecondUnitId,
+    Guid FirstNewIdentifierId,
+    Guid SecondNewIdentifierId,
+    Guid CorrectionId,
+    int AssetTagPrintJobsRequested,
+    bool Replayed);
 
 /// <summary>Release a <c>pre_release</c> unit on its release signature; freezes the as-built into BuildRecord version 1 (or the next version after reassembly).</summary>
 public sealed record ReleaseUnit(Guid CommandId, Guid UnitId, DateTime EventTime, string ActorRef, Guid LegalEntityId, string ReleaseSignatureRef, DocumentRef? Document = null, string? Revision = null, Guid? FacilityId = null, string? TestResultsJson = null);

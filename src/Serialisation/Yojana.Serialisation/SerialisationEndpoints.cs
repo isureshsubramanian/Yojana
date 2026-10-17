@@ -42,6 +42,10 @@ public static class SerialisationEndpoints
         units.MapPost("/assign-identifier", (AssignIdentifier command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<AssignIdentifierResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/correct-identifier", (CorrectIdentifier command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<CorrectIdentifierResult>(bus, tenant, command with { ActorRef = Actor(user), Correction = ApiCorrection(command, user) }, ct));
+        units.MapPost("/swap-identifiers/preview", (SwapIdentifiers command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CorrectionPreview>(bus, tenant, new PreviewSwapIdentifiers(ApiSwap(command, user)), ct));
+        units.MapPost("/swap-identifiers", (SwapIdentifiers command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<SwapIdentifiersResult>(bus, tenant, ApiSwap(command, user), ct));
         units.MapPost("/release", (ReleaseUnit command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ReleaseUnitResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/assemble", (RecordAssembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordAssemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/disassemble", (RecordDisassembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordDisassemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
@@ -273,6 +277,9 @@ public static class SerialisationEndpoints
     private static AmendmentCommitter Committer(ClaimsPrincipal user) =>
         new(user.FindFirstValue(YojanaClaim.UserId) ?? throw new InvalidOperationException("A signed-in user carries a user id claim."), user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToList());
 
+    private static CorrectionCommitter CorrectionCommitter(ClaimsPrincipal user) =>
+        new(user.FindFirstValue(YojanaClaim.UserId) ?? throw new InvalidOperationException("A signed-in user carries a user id claim."), user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToList());
+
     private static BulkApproval Approver(ClaimsPrincipal user, BulkApproval? given)
     {
         var committer = Committer(user);
@@ -293,6 +300,24 @@ public static class SerialisationEndpoints
             // Approvers are never taken from the request body: a caller could name anyone, with any roles. The legacy
             // ApproverRef keeps its P1 meaning; server-recorded approvals arrive with the workbench approval flow (P3-T16).
             null);
+    }
+
+    private static SwapIdentifiers ApiSwap(SwapIdentifiers command, ClaimsPrincipal user)
+    {
+        var actor = Actor(user);
+        var supplied = command.Correction;
+        var correction = new CorrectionMetadata(
+            supplied?.CorrectionId ?? command.CommandId,
+            supplied?.ReasonCode ?? command.Reason,
+            supplied?.Note ?? command.Note,
+            supplied?.EvidenceRefs ?? [],
+            supplied?.InitiatedVia ?? CorrectionInitiatedVia.Api,
+            supplied?.CorrectsCorrectionId,
+            InitiatingRole(user),
+            // Direct API input can never manufacture an approval. P3-T16's approver flow supplies server-recorded
+            // approvals after showing this same preview.
+            null);
+        return command with { ActorRef = actor, Correction = correction, CommittedBy = CorrectionCommitter(user) };
     }
 
     private static string InitiatingRole(ClaimsPrincipal user)

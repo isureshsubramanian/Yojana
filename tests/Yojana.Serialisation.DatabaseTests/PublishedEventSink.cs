@@ -8,6 +8,7 @@ public static class PublishedEventSink
 {
     public static readonly ConcurrentQueue<IPublishedUnitEvent> Received = new();
     public static readonly ConcurrentQueue<IPublishedSummaryEvent> Summaries = new();
+    public static readonly ConcurrentQueue<AssetTagPrintJobRequested> PrintJobRequests = new();
 
     public static Task<IReadOnlyList<T>> WaitForAsync<T>(Func<T, bool> match, int count, TimeSpan timeout) where T : IPublishedUnitEvent
     {
@@ -52,4 +53,5 @@ public static class PublishedEventSinkHandler
     public static void Handle(UnitAllocationReassigned e) => PublishedEventSink.Summaries.Enqueue(e);
     public static void Handle(DocumentSerialsCorrected e) => PublishedEventSink.Summaries.Enqueue(e);
     public static void Handle(OwnershipSourceDocumentCorrected e) => PublishedEventSink.Summaries.Enqueue(e);
+    public static void Handle(AssetTagPrintJobRequested e) => PublishedEventSink.PrintJobRequests.Enqueue(e);
 }
