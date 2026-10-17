@@ -143,6 +143,47 @@ public sealed record AssignItem(Guid CommandId, Guid UnitId, Guid NewItemId, str
 
 public sealed record AssignItemResult(Guid UnitId, Guid ClosedAssignmentId, Guid NewAssignmentId, Guid PreviousItemId, Guid NewItemId);
 
+/// <summary>Who commits a correction and the tenant roles proven by the caller; HTTP endpoints replace both from claims.</summary>
+public sealed record CorrectionCommitter(string UserRef, IReadOnlyList<string> Roles);
+
+/// <summary>One warranty-family policy selection changed because the unit's corrected item differs.</summary>
+public sealed record CorrectedItemWarrantyPolicy(string CoverageFamily, string? PreviousPolicyCode, string? CorrectedPolicyCode);
+
+/// <summary>
+/// Correct a unit recorded against the wrong item (ADR-0001 case 118). The current item assignment is closed and a
+/// correction assignment is opened. Customer-owned units retain their Sales and Finance documents, gain a
+/// <c>document_mismatch</c> flag and raise a finance-review obligation; all other units request stock reclassification.
+/// </summary>
+public sealed record CorrectItem(
+    Guid CommandId,
+    Guid UnitId,
+    Guid CorrectedItemId,
+    string Reason,
+    DateTime EventTime,
+    string ActorRef,
+    Guid LegalEntityId,
+    CorrectionMetadata Correction,
+    CorrectionCommitter CommittedBy,
+    Guid? CorrectedModelVersionId = null);
+
+/// <summary>Runs the same CorrectItem planning and approval checks without writing.</summary>
+public sealed record PreviewCorrectItem(CorrectItem Command);
+
+public sealed record CorrectItemResult(
+    Guid UnitId,
+    Guid PreviousAssignmentId,
+    Guid NewAssignmentId,
+    Guid PreviousItemId,
+    Guid CorrectedItemId,
+    bool Sold,
+    bool DocumentMismatch,
+    string? InventoryReclassificationRef,
+    bool FinanceReviewRequired,
+    IReadOnlyList<CorrectedItemWarrantyPolicy> WarrantyPolicyChanges,
+    Guid CorrectionId,
+    Guid EventId,
+    bool Replayed);
+
 /// <summary>Who the unit belongs to from now (ADR-0001 CustodyEpisode, ownership transitions). Closes the open ownership row in the same event when one exists (a transfer is one transaction).</summary>
 public sealed record OpenOwnership(
     Guid CommandId, Guid UnitId, Guid PartyRef, string PartyType, string Reason, DateTime EventTime, string ActorRef, Guid LegalEntityId,

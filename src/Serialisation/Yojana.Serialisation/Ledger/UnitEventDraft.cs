@@ -97,6 +97,10 @@ public sealed record CurrentStateDelta
 
     public Guid? ModelVersionId { get; init; }
 
+    /// <summary>Explicitly clears a model version; null <see cref="ModelVersionId"/> otherwise means unchanged.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ClearModelVersionId { get; init; }
+
     public Guid? LotId { get; init; }
 
     /// <summary>Custody side; <see cref="Optional{T}"/> distinguishes "unchanged" from "cleared".</summary>

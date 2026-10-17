@@ -30,6 +30,7 @@ public static class OverlayFlag
     public const string CloneSeen = "clone_seen";
     public const string Recalled = "recalled";
     public const string AuthenticityFailed = "authenticity_failed";
+    public const string DocumentMismatch = "document_mismatch";
 }
 
 /// <summary>How a unit came into the tenant's world.</summary>
@@ -107,6 +108,7 @@ public static class ItemAssignmentReason
     public const string Upgrade = "upgrade";
     public const string Conversion = "conversion";
     public const string Relabel = "relabel";
+    public const string Correction = "correction";
 }
 
 /// <summary>AssemblyLink relation between parent and child (Identity rule 8).</summary>
@@ -218,6 +220,7 @@ public static class UnitEventType
     public const string IdentifierAssigned = "unit.identifier_assigned";
     public const string IdentifierCorrected = "unit.identifier_corrected";
     public const string ItemAssigned = "unit.item_assigned";
+    public const string ItemCorrected = "unit.item_corrected";
     public const string Assembled = "unit.assembled";
     public const string Disassembled = "unit.disassembled";
     /// <summary>On the child: it went into a parent.</summary>

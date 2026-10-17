@@ -76,6 +76,16 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     GuidOrNull(before, "identifier_id") ?? Guid.Empty, GuidOrNull(after, "identifier_id") ?? Guid.Empty, Str(a, "approver_ref"));
             }
 
+            case UnitEventType.ItemCorrected:
+            {
+                var before = a?.GetProperty("before");
+                var after = a?.GetProperty("after");
+                return new UnitItemCorrected(Header(UnitItemCorrected.Schema, UnitItemCorrected.Version), Correction(a),
+                    GuidOrNull(before, "item_id") ?? Guid.Empty, GuidOrNull(after, "item_id") ?? Guid.Empty,
+                    GuidOrNull(before, "assignment_id") ?? Guid.Empty, GuidOrNull(after, "assignment_id") ?? Guid.Empty,
+                    Bool(a, "document_mismatch"), Str(a, "inventory_reclassification_ref"), Bool(a, "warranty_policy_changed"));
+            }
+
             case UnitEventType.OwnershipOpened or UnitEventType.OwnershipTransferred:
                 return new OwnershipOpened(Header(OwnershipOpened.Schema, OwnershipOpened.Version), GuidOrNull(a, "episode_id") ?? Guid.Empty, GuidOrNull(a, "party_ref") ?? Guid.Empty, Str(a, "party_type") ?? "", Str(a, "reason") ?? "", Str(a, "source") ?? "", Str(a, "confidence") ?? "", Str(a, "customer_po_ref"), Str(a, "customer_item_ref"), GuidOrNull(a, "previous_episode_id"));
             case UnitEventType.OwnershipClosed:
@@ -150,6 +160,8 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
 
     private static int? Int(JsonElement? element, string name) => element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt32() : null;
 
+    private static bool Bool(JsonElement? element, string name) => element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.True;
+
     private static DateOnly? Date(JsonElement? element, string name) => Str(element, name) is { } text && DateOnly.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out var date) ? date : null;
 
     private static List<Guid> Guids(JsonElement element, string name) => element.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Array ? p.EnumerateArray().Select(i => i.GetGuid()).Order().ToList() : [];
@@ -169,6 +181,15 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
     }
 
     private static Guid? GuidOrNull(JsonElement? element, string name) => element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String && Guid.TryParse(p.GetString(), out var g) ? g : null;
+
+    private static PublishedCorrection Correction(JsonElement? element)
+    {
+        var approvers = element is { ValueKind: JsonValueKind.Object } root && root.TryGetProperty("approvers", out var values) && values.ValueKind == JsonValueKind.Array
+            ? values.EnumerateArray().Select(value => Str(value, "user_ref")).OfType<string>().ToList()
+            : [];
+        return new PublishedCorrection(GuidOrNull(element, "correction_id") ?? Guid.Empty, Str(element, "reason_code") ?? "",
+            Str(element, "initiated_via") ?? "", GuidOrNull(element, "corrects_correction_id"), approvers);
+    }
 
     private static List<PublishedIdentifier> Identifiers(JsonElement? element)
     {

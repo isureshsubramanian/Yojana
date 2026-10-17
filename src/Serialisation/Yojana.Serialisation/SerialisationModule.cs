@@ -126,6 +126,8 @@ public static class SerialisationModule
         builder.Services.AddSingleton<InMemoryItemPorts>();
         builder.Services.TryAddSingleton<IItemQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());
         builder.Services.TryAddSingleton<IBomQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());
+        builder.Services.AddSingleton<InMemoryStockReclassificationPort>();
+        builder.Services.TryAddSingleton<IStockReclassificationPort>(sp => sp.GetRequiredService<InMemoryStockReclassificationPort>());
         builder.Services.AddSingleton<InMemoryWarrantyPorts>();
         builder.Services.TryAddSingleton<IItemPolicyPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
         builder.Services.TryAddSingleton<ICustomerContractPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
