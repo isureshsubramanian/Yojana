@@ -99,6 +99,16 @@ public static class AmendEntitlementHandler
                 : new CommandRefusedException("reason_not_system", $"The system applies only system reasons; '{command.ReasonCode}' is committed by a person.");
         }
 
+        if (command.ReasonCode == AmendmentReason.StatutoryExtension)
+        {
+            var rootId = entitlement.RootEntitlementId ?? entitlement.EntitlementId;
+            var alreadyApplied = await db.Entitlements.AnyAsync(e => e.TenantId == tenantId
+                && (e.EntitlementId == rootId || e.RootEntitlementId == rootId)
+                && e.StatutoryExtensionApplied, cancellationToken);
+            if (alreadyApplied)
+                throw new CommandRefusedException("statutory_extension_already_applied", "The statutory repair extension was already applied on this entitlement chain.");
+        }
+
         if (required.SourceDocument && command.SourceDocument is null)
         {
             throw new CommandRefusedException("source_document_required", $"A '{command.ReasonCode}' amendment cites its source document.", "attach the purchase document, or choose the reason that fits");
@@ -159,6 +169,7 @@ public static class AmendEntitlementHandler
         entitlement.DurationUnit = newTerm.Unit;
         entitlement.EndAdjustmentDays = adjustment;
         entitlement.EndDate = newEnd;
+        if (command.ReasonCode == AmendmentReason.StatutoryExtension) entitlement.StatutoryExtensionApplied = true;
         if (command.NewCoverage is { } applied) entitlement.Coverage = JsonSerializer.Serialize(applied, LedgerJson.Options);
 
         await ledger.AppendAsync(entitlement, EntitlementEventType.Amended, key, command.EventTime, command.ActorRef, new
