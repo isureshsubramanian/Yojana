@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/unit.partinstalled.json",
+  "title": "Unit.PartInstalled",
+  "type": "object",
+  "required": ["header", "parent_unit_id", "assembly_link_id", "item_id", "relation"],
+  "properties": {
+    "header": { "type": "object" },
+    "parent_unit_id": { "type": "string", "format": "uuid" },
+    "assembly_link_id": { "type": "string", "format": "uuid" },
+    "item_id": { "type": "string", "format": "uuid" },
+    "relation": { "type": "string" },
+    "slot": { "type": ["string", "null"] }
+  }
+}

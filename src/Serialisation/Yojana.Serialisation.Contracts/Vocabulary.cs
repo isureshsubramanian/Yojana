@@ -210,6 +210,7 @@ public static class EpisodeReason
     public const string Receipt = "receipt";
     public const string Production = "production";
     public const string DocumentCorrection = "document_correction";
+    public const string ServiceInstallation = "service_installation";
 }
 
 public static class EpisodeSource
@@ -223,6 +224,7 @@ public static class EpisodeSource
     public const string CarrierPod = "carrier_pod";
     public const string Migration = "migration";
     public const string Manufacturing = "manufacturing";
+    public const string Service = "service";
 }
 
 public static class Confidence

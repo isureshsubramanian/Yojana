@@ -936,6 +936,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("claim_id");
 
+                    b.Property<Guid?>("CoverageDecisionRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("coverage_decision_ref");
+
                     b.Property<string>("CoverageFamily")
                         .IsRequired()
                         .HasMaxLength(40)
@@ -1149,6 +1153,99 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ix_correction_record_unit_tenant_id_item_id_correction_id");
 
                     b.ToTable("correction_record_unit", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CoverageDecision", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CoverageDecisionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("coverage_decision_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<string>("AfterDecision")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("after_decision");
+
+                    b.Property<string>("BeforeDecision")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("before_decision");
+
+                    b.Property<DateTime>("DecidedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("decided_at");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("SourceEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_event_id");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<Guid>("WorkId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("work_id");
+
+                    b.Property<Guid?>("WorkLineId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("work_line_id");
+
+                    b.Property<Guid>("WorkLineKey")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("work_line_key");
+
+                    b.Property<string>("WorkType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("work_type");
+
+                    b.HasKey("TenantId", "CoverageDecisionId")
+                        .HasName("pk_coverage_decision");
+
+                    b.HasIndex("TenantId", "UnitId", "DecidedAt")
+                        .HasDatabaseName("ix_coverage_decision_tenant_id_unit_id_decided_at");
+
+                    b.HasIndex("TenantId", "SourceEventId", "WorkType", "WorkId", "WorkLineKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_coverage_decision_tenant_id_source_event_id_work_type_work_id_work_line_key");
+
+                    b.HasIndex("TenantId", "WorkType", "WorkId", "WorkLineId", "DecidedAt")
+                        .HasDatabaseName("ix_coverage_decision_tenant_id_work_type_work_id_work_line_id_decided_at");
+
+                    b.ToTable("coverage_decision", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_coverage_decision_after_json", "ISJSON(after_decision) = 1");
+
+                            t.HasCheckConstraint("ck_coverage_decision_before_json", "ISJSON(before_decision) = 1");
+
+                            t.HasCheckConstraint("ck_coverage_decision_reason", "reason IN ('entitlement_changed')");
+
+                            t.HasCheckConstraint("ck_coverage_decision_work_type", "work_type IN ('rma', 'claim', 'service_order')");
+                        });
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CoverageFamily", b =>
@@ -1480,6 +1577,14 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(10)")
                         .HasColumnName("end_of_month_rule");
 
+                    b.Property<Guid?>("InstallationLinkId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("installation_link_id");
+
+                    b.Property<Guid?>("InstalledParentUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("installed_parent_unit_id");
+
                     b.Property<Guid?>("MergedFromUnitId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("merged_from_unit_id");
@@ -1590,6 +1695,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(60)")
                         .HasColumnName("scope_item_class");
 
+                    b.Property<Guid?>("ServiceParentEntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("service_parent_entitlement_id");
+
                     b.Property<Guid?>("SourceDocumentId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("source_document_id");
@@ -1602,6 +1711,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)")
                         .HasColumnName("source_document_type");
+
+                    b.Property<Guid?>("SourceEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_event_id");
 
                     b.Property<string>("StartBasis")
                         .HasMaxLength(40)
@@ -1683,11 +1796,19 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "RootEntitlementId")
                         .HasDatabaseName("ix_entitlement_tenant_id_root_entitlement_id");
 
+                    b.HasIndex("TenantId", "InstalledParentUnitId", "InstallationLinkId")
+                        .HasDatabaseName("ix_entitlement_tenant_id_installed_parent_unit_id_installation_link_id");
+
                     b.HasIndex("TenantId", "OwnerPartyRef", "Status")
                         .HasDatabaseName("ix_entitlement_tenant_id_owner_party_ref_status");
 
                     b.HasIndex("TenantId", "SourceDocumentType", "SourceDocumentId")
                         .HasDatabaseName("ix_entitlement_tenant_id_source_document_type_source_document_id");
+
+                    b.HasIndex("TenantId", "SourceEventId", "ServiceParentEntitlementId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_entitlement_tenant_id_source_event_id_service_parent_entitlement_id")
+                        .HasFilter("[source_event_id] IS NOT NULL AND [service_parent_entitlement_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "UnitId", "CoverageFamily")
                         .IsUnique()
@@ -3848,6 +3969,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)")
                         .HasColumnName("condition_grade");
+
+                    b.Property<Guid?>("CoverageDecisionRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("coverage_decision_ref");
 
                     b.Property<string>("CoverageFamily")
                         .IsRequired()

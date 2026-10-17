@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/coverage.decisionchanged.json",
+  "title": "Coverage.DecisionChanged",
+  "type": "object",
+  "required": ["header", "coverage_decision_id", "reason", "work_type", "work_id", "before", "after"],
+  "properties": {
+    "header": { "type": "object" },
+    "coverage_decision_id": { "type": "string", "format": "uuid" },
+    "reason": { "type": "string", "const": "entitlement_changed" },
+    "work_type": { "type": "string", "enum": ["rma", "claim", "service_order"] },
+    "work_id": { "type": "string", "format": "uuid" },
+    "work_line_id": { "type": ["string", "null"], "format": "uuid" },
+    "before": { "$ref": "#/$defs/decision" },
+    "after": { "$ref": "#/$defs/decision" }
+  },
+  "$defs": {
+    "decision": {
+      "type": "object",
+      "required": ["coverage_pct", "approved_amount", "coverage_source", "chain_length"],
+      "properties": {
+        "coverage_pct": { "type": "number" },
+        "approved_amount": { "type": "number" },
+        "coverage_source": { "type": "string" },
+        "entitlement_id": { "type": ["string", "null"], "format": "uuid" },
+        "policy_version_id": { "type": ["string", "null"], "format": "uuid" },
+        "denial_reason": { "type": ["string", "null"] },
+        "chain_length": { "type": "integer" }
+      }
+    }
+  }
+}

@@ -60,6 +60,7 @@ public sealed class RmaLine : ITenantScoped
     public string? Disposition { get; set; }
     public Guid? ReplacementIntentId { get; set; }
     public string? EntitlementClosedReason { get; set; }
+    public Guid? CoverageDecisionRef { get; set; }
 }
 
 public sealed class ReturnReceipt : ITenantScoped

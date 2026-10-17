@@ -130,6 +130,11 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                 return new CustodyChanged(Header(CustodyChanged.Schema, CustodyChanged.Version), GuidOrNull(a, "episode_id") ?? Guid.Empty, Str(to, "location_kind") ?? "", GuidOrNull(to, "location_id"), GuidOrNull(to, "party_ref"), Str(to, "party_type"), Str(from, "location_kind"), GuidOrNull(from, "location_id"), Str(a, "reason") ?? "", e.EventType);
             }
 
+            case UnitEventType.Installed:
+                return new UnitPartInstalled(Header(UnitPartInstalled.Schema, UnitPartInstalled.Version),
+                    GuidOrNull(a, "parent_unit_id") ?? Guid.Empty, GuidOrNull(a, "link_id") ?? Guid.Empty,
+                    GuidOrNull(a, "child_item_id") ?? Guid.Empty, Str(a, "relation") ?? "component", Str(a, "slot"));
+
             case EntitlementEventType.Created:
                 if (Str(a, "direction") == EntitlementDirection.Inbound) return null;
                 if (Str(a, "provenance") == EntitlementProvenance.Backfilled)
@@ -183,6 +188,16 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
             case EntitlementEventType.Closed or EntitlementEventType.Voided:
                 return new EntitlementClosed(Header(EntitlementClosed.Schema, EntitlementClosed.Version), GuidOrNull(a, "entitlement_id") ?? Guid.Empty, Str(a, "coverage_family") ?? "", Str(a, "reason") ?? "",
                     Date(a, "effective") ?? DateOnly.FromDateTime(e.EventTime), GuidOrNull(a, "successor_entitlement_id"), GuidOrNull(a, "successor_unit_id"));
+            case CoverageEventType.DecisionChanged:
+                return new CoverageDecisionChanged(Header(CoverageDecisionChanged.Schema, CoverageDecisionChanged.Version),
+                    GuidOrNull(a, "coverage_decision_id") ?? Guid.Empty, Str(a, "reason") ?? "", Str(a, "work_type") ?? "",
+                    GuidOrNull(a, "work_id") ?? Guid.Empty, GuidOrNull(a, "work_line_id"),
+                    a?.TryGetProperty("before", out var coverageBefore) == true
+                        ? coverageBefore.Deserialize<CoverageDecisionSnapshot>(LedgerJson.Options)!
+                        : new CoverageDecisionSnapshot(0, 0, ClaimCoverageSource.Chargeable, null, null, null, 0),
+                    a?.TryGetProperty("after", out var coverageAfter) == true
+                        ? coverageAfter.Deserialize<CoverageDecisionSnapshot>(LedgerJson.Options)!
+                        : new CoverageDecisionSnapshot(0, 0, ClaimCoverageSource.Chargeable, null, null, null, 0));
             case ClaimEventType.Adjudicated:
                 return new ClaimAdjudicated(Header(ClaimAdjudicated.Schema, ClaimAdjudicated.Version), GuidOrNull(a, "claim_id") ?? Guid.Empty,
                     GuidOrNull(a, "cohort_id"), Str(a, "coverage_source") ?? ClaimCoverageSource.Chargeable,

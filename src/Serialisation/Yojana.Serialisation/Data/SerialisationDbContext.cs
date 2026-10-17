@@ -107,6 +107,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<ClaimEvidence> ClaimEvidence => Set<ClaimEvidence>();
 
+    public DbSet<CoverageDecision> CoverageDecisions => Set<CoverageDecision>();
+
     public DbSet<RecoveryClaim> RecoveryClaims => Set<RecoveryClaim>();
     public DbSet<NumberSeries> NumberSeries => Set<NumberSeries>();
 
@@ -584,6 +586,9 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.CreatedAt });
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.CoverageFamily, e.Status, e.ClosedReason });
             b.HasIndex(e => new { e.TenantId, e.RootEntitlementId });
+            b.HasIndex(e => new { e.TenantId, e.SourceEventId, e.ServiceParentEntitlementId }).IsUnique()
+                .HasFilter("[source_event_id] IS NOT NULL AND [service_parent_entitlement_id] IS NOT NULL");
+            b.HasIndex(e => new { e.TenantId, e.InstalledParentUnitId, e.InstallationLinkId });
             b.HasIndex(e => new { e.TenantId, e.OwnerPartyRef, e.Status });
             b.HasIndex(e => new { e.TenantId, e.PolicyVersionId });
             b.HasIndex(e => new { e.TenantId, e.SourceDocumentType, e.SourceDocumentId });
@@ -812,6 +817,26 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(e => e.ActorRef).HasMaxLength(200);
             b.HasIndex(e => new { e.TenantId, e.ClaimId, e.RecordedAt });
             b.HasOne<Claim>().WithMany().HasForeignKey(e => new { e.TenantId, e.ClaimId }).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // P5-T15: policy re-adjudication history. Work references remain logical because RMA, Claims and the future
+        // Service module own their lifecycles independently; the source event plus work line is the replay boundary.
+        modelBuilder.Entity<CoverageDecision>(b =>
+        {
+            b.ToTable("coverage_decision", t =>
+            {
+                t.HasCheckConstraint("ck_coverage_decision_before_json", "ISJSON(before_decision) = 1");
+                t.HasCheckConstraint("ck_coverage_decision_after_json", "ISJSON(after_decision) = 1");
+                t.HasCheckConstraint("ck_coverage_decision_reason", "reason IN ('entitlement_changed')");
+                t.HasCheckConstraint("ck_coverage_decision_work_type", "work_type IN ('rma', 'claim', 'service_order')");
+            });
+            b.HasKey(d => new { d.TenantId, d.CoverageDecisionId });
+            b.Property(d => d.Reason).HasMaxLength(40).IsUnicode(false);
+            b.Property(d => d.WorkType).HasMaxLength(30).IsUnicode(false);
+            b.Property(d => d.ActorRef).HasMaxLength(200);
+            b.HasIndex(d => new { d.TenantId, d.SourceEventId, d.WorkType, d.WorkId, d.WorkLineKey }).IsUnique();
+            b.HasIndex(d => new { d.TenantId, d.UnitId, d.DecidedAt });
+            b.HasIndex(d => new { d.TenantId, d.WorkType, d.WorkId, d.WorkLineId, d.DecidedAt });
         });
 
         modelBuilder.Entity<RecoveryClaim>(b =>
