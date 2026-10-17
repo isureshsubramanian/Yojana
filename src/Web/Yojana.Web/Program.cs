@@ -16,6 +16,7 @@ using Yojana.Platform.Seeding;
 using Yojana.Platform.Security;
 using Yojana.Platform.Shell;
 using Yojana.Serialisation;
+using Yojana.Serialisation.Ports;
 using Yojana.Web;
 
 // The web client (web/, MOD-02) is built by esbuild into web/dist and copied into this host's output as
@@ -54,6 +55,20 @@ if (args.Contains("--migrate") || args.Contains("--seed"))
     }
 
     return;
+}
+
+// Development composition only: real item, party and document modules replace the same narrow name ports.
+// Production never opens or registers this catalogue, even if the file is accidentally present beside the host.
+var referenceCounts = DevReferenceCatalogue.Load(
+    app.Environment,
+    Path.Combine(AppContext.BaseDirectory, "DevData", "reference-labels.json"),
+    app.Services.GetRequiredService<InMemoryItemNamePort>(),
+    app.Services.GetRequiredService<InMemoryPartyNamePort>(),
+    app.Services.GetRequiredService<InMemoryDocumentNumberRegistry>());
+if (app.Environment.IsDevelopment())
+{
+    app.Logger.LogInformation("Loaded development reference catalogue: {Items} items, {Parties} parties, {Documents} documents",
+        referenceCounts.Items, referenceCounts.Parties, referenceCounts.Documents);
 }
 
 // Hashed client assets are immutable; index.html must always be revalidated so a new build is picked up.
