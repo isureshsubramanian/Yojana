@@ -5,6 +5,7 @@
 //   node tools/web-perf/lcp.mjs --base http://localhost:5080 [--budget-ms 2000] [--browser <path>]
 //        [--email admin@dev.yojana.local] [--password ...] [--pages /sign-in,/tenants,/] [--screenshots dir] [--no-throttle]
 //        [--click "<css selector>"]  clicks the first match on each page after LCP is read (e.g. a row, to open its drawer)
+//        [--full]  screenshots the whole page height, not just the viewport
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -115,7 +116,12 @@ for (const page of pages) {
     for (const mode of ["light", "dark"]) {
       await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: mode }] }, sessionId);
       await sleep(250);
+      // --full captures the whole scrolling content (the frame scrolls in <main>, so measure that, not the window).
+      const full = args.full ? JSON.parse((await send("Runtime.evaluate", { expression: "JSON.stringify((() => { const m = document.querySelector('main'); return { w: document.documentElement.clientWidth, h: Math.max(document.documentElement.scrollHeight, (m?.scrollHeight ?? 0) + (m?.getBoundingClientRect().top ?? 0)) }; })())", returnByValue: true }, sessionId)).result.value) : null;
+      if (full) await send("Emulation.setDeviceMetricsOverride", { width: full.w, height: full.h, deviceScaleFactor: 1, mobile: false }, sessionId);
+      if (full) await sleep(300);
       const shot = await send("Page.captureScreenshot", { format: "png" }, sessionId);
+      if (full) await send("Emulation.clearDeviceMetricsOverride", {}, sessionId);
       writeFileSync(join(shots, `${name}-${mode}.png`), Buffer.from(shot.data, "base64"));
     }
     await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] }, sessionId);
