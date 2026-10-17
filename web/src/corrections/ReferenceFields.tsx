@@ -3,11 +3,11 @@ import { api } from "../api/client";
 import { units, type UnitDetail } from "../api/units";
 import { useSession } from "../session/session";
 import {
-  createReferenceStore, documentLabelText, itemLabelText, lotLabelText, partyLabelText,
-  type DocumentReferenceLabel, type ItemReferenceLabel, type PartyReferenceLabel, type ReferenceStore,
+  createReferenceStore, documentLabelText, itemLabelText, locationLabelText, lotLabelText, partyLabelText,
+  type DocumentReferenceLabel, type ItemReferenceLabel, type LocationReferenceLabel, type PartyReferenceLabel, type ReferenceStore,
 } from "./referenceStore";
 
-// Reference fields: how a correction screen asks for, and shows, an item, a business partner or a document. Screens use
+// Reference fields: how a screen asks for, and shows, an item, business partner, location or document. Screens use
 // these instead of raw id inputs so the user works with codes, names and document numbers; the values crossing the
 // component boundary remain stable ids and DocumentRefs.
 
@@ -17,10 +17,11 @@ type ReferenceNamesResponse = {
   items: Record<string, ItemReferenceLabel>;
   parties: Record<string, PartyReferenceLabel>;
   documents: Record<string, DocumentReferenceLabel>;
+  locations: Record<string, LocationReferenceLabel>;
 };
 
 type SearchResult = {
-  kind: "item" | "party" | "document" | "unit"; id: string; type: string | null; code: string | null; name: string | null;
+  kind: "item" | "party" | "location" | "document" | "unit"; id: string; type: string | null; code: string | null; name: string | null;
   partyType: string | null; number: string | null; status: string | null; itemId: string | null;
 };
 
@@ -37,12 +38,13 @@ function storeFor(tenant: string): ReferenceStore {
 }
 
 /** Labels for references a screen shows. Pass every reference the screen renders; each label falls back to a short id until the name arrives. */
-export function useReferenceNames(references: { items?: readonly (string | null | undefined)[]; parties?: readonly (string | null | undefined)[]; documents?: readonly (DocumentValue | null | undefined)[] }): {
+export function useReferenceNames(references: { items?: readonly (string | null | undefined)[]; parties?: readonly (string | null | undefined)[]; documents?: readonly (DocumentValue | null | undefined)[]; locations?: readonly (string | null | undefined)[] }): {
   item: (id: string | null | undefined) => string;
   itemName: (id: string | null | undefined) => string | null;
   party: (id: string | null | undefined) => string;
   document: (doc: DocumentValue | null | undefined) => string;
   lot: (doc: DocumentValue | null | undefined) => string;
+  location: (id: string | null | undefined) => string;
 } {
   const session = useSession();
   const store = storeFor(session.tenant?.code ?? "");
@@ -52,13 +54,15 @@ export function useReferenceNames(references: { items?: readonly (string | null 
   const itemKey = [...(references.items ?? []), ...lotItemIds].filter(Boolean).join("\n");
   const partyKey = (references.parties ?? []).filter(Boolean).join("\n");
   const documentKey = (references.documents ?? []).filter(Boolean).map((document) => `${document!.type}:${document!.id}`).join("\n");
+  const locationKey = (references.locations ?? []).filter(Boolean).join("\n");
   useEffect(() => {
     store.request({
       items: itemKey ? itemKey.split("\n") : [],
       parties: partyKey ? partyKey.split("\n") : [],
       documents: documentKey ? documentKey.split("\n").map((value) => { const colon = value.indexOf(":"); return { type: value.slice(0, colon), id: value.slice(colon + 1) }; }) : [],
+      locations: locationKey ? locationKey.split("\n") : [],
     });
-  }, [store, itemKey, partyKey, documentKey]);
+  }, [store, itemKey, partyKey, documentKey, locationKey]);
   return {
     item: useCallback((id) => itemLabelText(id, id ? store.item(id) : undefined), [store, version]),
     itemName: useCallback((id) => id ? store.item(id)?.name ?? store.item(id)?.code ?? null : null, [store, version]),
@@ -68,6 +72,7 @@ export function useReferenceNames(references: { items?: readonly (string | null 
       const documentLabel = document ? store.document(document) : undefined;
       return lotLabelText(document, documentLabel, documentLabel?.itemId ? store.item(documentLabel.itemId) : undefined);
     }, [store, version]),
+    location: useCallback((id) => locationLabelText(id, id ? store.location(id) : undefined), [store, version]),
   };
 }
 
@@ -85,6 +90,13 @@ export function PartyField({ id, label, value, onChange, optional, hint }: Field
   const names = useReferenceNames({ parties: [value] });
   return <ReferencePicker id={id} label={label} value={value} selectedLabel={names.party(value)} onChange={onChange} optional={optional} hint={hint}
     kind="party" placeholder="Search by partner code or name" noResult={(query) => `No business partner ${query} found`} />;
+}
+
+/** A stock or service location, chosen by code or name; the value is the location id. */
+export function LocationField({ id, label, value, onChange, optional, hint, kind = "quarantine" }: FieldProps<string> & { kind?: string | undefined }) {
+  const names = useReferenceNames({ locations: [value] });
+  return <ReferencePicker id={id} label={label} value={value} selectedLabel={names.location(value)} onChange={onChange} optional={optional} hint={hint}
+    kind="location" locationKind={kind} acceptGuid={false} placeholder="Search by location code or name" noResult={(query) => `No ${friendlyType(kind)} location ${query} found`} />;
 }
 
 /** A document of one of the given types (e.g. ["production_order"]), chosen by its number; the value is the document reference. */
@@ -129,9 +141,10 @@ export function LotField({ id, label, value, onChange, optional, hint }: FieldPr
     onChange={(document) => onChange(document?.id ?? null)} optional={optional} hint={hint} />;
 }
 
-function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, hint, kind, documentType, placeholder, noResult, hideLabel = false }: {
+function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, hint, kind, documentType, locationKind, acceptGuid = true, placeholder, noResult, hideLabel = false }: {
   id: string; label: string; value: string | null; selectedLabel: string; onChange: (value: string | null) => void; optional: boolean | undefined; hint: string | undefined;
-  kind: "item" | "party" | "document" | "unit"; documentType?: string; placeholder: string; noResult: (query: string) => string; hideLabel?: boolean;
+  kind: "item" | "party" | "location" | "document" | "unit"; documentType?: string; locationKind?: string; acceptGuid?: boolean;
+  placeholder: string; noResult: (query: string) => string; hideLabel?: boolean;
 }) {
   const listId = `${useId().replace(/:/g, "")}-reference-options`;
   const [query, setQuery] = useState("");
@@ -146,8 +159,9 @@ function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, 
   const search = useCallback(async (text: string, signal: AbortSignal) => {
     const params = new URLSearchParams({ kind, q: text, take: "10" });
     if (documentType) params.set("type", documentType);
+    if (locationKind) params.set("locationKind", locationKind);
     return (await api<{ results: SearchResult[] }>(`/api/serialisation/reference-search?${params}`, { signal })).results;
-  }, [kind, documentType]);
+  }, [kind, documentType, locationKind]);
 
   useEffect(() => {
     const text = query.trim();
@@ -168,7 +182,7 @@ function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, 
   const resolveEntry = async () => {
     const text = query.trim();
     if (!text) { if (optional) onChange(null); return; }
-    if (GUID.test(text)) { onChange(text); setQuery(""); setOpen(false); setMessage(null); return; }
+    if (acceptGuid && GUID.test(text)) { onChange(text); setQuery(""); setOpen(false); setMessage(null); return; }
     let choices = results;
     if (!choices.length) {
       request.current?.abort();
@@ -212,12 +226,14 @@ function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, 
 function resultLabel(result: SearchResult, itemName: string | null): string {
   if (result.kind === "item") return result.name ? `${result.code} · ${result.name}` : result.code ?? result.id;
   if (result.kind === "party") return result.name ? `${result.name} (${result.code})` : result.code ?? result.id;
+  if (result.kind === "location") return result.name ? `${result.code} · ${result.name}` : result.code ?? result.id;
   const number = result.number ?? result.id;
   return (result.type === "lot" || result.kind === "unit") && itemName ? `${number} · ${itemName}` : number;
 }
 
 function resultMeta(result: SearchResult): string | null {
   if (result.kind === "party") return result.partyType ? friendlyType(result.partyType) : null;
+  if (result.kind === "location") return result.type ? friendlyType(result.type) : null;
   if (result.kind === "document" || result.kind === "unit") return result.status ? friendlyType(result.status) : null;
   return null;
 }

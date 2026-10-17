@@ -66,11 +66,12 @@ var referenceCounts = DevReferenceCatalogue.Load(
     app.Services.GetRequiredService<InMemoryItemNamePort>(),
     app.Services.GetRequiredService<InMemoryWarrantyPorts>(),
     app.Services.GetRequiredService<InMemoryPartyNamePort>(),
-    app.Services.GetRequiredService<InMemoryDocumentNumberRegistry>());
+    app.Services.GetRequiredService<InMemoryDocumentNumberRegistry>(),
+    app.Services.GetRequiredService<InMemoryLocationNameRegistry>());
 if (app.Environment.IsDevelopment())
 {
-    app.Logger.LogInformation("Loaded development reference catalogue: {Items} items, {Parties} parties, {Documents} documents",
-        referenceCounts.Items, referenceCounts.Parties, referenceCounts.Documents);
+    app.Logger.LogInformation("Loaded development reference catalogue: {Items} items, {Parties} parties, {Documents} documents, {Locations} locations",
+        referenceCounts.Items, referenceCounts.Parties, referenceCounts.Documents, referenceCounts.Locations);
 }
 
 // Hashed client assets are immutable; index.html must always be revalidated so a new build is picked up.

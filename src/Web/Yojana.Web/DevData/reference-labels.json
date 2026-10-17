@@ -74,5 +74,14 @@
     { "id": "7061be89-a2b0-5cda-b70a-0b2616e5b9c4", "type": "lot", "number": "KPL-2511", "itemId": "10000000-0000-0000-0000-000000000016" },
     { "id": "51387d0f-e155-5200-ab70-76c57f13fc75", "type": "lot", "number": "KPL-2601", "itemId": "10000000-0000-0000-0000-000000000016" },
     { "id": "893faec7-6589-5081-8de1-c0b71b62bf32", "type": "lot", "number": "KPL-2410", "itemId": "10000000-0000-0000-0000-000000000016" }
+  ],
+  "locations": [
+    { "id": "40000000-0000-0000-0000-000000000001", "code": "LDS-Q1", "name": "Leeds service centre · quarantine bay Q1", "kind": "quarantine" },
+    { "id": "40000000-0000-0000-0000-000000000002", "code": "LDS-Q2", "name": "Leeds service centre · quarantine bay Q2", "kind": "quarantine" },
+    { "id": "40000000-0000-0000-0000-000000000003", "code": "LDS-Q3", "name": "Leeds service centre · quarantine bay Q3", "kind": "quarantine" },
+    { "id": "40000000-0000-0000-0000-000000000004", "code": "LDS-WA-01", "name": "Leeds service centre · warehouse bin A-01", "kind": "warehouse" },
+    { "id": "40000000-0000-0000-0000-000000000005", "code": "LDS-WA-02", "name": "Leeds service centre · warehouse bin A-02", "kind": "warehouse" },
+    { "id": "40000000-0000-0000-0000-000000000006", "code": "LDS-RB-01", "name": "Leeds service centre · repair bench 1", "kind": "in_repair" },
+    { "id": "40000000-0000-0000-0000-000000000007", "code": "LDS-RB-02", "name": "Leeds service centre · repair bench 2", "kind": "in_repair" }
   ]
 }

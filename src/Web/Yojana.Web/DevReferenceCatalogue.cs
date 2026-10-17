@@ -6,8 +6,8 @@ using Yojana.Serialisation.Ports;
 namespace Yojana.Web;
 
 /// <summary>
-/// Development labels for opaque item, party and document references. A real item/party module and the document-owning
-/// modules replace these in-memory ports; this catalogue is only composition-root data for the development host.
+/// Development labels for opaque item, party, document and location references. Their owning modules replace these
+/// in-memory ports; this catalogue is only composition-root data for the development host.
 /// </summary>
 public static class DevReferenceCatalogue
 {
@@ -20,9 +20,10 @@ public static class DevReferenceCatalogue
         InMemoryItemNamePort items,
         InMemoryWarrantyPorts warranties,
         InMemoryPartyNamePort parties,
-        InMemoryDocumentNumberRegistry documents)
+        InMemoryDocumentNumberRegistry documents,
+        InMemoryLocationNameRegistry locations)
     {
-        if (!environment.IsDevelopment()) return new(0, 0, 0);
+        if (!environment.IsDevelopment()) return new(0, 0, 0, 0);
 
         using var stream = File.OpenRead(path);
         var catalogue = JsonSerializer.Deserialize<DevReferenceCatalogueFile>(stream, JsonOptions)
@@ -30,6 +31,7 @@ public static class DevReferenceCatalogue
         EnsureUnique(catalogue.Items.Select(row => row.Id), "item");
         EnsureUnique(catalogue.Parties.Select(row => row.Id), "party");
         EnsureUnique(catalogue.Documents.Select(row => (row.Type, row.Id)), "document");
+        EnsureUnique(catalogue.Locations.Select(row => row.Id), "location");
 
         foreach (var item in catalogue.Items)
         {
@@ -65,7 +67,14 @@ public static class DevReferenceCatalogue
             documents.Register(new DocumentLabel(new DocumentRef(document.Type, document.Id), document.Number, document.Status, document.ItemId));
         }
 
-        return new(catalogue.Items.Count, catalogue.Parties.Count, catalogue.Documents.Count);
+        foreach (var location in catalogue.Locations)
+        {
+            Require(location.Code, "location code");
+            Require(location.Kind, "location kind");
+            locations.Register(new LocationLabel(location.Id, location.Code, location.Name, location.Kind));
+        }
+
+        return new(catalogue.Items.Count, catalogue.Parties.Count, catalogue.Documents.Count, catalogue.Locations.Count);
     }
 
     private static void EnsureUnique<T>(IEnumerable<T> values, string kind) where T : notnull
@@ -84,7 +93,8 @@ public static class DevReferenceCatalogue
     public sealed record DevReferenceCatalogueFile(
         IReadOnlyList<DevItemLabel> Items,
         IReadOnlyList<DevPartyLabel> Parties,
-        IReadOnlyList<DevDocumentLabel> Documents);
+        IReadOnlyList<DevDocumentLabel> Documents,
+        IReadOnlyList<DevLocationLabel> Locations);
 
     public sealed record DevItemLabel(
         Guid Id,
@@ -111,6 +121,8 @@ public static class DevReferenceCatalogue
     public sealed record DevPartyLabel(Guid Id, string Code, string? Name, string PartyType);
 
     public sealed record DevDocumentLabel(Guid Id, string Type, string Number, string? Status = null, Guid? ItemId = null);
+
+    public sealed record DevLocationLabel(Guid Id, string Code, string? Name, string Kind);
 }
 
-public sealed record DevReferenceCatalogueCounts(int Items, int Parties, int Documents);
+public sealed record DevReferenceCatalogueCounts(int Items, int Parties, int Documents, int Locations);

@@ -216,30 +216,35 @@ public static class SerialisationEndpoints
 
         var serialisationReferences = app.MapGroup("/api/serialisation").RequireAuthorization(YojanaPolicy.TenantMember);
         serialisationReferences.MapPost("/reference-names", async (ReferenceNamesRequest request, IItemNamePort items,
-            IPartyNamePort parties, IDocumentNumberPort documents, CancellationToken ct) =>
+            IPartyNamePort parties, ILocationNamePort locations, IDocumentNumberPort documents, CancellationToken ct) =>
         {
             // Wire-contract cap mirrored by web/src/corrections/referenceStore.ts; change both sides together so its
             // batched requests cannot be refused after an otherwise independent client update.
             const int maximum = 200;
-            if (request.Items.Count > maximum || request.Parties.Count > maximum || request.Documents.Count > maximum)
+            if (request.Items.Count > maximum || request.Parties.Count > maximum || request.Documents.Count > maximum
+                || (request.Locations?.Count ?? 0) > maximum)
             {
                 return Results.Problem(title: "too_many_references",
-                    detail: $"At most {maximum} item, partner and document references resolve in one call.",
+                    detail: $"At most {maximum} item, partner, location and document references resolve in one call.",
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
             var itemLabels = await items.NamesAsync(request.Items.Distinct().ToList(), ct);
             var partyLabels = await parties.NamesAsync(request.Parties.Distinct().ToList(), ct);
+            var locationLabels = await locations.NamesAsync((request.Locations ?? []).Distinct().ToList(), ct);
             var documentLabels = await documents.NumbersAsync(request.Documents
                 .DistinctBy(document => new DocumentKey(document.Type, document.Id)).ToList(), ct);
             return Results.Ok(new ReferenceNamesResponse(
                 itemLabels.ToDictionary(row => row.Key, row => new ItemReferenceView(row.Value.Code, row.Value.Name)),
                 partyLabels.ToDictionary(row => row.Key, row => new PartyReferenceView(row.Value.Code, row.Value.Name, row.Value.PartyType)),
                 documentLabels.ToDictionary(row => $"{row.Key.Type}:{row.Key.Id:D}",
-                    row => new DocumentReferenceView(row.Value.Number, row.Value.Status, row.Value.ItemId))));
+                    row => new DocumentReferenceView(row.Value.Number, row.Value.Status, row.Value.ItemId)),
+                locationLabels.ToDictionary(row => row.Key,
+                    row => new LocationReferenceView(row.Value.Code, row.Value.Name, row.Value.Kind))));
         });
-        serialisationReferences.MapGet("/reference-search", async (string kind, string? type, string? q, int? take,
-            IItemNamePort items, IPartyNamePort parties, IDocumentNumberPort documents, UnitQueries unitQueries, CancellationToken ct) =>
+        serialisationReferences.MapGet("/reference-search", async (string kind, string? type, string? locationKind, string? q, int? take,
+            IItemNamePort items, IPartyNamePort parties, ILocationNamePort locations, IDocumentNumberPort documents,
+            UnitQueries unitQueries, CancellationToken ct) =>
         {
             var text = q?.Trim() ?? "";
             var count = Math.Clamp(take ?? 10, 1, 25);
@@ -252,6 +257,10 @@ public static class SerialisationEndpoints
                 case "party":
                     return Results.Ok(new ReferenceSearchResponse((await parties.SearchAsync(text, count, ct))
                         .Select(label => new ReferenceSearchResult("party", label.PartyRef, Code: label.Code, Name: label.Name, PartyType: label.PartyType)).ToList()));
+                case "location":
+                    return Results.Ok(new ReferenceSearchResponse((await locations.SearchAsync(text, count, locationKind, ct))
+                        .Select(label => new ReferenceSearchResult("location", label.LocationId, Type: label.Kind,
+                            Code: label.Code, Name: label.Name)).ToList()));
                 case "unit":
                     // Units belong to this module, so the picker reads the unit search directly: live identifiers only,
                     // one result per unit, labelled with the identifier as printed.
@@ -267,7 +276,7 @@ public static class SerialisationEndpoints
                     return Results.Problem(title: "document_type_required", detail: "type is required for document search.",
                         statusCode: StatusCodes.Status400BadRequest);
                 default:
-                    return Results.Problem(title: "reference_kind_invalid", detail: "kind must be item, party, document or unit.",
+                    return Results.Problem(title: "reference_kind_invalid", detail: "kind must be item, party, location, document or unit.",
                         statusCode: StatusCodes.Status400BadRequest);
             }
         });
@@ -949,7 +958,8 @@ public static class SerialisationEndpoints
     public sealed record ReferenceNamesRequest(
         IReadOnlyList<Guid> Items,
         IReadOnlyList<Guid> Parties,
-        IReadOnlyList<DocumentRef> Documents);
+        IReadOnlyList<DocumentRef> Documents,
+        IReadOnlyList<Guid>? Locations = null);
 
     public sealed record ItemReferenceView(string Code, string? Name);
 
@@ -957,10 +967,13 @@ public static class SerialisationEndpoints
 
     public sealed record DocumentReferenceView(string Number, string? Status, Guid? ItemId);
 
+    public sealed record LocationReferenceView(string Code, string? Name, string? Kind);
+
     public sealed record ReferenceNamesResponse(
         IReadOnlyDictionary<Guid, ItemReferenceView> Items,
         IReadOnlyDictionary<Guid, PartyReferenceView> Parties,
-        IReadOnlyDictionary<string, DocumentReferenceView> Documents);
+        IReadOnlyDictionary<string, DocumentReferenceView> Documents,
+        IReadOnlyDictionary<Guid, LocationReferenceView> Locations);
 
     public sealed record ReferenceSearchResult(
         string Kind,
