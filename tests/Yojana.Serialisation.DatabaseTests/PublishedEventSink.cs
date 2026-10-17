@@ -71,5 +71,6 @@ public static class PublishedEventSinkHandler
     public static void Handle(UnitAllocationReassigned e) => PublishedEventSink.Summaries.Enqueue(e);
     public static void Handle(DocumentSerialsCorrected e) => PublishedEventSink.Summaries.Enqueue(e);
     public static void Handle(OwnershipSourceDocumentCorrected e) => PublishedEventSink.Summaries.Enqueue(e);
+    public static void Handle(UnitProductionOrderReconciled e) => PublishedEventSink.Summaries.Enqueue(e);
     public static void Handle(AssetTagPrintJobRequested e) => PublishedEventSink.PrintJobRequests.Enqueue(e);
 }

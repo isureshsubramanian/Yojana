@@ -64,6 +64,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<AssignIdentifiersService>();
         builder.Services.AddScoped<LateSerializationPlanner>();
         builder.Services.AddScoped<LateSerializationService>();
+        builder.Services.AddScoped<Manufacturing.ManufacturingContractService>();
         // Coupled to CorrectionApprovalSettings for the same Wolverine constraint documented on that type: replacing
         // this factory with constructor registration exposes PlatformDbContext beside SerialisationDbContext and stops host startup.
         builder.Services.AddScoped(sp => new CorrectionApprovalSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));

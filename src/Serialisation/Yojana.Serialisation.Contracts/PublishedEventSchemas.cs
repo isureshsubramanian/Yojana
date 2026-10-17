@@ -2,7 +2,7 @@ using System.Reflection;
 
 namespace Yojana.Serialisation.Contracts;
 
-/// <summary>The embedded JSON schemas of the published events, by schema name and version.</summary>
+/// <summary>The embedded JSON schemas of published and consumed integration contracts, by schema name and version.</summary>
 public static class PublishedEventSchemas
 {
     public static string Read(string schema, string version)

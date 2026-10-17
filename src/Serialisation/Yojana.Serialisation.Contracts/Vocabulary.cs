@@ -121,6 +121,11 @@ public static class AssemblyRelation
     public const string CoProductSibling = "co_product_sibling";
 }
 
+public static class AssemblyRemovalReason
+{
+    public const string ReverseIssue = "reverse_issue";
+}
+
 /// <summary>How CorrectAsBuilt changes one effective-dated component link.</summary>
 public static class AsBuiltCorrectionChange
 {
@@ -216,6 +221,7 @@ public static class EpisodeSource
     public const string PartnerReport = "partner_report";
     public const string CarrierPod = "carrier_pod";
     public const string Migration = "migration";
+    public const string Manufacturing = "manufacturing";
 }
 
 public static class Confidence
@@ -297,8 +303,9 @@ public static class CorrectionInitiatedVia
     public const string Api = "api";
     public const string Migration = "migration";
     public const string System = "system";
+    public const string Integration = "integration";
 
-    public static readonly IReadOnlyList<string> All = [Workbench, Api, Migration, System];
+    public static readonly IReadOnlyList<string> All = [Workbench, Api, Migration, System, Integration];
 }
 
 /// <summary>The initiating-role dimension of the correction-volume KPI.</summary>

@@ -1563,6 +1563,50 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ManufacturingMessageReceipt", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("message_id");
+
+                    b.Property<string>("MessageType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("message_type");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .HasColumnName("payload_hash");
+
+                    b.Property<DateTime>("ProcessedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("processed_at");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("result_json");
+
+                    b.HasKey("TenantId", "MessageId")
+                        .HasName("pk_manufacturing_message_receipt");
+
+                    b.HasIndex("TenantId", "ProcessedAt")
+                        .HasDatabaseName("ix_manufacturing_message_receipt_tenant_id_processed_at");
+
+                    b.ToTable("manufacturing_message_receipt", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_manufacturing_message_receipt_result_json", "ISJSON(result_json) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PendingShipmentLine", b =>
                 {
                     b.Property<Guid>("TenantId")
