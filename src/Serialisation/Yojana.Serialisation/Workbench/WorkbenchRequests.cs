@@ -415,7 +415,7 @@ public sealed class WorkbenchRequestService(
     private static string? Trim(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim() is { Length: > 2000 } longValue ? longValue[..2000] : value.Trim();
 }
 
-public sealed class WorkbenchRequestQueries(SerialisationDbContext db, ITenantContext tenant)
+public sealed class WorkbenchRequestQueries(SerialisationDbContext db, ITenantContext tenant, IWorkbenchChoiceCatalog catalog)
 {
     public async Task<WorkbenchRequestRow?> GetAsync(Guid requestId, CancellationToken cancellationToken) =>
         await db.WorkbenchRequests.AsNoTracking().FirstOrDefaultAsync(r => r.TenantId == tenant.TenantId && r.RequestId == requestId, cancellationToken) is { } row
@@ -425,10 +425,23 @@ public sealed class WorkbenchRequestQueries(SerialisationDbContext db, ITenantCo
     {
         skip = Math.Max(0, skip);
         take = Math.Clamp(take, 1, 200);
-        var query = db.WorkbenchRequests.AsNoTracking().Where(r => r.TenantId == tenant.TenantId
-            && (r.Status == WorkbenchRequestStatus.AwaitingApproval || r.Status == WorkbenchRequestStatus.Unclassified));
         if (roles.Count == 0) return new([], 0, skip, take);
-        query = query.Where(HasAnyRole(roles));
+        // An approved request waits on whoever may commit it, which is the choice's commit roles (tenant data, read through
+        // the catalogue exactly as CommitAsync checks them) rather than the approver roles recorded on the row.
+        var committable = (await catalog.GetChoicesAsync(cancellationToken))
+            .Where(c => (c.CommitRoles ?? []).Intersect(roles, StringComparer.Ordinal).Any()).Select(c => c.Choice).ToList();
+        var waiting = HasAnyRole(roles);
+        var row = waiting.Parameters[0];
+        var status = Expression.Property(row, nameof(WorkbenchRequest.Status));
+        var awaitingDecision = Expression.AndAlso(
+            Expression.OrElse(Expression.Equal(status, Expression.Constant(WorkbenchRequestStatus.AwaitingApproval)),
+                Expression.Equal(status, Expression.Constant(WorkbenchRequestStatus.Unclassified))),
+            waiting.Body);
+        var awaitingCommit = Expression.AndAlso(Expression.Equal(status, Expression.Constant(WorkbenchRequestStatus.Approved)),
+            Expression.Call(Expression.Constant(committable), typeof(List<string>).GetMethod(nameof(List<string>.Contains))!,
+                Expression.Property(row, nameof(WorkbenchRequest.Choice))));
+        var query = db.WorkbenchRequests.AsNoTracking().Where(r => r.TenantId == tenant.TenantId)
+            .Where(Expression.Lambda<Func<WorkbenchRequest, bool>>(Expression.OrElse(awaitingDecision, awaitingCommit), row));
         var total = await query.CountAsync(cancellationToken);
         var rows = await query.OrderBy(r => r.InitiatedAt).ThenBy(r => r.RequestId).Skip(skip).Take(take).ToListAsync(cancellationToken);
         return new(rows.Select(WorkbenchRequestService.ToRow).ToList(), total, skip, take);

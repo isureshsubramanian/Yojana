@@ -19,6 +19,7 @@ export function Component() {
   const [row, setRow] = useState<WorkbenchRequestRow | null>(null);
   const [others, setOthers] = useState<WorkbenchRequestRow[]>([]);
   const [labels, setLabels] = useState<Record<string, string>>({});
+  const [commitRoles, setCommitRoles] = useState<Record<string, string[]>>({});
   const [decision, setDecision] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -28,7 +29,7 @@ export function Component() {
     const controller = new AbortController();
     setError(null);
     Promise.all([workbenchApi.request(requestId, controller.signal), workbenchApi.inbox(0, 10, controller.signal), workbenchApi.choices(controller.signal)])
-      .then(([request, inbox, choices]) => { setRow(request); setOthers(inbox.items.filter((item) => item.requestId !== requestId)); setLabels(Object.fromEntries(choices.map((c) => [c.choice, c.label]))); })
+      .then(([request, inbox, choices]) => { setRow(request); setOthers(inbox.items.filter((item) => item.requestId !== requestId)); setLabels(Object.fromEntries(choices.map((c) => [c.choice, c.label]))); setCommitRoles(Object.fromEntries(choices.map((c) => [c.choice, c.commitRoles ?? []]))); })
       .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
     return () => controller.abort();
   }, [requestId]);
@@ -38,13 +39,15 @@ export function Component() {
   const initiatedByMe = row?.initiatedBy === me;
   const approvedByMe = !!row?.approvals.some((a) => a.userRef === me);
   const mayApprove = row?.status === "awaiting_approval" && !initiatedByMe && !approvedByMe && roles.some((r) => row.requiredApproverRoles.includes(r));
+  // Commit is allowed to the choice's commit roles, the same rule the server applies; approver roles only decide approval.
+  const mayCommit = (request: WorkbenchRequestRow | null) => request?.status === "approved" && roles.some((r) => (commitRoles[request.choice] ?? []).includes(r));
   const act = async (action: () => Promise<WorkbenchRequestRow>) => {
     setBusy(true); setError(null);
     try { setRow(await action()); } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
   const approveAndCommit = () => act(async () => {
     const approved = await workbenchApi.approve(requestId, decision || null);
-    return approved.status === "approved" && roles.some((r) => approved.requiredApproverRoles.includes(r)) ? await workbenchApi.commit(requestId).catch(() => approved) : approved;
+    return mayCommit(approved) ? await workbenchApi.commit(requestId).catch(() => approved) : approved;
   });
 
   const preview = row?.preview;
@@ -61,7 +64,7 @@ export function Component() {
         </div>
         <div className="actions">
           <button type="button" className="btn" disabled={!row || row.status !== "awaiting_approval" || !decision.trim() || busy} aria-busy={busy} onClick={() => act(() => workbenchApi.reject(requestId, decision))}>Reject…</button>
-          {row?.status === "approved" && roles.some((r) => row.requiredApproverRoles.includes(r))
+          {mayCommit(row)
             ? <button type="button" className="btn primary" disabled={busy} aria-busy={busy} onClick={() => act(() => workbenchApi.commit(requestId))}>Commit<kbd className="key">⌘↵</kbd></button>
             : <button type="button" className="btn primary" disabled={!mayApprove || busy} aria-busy={busy} onClick={approveAndCommit}>Approve and commit<kbd className="key">⌘↵</kbd></button>}
         </div>

@@ -210,6 +210,11 @@ public sealed class WorkbenchTests(SerialisationHostFixture fixture)
         Assert.Equal(WorkbenchRequestStatus.AwaitingApproval, raisedSwap.Status);
         var approvedSwap = await service.ApproveAsync(raisedSwap.RequestId, SerialAdministrator, "checked labels", CancellationToken.None);
         Assert.Equal(WorkbenchRequestStatus.Approved, approvedSwap.Status);
+        // Approved but not committed: waiting in the inbox of whoever may commit it, not of the initiator who may not.
+        Assert.Contains((await queries.InboxAsync(SerialAdministrator.Roles, 0, 50, CancellationToken.None)).Items,
+            r => r.RequestId == raisedSwap.RequestId && r.Status == WorkbenchRequestStatus.Approved);
+        Assert.DoesNotContain((await queries.InboxAsync(Technician.Roles, 0, 50, CancellationToken.None)).Items,
+            r => r.RequestId == raisedSwap.RequestId);
         await AssertRuleAsync("approval_required", () => service.CommitAsync(raisedSwap.RequestId, Technician, CancellationToken.None));
         var committedSwap = await service.CommitAsync(raisedSwap.RequestId, SerialAdministrator, CancellationToken.None);
         Assert.Equal(WorkbenchRequestStatus.Committed, committedSwap.Status);
