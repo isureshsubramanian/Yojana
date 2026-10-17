@@ -149,6 +149,38 @@ public static class CorrectionApprovalRules
         return true;
     }
 
+    /// <summary>
+    /// Choice roles are an outer permission only; the selected command still evaluates facts and named approvers.
+    /// A choice is therefore no weaker only when every role it permits is already a base committer for one of its
+    /// routes. Single-command added choices become a strict subset of that command's commit roles.
+    /// </summary>
+    public static CommandRefusal? WorkbenchChoiceApprovalProblem(
+        CorrectionApprovalPolicy policy,
+        WorkbenchChoice choice,
+        IReadOnlyList<string> commands)
+    {
+        var allowed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var command in commands)
+        {
+            if (string.IsNullOrWhiteSpace(command)) continue;
+            if (command.StartsWith("entitlement.", StringComparison.Ordinal))
+            {
+                allowed.UnionWith(DefaultPolicy.Workbench.First(w => w.Choice == CorrectionWorkbenchChoice.WrongWarranty).CommitRoles);
+                continue;
+            }
+
+            if (policy.Commands.FirstOrDefault(r => r.Command == command) is not { } rule) continue;
+            allowed.UnionWith(rule.CommitRoles);
+            allowed.UnionWith(rule.SoldCommitRoles ?? []);
+        }
+
+        var weaker = (choice.CommitRoles ?? []).Where(role => !allowed.Contains(role)).Order(StringComparer.Ordinal).ToList();
+        return weaker.Count == 0 ? null : new CommandRefusal(
+            "workbench_approval_weaker_than_command",
+            $"Choice '{choice.Choice}' permits {string.Join(", ", weaker)}, which is weaker than its command policy.",
+            "remove those commit roles; command approvals may be made stricter, never weaker");
+    }
+
     public static IReadOnlyList<string> Validate(CorrectionApprovalPolicy policy)
     {
         var problems = new List<string>();

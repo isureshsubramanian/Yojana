@@ -5,6 +5,7 @@ using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
@@ -19,7 +20,7 @@ namespace Yojana.Serialisation.Entitlements;
 /// </summary>
 public static partial class AttachExtendedWarrantyHandler
 {
-    public static async Task<AttachExtendedWarrantyResult> Handle(AttachExtendedWarranty command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+    public static async Task<AttachExtendedWarrantyResult> Handle(AttachExtendedWarranty command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var key = EntitlementLedger.Key(command.CommandId, command.UnitId, EntitlementEventType.ExtendedSold, command.EventTime);
@@ -92,6 +93,9 @@ public static partial class AttachExtendedWarrantyHandler
             ?? throw new CommandRefusedException("base_not_resolved", $"The plan starts when the {terms.Eligibility?.BaseFamily} entitlement expires, and its end is not resolved yet.", "attach the base's start evidence first");
         var end = TermArithmetic.EndDate(start, terms.Duration);
         var schedule = ExtendedPlanArithmetic.RevenueSchedule(start, end, command.Price);
+        var metadata = command.Correction is null ? null : await corrections.PrepareAsync(
+            CorrectionCommand.AttachExtendedWarranty, command.Correction, command.CommandId, command.Correction.ReasonCode, null,
+            null, command.EventTime, CorrectionInitiatingRole.CustomerService, cancellationToken);
 
         var eventId = TimeOrderedId.New(command.EventTime);
         var entitlement = new Entitlement
@@ -119,7 +123,9 @@ public static partial class AttachExtendedWarrantyHandler
             purchase_day = purchaseDay, start_date = start, end_date = end, term_months = ExtendedPlanArithmetic.TermMonths(terms.Duration), price = command.Price, currency = command.Currency,
             revenue_schedule = schedule, payer_party_ref = command.PayerPartyRef, owner_party_ref = command.OwnerPartyRef, time_zone = zone, assurance_or_service = AssuranceOrService.Service,
             service_contract_regulated = terms.ServiceContractRegulated, rule_version = version.RuleVersion,
-        }, command.SourceDocument, cancellationToken, eventId);
+        }, command.SourceDocument, cancellationToken, eventId, metadata);
+        if (metadata is not null)
+            await corrections.RecordAsync(CorrectionCommand.AttachExtendedWarranty, metadata, command.ActorRef, command.EventTime, [command.UnitId], cancellationToken);
         return new(entitlement.EntitlementId, version.PolicyCode, version.Version, terms.Start.Trigger, start, end, baseCoverage?.EntitlementId, schedule, eventId, false);
     }
 

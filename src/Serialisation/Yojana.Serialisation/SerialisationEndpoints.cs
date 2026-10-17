@@ -187,6 +187,12 @@ public static class SerialisationEndpoints
                     extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
             }
         }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+        correctionReference.MapGet("/workbench-choices", async (WorkbenchChoiceSettings settings, CancellationToken ct) =>
+            Results.Ok(await settings.GetViewAsync(ct)))
+            .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+        correctionReference.MapPut("/workbench-choices", (UpdateWorkbenchChoices update, ClaimsPrincipal user, WorkbenchChoiceSettings settings, CancellationToken ct) =>
+            WorkbenchInvoke(() => settings.SetAsync(update, Actor(user), ct)))
+            .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         correctionReference.MapGet("/serial-reuse", async (SerialReuseSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
         correctionReference.MapPut("/serial-reuse", async (SerialReusePolicy policy, SerialReuseSettings settings, CancellationToken ct) =>
         {
@@ -385,7 +391,9 @@ public static class SerialisationEndpoints
             Invoke<BulkApprovalRequestRow>(bus, tenant, command with { RequestId = requestId, Decider = Approver(user, null) }, ct));
 
         var workbench = app.MapGroup("/api/workbench").RequireAuthorization(YojanaPolicy.TenantMember);
-        workbench.MapGet("/choices", (IWorkbenchChoiceCatalog choices) => Results.Ok(choices.GetChoices()));
+        workbench.MapGet("/choices", async (IWorkbenchChoiceCatalog choices, CancellationToken ct) => Results.Ok(await choices.GetChoicesAsync(ct)));
+        workbench.MapGet("/picker", (Guid? unitId, string? q, WorkbenchPickerService picker, CancellationToken ct) =>
+            WorkbenchInvoke(() => picker.QueryAsync(unitId, q, ct)));
         workbench.MapPost("/resolve", (ResolveWorkbenchEntry command, ClaimsPrincipal user, WorkbenchEntryResolver resolver, CancellationToken ct) =>
             WorkbenchInvoke(() => resolver.ResolveAsync(command with { ActorRef = Actor(user) }, ct)));
         workbench.MapGet("/units/{unitId:guid}/lineage", async (Guid unitId, WorkbenchLineageQueries queries, CancellationToken ct) =>
@@ -394,6 +402,12 @@ public static class SerialisationEndpoints
             WorkbenchInvoke(() => service.PreviewAsync(request, ct)));
         workbench.MapPost("/requests/{requestId:guid}", (Guid requestId, WorkbenchPreviewRequest request, ClaimsPrincipal user, WorkbenchRequestService service, CancellationToken ct) =>
             WorkbenchInvoke(() => service.InitiateAsync(requestId, request, WorkbenchActorFrom(user), ct)));
+        workbench.MapPost("/requests/{requestId:guid}/unclassified", (Guid requestId, FileUnclassifiedWorkbenchRequest request, ClaimsPrincipal user, WorkbenchRequestService service, CancellationToken ct) =>
+            WorkbenchInvoke(() => service.FileUnclassifiedAsync(requestId, request, WorkbenchActorFrom(user), ct)));
+        workbench.MapPost("/requests/{requestId:guid}/refile", (Guid requestId, RefileWorkbenchRequest request, ClaimsPrincipal user, WorkbenchRequestService service, CancellationToken ct) =>
+            WorkbenchInvoke(() => service.RefileAsync(requestId, request, WorkbenchActorFrom(user), ct)));
+        workbench.MapPost("/requests/{requestId:guid}/no-command-fits", (Guid requestId, EscalateWorkbenchRequest request, ClaimsPrincipal user, WorkbenchRequestService service, CancellationToken ct) =>
+            WorkbenchInvoke(() => service.EscalateAsync(requestId, WorkbenchActorFrom(user), request.Note, ct)));
         workbench.MapGet("/requests/{requestId:guid}", async (Guid requestId, WorkbenchRequestQueries queries, CancellationToken ct) =>
             await queries.GetAsync(requestId, ct) is { } request ? Results.Ok(request) : Results.NotFound());
         workbench.MapGet("/inbox", (int? skip, int? take, ClaimsPrincipal user, WorkbenchRequestQueries queries, CancellationToken ct) =>

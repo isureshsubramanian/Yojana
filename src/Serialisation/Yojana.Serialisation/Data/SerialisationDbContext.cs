@@ -608,7 +608,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
         {
             b.ToTable("workbench_request", t =>
             {
-                t.HasCheckConstraint("ck_workbench_request_status", "status IN ('draft', 'awaiting_approval', 'approved', 'rejected', 'committed', 'superseded')");
+                t.HasCheckConstraint("ck_workbench_request_status", "status IN ('draft', 'awaiting_approval', 'approved', 'rejected', 'committed', 'superseded', 'unclassified', 'no_command_fits')");
                 foreach (var column in new[] { "target_json", "answers_json", "evidence_json", "preview_json", "initiator_roles_json", "required_approver_roles_json", "approvals_json" })
                 {
                     t.HasCheckConstraint($"ck_workbench_request_{column}", $"ISJSON({column}) = 1");
@@ -627,6 +627,9 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(r => r.RejectedBy).HasMaxLength(200);
             b.Property(r => r.DecisionNote).HasMaxLength(2000);
             b.Property(r => r.CommittedBy).HasMaxLength(200);
+            b.Property(r => r.UnclassifiedDescription).HasMaxLength(2000);
+            b.Property(r => r.ClassifiedBy).HasMaxLength(200);
+            b.Property(r => r.EscalatedBy).HasMaxLength(200);
             b.HasIndex(r => new { r.TenantId, r.CommandId }).IsUnique();
             b.HasIndex(r => new { r.TenantId, r.Status, r.InitiatedAt });
         });

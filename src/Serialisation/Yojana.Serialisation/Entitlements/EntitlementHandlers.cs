@@ -372,7 +372,7 @@ public static class VoidEntitlementHandler
 
 public static class CloseEntitlementHandler
 {
-    public static async Task<EntitlementChangeResult> Handle(CloseEntitlement command, EntitlementLedger ledger, IClock clock, CancellationToken cancellationToken)
+    public static async Task<EntitlementChangeResult> Handle(CloseEntitlement command, EntitlementLedger ledger, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
         var entitlement = await ledger.LoadAsync(command.EntitlementId, cancellationToken);
         var key = EntitlementLedger.Key(command.CommandId, entitlement.UnitId, EntitlementEventType.Closed, command.EventTime);
@@ -387,11 +387,17 @@ public static class CloseEntitlementHandler
             throw new CommandRefusedException("not_expired", $"Entitlement {entitlement.EntitlementId} runs to {entitlement.EndDate:yyyy-MM-dd}; it cannot close as expired on {command.Effective:yyyy-MM-dd}.");
         }
 
+        var metadata = command.Correction is null ? null : await corrections.PrepareAsync(
+            CorrectionCommand.CloseEntitlement, command.Correction, command.CommandId, command.ClosedReason, command.Note,
+            null, command.EventTime, CorrectionInitiatingRole.CustomerService, cancellationToken);
+
         EntitlementLedger.Transition(entitlement, EntitlementEventType.Closed);
         entitlement.ClosedReason = command.ClosedReason;
         entitlement.ClosedEffective = command.Effective;
         entitlement.ClosedAt = clock.UtcNow;
-        var eventId = await ledger.AppendAsync(entitlement, EntitlementEventType.Closed, key, command.EventTime, command.ActorRef, new { entitlement_id = entitlement.EntitlementId, coverage_family = entitlement.CoverageFamily, reason = command.ClosedReason, effective = command.Effective, note = command.Note }, command.SourceDocument, cancellationToken);
+        var eventId = await ledger.AppendAsync(entitlement, EntitlementEventType.Closed, key, command.EventTime, command.ActorRef, new { entitlement_id = entitlement.EntitlementId, coverage_family = entitlement.CoverageFamily, reason = command.ClosedReason, effective = command.Effective, note = command.Note }, command.SourceDocument, cancellationToken, correction: metadata);
+        if (metadata is not null)
+            await corrections.RecordAsync(CorrectionCommand.CloseEntitlement, metadata, command.ActorRef, command.EventTime, [entitlement.UnitId], cancellationToken);
         return RebaseEntitlementStartHandler.Result(entitlement, eventId, false);
     }
 }

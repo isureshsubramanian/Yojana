@@ -10,4 +10,10 @@ public interface ITenantSettings
     Task<string?> GetAsync(string key, CancellationToken cancellationToken);
 
     Task SetAsync(string key, string value, CancellationToken cancellationToken);
+
+    /// <summary>All temporal versions of a setting, including the current row, newest first.</summary>
+    Task<IReadOnlyList<TenantSettingVersion>> HistoryAsync(string key, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<TenantSettingVersion>>([]);
 }
+
+public sealed record TenantSettingVersion(string Value, DateTime ValidFrom, DateTime ValidTo);

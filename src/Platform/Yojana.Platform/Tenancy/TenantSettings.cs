@@ -31,4 +31,17 @@ public sealed class TenantSettings(PlatformDbContext db, ITenantContext tenant, 
 
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<TenantSettingVersion>> HistoryAsync(string key, CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        return await db.TenantSettings.TemporalAll().AsNoTracking().IgnoreQueryFilters()
+            .Where(s => s.TenantId == tenantId && s.Key == key)
+            .OrderByDescending(s => EF.Property<DateTime>(s, "PeriodStart"))
+            .Select(s => new TenantSettingVersion(
+                s.Value,
+                EF.Property<DateTime>(s, "PeriodStart"),
+                EF.Property<DateTime>(s, "PeriodEnd")))
+            .ToListAsync(cancellationToken);
+    }
 }
