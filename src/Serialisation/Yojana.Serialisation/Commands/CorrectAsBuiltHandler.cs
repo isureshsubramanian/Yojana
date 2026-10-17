@@ -143,7 +143,7 @@ public static class CorrectAsBuiltHandler
 
         await ApplyFinalChildStateAsync(db, tenant.TenantId, drafts, affectedChildren, originalOpenParents, plan, cancellationToken);
         await writer.AppendAsync(drafts, cancellationToken);
-        corrections.Record(CorrectionCommand.CorrectAsBuilt, metadata, command.ActorRef, plan.Parents.Min(p => p.EffectiveAt), plan.Parents.Count);
+        await corrections.RecordAsync(CorrectionCommand.CorrectAsBuilt, metadata, command.ActorRef, plan.Parents.Min(p => p.EffectiveAt), plan.Parents.Select(p => p.ParentUnitId).ToList(), cancellationToken);
 
         // P6 hook: Unit.AsBuiltCorrected is the release-record reissue trigger. Certificate work does not run here.
         return new(metadata.CorrectionId, plan.Parents.Count, plan.Parents.Sum(p => p.Changes.Count), results);

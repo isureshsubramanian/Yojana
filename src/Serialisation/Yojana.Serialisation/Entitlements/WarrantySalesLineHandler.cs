@@ -97,7 +97,7 @@ public static class SalesInvoicePostedHandler
                     envelope.Source, new Dictionary<string, DateTime> { [StartTrigger.Invoice] = invoice.PostedAt, [StartTrigger.PlanPurchase] = invoice.PostedAt }, version.PolicyVersionId,
                     invoice.CustomerPartyRef, PartyType.Customer, invoice.CustomerPartyRef, PartyType.Customer, Country: invoice.Country, SiteLocationId: invoice.SiteLocationId,
                     StartEvidenceRef: $"{invoice.Document.Type}:{invoice.Document.Id:N}", SourceDocument: sourceDocument, CustomerPoRef: invoice.CustomerPoRef),
-                    db, ledger, resolver, store, zones, refurbished, tenant, clock, null, [], false, null, null, cancellationToken);
+                    db, ledger, resolver, store, zones, refurbished, tenant, clock, null, [], false, null, null, null, cancellationToken);
             }
             else
             {
@@ -106,16 +106,16 @@ public static class SalesInvoicePostedHandler
                 {
                     var extensionStart = (live.EndDate ?? contractDate).AddDays(1);
                     var newEnd = TermArithmetic.EndDate(extensionStart, terms.Duration);
-                    await AmendEntitlementHandler.Handle(new AmendEntitlement(commandId, live.EntitlementId, AmendmentReason.Purchase, invoice.PostedAt, envelope.Source,
+                    await AmendEntitlementHandler.AmendAsync(new AmendEntitlement(commandId, live.EntitlementId, AmendmentReason.Purchase, invoice.PostedAt, envelope.Source,
                         NewEnd: newEnd, SourceDocument: sourceDocument, CommittedBy: new AmendmentCommitter("invoice-posting", [YojanaRole.ServiceDesk])),
-                        db, ledger, approvals, claims, certificates, currency, tenant, cancellationToken);
+                        db, ledger, approvals, claims, certificates, currency, tenant, null, false, cancellationToken);
                     live.CustomerPoRef = invoice.CustomerPoRef;
                 }
                 else
                 {
                     await SupersedeEntitlementHandler.SupersedeAsync(new SupersedeEntitlement(commandId, live.EntitlementId, contractDate, AmendmentReason.Purchase,
                         invoice.PostedAt, envelope.Source, version.PolicyVersionId, SourceDocument: sourceDocument,
-                        CommittedBy: new AmendmentCommitter("invoice-posting", [YojanaRole.ServiceDesk])), db, ledger, store, claims, certificates, tenant, clock, cancellationToken);
+                        CommittedBy: new AmendmentCommitter("invoice-posting", [YojanaRole.ServiceDesk])), db, ledger, store, claims, certificates, tenant, clock, null, false, cancellationToken);
                 }
             }
         }

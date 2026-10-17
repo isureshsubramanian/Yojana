@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
@@ -49,7 +50,12 @@ public sealed class CorrectionLedger(SerialisationDbContext db, ITenantContext t
         if (metadata.InitiatingRole is null || !CorrectionInitiatingRole.All.Contains(metadata.InitiatingRole)) throw new CommandRefusedException("initiating_role_unknown", $"'{metadata.InitiatingRole}' is not a correction initiating role.");
         if (metadata.EvidenceRefs!.Any(string.IsNullOrWhiteSpace)) throw new CommandRefusedException("evidence_ref_blank", "Evidence references cannot be blank.");
         if (metadata.Approvers!.Any(a => string.IsNullOrWhiteSpace(a.UserRef))) throw new CommandRefusedException("approver_ref_blank", "Approver references cannot be blank.");
-        if (await db.Corrections.AsNoTracking().AnyAsync(c => c.TenantId == tenant.TenantId && c.CorrectionId == metadata.CorrectionId, cancellationToken))
+        var pending = db.Corrections.Local.FirstOrDefault(c => c.TenantId == tenant.TenantId && c.CorrectionId == metadata.CorrectionId);
+        if (pending is not null && (pending.Command != command || pending.ReasonCode != metadata.ReasonCode
+            || pending.InitiatedVia != metadata.InitiatedVia || pending.InitiatingRole != metadata.InitiatingRole
+            || pending.CorrectsCorrectionId != metadata.CorrectsCorrectionId))
+            throw new CommandRefusedException("correction_id_in_use", $"Correction id {metadata.CorrectionId} is already being used by {pending.Command}.", "send a new correction id");
+        if (pending is null && await db.Corrections.AsNoTracking().AnyAsync(c => c.TenantId == tenant.TenantId && c.CorrectionId == metadata.CorrectionId, cancellationToken))
             throw new CommandRefusedException("correction_id_in_use", $"Correction id {metadata.CorrectionId} has already been used.", "send a new correction id, or replay the original command idempotently");
         if (metadata.CorrectsCorrectionId is { } priorId)
         {
@@ -61,26 +67,51 @@ public sealed class CorrectionLedger(SerialisationDbContext db, ITenantContext t
         return metadata;
     }
 
-    public void Record(string command, CorrectionMetadata metadata, string actorRef, DateTime eventTime, int unitCount)
+    public async Task RecordAsync(string command, CorrectionMetadata metadata, string actorRef, DateTime eventTime, IReadOnlyCollection<Guid> unitIds, CancellationToken cancellationToken)
     {
-        db.Corrections.Add(new CorrectionRecord
+        var distinctUnits = unitIds.Distinct().ToList();
+        var row = db.Corrections.Local.FirstOrDefault(c => c.TenantId == tenant.TenantId && c.CorrectionId == metadata.CorrectionId);
+        if (row is null)
         {
-            TenantId = tenant.TenantId,
-            CorrectionId = metadata.CorrectionId,
-            Command = command,
-            ReasonCode = metadata.ReasonCode,
-            RootCauseCategory = CorrectionRules.RootCause(command, metadata.ReasonCode),
-            InitiatedVia = metadata.InitiatedVia,
-            InitiatingRole = metadata.InitiatingRole!,
-            ActorRef = actorRef,
-            EventTime = eventTime,
-            RecordedTime = clock.UtcNow,
-            CorrectsCorrectionId = metadata.CorrectsCorrectionId,
-            UnitCount = unitCount,
-            Note = metadata.Note,
-            EvidenceRefs = JsonSerializer.Serialize(metadata.EvidenceRefs, LedgerJson.Options),
-            Approvers = JsonSerializer.Serialize(metadata.Approvers, LedgerJson.Options),
-        });
+            row = new CorrectionRecord
+            {
+                TenantId = tenant.TenantId,
+                CorrectionId = metadata.CorrectionId,
+                Command = command,
+                ReasonCode = metadata.ReasonCode,
+                RootCauseCategory = CorrectionRules.RootCause(command, metadata.ReasonCode),
+                InitiatedVia = metadata.InitiatedVia,
+                InitiatingRole = metadata.InitiatingRole!,
+                ActorRef = actorRef,
+                EventTime = eventTime,
+                RecordedTime = clock.UtcNow,
+                CorrectsCorrectionId = metadata.CorrectsCorrectionId,
+                UnitCount = distinctUnits.Count,
+                Note = metadata.Note,
+                EvidenceRefs = JsonSerializer.Serialize(metadata.EvidenceRefs, LedgerJson.Options),
+                Approvers = JsonSerializer.Serialize(metadata.Approvers, LedgerJson.Options),
+            };
+            db.Corrections.Add(row);
+        }
+        else
+        {
+            row.UnitCount += distinctUnits.Count(id => !db.CorrectionUnits.Local.Any(link => link.TenantId == tenant.TenantId && link.CorrectionId == metadata.CorrectionId && link.UnitId == id));
+        }
+
+        var linked = db.CorrectionUnits.Local.Where(link => link.TenantId == tenant.TenantId && link.CorrectionId == metadata.CorrectionId).Select(link => link.UnitId).ToHashSet();
+        var missing = distinctUnits.Where(id => !linked.Contains(id)).ToList();
+        if (missing.Count == 0) return;
+        var trackedItems = db.Current.Local.Where(c => c.TenantId == tenant.TenantId && missing.Contains(c.UnitId)).ToDictionary(c => c.UnitId, c => c.ItemId);
+        var remaining = missing.Where(id => !trackedItems.ContainsKey(id)).ToList();
+        var storedItems = remaining.Count == 0
+            ? new Dictionary<Guid, Guid>()
+            : await db.Current.AsNoTracking().Where(c => c.TenantId == tenant.TenantId && remaining.Contains(c.UnitId)).ToDictionaryAsync(c => c.UnitId, c => c.ItemId, cancellationToken);
+        foreach (var unitId in missing)
+        {
+            var itemId = trackedItems.GetValueOrDefault(unitId, storedItems.GetValueOrDefault(unitId));
+            if (itemId == Guid.Empty) throw new CommandRefusedException("unit_current_missing", $"Unit {unitId} has no current projection for KPI item attribution.");
+            db.CorrectionUnits.Add(new CorrectionRecordUnit { TenantId = tenant.TenantId, CorrectionId = metadata.CorrectionId, UnitId = unitId, ItemId = itemId });
+        }
     }
 
     /// <summary>Merges common metadata into command-specific attributes, keeping it flat and identical on every fact.</summary>
@@ -115,6 +146,10 @@ public static class CorrectionRules
         CorrectionCommand.ReassignAllocation => ReassignAllocationReason.All,
         CorrectionCommand.CorrectDocumentSerials => CorrectDocumentSerialsReason.All,
         CorrectionCommand.CorrectSourceDocument => CorrectSourceDocumentReason.All,
+        CorrectionCommand.AmendEntitlement or CorrectionCommand.SupersedeEntitlement => AmendmentReason.All,
+        CorrectionCommand.VoidEntitlement => EntitlementStateMachineReasons.Void,
+        CorrectionCommand.TransferEntitlement => [EntitlementTransferReason.Replacement],
+        CorrectionCommand.BackfillEntitlements => BackfillReason.All,
         _ => [],
     };
 
@@ -140,6 +175,28 @@ public static class CorrectionRules
         CorrectionCommand.CorrectItem or CorrectionCommand.CorrectAsBuilt or CorrectionCommand.CorrectSourceDocument => CorrectionRootCause.WrongItemOrOrder,
         CorrectionCommand.LateSerialization or CorrectionCommand.ReassignAllocation or CorrectionCommand.VoidUnit or CorrectionCommand.AssignIdentifiers => CorrectionRootCause.AllocationBeforeBirth,
         CorrectionCommand.MergeUnits => CorrectionRootCause.TypoOrCrossedPair,
+        CorrectionCommand.AmendEntitlement or CorrectionCommand.SupersedeEntitlement or CorrectionCommand.VoidEntitlement
+            or CorrectionCommand.TransferEntitlement or CorrectionCommand.BackfillEntitlements => CorrectionRootCause.Warranty,
         _ => throw new CommandRefusedException("root_cause_unknown", $"Correction command '{command}' has no KPI root-cause mapping."),
     };
+
+    /// <summary>Maps trusted tenant roles onto the deliberately small KPI role vocabulary.</summary>
+    public static string InitiatingRole(IReadOnlyCollection<string> roles)
+    {
+        if (roles.Any(role => role is YojanaRole.CustomerService or YojanaRole.ServiceDesk or YojanaRole.ServiceSupervisor or YojanaRole.ServiceManager)) return CorrectionInitiatingRole.CustomerService;
+        if (roles.Any(role => role is YojanaRole.WarehouseLead or YojanaRole.ShippingSupervisor or YojanaRole.InventoryController)) return CorrectionInitiatingRole.WarehouseLead;
+        if (roles.Any(role => role is YojanaRole.ProductionSupervisor or YojanaRole.Quality or YojanaRole.ItemMasterOwner)) return CorrectionInitiatingRole.ProductionSupervisor;
+        if (roles.Contains(YojanaRole.Technician)) return CorrectionInitiatingRole.ServiceTechnician;
+        return CorrectionInitiatingRole.SerialAdministrator;
+    }
+}
+
+internal static class EntitlementStateMachineReasons
+{
+    public static readonly IReadOnlyList<string> Void =
+    [
+        EntitlementClosedReason.Voided,
+        EntitlementClosedReason.VoidedShippingError,
+        EntitlementClosedReason.VoidedDocumentCorrection,
+    ];
 }

@@ -97,7 +97,8 @@ public sealed class VoidUnitTests(SerialisationHostFixture fixture)
             Assert.Equal(LifecycleStatus.Void, (await db.Units.SingleAsync(u => u.UnitId == parent.UnitId)).LifecycleStatus);
             Assert.False(await db.Identifiers.AnyAsync(i => i.UnitId == parent.UnitId && i.ValidTo == null));
             Assert.Equal(2, await db.Units.CountAsync(u => u.UnitId == parent.UnitId || u.UnitId == child.UnitId));
-            Assert.Single(await db.Corrections.Where(c => c.CorrectionId == correctionId).ToListAsync());
+            Assert.Equal(CorrectionRootCause.AllocationBeforeBirth,
+                Assert.Single(await db.Corrections.Where(c => c.CorrectionId == correctionId).ToListAsync()).RootCauseCategory);
             Assert.Single(await db.Events.Where(e => e.UnitId == parent.UnitId && e.EventType == UnitEventType.Voided).ToListAsync());
         }
 

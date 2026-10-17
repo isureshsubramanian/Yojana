@@ -75,6 +75,9 @@ public sealed class BackfillEntitlementsTests(SerialisationHostFixture fixture)
         Assert.All(rows, e => Assert.Equal(EntitlementProvenance.Backfilled, e.Provenance));
         Assert.Contains(rows, e => e.UnitId == setup.DeliveryUnit && e.StartBasis == BackfillStartBasis.DeliveryDocument);
         Assert.Contains(rows, e => e.UnitId == setup.DropShipUnit && e.StartBasis == BackfillStartBasis.VendorShipConfirmation);
+        var correction = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Corrections.SingleAsync(c => c.CorrectionId == command.CommandId);
+        Assert.Equal(CorrectionRootCause.Warranty, correction.RootCauseCategory);
+        Assert.Equal(2, correction.UnitCount);
 
         var published = await PublishedEventSink.WaitForAsync<EntitlementBackfilled>(e => e.Header.UnitId == setup.DeliveryUnit || e.Header.UnitId == setup.DropShipUnit, 2, TimeSpan.FromSeconds(20));
         Assert.Equal(2, published.Count);

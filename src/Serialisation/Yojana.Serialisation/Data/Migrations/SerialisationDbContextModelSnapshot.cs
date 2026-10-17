@@ -440,7 +440,12 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("recorded_time");
 
-                    b.Property<int>("RootCauseCategory")
+                    b.Property<string>("RequestStatus")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("request_status");
+
+                    b.Property<int?>("RootCauseCategory")
                         .HasColumnType("int")
                         .HasColumnName("root_cause_category");
 
@@ -454,6 +459,9 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "CorrectsCorrectionId")
                         .HasDatabaseName("ix_correction_record_tenant_id_corrects_correction_id");
 
+                    b.HasIndex("TenantId", "EventTime", "RootCauseCategory", "RequestStatus")
+                        .HasDatabaseName("ix_correction_record_tenant_id_event_time_root_cause_category_request_status");
+
                     b.HasIndex("TenantId", "EventTime", "RootCauseCategory", "InitiatingRole", "InitiatedVia")
                         .HasDatabaseName("ix_correction_record_tenant_id_event_time_root_cause_category_initiating_role_initiated_via");
 
@@ -463,8 +471,35 @@ namespace Yojana.Serialisation.Data.Migrations
 
                             t.HasCheckConstraint("ck_correction_record_evidence_refs_json", "ISJSON(evidence_refs) = 1");
 
-                            t.HasCheckConstraint("ck_correction_record_root_cause", "root_cause_category BETWEEN 1 AND 7");
+                            t.HasCheckConstraint("ck_correction_record_root_cause", "root_cause_category IS NULL OR root_cause_category BETWEEN 1 AND 7");
                         });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CorrectionRecordUnit", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CorrectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("correction_id");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("item_id");
+
+                    b.HasKey("TenantId", "CorrectionId", "UnitId")
+                        .HasName("pk_correction_record_unit");
+
+                    b.HasIndex("TenantId", "ItemId", "CorrectionId")
+                        .HasDatabaseName("ix_correction_record_unit_tenant_id_item_id_correction_id");
+
+                    b.ToTable("correction_record_unit", "serialisation");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CoverageFamily", b =>
@@ -3105,6 +3140,16 @@ namespace Yojana.Serialisation.Data.Migrations
                                     .HasPeriodEnd("PeriodEnd")
                                     .HasColumnName("sys_end");
                             }));
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CorrectionRecordUnit", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.CorrectionRecord", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CorrectionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_correction_record_unit_tenant_id_correction_id");
                 });
 #pragma warning restore 612, 618
         }

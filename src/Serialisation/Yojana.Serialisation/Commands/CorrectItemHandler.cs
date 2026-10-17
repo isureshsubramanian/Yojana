@@ -111,7 +111,7 @@ public static class CorrectItemHandler
                 },
             },
         ], cancellationToken);
-        corrections.Record(CorrectionCommand.CorrectItem, metadata, command.ActorRef, command.EventTime, 1);
+        await corrections.RecordAsync(CorrectionCommand.CorrectItem, metadata, command.ActorRef, command.EventTime, [command.UnitId], cancellationToken);
         return new CorrectItemResult(command.UnitId, plan.CurrentAssignment.AssignmentId, next.AssignmentId,
             plan.CurrentAssignment.ItemId, next.ItemId, plan.Sold, plan.DocumentMismatch, reclassificationRef,
             plan.FinanceReviewRequired, plan.WarrantyPolicyChanges, metadata.CorrectionId, eventId, false);

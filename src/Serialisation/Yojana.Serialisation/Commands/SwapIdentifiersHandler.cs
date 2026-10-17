@@ -87,7 +87,7 @@ public static class SwapIdentifiersHandler
                 Draft(command, inspection.Metadata, command.SecondUnitId, command.FirstUnitId, swapId, inspection.SecondIdentifier, secondReplacement, secondEventId, keys.Second),
             };
             await writer.AppendAsync(drafts, cancellationToken);
-            corrections.Record(CorrectionCommand.SwapIdentifiers, inspection.Metadata, command.ActorRef, command.EventTime, 2);
+            await corrections.RecordAsync(CorrectionCommand.SwapIdentifiers, inspection.Metadata, command.ActorRef, command.EventTime, [command.FirstUnitId, command.SecondUnitId], cancellationToken);
 
             var tags = command.IdentifierType == IdentifierType.CustomerAssetTag
                 ? new[] { firstReplacement, secondReplacement }

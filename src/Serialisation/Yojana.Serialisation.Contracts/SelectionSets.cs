@@ -81,7 +81,17 @@ public sealed record PreviewBulkOperation(Guid SelectionId, string Operation, Bu
 public sealed record BulkPreviewResult(Guid SelectionId, string Operation, int Total, int Change, int Skip, int Block, IReadOnlyList<UnitOutcome> Page, int PageSkip, int PageTake);
 
 /// <summary>Arguments every bulk operation shares; operation-specific ones travel in <see cref="Extra"/>.</summary>
-public sealed record BulkOperationArguments(DateTime EventTime, string ActorRef, Guid LegalEntityId, DocumentRef SourceDocument, string? Reason = null, string? Note = null, IReadOnlyDictionary<string, string>? Extra = null);
+public sealed record BulkOperationArguments(
+    DateTime EventTime,
+    string ActorRef,
+    Guid LegalEntityId,
+    DocumentRef SourceDocument,
+    string? Reason = null,
+    string? Note = null,
+    IReadOnlyDictionary<string, string>? Extra = null,
+    string InitiatedVia = CorrectionInitiatedVia.Api,
+    string? InitiatingRole = null,
+    Guid? CorrectsCorrectionId = null);
 
 /// <summary>
 /// Approval of a bulk execution: who approved, or that the policy needed none (the policy as tenant data is P3; P1 records

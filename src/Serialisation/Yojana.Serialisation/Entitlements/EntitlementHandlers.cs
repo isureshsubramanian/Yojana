@@ -5,6 +5,7 @@ using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
@@ -20,10 +21,10 @@ public static class CreateEntitlementHandler
     // Coupled to the factory registration of RefurbishedGoodsSettings in SerialisationModule: Wolverine must not see the
     // PlatformDbContext behind ITenantSettings in this handler graph, or its SerialisationDbContext transaction is refused.
     public static async Task<CreateEntitlementResult> Handle(CreateEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
-        => await CreateAsync(command, db, ledger, resolver, store, zones, refurbishedSettings, tenant, clock, null, [], false, null, null, cancellationToken);
+        => await CreateAsync(command, db, ledger, resolver, store, zones, refurbishedSettings, tenant, clock, null, [], false, null, null, null, cancellationToken);
 
     internal static async Task<CreateEntitlementResult> CreateAsync(CreateEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings, ITenantContext tenant, IClock clock,
-        string? startBasisOverride, IReadOnlyList<string> evidenceRefs, bool financeReviewRequired, string? reasonCode, string? financeReviewRef, CancellationToken cancellationToken)
+        string? startBasisOverride, IReadOnlyList<string> evidenceRefs, bool financeReviewRequired, string? reasonCode, string? financeReviewRef, CorrectionMetadata? correction, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var key = EntitlementLedger.Key(command.CommandId, command.UnitId, EntitlementEventType.Created, command.EventTime);
@@ -131,7 +132,7 @@ public static class CreateEntitlementHandler
             time_zone = zone, accrual_cohort_id = cohortId, assurance_or_service = entitlement.AssuranceOrService,
             accrual_suppressed = entitlement.AssuranceOrService == AssuranceOrService.Assurance && cohortId is null, provenance = command.Provenance, owner_party_ref = command.OwnerPartyRef, rule_version = version.RuleVersion, trail,
             evidence_refs = evidenceRefs, finance_review_required = financeReviewRequired, reason_code = reasonCode, finance_review_ref = financeReviewRef,
-        }, command.SourceDocument, cancellationToken, eventId);
+        }, command.SourceDocument, cancellationToken, eventId, correction);
         return new CreateEntitlementResult(entitlement.EntitlementId, entitlement.Status, level, version.PolicyCode, version.Version, entitlement.StartDate, entitlement.EndDate, entitlement.StartBasis, start.CapApplied, duration.FloorApplied, zone, cohortId, trail, disclosure);
     }
 
@@ -248,7 +249,7 @@ public static class TransferEntitlementHandler
 {
     private static readonly DateOnly EuEffectiveDate = new(2026, 7, 31);
 
-    public static async Task<TransferEntitlementResult> Handle(TransferEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+    public static async Task<TransferEntitlementResult> Handle(TransferEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var source = await ledger.LoadAsync(command.SourceEntitlementId, cancellationToken);
@@ -279,6 +280,9 @@ public static class TransferEntitlementHandler
                 ? await db.ReplacementPolicies.AsNoTracking().FirstOrDefaultAsync(p => p.TenantId == tenantId && p.ReplacementPolicyId == policyId, cancellationToken)
                 : null;
         if (policy is null) throw new CommandRefusedException("replacement_policy_unknown", command.ReplacementPolicyCode is null ? "The source policy has no replacement policy." : $"Replacement policy '{command.ReplacementPolicyCode}' does not exist.");
+
+        var metadata = await corrections.PrepareAsync(CorrectionCommand.TransferEntitlement, command.Correction, command.CommandId, EntitlementTransferReason.Replacement, null,
+            null, command.EventTime, CorrectionInitiatingRole.ServiceTechnician, cancellationToken);
 
         var rootId = source.RootEntitlementId ?? source.EntitlementId;
         if (policy.Rule == ReplacementRule.StatutoryExtensionOnce)
@@ -321,14 +325,15 @@ public static class TransferEntitlementHandler
         {
             entitlement_id = source.EntitlementId, coverage_family = source.CoverageFamily, reason = EntitlementClosedReason.Replaced, effective = command.ReplacementDate,
             successor_entitlement_id = target.EntitlementId, successor_unit_id = target.UnitId,
-        }, null, cancellationToken);
+        }, null, cancellationToken, correction: metadata);
 
         var chainLength = await ChainLengthAsync(db, tenantId, rootId, cancellationToken) - 1;
         await ledger.AppendAsync(target, EntitlementEventType.Transferred, transferKey, command.EventTime, command.ActorRef, new
         {
             source_entitlement_id = source.EntitlementId, target_entitlement_id = target.EntitlementId, source_unit_id = source.UnitId, target_unit_id = target.UnitId,
             replacement_link_id = command.ReplacementLinkId, policy_applied = policy.Code, computed_end = computedEnd, root_entitlement_id = rootId, chain_length = chainLength, accrual_suppressed = true,
-        }, null, cancellationToken, eventId);
+        }, null, cancellationToken, eventId, metadata);
+        await corrections.RecordAsync(CorrectionCommand.TransferEntitlement, metadata, command.ActorRef, command.EventTime, [source.UnitId, target.UnitId], cancellationToken);
         return new(source.EntitlementId, target.EntitlementId, rootId, policy.Code, computedEnd, chainLength, eventId, false);
     }
 
@@ -340,7 +345,7 @@ public static class TransferEntitlementHandler
 
 public static class VoidEntitlementHandler
 {
-    public static async Task<EntitlementChangeResult> Handle(VoidEntitlement command, EntitlementLedger ledger, IClock clock, CancellationToken cancellationToken)
+    public static async Task<EntitlementChangeResult> Handle(VoidEntitlement command, EntitlementLedger ledger, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
         var entitlement = await ledger.LoadAsync(command.EntitlementId, cancellationToken);
         var key = EntitlementLedger.Key(command.CommandId, entitlement.UnitId, EntitlementEventType.Voided, command.EventTime);
@@ -351,11 +356,16 @@ public static class VoidEntitlementHandler
             throw new CommandRefusedException("evidence_required", "A void names why and the evidence for it.", "attach the evidence (document, inspection report) and an explanation");
         }
 
+        var supplied = command.Correction ?? new CorrectionMetadata(command.CommandId, command.ClosedReason, command.Explanation, command.EvidenceRefs);
+        var metadata = await corrections.PrepareAsync(CorrectionCommand.VoidEntitlement, supplied, command.CommandId, command.ClosedReason, command.Explanation,
+            null, command.EventTime, CorrectionInitiatingRole.CustomerService, cancellationToken);
+
         EntitlementLedger.Transition(entitlement, EntitlementEventType.Voided);
         entitlement.ClosedReason = command.ClosedReason;
         entitlement.ClosedEffective = command.Effective;
         entitlement.ClosedAt = clock.UtcNow;
-        var eventId = await ledger.AppendAsync(entitlement, EntitlementEventType.Voided, key, command.EventTime, command.ActorRef, new { entitlement_id = entitlement.EntitlementId, coverage_family = entitlement.CoverageFamily, reason = command.ClosedReason, explanation = command.Explanation, evidence = command.EvidenceRefs, effective = command.Effective }, null, cancellationToken);
+        var eventId = await ledger.AppendAsync(entitlement, EntitlementEventType.Voided, key, command.EventTime, command.ActorRef, new { entitlement_id = entitlement.EntitlementId, coverage_family = entitlement.CoverageFamily, reason = command.ClosedReason, explanation = command.Explanation, evidence = command.EvidenceRefs, effective = command.Effective }, null, cancellationToken, correction: metadata);
+        await corrections.RecordAsync(CorrectionCommand.VoidEntitlement, metadata, command.ActorRef, command.EventTime, [entitlement.UnitId], cancellationToken);
         return RebaseEntitlementStartHandler.Result(entitlement, eventId, false);
     }
 }

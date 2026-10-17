@@ -61,6 +61,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<CorrectionRecord> Corrections => Set<CorrectionRecord>();
 
+    public DbSet<CorrectionRecordUnit> CorrectionUnits => Set<CorrectionRecordUnit>();
+
     public DbSet<SearchEntry> SearchEntries => Set<SearchEntry>();
 
     public DbSet<SearchTerm> SearchTerms => Set<SearchTerm>();
@@ -310,17 +312,27 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             {
                 t.HasCheckConstraint("ck_correction_record_evidence_refs_json", "ISJSON(evidence_refs) = 1");
                 t.HasCheckConstraint("ck_correction_record_approvers_json", "ISJSON(approvers) = 1");
-                t.HasCheckConstraint("ck_correction_record_root_cause", "root_cause_category BETWEEN 1 AND 7");
+                t.HasCheckConstraint("ck_correction_record_root_cause", "root_cause_category IS NULL OR root_cause_category BETWEEN 1 AND 7");
             });
             b.HasKey(c => new { c.TenantId, c.CorrectionId });
             b.Property(c => c.Command).HasMaxLength(60);
             b.Property(c => c.ReasonCode).HasMaxLength(60);
+            b.Property(c => c.RequestStatus).HasMaxLength(30);
             b.Property(c => c.InitiatedVia).HasMaxLength(20);
             b.Property(c => c.InitiatingRole).HasMaxLength(40);
             b.Property(c => c.ActorRef).HasMaxLength(200);
             b.Property(c => c.Note).HasMaxLength(2000);
             b.HasIndex(c => new { c.TenantId, c.EventTime, c.RootCauseCategory, c.InitiatingRole, c.InitiatedVia });
+            b.HasIndex(c => new { c.TenantId, c.EventTime, c.RootCauseCategory, c.RequestStatus });
             b.HasIndex(c => new { c.TenantId, c.CorrectsCorrectionId });
+        });
+
+        modelBuilder.Entity<CorrectionRecordUnit>(b =>
+        {
+            b.ToTable("correction_record_unit");
+            b.HasKey(c => new { c.TenantId, c.CorrectionId, c.UnitId });
+            b.HasOne<CorrectionRecord>().WithMany().HasForeignKey(c => new { c.TenantId, c.CorrectionId }).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(c => new { c.TenantId, c.ItemId, c.CorrectionId });
         });
 
         modelBuilder.Entity<SearchEntry>(b =>

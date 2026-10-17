@@ -83,7 +83,7 @@ public static class VoidUnitHandler
             },
         ], cancellationToken);
         plan.Unit.LifecycleStatus = plan.NextStatus;
-        corrections.Record(CorrectionCommand.VoidUnit, plan.Metadata, command.ActorRef, command.EventTime, 1);
+        await corrections.RecordAsync(CorrectionCommand.VoidUnit, plan.Metadata, command.ActorRef, command.EventTime, [command.UnitId], cancellationToken);
         return new(command.UnitId, plan.PreviousStatus, plan.NextStatus, identifierIds, plan.SerialReuseOutcome,
             plan.Metadata.CorrectionId, plan.Reversed);
     }

@@ -100,7 +100,7 @@ public static class CorrectIdentifierHandler
                 Delta = null,
             },
         ], cancellationToken);
-        corrections.Record(CorrectionCommand.CorrectIdentifier, metadata, command.ActorRef, command.EventTime, 1);
+        await corrections.RecordAsync(CorrectionCommand.CorrectIdentifier, metadata, command.ActorRef, command.EventTime, [unit.UnitId], cancellationToken);
         return new CorrectIdentifierResult(unit.UnitId, open.IdentifierId, replacement.IdentifierId, open.NormalisedValue, replacement.NormalisedValue, metadata.CorrectionId);
     }
 }

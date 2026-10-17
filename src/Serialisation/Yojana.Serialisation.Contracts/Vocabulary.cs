@@ -269,11 +269,17 @@ public static class CorrectionCommand
     public const string ReassignAllocation = "reassign_allocation";
     public const string CorrectDocumentSerials = "correct_document_serials";
     public const string CorrectSourceDocument = "correct_source_document";
+    public const string AmendEntitlement = "amend_entitlement";
+    public const string SupersedeEntitlement = "supersede_entitlement";
+    public const string VoidEntitlement = "void_entitlement";
+    public const string TransferEntitlement = "transfer_entitlement";
+    public const string BackfillEntitlements = "backfill_entitlements";
 
     public static readonly IReadOnlyList<string> All =
     [
         CorrectIdentifier, SwapIdentifiers, CorrectItem, CorrectAsBuilt, LateSerialization, VoidUnit, MergeUnits,
-        AssignIdentifiers, ReassignAllocation, CorrectDocumentSerials, CorrectSourceDocument,
+        AssignIdentifiers, ReassignAllocation, CorrectDocumentSerials, CorrectSourceDocument, AmendEntitlement,
+        SupersedeEntitlement, VoidEntitlement, TransferEntitlement, BackfillEntitlements,
     ];
 }
 
@@ -311,6 +317,22 @@ public static class CorrectionRootCause
     public const int WrongItemOrOrder = 5;
     public const int AllocationBeforeBirth = 6;
     public const int Warranty = 7;
+}
+
+/// <summary>Request-only rows reserved for P3-T16b; re-filed requests are replaced in the KPI by their correction.</summary>
+public static class CorrectionRequestStatus
+{
+    public const string Open = "open";
+    public const string Refiled = "refiled";
+    public const string NoCommandFits = "no_command_fits";
+
+    public static readonly IReadOnlyList<string> All = [Open, Refiled, NoCommandFits];
+}
+
+/// <summary>The fixed reason recorded when remaining cover moves to a replacement unit.</summary>
+public static class EntitlementTransferReason
+{
+    public const string Replacement = "replacement_transfer";
 }
 
 public static class IdentifierCorrectionReason

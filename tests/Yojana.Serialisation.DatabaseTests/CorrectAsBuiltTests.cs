@@ -85,6 +85,7 @@ public sealed class CorrectAsBuiltTests(SerialisationHostFixture fixture)
             Assert.All(facts, fact => Assert.Equal(correctionId, JsonDocument.Parse(fact.Attributes!).RootElement.GetProperty("correction_id").GetGuid()));
             var correction = await db.Corrections.SingleAsync(c => c.CorrectionId == correctionId);
             Assert.Equal(2, correction.UnitCount);
+            Assert.Equal(CorrectionRootCause.WrongItemOrOrder, correction.RootCauseCategory);
         }
 
         var published = await PublishedEventSink.WaitForAsync<UnitAsBuiltCorrected>(e => e.Correction.CorrectionId == correctionId, 2, TimeSpan.FromSeconds(5));

@@ -104,6 +104,10 @@ public sealed class EntitlementBulkTests(SerialisationHostFixture fixture)
         Assert.Equal((65, 61, 4, 0, false), (result.Total, result.Done, result.Skipped, result.Blocked, result.Replayed));
         var replay = await InvokeAsync<BulkExecutionResult>(tenant, execute);
         Assert.True(replay.Replayed);
+        var correction = await CountAsync(tenant, db => db.Corrections.SingleAsync(c => c.CorrectionId == execute.CommandId));
+        Assert.Equal(CorrectionCommand.SupersedeEntitlement, correction.Command);
+        Assert.Equal(CorrectionRootCause.Warranty, correction.RootCauseCategory);
+        Assert.Equal(61, correction.UnitCount);
 
         var live = await CountAsync(tenant, db => db.Entitlements.Where(e => units.Contains(e.UnitId) && e.Status != EntitlementStatus.Closed).ToListAsync());
         Assert.Equal(61, live.Count);

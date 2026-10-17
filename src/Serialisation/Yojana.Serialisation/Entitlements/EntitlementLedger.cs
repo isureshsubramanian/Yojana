@@ -1,9 +1,11 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
@@ -45,7 +47,7 @@ public sealed class EntitlementLedger(SerialisationDbContext db, IUnitEventWrite
         entitlement.Status = next;
     }
 
-    public async Task<Guid> AppendAsync(Entitlement entitlement, string eventType, string key, DateTime at, string actorRef, object attributes, DocumentRef? document, CancellationToken cancellationToken, Guid? presetEventId = null)
+    public async Task<Guid> AppendAsync(Entitlement entitlement, string eventType, string key, DateTime at, string actorRef, object attributes, DocumentRef? document, CancellationToken cancellationToken, Guid? presetEventId = null, CorrectionMetadata? correction = null)
     {
         // Saved first, so the coverage read below sees this entitlement's new state together with the unit's others.
         await db.SaveChangesAsync(cancellationToken);
@@ -61,6 +63,11 @@ public sealed class EntitlementLedger(SerialisationDbContext db, IUnitEventWrite
             live_entitlement_ids = (current is null ? [] : JsonSerializer.Deserialize<List<Guid>>(current.LiveEntitlementIds, LedgerJson.Options) ?? []).Order().ToList(),
             warranty_end_max = current?.WarrantyEndMax,
         }, LedgerJson.Options);
+        if (correction is not null)
+        {
+            var corrected = CorrectionLedger.Attributes(correction, recorded).Json;
+            recorded = JsonNode.Parse(corrected)!.AsObject();
+        }
         var eventId = presetEventId ?? TimeOrderedId.New(at);
         await writer.AppendAsync(
         [

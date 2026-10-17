@@ -57,12 +57,16 @@ public static class SerialisationModule
         builder.Services.AddScoped<BulkExecutor>();
         builder.Services.AddScoped<BulkApprovalRequestQueries>();
         builder.Services.AddScoped<CorrectionLedger>();
+        builder.Services.AddScoped<CorrectionKpiQueries>();
         builder.Services.AddScoped<CorrectAsBuiltPlanner>();
         // Coupled to CorrectionApprovalSettings for the same Wolverine constraint documented on that type: replacing
         // this factory with constructor registration exposes PlatformDbContext beside SerialisationDbContext and stops host startup.
         builder.Services.AddScoped(sp => new CorrectionApprovalSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         // Coupled to SerialReuseSettings for the same reason as correction approvals: keep PlatformDbContext hidden from Wolverine.
         builder.Services.AddScoped(sp => new SerialReuseSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        // Coupled to CorrectionKpiTargetSettings for the same Wolverine constraint as correction approvals: keep the
+        // PlatformDbContext behind ITenantSettings out of generated handler dependency graphs.
+        builder.Services.AddScoped(sp => new CorrectionKpiTargetSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
 
         // Global search (MOD-13, P1-T23): the index table and its maintenance handlers live here; other modules index through ISearchIndex.
         // Warranty policies (MOD-06, P2-T03).
