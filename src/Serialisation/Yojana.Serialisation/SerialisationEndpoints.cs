@@ -37,20 +37,20 @@ public static class SerialisationEndpoints
             Results.Ok(await queries.HistoryAsync(unitId, Math.Max(0, skip ?? 0), take ?? 50, ct)));
         units.MapPost("/scan", (ScanRequest request) => Results.Ok(ScanParser.Parse(request.Raw)));
         units.MapPost("/completeness", async (CompletenessQuery query, CompletenessQueries queries, CancellationToken ct) => Results.Ok(await queries.QueryAsync(query, ct)));
-        units.MapPost("/commission", (CommissionUnits command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CommissionUnitsResult>(bus, tenant, command, ct));
-        units.MapPost("/assign-identifier", (AssignIdentifier command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<AssignIdentifierResult>(bus, tenant, command, ct));
-        units.MapPost("/correct-identifier", (CorrectIdentifier command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CorrectIdentifierResult>(bus, tenant, command, ct));
-        units.MapPost("/release", (ReleaseUnit command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ReleaseUnitResult>(bus, tenant, command, ct));
-        units.MapPost("/assemble", (RecordAssembly command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordAssemblyResult>(bus, tenant, command, ct));
-        units.MapPost("/disassemble", (RecordDisassembly command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordDisassemblyResult>(bus, tenant, command, ct));
-        units.MapPost("/flag", (SetUnitFlag command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<UnitFlagResult>(bus, tenant, command, ct));
-        units.MapPost("/unflag", (ClearUnitFlag command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<UnitFlagResult>(bus, tenant, command, ct));
+        units.MapPost("/commission", (CommissionUnits command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CommissionUnitsResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
+        units.MapPost("/assign-identifier", (AssignIdentifier command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<AssignIdentifierResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
+        units.MapPost("/correct-identifier", (CorrectIdentifier command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CorrectIdentifierResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
+        units.MapPost("/release", (ReleaseUnit command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ReleaseUnitResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
+        units.MapPost("/assemble", (RecordAssembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordAssemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
+        units.MapPost("/disassemble", (RecordDisassembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordDisassemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
+        units.MapPost("/flag", (SetUnitFlag command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<UnitFlagResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
+        units.MapPost("/unflag", (ClearUnitFlag command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<UnitFlagResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
 
         var ranges = app.MapGroup("/api/serial-ranges").RequireAuthorization(YojanaPolicy.TenantMember);
         ranges.MapGet("/schemes", (SerialRangeQueries queries) => Results.Ok(queries.Schemes()));
         ranges.MapGet("/", async (string scheme, string? status, int? skip, int? take, SerialRangeQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.ListAsync(scheme, status, Math.Max(0, skip ?? 0), take ?? 50, ct)));
-        ranges.MapPost("/", (AllocateSerialRange command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<AllocateSerialRangeResult>(bus, tenant, command, ct));
+        ranges.MapPost("/", (AllocateSerialRange command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<AllocateSerialRangeResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
 
         // Global search (MOD-13): the palette's endpoint; the tier is back office until the portal (P7) adds its principal.
         app.MapGet("/api/search", async (string? q, string? scope, SearchQueries search, CancellationToken ct) =>
@@ -67,11 +67,11 @@ public static class SerialisationEndpoints
         policies.MapGet("/{policyCode}/versions", async (string policyCode, PolicyQueries queries, CancellationToken ct) => Results.Ok(await queries.VersionsAsync(policyCode, ct)));
         policies.MapGet("/versions/{policyVersionId:guid}", async (Guid policyVersionId, PolicyQueries queries, CancellationToken ct) =>
             await queries.DetailAsync(policyVersionId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
-        policies.MapPost("/drafts", (CreatePolicyDraft command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyDraftResult>(bus, tenant, command, ct)).RequireAuthorization(editor);
-        policies.MapPut("/versions/{policyVersionId:guid}", (Guid policyVersionId, UpdatePolicyDraft command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyDraftResult>(bus, tenant, command with { PolicyVersionId = policyVersionId }, ct)).RequireAuthorization(editor);
+        policies.MapPost("/drafts", (CreatePolicyDraft command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyDraftResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(editor);
+        policies.MapPut("/versions/{policyVersionId:guid}", (Guid policyVersionId, UpdatePolicyDraft command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyDraftResult>(bus, tenant, command with { ActorRef = Actor(user), PolicyVersionId = policyVersionId }, ct)).RequireAuthorization(editor);
         policies.MapPost("/versions/{policyVersionId:guid}/validate", (Guid policyVersionId, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyValidation>(bus, tenant, new ValidatePolicyDraft(policyVersionId), ct));
-        policies.MapPost("/versions/{policyVersionId:guid}/publish", (Guid policyVersionId, PublishPolicyVersion command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyDraftResult>(bus, tenant, command with { PolicyVersionId = policyVersionId }, ct)).RequireAuthorization(editor);
-        policies.MapPost("/versions/{policyVersionId:guid}/discard", (Guid policyVersionId, DiscardPolicyDraft command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyDraftResult>(bus, tenant, command with { PolicyVersionId = policyVersionId }, ct)).RequireAuthorization(editor);
+        policies.MapPost("/versions/{policyVersionId:guid}/publish", (Guid policyVersionId, PublishPolicyVersion command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyDraftResult>(bus, tenant, command with { ActorRef = Actor(user), PolicyVersionId = policyVersionId }, ct)).RequireAuthorization(editor);
+        policies.MapPost("/versions/{policyVersionId:guid}/discard", (Guid policyVersionId, DiscardPolicyDraft command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyDraftResult>(bus, tenant, command with { ActorRef = Actor(user), PolicyVersionId = policyVersionId }, ct)).RequireAuthorization(editor);
         // Entitlements (P2-T05): the panel reads; the service desk and manager act. AmendEntitlement (P2-T08) is open to any
         // member: the handler checks the committer's roles against the tenant's approval policy for the reason and days.
         var entitlements = app.MapGroup("/api/entitlements").RequireAuthorization(YojanaPolicy.TenantMember);
@@ -90,20 +90,20 @@ public static class SerialisationEndpoints
             if (unitsFound.Count > 1) return Results.Conflict(new { reason = "ambiguous_identifier", lookup.Hits });
             return Results.Ok(await entitlementQueries.WarrantyCheckAsync(unitsFound[0], on ?? DateOnly.FromDateTime(clock.UtcNow), family, ct));
         });
-        entitlements.MapPost("/", (CreateEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CreateEntitlementResult>(bus, tenant, command, ct)).RequireAuthorization(desk);
-        entitlements.MapPost("/extended", (AttachExtendedWarranty command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<AttachExtendedWarrantyResult>(bus, tenant, command, ct)).RequireAuthorization(desk);
+        entitlements.MapPost("/", (CreateEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CreateEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
+        entitlements.MapPost("/extended", (AttachExtendedWarranty command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<AttachExtendedWarrantyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
         entitlements.MapPost("/backfill", (BackfillEntitlements command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<BackfillEntitlementsResult>(bus, tenant, command with { CommittedBy = Committer(user) }, ct)).RequireAuthorization(editor);
-        entitlements.MapPost("/{entitlementId:guid}/rebase", (Guid entitlementId, RebaseEntitlementStart command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { EntitlementId = entitlementId }, ct)).RequireAuthorization(desk);
-        entitlements.MapPost("/{entitlementId:guid}/suspend", (Guid entitlementId, SuspendEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
-        entitlements.MapPost("/{entitlementId:guid}/resume", (Guid entitlementId, ResumeEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
-        entitlements.MapPost("/{entitlementId:guid}/void", (Guid entitlementId, VoidEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
-        entitlements.MapPost("/{entitlementId:guid}/close", (Guid entitlementId, CloseEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
+            Invoke<BackfillEntitlementsResult>(bus, tenant, command with { ActorRef = Actor(user), CommittedBy = Committer(user) }, ct)).RequireAuthorization(editor);
+        entitlements.MapPost("/{entitlementId:guid}/rebase", (Guid entitlementId, RebaseEntitlementStart command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId }, ct)).RequireAuthorization(desk);
+        entitlements.MapPost("/{entitlementId:guid}/suspend", (Guid entitlementId, SuspendEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
+        entitlements.MapPost("/{entitlementId:guid}/resume", (Guid entitlementId, ResumeEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
+        entitlements.MapPost("/{entitlementId:guid}/void", (Guid entitlementId, VoidEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
+        entitlements.MapPost("/{entitlementId:guid}/close", (Guid entitlementId, CloseEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
         entitlements.MapPost("/{entitlementId:guid}/amend", (Guid entitlementId, AmendEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<AmendEntitlementResult>(bus, tenant, command with { EntitlementId = entitlementId, CommittedBy = Committer(user) }, ct));
+            Invoke<AmendEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId, CommittedBy = Committer(user) }, ct));
         entitlements.MapPost("/{entitlementId:guid}/supersede", (Guid entitlementId, SupersedeEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<SupersedeEntitlementResult>(bus, tenant, command with { EntitlementId = entitlementId, CommittedBy = Committer(user) }, ct));
-        entitlements.MapPost("/{entitlementId:guid}/transfer", (Guid entitlementId, TransferEntitlement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<TransferEntitlementResult>(bus, tenant, command with { SourceEntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
+            Invoke<SupersedeEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId, CommittedBy = Committer(user) }, ct));
+        entitlements.MapPost("/{entitlementId:guid}/transfer", (Guid entitlementId, TransferEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<TransferEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user), SourceEntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
         entitlements.MapGet("/requirements", async (string? status, string? documentType, Guid? document, int? skip, int? take, EntitlementRequirementQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.PageAsync(status, documentType, document, skip ?? 0, take ?? 50, ct)));
         entitlements.MapGet("/requirements/check", async (string documentType, Guid documentId, EntitlementRequirementQueries queries, CancellationToken ct) =>
@@ -145,10 +145,10 @@ public static class SerialisationEndpoints
                 await writer.FlushAsync(ct);
             }, "text/csv; charset=utf-8", "entitlement-gap-report.csv");
         });
-        entitlements.MapPost("/requirements/{requirementId:guid}/waive", (Guid requirementId, WaiveEntitlementRequirement command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<EntitlementRequirementRow>(bus, tenant, command with { RequirementId = requirementId }, ct)).RequireAuthorization(editor);
-        entitlements.MapPost("/requirements/{requirementId:guid}/complete-transfer", (Guid requirementId, CompleteEntitlementTransfer command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<EntitlementRequirementRow>(bus, tenant, command with { RequirementId = requirementId }, ct)).RequireAuthorization(desk);
+        entitlements.MapPost("/requirements/{requirementId:guid}/waive", (Guid requirementId, WaiveEntitlementRequirement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<EntitlementRequirementRow>(bus, tenant, command with { ActorRef = Actor(user), RequirementId = requirementId }, ct)).RequireAuthorization(editor);
+        entitlements.MapPost("/requirements/{requirementId:guid}/complete-transfer", (Guid requirementId, CompleteEntitlementTransfer command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<EntitlementRequirementRow>(bus, tenant, command with { ActorRef = Actor(user), RequirementId = requirementId }, ct)).RequireAuthorization(desk);
         entitlements.MapGet("/{entitlementId:guid}/disclosure", async (Guid entitlementId, EntitlementQueries queries, CancellationToken ct) =>
             await queries.DisclosureAsync(entitlementId, ct) is { } disclosure ? Results.Ok(disclosure) : Results.NotFound()).RequireAuthorization(YojanaPolicy.TenantMember);
 
@@ -195,16 +195,16 @@ public static class SerialisationEndpoints
             Results.Ok(await validation.ValidateAsync(request, ct)));
         warrantyLines.MapGet("/exceptions", async (string? status, int? skip, int? take, WarrantyLineExceptionQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.PageAsync(status, skip ?? 0, take ?? 50, ct)));
-        warrantyLines.MapPost("/exceptions/{exceptionId:guid}/resolve", (Guid exceptionId, ResolveWarrantyLineException command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<WarrantyLineExceptionRow>(bus, tenant, command with { ExceptionId = exceptionId }, ct)).RequireAuthorization(desk);
+        warrantyLines.MapPost("/exceptions/{exceptionId:guid}/resolve", (Guid exceptionId, ResolveWarrantyLineException command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<WarrantyLineExceptionRow>(bus, tenant, command with { ActorRef = Actor(user), ExceptionId = exceptionId }, ct)).RequireAuthorization(desk);
 
         var selections = app.MapGroup("/api/selections").RequireAuthorization(YojanaPolicy.TenantMember);
-        selections.MapPost("/", (ResolveSelectionSet command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ResolveSelectionSetResult>(bus, tenant, command, ct));
+        selections.MapPost("/", (ResolveSelectionSet command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ResolveSelectionSetResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         // Approver and roles come from the claims, never the body: the operations judge approval tiers on them.
         selections.MapPost("/{selectionId:guid}/preview", (Guid selectionId, PreviewBulkOperation command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<BulkPreviewResult>(bus, tenant, command with { SelectionId = selectionId, Approval = Approver(user, command.Approval) }, ct));
+            Invoke<BulkPreviewResult>(bus, tenant, command with { Arguments = command.Arguments with { ActorRef = Actor(user) }, SelectionId = selectionId, Approval = Approver(user, command.Approval) }, ct));
         selections.MapPost("/{selectionId:guid}/execute", (Guid selectionId, ExecuteBulkOperation command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<BulkExecutionResult>(bus, tenant, command with { SelectionId = selectionId, Approval = Approver(user, command.Approval)! }, ct));
+            Invoke<BulkExecutionResult>(bus, tenant, command with { Arguments = command.Arguments with { ActorRef = Actor(user) }, SelectionId = selectionId, Approval = Approver(user, command.Approval)! }, ct));
         selections.MapGet("/{selectionId:guid}/find", async (Guid selectionId, string q, int? skip, int? take, BulkExecutor executor, CancellationToken ct) =>
             Results.Ok(await executor.FindAsync(new FindInSelection(selectionId, q, Math.Max(0, skip ?? 0), take ?? 50), ct)));
         // P2-T21 approval queue: requester, approver and their roles come from the claims, never the body.
@@ -214,7 +214,7 @@ public static class SerialisationEndpoints
         approvals.MapGet("/{requestId:guid}", async (Guid requestId, BulkApprovalRequestQueries queries, CancellationToken ct) =>
             await queries.GetAsync(requestId, ct) is { } row ? Results.Ok(row) : Results.NotFound());
         approvals.MapPost("/", (RequestBulkApproval command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<BulkApprovalRequestRow>(bus, tenant, command with { Requester = Approver(user, null) }, ct));
+            Invoke<BulkApprovalRequestRow>(bus, tenant, command with { Arguments = command.Arguments with { ActorRef = Actor(user) }, Requester = Approver(user, null) }, ct));
         approvals.MapPost("/{requestId:guid}/approve", (Guid requestId, ApproveBulkRequest command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<BulkApprovalRequestRow>(bus, tenant, command with { RequestId = requestId, Approver = Approver(user, null) }, ct));
         approvals.MapPost("/{requestId:guid}/reject", (Guid requestId, RejectBulkRequest command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
@@ -233,6 +233,13 @@ public static class SerialisationEndpoints
             return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict, extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
         }
     }
+
+    /// <summary>
+    /// Who acts: the signed-in user's id, from the claims. Every command endpoint overwrites the body's ActorRef with it, so
+    /// the ledger records who was signed in, never what a client claimed; screens show the name through IUserDirectory.
+    /// </summary>
+    private static string Actor(ClaimsPrincipal user) =>
+        user.FindFirstValue(YojanaClaim.UserId) ?? throw new InvalidOperationException("A signed-in user carries a user id claim.");
 
     /// <summary>The signed-in user and their roles in the selected tenant, from the claims; never what a request body claims.</summary>
     private static AmendmentCommitter Committer(ClaimsPrincipal user) =>

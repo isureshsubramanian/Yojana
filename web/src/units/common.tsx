@@ -40,7 +40,10 @@ export function UnitLink({ unitId, children, className = "serial" }: { unitId: s
   return <Link className={className} to={`/units/${unitId}`}>{children}</Link>;
 }
 
-/** Who acts: the signed-in user's display name as the actor reference on every command. */
+/**
+ * The signed-in user's reference for display and for the actorRef field commands still carry. The server ignores the
+ * body's actorRef and records the signed-in user's id from the claims (SerialisationEndpoints.Actor).
+ */
 export function useActor(): string {
   const session = useSession();
   return session.user.email || session.user.displayName;
