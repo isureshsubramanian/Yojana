@@ -3,6 +3,7 @@ using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 
@@ -36,7 +37,7 @@ public static class BackfillEntitlementsHandler
     // Coupled to the RefurbishedGoodsSettings factory in SerialisationModule: exposing ITenantSettings directly makes
     // Wolverine include PlatformDbContext beside SerialisationDbContext and refuse this handler's transaction graph.
     public static async Task<BackfillEntitlementsResult> Handle(BackfillEntitlements command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store,
-        ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
         if (BackfillRules.CommandProblem(command) is { } problem)
         {
@@ -108,6 +109,13 @@ public static class BackfillEntitlementsHandler
             throw new CommandRefusedException("finance_review_required", "At least one backfilled assurance warranty joins or creates an accrual cohort.", "record the finance review reference before committing the list");
         }
 
+        CorrectionMetadata? metadata = null;
+        if (plans.Count > 0)
+        {
+            metadata = await corrections.PrepareAsync(CorrectionCommand.BackfillEntitlements, command.Correction, command.CommandId, command.ReasonCode, null,
+                command.CommittedBy?.UserRef, command.EventTime, CorrectionInitiatingRole.CustomerService, cancellationToken);
+        }
+
         foreach (var plan in plans)
         {
             var evidenceAt = DateTime.SpecifyKind(plan.Ownership.ValidFrom, DateTimeKind.Utc);
@@ -115,9 +123,12 @@ public static class BackfillEntitlementsHandler
                 new Dictionary<string, DateTime> { [StartTrigger.Deliver] = evidenceAt }, plan.PolicyVersionId, plan.Ownership.PartyRef, plan.Ownership.PartyType,
                 Country: command.Country, SiteLocationId: command.SiteLocationId, StartEvidenceRef: command.EvidenceRefs[0], SourceDocument: command.SourceDocument,
                 CustomerPoRef: plan.Ownership.CustomerPoRef, Provenance: EntitlementProvenance.Backfilled);
-            var created = await CreateEntitlementHandler.CreateAsync(creation, db, ledger, resolver, store, zones, refurbishedSettings, tenant, clock, plan.StartBasis, command.EvidenceRefs, plan.FinanceReviewRequired, command.ReasonCode, command.FinanceReviewRef, cancellationToken);
+            var created = await CreateEntitlementHandler.CreateAsync(creation, db, ledger, resolver, store, zones, refurbishedSettings, tenant, clock, plan.StartBasis, command.EvidenceRefs, plan.FinanceReviewRequired, command.ReasonCode, command.FinanceReviewRef, metadata, cancellationToken);
             outcomes.Add(new(plan.UnitId, "created", null, created.EntitlementId, created.StartDate, created.EndDate));
         }
+
+        if (metadata is not null)
+            await corrections.RecordAsync(CorrectionCommand.BackfillEntitlements, metadata, command.ActorRef, command.EventTime, plans.Select(p => p.UnitId).ToList(), cancellationToken);
 
         var ordered = command.UnitIds.Select(id => outcomes.Single(o => o.UnitId == id)).ToList();
         return new(ordered, plans.Count == 0 && ordered.Count > 0 && ordered.All(o => o.EntitlementId is not null));

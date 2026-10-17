@@ -90,7 +90,7 @@ public sealed class CorrectionApprovalRulesTests
     public void The_default_policy_is_complete_and_valid()
     {
         Assert.Empty(CorrectionApprovalRules.Validate(Policy));
-        Assert.Equal(CorrectionCommand.All.Order(), Policy.Commands.Select(r => r.Command).Order());
+        Assert.Equal(CorrectionCommand.All.Except(CorrectionCommand.ApprovedByEntitlementPolicy).Order(), Policy.Commands.Select(r => r.Command).Order());
         Assert.Equal(10, Policy.Workbench.Count);
     }
 

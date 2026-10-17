@@ -12,7 +12,8 @@ public sealed class CorrectionRecord : ITenantScoped
     public Guid CorrectionId { get; set; }
     public required string Command { get; set; }
     public required string ReasonCode { get; set; }
-    public int RootCauseCategory { get; set; }
+    public int? RootCauseCategory { get; set; }
+    public string? RequestStatus { get; set; }
     public required string InitiatedVia { get; set; }
     public required string InitiatingRole { get; set; }
     public required string ActorRef { get; set; }
@@ -76,4 +77,16 @@ public sealed class SerialAllocationOverride : ITenantScoped
     public Guid LastCorrectionId { get; set; }
     public DateTime UpdatedAt { get; set; }
     public Guid? CommissionedUnitId { get; set; }
+}
+
+/// <summary>
+/// Item membership of a correction. It is separate from <see cref="CorrectionRecord"/> because one bulk correction may
+/// span several items while the KPI must still count the command once.
+/// </summary>
+public sealed class CorrectionRecordUnit : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid CorrectionId { get; set; }
+    public Guid UnitId { get; set; }
+    public Guid ItemId { get; set; }
 }

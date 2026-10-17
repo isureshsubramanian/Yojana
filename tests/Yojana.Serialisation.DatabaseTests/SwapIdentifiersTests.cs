@@ -82,6 +82,7 @@ public sealed class SwapIdentifiersTests(SerialisationHostFixture fixture)
 
             var correction = Assert.Single(await db.Corrections.Where(c => c.CorrectionId == firstCorrection).ToListAsync());
             Assert.Equal(2, correction.UnitCount);
+            Assert.Equal(CorrectionRootCause.TypoOrCrossedPair, correction.RootCauseCategory);
             var facts = await db.Events.Where(e => e.EventType == UnitEventType.IdentifiersSwapped).ToListAsync();
             Assert.Equal(2, facts.Count);
             Assert.All(facts, fact =>

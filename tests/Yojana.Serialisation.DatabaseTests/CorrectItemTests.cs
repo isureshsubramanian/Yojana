@@ -77,7 +77,8 @@ public sealed class CorrectItemTests(SerialisationHostFixture fixture)
         Assert.Equal(2, assignments.Count);
         Assert.Equal(ItemAssignmentReason.Correction, assignments[1].Reason);
         Assert.Equal(correctedItem, (await db.Current.SingleAsync(row => row.UnitId == setup.Unit)).ItemId);
-        Assert.Single(await db.Corrections.Where(row => row.CorrectionId == command.Correction.CorrectionId).ToListAsync());
+        Assert.Equal(CorrectionRootCause.WrongItemOrOrder,
+            Assert.Single(await db.Corrections.Where(row => row.CorrectionId == command.Correction.CorrectionId).ToListAsync()).RootCauseCategory);
 
         var published = await PublishedEventSink.WaitForAsync<UnitItemCorrected>(e => e.Header.UnitId == setup.Unit, 1, TimeSpan.FromSeconds(20));
         var corrected = Assert.Single(published);

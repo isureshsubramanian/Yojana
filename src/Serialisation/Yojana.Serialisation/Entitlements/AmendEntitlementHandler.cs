@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
@@ -27,7 +28,12 @@ public static class AmendEntitlementHandler
     // the transactional one. Naming it with [Transactional] instead opens the connection before the tenant middleware
     // runs, so row-level security hides every row. The factory keeps the platform context out of the generated code.
     // ITenantCurrency is coupled the same way, through its factory registration in PlatformSetup.
-    public static async Task<AmendEntitlementResult> Handle(AmendEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates, ITenantCurrency currency, ITenantContext tenant, CancellationToken cancellationToken)
+    public static Task<AmendEntitlementResult> Handle(AmendEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims,
+        IWarrantyCertificatePort certificates, ITenantCurrency currency, ITenantContext tenant, CorrectionLedger corrections, CancellationToken cancellationToken) =>
+        AmendAsync(command, db, ledger, approvals, claims, certificates, currency, tenant, corrections, true, cancellationToken);
+
+    internal static async Task<AmendEntitlementResult> AmendAsync(AmendEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims,
+        IWarrantyCertificatePort certificates, ITenantCurrency currency, ITenantContext tenant, CorrectionLedger? corrections, bool recordCorrection, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var entitlement = await ledger.LoadAsync(command.EntitlementId, cancellationToken);
@@ -129,6 +135,13 @@ public static class AmendEntitlementHandler
             throw new CommandRefusedException("open_claims", "Cover is not reduced while claims against it are open.", "close the open claims first");
         }
 
+        CorrectionMetadata? metadata = null;
+        if (recordCorrection)
+        {
+            metadata = await corrections!.PrepareAsync(CorrectionCommand.AmendEntitlement, command.Correction, command.CommandId, command.ReasonCode, command.Note,
+                committer.UserRef, command.EventTime, CorrectionInitiatingRole.CustomerService, cancellationToken);
+        }
+
         var eventId = TimeOrderedId.New(command.EventTime);
         var approvedBy = committer.UserRef;
         foreach (var change in changes)
@@ -153,7 +166,9 @@ public static class AmendEntitlementHandler
             entitlement_id = entitlement.EntitlementId, coverage_family = entitlement.CoverageFamily, reason_code = command.ReasonCode, days_changed = daysChanged, reduction,
             approval_level = required.Role, approved_by = approvedBy, finance_review_ref = command.FinanceReviewRef, customer_notification_ref = command.CustomerNotificationRef,
             certificate_issued = certificateIssued, note = command.Note, changes, value, value_source = valueSource, value_currency = valueCurrency,
-        }, command.SourceDocument, cancellationToken, eventId);
+        }, command.SourceDocument, cancellationToken, eventId, metadata);
+        if (metadata is not null)
+            await corrections!.RecordAsync(CorrectionCommand.AmendEntitlement, metadata, command.ActorRef, command.EventTime, [entitlement.UnitId], cancellationToken);
         return new(entitlement.EntitlementId, newStart, newEnd, daysChanged, reduction, required.Role, approvedBy, changes, eventId, false, value, valueSource);
     }
 

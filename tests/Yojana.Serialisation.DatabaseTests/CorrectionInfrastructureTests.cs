@@ -6,6 +6,8 @@ using Xunit;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Queries;
 
 namespace Yojana.Serialisation.DatabaseTests;
 
@@ -57,5 +59,35 @@ public sealed class CorrectionInfrastructureTests(SerialisationHostFixture fixtu
         Assert.Equal(firstId, firstJson.RootElement.GetProperty("correction_id").GetGuid());
         using var secondJson = JsonDocument.Parse(facts[1].Attributes!);
         Assert.Equal(firstId, secondJson.RootElement.GetProperty("corrects_correction_id").GetGuid());
+
+        var kpi = await scope.ServiceProvider.GetRequiredService<CorrectionKpiQueries>().QueryAsync(
+            new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), CorrectionKpiBreakdown.RootCause, null, CancellationToken.None);
+        Assert.Equal(1, kpi.Rows.Single(r => r.Dimension == CorrectionRootCause.TypoOrCrossedPair.ToString()).ReversedLater);
+    }
+
+    [DatabaseFact]
+    public async Task Unclassified_requests_exclude_a_refiled_request_and_count_its_result_once()
+    {
+        var tenant = await fixture.NewTenantAsync("ur");
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        CorrectionRecord Request(string status) => new()
+        {
+            TenantId = tenant, CorrectionId = Guid.NewGuid(), Command = "correction_request", ReasonCode = "unclassified",
+            RequestStatus = status, InitiatedVia = CorrectionInitiatedVia.Workbench, InitiatingRole = CorrectionInitiatingRole.CustomerService,
+            ActorRef = "desk", EventTime = At, RecordedTime = At, UnitCount = 1,
+        };
+        db.Corrections.AddRange(Request(CorrectionRequestStatus.Open), Request(CorrectionRequestStatus.Refiled), new CorrectionRecord
+        {
+            TenantId = tenant, CorrectionId = Guid.NewGuid(), Command = CorrectionCommand.AmendEntitlement, ReasonCode = AmendmentReason.Correction,
+            RootCauseCategory = CorrectionRootCause.Warranty, InitiatedVia = CorrectionInitiatedVia.Workbench, InitiatingRole = CorrectionInitiatingRole.CustomerService,
+            ActorRef = "desk", EventTime = At, RecordedTime = At, UnitCount = 1,
+        });
+        await db.SaveChangesAsync();
+
+        var report = await scope.ServiceProvider.GetRequiredService<CorrectionKpiQueries>().QueryAsync(
+            new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), CorrectionKpiBreakdown.RootCause, null, CancellationToken.None);
+        Assert.Equal(1, report.Rows.Single(r => r.Dimension == "unclassified").Corrections);
+        Assert.Equal(1, report.Rows.Single(r => r.Dimension == CorrectionRootCause.Warranty.ToString()).Corrections);
     }
 }

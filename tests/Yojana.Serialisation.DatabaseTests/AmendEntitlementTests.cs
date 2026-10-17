@@ -112,6 +112,8 @@ public sealed class AmendEntitlementTests(SerialisationHostFixture fixture)
             Assert.Equal((new DateOnly(2029, 3, 19), 185), (row.EndDate, row.EndAdjustmentDays));
             Assert.Equal(new DateOnly(2029, 3, 19), (await db.Current.AsNoTracking().SingleAsync(c => c.UnitId == units[0])).WarrantyEndMax);
             Assert.Equal(3, await db.Events.CountAsync(x => x.UnitId == units[0] && x.EventType == EntitlementEventType.Amended));
+            Assert.All(await db.Corrections.Where(c => c.Command == CorrectionCommand.AmendEntitlement).ToListAsync(),
+                c => Assert.Equal(CorrectionRootCause.Warranty, c.RootCauseCategory));
         }
 
         var published = await PublishedEventSink.WaitForAsync<EntitlementAmended>(x => x.Header.UnitId == units[0], 3, TimeSpan.FromSeconds(20));

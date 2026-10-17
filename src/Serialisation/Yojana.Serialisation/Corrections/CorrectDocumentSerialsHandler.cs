@@ -117,7 +117,8 @@ public static class CorrectDocumentSerialsHandler
                     item.Select(p => p.RecordedUnitId).ToList(), item.Select(p => p.PhysicalUnitId).ToList(), metadata.CorrectionId), cancellationToken);
             }
 
-            corrections.Record(CorrectionCommand.CorrectDocumentSerials, metadata, command.ActorRef, command.EventTime, plan.Pairs.Count * 2);
+            await corrections.RecordAsync(CorrectionCommand.CorrectDocumentSerials, metadata, command.ActorRef, command.EventTime,
+                plan.Pairs.SelectMany(p => new[] { p.RecordedUnitId, p.PhysicalUnitId }).ToList(), cancellationToken);
             var finance = plan.Approval.ReviewTasks.Count > 0;
             var publishedCorrection = new PublishedCorrection(metadata.CorrectionId, metadata.ReasonCode, metadata.InitiatedVia,
                 metadata.CorrectsCorrectionId, (metadata.Approvers ?? []).Select(a => a.UserRef).ToList());

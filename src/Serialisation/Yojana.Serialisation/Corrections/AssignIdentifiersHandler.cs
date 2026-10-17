@@ -209,7 +209,7 @@ public sealed class AssignIdentifiersService(
         }
 
         await writer.AppendAsync(drafts, cancellationToken);
-        corrections.Record(CorrectionCommand.AssignIdentifiers, evaluation.Metadata, command.ActorRef, command.EventTime, drafts.Select(d => d.UnitId).Distinct().Count());
+        await corrections.RecordAsync(CorrectionCommand.AssignIdentifiers, evaluation.Metadata, command.ActorRef, command.EventTime, drafts.Select(d => d.UnitId).Distinct().ToList(), cancellationToken);
         var summary = new UnitIdentifiersAssigned(
             new(UnitIdentifiersAssigned.Schema, UnitIdentifiersAssigned.Version, summaryEventId, command.EventTime, now, command.LegalEntityId, command.ActorRef, command.ProductionOrder),
             PublishedCorrection(evaluation.Metadata), command.ProductionOrder, published, evaluation.RemainingUnitIds.Count, evaluation.RemainingUnitIds);

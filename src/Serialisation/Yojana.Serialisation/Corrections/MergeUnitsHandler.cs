@@ -203,7 +203,7 @@ public static class MergeUnitsHandler
             Attributes = CorrectionLedger.Attributes(metadata, new { command_id = command.CommandId, resolution = command.Resolution, vendor_serial = source.NormalisedValue, counterpart_unit_id = unitId == first.UnitId ? second.UnitId : first.UnitId }),
         }).ToList();
         await writer.AppendAsync(drafts, cancellationToken);
-        corrections.Record(CorrectionCommand.MergeUnits, metadata, command.ActorRef, command.EventTime, 2);
+        await corrections.RecordAsync(CorrectionCommand.MergeUnits, metadata, command.ActorRef, command.EventTime, [first.UnitId, second.UnitId], cancellationToken);
         return new(first.UnitId, second.UnitId, command.Resolution, metadata.CorrectionId, created ? 1 : 2, false, false);
     }
 
@@ -250,7 +250,7 @@ public static class MergeUnitsHandler
         var coverage = await CoverageAsync(db, tenantId, survivorId, cancellationToken);
         var drafts = MergeDrafts(command, metadata, survivorId, absorbedId, UnitEventType.Merged, state.CombinedFlags, coverage, LifecycleStatus.Merged);
         await writer.AppendAsync(drafts, cancellationToken);
-        corrections.Record(CorrectionCommand.MergeUnits, metadata, command.ActorRef, command.EventTime, 2);
+        await corrections.RecordAsync(CorrectionCommand.MergeUnits, metadata, command.ActorRef, command.EventTime, [survivorId, absorbedId], cancellationToken);
         return new(survivorId, absorbedId, command.Resolution, metadata.CorrectionId, rows, false, false);
     }
 
@@ -327,7 +327,7 @@ public static class MergeUnitsHandler
             Draft(command, metadata, absorbedId, survivorId, "restored", UnitEventType.MergeReversed, new CurrentStateDelta { LifecycleStatus = state.AbsorbedLifecycle, OverlayFlags = absorbedFlags, LiveEntitlementIds = absorbedCoverage.LiveEntitlementIds, WarrantyEndMax = new Optional<DateOnly?>(absorbedCoverage.WarrantyEndMax) }),
         };
         await writer.AppendAsync(drafts, cancellationToken);
-        corrections.Record(CorrectionCommand.MergeUnits, metadata, command.ActorRef, command.EventTime, 2);
+        await corrections.RecordAsync(CorrectionCommand.MergeUnits, metadata, command.ActorRef, command.EventTime, [survivorId, absorbedId], cancellationToken);
         return new(survivorId, absorbedId, command.Resolution, metadata.CorrectionId, rows, true, false);
     }
 

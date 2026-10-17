@@ -170,8 +170,8 @@ public sealed class LateSerializationService(
         };
         db.ItemTrackingModeChanges.Add(row);
         var affectedParents = plan.Captures.Select(c => c.Link.ParentUnitId).Distinct().ToList();
-        var affectedUnits = commissioning.Select(c => c.UnitId).Concat(affectedParents).Distinct().Count();
-        corrections.Record(CorrectionCommand.LateSerialization, metadata, command.ActorRef, command.EffectiveAt, affectedUnits);
+        var affectedUnits = commissioning.Select(c => c.UnitId).Concat(affectedParents).Distinct().ToList();
+        await corrections.RecordAsync(CorrectionCommand.LateSerialization, metadata, command.ActorRef, command.EffectiveAt, affectedUnits, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
         if (publish)

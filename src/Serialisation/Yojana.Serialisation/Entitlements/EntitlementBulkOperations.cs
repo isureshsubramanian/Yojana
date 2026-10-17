@@ -5,6 +5,7 @@ using Yojana.Platform.Tenancy;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
@@ -98,6 +99,13 @@ public abstract class EntitlementBulkOperation(SerialisationDbContext db, ITenan
     protected static AmendmentCommitter Committer(BulkOperationArguments arguments) => new(
         arguments.Extra?.GetValueOrDefault(BulkApprovalArguments.ApproverRef) ?? arguments.ActorRef,
         (arguments.Extra?.GetValueOrDefault(BulkApprovalArguments.ApproverRoles) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+    protected static CorrectionMetadata Correction(Guid commandId, string reason, BulkOperationArguments arguments, IReadOnlyList<string>? evidenceRefs = null)
+    {
+        var committer = Committer(arguments);
+        return new(commandId, reason, arguments.Note, evidenceRefs ?? [], arguments.InitiatedVia, arguments.CorrectsCorrectionId,
+            arguments.InitiatingRole ?? CorrectionRules.InitiatingRole(committer.Roles), [new CorrectionApprover(committer.UserRef, committer.Roles)]);
+    }
 }
 
 public sealed class BulkCreateEntitlementOperation(SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store,
@@ -117,7 +125,7 @@ public sealed class BulkCreateEntitlementOperation(SerialisationDbContext db, En
         var x = EntitlementBulkArguments.Parse(arguments);
         await CreateEntitlementHandler.CreateAsync(new(commandId, unitId, x.Family, x.ContractDate!.Value, x.ObligorEntityId!.Value, arguments.EventTime, arguments.ActorRef, x.Evidence,
             x.PolicyVersionId, x.OwnerPartyRef, x.OwnerPartyType, x.PayerPartyRef, x.PayerPartyType, Country: x.Country, SiteLocationId: x.SiteLocationId,
-            SourceDocument: arguments.SourceDocument), Db, ledger, resolver, store, zones, refurbished, Tenant, clock, null, [], false, null, null, cancellationToken);
+            SourceDocument: arguments.SourceDocument), Db, ledger, resolver, store, zones, refurbished, Tenant, clock, null, [], false, null, null, null, cancellationToken);
     }
 }
 
@@ -142,7 +150,7 @@ public sealed class BulkAttachExtendedOperation(SerialisationDbContext db, Entit
 }
 
 public sealed class BulkAmendEntitlementOperation(SerialisationDbContext db, EntitlementLedger ledger, AmendmentApprovalSettings approvals,
-    IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates, ITenantCurrency currency, ITenantContext tenant, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
+    IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates, ITenantCurrency currency, CorrectionLedger corrections, ITenantContext tenant, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
 {
     public override string Name => "entitlement.amend";
     protected override async Task<UnitOutcome> PrecheckAsync(Guid unitId, string? serial, BulkOperationArguments arguments, CancellationToken cancellationToken)
@@ -158,13 +166,13 @@ public sealed class BulkAmendEntitlementOperation(SerialisationDbContext db, Ent
         var x = EntitlementBulkArguments.Parse(arguments); var entitlement = (await Live(unitId, x.Family, cancellationToken))!;
         var term = x.NewTermValue is { } value ? new AmendedTerm(value, x.NewTermUnit ?? throw new CommandRefusedException("bulk_arguments_invalid", "new_term_unit is required with new_term_value.")) : null;
         await AmendEntitlementHandler.Handle(new(commandId, entitlement.EntitlementId, arguments.Reason ?? throw new CommandRefusedException("bulk_arguments_invalid", "A reason is required."),
-            arguments.EventTime, arguments.ActorRef, x.NewStart, x.NewEnd, term, x.Coverage, arguments.SourceDocument, x.CustomerNotificationRef, x.FinanceReviewRef, arguments.Note, Committer(arguments), x.EnteredValue),
-            Db, ledger, approvals, claims, certificates, currency, Tenant, cancellationToken);
+            arguments.EventTime, arguments.ActorRef, x.NewStart, x.NewEnd, term, x.Coverage, arguments.SourceDocument, x.CustomerNotificationRef, x.FinanceReviewRef, arguments.Note, Committer(arguments), x.EnteredValue,
+            Correction(commandId, arguments.Reason!, arguments)), Db, ledger, approvals, claims, certificates, currency, Tenant, corrections, cancellationToken);
     }
 }
 
 public sealed class BulkSupersedeEntitlementOperation(SerialisationDbContext db, EntitlementLedger ledger, PolicyStore store, IWarrantyClaimsPort claims,
-    IWarrantyCertificatePort certificates, ITenantContext tenant, IClock clock, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
+    IWarrantyCertificatePort certificates, CorrectionLedger corrections, ITenantContext tenant, IClock clock, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
 {
     public override string Name => "entitlement.supersede";
     protected override async Task<UnitOutcome> PrecheckAsync(Guid unitId, string? serial, BulkOperationArguments arguments, CancellationToken cancellationToken)
@@ -192,17 +200,17 @@ public sealed class BulkSupersedeEntitlementOperation(SerialisationDbContext db,
         var x = EntitlementBulkArguments.Parse(arguments); var entitlement = (await Live(unitId, x.Family, cancellationToken))!;
         await SupersedeEntitlementHandler.SupersedeAsync(new(commandId, entitlement.EntitlementId, x.EffectiveDate!.Value,
             arguments.Reason ?? throw new CommandRefusedException("bulk_arguments_invalid", "A reason is required."), arguments.EventTime, arguments.ActorRef, x.PolicyVersionId,
-            x.PolicyCode, arguments.SourceDocument, x.CustomerNotificationRef, Committer(arguments)), Db, ledger, store, claims, certificates, Tenant, clock, cancellationToken);
+            x.PolicyCode, arguments.SourceDocument, x.CustomerNotificationRef, Committer(arguments), Correction(commandId, arguments.Reason!, arguments)), Db, ledger, store, claims, certificates, Tenant, clock, corrections, true, cancellationToken);
     }
 }
 
-public sealed class BulkVoidEntitlementOperation(SerialisationDbContext db, EntitlementLedger ledger, ITenantContext tenant, IClock clock, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
+public sealed class BulkVoidEntitlementOperation(SerialisationDbContext db, EntitlementLedger ledger, CorrectionLedger corrections, ITenantContext tenant, IClock clock, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
 {
     public override string Name => "entitlement.void";
     protected override async Task<UnitOutcome> PrecheckAsync(Guid unitId, string? serial, BulkOperationArguments arguments, CancellationToken cancellationToken)
     { var x = EntitlementBulkArguments.Parse(arguments); return await Live(unitId, x.Family, cancellationToken) is null ? Skip(unitId, serial, "no_live_entitlement_in_family") : x.EffectiveDate is null || x.EvidenceRefs.Count == 0 ? Block(unitId, serial, "evidence_required") : Change(unitId, serial, $"void {x.Family} entitlement"); }
     public override async Task ApplyAsync(Guid unitId, Guid commandId, BulkOperationArguments arguments, CancellationToken cancellationToken)
-    { var x = EntitlementBulkArguments.Parse(arguments); var e = (await Live(unitId, x.Family, cancellationToken))!; await VoidEntitlementHandler.Handle(new(commandId, e.EntitlementId, (arguments.Reason ?? throw new CommandRefusedException("bulk_arguments_invalid", "A reason is required.")), arguments.Note ?? "", x.EvidenceRefs, x.EffectiveDate!.Value, arguments.EventTime, arguments.ActorRef), ledger, clock, cancellationToken); }
+    { var x = EntitlementBulkArguments.Parse(arguments); var reason = arguments.Reason ?? throw new CommandRefusedException("bulk_arguments_invalid", "A reason is required."); var e = (await Live(unitId, x.Family, cancellationToken))!; await VoidEntitlementHandler.Handle(new(commandId, e.EntitlementId, reason, arguments.Note ?? "", x.EvidenceRefs, x.EffectiveDate!.Value, arguments.EventTime, arguments.ActorRef, Correction(commandId, reason, arguments, x.EvidenceRefs)), ledger, clock, corrections, cancellationToken); }
 }
 
 public sealed class BulkCloseEntitlementOperation(SerialisationDbContext db, EntitlementLedger ledger, ITenantContext tenant, IClock clock, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
@@ -215,7 +223,7 @@ public sealed class BulkCloseEntitlementOperation(SerialisationDbContext db, Ent
 }
 
 public sealed class BulkBackfillOperation(SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones,
-    RefurbishedGoodsSettings refurbished, ITenantContext tenant, IClock clock, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
+    RefurbishedGoodsSettings refurbished, CorrectionLedger corrections, ITenantContext tenant, IClock clock, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
 {
     public override string Name => "entitlement.backfill";
     protected override async Task<UnitOutcome> PrecheckAsync(Guid unitId, string? serial, BulkOperationArguments arguments, CancellationToken cancellationToken)
@@ -224,6 +232,6 @@ public sealed class BulkBackfillOperation(SerialisationDbContext db, Entitlement
     {
         var x = EntitlementBulkArguments.Parse(arguments);
         await BackfillEntitlementsHandler.Handle(new(commandId, [unitId], (arguments.Reason ?? throw new CommandRefusedException("bulk_arguments_invalid", "A reason is required.")), x.EvidenceRefs, arguments.SourceDocument, x.ObligorEntityId!.Value, arguments.EventTime, arguments.ActorRef,
-            Committer(arguments), false, x.FinanceReviewRef, x.Country, x.SiteLocationId), Db, ledger, resolver, store, zones, refurbished, Tenant, clock, cancellationToken);
+            Committer(arguments), false, x.FinanceReviewRef, x.Country, x.SiteLocationId, Correction(commandId, arguments.Reason!, arguments, x.EvidenceRefs)), Db, ledger, resolver, store, zones, refurbished, Tenant, clock, corrections, cancellationToken);
     }
 }

@@ -4,6 +4,7 @@ using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
@@ -20,11 +21,11 @@ namespace Yojana.Serialisation.Entitlements;
 public static class SupersedeEntitlementHandler
 {
     public static async Task<SupersedeEntitlementResult> Handle(SupersedeEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyStore store,
-        IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates, ITenantContext tenant, IClock clock, CancellationToken cancellationToken) =>
-        await SupersedeAsync(command, db, ledger, store, claims, certificates, tenant, clock, cancellationToken);
+        IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken) =>
+        await SupersedeAsync(command, db, ledger, store, claims, certificates, tenant, clock, corrections, true, cancellationToken);
 
     internal static async Task<SupersedeEntitlementResult> SupersedeAsync(SupersedeEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyStore store,
-        IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates, ITenantContext tenant, IClock clock, CorrectionLedger? corrections, bool recordCorrection, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var old = await ledger.LoadAsync(command.EntitlementId, cancellationToken);
@@ -72,6 +73,13 @@ public static class SupersedeEntitlementHandler
         if (required.CustomerNotification && string.IsNullOrWhiteSpace(command.CustomerNotificationRef)) throw new CommandRefusedException("customer_notification_required", "The customer holds a certificate for the cover this supersession reduces.");
         if (reduction && await claims.HasOpenClaimsAsync(old.UnitId, old.EntitlementId, cancellationToken)) throw new CommandRefusedException("open_claims", "Cover is not reduced while claims against it are open.");
 
+        CorrectionMetadata? metadata = null;
+        if (recordCorrection)
+        {
+            metadata = await corrections!.PrepareAsync(CorrectionCommand.SupersedeEntitlement, command.Correction, command.CommandId, command.ReasonCode, null,
+                committer.UserRef, command.EventTime, CorrectionInitiatingRole.CustomerService, cancellationToken);
+        }
+
         EntitlementLedger.Transition(old, EntitlementEventType.Closed);
         old.EndDate = command.EffectiveDate.AddDays(-1);
         old.EndAdjustmentDays = old.EndDate.Value.DayNumber - TermArithmetic.EndDate(oldStart, new DurationRule(old.DurationValue, old.DurationUnit, old.EndOfMonthRule, old.EndInclusive)).DayNumber;
@@ -103,7 +111,9 @@ public static class SupersedeEntitlementHandler
             superseded_entitlement_id = old.EntitlementId, new_entitlement_id = successor.EntitlementId, coverage_family = old.CoverageFamily, effective_date = command.EffectiveDate,
             old_policy_version_id = old.PolicyVersionId, new_policy_version_id = version.PolicyVersionId, reason_code = command.ReasonCode, reduction,
             approval_level = required.Role, approved_by = committer.UserRef, customer_notification_ref = command.CustomerNotificationRef, accrual_cohort_id = successor.AccrualCohortId,
-        }, command.SourceDocument, cancellationToken, eventId);
+        }, command.SourceDocument, cancellationToken, eventId, metadata);
+        if (metadata is not null)
+            await corrections!.RecordAsync(CorrectionCommand.SupersedeEntitlement, metadata, command.ActorRef, command.EventTime, [old.UnitId], cancellationToken);
         return new(old.EntitlementId, successor.EntitlementId, root, command.EffectiveDate, newEnd, reduction, required.Role, committer.UserRef, eventId, false);
     }
 }

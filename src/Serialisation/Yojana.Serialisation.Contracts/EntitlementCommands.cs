@@ -93,7 +93,7 @@ public sealed record SuspendEntitlement(Guid CommandId, Guid EntitlementId, Date
 public sealed record ResumeEntitlement(Guid CommandId, Guid EntitlementId, DateOnly On, DateTime EventTime, string ActorRef);
 
 /// <summary>Void is per entitlement with a reason and evidence (case 61); a damage finding is a claim denial, never this.</summary>
-public sealed record VoidEntitlement(Guid CommandId, Guid EntitlementId, string ClosedReason, string Explanation, IReadOnlyList<string> EvidenceRefs, DateOnly Effective, DateTime EventTime, string ActorRef);
+public sealed record VoidEntitlement(Guid CommandId, Guid EntitlementId, string ClosedReason, string Explanation, IReadOnlyList<string> EvidenceRefs, DateOnly Effective, DateTime EventTime, string ActorRef, CorrectionMetadata? Correction = null);
 
 public sealed record CloseEntitlement(Guid CommandId, Guid EntitlementId, string ClosedReason, DateOnly Effective, DateTime EventTime, string ActorRef, DocumentRef? SourceDocument = null, string? Note = null);
 
@@ -112,7 +112,8 @@ public sealed record TransferEntitlement(
     DateOnly? ContractDate = null,
     string? Country = null,
     bool ConsumerContract = false,
-    string Remedy = "replacement");
+    string Remedy = "replacement",
+    CorrectionMetadata? Correction = null);
 
 public sealed record TransferEntitlementResult(Guid SourceEntitlementId, Guid TargetEntitlementId, Guid RootEntitlementId, string PolicyApplied, DateOnly ComputedEnd, int ChainLength, Guid EventId, bool Replayed);
 
@@ -169,7 +170,8 @@ public sealed record AmendEntitlement(
     string? FinanceReviewRef = null,
     string? Note = null,
     AmendmentCommitter? CommittedBy = null,
-    decimal? EnteredValue = null);
+    decimal? EnteredValue = null,
+    CorrectionMetadata? Correction = null);
 
 /// <summary>A new term length; the entitlement keeps its end-of-month rule and whether the term counts its start day.</summary>
 public sealed record AmendedTerm(int Value, string Unit);
@@ -201,7 +203,8 @@ public sealed record SupersedeEntitlement(
     string? NewPolicyCode = null,
     DocumentRef? SourceDocument = null,
     string? CustomerNotificationRef = null,
-    AmendmentCommitter? CommittedBy = null);
+    AmendmentCommitter? CommittedBy = null,
+    CorrectionMetadata? Correction = null);
 
 public sealed record SupersedeEntitlementResult(Guid SupersededEntitlementId, Guid NewEntitlementId, Guid RootEntitlementId, DateOnly StartDate, DateOnly EndDate, bool Reduction, string ApprovalLevel, string ApprovedBy, Guid EventId, bool Replayed);
 
@@ -223,7 +226,8 @@ public sealed record BackfillEntitlements(
     bool SkipInvalid = false,
     string? FinanceReviewRef = null,
     string? Country = null,
-    Guid? SiteLocationId = null);
+    Guid? SiteLocationId = null,
+    CorrectionMetadata? Correction = null);
 
 public sealed record BackfillEntitlementsResult(IReadOnlyList<BackfillUnitResult> Units, bool Replayed);
 

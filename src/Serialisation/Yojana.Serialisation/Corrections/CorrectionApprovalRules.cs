@@ -152,7 +152,7 @@ public static class CorrectionApprovalRules
     public static IReadOnlyList<string> Validate(CorrectionApprovalPolicy policy)
     {
         var problems = new List<string>();
-        foreach (var command in CorrectionCommand.All.Except(policy.Commands.Select(r => r.Command))) problems.Add($"command '{command}' has no rule");
+        foreach (var command in CorrectionCommand.All.Except(CorrectionCommand.ApprovedByEntitlementPolicy).Except(policy.Commands.Select(r => r.Command))) problems.Add($"command '{command}' has no rule");
         foreach (var rule in policy.Commands)
         {
             if (!CorrectionCommand.All.Contains(rule.Command)) problems.Add($"'{rule.Command}' is not a correction command");

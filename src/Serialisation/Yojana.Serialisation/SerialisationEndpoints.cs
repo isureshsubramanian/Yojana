@@ -123,6 +123,38 @@ public static class SerialisationEndpoints
             Invoke<LateSerializationResult>(bus, tenant, Secure(command, user), ct));
         corrections.MapPost("/late-serialization/preview", (PreviewLateSerialization preview, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<CorrectionPreview>(bus, tenant, preview with { Command = Secure(preview.Command, user) }, ct));
+        corrections.MapGet("/kpi", async (DateOnly? from, DateOnly? to, string? breakdown, Guid? item, CorrectionKpiQueries queries, IClock clock, CancellationToken ct) =>
+        {
+            try
+            {
+                var end = to ?? DateOnly.FromDateTime(clock.UtcNow);
+                return Results.Ok(await queries.QueryAsync(from ?? end.AddMonths(-11).AddDays(1 - end.Day), end, breakdown ?? CorrectionKpiBreakdown.RootCause, item, ct));
+            }
+            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "kpi_query_invalid", detail = ex.Message }); }
+        });
+        corrections.MapGet("/kpi/export", async (DateOnly? from, DateOnly? to, string? breakdown, Guid? item, CorrectionKpiQueries queries, IClock clock, CancellationToken ct) =>
+        {
+            CorrectionKpiReport report;
+            try
+            {
+                var end = to ?? DateOnly.FromDateTime(clock.UtcNow);
+                report = await queries.QueryAsync(from ?? end.AddMonths(-11).AddDays(1 - end.Day), end, breakdown ?? CorrectionKpiBreakdown.RootCause, item, ct);
+            }
+            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "kpi_query_invalid", detail = ex.Message }); }
+            return Results.Stream(async stream =>
+            {
+                await using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false), leaveOpen: true);
+                await writer.WriteAsync(CorrectionKpiCsv.Header.AsMemory(), ct);
+                foreach (var row in report.Rows) await writer.WriteAsync(CorrectionKpiCsv.Row(report.Breakdown, row).AsMemory(), ct);
+                await writer.FlushAsync(ct);
+            }, "text/csv; charset=utf-8", "correction-volume.csv");
+        });
+        corrections.MapGet("/kpi/targets", async (CorrectionKpiTargetSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
+        corrections.MapPut("/kpi/targets", async (CorrectionKpiTargetPolicy policy, CorrectionKpiTargetSettings settings, CancellationToken ct) =>
+        {
+            try { await settings.SetAsync(policy, ct); return Results.Ok(policy); }
+            catch (CommandRefusedException ex) { return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest); }
+        }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
 
         var correctionReference = app.MapGroup("/api/correction-reference").RequireAuthorization(YojanaPolicy.TenantMember);
         correctionReference.MapGet("/approval", async (CorrectionApprovalSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
@@ -197,17 +229,17 @@ public static class SerialisationEndpoints
         entitlements.MapPost("/", (CreateEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CreateEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
         entitlements.MapPost("/extended", (AttachExtendedWarranty command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<AttachExtendedWarrantyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
         entitlements.MapPost("/backfill", (BackfillEntitlements command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<BackfillEntitlementsResult>(bus, tenant, command with { ActorRef = Actor(user), CommittedBy = Committer(user) }, ct)).RequireAuthorization(editor);
+            Invoke<BackfillEntitlementsResult>(bus, tenant, command with { ActorRef = Actor(user), CommittedBy = Committer(user), Correction = ApiCorrection(command.CommandId, command.ReasonCode, null, command.Correction, user, command.EvidenceRefs) }, ct)).RequireAuthorization(editor);
         entitlements.MapPost("/{entitlementId:guid}/rebase", (Guid entitlementId, RebaseEntitlementStart command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId }, ct)).RequireAuthorization(desk);
         entitlements.MapPost("/{entitlementId:guid}/suspend", (Guid entitlementId, SuspendEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
         entitlements.MapPost("/{entitlementId:guid}/resume", (Guid entitlementId, ResumeEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
-        entitlements.MapPost("/{entitlementId:guid}/void", (Guid entitlementId, VoidEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
+        entitlements.MapPost("/{entitlementId:guid}/void", (Guid entitlementId, VoidEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId, Correction = ApiCorrection(command.CommandId, command.ClosedReason, command.Explanation, command.Correction, user, command.EvidenceRefs) }, ct)).RequireAuthorization(editor);
         entitlements.MapPost("/{entitlementId:guid}/close", (Guid entitlementId, CloseEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntitlementChangeResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
         entitlements.MapPost("/{entitlementId:guid}/amend", (Guid entitlementId, AmendEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<AmendEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId, CommittedBy = Committer(user) }, ct));
+            Invoke<AmendEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId, CommittedBy = Committer(user), Correction = ApiCorrection(command.CommandId, command.ReasonCode, command.Note, command.Correction, user) }, ct));
         entitlements.MapPost("/{entitlementId:guid}/supersede", (Guid entitlementId, SupersedeEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<SupersedeEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId, CommittedBy = Committer(user) }, ct));
-        entitlements.MapPost("/{entitlementId:guid}/transfer", (Guid entitlementId, TransferEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<TransferEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user), SourceEntitlementId = entitlementId }, ct)).RequireAuthorization(editor);
+            Invoke<SupersedeEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user), EntitlementId = entitlementId, CommittedBy = Committer(user), Correction = ApiCorrection(command.CommandId, command.ReasonCode, null, command.Correction, user) }, ct));
+        entitlements.MapPost("/{entitlementId:guid}/transfer", (Guid entitlementId, TransferEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<TransferEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user), SourceEntitlementId = entitlementId, Correction = ApiCorrection(command.CommandId, EntitlementTransferReason.Replacement, null, command.Correction, user) }, ct)).RequireAuthorization(editor);
         entitlements.MapGet("/requirements", async (string? status, string? documentType, Guid? document, int? skip, int? take, EntitlementRequirementQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.PageAsync(status, documentType, document, skip ?? 0, take ?? 50, ct)));
         entitlements.MapGet("/requirements/check", async (string documentType, Guid documentId, EntitlementRequirementQueries queries, CancellationToken ct) =>
@@ -306,9 +338,9 @@ public static class SerialisationEndpoints
         selections.MapPost("/", (ResolveSelectionSet command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ResolveSelectionSetResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         // Approver and roles come from the claims, never the body: the operations judge approval tiers on them.
         selections.MapPost("/{selectionId:guid}/preview", (Guid selectionId, PreviewBulkOperation command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<BulkPreviewResult>(bus, tenant, command with { Arguments = command.Arguments with { ActorRef = Actor(user) }, SelectionId = selectionId, Approval = Approver(user, command.Approval) }, ct));
+            Invoke<BulkPreviewResult>(bus, tenant, command with { Arguments = ApiBulkArguments(command.Arguments, user), SelectionId = selectionId, Approval = Approver(user, command.Approval) }, ct));
         selections.MapPost("/{selectionId:guid}/execute", (Guid selectionId, ExecuteBulkOperation command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<BulkExecutionResult>(bus, tenant, command with { Arguments = command.Arguments with { ActorRef = Actor(user) }, SelectionId = selectionId, Approval = Approver(user, command.Approval)! }, ct));
+            Invoke<BulkExecutionResult>(bus, tenant, command with { Arguments = ApiBulkArguments(command.Arguments, user), SelectionId = selectionId, Approval = Approver(user, command.Approval)! }, ct));
         selections.MapGet("/{selectionId:guid}/find", async (Guid selectionId, string q, int? skip, int? take, BulkExecutor executor, CancellationToken ct) =>
             Results.Ok(await executor.FindAsync(new FindInSelection(selectionId, q, Math.Max(0, skip ?? 0), take ?? 50), ct)));
         // P2-T21 approval queue: requester, approver and their roles come from the claims, never the body.
@@ -318,7 +350,7 @@ public static class SerialisationEndpoints
         approvals.MapGet("/{requestId:guid}", async (Guid requestId, BulkApprovalRequestQueries queries, CancellationToken ct) =>
             await queries.GetAsync(requestId, ct) is { } row ? Results.Ok(row) : Results.NotFound());
         approvals.MapPost("/", (RequestBulkApproval command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<BulkApprovalRequestRow>(bus, tenant, command with { Arguments = command.Arguments with { ActorRef = Actor(user) }, Requester = Approver(user, null) }, ct));
+            Invoke<BulkApprovalRequestRow>(bus, tenant, command with { Arguments = ApiBulkArguments(command.Arguments, user), Requester = Approver(user, null) }, ct));
         approvals.MapPost("/{requestId:guid}/approve", (Guid requestId, ApproveBulkRequest command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<BulkApprovalRequestRow>(bus, tenant, command with { RequestId = requestId, Approver = Approver(user, null) }, ct));
         approvals.MapPost("/{requestId:guid}/reject", (Guid requestId, RejectBulkRequest command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
@@ -358,6 +390,13 @@ public static class SerialisationEndpoints
         return new BulkApproval(committer.UserRef, given?.Required ?? false, committer.Roles);
     }
 
+    private static BulkOperationArguments ApiBulkArguments(BulkOperationArguments arguments, ClaimsPrincipal user) => arguments with
+    {
+        ActorRef = Actor(user),
+        InitiatedVia = CorrectionInitiatedVia.Api,
+        InitiatingRole = InitiatingRole(user),
+    };
+
     private static CorrectionMetadata ApiCorrection(CorrectIdentifier command, ClaimsPrincipal user)
     {
         return ApiCorrection(command.CommandId, command.Reason, command.Note, command.Correction, user);
@@ -384,13 +423,13 @@ public static class SerialisationEndpoints
         Correction = ApiCorrection(command.CommandId, command.Reason, command.Note, command.Correction, user),
     };
 
-    private static CorrectionMetadata ApiCorrection(Guid commandId, string reason, string? note, CorrectionMetadata? supplied, ClaimsPrincipal user)
+    private static CorrectionMetadata ApiCorrection(Guid commandId, string reason, string? note, CorrectionMetadata? supplied, ClaimsPrincipal user, IReadOnlyList<string>? evidenceRefs = null)
     {
         return new CorrectionMetadata(
             supplied?.CorrectionId ?? commandId,
             supplied?.ReasonCode ?? reason,
             supplied?.Note ?? note,
-            supplied?.EvidenceRefs ?? [],
+            supplied?.EvidenceRefs ?? evidenceRefs ?? [],
             supplied?.InitiatedVia ?? CorrectionInitiatedVia.Api,
             supplied?.CorrectsCorrectionId,
             InitiatingRole(user),
@@ -457,12 +496,7 @@ public static class SerialisationEndpoints
 
     private static string InitiatingRole(ClaimsPrincipal user)
     {
-        var roles = user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToHashSet(StringComparer.Ordinal);
-        if (roles.Contains(YojanaRole.CustomerService)) return CorrectionInitiatingRole.CustomerService;
-        if (roles.Contains(YojanaRole.WarehouseLead) || roles.Contains(YojanaRole.ShippingSupervisor)) return CorrectionInitiatingRole.WarehouseLead;
-        if (roles.Contains(YojanaRole.ProductionSupervisor)) return CorrectionInitiatingRole.ProductionSupervisor;
-        if (roles.Contains(YojanaRole.Technician) || roles.Contains(YojanaRole.ServiceSupervisor)) return CorrectionInitiatingRole.ServiceTechnician;
-        return CorrectionInitiatingRole.SerialAdministrator;
+        return CorrectionRules.InitiatingRole(user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToList());
     }
 
     /// <summary>"type:guid" as the search result href carries it; null when absent or malformed.</summary>

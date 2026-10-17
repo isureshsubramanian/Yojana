@@ -161,7 +161,8 @@ public static class ReassignAllocationHandler
                 }
             }
 
-            corrections.Record(CorrectionCommand.ReassignAllocation, metadata, command.ActorRef, command.EventTime, 0);
+            // No unit exists before commissioning (Identity rule 13), so the KPI row carries no unit attribution.
+            await corrections.RecordAsync(CorrectionCommand.ReassignAllocation, metadata, command.ActorRef, command.EventTime, [], cancellationToken);
             await bus.PublishAsync(new UnitAllocationReassigned(
                 new(UnitAllocationReassigned.Schema, UnitAllocationReassigned.Version, eventId, command.EventTime, recordedTime,
                     command.LegalEntityId, command.ActorRef, null),
