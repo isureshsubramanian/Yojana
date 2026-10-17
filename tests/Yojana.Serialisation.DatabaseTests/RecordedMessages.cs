@@ -71,6 +71,11 @@ public sealed class RecordedScenario
                 "Service.LoanerIssued" => new ServiceLoanerIssued(Envelope(message), Doc(message)),
                 "Finance.PeriodClosed" => new FinancePeriodClosed(Envelope(message), message.GetProperty("period").GetString()!),
                 "ReleaseUnit" => new ReleaseUnit(Guid.NewGuid(), await UnitBySerialAsync(fixture, tenant, message.GetProperty("serial").GetString()!, cancellationToken), message.GetProperty("eventTime").GetDateTime(), message.GetProperty("actorRef").GetString()!, message.GetProperty("legalEntityId").GetGuid(), message.GetProperty("releaseSignatureRef").GetString()!),
+                "CreateEntitlement" => await CreateEntitlementAsync(fixture, tenant, message, cancellationToken),
+                "SubmitClaim" => await SubmitClaimAsync(fixture, tenant, message, cancellationToken),
+                "AdjudicateClaim" => new AdjudicateClaim(message.GetProperty("commandId").GetGuid(),
+                    await ClaimByCommandAsync(fixture, tenant, message.GetProperty("claimCommandId").GetGuid(), cancellationToken),
+                    message.GetProperty("eventTime").GetDateTime(), message.GetProperty("actorRef").GetString()!),
                 _ => throw new InvalidOperationException($"Recorded message type '{type}' is not known to the harness."),
             };
             using var scope = fixture.ScopeFor(tenant);
@@ -92,6 +97,47 @@ public sealed class RecordedScenario
     private static ThinEnvelope Envelope(JsonElement m) => m.GetProperty("envelope").Deserialize<ThinEnvelope>(Json)!;
 
     private static DocumentRef Doc(JsonElement m) => m.GetProperty("document").Deserialize<DocumentRef>(Json)!;
+
+    private static async Task<CreateEntitlement> CreateEntitlementAsync(SerialisationHostFixture fixture, TenantId tenant,
+        JsonElement message, CancellationToken cancellationToken)
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var policyCode = message.GetProperty("policyCode").GetString()!;
+        var policyVersionId = await db.PolicyVersions.AsNoTracking()
+            .Where(p => p.PolicyCode == policyCode && p.Status == PolicyVersionStatus.Published)
+            .OrderByDescending(p => p.Version)
+            .Select(p => p.PolicyVersionId)
+            .FirstAsync(cancellationToken);
+        return new CreateEntitlement(message.GetProperty("commandId").GetGuid(),
+            await UnitBySerialAsync(fixture, tenant, message.GetProperty("serial").GetString()!, cancellationToken),
+            message.GetProperty("coverageFamily").GetString()!, message.GetProperty("contractDate").Deserialize<DateOnly>(Json),
+            message.GetProperty("obligorEntityId").GetGuid(), message.GetProperty("eventTime").GetDateTime(),
+            message.GetProperty("actorRef").GetString()!,
+            message.GetProperty("evidence").Deserialize<Dictionary<string, DateTime>>(Json)!, policyVersionId,
+            OwnerPartyRef: message.GetProperty("ownerPartyRef").GetGuid(), OwnerPartyType: message.GetProperty("ownerPartyType").GetString(),
+            Country: message.GetProperty("country").GetString());
+    }
+
+    private static async Task<SubmitClaim> SubmitClaimAsync(SerialisationHostFixture fixture, TenantId tenant,
+        JsonElement message, CancellationToken cancellationToken) => new(
+        message.GetProperty("commandId").GetGuid(),
+        await UnitBySerialAsync(fixture, tenant, message.GetProperty("serial").GetString()!, cancellationToken), null,
+        message.GetProperty("claimDate").Deserialize<DateOnly>(Json), message.GetProperty("claimantPartyRef").GetGuid(),
+        message.GetProperty("settlementPartyRef").GetGuid(), message.GetProperty("serviceEntityId").GetGuid(),
+        message.GetProperty("obligorEntityId").GetGuid(), message.GetProperty("serviceCountry").GetString()!,
+        message.GetProperty("currency").GetString()!, message.GetProperty("lines").Deserialize<List<ClaimLineInput>>(Json)!,
+        message.GetProperty("evidence").Deserialize<List<ClaimEvidenceInput>>(Json)!, message.GetProperty("remedy").GetString()!,
+        message.GetProperty("consumerChoiceEvidenceRef").GetString()!, message.GetProperty("eventTime").GetDateTime(),
+        message.GetProperty("actorRef").GetString()!);
+
+    private static async Task<Guid> ClaimByCommandAsync(SerialisationHostFixture fixture, TenantId tenant, Guid commandId,
+        CancellationToken cancellationToken)
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        return await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Claims.AsNoTracking()
+            .Where(c => c.CommandId == commandId).Select(c => c.ClaimId).SingleAsync(cancellationToken);
+    }
 }
 
 public sealed class RecordedDocuments

@@ -1,6 +1,6 @@
 {
   "name": "reference-scenario-steps-0-1",
-  "description": "ADR-0001 reference scenario, steps 0 and 1: components received, S1 built and released at Leeds, sold and delivered to customer A. Serials use the {p} run prefix so the scenario replays on a persisted database.",
+  "description": "ADR-0001 reference scenario, steps 0 and 1: components received, S1 built and released, sold on 2026-02-01 and delivered to customer A on 2026-02-03. Serials use the {p} run prefix so the scenario replays on a persisted database.",
   "documents": {
     "receipts": [
       {
@@ -9,7 +9,7 @@
           "id": "55555555-0000-0000-0000-00000000e001"
         },
         "vendorPartyRef": "33333333-0000-0000-0000-00000000c002",
-        "postedAt": "2025-03-05T09:00:00Z",
+        "postedAt": "2026-01-05T09:00:00Z",
         "lines": [
           {
             "lineNo": 1,
@@ -36,7 +36,7 @@
           "type": "production_order",
           "id": "55555555-0000-0000-0000-00000000e002"
         },
-        "postedAt": "2025-03-06T08:02:00Z",
+        "postedAt": "2026-01-06T08:02:00Z",
         "produced": [
           {
             "lineNo": 1,
@@ -75,7 +75,7 @@
           "id": "55555555-0000-0000-0000-00000000e004"
         },
         "customerPartyRef": "33333333-0000-0000-0000-00000000c001",
-        "postedAt": "2025-03-13T11:50:00Z",
+        "postedAt": "2026-02-01T11:50:00Z",
         "lines": [
           {
             "lineNo": 1,
@@ -103,7 +103,7 @@
           "type": "delivery",
           "id": "55555555-0000-0000-0000-00000000e004"
         },
-        "deliveredAt": "2025-03-14T11:05:00Z",
+        "deliveredAt": "2026-02-03T11:05:00Z",
         "shipToLocationId": "22222222-0000-0000-0000-00000000b002"
       }
     ]
@@ -114,7 +114,7 @@
       "envelope": {
         "messageId": "66666666-0000-0000-0000-00000000f001",
         "legalEntityId": "44444444-0000-0000-0000-00000000d001",
-        "occurredAt": "2025-03-05T09:00:00Z",
+        "occurredAt": "2026-01-05T09:00:00Z",
         "source": "cx01-recorded"
       },
       "document": {
@@ -127,7 +127,7 @@
       "envelope": {
         "messageId": "66666666-0000-0000-0000-00000000f002",
         "legalEntityId": "44444444-0000-0000-0000-00000000d001",
-        "occurredAt": "2025-03-06T08:02:00Z",
+        "occurredAt": "2026-01-06T08:02:00Z",
         "source": "cx01-recorded"
       },
       "document": {
@@ -138,17 +138,17 @@
     {
       "type": "ReleaseUnit",
       "serial": "{p}-493445",
-      "eventTime": "2025-03-10T15:20:00Z",
+      "eventTime": "2026-01-10T15:20:00Z",
       "actorRef": "q.mahler",
       "legalEntityId": "44444444-0000-0000-0000-00000000d001",
-      "releaseSignatureRef": "sig:q.mahler:2025-03-10"
+      "releaseSignatureRef": "sig:q.mahler:2026-01-10"
     },
     {
       "type": "Sales.ShipmentPosted",
       "envelope": {
         "messageId": "66666666-0000-0000-0000-00000000f003",
         "legalEntityId": "44444444-0000-0000-0000-00000000d001",
-        "occurredAt": "2025-03-13T11:50:00Z",
+        "occurredAt": "2026-02-01T11:50:00Z",
         "source": "cx01-recorded"
       },
       "document": {
@@ -161,7 +161,7 @@
       "envelope": {
         "messageId": "66666666-0000-0000-0000-00000000f004",
         "legalEntityId": "44444444-0000-0000-0000-00000000d001",
-        "occurredAt": "2025-03-14T11:05:00Z",
+        "occurredAt": "2026-02-03T11:05:00Z",
         "source": "cx01-recorded"
       },
       "document": {
