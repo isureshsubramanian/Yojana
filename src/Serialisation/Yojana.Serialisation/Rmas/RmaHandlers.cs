@@ -13,6 +13,50 @@ using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation.Rmas;
 
+public static class DefineReturnReasonHandler
+{
+    public static async Task<ReturnReasonRow> Handle(DefineReturnReason command, SerialisationDbContext db,
+        ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+    {
+        var code = command.Code.Trim();
+        if (code.Length is 0 or > 40 || code.Any(ch => !(char.IsAsciiLetterLower(ch) || char.IsAsciiDigit(ch) || ch == '_')))
+            throw new CommandRefusedException("return_reason_code_invalid", "A return-reason code must contain 1 to 40 lower-case letters, digits or underscores.");
+        var name = command.Name.Trim();
+        if (name.Length is 0 or > 160)
+            throw new CommandRefusedException("return_reason_name_invalid", "A return-reason name must contain 1 to 160 characters.");
+        if (!RestockFeeRule.All.Contains(command.RestockFeeRule))
+            throw new CommandRefusedException("restock_fee_rule_unknown", $"'{command.RestockFeeRule}' is not a restocking-fee rule.");
+        if (command.DoaWindowDays is < 0)
+            throw new CommandRefusedException("doa_window_invalid", "A DOA window cannot be negative.");
+        if (command.RestockFeeRule == RestockFeeRule.None && command.RestockFeeValue is not null
+            || command.RestockFeeRule != RestockFeeRule.None && command.RestockFeeValue is not >= 0
+            || command.RestockFeeRule == RestockFeeRule.Percentage && command.RestockFeeValue > 100)
+            throw new CommandRefusedException("restock_fee_value_invalid", "The restocking-fee value must match its rule and a percentage cannot exceed 100.");
+
+        var row = await db.ReturnReasons.FirstOrDefaultAsync(reason => reason.TenantId == tenant.TenantId
+            && reason.Code == code, cancellationToken);
+        if (row is null)
+        {
+            row = new ReturnReason
+            {
+                TenantId = tenant.TenantId,
+                Code = code,
+                Name = name,
+                RestockFeeRule = command.RestockFeeRule,
+                CreatedAt = clock.UtcNow,
+            };
+            db.ReturnReasons.Add(row);
+        }
+
+        row.Name = name;
+        row.RestockFeeRule = command.RestockFeeRule;
+        row.RestockFeeValue = command.RestockFeeValue;
+        row.DoaWindowDays = command.DoaWindowDays;
+        row.Active = command.Active;
+        return new(row.Code, row.Name, row.RestockFeeRule, row.RestockFeeValue, row.DoaWindowDays, row.Active);
+    }
+}
+
 public static class RequestRmaHandler
 {
     public static async Task<RequestRmaResult> Handle(RequestRma command, SerialisationDbContext db, UnitResolver units,

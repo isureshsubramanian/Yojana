@@ -52,6 +52,32 @@ public sealed class DemoConventionsTests
         }
     }
 
+    [Fact]
+    public void Phase_five_locations_are_distinct_catalogue_records()
+    {
+        var catalogue = DemoCatalogue.Load(Path.Combine(AppContext.BaseDirectory, "DevData", "reference-labels.json"));
+
+        Assert.Equal(4, catalogue.Locations.Count);
+        Assert.Equal("warehouse", catalogue.Locations["AST-WH-01"].Kind);
+        Assert.Equal("quarantine", catalogue.Locations["AST-Q-01"].Kind);
+        Assert.Equal("quarantine", catalogue.Locations["AST-Q-02"].Kind);
+        Assert.Equal("in_repair", catalogue.Locations["AST-RPR-01"].Kind);
+        Assert.All(catalogue.Locations.Values, location =>
+            Assert.StartsWith("40000000-0000-0000-0000-0000000000", location.Id.ToString("D")));
+        Assert.Equal(4, catalogue.Locations.Values.Select(location => location.Id).Distinct().Count());
+    }
+
+    [Fact]
+    public void Phase_five_sanitisation_flags_follow_the_item_catalogue()
+    {
+        var catalogue = DemoCatalogue.Load(Path.Combine(AppContext.BaseDirectory, "DevData", "reference-labels.json"));
+
+        Assert.True(Assert.IsType<DemoCatalogue.ItemSerialisation>(catalogue.Items["RS-1100"].Serialisation).RequiresSanitisation);
+        Assert.True(Assert.IsType<DemoCatalogue.ItemSerialisation>(catalogue.Items["SS-1110"].Serialisation).RequiresSanitisation);
+        Assert.True(Assert.IsType<DemoCatalogue.ItemSerialisation>(catalogue.Items["SS-1112"].Serialisation).RequiresSanitisation);
+        Assert.False(Assert.IsType<DemoCatalogue.ItemSerialisation>(catalogue.Items["PF-400"].Serialisation).RequiresSanitisation);
+    }
+
     private sealed class NoRecordedDocuments : IRecordedDocumentReferenceQuery
     {
         public Task<IReadOnlyList<DocumentRef>> CandidatesAsync(string type, string idPrefix, int take, CancellationToken cancellationToken) =>

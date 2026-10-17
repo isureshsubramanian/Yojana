@@ -14,11 +14,14 @@ public sealed class DemoCatalogue
         Items = source.Items.ToDictionary(row => row.Code, StringComparer.Ordinal);
         Parties = source.Parties.ToDictionary(row => row.Code, StringComparer.Ordinal);
         Documents = source.Documents.ToDictionary(row => row.Number, StringComparer.Ordinal);
+        Locations = source.Locations?.ToDictionary(row => row.Code, StringComparer.Ordinal)
+            ?? new Dictionary<string, CatalogueLocation>(StringComparer.Ordinal);
     }
 
     public IReadOnlyDictionary<string, CatalogueItem> Items { get; }
     public IReadOnlyDictionary<string, CatalogueParty> Parties { get; }
     public IReadOnlyDictionary<string, CatalogueDocument> Documents { get; }
+    public IReadOnlyDictionary<string, CatalogueLocation> Locations { get; }
 
     public static DemoCatalogue Load(string path)
     {
@@ -40,7 +43,8 @@ public sealed class DemoCatalogue
             {
                 profiles.Register(new ItemSerialisationProfile(item.Id, item.Code, profile.TrackingMode,
                     profile.SerialisationPoint, profile.RetentionClass, profile.SerialReusePolicy,
-                    profile.AsBuiltCompleteness, profile.SerialScheme, profile.ExpiryRequired, profile.ItemClass));
+                    profile.AsBuiltCompleteness, profile.SerialScheme, profile.ExpiryRequired, profile.ItemClass,
+                    RequiresSanitisation: profile.RequiresSanitisation));
             }
 
             foreach (var policy in item.WarrantyPolicies ?? [])
@@ -61,7 +65,8 @@ public sealed class DemoCatalogue
     public sealed record CatalogueFile(
         IReadOnlyList<CatalogueItem> Items,
         IReadOnlyList<CatalogueParty> Parties,
-        IReadOnlyList<CatalogueDocument> Documents);
+        IReadOnlyList<CatalogueDocument> Documents,
+        IReadOnlyList<CatalogueLocation>? Locations = null);
 
     public sealed record CatalogueItem(
         Guid Id,
@@ -78,9 +83,11 @@ public sealed class DemoCatalogue
         string AsBuiltCompleteness,
         string SerialScheme,
         bool ExpiryRequired = false,
-        string? ItemClass = null);
+        string? ItemClass = null,
+        bool RequiresSanitisation = false);
 
     public sealed record ItemWarranty(string CoverageFamily, string PolicyCode, bool EntitlementRequiredOnSale = true);
     public sealed record CatalogueParty(Guid Id, string Code, string? Name, string PartyType);
     public sealed record CatalogueDocument(Guid Id, string Type, string Number, string? Status = null, Guid? ItemId = null);
+    public sealed record CatalogueLocation(Guid Id, string Code, string Name, string Kind);
 }
