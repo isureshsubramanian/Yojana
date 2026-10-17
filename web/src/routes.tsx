@@ -59,6 +59,7 @@ export const router = createBrowserRouter([
           { path: "claims/new", lazy: () => import("./claims/ClaimIntake") },
           { path: "claims/recovery", lazy: () => import("./recovery/RecoveryClaims") },
           { path: "settings/currencies", lazy: () => import("./settings/Currencies") },
+          { path: "settings/recovery", lazy: () => import("./settings/SupplierRecovery") },
           { path: "settings/workbench-choices", lazy: () => import("./corrections/WorkbenchChoices") },
           { path: "claims/campaigns", lazy: () => import("./campaigns/Campaigns") },
           { path: "claims/campaigns/new", lazy: () => import("./campaigns/CampaignEditor") },

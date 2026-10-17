@@ -35,6 +35,7 @@ export const navigation: NavEntry[] = [
   { path: "/integration", label: "Integration", icon: "int", section: "Data", placeholder: "Connections and the integration gateway" },
   { path: "/settings", label: "Settings", icon: "set", section: "Data", roles: ["tenant_administrator"], placeholder: "Tenant settings" },
   { path: "/settings/currencies", label: "Currencies", icon: "set", section: "Data", roles: ["tenant_administrator"] },
+  { path: "/settings/recovery", label: "Supplier recovery", icon: "set", section: "Data", roles: ["tenant_administrator"] },
   { path: "/settings/workbench-choices", label: "Workbench choices", icon: "set", section: "Data", roles: ["tenant_administrator"] },
 ];
 

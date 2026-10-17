@@ -43,7 +43,21 @@ export interface RecoveryClaimSummary {
   childItems: RecoveryFilterOption[];
 }
 
-export type RecoveryNotRaisedReason = "vendor_term_ended" | "no_vendor_term" | "recall_claim";
+export type RecoveryNotRaisedReason =
+  | "vendor_term_ended"
+  | "no_vendor_term"
+  | "recall_claim"
+  | "several_covered_parts"
+  | "part_not_named"
+  | "line_kind_not_recovered";
+
+export type RecoveryWholeUnitRule = "single_covered_part" | "named_part_only";
+
+export interface RecoveryPolicy {
+  wholeUnitLines: RecoveryWholeUnitRule;
+  lineKinds: string[];
+  vendorAnswerDueDays: number;
+}
 
 export interface RecoveryNotRaisedRow {
   customerClaimId: string;

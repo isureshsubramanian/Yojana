@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router";
 import { StatusBadge } from "../components";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 import { usePeople } from "../people/people";
+import { noRecoveryExplanation } from "../recovery/format";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
 import { openDrawer } from "../shell/drawerStore";
@@ -88,6 +89,7 @@ export function Component() {
           <section className="card" aria-labelledby="claim-record"><div className="card-header"><h2 id="claim-record">{decided ? "Recorded on adjudication" : "Will be recorded on approve"}</h2><span className="meta">one transaction · outbox</span></div><table className="table dense"><colgroup><col style={{ width: "30%" }} /><col style={{ width: "58%" }} /><col style={{ width: "12%" }} /></colgroup><tbody>
             <tr><td className="primary"><span className="t">Claim.Adjudicated</span></td><td>{preview.cohortId ? "one accrual cohort" : "no accrual cohort"} · {humanise(preview.coverageSource).toLowerCase()} · {money(preview.approvedAmount, preview.currency, catalogue)} by line · service {names.party(detail.serviceEntityId)} · obligor {names.party(preview.obligorEntityId)}</td><td className="num">1</td></tr>
             {preview.recoveries.map((recovery) => <tr key={`${recovery.childUnitId}-${recovery.vendorPartyRef}`}><td className="primary"><span className="t">RecoveryClaim.Raised</span></td><td>{names.party(recovery.vendorPartyRef)} · child {recovery.childSerial ?? "serial unavailable"} · requested {money(recovery.requestedAmount, preview.currency, catalogue)}{recovery.monthOfTerm && recovery.termMonths ? ` · month ${recovery.monthOfTerm} of ${recovery.termMonths}` : ""}</td><td className="num">1</td></tr>)}
+            {preview.recoveryNotRaisedReason && <tr><td className="primary"><span className="t">No recovery</span></td><td>No recovery: {noRecoveryExplanation(preview.recoveryNotRaisedReason)}</td><td className="num">—</td></tr>}
             {preview.chargeableAmount > 0 && <tr><td className="primary"><span className="t">Chargeable quote request</span></td><td>{money(preview.chargeableAmount, preview.currency, catalogue)} · to {names.party(detail.settlementPartyRef)}</td><td className="num">1</td></tr>}
           </tbody></table></section>
         </div>

@@ -50,6 +50,8 @@ public sealed class RecoverySettings(ITenantSettings settings)
         if (!RecoveryWholeUnitRule.All.Contains(policy.WholeUnitLines))
             throw new CommandRefusedException("recovery_policy_invalid", $"'{policy.WholeUnitLines}' is not a whole-unit recovery rule.", "choose single_covered_part or named_part_only");
         var kinds = (policy.LineKinds ?? []).Distinct(StringComparer.Ordinal).ToList();
+        if (kinds.Count == 0)
+            throw new CommandRefusedException("recovery_policy_invalid", "Choose at least one claim line kind for supplier recovery.");
         if (kinds.Any(kind => !ClaimLineKind.All.Contains(kind)))
             throw new CommandRefusedException("recovery_policy_invalid", "Line kinds must be parts, labour or travel.");
         if (policy.VendorAnswerDueDays is < 1 or > 90)

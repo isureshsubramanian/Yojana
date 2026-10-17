@@ -289,6 +289,162 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Whole_unit_line_with_several_covered_parts_records_and_reports_why_recovery_was_not_raised()
+    {
+        var setup = await SetUpAsync("recovery-many", 4);
+        await AddSupplierCoverAsync(setup, (setup.Units[0], setup.Units[1]), (setup.Units[0], setup.Units[3]));
+        var at = new DateTime(2025, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+        var claim = await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2025, 9, 1), at, ClaimRemedy.Repair);
+
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var preview = (await scope.ServiceProvider.GetRequiredService<Claims.ClaimAdjudicationPreviewQuery>()
+                .PreviewAsync(claim.ClaimId, YojanaRole.ServiceManager, CancellationToken.None))!;
+            Assert.Empty(preview.Recoveries);
+            Assert.Equal(RecoveryNotRaisedReason.SeveralCoveredParts, preview.RecoveryNotRaisedReason);
+        }
+
+        var result = await InvokeAsync<AdjudicateClaimResult>(setup.Tenant,
+            new AdjudicateClaim(Guid.NewGuid(), claim.ClaimId, at.AddHours(1), "service.manager"));
+        Assert.Empty(result.RecoveryClaimIds);
+
+        using var read = fixture.ScopeFor(setup.Tenant);
+        var saved = await read.ServiceProvider.GetRequiredService<SerialisationDbContext>().Claims.SingleAsync(row => row.ClaimId == claim.ClaimId);
+        Assert.Equal(RecoveryNotRaisedReason.SeveralCoveredParts, saved.RecoveryNotRaisedReason);
+        var report = await read.ServiceProvider.GetRequiredService<Claims.RecoveryQueries>()
+            .NotRaisedAsync(30, new DateOnly(2025, 9, 1), CancellationToken.None);
+        Assert.Equal(RecoveryNotRaisedReason.SeveralCoveredParts, Assert.Single(report.Rows).Reason);
+    }
+
+    [DatabaseFact]
+    public async Task Whole_unit_line_with_one_covered_part_raises_one_recovery_for_that_part()
+    {
+        var setup = await SetUpAsync("recovery-one", 2);
+        await AddSupplierCoverAsync(setup, (setup.Units[0], setup.Units[1]));
+        var at = new DateTime(2025, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+        var claim = await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2025, 9, 1), at, ClaimRemedy.Repair);
+
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var preview = (await scope.ServiceProvider.GetRequiredService<Claims.ClaimAdjudicationPreviewQuery>()
+                .PreviewAsync(claim.ClaimId, YojanaRole.ServiceManager, CancellationToken.None))!;
+            Assert.Equal(setup.Units[1], Assert.Single(preview.Recoveries).ChildUnitId);
+            Assert.Null(preview.RecoveryNotRaisedReason);
+        }
+
+        var result = await InvokeAsync<AdjudicateClaimResult>(setup.Tenant,
+            new AdjudicateClaim(Guid.NewGuid(), claim.ClaimId, at.AddHours(1), "service.manager"));
+        var recoveryId = Assert.Single(result.RecoveryClaimIds);
+        using var read = fixture.ScopeFor(setup.Tenant);
+        var recovery = await read.ServiceProvider.GetRequiredService<SerialisationDbContext>().RecoveryClaims.SingleAsync(row => row.RecoveryClaimId == recoveryId);
+        Assert.Equal(setup.Units[1], recovery.ChildUnitId);
+    }
+
+    [DatabaseFact]
+    public async Task Named_part_policy_requires_the_line_to_name_the_part_and_then_recovers_from_it()
+    {
+        var setup = await SetUpAsync("recovery-named", 3);
+        await AddSupplierCoverAsync(setup, (setup.Units[0], setup.Units[2]));
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            await scope.ServiceProvider.GetRequiredService<Claims.RecoverySettings>().SetAsync(
+                new RecoveryPolicy(RecoveryWholeUnitRule.NamedPartOnly, [ClaimLineKind.Parts], 7), CancellationToken.None);
+        }
+
+        var at = new DateTime(2025, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+        var unnamed = await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2025, 9, 1), at, ClaimRemedy.Repair);
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var preview = (await scope.ServiceProvider.GetRequiredService<Claims.ClaimAdjudicationPreviewQuery>()
+                .PreviewAsync(unnamed.ClaimId, YojanaRole.ServiceManager, CancellationToken.None))!;
+            Assert.Empty(preview.Recoveries);
+            Assert.Equal(RecoveryNotRaisedReason.PartNotNamed, preview.RecoveryNotRaisedReason);
+        }
+        await InvokeAsync<AdjudicateClaimResult>(setup.Tenant,
+            new AdjudicateClaim(Guid.NewGuid(), unnamed.ClaimId, at.AddHours(1), "service.manager"));
+
+        var named = await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2025, 9, 1), at.AddMinutes(1), ClaimRemedy.Repair,
+            ClaimLineKind.Parts, setup.Units[2]);
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var preview = (await scope.ServiceProvider.GetRequiredService<Claims.ClaimAdjudicationPreviewQuery>()
+                .PreviewAsync(named.ClaimId, YojanaRole.ServiceManager, CancellationToken.None))!;
+            Assert.Equal(setup.Units[2], Assert.Single(preview.Recoveries).ChildUnitId);
+        }
+        var namedResult = await InvokeAsync<AdjudicateClaimResult>(setup.Tenant,
+            new AdjudicateClaim(Guid.NewGuid(), named.ClaimId, at.AddHours(1).AddMinutes(1), "service.manager"));
+        Assert.Single(namedResult.RecoveryClaimIds);
+
+        using var read = fixture.ScopeFor(setup.Tenant);
+        var db = read.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        Assert.Equal(RecoveryNotRaisedReason.PartNotNamed, (await db.Claims.SingleAsync(row => row.ClaimId == unnamed.ClaimId)).RecoveryNotRaisedReason);
+        Assert.Equal(setup.Units[2], (await db.RecoveryClaims.SingleAsync(row => row.CustomerClaimId == named.ClaimId)).ChildUnitId);
+    }
+
+    [DatabaseFact]
+    public async Task Line_kind_outside_the_policy_records_and_reports_the_kind()
+    {
+        var setup = await SetUpAsync("recovery-kind", 2);
+        await AddSupplierCoverAsync(setup, (setup.Units[0], setup.Units[1]));
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            await scope.ServiceProvider.GetRequiredService<Claims.RecoverySettings>().SetAsync(
+                new RecoveryPolicy(RecoveryWholeUnitRule.SingleCoveredPart, [ClaimLineKind.Parts], 7), CancellationToken.None);
+        }
+
+        var at = new DateTime(2025, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+        var claim = await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2025, 9, 1), at, ClaimRemedy.Repair, ClaimLineKind.Labour);
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var preview = (await scope.ServiceProvider.GetRequiredService<Claims.ClaimAdjudicationPreviewQuery>()
+                .PreviewAsync(claim.ClaimId, YojanaRole.ServiceManager, CancellationToken.None))!;
+            Assert.Empty(preview.Recoveries);
+            Assert.Equal(RecoveryNotRaisedReason.LineKindNotRecovered, preview.RecoveryNotRaisedReason);
+        }
+        await InvokeAsync<AdjudicateClaimResult>(setup.Tenant,
+            new AdjudicateClaim(Guid.NewGuid(), claim.ClaimId, at.AddHours(1), "service.manager"));
+
+        using var read = fixture.ScopeFor(setup.Tenant);
+        var saved = await read.ServiceProvider.GetRequiredService<SerialisationDbContext>().Claims.SingleAsync(row => row.ClaimId == claim.ClaimId);
+        Assert.Equal(RecoveryNotRaisedReason.LineKindNotRecovered, saved.RecoveryNotRaisedReason);
+        var row = Assert.Single((await read.ServiceProvider.GetRequiredService<Claims.RecoveryQueries>()
+            .NotRaisedAsync(30, new DateOnly(2025, 9, 1), CancellationToken.None)).Rows);
+        Assert.Equal(RecoveryNotRaisedReason.LineKindNotRecovered, row.Reason);
+    }
+
+    [DatabaseFact]
+    public async Task Recovery_policy_refuses_empty_kinds_out_of_range_days_and_unknown_rules()
+    {
+        var tenant = await fixture.NewTenantAsync("recovery-policy", "EUR");
+        using var scope = fixture.ScopeFor(tenant);
+        var settings = scope.ServiceProvider.GetRequiredService<Claims.RecoverySettings>();
+
+        var noKinds = await Assert.ThrowsAsync<CommandRefusedException>(() => settings.SetAsync(
+            new RecoveryPolicy(RecoveryWholeUnitRule.SingleCoveredPart, [], 7), CancellationToken.None));
+        var tooSoon = await Assert.ThrowsAsync<CommandRefusedException>(() => settings.SetAsync(
+            new RecoveryPolicy(RecoveryWholeUnitRule.SingleCoveredPart, [ClaimLineKind.Parts], 0), CancellationToken.None));
+        var tooLate = await Assert.ThrowsAsync<CommandRefusedException>(() => settings.SetAsync(
+            new RecoveryPolicy(RecoveryWholeUnitRule.SingleCoveredPart, [ClaimLineKind.Parts], 91), CancellationToken.None));
+        var unknown = await Assert.ThrowsAsync<CommandRefusedException>(() => settings.SetAsync(
+            new RecoveryPolicy("guess_vendor", [ClaimLineKind.Parts], 7), CancellationToken.None));
+
+        Assert.All([noKinds, tooSoon, tooLate, unknown], refusal => Assert.Equal("recovery_policy_invalid", refusal.Rule));
+    }
+
+    [DatabaseFact]
+    public async Task Working_currency_cannot_change_after_it_is_set()
+    {
+        var tenant = await fixture.NewTenantAsync("currency-lock", "EUR");
+        using var scope = fixture.ScopeFor(tenant);
+        var currency = scope.ServiceProvider.GetRequiredService<ITenantCurrency>();
+
+        var refusal = await Assert.ThrowsAsync<TenantCurrencyLockedException>(() => currency.SetAsync("USD", CancellationToken.None));
+
+        Assert.Equal("EUR", refusal.Current);
+        Assert.Equal("EUR", await currency.GetAsync(CancellationToken.None));
+    }
+
+    [DatabaseFact]
     public async Task Sales_block_alone_does_not_affect_claim_approval()
     {
         var setup = await SetUpAsync("sales-block", 1);
@@ -369,9 +525,10 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
         Assert.Equal("choose repair or goodwill", refusal.UnblockingStep);
     }
 
-    private async Task<SubmitClaimResult> SubmitAsync(TenantId tenant, Guid unitId, DateOnly claimDate, DateTime at, string remedy) =>
+    private async Task<SubmitClaimResult> SubmitAsync(TenantId tenant, Guid unitId, DateOnly claimDate, DateTime at, string remedy,
+        string lineKind = ClaimLineKind.Parts, Guid? lineUnitId = null) =>
         await InvokeAsync<SubmitClaimResult>(tenant, new SubmitClaim(Guid.NewGuid(), unitId, null, claimDate, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "DE", "EUR",
-            [new ClaimLineInput(ClaimLineKind.Parts, CoverageFamilyCode.Base, 100m)], [new ClaimEvidenceInput(ClaimEvidenceKind.Attachment, "DEFECT-PHOTO")], remedy, "CHOICE-RECORDED", at, "service.desk", "INVOICE-1"));
+            [new ClaimLineInput(lineKind, CoverageFamilyCode.Base, 100m, lineUnitId)], [new ClaimEvidenceInput(ClaimEvidenceKind.Attachment, "DEFECT-PHOTO")], remedy, "CHOICE-RECORDED", at, "service.desk", "INVOICE-1"));
 
     private async Task<ClaimSetup> SetUpAsync(string prefix, int count)
     {
@@ -401,10 +558,13 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
     }
 
     private async Task AddChildrenAndSupplierCoverAsync(ClaimSetup setup, Guid firstRoot, Guid firstChild, Guid secondRoot, Guid secondChild)
+        => await AddSupplierCoverAsync(setup, (firstRoot, firstChild), (secondRoot, secondChild));
+
+    private async Task AddSupplierCoverAsync(ClaimSetup setup, params (Guid Root, Guid Child)[] pairs)
     {
         using var scope = fixture.ScopeFor(setup.Tenant);
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
-        foreach (var (root, child) in new[] { (firstRoot, firstChild), (secondRoot, secondChild) })
+        foreach (var (root, child) in pairs)
         {
             db.AssemblyLinks.Add(new AssemblyLink
             {

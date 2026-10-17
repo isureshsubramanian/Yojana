@@ -1,3 +1,5 @@
+import type { RecoveryNotRaisedReason } from "../recovery/types";
+
 export interface ClaimListRow {
   claimId: string; claimNumber: string; unitId: string; serial: string | null; itemId: string | null;
   claimantPartyRef: string; settlementPartyRef: string; status: string; coverageSource: string; remedy: string;
@@ -55,6 +57,7 @@ export interface ClaimAdjudicationPreview {
   approvedAmount: number; lines: ClaimLinePreview[]; checks: ClaimCheck[]; cohortId: string | null; obligorEntityId: string;
   recoveries: RecoveryPreview[]; chargeableAmount: number; refusal: string | null; refusalStep: string | null;
   requiredReviewerRole: string | null; successorItemId: string | null; manualDenialReasons: string[];
+  recoveryNotRaisedReason: RecoveryNotRaisedReason | null;
 }
 
 export interface ClaimLineInput {

@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import type { RecoveryAnswer, RecoveryAnswerResult, RecoveryClaimPage, RecoveryClaimSummary, RecoveryNotRaisedReport } from "./types";
+import type { RecoveryAnswer, RecoveryAnswerResult, RecoveryClaimPage, RecoveryClaimSummary, RecoveryNotRaisedReport, RecoveryPolicy } from "./types";
 
 function query(values: Record<string, string | number | undefined | null>): string {
   const result = new URLSearchParams();
@@ -9,6 +9,8 @@ function query(values: Record<string, string | number | undefined | null>): stri
 }
 
 export const recoveryApi = {
+  policy: (signal?: AbortSignal) => api<RecoveryPolicy>("/api/claims/recovery-policy", { signal }),
+  savePolicy: (body: RecoveryPolicy) => api<RecoveryPolicy>("/api/claims/recovery-policy", { method: "PUT", body }),
   page: (filters: Record<string, string | number | undefined | null>, signal?: AbortSignal) => api<RecoveryClaimPage>(`/api/recovery-claims${query(filters)}`, { signal }),
   summary: (signal?: AbortSignal) => api<RecoveryClaimSummary>("/api/recovery-claims/summary", { signal }),
   notRaised: (days = 30, signal?: AbortSignal) => api<RecoveryNotRaisedReport>(`/api/recovery-claims/not-raised${query({ days })}`, { signal }),

@@ -11,7 +11,7 @@ import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDate } from "../units/format";
 import { recoveryApi } from "./api";
 import { currencyAmounts, money, noRecoveryExplanation, primaryApprovalRate, recoveryState, termText } from "./format";
-import type { RecoveryAnswer, RecoveryClaimPage, RecoveryClaimRow, RecoveryClaimSummary, RecoveryNotRaisedReport } from "./types";
+import type { RecoveryAnswer, RecoveryClaimPage, RecoveryClaimRow, RecoveryClaimSummary, RecoveryNotRaisedReport, RecoveryPolicy } from "./types";
 
 const PAGE_SIZE = 50;
 
@@ -25,6 +25,7 @@ export function Component() {
   const [data, setData] = useState<RecoveryClaimPage | null>(null);
   const [summary, setSummary] = useState<RecoveryClaimSummary | null>(null);
   const [notRaised, setNotRaised] = useState<RecoveryNotRaisedReport | null>(null);
+  const [policy, setPolicy] = useState<RecoveryPolicy | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -33,6 +34,14 @@ export function Component() {
   const exportFilters = useMemo(() => ({ status, vendor: vendor || undefined, childItem: childItem || undefined, find: find || undefined }), [status, vendor, childItem, find]);
 
   useEffect(() => { const timer = window.setTimeout(() => { setFind(findText.trim()); setPage(1); }, 250); return () => window.clearTimeout(timer); }, [findText]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    recoveryApi.policy(controller.signal)
+      .then(setPolicy)
+      .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError(null);
@@ -50,14 +59,15 @@ export function Component() {
   const openAmounts = currencyAmounts(summary?.openAmounts ?? [], "requestedAmount");
   const approvedAmounts = currencyAmounts(summary?.approvedThisYear ?? [], "approvedAmount");
   const approvalRate = primaryApprovalRate(summary?.approvedThisYear ?? []);
+  const vendorAnswerDueDays = policy?.vendorAnswerDueDays ?? Number.POSITIVE_INFINITY;
 
   const refresh = useCallback(() => { closeDrawer(); setRevision((value) => value + 1); }, []);
   const drawerBody = useCallback((row: RecoveryClaimRow) => <RecoveryDrawer row={row} onSaved={refresh} />, [refresh]);
   const openRow = useCallback((row: RecoveryClaimRow) => {
     setSelectedId(row.recoveryClaimId);
-    const state = recoveryState(row);
+    const state = recoveryState(row, vendorAnswerDueDays);
     openDrawer({ eyebrow: `Recovery claim · ${state.label.toLocaleLowerCase()}`, title: row.recoveryNumber, mono: true }, drawerBody(row));
-  }, [drawerBody]);
+  }, [drawerBody, vendorAnswerDueDays]);
 
   const columns: GridColumn<RecoveryClaimRow>[] = [
     { key: "recovery", label: "Recovery", width: 13, mono: true, render: (row) => <>{row.recoveryNumber}<span className="sub" style={{ fontFamily: "var(--font-body)" }}>raised {fmtDate(row.raisedAt)}</span></> },
@@ -67,7 +77,7 @@ export function Component() {
     { key: "term", label: "Vendor term", width: 14, render: (row) => <>{termText(row.vendorTermMonths, row.vendorTermEnd)}<span className="sub">month {row.claimMonthOfTerm ?? "—"}</span></> },
     { key: "requested", label: "Requested", width: 9, numeric: true, render: (row) => money(row.requestedAmount, row.currency) },
     { key: "approved", label: "Approved", width: 9, numeric: true, muted: true, render: (row) => row.approvedAmount === null ? "—" : money(row.approvedAmount, row.currency) },
-    { key: "status", label: "Status", width: 11, render: (row) => { const state = recoveryState(row); return <><StatusBadge tone={state.tone}>{state.label}</StatusBadge><span className="sub">{state.detail}</span></>; } },
+    { key: "status", label: "Status", width: 11, render: (row) => { const state = recoveryState(row, vendorAnswerDueDays); return <><StatusBadge tone={state.tone}>{state.label}</StatusBadge><span className="sub">{state.detail}</span></>; } },
   ];
 
   const title = status === "open" ? "Open recovery claims" : status === "approved" ? "Approved recovery claims" : "Recovery claims";
@@ -102,7 +112,7 @@ export function Component() {
 
         <section className="card" aria-labelledby="not-raised"><div className="card-header"><h2 id="not-raised">Approved claims that raised no recovery <span className="meta">last {notRaised?.days ?? 30} days · {notRaised?.rows.length.toLocaleString() ?? "…"} claims</span></h2><span className="meta">so a missed recovery is visible, not silent</span></div>
           <table className="table dense"><colgroup><col style={{ width: "16%" }} /><col style={{ width: "22%" }} /><col style={{ width: "22%" }} /><col style={{ width: "40%" }} /></colgroup><tbody>
-            {notRaised?.rows.map((row) => <tr key={row.customerClaimId}><td className="serial"><Link to={`/claims/${row.customerClaimId}`}>{row.customerClaimNumber}</Link></td><td><UnitLink unitId={row.unitId}>{row.unitSerial}</UnitLink> · {names.item(row.itemId)}</td><td>{row.vendorPartyRef ? names.party(row.vendorPartyRef) : <span className="muted">no vendor term</span>}</td><td className="muted">{noRecoveryExplanation(row)}</td></tr>)}
+            {notRaised?.rows.map((row) => <tr key={row.customerClaimId}><td className="serial"><Link to={`/claims/${row.customerClaimId}`}>{row.customerClaimNumber}</Link></td><td><UnitLink unitId={row.unitId}>{row.unitSerial}</UnitLink> · {names.item(row.itemId)}</td><td>{row.vendorPartyRef ? names.party(row.vendorPartyRef) : <span className="muted">no vendor term</span>}</td><td className="muted">{noRecoveryExplanation(row.reason, row)}</td></tr>)}
             {!loading && !notRaised?.rows.length && <tr><td colSpan={4} className="muted" style={{ textAlign: "center", height: 64 }}>Every approved claim in the last 30 days has an explained recovery outcome.</td></tr>}
           </tbody></table>
         </section>

@@ -15,13 +15,20 @@ test("recovery amounts keep currencies separate and calculate the primary-curren
 });
 
 test("recovery state derives waiting, partial and refusal without adding stored statuses", () => {
-  assert.deepEqual(recoveryState({ status: "raised", ageDays: 14, approvedAmount: null, requestedAmount: 100, vendorNote: null }), { label: "Waiting", tone: "warn", detail: "14 d" });
-  assert.equal(recoveryState({ status: "approved", ageDays: 2, approvedAmount: 80, requestedAmount: 100, vendorNote: "labour refused" }).label, "Partially approved");
-  assert.equal(recoveryState({ status: "approved", ageDays: 2, approvedAmount: 0, requestedAmount: 100, vendorNote: null }).label, "Refused");
+  assert.deepEqual(recoveryState({ status: "raised", ageDays: 14, approvedAmount: null, requestedAmount: 100, vendorNote: null }, 10), { label: "Waiting", tone: "warn", detail: "14 d" });
+  assert.equal(recoveryState({ status: "raised", ageDays: 8, approvedAmount: null, requestedAmount: 100, vendorNote: null }, 10).label, "Raised");
+  assert.equal(recoveryState({ status: "approved", ageDays: 2, approvedAmount: 80, requestedAmount: 100, vendorNote: "labour refused" }, 10).label, "Partially approved");
+  assert.equal(recoveryState({ status: "approved", ageDays: 2, approvedAmount: 0, requestedAmount: 100, vendorNote: null }, 10).label, "Refused");
 });
 
 test("term and not-raised explanations mirror the approved wording", () => {
   assert.equal(termText(12, "2026-07-02"), "12 m · ends 2026-07-02");
   const row = { reason: "vendor_term_ended", vendorTermMonths: 12, vendorTermEnd: "2026-07-02", claimMonthOfTerm: 15 } as RecoveryNotRaisedRow;
-  assert.equal(noRecoveryExplanation(row), "vendor term 12 m ended 2026-07-02 · claim in month 15");
+  assert.equal(noRecoveryExplanation(row.reason, row), "vendor term 12 m ended 2026-07-02 · claim in month 15");
+});
+
+test("policy reasons explain why a live vendor term did not raise recovery", () => {
+  assert.equal(noRecoveryExplanation("several_covered_parts"), "several parts inside the unit carry live vendor terms · name the part on the line to recover");
+  assert.equal(noRecoveryExplanation("part_not_named"), "policy recovers only from a named part · the line names none");
+  assert.equal(noRecoveryExplanation("line_kind_not_recovered"), "the approved line kinds are not recovered under the tenant policy");
 });
