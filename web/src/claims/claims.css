@@ -1,0 +1,30 @@
+.claims-age { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.claims-age > div { padding: 10px 14px; min-width: 0; }
+.claims-age > div + div { border-left: 1px solid var(--border); }
+.claims-age .label { font-size: 12px; color: var(--text-3); }
+.claims-age .value { font-size: 20px; font-weight: 600; }
+.claims-age .progress { margin-top: 6px; height: 6px; }
+.claims-lines .input, .claims-lines .select { height: 32px; font-size: 13px; }
+.claims-lines td { overflow: visible; }
+.claims-line-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.claims-line-actions .btn { padding: 0 8px; }
+.claims-segmented { display: flex; flex-wrap: wrap; gap: 8px; }
+.claims-remedy { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.claims-remedy label { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-s); cursor: pointer; }
+.claims-remedy label.on { border-color: var(--accent); background: var(--accent-soft); }
+.claims-remedy .help { display: block; }
+.claims-stack { counter-reset: claims-level; }
+.claims-stack .job .t::before { counter-increment: claims-level; content: counter(claims-level) " · "; color: var(--text-3); font-weight: 400; }
+.claims-modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, var(--text-1) 28%, transparent); }
+.claims-modal { width: min(480px, 100%); background: var(--surface-1); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow-1); }
+.claims-modal .card-body { display: grid; gap: 16px; }
+.claims-modal .actions { display: flex; justify-content: flex-end; gap: 8px; }
+.claims-chip-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.claims-chip-list .chip { cursor: default; }
+.claims-currency-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; max-height: 380px; overflow: auto; }
+.claims-currency-option { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-s); }
+.claims-currency-option input { margin-top: 3px; accent-color: var(--accent); }
+.claims-currency-option span { min-width: 0; }
+.claims-currency-option .sub { display: block; }
+.toolbar > .findbar { display: contents; }
+@media (max-width: 960px) { .claims-age { grid-template-columns: 1fr; } .claims-age > div + div { border-left: 0; border-top: 1px solid var(--border); } .claims-remedy { grid-template-columns: 1fr; } }

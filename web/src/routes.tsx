@@ -53,6 +53,12 @@ export const router = createBrowserRouter([
           { path: "corrections/reassign-allocation", lazy: () => import("./corrections/AllocationReassign") },
           { path: "corrections/merge", lazy: () => import("./corrections/MergeUnits") },
           { path: "corrections/vendor-serials", lazy: () => import("./corrections/VendorSerials") },
+          { path: "claims", lazy: () => import("./claims/Claims") },
+          // Keep claim collection routes (including campaigns/recovery added by sibling work) above the id route.
+          // React Router ranks literals first too; the order documents the boundary so "campaigns" is never treated as an id.
+          { path: "claims/new", lazy: () => import("./claims/ClaimIntake") },
+          { path: "claims/:claimId", lazy: () => import("./claims/ClaimAdjudication") },
+          { path: "settings/currencies", lazy: () => import("./settings/Currencies") },
           { path: "settings/workbench-choices", lazy: () => import("./corrections/WorkbenchChoices") },
           ...patterns,
           ...placeholders,

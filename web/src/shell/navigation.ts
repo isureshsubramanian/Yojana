@@ -26,12 +26,13 @@ export const navigation: NavEntry[] = [
   { path: "/entitlements/exceptions", label: "Warranty-line exceptions", icon: "bell", section: "Work" },
   { path: "/approvals", label: "Approvals", icon: "check", section: "Work", roles: ["service_manager", "tenant_administrator", "serial_administrator", "production_supervisor", "inventory_controller", "order_desk_supervisor", "quality", "item_master_owner", "shipping_supervisor", "service_supervisor"] },
   { path: "/corrections", label: "Correction workbench", icon: "corr", section: "Work" },
-  { path: "/claims", label: "Claims", icon: "claim", section: "Work", placeholder: "Claims, campaigns and supplier recovery" },
+  { path: "/claims", label: "Claims", icon: "claim", section: "Work" },
   { path: "/rma", label: "RMA", icon: "rma", section: "Work", placeholder: "RMA, replacement and refurbishment" },
   { path: "/certificates", label: "Certificates", icon: "cert", section: "Work", placeholder: "Certificates and labels" },
   { path: "/imports", label: "Imports", icon: "import", section: "Data", placeholder: "Imports and 3PL capture" },
   { path: "/integration", label: "Integration", icon: "int", section: "Data", placeholder: "Connections and the integration gateway" },
   { path: "/settings", label: "Settings", icon: "set", section: "Data", roles: ["tenant_administrator"], placeholder: "Tenant settings" },
+  { path: "/settings/currencies", label: "Currencies", icon: "set", section: "Data", roles: ["tenant_administrator"] },
   { path: "/settings/workbench-choices", label: "Workbench choices", icon: "set", section: "Data", roles: ["tenant_administrator"] },
 ];
 
