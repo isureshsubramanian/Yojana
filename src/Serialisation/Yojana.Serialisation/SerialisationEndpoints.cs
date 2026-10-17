@@ -389,6 +389,16 @@ public static class SerialisationEndpoints
         claims.MapPost("/{claimId:guid}/close", (Guid claimId, CloseClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
 
+        var replacements = app.MapGroup("/api/warranty-replacements").RequireAuthorization(YojanaPolicy.TenantMember);
+        replacements.MapGet("/", async (string? status, int? skip, int? take, Replacements.WarrantyReplacementQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.ListAsync(status, skip ?? 0, take ?? 50, ct)));
+        replacements.MapGet("/{warrantyReplacementId:guid}", async (Guid warrantyReplacementId, Replacements.WarrantyReplacementQueries queries, CancellationToken ct) =>
+            await queries.DetailAsync(warrantyReplacementId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
+        replacements.MapPost("/", (CreateWarrantyReplacement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CreateWarrantyReplacementResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
+        replacements.MapPost("/{warrantyReplacementId:guid}/ship", (Guid warrantyReplacementId, ShipWarrantyReplacement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<ShipWarrantyReplacementResult>(bus, tenant, command with { WarrantyReplacementId = warrantyReplacementId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
+
         var recoveryClaims = app.MapGroup("/api/recovery-claims").RequireAuthorization(YojanaPolicy.TenantMember);
         recoveryClaims.MapGet("/", async (string? status, Guid? vendor, Guid? childItem, string? find, int? skip, int? take, RecoveryQueries queries, IPartyNamePort parties, IClock clock, CancellationToken ct) =>
         {

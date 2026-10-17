@@ -113,9 +113,24 @@ public sealed record StockPostingSerialCorrection(
     IReadOnlyList<Guid> PhysicalUnitIds,
     Guid CorrectionId);
 
+/// <summary>The stock issue paired with a shipped replacement; Inventory owns valuation and the posting reference.</summary>
+public sealed record WarrantyReplacementStockIssue(
+    Guid CommandId,
+    Guid WarrantyReplacementId,
+    string ReplacementNumber,
+    Guid ReplacementLinkId,
+    Guid UnitId,
+    Guid ItemId,
+    DateTime EventTime,
+    string ActorRef,
+    Guid LegalEntityId);
+
+public sealed record WarrantyReplacementStockIssueResult(string PostingReference);
+
 // TIGHT COUPLING (declared, ADR-0001 "Integration boundaries and coupling", coupling 1)
-// WHAT:  Inventory.StockPostingService calls Serialisation.IStockUnitEventPort.RecordForPosting(...)
-//        inside the SAME database transaction that writes the stock ledger line and valuation layer.
+// WHAT:  Warranty replacement calls IStockUnitEventPort.IssueWarrantyReplacementAsync(...), while document correction
+//        calls IStockUnitEventPort.RecordCorrectionForPosting(...); Inventory must handle each inside the SAME database
+//        transaction that writes the corresponding stock ledger line and valuation layer.
 // WHY:   The invariant "on-hand quantity of a serial-tracked item at a location equals the count of
 //        units in stock at that location" (ADR-0001, edge case 34) must hold at every commit. An outbox
 //        or event hand-off would allow a committed quantity with no units (or units with no quantity)
@@ -131,5 +146,37 @@ public sealed record StockPostingSerialCorrection(
 // Engine: SQL Server / Azure SQL; the pairing relies on a single local transaction, never on a distributed one.
 public interface IStockUnitEventPort
 {
+    Task<WarrantyReplacementStockIssueResult> IssueWarrantyReplacementAsync(WarrantyReplacementStockIssue issue, CancellationToken cancellationToken);
+
     Task RecordCorrectionForPosting(StockPostingSerialCorrection correction, CancellationToken cancellationToken);
+}
+
+/// <summary>The latest condition grade needed to validate a replacement allocation.</summary>
+public interface IUnitConditionQueryPort
+{
+    Task<string> LatestGradeAsync(Guid unitId, CancellationToken cancellationToken);
+}
+
+/// <summary>Facts resolved from the source aggregate; RMA supplies its implementation when that sibling module is merged.</summary>
+public sealed record ReplacementSource(
+    string Kind,
+    Guid Id,
+    string Number,
+    Guid OriginalUnitId,
+    Guid SourceEntitlementId,
+    DateOnly CoverageDate,
+    DocumentRef? OriginalSale,
+    string? ReturnReasonCode);
+
+public interface IReplacementSourceQueryPort
+{
+    Task<ReplacementSource?> ResolveAsync(string kind, Guid id, Guid sourceEntitlementId, CancellationToken cancellationToken);
+}
+
+/// <summary>Return owns rule interpretation; Replacement receives only the auditable rule and computed service amount.</summary>
+public sealed record RestockingFeeQuote(string Rule, decimal Amount);
+
+public interface IReturnReasonQueryPort
+{
+    Task<RestockingFeeQuote> QuoteAsync(string? returnReasonCode, decimal basis, CancellationToken cancellationToken);
 }

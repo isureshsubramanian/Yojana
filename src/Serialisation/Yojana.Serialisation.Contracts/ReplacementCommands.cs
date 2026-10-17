@@ -1,0 +1,179 @@
+namespace Yojana.Serialisation.Contracts;
+
+public static class ReplacementSourceKind
+{
+    public const string Claim = "claim";
+    public const string Rma = "rma";
+    public static readonly IReadOnlyList<string> All = [Claim, Rma];
+}
+
+public static class ReplacementDirection
+{
+    public const string CustomerFacing = "customer_facing";
+    public const string VendorFacing = "vendor_facing";
+    public static readonly IReadOnlyList<string> All = [CustomerFacing, VendorFacing];
+}
+
+public static class ReplacementReason
+{
+    public const string WarrantyDefect = "warranty_defect";
+    public const string DeadOnArrival = "dead_on_arrival";
+    public const string SellerError = "seller_error";
+    public const string Goodwill = "goodwill";
+    public const string Recall = "recall";
+    public static readonly IReadOnlyList<string> All = [WarrantyDefect, DeadOnArrival, SellerError, Goodwill, Recall];
+}
+
+public static class ReplacementLinkState
+{
+    public const string Proposed = "proposed";
+    public const string AwaitingReturn = "awaiting_return";
+    public const string ClosedReturned = "closed_returned";
+    public const string ClosedBilled = "closed_billed";
+    public const string Cancelled = "cancelled";
+    public const string Corrected = "corrected";
+    public static readonly IReadOnlyList<string> All = [Proposed, AwaitingReturn, ClosedReturned, ClosedBilled, Cancelled, Corrected];
+}
+
+public static class WarrantyReplacementStatus
+{
+    public const string Proposed = "proposed";
+    public const string Shipped = "shipped";
+    public const string Cancelled = "cancelled";
+    public static readonly IReadOnlyList<string> All = [Proposed, Shipped, Cancelled];
+}
+
+public static class ReplacementPricePolicy
+{
+    public const string Zero = "zero";
+    public const string Difference = "difference";
+    public const string Full = "full";
+    public static readonly IReadOnlyList<string> All = [Zero, Difference, Full];
+}
+
+public static class ReplacementConditionAllowed
+{
+    public const string New = "new";
+    public const string NewOrRefurbished = "new_or_refurbished";
+    public const string Any = "any";
+    public static readonly IReadOnlyList<string> All = [New, NewOrRefurbished, Any];
+}
+
+public static class NonReturnPriceBasis
+{
+    public const string List = "list";
+    public const string FairMarketValue = "fmv";
+    public const string Cost = "cost";
+    public static readonly IReadOnlyList<string> All = [List, FairMarketValue, Cost];
+}
+
+public static class WarrantyReplacementLineKind
+{
+    public const string Replacement = "replacement";
+    public const string ServiceRevenue = "service_revenue";
+}
+
+/// <summary>Creates the document and its proposed link. Unit, item, sale and source-number facts are resolved server-side.</summary>
+public sealed record CreateWarrantyReplacement(
+    Guid CommandId,
+    string SourceKind,
+    Guid SourceId,
+    Guid SourceEntitlementId,
+    Guid ReplacementUnitId,
+    string ReplacementReason,
+    string PricePolicy,
+    decimal DifferenceAmount,
+    string Currency,
+    string ServiceCountry,
+    bool ConsumerContract,
+    bool ConsentRefurbished,
+    DateTime EventTime,
+    Guid LegalEntityId,
+    string ActorRef = "",
+    string ReplacementConditionAllowed = Yojana.Serialisation.Contracts.ReplacementConditionAllowed.Any,
+    string? ReplacementPolicyCode = null,
+    DateOnly? ReturnDue = null,
+    string? NonReturnPriceBasis = null,
+    string? ReturnReasonCode = null,
+    decimal RestockingFeeBasis = 0m);
+
+public sealed record CreateWarrantyReplacementResult(WarrantyReplacementDetail Document, bool Replayed);
+
+/// <summary>Ships a proposed replacement. The server reads condition and actor; neither can be asserted by the browser.</summary>
+public sealed record ShipWarrantyReplacement(
+    Guid CommandId,
+    Guid WarrantyReplacementId,
+    DateOnly ReplacementDate,
+    DateTime EventTime,
+    string ActorRef = "");
+
+public sealed record ShipWarrantyReplacementResult(
+    Guid WarrantyReplacementId,
+    string ReplacementNumber,
+    Guid ReplacementLinkId,
+    string LinkState,
+    Guid TargetEntitlementId,
+    string PolicyApplied,
+    DateOnly ComputedEnd,
+    string ReplacementCondition,
+    string StockPostingReference,
+    bool AssetTagRepointed,
+    bool AccrualSuppressed,
+    Guid EventId,
+    bool Replayed);
+
+public sealed record WarrantyReplacementLineRow(
+    Guid LineId,
+    int Sequence,
+    string Kind,
+    Guid? ItemId,
+    string Description,
+    decimal Quantity,
+    decimal UnitAmount,
+    decimal LineAmount,
+    string Currency,
+    string? RevenueRule);
+
+public sealed record WarrantyReplacementRow(
+    Guid WarrantyReplacementId,
+    string ReplacementNumber,
+    string SourceKind,
+    Guid SourceId,
+    string SourceNumber,
+    Guid OriginalUnitId,
+    Guid ReplacementUnitId,
+    Guid OriginalItemId,
+    Guid ReplacementItemId,
+    string ReplacementReason,
+    string State,
+    string Status,
+    string PricePolicy,
+    decimal DifferenceAmount,
+    string Currency,
+    DateOnly? ReturnDue,
+    string? NonReturnPriceBasis,
+    string ReplacementConditionAllowed,
+    string? ReplacementCondition,
+    bool ConsentRefurbished,
+    string? PolicyApplied,
+    DateOnly? ComputedEnd,
+    decimal RestockingFeeAmount,
+    DateTime CreatedAt,
+    string CreatedBy,
+    DateTime? ShippedAt,
+    string? ShippedBy);
+
+public sealed record WarrantyReplacementDetail(
+    WarrantyReplacementRow Document,
+    Guid SourceEntitlementId,
+    Guid? TargetEntitlementId,
+    Guid ReplacementLinkId,
+    Guid? PreviousReplacementLinkId,
+    DocumentRef? OriginalInvoice,
+    string? ReturnReasonCode,
+    string? RestockingFeeRule,
+    string? StockPostingReference,
+    IReadOnlyList<WarrantyReplacementLineRow> Lines);
+
+public sealed record WarrantyReplacementPage(IReadOnlyList<WarrantyReplacementRow> Rows, int Total, int Skip, int Take);
+

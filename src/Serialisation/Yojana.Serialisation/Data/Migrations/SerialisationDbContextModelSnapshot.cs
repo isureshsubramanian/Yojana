@@ -424,7 +424,6 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasPrecision(5, 2)
                         .HasColumnType("decimal(5,2)")
                         .HasDefaultValue(100m)
-                        .HasSentinel(-1m)
                         .HasColumnName("labour_pct");
 
                     b.Property<string>("Name")
@@ -438,7 +437,6 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasPrecision(5, 2)
                         .HasColumnType("decimal(5,2)")
                         .HasDefaultValue(100m)
-                        .HasSentinel(-1m)
                         .HasColumnName("parts_pct");
 
                     b.Property<string>("ReasonCode")
@@ -478,7 +476,6 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasPrecision(5, 2)
                         .HasColumnType("decimal(5,2)")
                         .HasDefaultValue(100m)
-                        .HasSentinel(-1m)
                         .HasColumnName("travel_pct");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -503,9 +500,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.ToTable("campaign", "serialisation", t =>
                         {
-                            t.HasCheckConstraint("ck_campaign_coverage_source", "coverage_source IN ('recall', 'goodwill')");
-
                             t.HasCheckConstraint("ck_campaign_cover_pct", "parts_pct BETWEEN 0 AND 100 AND labour_pct BETWEEN 0 AND 100 AND travel_pct BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("ck_campaign_coverage_source", "coverage_source IN ('recall', 'goodwill')");
 
                             t.HasCheckConstraint("ck_campaign_reason_code", "reason_code IN ('safety', 'reliability', 'firmware', 'regulatory', 'goodwill')");
 
@@ -2508,6 +2505,207 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReplacementLink", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ReplacementLinkId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("replacement_link_id");
+
+                    b.Property<DateOnly?>("ComputedEnd")
+                        .HasColumnType("date")
+                        .HasColumnName("computed_end");
+
+                    b.Property<bool>("ConsentRefurbished")
+                        .HasColumnType("bit")
+                        .HasColumnName("consent_refurbished");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency")
+                        .IsFixedLength();
+
+                    b.Property<decimal>("DifferenceAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("difference_amount");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("direction");
+
+                    b.Property<string>("NonReturnPriceBasis")
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("non_return_price_basis");
+
+                    b.Property<Guid>("OriginalItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("original_item_id");
+
+                    b.Property<Guid>("OriginalUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("original_unit_id");
+
+                    b.Property<string>("PolicyApplied")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("policy_applied");
+
+                    b.Property<Guid?>("PreviousReplacementLinkId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("previous_replacement_link_id");
+
+                    b.Property<string>("PricePolicy")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("price_policy");
+
+                    b.Property<string>("ReplacementCondition")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("replacement_condition");
+
+                    b.Property<string>("ReplacementConditionAllowed")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("replacement_condition_allowed");
+
+                    b.Property<Guid>("ReplacementItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("replacement_item_id");
+
+                    b.Property<string>("ReplacementReason")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("replacement_reason");
+
+                    b.Property<Guid>("ReplacementUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("replacement_unit_id");
+
+                    b.Property<DateOnly?>("ReturnDue")
+                        .HasColumnType("date")
+                        .HasColumnName("return_due");
+
+                    b.Property<DateTime?>("ShippedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("shipped_at");
+
+                    b.Property<string>("ShippedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("shipped_by");
+
+                    b.Property<Guid?>("ShippedEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("shipped_event_id");
+
+                    b.Property<Guid>("SourceEntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_entitlement_id");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_id");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("source_kind");
+
+                    b.Property<string>("SourceNumber")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_number");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("state");
+
+                    b.Property<Guid?>("TargetEntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("target_entitlement_id");
+
+                    b.Property<Guid>("WarrantyReplacementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("warranty_replacement_id");
+
+                    b.HasKey("TenantId", "ReplacementLinkId")
+                        .HasName("pk_replacement_link");
+
+                    b.HasIndex("TenantId", "PreviousReplacementLinkId")
+                        .HasDatabaseName("ix_replacement_link_tenant_id_previous_replacement_link_id");
+
+                    b.HasIndex("TenantId", "WarrantyReplacementId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_replacement_link_tenant_id_warranty_replacement_id");
+
+                    b.HasIndex("TenantId", "OriginalUnitId", "CreatedAt")
+                        .HasDatabaseName("ix_replacement_link_tenant_id_original_unit_id_created_at");
+
+                    b.HasIndex("TenantId", "ReplacementUnitId", "CreatedAt")
+                        .HasDatabaseName("ix_replacement_link_tenant_id_replacement_unit_id_created_at");
+
+                    b.HasIndex("TenantId", "SourceKind", "SourceId")
+                        .HasDatabaseName("ix_replacement_link_tenant_id_source_kind_source_id");
+
+                    b.HasIndex("TenantId", "State", "ReturnDue")
+                        .HasDatabaseName("ix_replacement_link_tenant_id_state_return_due");
+
+                    b.ToTable("replacement_link", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_replacement_link_condition_allowed", "replacement_condition_allowed IN ('new', 'new_or_refurbished', 'any')");
+
+                            t.HasCheckConstraint("ck_replacement_link_direction", "direction IN ('customer_facing', 'vendor_facing')");
+
+                            t.HasCheckConstraint("ck_replacement_link_price_policy", "price_policy IN ('zero', 'difference', 'full')");
+
+                            t.HasCheckConstraint("ck_replacement_link_reason", "replacement_reason IN ('warranty_defect', 'dead_on_arrival', 'seller_error', 'goodwill', 'recall')");
+
+                            t.HasCheckConstraint("ck_replacement_link_source_kind", "source_kind IN ('claim', 'rma')");
+
+                            t.HasCheckConstraint("ck_replacement_link_state", "state IN ('proposed', 'awaiting_return', 'closed_returned', 'closed_billed', 'cancelled', 'corrected')");
+
+                            t.HasCheckConstraint("ck_replacement_link_units", "original_unit_id <> replacement_unit_id");
+
+                            t.HasCheckConstraint("ck_replacement_link_zero_price", "price_policy <> 'zero' OR difference_amount = 0");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReplacementPolicy", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -4387,6 +4585,249 @@ namespace Yojana.Serialisation.Data.Migrations
                             }));
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.WarrantyReplacement", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("WarrantyReplacementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("warranty_replacement_id");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<bool>("ConsumerContract")
+                        .HasColumnType("bit")
+                        .HasColumnName("consumer_contract");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("LegalEntityId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("legal_entity_id");
+
+                    b.Property<Guid?>("OriginalInvoiceId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("original_invoice_id");
+
+                    b.Property<int?>("OriginalInvoiceLine")
+                        .HasColumnType("int")
+                        .HasColumnName("original_invoice_line");
+
+                    b.Property<string>("OriginalInvoiceType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("original_invoice_type");
+
+                    b.Property<string>("ReplacementNumber")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(24)")
+                        .HasColumnName("replacement_number");
+
+                    b.Property<string>("ReplacementPolicyCode")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("replacement_policy_code");
+
+                    b.Property<decimal>("RestockingFeeAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("restocking_fee_amount");
+
+                    b.Property<string>("RestockingFeeRule")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("restocking_fee_rule");
+
+                    b.Property<string>("ReturnReasonCode")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("return_reason_code");
+
+                    b.Property<string>("ServiceCountry")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .IsUnicode(false)
+                        .HasColumnType("char(2)")
+                        .HasColumnName("service_country")
+                        .IsFixedLength();
+
+                    b.Property<Guid?>("ShipCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("ship_command_id");
+
+                    b.Property<DateTime?>("ShippedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("shipped_at");
+
+                    b.Property<string>("ShippedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("shipped_by");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_id");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("source_kind");
+
+                    b.Property<string>("SourceNumber")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_number");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("StockPostingReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("stock_posting_reference");
+
+                    b.HasKey("TenantId", "WarrantyReplacementId")
+                        .HasName("pk_warranty_replacement");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_warranty_replacement_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "ReplacementNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ux_warranty_replacement_tenant_id_replacement_number");
+
+                    b.HasIndex("TenantId", "ShipCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_warranty_replacement_tenant_id_ship_command_id")
+                        .HasFilter("[ship_command_id] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "SourceKind", "SourceId")
+                        .HasDatabaseName("ix_warranty_replacement_tenant_id_source_kind_source_id");
+
+                    b.HasIndex("TenantId", "Status", "CreatedAt")
+                        .HasDatabaseName("ix_warranty_replacement_tenant_id_status_created_at");
+
+                    b.ToTable("warranty_replacement", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_warranty_replacement_fee", "restocking_fee_amount >= 0");
+
+                            t.HasCheckConstraint("ck_warranty_replacement_source_kind", "source_kind IN ('claim', 'rma')");
+
+                            t.HasCheckConstraint("ck_warranty_replacement_status", "status IN ('proposed', 'shipped', 'cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.WarrantyReplacementLine", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("LineId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("line_id");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency")
+                        .IsFixedLength();
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)")
+                        .HasColumnName("description");
+
+                    b.Property<Guid?>("ItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("item_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("kind");
+
+                    b.Property<decimal>("LineAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("line_amount");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)")
+                        .HasColumnName("quantity");
+
+                    b.Property<Guid?>("ReplacementLinkId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("replacement_link_id");
+
+                    b.Property<string>("RevenueRule")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("revenue_rule");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("int")
+                        .HasColumnName("sequence");
+
+                    b.Property<decimal>("UnitAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("unit_amount");
+
+                    b.Property<Guid>("WarrantyReplacementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("warranty_replacement_id");
+
+                    b.HasKey("TenantId", "LineId")
+                        .HasName("pk_warranty_replacement_line");
+
+                    b.HasIndex("TenantId", "ItemId")
+                        .HasDatabaseName("ix_warranty_replacement_line_tenant_id_item_id");
+
+                    b.HasIndex("TenantId", "ReplacementLinkId")
+                        .HasDatabaseName("ix_warranty_replacement_line_tenant_id_replacement_link_id");
+
+                    b.HasIndex("TenantId", "WarrantyReplacementId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_warranty_replacement_line_tenant_id_warranty_replacement_id_sequence");
+
+                    b.ToTable("warranty_replacement_line", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_warranty_replacement_line_amounts", "quantity > 0 AND unit_amount >= 0 AND line_amount >= 0");
+
+                            t.HasCheckConstraint("ck_warranty_replacement_line_kind", "kind IN ('replacement', 'service_revenue')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.WorkbenchRequest", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -4622,6 +5063,32 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_recovery_claim_tenant_id_customer_claim_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReplacementLink", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.WarrantyReplacement", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "WarrantyReplacementId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_replacement_link_tenant_id_warranty_replacement_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.WarrantyReplacementLine", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.ReplacementLink", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ReplacementLinkId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_warranty_replacement_line_tenant_id_replacement_link_id");
+
+                    b.HasOne("Yojana.Serialisation.Data.Entities.WarrantyReplacement", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "WarrantyReplacementId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_warranty_replacement_line_tenant_id_warranty_replacement_id");
                 });
 #pragma warning restore 612, 618
         }

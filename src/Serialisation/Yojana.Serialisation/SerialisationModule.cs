@@ -127,6 +127,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<Campaigns.CampaignCoverQueries>();
         builder.Services.AddScoped<ICampaignCoverPort>(sp => sp.GetRequiredService<Campaigns.CampaignCoverQueries>());
         builder.Services.AddScoped<RecoveryQueries>();
+        builder.Services.AddScoped<Replacements.WarrantyReplacementQueries>();
         builder.Services.AddScoped<LegacyUnknownClaimUnitCreator>();
         // Coupled to ClaimReviewSettings and RecoverySettings for the same Wolverine constraint as entitlement approval settings: the
         // factory hides ITenantSettings' PlatformDbContext from AdjudicateClaimHandler's transactional graph.
@@ -187,6 +188,9 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<IServiceDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.AddSingleton<InMemoryStockUnitEventPort>();
         builder.Services.TryAddSingleton<IStockUnitEventPort>(sp => sp.GetRequiredService<InMemoryStockUnitEventPort>());
+        builder.Services.TryAddScoped<IUnitConditionQueryPort, DefaultUnitConditionQueryPort>();
+        builder.Services.TryAddScoped<IReplacementSourceQueryPort, DefaultReplacementSourceQueryPort>();
+        builder.Services.TryAddScoped<IReturnReasonQueryPort, DefaultReturnReasonQueryPort>();
         builder.Services.AddScoped<IReleaseGuard, ReleaseCompletenessGuard>();
         builder.Services.AddSingleton<InMemoryItemPorts>();
         builder.Services.TryAddSingleton<IItemQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());

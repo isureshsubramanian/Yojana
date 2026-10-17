@@ -13,6 +13,7 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
 {
     public const string Claim = "CLM";
     public const string Recovery = "RCV";
+    public const string WarrantyReplacement = "WRP";
 
     public async Task<string> NextAsync(string series, DateTime at, CancellationToken cancellationToken)
     {
@@ -35,6 +36,7 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
     {
         Claim => $"{Claim}-{year}-{value:D5}",
         Recovery => $"{Recovery}-{year}-{value:D4}",
+        WarrantyReplacement => $"{WarrantyReplacement}-{year}-{value:D5}",
         _ => $"{series}-{year}-{value:D5}",
     };
 }
