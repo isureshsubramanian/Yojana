@@ -116,6 +116,7 @@ export function Component() {
           </div>
           <div className="actions">
             <button type="button" className="btn" onClick={() => window.print()}><Icon name="print" />Print</button>
+            <Link className="btn" to={`/corrections?unit=${unitId}&q=${encodeURIComponent(primary?.rawValue ?? "")}`}>Something is wrong…</Link>
             {tab === "entitlements" ? <><button type="button" className="btn" onClick={() => openAttachEntitlement(unitId, entitlementDetail, reloadEntitlements)}>Attach extended or add-on…</button><button type="button" className="btn primary" onClick={() => openAmendEntitlement(entitlementDetail, reloadEntitlements)}><Icon name="corr" />Amend entitlement…</button></> : <><button type="button" className="btn" onClick={flag}>Overlay flag…</button><button type="button" className="btn primary" onClick={correct}><Icon name="corr" />Correct identifier…</button></>}
           </div>
         </div>

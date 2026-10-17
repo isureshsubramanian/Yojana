@@ -47,6 +47,8 @@ export const router = createBrowserRouter([
           { path: "entitlements/bulk", lazy: () => import("./entitlements/BulkOperation") },
           { path: "entitlements/exceptions", lazy: () => import("./entitlements/WarrantyLineExceptions") },
           { path: "approvals", lazy: () => import("./entitlements/ApprovalInbox") },
+          { path: "corrections", lazy: () => import("./corrections/Workbench") },
+          { path: "corrections/requests/:requestId", lazy: () => import("./corrections/ApproverView") },
           ...patterns,
           ...placeholders,
           { path: "*", lazy: () => import("./pages/Placeholder") },

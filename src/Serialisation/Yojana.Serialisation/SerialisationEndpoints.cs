@@ -392,6 +392,9 @@ public static class SerialisationEndpoints
 
         var workbench = app.MapGroup("/api/workbench").RequireAuthorization(YojanaPolicy.TenantMember);
         workbench.MapGet("/choices", async (IWorkbenchChoiceCatalog choices, CancellationToken ct) => Results.Ok(await choices.GetChoicesAsync(ct)));
+        // The reason codes a route's command accepts, so the screen offers the server's vocabulary, never a copy of it.
+        workbench.MapGet("/routes/{command}/reasons", (string command) =>
+            WorkbenchInvoke(() => Task.FromResult(CorrectionRules.Reasons(WorkbenchChoiceRules.CorrectionCommandForRoute(command)))));
         workbench.MapGet("/picker", (Guid? unitId, string? q, WorkbenchPickerService picker, CancellationToken ct) =>
             WorkbenchInvoke(() => picker.QueryAsync(unitId, q, ct)));
         workbench.MapPost("/resolve", (ResolveWorkbenchEntry command, ClaimsPrincipal user, WorkbenchEntryResolver resolver, CancellationToken ct) =>
