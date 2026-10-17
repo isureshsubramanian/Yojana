@@ -1273,7 +1273,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(row => row.CreatedBy).HasMaxLength(200);
             b.Property(row => row.ShippedBy).HasMaxLength(200);
             b.HasOne<WarrantyReplacement>().WithMany().HasForeignKey(row => new { row.TenantId, row.WarrantyReplacementId }).OnDelete(DeleteBehavior.Cascade);
-            b.HasIndex(row => new { row.TenantId, row.WarrantyReplacementId }).IsUnique();
+            b.HasOne<ReplacementLink>().WithMany().HasForeignKey(row => new { row.TenantId, row.CorrectedByLinkId }).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(row => new { row.TenantId, row.WarrantyReplacementId });
             b.HasIndex(row => new { row.TenantId, row.OriginalUnitId, row.CreatedAt });
             b.HasIndex(row => new { row.TenantId, row.ReplacementUnitId, row.CreatedAt });
             b.HasIndex(row => new { row.TenantId, row.SourceKind, row.SourceId });
@@ -1282,6 +1283,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(row => new { row.TenantId, row.OverdueEventId }).IsUnique().HasFilter("[overdue_event_id] IS NOT NULL");
             b.HasIndex(row => new { row.TenantId, row.ReturnDueCommandId }).IsUnique().HasFilter("[return_due_command_id] IS NOT NULL");
             b.HasIndex(row => new { row.TenantId, row.BillCommandId }).IsUnique().HasFilter("[bill_command_id] IS NOT NULL");
+            b.HasIndex(row => new { row.TenantId, row.CorrectedByLinkId });
+            b.HasIndex(row => new { row.TenantId, row.CorrectionCommandId }).IsUnique().HasFilter("[correction_command_id] IS NOT NULL");
         });
 
         modelBuilder.Entity<PartyReplacementHold>(b =>

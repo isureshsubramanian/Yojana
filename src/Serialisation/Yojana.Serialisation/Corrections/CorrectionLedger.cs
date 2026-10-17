@@ -209,6 +209,7 @@ public static class CorrectionRules
         CorrectionCommand.ReassignAllocation => ReassignAllocationReason.All,
         CorrectionCommand.CorrectDocumentSerials => CorrectDocumentSerialsReason.All,
         CorrectionCommand.CorrectSourceDocument => CorrectSourceDocumentReason.All,
+        CorrectionCommand.CorrectReplacementLink => CorrectReplacementLinkReason.All,
         CorrectionCommand.AmendEntitlement or CorrectionCommand.SupersedeEntitlement => AmendmentReason.All,
         CorrectionCommand.VoidEntitlement => EntitlementStateMachineReasons.Void,
         CorrectionCommand.TransferEntitlement => [EntitlementTransferReason.Replacement],
@@ -235,6 +236,7 @@ public static class CorrectionRules
     public static int RootCause(string command, string reason) => command switch
     {
         CorrectionCommand.CorrectDocumentSerials => CorrectionRootCause.DocumentSerials,
+        CorrectionCommand.CorrectReplacementLink => CorrectionRootCause.ReplacementOrExchange,
         CorrectionCommand.CorrectIdentifier when reason == IdentifierCorrectionReason.Relabel => CorrectionRootCause.RefurbishmentReserialisation,
         CorrectionCommand.CorrectIdentifier or CorrectionCommand.SwapIdentifiers => CorrectionRootCause.TypoOrCrossedPair,
         CorrectionCommand.CorrectItem or CorrectionCommand.CorrectAsBuilt or CorrectionCommand.CorrectSourceDocument => CorrectionRootCause.WrongItemOrOrder,

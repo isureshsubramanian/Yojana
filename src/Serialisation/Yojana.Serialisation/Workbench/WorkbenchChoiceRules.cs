@@ -6,17 +6,23 @@ namespace Yojana.Serialisation.Workbench;
 
 public static class WorkbenchChoiceRules
 {
-    // TIGHT COUPLING: these ids mirror WorkbenchCommandDispatcher's explicit adapters. The dispatcher deliberately has
-    // no generic reflection route, so settings validation cannot discover them. Adding or removing an adapter on either
-    // side without changing the other makes a valid command unavailable or lets tenant data save a dead-end route.
-    public static readonly IReadOnlyList<string> AvailableCommands =
+    // TIGHT COUPLING: these ids mirror WorkbenchCommandDispatcher's explicit inline adapters. The dispatcher deliberately
+    // has no generic reflection route, so settings validation cannot discover them. Adding or removing an inline adapter
+    // on either side without changing the other makes a valid command unavailable or saves a dead-end inline route.
+    public static readonly IReadOnlyList<string> InlineCommands =
     [
         CorrectionCommand.CorrectIdentifier, CorrectionCommand.SwapIdentifiers, CorrectionCommand.VoidUnit,
         CorrectionCommand.CorrectItem, CorrectionCommand.CorrectAsBuilt, CorrectionCommand.LateSerialization,
         CorrectionCommand.MergeUnits, CorrectionCommand.AssignIdentifiers, CorrectionCommand.ReassignAllocation,
-        CorrectionCommand.CorrectDocumentSerials, CorrectionCommand.CorrectSourceDocument,
+        CorrectionCommand.CorrectDocumentSerials, CorrectionCommand.CorrectSourceDocument, CorrectionCommand.CorrectReplacementLink,
         "entitlement.amend", "entitlement.supersede", "entitlement.attach_extended", "entitlement.close", "entitlement.backfill",
     ];
+
+    // Dedicated routes hand control to their owning screen; no command is dispatched from the workbench boundary.
+    public static readonly IReadOnlyList<string> HandoffCommands =
+        [WorkbenchRouteCommand.ShipWarrantyReplacement, WorkbenchRouteCommand.ReleaseRefurbishment];
+
+    public static readonly IReadOnlyList<string> AvailableCommands = [.. InlineCommands, .. HandoffCommands];
 
     public static IReadOnlyList<CommandRefusal> Validate(UpdateWorkbenchChoices update, WorkbenchChoiceConfiguration current,
         CorrectionApprovalPolicy approvalPolicy)
@@ -99,7 +105,7 @@ public static class WorkbenchChoiceRules
                     problems.Add(new("workbench_default_reason_required", $"Route '{option.Value}' on choice '{choice.Choice}' needs a default reason."));
                 else if (option.DefaultReason is { Length: > 60 })
                     problems.Add(new("workbench_default_reason_too_long", $"Route '{option.Value}' has a default reason longer than 60 characters."));
-                if (WorkbenchChoiceRules.AvailableCommands.Contains(option.Command)
+                if (InlineCommands.Contains(option.Command)
                     && !CorrectionRules.Reasons(CorrectionCommandForRoute(option.Command)).Contains(option.DefaultReason))
                     problems.Add(new("workbench_default_reason_unknown", $"Route '{option.Value}' uses a reason not recognised by '{option.Command}'."));
             }

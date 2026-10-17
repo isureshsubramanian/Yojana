@@ -9,6 +9,7 @@ using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Ports;
 using Yojana.Serialisation.Queries;
+using Yojana.Serialisation.Replacements;
 using Yojana.Serialisation.Workbench;
 
 namespace Yojana.Serialisation.DatabaseTests;
@@ -37,11 +38,19 @@ public sealed class WorkbenchAcceptanceTests(SerialisationHostFixture fixture)
         ["T13/T15/T51", "as_built", CorrectionWorkbenchChoice.WrongComponents, WorkbenchTargetKind.Unit, CorrectionCommand.CorrectAsBuilt, UnitEventType.AsBuiltCorrected],
         ["T16", "late_serialisation", CorrectionWorkbenchChoice.WrongComponents, WorkbenchTargetKind.DocumentLine, CorrectionCommand.LateSerialization, ItemEventType.TrackingModeChanged],
         ["T42/T43", "vendor_list", CorrectionWorkbenchChoice.WrongComponents, WorkbenchTargetKind.DocumentLine, CorrectionCommand.AssignIdentifiers, UnitEventType.IdentifierAssigned],
+        ["P5-T14/correct-link", "correct_link", CorrectionWorkbenchChoice.ReplacedOrExchanged, WorkbenchTargetKind.Unit, CorrectionCommand.CorrectReplacementLink, ReplacementEventType.LinkCorrected],
+        ["P5-T14/relabel", "relabel", CorrectionWorkbenchChoice.RefurbishedAndReserialised, WorkbenchTargetKind.Unit, CorrectionCommand.CorrectIdentifier, UnitEventType.IdentifierCorrected],
         ["choice:warranty/amend", "amend", CorrectionWorkbenchChoice.WrongWarranty, WorkbenchTargetKind.SelectionSet, "entitlement.amend", EntitlementEventType.Amended],
         ["T31/warranty", "supersede", CorrectionWorkbenchChoice.WrongWarranty, WorkbenchTargetKind.SelectionSet, "entitlement.supersede", EntitlementEventType.Superseded],
         ["choice:warranty/attach", "attach", CorrectionWorkbenchChoice.WrongWarranty, WorkbenchTargetKind.SelectionSet, "entitlement.attach_extended", EntitlementEventType.ExtendedSold],
         ["choice:warranty/close", "close", CorrectionWorkbenchChoice.WrongWarranty, WorkbenchTargetKind.SelectionSet, "entitlement.close", EntitlementEventType.Closed],
         ["choice:warranty/backfill", "backfill", CorrectionWorkbenchChoice.WrongWarranty, WorkbenchTargetKind.SelectionSet, "entitlement.backfill", EntitlementEventType.Created],
+    ];
+
+    private static readonly IReadOnlyList<string[]> HandoffRows =
+    [
+        ["P5-T14/ship", "ship", CorrectionWorkbenchChoice.ReplacedOrExchanged, WorkbenchRouteCommand.ShipWarrantyReplacement],
+        ["P5-T14/release", "release", CorrectionWorkbenchChoice.RefurbishedAndReserialised, WorkbenchRouteCommand.ReleaseRefurbishment],
     ];
 
     public static TheoryData<string, string, string, string, string, string> Matrix
@@ -99,20 +108,27 @@ public sealed class WorkbenchAcceptanceTests(SerialisationHostFixture fixture)
             Tickets = (string)values[0]!, Route = (string)values[1]!, Choice = (string)values[2]!, Command = (string)values[4]!,
         }).ToList();
 
+        var handoffs = HandoffRows.Select(values => new
+        {
+            Tickets = values[0], Route = values[1], Choice = values[2], Command = values[3],
+        }).ToList();
+        var covered = matrixRows.Select(row => (row.Choice, row.Route, row.Command))
+            .Concat(handoffs.Select(row => (row.Choice, row.Route, row.Command))).ToList();
         var expectedChoices = shown.Where(choice => !choice.Fallback).Select(choice => choice.Choice).Order(StringComparer.Ordinal);
-        Assert.Equal(expectedChoices, matrixRows.Select(row => row.Choice).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
+        Assert.Equal(expectedChoices, covered.Select(row => row.Choice).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
         var expectedRoutes = shown.Where(choice => !choice.Fallback)
             .SelectMany(choice => WorkbenchChoiceRules.Options(choice).Select(option => (choice.Choice, option.Value, option.Command)))
             .Order().ToList();
-        Assert.Equal(expectedRoutes, matrixRows.Select(row => (row.Choice, row.Route, row.Command)).Order().ToList());
+        Assert.Equal(expectedRoutes, covered.Order().ToList());
 
         var expectedTickets = new[] { "T1", "T2", "T3", "T13", "T15", "T16", "T31", "T33", "T40", "T42", "T43", "T45", "T51", "T53", "T62", "T66a", "T67", "T68", "T70", "T71", "T74" };
         var coveredTickets = matrixRows.SelectMany(row => row.Tickets.Split('/', StringSplitOptions.RemoveEmptyEntries))
             .Where(value => value.StartsWith('T')).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
         Assert.Equal(expectedTickets.Order(StringComparer.Ordinal), coveredTickets);
 
-        Assert.DoesNotContain(shown, choice => choice.Choice == CorrectionWorkbenchChoice.ReplacedOrExchanged);
-        Assert.DoesNotContain(shown, choice => choice.Choice == CorrectionWorkbenchChoice.RefurbishedAndReserialised);
+        Assert.Contains(shown, choice => choice.Choice == CorrectionWorkbenchChoice.ReplacedOrExchanged);
+        Assert.Contains(shown, choice => choice.Choice == CorrectionWorkbenchChoice.RefurbishedAndReserialised);
+        Assert.All(handoffs, row => Assert.Contains(row.Command, WorkbenchChoiceRules.HandoffCommands));
         var fallback = Assert.Single(shown, choice => choice.Fallback);
         Assert.Equal("None of these, or not sure", fallback.Label);
 
@@ -149,18 +165,32 @@ public sealed class WorkbenchAcceptanceTests(SerialisationHostFixture fixture)
         CorrectionCommand.LateSerialization => ArrangeLateSerializationAsync(ticketOrChoice, choiceId, narrowingAnswer),
         CorrectionCommand.AssignIdentifiers => ArrangeAssignIdentifiersAsync(ticketOrChoice, choiceId, narrowingAnswer),
         CorrectionCommand.CorrectDocumentSerials => ArrangeCorrectDocumentSerialsAsync(ticketOrChoice, choiceId, narrowingAnswer),
+        CorrectionCommand.CorrectReplacementLink => ArrangeCorrectReplacementLinkAsync(ticketOrChoice, choiceId, narrowingAnswer),
         "entitlement.amend" or "entitlement.supersede" or "entitlement.attach_extended" or "entitlement.close" or "entitlement.backfill"
             => ArrangeEntitlementAsync(ticketOrChoice, choiceId, narrowingAnswer, routeCommand),
         _ => throw new ArgumentOutOfRangeException(nameof(routeCommand), routeCommand, "The matrix route has no scenario."),
     };
+
+    private async Task<ArrangedPath> ArrangeCorrectReplacementLinkAsync(string id, string choice, string route)
+    {
+        var setup = await new CorrectReplacementLinkTests(fixture).SetUpAsync("wbt17replink");
+        var correctionId = Guid.NewGuid();
+        var command = new CorrectReplacementLink(Guid.Empty, setup.RecordedUnitId, setup.ActualUnitId,
+            CorrectReplacementLinkReason.WrongUnitRecorded, At.AddDays(6), "ignored", Entity);
+        var committer = Actor("service-manager", YojanaRole.ServiceManager);
+        return Path(setup.Tenant, correctionId, choice, CorrectionCommand.CorrectReplacementLink,
+            new(WorkbenchTargetKind.Unit, UnitId: setup.RecordedUnitId), command.Reason, command, route, committer, committer);
+    }
 
     private async Task<ArrangedPath> ArrangeCorrectIdentifierAsync(string id, string choice, string route)
     {
         var tenant = await fixture.NewTenantAsync("wbt17id");
         var unit = await Scenario.CommissionAsync(tenant, Marker(id));
         var correctionId = Guid.NewGuid();
+        var reason = choice == CorrectionWorkbenchChoice.RefurbishedAndReserialised
+            ? IdentifierCorrectionReason.Relabel : IdentifierCorrectionReason.Typo;
         var command = new CorrectIdentifier(Guid.Empty, unit.UnitId, IdentifierType.InternalSerial, unit.Serial + "-FIX",
-            IdentifierCorrectionReason.Typo, At.AddDays(1), "ignored", Entity);
+            reason, At.AddDays(1), "ignored", Entity);
         var committer = Actor("serial", YojanaRole.SerialAdministrator);
         return Path(tenant, correctionId, choice, CorrectionCommand.CorrectIdentifier,
             new(WorkbenchTargetKind.Unit, UnitId: unit.UnitId), command.Reason, command, route, committer, committer);

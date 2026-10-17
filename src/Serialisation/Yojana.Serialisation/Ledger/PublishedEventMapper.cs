@@ -276,6 +276,22 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                 return new ReleaseRecordReissueRequested(Header(ReleaseRecordReissueRequested.Schema, ReleaseRecordReissueRequested.Version),
                     GuidOrNull(a, "work_order_id") ?? Guid.Empty, Str(a, "reason") ?? "");
             // End P5 refurbishment published contracts.
+            case ReplacementEventType.LinkCorrected:
+                return new ReplacementLinkCorrected(Header(ReplacementLinkCorrected.Schema, ReplacementLinkCorrected.Version), Correction(a),
+                    GuidOrNull(a, "warranty_replacement_id") ?? Guid.Empty,
+                    GuidOrNull(a, "previous_replacement_link_id") ?? Guid.Empty,
+                    GuidOrNull(a, "corrected_replacement_link_id") ?? Guid.Empty,
+                    GuidOrNull(a, "original_unit_id") ?? Guid.Empty,
+                    GuidOrNull(a, "recorded_replacement_unit_id") ?? Guid.Empty,
+                    GuidOrNull(a, "actual_replacement_unit_id") ?? Guid.Empty,
+                    GuidOrNull(a, "voided_entitlement_id") ?? Guid.Empty,
+                    GuidOrNull(a, "target_entitlement_id") ?? Guid.Empty,
+                    Str(a, "replacement_reason") ?? "", Str(a, "policy_applied") ?? "",
+                    Date(a, "computed_end") ?? default, Bool(a, "asset_tag_repointed"));
+            case ReplacementEventType.CertificateReissueRequested:
+                return new CertificateReissueRequested(Header(CertificateReissueRequested.Schema, CertificateReissueRequested.Version),
+                    GuidOrNull(a, "replacement_link_id") ?? Guid.Empty,
+                    Strings(a, "document_kinds"), Str(a, "reason") ?? "");
             default:
                 return null;
         }
@@ -296,6 +312,11 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
         element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String && p.TryGetDateTime(out var value) ? value : null;
 
     private static List<Guid> Guids(JsonElement element, string name) => element.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Array ? p.EnumerateArray().Select(i => i.GetGuid()).Order().ToList() : [];
+
+    private static List<string> Strings(JsonElement? element, string name) =>
+        element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Array
+            ? p.EnumerateArray().Where(i => i.ValueKind == JsonValueKind.String).Select(i => i.GetString()!).ToList()
+            : [];
 
     private static string? Str(JsonElement? element, string name) => element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
 

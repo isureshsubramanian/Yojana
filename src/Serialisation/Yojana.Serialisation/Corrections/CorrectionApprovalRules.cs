@@ -44,11 +44,15 @@ public static class CorrectionApprovalRules
         [new(CorrectionApprovalFact.DocumentInvoiced, CorrectionApprovalCondition.ReviewTask, [YojanaRole.FinanceReview], "finance_review_required", "raise a finance review task for the invoiced document")]),
         new(CorrectionCommand.CorrectSourceDocument, [YojanaRole.OrderDeskSupervisor], Conditions:
         [Approver(CorrectionApprovalFact.OwningPartyChanges, [YojanaRole.ServiceManager])]),
+        new(CorrectionCommand.CorrectReplacementLink, [YojanaRole.ServiceManager]),
     ],
     [
         new(CorrectionWorkbenchChoice.WrongDocumentSerials, [CorrectionCommand.CorrectDocumentSerials], [YojanaRole.ShippingSupervisor]),
-        new(CorrectionWorkbenchChoice.ReplacedOrExchanged, [], [YojanaRole.ServiceSupervisor]),
-        new(CorrectionWorkbenchChoice.RefurbishedAndReserialised, [CorrectionCommand.CorrectIdentifier], [YojanaRole.ProductionSupervisor, YojanaRole.ServiceSupervisor]),
+        new(CorrectionWorkbenchChoice.ReplacedOrExchanged,
+            [WorkbenchRouteCommand.ShipWarrantyReplacement, CorrectionCommand.CorrectReplacementLink], [YojanaRole.ServiceManager]),
+        new(CorrectionWorkbenchChoice.RefurbishedAndReserialised,
+            [WorkbenchRouteCommand.ReleaseRefurbishment, CorrectionCommand.CorrectIdentifier],
+            [YojanaRole.ProductionSupervisor, YojanaRole.SerialAdministrator]),
         new(CorrectionWorkbenchChoice.MistypedOrCrossed, [CorrectionCommand.CorrectIdentifier, CorrectionCommand.SwapIdentifiers], [YojanaRole.SerialAdministrator]),
         new(CorrectionWorkbenchChoice.WrongItem, [CorrectionCommand.CorrectItem], [YojanaRole.InventoryController, YojanaRole.ServiceSupervisor]),
         new(CorrectionWorkbenchChoice.WrongOrder, [CorrectionCommand.CorrectSourceDocument], [YojanaRole.OrderDeskSupervisor]),
@@ -163,6 +167,16 @@ public static class CorrectionApprovalRules
         foreach (var command in commands)
         {
             if (string.IsNullOrWhiteSpace(command)) continue;
+            if (command == WorkbenchRouteCommand.ShipWarrantyReplacement)
+            {
+                allowed.Add(YojanaRole.ServiceManager);
+                continue;
+            }
+            if (command == WorkbenchRouteCommand.ReleaseRefurbishment)
+            {
+                allowed.Add(YojanaRole.ProductionSupervisor);
+                continue;
+            }
             if (command.StartsWith("entitlement.", StringComparison.Ordinal))
             {
                 allowed.UnionWith(DefaultPolicy.Workbench.First(w => w.Choice == CorrectionWorkbenchChoice.WrongWarranty).CommitRoles);

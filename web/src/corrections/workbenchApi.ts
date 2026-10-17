@@ -93,6 +93,8 @@ export function recordedRows(preview: CorrectionPreview): { what: string; detail
 
 /** Commands whose arguments live on a dedicated screen; the workbench hands the user over instead of re-implementing them. */
 export const DEDICATED_SCREENS: Record<string, { path: string; label: string }> = {
+  "replacement.ship": { path: "/warranty-replacements/new", label: "Ship warranty replacement" },
+  "refurbishment.release": { path: "/refurbishments/release", label: "Release refurbishment" },
   merge_units: { path: "/corrections/merge", label: "Merge units" },
   reassign_allocation: { path: "/corrections/reassign-allocation", label: "Reassign allocation" },
   assign_identifiers: { path: "/corrections/vendor-serials", label: "Assign vendor serials" },

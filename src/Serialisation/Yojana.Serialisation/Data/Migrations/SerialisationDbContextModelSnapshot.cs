@@ -3381,6 +3381,14 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("bit")
                         .HasColumnName("consent_refurbished");
 
+                    b.Property<Guid?>("CorrectedByLinkId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("corrected_by_link_id");
+
+                    b.Property<Guid?>("CorrectionCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("correction_command_id");
+
                     b.Property<Guid?>("CounterpartyPartyRef")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("counterparty_party_ref");
@@ -3551,6 +3559,14 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ux_replacement_link_tenant_id_bill_command_id")
                         .HasFilter("[bill_command_id] IS NOT NULL");
 
+                    b.HasIndex("TenantId", "CorrectedByLinkId")
+                        .HasDatabaseName("ix_replacement_link_tenant_id_corrected_by_link_id");
+
+                    b.HasIndex("TenantId", "CorrectionCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_replacement_link_tenant_id_correction_command_id")
+                        .HasFilter("[correction_command_id] IS NOT NULL");
+
                     b.HasIndex("TenantId", "OverdueEventId")
                         .IsUnique()
                         .HasDatabaseName("ux_replacement_link_tenant_id_overdue_event_id")
@@ -3565,8 +3581,7 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasFilter("[return_due_command_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "WarrantyReplacementId")
-                        .IsUnique()
-                        .HasDatabaseName("ux_replacement_link_tenant_id_warranty_replacement_id");
+                        .HasDatabaseName("ix_replacement_link_tenant_id_warranty_replacement_id");
 
                     b.HasIndex("TenantId", "OriginalUnitId", "CreatedAt")
                         .HasDatabaseName("ix_replacement_link_tenant_id_original_unit_id_created_at");
@@ -6845,6 +6860,12 @@ namespace Yojana.Serialisation.Data.Migrations
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReplacementLink", b =>
                 {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.ReplacementLink", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CorrectedByLinkId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_replacement_link_tenant_id_corrected_by_link_id");
+
                     b.HasOne("Yojana.Serialisation.Data.Entities.WarrantyReplacement", null)
                         .WithMany()
                         .HasForeignKey("TenantId", "WarrantyReplacementId")

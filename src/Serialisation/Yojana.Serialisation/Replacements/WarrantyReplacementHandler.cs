@@ -351,4 +351,6 @@ public static class ReplacementEventType
     public const string NonReturnBilled = "replacement.non_return_billed";
     public const string LoanConverted = "replacement.loan_converted";
     public const string VendorReceived = "replacement.vendor_received";
+    public const string LinkCorrected = "replacement.link_corrected";
+    public const string CertificateReissueRequested = "certificate.reissue_requested";
 }

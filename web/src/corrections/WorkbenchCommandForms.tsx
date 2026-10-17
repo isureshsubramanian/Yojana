@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type Keyboar
 import { DEFAULT_LEGAL_ENTITY, newCommandId, selections } from "../api/units";
 import { ErrorNote, useActor } from "../units/common";
 import { humanise, shortId, splitSerials } from "../units/format";
-import { DocumentField, ItemField, useReferenceNames, type DocumentValue } from "./ReferenceFields";
+import { DocumentField, ItemField, UnitField, useReferenceNames, type DocumentValue } from "./ReferenceFields";
 import type { WorkbenchCandidate, WorkbenchUnitLineage } from "./workbenchApi";
 import {
   buildCorrectAsBuiltArguments,
   buildCorrectDocumentSerialsArguments,
   buildCorrectSourceDocumentArguments,
+  buildCorrectReplacementLinkArguments,
   buildLateSerializationArguments,
   type AsBuiltFormChange,
   type LateSerializationKitValue,
@@ -27,7 +28,7 @@ interface CommandFormProps {
   onArguments: (value: Record<string, unknown> | null) => void;
 }
 
-export const STRUCTURED_COMMANDS = ["correct_as_built", "late_serialization", "correct_document_serials", "correct_source_document"] as const;
+export const STRUCTURED_COMMANDS = ["correct_as_built", "late_serialization", "correct_document_serials", "correct_source_document", "correct_replacement_link"] as const;
 
 export function StructuredCommandForm(props: CommandFormProps) {
   const actor = useActor();
@@ -36,8 +37,32 @@ export function StructuredCommandForm(props: CommandFormProps) {
     case "late_serialization": return <LateSerializationForm {...props} />;
     case "correct_document_serials": return <CorrectDocumentSerialsForm {...props} actor={actor} />;
     case "correct_source_document": return <CorrectSourceDocumentForm {...props} actor={actor} />;
+    case "correct_replacement_link": return <CorrectReplacementLinkForm {...props} />;
     default: return null;
   }
+}
+
+function CorrectReplacementLinkForm({ unitId, primary, onArguments }: CommandFormProps) {
+  const [actualUnitId, setActualUnitId] = useState<string | null>(null);
+  const invalid = !unitId || !actualUnitId || actualUnitId === unitId;
+
+  useEffect(() => {
+    onArguments(invalid ? null : buildCorrectReplacementLinkArguments({
+      recordedReplacementUnitId: unitId!,
+      actualReplacementUnitId: actualUnitId!,
+    }, context()));
+  }, [unitId, actualUnitId, invalid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return <div className="workbench-command-form">
+    <div className="correction-form-head"><div><strong>CorrectReplacementLink</strong><span>Compare the unit recorded on the shipment with the physical unit the customer received.</span></div></div>
+    <div className="pair" style={{ marginBottom: 12 }}>
+      <div className="side"><div className="k">Recorded replacement</div><div className="serial">{primary ?? "Selected unit"}</div><div className="hint">Returns to its prior company stock location.</div></div>
+      <div className="arrow">→</div>
+      <div className="side"><UnitField id="wb-actual-replacement" label="Actual replacement" value={actualUnitId} onChange={setActualUnitId} hint="Search or scan the unit physically supplied" /></div>
+    </div>
+    {actualUnitId === unitId && <Validation errors={["The recorded and actual replacement units must be different."]} />}
+    <div className="hint">The command computes ownership, custody, entitlement transfer, asset-tag printing, and certificate reissue requests from the original replacement.</div>
+  </div>;
 }
 
 type AsBuiltRow = {

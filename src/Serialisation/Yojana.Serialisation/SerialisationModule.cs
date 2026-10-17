@@ -132,6 +132,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<Entitlements.WarrantyLineExceptionQueries>();
         builder.Services.AddScoped<Entitlements.WarrantyLineValidationService>();
         builder.Services.AddScoped<Entitlements.DocumentCorrectionEntitlements>();
+        builder.Services.AddScoped<Entitlements.ReplacementLinkCorrectionEntitlements>();
         builder.Services.AddScoped<ClaimLedger>();
         builder.Services.AddScoped<DocumentNumbers>();
         builder.Services.AddScoped<ClaimLineDecider>();

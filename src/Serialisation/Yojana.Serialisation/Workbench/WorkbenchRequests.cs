@@ -369,7 +369,8 @@ public sealed class WorkbenchRequestService(
         if (choice.Status != WorkbenchChoiceStatus.Shown)
             throw new CommandRefusedException("workbench_choice_retired", $"Workbench choice '{request.Choice}' is retired.", "choose a shown workbench choice");
         var route = await catalog.RouteAsync(request.Choice, request.Answers.Command, cancellationToken);
-        if (!CorrectionRules.Reasons(WorkbenchChoiceRules.CorrectionCommandForRoute(request.Answers.Command)).Contains(request.Reason))
+        if (WorkbenchChoiceRules.InlineCommands.Contains(request.Answers.Command)
+            && !CorrectionRules.Reasons(WorkbenchChoiceRules.CorrectionCommandForRoute(request.Answers.Command)).Contains(request.Reason))
             throw new CommandRefusedException("reason_unknown", $"Reason '{request.Reason}' is not valid for '{request.Answers.Command}'.", $"use the route default '{route.DefaultReason}' or another command reason");
         if (string.IsNullOrWhiteSpace(request.Reason)) throw new CommandRefusedException("reason_required", "A workbench request needs a reason.");
         if (request.Evidence?.Any(e => string.IsNullOrWhiteSpace(e.Kind) || string.IsNullOrWhiteSpace(e.Ref)) == true)

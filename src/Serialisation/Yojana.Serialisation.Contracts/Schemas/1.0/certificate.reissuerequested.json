@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/certificate.reissuerequested.json",
+  "title": "Certificate.ReissueRequested",
+  "type": "object",
+  "required": ["header", "replacement_link_id", "document_kinds", "reason"],
+  "properties": {
+    "header": {
+      "type": "object",
+      "required": ["schema", "version", "event_id", "unit_id", "event_time", "recorded_time", "seq", "legal_entity_id", "actor_ref"],
+      "properties": {
+        "schema": { "type": "string", "const": "Certificate.ReissueRequested" },
+        "version": { "type": "string", "const": "1.0" },
+        "event_id": { "type": "string", "format": "uuid" },
+        "unit_id": { "type": "string", "format": "uuid" },
+        "event_time": { "type": "string", "format": "date-time" },
+        "recorded_time": { "type": "string", "format": "date-time" },
+        "seq": { "type": "integer" },
+        "legal_entity_id": { "type": "string", "format": "uuid" },
+        "actor_ref": { "type": "string" },
+        "document": { "type": ["object", "null"] }
+      }
+    },
+    "replacement_link_id": { "type": "string", "format": "uuid" },
+    "document_kinds": {
+      "type": "array", "minItems": 2, "uniqueItems": true,
+      "items": { "type": "string", "enum": ["release_record", "warranty_certificate"] }
+    },
+    "reason": { "type": "string", "const": "replacement_link_corrected" }
+  }
+}

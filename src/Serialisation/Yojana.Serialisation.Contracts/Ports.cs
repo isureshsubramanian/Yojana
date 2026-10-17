@@ -130,8 +130,8 @@ public sealed record WarrantyReplacementStockIssue(
 public sealed record WarrantyReplacementStockIssueResult(string PostingReference);
 
 // TIGHT COUPLING (declared, ADR-0001 "Integration boundaries and coupling", coupling 1)
-// WHAT:  Warranty replacement calls IStockUnitEventPort.IssueWarrantyReplacementAsync(...), while document correction
-//        calls IStockUnitEventPort.RecordCorrectionForPosting(...); Inventory must handle each inside the SAME database
+// WHAT:  Warranty replacement calls IStockUnitEventPort.IssueWarrantyReplacementAsync(...), while document and
+//        replacement-link corrections call IStockUnitEventPort.RecordCorrectionForPosting(...); Inventory must handle each inside the SAME database
 //        transaction that writes the corresponding stock ledger line and valuation layer.
 // WHY:   The invariant "on-hand quantity of a serial-tracked item at a location equals the count of
 //        units in stock at that location" (ADR-0001, edge case 34) must hold at every commit. An outbox
@@ -141,7 +141,7 @@ public sealed record WarrantyReplacementStockIssueResult(string PostingReference
 //        between the two writes; the WarrantyReplacement and return receipts could post stock without
 //        serial events; the reconciliation job would emit mismatch_quantity exceptions that no one can
 //        resolve from history. Change the port signature and this comment together, on both sides.
-// NOTE:  Serialisation.CorrectDocumentSerials (ADR-0001 cases 32 and 141) calls RecordCorrectionForPosting(...)
+// NOTE:  Serialisation.CorrectDocumentSerials (ADR-0001 cases 32 and 141) and CorrectReplacementLink (case 144) call RecordCorrectionForPosting(...)
 //        on this same port with a quantity delta of ZERO: it replaces which units a posted document
 //        refers to, or removes units recorded as shipped when none physically left, while the posted document's
 //        quantity remains unchanged. The port asserts the zero delta; a quantity correction is a document reversal.

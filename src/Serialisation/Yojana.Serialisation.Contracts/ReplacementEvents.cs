@@ -54,3 +54,41 @@ public sealed record ReplacementReturnOverdue(
     public const string Version = "1.0";
 }
 
+public sealed record ReplacementLinkCorrected(
+    PublishedEventHeader Header,
+    PublishedCorrection Correction,
+    Guid WarrantyReplacementId,
+    Guid PreviousReplacementLinkId,
+    Guid CorrectedReplacementLinkId,
+    Guid OriginalUnitId,
+    Guid RecordedReplacementUnitId,
+    Guid ActualReplacementUnitId,
+    Guid VoidedEntitlementId,
+    Guid TargetEntitlementId,
+    string ReplacementReason,
+    string PolicyApplied,
+    DateOnly ComputedEnd,
+    bool AssetTagRepointed) : IPublishedUnitEvent
+{
+    public const string Schema = "Replacement.LinkCorrected";
+    public const string Version = "1.0";
+}
+
+/// <summary>P6 consumes this request and decides certificate versions; P5 records neither certificate rows nor files.</summary>
+public sealed record CertificateReissueRequested(
+    PublishedEventHeader Header,
+    Guid ReplacementLinkId,
+    IReadOnlyList<string> DocumentKinds,
+    string Reason) : IPublishedUnitEvent
+{
+    public const string Schema = "Certificate.ReissueRequested";
+    public const string Version = "1.0";
+}
+
+public static class ReplacementCertificateDocumentKind
+{
+    public const string ReleaseRecord = "release_record";
+    public const string WarrantyCertificate = "warranty_certificate";
+    public static readonly IReadOnlyList<string> All = [ReleaseRecord, WarrantyCertificate];
+}
+
