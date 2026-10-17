@@ -94,7 +94,7 @@ public sealed class SwapIdentifiersTests(SerialisationHostFixture fixture)
 
         var published = await PublishedEventSink.WaitForAsync<UnitIdentifiersSwapped>(e => e.SwapId == firstSwapId, 2, TimeSpan.FromSeconds(20));
         Assert.Equal(2, published.Count);
-        Assert.Equal([firstUnit, secondUnit], published.Select(e => e.Header.UnitId).Order().ToArray());
+        Assert.Equal(new[] { firstUnit, secondUnit }.Order().ToArray(), published.Select(e => e.Header.UnitId).Order().ToArray());
         Assert.All(published, e => Assert.Equal(firstCorrection, e.Correction.CorrectionId));
         Assert.Contains(published, e => e.Header.UnitId == firstUnit && e.GivenIdentifier.Value == $"{prefix}001" && e.ReceivedIdentifier.Value == $"{prefix}002");
         Assert.Contains(published, e => e.Header.UnitId == secondUnit && e.GivenIdentifier.Value == $"{prefix}002" && e.ReceivedIdentifier.Value == $"{prefix}001");

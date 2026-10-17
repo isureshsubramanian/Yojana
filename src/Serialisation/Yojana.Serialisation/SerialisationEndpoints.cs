@@ -46,6 +46,13 @@ public static class SerialisationEndpoints
             Invoke<CorrectionPreview>(bus, tenant, new PreviewSwapIdentifiers(ApiSwap(command, user)), ct));
         units.MapPost("/swap-identifiers", (SwapIdentifiers command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<SwapIdentifiersResult>(bus, tenant, ApiSwap(command, user), ct));
+        units.MapPost("/{unitId:guid}/correct-item/preview", (Guid unitId, CorrectItem command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+        {
+            var stamped = command with { UnitId = unitId, ActorRef = Actor(user), Correction = ApiCorrection(command, user), CommittedBy = CorrectionCommitter(user) };
+            return Invoke<CorrectionPreview>(bus, tenant, new PreviewCorrectItem(stamped), ct);
+        });
+        units.MapPost("/{unitId:guid}/correct-item", (Guid unitId, CorrectItem command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CorrectItemResult>(bus, tenant, command with { UnitId = unitId, ActorRef = Actor(user), Correction = ApiCorrection(command, user), CommittedBy = CorrectionCommitter(user) }, ct));
         units.MapPost("/release", (ReleaseUnit command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ReleaseUnitResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/assemble", (RecordAssembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordAssemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/disassemble", (RecordDisassembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordDisassemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
@@ -318,6 +325,23 @@ public static class SerialisationEndpoints
             // approvals after showing this same preview.
             null);
         return command with { ActorRef = actor, Correction = correction, CommittedBy = CorrectionCommitter(user) };
+    }
+
+    private static CorrectionMetadata ApiCorrection(CorrectItem command, ClaimsPrincipal user)
+    {
+        var supplied = command.Correction;
+        var actor = Actor(user);
+        var roles = user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToList();
+        return new CorrectionMetadata(
+            supplied?.CorrectionId ?? command.CommandId,
+            supplied?.ReasonCode ?? command.Reason,
+            supplied?.Note,
+            supplied?.EvidenceRefs ?? [],
+            supplied?.InitiatedVia ?? CorrectionInitiatedVia.Api,
+            supplied?.CorrectsCorrectionId,
+            InitiatingRole(user),
+            // The signed-in committer, from claims, is the only approval the API can attest; never the request body.
+            [new CorrectionApprover(actor, roles)]);
     }
 
     private static string InitiatingRole(ClaimsPrincipal user)

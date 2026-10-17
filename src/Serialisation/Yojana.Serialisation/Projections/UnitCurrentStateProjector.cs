@@ -105,7 +105,8 @@ public sealed class UnitCurrentStateProjector(SerialisationDbContext db)
         if (delta.Disposition is not null) row.Disposition = delta.Disposition;
         if (delta.ConditionGrade is not null) row.ConditionGrade = delta.ConditionGrade;
         if (delta.ItemId is not null) row.ItemId = delta.ItemId.Value;
-        if (delta.ModelVersionId is not null) row.ModelVersionId = delta.ModelVersionId;
+        if (delta.ClearModelVersionId) row.ModelVersionId = null;
+        else if (delta.ModelVersionId is not null) row.ModelVersionId = delta.ModelVersionId;
         if (delta.LotId is not null) row.LotId = delta.LotId;
         if (delta.LocationId is { } location) row.LocationId = location.Value;
         if (delta.LocationKind is { } locationKind) row.LocationKind = locationKind.Value;
