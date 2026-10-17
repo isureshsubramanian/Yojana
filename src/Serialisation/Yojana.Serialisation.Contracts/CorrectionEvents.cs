@@ -88,6 +88,17 @@ public sealed record UnitVoided(
     public const string Version = "1.0";
 }
 
+public sealed record UnitVoidReversed(
+    PublishedEventHeader Header,
+    PublishedCorrection Correction,
+    IReadOnlyList<Guid> RestoredIdentifierIds,
+    string RestoredLifecycleStatus,
+    DocumentRef? ProductionOrder) : IPublishedUnitEvent
+{
+    public const string Schema = "Unit.VoidReversed";
+    public const string Version = "1.0";
+}
+
 public sealed record UnitMerged(
     PublishedEventHeader Header,
     PublishedCorrection Correction,

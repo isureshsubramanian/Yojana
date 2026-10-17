@@ -23,6 +23,8 @@ public sealed class CorrectionEventSchemaTests
             h => new(h, Correction, "replace", Occurred, new(Id(31), Id(32), null, null, null, "component", "drive-1"), new(Id(33), Id(34), null, null, null, "component", "drive-1"))),
         UnitEntry<UnitVoided>(UnitVoided.Schema, UnitVoided.Version,
             h => new(h, Correction, [Id(41)], "never_reuse", new("production_order", Id(42), 3))),
+        UnitEntry<UnitVoidReversed>(UnitVoidReversed.Schema, UnitVoidReversed.Version,
+            h => new(h, Correction with { CorrectsCorrectionId = Id(43) }, [Id(44)], "pre_release", new("production_order", Id(45), 3))),
         UnitEntry<UnitMerged>(UnitMerged.Schema, UnitMerged.Version, h => new(h, Correction, h.UnitId, Id(51), "survivor")),
         SummaryEntry<UnitIdentifiersAssigned>(UnitIdentifiersAssigned.Schema, UnitIdentifiersAssigned.Version,
             h => new(h, Correction, new("production_order", Id(60), null), [new(Id(61), Id(62), new("vendor_serial", "OEM", "V-61", Id(63)))], 1, [Id(64)])),

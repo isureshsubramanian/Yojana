@@ -161,7 +161,7 @@ public sealed class SerialReuseSettings(ITenantSettings settings)
     public static readonly SerialReusePolicy DefaultPolicy = new(SerialReusePolicyValue.Never, []);
 
     // Coupled to the factory registration in SerialisationModule for the same two-DbContext Wolverine constraint as
-    // CorrectionApprovalSettings; future VoidUnit handlers must consume this wrapper, not ITenantSettings directly.
+    // CorrectionApprovalSettings; VoidUnit and commissioning consume this wrapper, never ITenantSettings directly.
     public async Task<SerialReusePolicy> GetAsync(CancellationToken cancellationToken) =>
         await settings.GetAsync(Key, cancellationToken) is { } text
             ? JsonSerializer.Deserialize<SerialReusePolicy>(text, LedgerJson.Options) ?? DefaultPolicy

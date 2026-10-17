@@ -76,6 +76,13 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     GuidOrNull(before, "identifier_id") ?? Guid.Empty, GuidOrNull(after, "identifier_id") ?? Guid.Empty, Str(a, "approver_ref"));
             }
 
+            case UnitEventType.Voided:
+                return new UnitVoided(Header(UnitVoided.Schema, UnitVoided.Version), Correction(a), Guids(a!.Value, "closed_identifier_ids"),
+                    Str(a, "serial_reuse_outcome") ?? "", document);
+            case UnitEventType.VoidReversed:
+                return new UnitVoidReversed(Header(UnitVoidReversed.Schema, UnitVoidReversed.Version), Correction(a),
+                    Guids(a!.Value, "restored_identifier_ids"), Str(a, "lifecycle_status") ?? "", document);
+
             case UnitEventType.OwnershipOpened or UnitEventType.OwnershipTransferred:
                 return new OwnershipOpened(Header(OwnershipOpened.Schema, OwnershipOpened.Version), GuidOrNull(a, "episode_id") ?? Guid.Empty, GuidOrNull(a, "party_ref") ?? Guid.Empty, Str(a, "party_type") ?? "", Str(a, "reason") ?? "", Str(a, "source") ?? "", Str(a, "confidence") ?? "", Str(a, "customer_po_ref"), Str(a, "customer_item_ref"), GuidOrNull(a, "previous_episode_id"));
             case UnitEventType.OwnershipClosed:
@@ -174,6 +181,15 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
     {
         if (element is not { ValueKind: JsonValueKind.Object } el || !el.TryGetProperty("identifiers", out var ids) || ids.ValueKind != JsonValueKind.Array) return [];
         return ids.EnumerateArray().Select(i => new PublishedIdentifier(Str(i, "type") ?? "", Str(i, "scheme") ?? "", Str(i, "value") ?? "", GuidOrNull(i, "issuer_party_ref"))).ToList();
+    }
+
+    private static PublishedCorrection Correction(JsonElement? element)
+    {
+        var approvers = element is { ValueKind: JsonValueKind.Object } root && root.TryGetProperty("approvers", out var values) && values.ValueKind == JsonValueKind.Array
+            ? values.EnumerateArray().Select(a => Str(a, "user_ref")).OfType<string>().ToList()
+            : [];
+        return new(GuidOrNull(element, "correction_id") ?? Guid.Empty, Str(element, "reason_code") ?? "",
+            Str(element, "initiated_via") ?? "", GuidOrNull(element, "corrects_correction_id"), approvers);
     }
 }
 

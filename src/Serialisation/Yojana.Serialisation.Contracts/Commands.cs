@@ -53,6 +53,9 @@ public sealed record AssignIdentifierResult(Guid UnitId, Guid IdentifierId, stri
 /// <summary>One approval attached to a correction; roles are recorded as evidence, never inferred later.</summary>
 public sealed record CorrectionApprover(string UserRef, IReadOnlyList<string> Roles);
 
+/// <summary>The signed-in correction committer; HTTP endpoints replace both fields from claims.</summary>
+public sealed record CorrectionCommitter(string UserRef, IReadOnlyList<string> Roles);
+
 /// <summary>Metadata shared by every correction command and every ledger fact it writes.</summary>
 public sealed record CorrectionMetadata(
     Guid CorrectionId,
@@ -71,6 +74,35 @@ public sealed record CorrectionMetadata(
 public sealed record CorrectIdentifier(Guid CommandId, Guid UnitId, string IdentifierType, string NewRawValue, string Reason, DateTime EventTime, string ActorRef, Guid LegalEntityId, string? ApproverRef = null, string? Note = null, Guid? IssuerPartyRef = null, string? Qualifier = null, CorrectionMetadata? Correction = null);
 
 public sealed record CorrectIdentifierResult(Guid UnitId, Guid SupersededIdentifierId, Guid NewIdentifierId, string OldNormalisedValue, string NewNormalisedValue, Guid CorrectionId = default);
+
+/// <summary>
+/// Void an allocated or kitted unit that was never shipped or named on an external document. A command whose
+/// correction metadata references an earlier VoidUnit correction reverses that void instead.
+/// </summary>
+public sealed record VoidUnit(
+    Guid CommandId,
+    Guid UnitId,
+    string Reason,
+    DateTime EventTime,
+    string ActorRef,
+    Guid LegalEntityId,
+    DocumentRef? ProductionOrder = null,
+    string? Note = null,
+    CorrectionMetadata? Correction = null,
+    CorrectionCommitter? CommittedBy = null);
+
+/// <summary>Rehearse <see cref="VoidUnit"/> without recording facts or changing state.</summary>
+public sealed record PreviewVoidUnit(VoidUnit Command);
+
+public sealed record VoidUnitResult(
+    Guid UnitId,
+    string PreviousLifecycleStatus,
+    string LifecycleStatus,
+    IReadOnlyList<Guid> IdentifierIds,
+    string SerialReuseOutcome,
+    Guid CorrectionId,
+    bool Reversed,
+    bool Replayed = false);
 
 /// <summary>Release a <c>pre_release</c> unit on its release signature; freezes the as-built into BuildRecord version 1 (or the next version after reassembly).</summary>
 public sealed record ReleaseUnit(Guid CommandId, Guid UnitId, DateTime EventTime, string ActorRef, Guid LegalEntityId, string ReleaseSignatureRef, DocumentRef? Document = null, string? Revision = null, Guid? FacilityId = null, string? TestResultsJson = null);

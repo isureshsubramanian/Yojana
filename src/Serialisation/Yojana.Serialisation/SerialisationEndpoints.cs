@@ -42,6 +42,13 @@ public static class SerialisationEndpoints
         units.MapPost("/assign-identifier", (AssignIdentifier command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<AssignIdentifierResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/correct-identifier", (CorrectIdentifier command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<CorrectIdentifierResult>(bus, tenant, command with { ActorRef = Actor(user), Correction = ApiCorrection(command, user) }, ct));
+        units.MapPost("/{unitId:guid}/void/preview", (Guid unitId, VoidUnit command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+        {
+            var stamped = StampVoid(command with { UnitId = unitId }, user);
+            return Invoke<CorrectionPreview>(bus, tenant, new PreviewVoidUnit(stamped), ct);
+        });
+        units.MapPost("/{unitId:guid}/void", (Guid unitId, VoidUnit command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<VoidUnitResult>(bus, tenant, StampVoid(command with { UnitId = unitId }, user), ct));
         units.MapPost("/release", (ReleaseUnit command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ReleaseUnitResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/assemble", (RecordAssembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordAssemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/disassemble", (RecordDisassembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordDisassemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
@@ -293,6 +300,32 @@ public static class SerialisationEndpoints
             // Approvers are never taken from the request body: a caller could name anyone, with any roles. The legacy
             // ApproverRef keeps its P1 meaning; server-recorded approvals arrive with the workbench approval flow (P3-T16).
             null);
+    }
+
+    private static VoidUnit StampVoid(VoidUnit command, ClaimsPrincipal user) => command with
+    {
+        ActorRef = Actor(user),
+        CommittedBy = CorrectionCommitter(user),
+        Correction = ApiCorrection(command.Correction, command.CommandId, command.Reason, command.Note, user),
+    };
+
+    private static CorrectionMetadata ApiCorrection(CorrectionMetadata? supplied, Guid commandId, string reason, string? note, ClaimsPrincipal user) =>
+        new(
+            supplied?.CorrectionId ?? commandId,
+            supplied?.ReasonCode ?? reason,
+            supplied?.Note ?? note,
+            supplied?.EvidenceRefs ?? [],
+            supplied?.InitiatedVia ?? CorrectionInitiatedVia.Api,
+            supplied?.CorrectsCorrectionId,
+            InitiatingRole(user),
+            // Approvers never cross this API boundary from the request body. The later workbench approval flow stamps
+            // server-verified approvals before invoking the command.
+            null);
+
+    private static CorrectionCommitter CorrectionCommitter(ClaimsPrincipal user)
+    {
+        var committer = Committer(user);
+        return new(committer.UserRef, committer.Roles);
     }
 
     private static string InitiatingRole(ClaimsPrincipal user)

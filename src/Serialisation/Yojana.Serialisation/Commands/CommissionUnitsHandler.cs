@@ -3,6 +3,7 @@ using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Identity;
@@ -23,7 +24,7 @@ public static class CommissionUnitsHandler
     public const string Source = "serialisation.command";
 
     public static async Task<CommissionUnitsResult> Handle(CommissionUnits command, SerialisationDbContext db, IUnitEventWriter writer, BulkIngestion bulk, IdentifierService identifiers,
-        IItemQueryPort items, SerialRangeService ranges, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        IItemQueryPort items, SerialRangeService ranges, SerialReuseSettings reuseSettings, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var profile = await items.GetAsync(command.ItemId, cancellationToken)
@@ -91,7 +92,7 @@ public static class CommissionUnitsHandler
         var inBatch = prepared.SelectMany(p => p.Identifiers.Select(id => (p.Index, id))).GroupBy(x => (x.id.Policy.Scheme, x.id.ScopeKey, x.id.Normalised)).Where(g => g.Count() > 1).SelectMany(g => g.Select(x => x.Index)).ToHashSet();
         var probe = prepared.SelectMany(p => p.Identifiers.Select(id => new UnitIdentifier { TenantId = tenantId, IdentifierId = Guid.Empty, UnitId = Guid.Empty, Type = id.Input.Type, Scheme = id.Policy.Scheme, ScopeKey = id.ScopeKey, RawValue = id.Input.RawValue, NormalisedValue = id.Normalised, ActorRef = command.ActorRef })).ToList();
         var conflicts = (await bulk.ValidateIdentifiersAsync(probe, cancellationToken)).Where(c => c.Reason == "already_open_on_another_unit").ToDictionary(c => (c.Scheme, c.ScopeKey, c.NormalisedValue), c => c.ExistingUnitId!.Value);
-        var reuseFrom = new Dictionary<int, (Guid ScrappedUnit, List<Guid> IdentifiersToClose)>();
+        var reuseFrom = new Dictionary<int, (Guid SourceUnit, List<Guid> IdentifiersToClose, string Outcome)>();
         if (conflicts.Count > 0)
         {
             var holders = await db.Units.AsNoTracking().Where(u => u.TenantId == tenantId && conflicts.Values.Contains(u.UnitId)).ToDictionaryAsync(u => u.UnitId, u => u.LifecycleStatus, cancellationToken);
@@ -105,12 +106,69 @@ public static class CommissionUnitsHandler
                 {
                     var scrapped = holderUnits[0];
                     var toClose = await db.Identifiers.Where(x => x.TenantId == tenantId && x.UnitId == scrapped && x.ValidTo == null).Select(x => x.IdentifierId).ToListAsync(cancellationToken);
-                    reuseFrom[index] = (scrapped, toClose);
+                    reuseFrom[index] = (scrapped, toClose, "reused_after_scrap");
                 }
                 else
                 {
                     results[index] = new CommissionLineResult(index, command.Lines[index].ClientReference, null, CommissionLineResult.Refused,
                         hits.Select(h => $"{h.Input.Type}:identifier_in_use:{conflicts[(h.Policy.Scheme, h.ScopeKey, h.Normalised)]:N}").ToList());
+                    prepared.RemoveAll(p => p.Index == index);
+                }
+            }
+        }
+
+        // Closed identifiers still belong to their history. In particular, VoidUnit closes them, so the open-only
+        // uniqueness index cannot decide whether a new unit may take the string. OD-07 is evaluated here, at the only
+        // boundary that creates the new identity, and an allowed reuse carries derived_from_unit_id (Identity rule 6).
+        var historical = new List<UnitIdentifier>();
+        foreach (var values in prepared.SelectMany(p => p.Identifiers).Select(i => i.Normalised).Distinct(StringComparer.Ordinal).Chunk(1000))
+        {
+            var chunk = values.ToList();
+            historical.AddRange(await db.Identifiers.AsNoTracking()
+                .Where(i => i.TenantId == tenantId && i.ValidTo != null && chunk.Contains(i.NormalisedValue))
+                .ToListAsync(cancellationToken));
+        }
+        if (historical.Count > 0)
+        {
+            // SerialReuseSettings is factory-registered in SerialisationModule: exposing ITenantSettings here would add
+            // PlatformDbContext to Wolverine's handler graph and make the host reject the command handler.
+            var tenantReuse = await reuseSettings.GetAsync(cancellationToken);
+            var resolvedReuse = SerialReuseSettings.Resolve(tenantReuse, profile.ItemClass);
+            var historicalByKey = historical.GroupBy(i => (i.Scheme, i.ScopeKey, i.NormalisedValue))
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(i => i.ValidTo).ThenByDescending(i => i.ValidFrom).ToList());
+            var holderIds = historical.Select(i => i.UnitId).Distinct().ToList();
+            var holderStatuses = await db.Units.AsNoTracking().Where(u => u.TenantId == tenantId && holderIds.Contains(u.UnitId))
+                .ToDictionaryAsync(u => u.UnitId, u => u.LifecycleStatus, cancellationToken);
+
+            foreach (var (index, ids) in prepared.ToList())
+            {
+                if (reuseFrom.ContainsKey(index)) continue;
+                var hits = ids.Select(id => historicalByKey.GetValueOrDefault((id.Policy.Scheme, id.ScopeKey, id.Normalised))?.FirstOrDefault())
+                    .OfType<UnitIdentifier>().ToList();
+                if (hits.Count == 0) continue;
+                var sources = hits.Select(i => i.UnitId).Distinct().ToList();
+                var source = sources.Count == 1 ? sources[0] : Guid.Empty;
+                var voided = source != Guid.Empty && holderStatuses.GetValueOrDefault(source) == LifecycleStatus.Void
+                    && hits.All(i => i.CorrectionReason is not null && VoidUnitReason.All.Contains(i.CorrectionReason));
+                // Only a voided unit's serial is governed by OD-07 here. Other closed rows (a value corrected away from
+                // the wrong unit, a scrapped unit's re-used serial) keep their P1 behaviour: the open-only index decides.
+                if (!voided) continue;
+                var allowed = voided && resolvedReuse == SerialReusePolicyValue.NeverShippedAndNotExternal;
+                if (allowed)
+                {
+                    var facts = await UnitCorrectionFacts.ReadAsync(db, tenantId, source, cancellationToken);
+                    allowed = !facts.EverShipped && !facts.AppearsOnExternalDocument;
+                }
+
+                if (allowed)
+                {
+                    reuseFrom[index] = (source, [], SerialReuseOutcome.ReusedFromVoidedUnit);
+                }
+                else
+                {
+                    const string reason = "serial_reuse_forbidden";
+                    results[index] = new CommissionLineResult(index, command.Lines[index].ClientReference, null, CommissionLineResult.Refused,
+                        hits.Select(h => $"{h.Type}:{reason}:{h.UnitId:N}").ToList());
                     prepared.RemoveAll(p => p.Index == index);
                 }
             }
@@ -154,7 +212,8 @@ public static class CommissionUnitsHandler
             };
             if (reuseFrom.TryGetValue(index, out var reuse))
             {
-                attributes["derived_from_unit_id"] = reuse.ScrappedUnit;
+                attributes["derived_from_unit_id"] = reuse.SourceUnit;
+                attributes["serial_reuse_outcome"] = reuse.Outcome;
             }
 
             batchEvents.Add(new UnitEventDraft
@@ -175,7 +234,7 @@ public static class CommissionUnitsHandler
             units.Add(new Unit
             {
                 TenantId = tenantId, UnitId = unitId, LifecycleStatus = status, Origin = command.Origin, LotId = line.LotId, ExpiryDate = line.ExpiryDate, BrandIsOurs = command.BrandIsOurs ?? command.Origin != UnitOrigin.TradeIn,
-                DerivedFromUnitId = reuseFrom.TryGetValue(index, out var r) ? r.ScrappedUnit : null,
+                DerivedFromUnitId = reuseFrom.TryGetValue(index, out var r) ? r.SourceUnit : null,
                 SerialisationPoint = profile.SerialisationPoint, RetentionClass = profile.RetentionClass, CreatedAt = now, CreatedEventId = eventId,
             });
             identifierRows.AddRange(ids.Select(id => id.ToRow(tenantId, unitId, command.EventTime, command.ActorRef, now, eventId)));
@@ -198,7 +257,8 @@ public static class CommissionUnitsHandler
         if (reuseFrom.Count > 0)
         {
             var closing = reuseFrom.Values.SelectMany(v => v.IdentifiersToClose).ToList();
-            await db.Identifiers.Where(i => i.TenantId == tenantId && closing.Contains(i.IdentifierId)).ForEachAsync(i => { i.ValidTo = command.EventTime; i.CorrectionReason = "reused_after_scrap"; }, cancellationToken);
+            if (closing.Count > 0)
+                await db.Identifiers.Where(i => i.TenantId == tenantId && closing.Contains(i.IdentifierId)).ForEachAsync(i => { i.ValidTo = command.EventTime; i.CorrectionReason = "reused_after_scrap"; }, cancellationToken);
         }
 
         if (prepared.Count >= BulkThreshold)
