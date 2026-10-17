@@ -110,6 +110,12 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<RecoveryClaim> RecoveryClaims => Set<RecoveryClaim>();
     public DbSet<NumberSeries> NumberSeries => Set<NumberSeries>();
 
+    public DbSet<ReplacementLink> ReplacementLinks => Set<ReplacementLink>();
+
+    public DbSet<WarrantyReplacement> WarrantyReplacements => Set<WarrantyReplacement>();
+
+    public DbSet<WarrantyReplacementLine> WarrantyReplacementLines => Set<WarrantyReplacementLine>();
+
     public DbSet<Campaign> Campaigns => Set<Campaign>();
 
     public DbSet<CampaignCriterion> CampaignCriteria => Set<CampaignCriterion>();
@@ -1068,6 +1074,94 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.StartedAt });
             b.HasIndex(e => new { e.TenantId, e.WorkOrderId });
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.Kind }).IsUnique().HasFilter("[ended_at] IS NULL");
+        });
+
+        modelBuilder.Entity<WarrantyReplacement>(b =>
+        {
+            b.ToTable("warranty_replacement", t =>
+            {
+                t.HasCheckConstraint("ck_warranty_replacement_source_kind", "source_kind IN ('claim', 'rma')");
+                t.HasCheckConstraint("ck_warranty_replacement_status", "status IN ('proposed', 'shipped', 'cancelled')");
+                t.HasCheckConstraint("ck_warranty_replacement_fee", "restocking_fee_amount >= 0");
+            });
+            b.HasKey(row => new { row.TenantId, row.WarrantyReplacementId });
+            b.Property(row => row.ReplacementNumber).HasMaxLength(24).IsUnicode(false);
+            b.Property(row => row.SourceKind).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.SourceNumber).HasMaxLength(40);
+            b.Property(row => row.OriginalInvoiceType).HasMaxLength(40);
+            b.Property(row => row.ServiceCountry).HasMaxLength(2).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.Status).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.ReplacementPolicyCode).HasMaxLength(60);
+            b.Property(row => row.ReturnReasonCode).HasMaxLength(40).IsUnicode(false);
+            b.Property(row => row.RestockingFeeRule).HasMaxLength(100);
+            b.Property(row => row.RestockingFeeAmount).HasPrecision(18, 2);
+            b.Property(row => row.CreatedBy).HasMaxLength(200);
+            b.Property(row => row.ShippedBy).HasMaxLength(200);
+            b.Property(row => row.StockPostingReference).HasMaxLength(100);
+            b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.ReplacementNumber }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.SourceKind, row.SourceId });
+            b.HasIndex(row => new { row.TenantId, row.Status, row.CreatedAt });
+            b.HasIndex(row => new { row.TenantId, row.ShipCommandId }).IsUnique().HasFilter("[ship_command_id] IS NOT NULL");
+        });
+
+        modelBuilder.Entity<ReplacementLink>(b =>
+        {
+            b.ToTable("replacement_link", t =>
+            {
+                t.HasCheckConstraint("ck_replacement_link_direction", "direction IN ('customer_facing', 'vendor_facing')");
+                t.HasCheckConstraint("ck_replacement_link_reason", "replacement_reason IN ('warranty_defect', 'dead_on_arrival', 'seller_error', 'goodwill', 'recall')");
+                t.HasCheckConstraint("ck_replacement_link_state", "state IN ('proposed', 'awaiting_return', 'closed_returned', 'closed_billed', 'cancelled', 'corrected')");
+                t.HasCheckConstraint("ck_replacement_link_source_kind", "source_kind IN ('claim', 'rma')");
+                t.HasCheckConstraint("ck_replacement_link_units", "original_unit_id <> replacement_unit_id");
+                t.HasCheckConstraint("ck_replacement_link_price_policy", "price_policy IN ('zero', 'difference', 'full')");
+                t.HasCheckConstraint("ck_replacement_link_zero_price", "price_policy <> 'zero' OR difference_amount = 0");
+                t.HasCheckConstraint("ck_replacement_link_condition_allowed", "replacement_condition_allowed IN ('new', 'new_or_refurbished', 'any')");
+            });
+            b.HasKey(row => new { row.TenantId, row.ReplacementLinkId });
+            b.Property(row => row.Direction).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.ReplacementReason).HasMaxLength(30).IsUnicode(false);
+            b.Property(row => row.State).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.SourceKind).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.SourceNumber).HasMaxLength(40);
+            b.Property(row => row.PolicyApplied).HasMaxLength(60);
+            b.Property(row => row.PricePolicy).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.DifferenceAmount).HasPrecision(18, 2);
+            b.Property(row => row.Currency).HasMaxLength(3).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.NonReturnPriceBasis).HasMaxLength(30).IsUnicode(false);
+            b.Property(row => row.ReplacementConditionAllowed).HasMaxLength(30).IsUnicode(false);
+            b.Property(row => row.ReplacementCondition).HasMaxLength(40).IsUnicode(false);
+            b.Property(row => row.CreatedBy).HasMaxLength(200);
+            b.Property(row => row.ShippedBy).HasMaxLength(200);
+            b.HasOne<WarrantyReplacement>().WithMany().HasForeignKey(row => new { row.TenantId, row.WarrantyReplacementId }).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(row => new { row.TenantId, row.WarrantyReplacementId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.OriginalUnitId, row.CreatedAt });
+            b.HasIndex(row => new { row.TenantId, row.ReplacementUnitId, row.CreatedAt });
+            b.HasIndex(row => new { row.TenantId, row.SourceKind, row.SourceId });
+            b.HasIndex(row => new { row.TenantId, row.State, row.ReturnDue });
+            b.HasIndex(row => new { row.TenantId, row.PreviousReplacementLinkId });
+        });
+
+        modelBuilder.Entity<WarrantyReplacementLine>(b =>
+        {
+            b.ToTable("warranty_replacement_line", t =>
+            {
+                t.HasCheckConstraint("ck_warranty_replacement_line_kind", "kind IN ('replacement', 'service_revenue')");
+                t.HasCheckConstraint("ck_warranty_replacement_line_amounts", "quantity > 0 AND unit_amount >= 0 AND line_amount >= 0");
+            });
+            b.HasKey(row => new { row.TenantId, row.LineId });
+            b.Property(row => row.Kind).HasMaxLength(30).IsUnicode(false);
+            b.Property(row => row.Description).HasMaxLength(300);
+            b.Property(row => row.Quantity).HasPrecision(18, 6);
+            b.Property(row => row.UnitAmount).HasPrecision(18, 2);
+            b.Property(row => row.LineAmount).HasPrecision(18, 2);
+            b.Property(row => row.Currency).HasMaxLength(3).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.RevenueRule).HasMaxLength(100);
+            b.HasOne<WarrantyReplacement>().WithMany().HasForeignKey(row => new { row.TenantId, row.WarrantyReplacementId }).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<ReplacementLink>().WithMany().HasForeignKey(row => new { row.TenantId, row.ReplacementLinkId }).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(row => new { row.TenantId, row.WarrantyReplacementId, row.Sequence }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.ReplacementLinkId });
+            b.HasIndex(row => new { row.TenantId, row.ItemId });
         });
 
         base.OnModelCreating(modelBuilder);

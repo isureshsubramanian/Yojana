@@ -76,6 +76,8 @@ public static class PublishedEventSinkHandler
     public static void Handle(RmaAuthorised e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(RmaReceived e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(RmaDispositioned e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(ReplacementShipped e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(ReplacementAssetTagPrintRequested e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitIdentifiersSwapped e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitItemCorrected e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitAsBuiltCorrected e) => PublishedEventSink.Received.Enqueue(e);

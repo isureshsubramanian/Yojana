@@ -4,8 +4,9 @@ using Yojana.Serialisation.Contracts;
 namespace Yojana.Serialisation.Ports;
 
 // TIGHT COUPLING (declared, ADR-0001 "Integration boundaries and coupling", coupling 1)
-// WHAT:  Inventory.StockPostingService calls Serialisation.IStockUnitEventPort.RecordForPosting(...)
-//        inside the SAME database transaction that writes the stock ledger line and valuation layer.
+// WHAT:  Warranty replacement calls IStockUnitEventPort.IssueWarrantyReplacementAsync(...), while document correction
+//        calls IStockUnitEventPort.RecordCorrectionForPosting(...); Inventory must handle each inside the SAME database
+//        transaction that writes the corresponding stock ledger line and valuation layer.
 // WHY:   The invariant "on-hand quantity of a serial-tracked item at a location equals the count of
 //        units in stock at that location" (ADR-0001, edge case 34) must hold at every commit. An outbox
 //        or event hand-off would allow a committed quantity with no units (or units with no quantity)
@@ -28,6 +29,13 @@ public sealed class InMemoryStockUnitEventPort : IStockUnitEventPort
     // P5 RMA return-receipt extension — keep this block separate so sibling port additions merge mechanically.
     public ConcurrentQueue<StockReturnPosting> Returns { get; } = new();
     // End P5 RMA return-receipt extension.
+    public ConcurrentQueue<WarrantyReplacementStockIssue> ReplacementIssues { get; } = new();
+
+    public Task<WarrantyReplacementStockIssueResult> IssueWarrantyReplacementAsync(WarrantyReplacementStockIssue issue, CancellationToken cancellationToken)
+    {
+        ReplacementIssues.Enqueue(issue);
+        return Task.FromResult(new WarrantyReplacementStockIssueResult($"WRP-STOCK-{issue.WarrantyReplacementId:N}"));
+    }
 
     public Task RecordCorrectionForPosting(StockPostingSerialCorrection correction, CancellationToken cancellationToken)
     {

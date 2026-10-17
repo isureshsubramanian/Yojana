@@ -3,6 +3,7 @@ using Wolverine;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Replacements;
 
 namespace Yojana.Serialisation.Ledger;
 
@@ -226,6 +227,20 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                 return new RmaDispositioned(Header(RmaDispositioned.Schema, RmaDispositioned.Version), GuidOrNull(a, "rma_id") ?? Guid.Empty,
                     GuidOrNull(a, "rma_line_id") ?? Guid.Empty, GuidOrNull(a, "unit_id") ?? e.UnitId, Str(a, "disposition") ?? "",
                     Str(a, "entitlement_closed_reason"), GuidOrNull(a, "replacement_intent_id"));
+            case ReplacementEventType.Shipped:
+                return new ReplacementShipped(Header(ReplacementShipped.Schema, ReplacementShipped.Version),
+                    GuidOrNull(a, "warranty_replacement_id") ?? Guid.Empty, Str(a, "replacement_number") ?? "",
+                    GuidOrNull(a, "replacement_link_id") ?? Guid.Empty, GuidOrNull(a, "original_unit_id") ?? Guid.Empty,
+                    GuidOrNull(a, "replacement_unit_id") ?? Guid.Empty, GuidOrNull(a, "original_item_id") ?? Guid.Empty,
+                    GuidOrNull(a, "replacement_item_id") ?? Guid.Empty, GuidOrNull(a, "source_entitlement_id") ?? Guid.Empty,
+                    GuidOrNull(a, "target_entitlement_id") ?? Guid.Empty, Str(a, "source_kind") ?? "", GuidOrNull(a, "source_id") ?? Guid.Empty,
+                    Str(a, "source_number") ?? "", Str(a, "reason") ?? "", Str(a, "price_policy") ?? "", Decimal(a, "difference_amount"),
+                    Str(a, "currency") ?? "", Str(a, "policy_applied") ?? "", Date(a, "computed_end") ?? default,
+                    Str(a, "replacement_condition") ?? "", Bool(a, "accrual_suppressed"), Decimal(a, "restocking_fee_amount"));
+            case ReplacementEventType.AssetTagPrintRequested:
+                return new ReplacementAssetTagPrintRequested(Header(ReplacementAssetTagPrintRequested.Schema, ReplacementAssetTagPrintRequested.Version),
+                    GuidOrNull(a, "warranty_replacement_id") ?? Guid.Empty, GuidOrNull(a, "replacement_link_id") ?? Guid.Empty,
+                    GuidOrNull(a, "identifier_id") ?? Guid.Empty, Str(a, "asset_tag") ?? "");
             default:
                 return null;
         }

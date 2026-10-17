@@ -5,6 +5,9 @@ public interface IUnitConditionQueryPort
 {
     Task<ConditionRequirementResult> SatisfiesAsync(Guid unitId, string requirement, CancellationToken cancellationToken);
     Task<ConditionDisclosure?> DisclosureAsync(Guid unitId, ConditionDisclosurePolicy policy, CancellationToken cancellationToken);
+
+    /// <summary>The unit's latest grade; a unit never graded counts as new.</summary>
+    Task<string> LatestGradeAsync(Guid unitId, CancellationToken cancellationToken);
 }
 
 public sealed record UnitShipmentCheck(Guid UnitId, Guid ItemId, DateTime ShipmentAt);

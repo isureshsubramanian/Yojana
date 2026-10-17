@@ -7,6 +7,15 @@ namespace Yojana.Serialisation.Condition;
 
 public sealed class ConditionQueries(SerialisationDbContext db, ITenantContext tenant) : IUnitConditionQueryPort
 {
+    public async Task<string> LatestGradeAsync(Guid unitId, CancellationToken cancellationToken)
+    {
+        var graded = await db.ConditionEvents.AsNoTracking().Where(e => e.TenantId == tenant.TenantId && e.UnitId == unitId)
+            .OrderByDescending(e => e.GradedAt).ThenByDescending(e => e.ConditionEventId).Select(e => e.Grade).FirstOrDefaultAsync(cancellationToken);
+        if (graded is not null) return graded;
+        return await db.Current.AsNoTracking().Where(row => row.TenantId == tenant.TenantId && row.UnitId == unitId)
+            .Select(row => row.ConditionGrade).FirstOrDefaultAsync(cancellationToken) ?? ConditionGrades.New;
+    }
+
     public Task<List<UnitConditionRow>> ConditionAsync(Guid unitId, CancellationToken cancellationToken) =>
         db.ConditionEvents.AsNoTracking().Where(e => e.TenantId == tenant.TenantId && e.UnitId == unitId)
             .OrderByDescending(e => e.GradedAt).ThenByDescending(e => e.ConditionEventId)
