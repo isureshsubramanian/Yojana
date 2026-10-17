@@ -111,7 +111,8 @@ public sealed class AdvanceReplacementTests(SerialisationHostFixture fixture)
         Assert.Equal((new DateOnly(2026, 9, 6), new DateOnly(2026, 9, 25), true),
             (oldReplay.PreviousReturnDue, oldReplay.NewReturnDue, oldReplay.Replayed));
         var billed = await P5AdvanceTestData.InvokeAsync<BillNonReturnResult>(fixture, world.Tenant,
-            new BillNonReturn(Guid.NewGuid(), shipped.ReplacementLinkId, NonReturnPriceBasis.FairMarketValue, 900m, new(2026, 9, 14), At.AddDays(14)));
+            new BillNonReturn(Guid.NewGuid(), shipped.ReplacementLinkId, NonReturnPriceBasis.FairMarketValue, 900m,
+                new(2026, 9, 14), At.AddDays(14), Reason: "agreed return window expired"));
         Assert.Equal(ReplacementLinkState.ClosedBilled, billed.State);
         var lifted = await P5AdvanceTestData.InvokeAsync<LiftReplacementHoldResult>(fixture, world.Tenant,
             new LiftReplacementHold(Guid.NewGuid(), world.Customer, "account reviewed after billing", At.AddDays(15)));

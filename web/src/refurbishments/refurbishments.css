@@ -1,0 +1,26 @@
+.refurb-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.refurb-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border: 1px solid var(--border-strong); border-radius: var(--radius); overflow: hidden; background: var(--surface-1); }
+.refurb-summary > span { padding: 14px 16px; border-right: 1px solid var(--border); }
+.refurb-summary > span:last-child { border-right: 0; }
+.refurb-summary .k { display: block; color: var(--text-2); font-size: 12px; }
+.refurb-summary .v { display: block; margin-top: 4px; color: var(--text-1); font-size: 20px; font-weight: 600; }
+.refurb-checks { list-style: none; margin: 0; padding: 0; }
+.refurb-checks li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--rule); }
+.refurb-checks li:last-child { border-bottom: 0; }
+.refurb-checks .s { display: block; margin-top: 2px; color: var(--text-3); font-size: 12px; }
+.refurb-grades, .refurb-identities { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.refurb-grades label, .refurb-identities label { display: flex; gap: 10px; align-items: flex-start; min-height: 58px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-s); cursor: pointer; }
+.refurb-grades label.on, .refurb-identities label.on { border-color: var(--accent); background: var(--accent-soft); }
+.refurb-grades input, .refurb-identities input { margin: 3px 0 0; accent-color: var(--accent); }
+.refurb-grades .s, .refurb-identities .s { display: block; margin-top: 2px; color: var(--text-3); font-size: 12px; }
+.refurb-pair { display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr); gap: 8px; align-items: stretch; margin-top: 14px; }
+.refurb-pair .side { min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-s); }
+.refurb-pair .arrow { display: grid; place-items: center; color: var(--text-3); }
+.refurb-pair .k { color: var(--text-3); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.refurb-pair .serial { display: block; margin-top: 4px; overflow-wrap: anywhere; }
+.refurb-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.refurb-form-grid .span { grid-column: 1 / -1; }
+.refurb-policy-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(220px, 1.3fr) 120px minmax(160px, 1fr) auto; gap: 10px; align-items: end; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.refurb-policy-row:last-child { border-bottom: 0; }
+@media (max-width: 960px) { .refurb-summary { grid-template-columns: 1fr 1fr; } .refurb-summary > span:nth-child(2) { border-right: 0; } .refurb-grades, .refurb-identities { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .refurb-form-grid, .refurb-policy-row { grid-template-columns: 1fr; } .refurb-form-grid .span { grid-column: auto; } }

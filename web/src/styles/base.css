@@ -113,6 +113,13 @@ svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-wid
 .btn kbd.key { margin-left: 2px; background: color-mix(in srgb, currentColor 12%, transparent); border-color: color-mix(in srgb, currentColor 25%, transparent); color: inherit; }
 .btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 
+/* Command dialogs shared by screens that collect a reason or business-time input before posting. */
+.action-dialog-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, var(--text-1) 28%, transparent); }
+.action-dialog { width: min(500px, 100%); background: var(--surface-1); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow-1); }
+.action-dialog.wide { width: min(720px, 100%); }
+.action-dialog .card-body { display: grid; gap: 16px; max-height: min(72vh, 720px); overflow: auto; }
+.action-dialog .actions { display: flex; justify-content: flex-end; gap: 8px; }
+
 /* Cards */
 .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-1); min-width: 0; }
 .card-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 52px; padding: 0 20px; border-bottom: 1px solid var(--border); }

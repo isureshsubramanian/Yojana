@@ -529,9 +529,9 @@ public static class SerialisationEndpoints
 
         // P5 advance-replacement block kept separate so sibling endpoint additions merge mechanically.
         var replacementLinks = app.MapGroup("/api/replacement-links").RequireAuthorization(YojanaPolicy.TenantMember);
-        replacementLinks.MapGet("/", async (string? state, bool? overdue, int? skip, int? take, Replacements.ReplacementLinkQueries queries, IClock clock, CancellationToken ct) =>
+        replacementLinks.MapGet("/", async (string? state, bool? overdue, int? dueWithinDays, string? q, int? skip, int? take, Replacements.ReplacementLinkQueries queries, IClock clock, CancellationToken ct) =>
         {
-            try { return Results.Ok(await queries.PageAsync(state, overdue ?? false, DateOnly.FromDateTime(clock.UtcNow), skip ?? 0, take ?? 50, ct)); }
+            try { return Results.Ok(await queries.PageAsync(state, overdue ?? false, dueWithinDays, q, DateOnly.FromDateTime(clock.UtcNow), skip ?? 0, take ?? 50, ct)); }
             catch (ArgumentException ex) { return Results.BadRequest(new { reason = "filters_invalid", detail = ex.Message }); }
         });
         replacementLinks.MapPost("/{replacementLinkId:guid}/extend-return-due", (Guid replacementLinkId, ExtendReturnDue command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>

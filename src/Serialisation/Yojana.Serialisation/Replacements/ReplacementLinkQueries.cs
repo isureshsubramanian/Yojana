@@ -7,9 +7,11 @@ namespace Yojana.Serialisation.Replacements;
 
 public sealed class ReplacementLinkQueries(SerialisationDbContext db, ITenantContext tenant)
 {
-    public async Task<ReplacementLinkPage> PageAsync(string? state, bool overdue, DateOnly asOf, int skip, int take, CancellationToken cancellationToken)
+    public async Task<ReplacementLinkPage> PageAsync(string? state, bool overdue, int? dueWithinDays, string? query,
+        DateOnly asOf, int skip, int take, CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(state) && !ReplacementLinkState.All.Contains(state)) throw new ArgumentException($"Unknown replacement link state '{state}'.", nameof(state));
+        if (dueWithinDays is < 1 or > 31) throw new ArgumentException("Due-within days must be between 1 and 31.", nameof(dueWithinDays));
         skip = Math.Max(0, skip);
         take = Math.Clamp(take, 1, 200);
         var tenantId = tenant.TenantId;
@@ -24,6 +26,19 @@ public sealed class ReplacementLinkQueries(SerialisationDbContext db, ITenantCon
         var source = all;
         if (!string.IsNullOrWhiteSpace(state)) source = source.Where(row => row.State == state);
         if (overdue) source = source.Where(row => row.State == ReplacementLinkState.AwaitingReturn && row.ReturnDue < asOf);
+        if (dueWithinDays is { } days) source = source.Where(row => row.State == ReplacementLinkState.AwaitingReturn
+            && row.ReturnDue >= asOf && row.ReturnDue <= asOf.AddDays(days));
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            var text = query.Trim();
+            source = source.Where(link =>
+                db.WarrantyReplacements.Any(document => document.TenantId == tenantId
+                    && document.WarrantyReplacementId == link.WarrantyReplacementId
+                    && (document.ReplacementNumber.Contains(text) || document.SourceNumber.Contains(text)))
+                || db.Identifiers.Any(identifier => identifier.TenantId == tenantId && identifier.ValidTo == null
+                    && (identifier.UnitId == link.OriginalUnitId || identifier.UnitId == link.ReplacementUnitId)
+                    && (identifier.RawValue.Contains(text) || identifier.NormalisedValue.Contains(text))));
+        }
         var total = await source.CountAsync(cancellationToken);
         var data = await (from link in source
                           join document in db.WarrantyReplacements.AsNoTracking() on new { link.TenantId, link.WarrantyReplacementId } equals new { document.TenantId, document.WarrantyReplacementId }
@@ -33,12 +48,22 @@ public sealed class ReplacementLinkQueries(SerialisationDbContext db, ITenantCon
                               link.ReplacementLinkId, link.WarrantyReplacementId, document.ReplacementNumber, link.Direction, link.State,
                               link.OriginalUnitId, link.ReplacementUnitId, link.CounterpartyPartyRef, link.ReturnDue, link.NonReturnPriceBasis,
                               link.NonReturnAmount, link.Currency, link.OverduePublishedAt,
+                              link.OriginalItemId, link.ReplacementItemId, link.SourceNumber,
+                              link.ReplacementReason, document.ShippedAt,
+                              OriginalSerial = db.Identifiers.Where(identifier => identifier.TenantId == tenantId
+                                  && identifier.UnitId == link.OriginalUnitId && identifier.ValidTo == null
+                                  && identifier.Type == IdentifierType.InternalSerial).Select(identifier => identifier.RawValue).FirstOrDefault(),
+                              ReplacementSerial = db.Identifiers.Where(identifier => identifier.TenantId == tenantId
+                                  && identifier.UnitId == link.ReplacementUnitId && identifier.ValidTo == null
+                                  && identifier.Type == IdentifierType.InternalSerial).Select(identifier => identifier.RawValue).FirstOrDefault(),
                               PartyOnHold = link.CounterpartyPartyRef != null && db.PartyReplacementHolds.Any(hold => hold.TenantId == tenantId && hold.PartyRef == link.CounterpartyPartyRef && hold.LiftedAt == null),
                           }).Skip(skip).Take(take).ToListAsync(cancellationToken);
         var rows = data.Select(row => new ReplacementLinkRow(row.ReplacementLinkId, row.WarrantyReplacementId, row.ReplacementNumber,
             row.Direction, row.State, row.OriginalUnitId, row.ReplacementUnitId, row.CounterpartyPartyRef, row.ReturnDue,
             row.ReturnDue is { } due && due < asOf ? asOf.DayNumber - due.DayNumber : null, row.NonReturnPriceBasis,
-            row.NonReturnAmount, row.Currency, row.OverduePublishedAt, row.PartyOnHold)).ToList();
+            row.NonReturnAmount, row.Currency, row.OverduePublishedAt, row.PartyOnHold, row.OriginalSerial,
+            row.ReplacementSerial, row.OriginalItemId, row.ReplacementItemId, row.SourceNumber,
+            row.ReplacementReason, row.ShippedAt)).ToList();
         return new(rows, kpis, total, skip, take);
     }
 
