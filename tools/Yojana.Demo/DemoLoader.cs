@@ -546,12 +546,31 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
     private async Task CreateEntitlementAsync(DemoUnit unit, Guid policyVersionId, string family, DemoCatalogue.CatalogueParty owner,
         DocumentRef invoice, DateOnly contractDate, DateTime eventTime, string country, string channel, CancellationToken cancellationToken)
     {
+        // A sold unit whose item requires cover on sale gets it from the entitlement-requirement handler, which runs
+        // off the bus after the invoice. Let it finish, then create only what the sale did not.
+        if (await LiveEntitlementAfterRequirementsAsync(unit.UnitId, family, cancellationToken)) return;
         await InvokeAsync<CreateEntitlementResult>(new CreateEntitlement(DemoIds.FromName($"entitlement:{family}:{unit.Serial}"), unit.UnitId,
             family, contractDate, LegalEntityId, eventTime.AddHours(3), actor,
             new Dictionary<string, DateTime> { [StartTrigger.Invoice] = eventTime }, policyVersionId,
             owner.Id, PartyType.EndUser, owner.Id, PartyType.EndUser, "new", channel, country,
             StartEvidenceRef: invoice.Id.ToString("N"), SourceDocument: invoice, CustomerPoRef: $"PO-{owner.Code}-{today.Year}",
             BuyerKind: RefurbishedBuyerKind.Business), cancellationToken);
+    }
+
+    private async Task<bool> LiveEntitlementAfterRequirementsAsync(Guid unitId, string family, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            using var scope = TenantScope();
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            if (await db.Entitlements.AsNoTracking().AnyAsync(row => row.UnitId == unitId && row.CoverageFamily == family
+                    && row.Status != EntitlementStatus.Closed, cancellationToken)) return true;
+            if (!await db.EntitlementRequirements.AsNoTracking().AnyAsync(row => row.UnitId == unitId
+                    && row.Status == EntitlementRequirementStatus.Open, cancellationToken)) return false;
+            await Task.Delay(100, cancellationToken);
+        }
+
+        return false;
     }
 
     private async Task<Guid> EnsurePolicyAsync(PolicyDefinition definition, CancellationToken cancellationToken)
