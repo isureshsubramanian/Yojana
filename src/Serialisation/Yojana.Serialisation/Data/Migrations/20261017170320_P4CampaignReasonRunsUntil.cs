@@ -1,5 +1,6 @@
 ﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Yojana.Platform.Data.Rls;
 
 #nullable disable
 
@@ -20,8 +21,12 @@ namespace Yojana.Serialisation.Data.Migrations
                 maxLength: 20,
                 nullable: true);
 
-            // Campaigns created before reasons were captured retain a valid, explicit classification.
+            // Campaigns created before reasons were captured retain a valid, explicit classification. Row-level security
+            // hides every row from a session with no tenant, so the backfill switches the schema's policy off for its own
+            // statement only.
+            migrationBuilder.Sql($"ALTER SECURITY POLICY [{TenantSecurityMigrations.SecuritySchema}].[{TenantSecurityMigrations.PolicyNameFor("serialisation")}] WITH (STATE = OFF);");
             migrationBuilder.Sql("UPDATE [serialisation].[campaign] SET [reason_code] = 'safety' WHERE [reason_code] IS NULL");
+            migrationBuilder.Sql($"ALTER SECURITY POLICY [{TenantSecurityMigrations.SecuritySchema}].[{TenantSecurityMigrations.PolicyNameFor("serialisation")}] WITH (STATE = ON);");
 
             migrationBuilder.AlterColumn<string>(
                 name: "reason_code",
