@@ -20,7 +20,7 @@ public static class CampaignHandler
         ISerialSchemeSource schemes, IIdentifierPolicySource identifierPolicies, ITenantContext tenant,
         CancellationToken cancellationToken)
     {
-        ValidateCampaign(command.Code, command.Name, command.CoverageSource, command.ReserveTag);
+        ValidateCampaign(command.Code, command.Name, command.CoverageSource, command.ReserveTag, command.ReasonCode, command.ReasonNote);
         var existing = await db.Campaigns.AsNoTracking().FirstOrDefaultAsync(c => c.TenantId == tenant.TenantId && c.CampaignId == command.CommandId, cancellationToken);
         if (existing is not null)
         {
@@ -38,6 +38,9 @@ public static class CampaignHandler
             Name = command.Name.Trim(),
             CoverageSource = command.CoverageSource,
             ReserveTag = command.ReserveTag.Trim(),
+            ReasonCode = command.ReasonCode,
+            ReasonNote = Note(command.ReasonNote),
+            RunsUntil = command.RunsUntil,
             Status = CampaignStatus.Draft,
             CreatedAt = command.EventTime,
             CreatedBy = command.ActorRef,
@@ -55,7 +58,7 @@ public static class CampaignHandler
         ISerialSchemeSource schemes, IIdentifierPolicySource identifierPolicies, ITenantContext tenant,
         CancellationToken cancellationToken)
     {
-        ValidateCampaign(command.Code, command.Name, command.CoverageSource, command.ReserveTag);
+        ValidateCampaign(command.Code, command.Name, command.CoverageSource, command.ReserveTag, command.ReasonCode, command.ReasonNote);
         if (!CampaignStatus.All.Contains(command.Status, StringComparer.Ordinal))
             throw new CommandRefusedException("campaign_status_unknown", $"Campaign status '{command.Status}' is not known.");
         var campaign = await db.Campaigns.SingleOrDefaultAsync(c => c.TenantId == tenant.TenantId && c.CampaignId == command.CampaignId, cancellationToken)
@@ -63,12 +66,18 @@ public static class CampaignHandler
         var oldCriteria = await db.CampaignCriteria.Where(c => c.TenantId == tenant.TenantId && c.CampaignId == campaign.CampaignId).ToListAsync(cancellationToken);
         if (!CampaignCriteriaRules.CanMove(campaign.Status, command.Status))
             throw new CommandRefusedException("campaign_status_transition_invalid", $"A campaign cannot move from {campaign.Status} to {command.Status}.");
+        if (campaign.SelectedAt is { } selectedAt && command.RunsUntil is { } runsUntil
+            && runsUntil < DateOnly.FromDateTime(selectedAt))
+            throw new CommandRefusedException("campaign_runs_until_before_selection", $"Runs until {runsUntil:yyyy-MM-dd} cannot be before the first selection on {selectedAt:yyyy-MM-dd}.");
 
         if (campaign.Status == CampaignStatus.Active)
         {
-            if (command.Status != CampaignStatus.Closed)
+            if (command.Status is not (CampaignStatus.Active or CampaignStatus.Closed))
                 throw new CommandRefusedException("campaign_active", "An active campaign can only be closed.");
-            campaign.Status = CampaignStatus.Closed;
+            if (command.Code.Trim() != campaign.Code || command.Name.Trim() != campaign.Name
+                || command.CoverageSource != campaign.CoverageSource || command.ReserveTag.Trim() != campaign.ReserveTag)
+                throw new CommandRefusedException("campaign_active", "An active campaign can change its reason or runs-until date, or be closed; its identity and cover stay fixed.");
+            campaign.Status = command.Status;
         }
         else
         {
@@ -89,6 +98,10 @@ public static class CampaignHandler
             campaign.ReserveTag = command.ReserveTag.Trim();
             campaign.Status = command.Status;
         }
+
+        campaign.ReasonCode = command.ReasonCode;
+        campaign.ReasonNote = Note(command.ReasonNote);
+        campaign.RunsUntil = command.RunsUntil;
 
         campaign.UpdatedAt = command.EventTime;
         campaign.UpdatedBy = command.ActorRef;
@@ -112,6 +125,8 @@ public static class CampaignHandler
     {
         var loaded = await Campaign(db, tenant.TenantId, command.CampaignId, cancellationToken);
         EnsureSelectable(loaded.Campaign);
+        if (loaded.Campaign.RunsUntil is { } runsUntil && DateOnly.FromDateTime(command.EventTime) > runsUntil)
+            throw new CommandRefusedException("campaign_selection_ended", $"This campaign stopped accepting new selections after {runsUntil:yyyy-MM-dd}; existing selections remain in its history.");
         var matched = await facts.MatchingUnitIdsAsync(loaded.Criteria, cancellationToken);
         var existing = (await db.CampaignUnits.AsNoTracking().Where(u => u.TenantId == tenant.TenantId && u.CampaignId == command.CampaignId)
             .Select(u => u.UnitId).ToListAsync(cancellationToken)).ToHashSet();
@@ -132,6 +147,7 @@ public static class CampaignHandler
                 new(CampaignUnitsSelected.Schema, CampaignUnitsSelected.Version, TimeOrderedId.New(command.EventTime), command.EventTime,
                     clock.UtcNow, command.LegalEntityId, command.ActorRef, null),
                 loaded.Campaign.CampaignId, loaded.Campaign.Code, loaded.Campaign.CoverageSource, loaded.Campaign.ReserveTag,
+                loaded.Campaign.ReasonCode, loaded.Campaign.ReasonNote, loaded.Campaign.RunsUntil,
                 command.CommandId, index + 1, batches.Count, matched.Count, total, units),
                 new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
         }
@@ -155,19 +171,26 @@ public static class CampaignHandler
             throw new CommandRefusedException("campaign_not_selectable", $"A {campaign.Status} campaign cannot change its selected units.");
     }
 
-    private static void ValidateCampaign(string code, string name, string coverageSource, string reserveTag)
+    private static void ValidateCampaign(string code, string name, string coverageSource, string reserveTag, string reasonCode, string? reasonNote)
     {
         if (string.IsNullOrWhiteSpace(code)) throw new CommandRefusedException("campaign_code_required", "A campaign code is required.");
         if (string.IsNullOrWhiteSpace(name)) throw new CommandRefusedException("campaign_name_required", "A campaign name is required.");
         if (!CampaignCoverageSource.All.Contains(coverageSource, StringComparer.Ordinal))
             throw new CommandRefusedException("campaign_coverage_source_invalid", "Campaign coverage_source is recall or goodwill.");
         if (string.IsNullOrWhiteSpace(reserveTag)) throw new CommandRefusedException("campaign_reserve_tag_required", "A campaign carries its own reserve tag.");
+        if (string.IsNullOrWhiteSpace(reasonCode)) throw new CommandRefusedException("campaign_reason_required", "A campaign reason is required.");
+        if (!CampaignReason.All.Contains(reasonCode, StringComparer.Ordinal))
+            throw new CommandRefusedException("campaign_reason_unknown", $"Campaign reason '{reasonCode}' is not known.");
+        if (reasonNote?.Trim().Length > 500)
+            throw new CommandRefusedException("campaign_reason_note_too_long", "A campaign reason note is at most 500 characters.");
     }
+
+    private static string? Note(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     internal static CampaignRow ToRow(Campaign campaign, IReadOnlyList<CampaignCriterion> criteria) => new(
         campaign.CampaignId, campaign.Code, campaign.Name, campaign.CoverageSource, campaign.ReserveTag, campaign.Status,
         criteria.Select(c => new CampaignCriterionRow(c.CriterionId, c.Kind, c.Scheme, c.RangeStart, c.RangeEnd, c.LotId,
             c.ChildUnitId, c.ChildItemId, c.FirmwareValue, c.EffectiveAt, c.ChildLotId, c.FirmwareKey)).ToList(), campaign.CreatedAt, campaign.CreatedBy,
-        campaign.UpdatedAt, campaign.UpdatedBy, campaign.SelectedAt);
+        campaign.UpdatedAt, campaign.UpdatedBy, campaign.SelectedAt, campaign.ReasonCode, campaign.ReasonNote, campaign.RunsUntil);
 }
 

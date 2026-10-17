@@ -425,11 +425,27 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("name");
 
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("reason_code");
+
+                    b.Property<string>("ReasonNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("reason_note");
+
                     b.Property<string>("ReserveTag")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("reserve_tag");
+
+                    b.Property<DateOnly?>("RunsUntil")
+                        .HasColumnType("date")
+                        .HasColumnName("runs_until");
 
                     b.Property<DateTime?>("SelectedAt")
                         .HasColumnType("datetime2(3)")
@@ -464,6 +480,8 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("campaign", "serialisation", t =>
                         {
                             t.HasCheckConstraint("ck_campaign_coverage_source", "coverage_source IN ('recall', 'goodwill')");
+
+                            t.HasCheckConstraint("ck_campaign_reason_code", "reason_code IN ('safety', 'reliability', 'firmware', 'regulatory', 'goodwill')");
 
                             t.HasCheckConstraint("ck_campaign_status", "status IN ('draft', 'selected', 'active', 'closed')");
                         });

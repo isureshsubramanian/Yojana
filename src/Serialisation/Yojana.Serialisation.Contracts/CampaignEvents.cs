@@ -10,6 +10,9 @@ public sealed record CampaignUnitsSelected(
     string CampaignCode,
     string CoverageSource,
     string ReserveTag,
+    string ReasonCode,
+    string? ReasonNote,
+    DateOnly? RunsUntil,
     Guid SelectionCommandId,
     int BatchNumber,
     int BatchCount,
@@ -18,7 +21,7 @@ public sealed record CampaignUnitsSelected(
     IReadOnlyList<CampaignSelectedUnit> Units) : IPublishedSummaryEvent
 {
     public const string Schema = "Campaign.UnitsSelected";
-    public const string Version = "1.0";
+    public const string Version = "1.1";
 }
 
 public sealed record CampaignSelectedUnit(
