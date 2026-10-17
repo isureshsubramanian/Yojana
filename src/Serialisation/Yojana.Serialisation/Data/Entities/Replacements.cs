@@ -8,6 +8,8 @@ public sealed class ReplacementLink : ITenantScoped
     public Guid ReplacementLinkId { get; set; }
     public Guid WarrantyReplacementId { get; set; }
     public Guid? PreviousReplacementLinkId { get; set; }
+    public Guid? CorrectedByLinkId { get; set; }
+    public Guid? CorrectionCommandId { get; set; }
     public required string Direction { get; set; }
     public required string ReplacementReason { get; set; }
     public required string State { get; set; }

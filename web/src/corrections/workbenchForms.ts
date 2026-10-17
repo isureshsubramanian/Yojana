@@ -61,6 +61,11 @@ export interface CorrectSourceDocumentFormValue {
   correctedDocument: DocumentValue;
 }
 
+export interface CorrectReplacementLinkFormValue {
+  recordedReplacementUnitId: string;
+  actualReplacementUnitId: string;
+}
+
 const commissionLines = (serials: string[], identifierType: string) => serials.map((serial) => ({
   identifiers: [{ type: identifierType, raw_value: serial }],
 }));
@@ -141,6 +146,19 @@ export function buildCorrectSourceDocumentArguments(value: CorrectSourceDocument
     selection_id: value.selectionId,
     previous_document: value.previousDocument,
     corrected_document: value.correctedDocument,
+    reason: "",
+    event_time: context.eventTime,
+    actor_ref: "",
+    legal_entity_id: context.legalEntityId,
+  };
+}
+
+/** Both sides are unit references; policy, reason and customer facts are recovered from the recorded replacement. */
+export function buildCorrectReplacementLinkArguments(value: CorrectReplacementLinkFormValue, context: WorkbenchFormContext): Record<string, unknown> {
+  return {
+    command_id: EMPTY_COMMAND_ID,
+    recorded_replacement_unit_id: value.recordedReplacementUnitId,
+    actual_replacement_unit_id: value.actualReplacementUnitId,
     reason: "",
     event_time: context.eventTime,
     actor_ref: "",

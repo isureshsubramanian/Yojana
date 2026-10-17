@@ -128,6 +128,20 @@ public static class SerialisationEndpoints
                 CommittedBy = CorrectionCommitter(user),
                 Correction = ApiCorrection(command.CommandId, command.Reason, command.Note, command.Correction, user),
             }, ct));
+        corrections.MapPost("/replacement-link/preview", (PreviewCorrectReplacementLink command, ClaimsPrincipal user,
+            IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CorrectionPreview>(bus, tenant, command with
+            {
+                ActorRef = Actor(user), CommittedBy = CorrectionCommitter(user),
+                Correction = ApiCorrection(Guid.Empty, command.Reason, command.Note, command.Correction, user),
+            }, ct));
+        corrections.MapPost("/replacement-link", (CorrectReplacementLink command, ClaimsPrincipal user,
+            IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CorrectReplacementLinkResult>(bus, tenant, command with
+            {
+                ActorRef = Actor(user), CommittedBy = CorrectionCommitter(user),
+                Correction = ApiCorrection(command.CommandId, command.Reason, command.Note, command.Correction, user),
+            }, ct)).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.ServiceManager));
         corrections.MapPost("/reassign-allocation/preview", (ReassignAllocation command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<ReassignAllocationResult>(bus, tenant, command with
             {

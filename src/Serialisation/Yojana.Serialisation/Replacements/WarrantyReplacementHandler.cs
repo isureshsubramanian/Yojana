@@ -337,4 +337,6 @@ public static class ReplacementEventType
     public const string Shipped = "replacement.shipped";
     public const string AssetTagRepointed = "replacement.asset_tag_repointed";
     public const string AssetTagPrintRequested = "replacement.asset_tag_print_requested";
+    public const string LinkCorrected = "replacement.link_corrected";
+    public const string CertificateReissueRequested = "certificate.reissue_requested";
 }

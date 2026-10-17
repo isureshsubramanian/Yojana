@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/replacement.linkcorrected.json",
+  "title": "Replacement.LinkCorrected",
+  "type": "object",
+  "required": [
+    "header", "correction", "warranty_replacement_id", "previous_replacement_link_id",
+    "corrected_replacement_link_id", "original_unit_id", "recorded_replacement_unit_id",
+    "actual_replacement_unit_id", "voided_entitlement_id", "target_entitlement_id",
+    "replacement_reason", "policy_applied", "computed_end", "asset_tag_repointed"
+  ],
+  "properties": {
+    "header": { "$ref": "#/$defs/header" },
+    "correction": { "$ref": "#/$defs/correction" },
+    "warranty_replacement_id": { "type": "string", "format": "uuid" },
+    "previous_replacement_link_id": { "type": "string", "format": "uuid" },
+    "corrected_replacement_link_id": { "type": "string", "format": "uuid" },
+    "original_unit_id": { "type": "string", "format": "uuid" },
+    "recorded_replacement_unit_id": { "type": "string", "format": "uuid" },
+    "actual_replacement_unit_id": { "type": "string", "format": "uuid" },
+    "voided_entitlement_id": { "type": "string", "format": "uuid" },
+    "target_entitlement_id": { "type": "string", "format": "uuid" },
+    "replacement_reason": { "type": "string" },
+    "policy_applied": { "type": "string" },
+    "computed_end": { "type": "string", "format": "date" },
+    "asset_tag_repointed": { "type": "boolean" }
+  },
+  "$defs": {
+    "header": {
+      "type": "object",
+      "required": ["schema", "version", "event_id", "unit_id", "event_time", "recorded_time", "seq", "legal_entity_id", "actor_ref"],
+      "properties": {
+        "schema": { "type": "string", "const": "Replacement.LinkCorrected" },
+        "version": { "type": "string", "const": "1.0" },
+        "event_id": { "type": "string", "format": "uuid" },
+        "unit_id": { "type": "string", "format": "uuid" },
+        "event_time": { "type": "string", "format": "date-time" },
+        "recorded_time": { "type": "string", "format": "date-time" },
+        "seq": { "type": "integer" },
+        "legal_entity_id": { "type": "string", "format": "uuid" },
+        "actor_ref": { "type": "string" },
+        "document": { "type": ["object", "null"] }
+      }
+    },
+    "correction": {
+      "type": "object",
+      "required": ["correction_id", "reason_code", "initiated_via", "approver_refs"],
+      "properties": {
+        "correction_id": { "type": "string", "format": "uuid" },
+        "reason_code": { "type": "string", "enum": ["wrong_unit_scanned_at_shipping", "wrong_unit_recorded", "replacement_returned_and_swapped"] },
+        "initiated_via": { "type": "string" },
+        "corrects_correction_id": { "type": ["string", "null"], "format": "uuid" },
+        "approver_refs": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

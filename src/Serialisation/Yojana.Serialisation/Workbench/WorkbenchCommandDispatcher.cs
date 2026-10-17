@@ -15,7 +15,7 @@ namespace Yojana.Serialisation.Workbench;
 /// <summary>
 /// Narrow command seam for the workbench. It translates an opaque answer into the existing preview or command message;
 /// it owns no correction rule and always overwrites identity, route metadata and approvers with trusted values.
-/// TIGHT COUPLING: every adapter command id is mirrored by WorkbenchChoiceRules.AvailableCommands because settings must
+/// TIGHT COUPLING: every inline adapter command id is mirrored by WorkbenchChoiceRules.InlineCommands because settings must
 /// reject dead-end routes before saving. There is no safe generic adapter; changing this switch requires changing that list.
 /// </summary>
 public sealed class WorkbenchCommandDispatcher(IMessageBus bus, ITenantContext tenant, BulkExecutor bulk)
@@ -134,6 +134,19 @@ public sealed class WorkbenchCommandDispatcher(IMessageBus bus, ITenantContext t
                     request.Reason, command.EventTime, committer.UserRef, command.LegalEntityId, request.Note, metadata, Committer(committer));
                 return await bus.InvokeAsync<CorrectionPreview>(preview, options, cancellationToken);
             }
+            case CorrectionCommand.CorrectReplacementLink:
+            {
+                var command = Read<CorrectReplacementLink>(request) with
+                {
+                    CommandId = request.CommandId, Reason = request.Reason, ActorRef = committer.UserRef,
+                    Note = request.Note, Correction = metadata, CommittedBy = Committer(committer),
+                };
+                ValidateUnitTarget(request.Target, command.RecordedReplacementUnitId);
+                return await bus.InvokeAsync<CorrectionPreview>(new PreviewCorrectReplacementLink(
+                    command.RecordedReplacementUnitId, command.ActualReplacementUnitId, command.Reason,
+                    command.EventTime, command.ActorRef, command.LegalEntityId, command.Note,
+                    command.Correction, command.CommittedBy), options, cancellationToken);
+            }
             case "entitlement.amend":
             case "entitlement.supersede":
             case "entitlement.attach_extended":
@@ -196,6 +209,11 @@ public sealed class WorkbenchCommandDispatcher(IMessageBus bus, ITenantContext t
             }, options, cancellationToken),
             CorrectionCommand.CorrectDocumentSerials => await CommitDocumentAsync(request, committer, metadata, options, cancellationToken),
             CorrectionCommand.CorrectSourceDocument => await bus.InvokeAsync<CorrectSourceDocumentResult>(Read<CorrectSourceDocument>(request) with
+            {
+                CommandId = request.CommandId, Reason = request.Reason, ActorRef = committer.UserRef, Note = request.Note,
+                Correction = metadata, CommittedBy = Committer(committer),
+            }, options, cancellationToken),
+            CorrectionCommand.CorrectReplacementLink => await bus.InvokeAsync<CorrectReplacementLinkResult>(Read<CorrectReplacementLink>(request) with
             {
                 CommandId = request.CommandId, Reason = request.Reason, ActorRef = committer.UserRef, Note = request.Note,
                 Correction = metadata, CommittedBy = Committer(committer),

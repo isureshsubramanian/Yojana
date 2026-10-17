@@ -295,6 +295,7 @@ public static class CorrectionCommand
     public const string ReassignAllocation = "reassign_allocation";
     public const string CorrectDocumentSerials = "correct_document_serials";
     public const string CorrectSourceDocument = "correct_source_document";
+    public const string CorrectReplacementLink = "correct_replacement_link";
     public const string AmendEntitlement = "amend_entitlement";
     public const string SupersedeEntitlement = "supersede_entitlement";
     public const string VoidEntitlement = "void_entitlement";
@@ -306,7 +307,7 @@ public static class CorrectionCommand
     public static readonly IReadOnlyList<string> All =
     [
         CorrectIdentifier, SwapIdentifiers, CorrectItem, CorrectAsBuilt, LateSerialization, VoidUnit, MergeUnits,
-        AssignIdentifiers, ReassignAllocation, CorrectDocumentSerials, CorrectSourceDocument, AmendEntitlement,
+        AssignIdentifiers, ReassignAllocation, CorrectDocumentSerials, CorrectSourceDocument, CorrectReplacementLink, AmendEntitlement,
         SupersedeEntitlement, VoidEntitlement, TransferEntitlement, BackfillEntitlements, AttachExtendedWarranty,
         CloseEntitlement,
     ];
@@ -484,6 +485,16 @@ public static class CorrectSourceDocumentReason
     public const string WrongDeliverySelected = "wrong_delivery_selected";
     public const string InvoiceSplitError = "invoice_split_error";
     public static readonly IReadOnlyList<string> All = [ReleasedUnderWrongOrder, WrongDeliverySelected, InvoiceSplitError];
+}
+
+public static class CorrectReplacementLinkReason
+{
+    public const string WrongUnitScannedAtShipping = "wrong_unit_scanned_at_shipping";
+    public const string WrongUnitRecorded = "wrong_unit_recorded";
+    public const string ReplacementReturnedAndSwapped = "replacement_returned_and_swapped";
+
+    public static readonly IReadOnlyList<string> All =
+        [WrongUnitScannedAtShipping, WrongUnitRecorded, ReplacementReturnedAndSwapped];
 }
 
 /// <summary>Disposition of a unit in <c>unit_current</c> (CBV 2.0 terms where one exists).</summary>

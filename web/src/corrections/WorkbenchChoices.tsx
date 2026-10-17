@@ -24,6 +24,7 @@ const COMMANDS: Record<string, { label: string; root: number; reason: string; co
   correct_as_built: { label: "CorrectAsBuilt", root: 5, reason: "component_not_captured", commitRoles: ["production_supervisor", "quality"] },
   assign_identifiers: { label: "AssignIdentifiers", root: 6, reason: "vendor_list", commitRoles: ["production_supervisor"] },
   late_serialization: { label: "LateSerialization", root: 6, reason: "coding_error_at_item_setup", commitRoles: ["item_master_owner"] },
+  correct_replacement_link: { label: "CorrectReplacementLink", root: 2, reason: "wrong_unit_recorded", commitRoles: ["service_manager"] },
   "entitlement.amend": { label: "AmendEntitlement", root: 7, reason: "correction", commitRoles: ["service_manager"] },
 };
 

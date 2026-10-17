@@ -251,6 +251,15 @@ public static class TransferEntitlementHandler
     private static readonly DateOnly EuEffectiveDate = new(2026, 7, 31);
 
     public static async Task<TransferEntitlementResult> Handle(TransferEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
+        => await TransferAsync(command, db, ledger, tenant, clock, corrections, true, cancellationToken);
+
+    /// <summary>
+    /// Reusable transfer seam for a correction that owns one correction_record across its compensating entitlement
+    /// facts. The caller supplies already-validated metadata and records that parent correction once.
+    /// </summary>
+    internal static async Task<TransferEntitlementResult> TransferAsync(TransferEntitlement command, SerialisationDbContext db,
+        EntitlementLedger ledger, ITenantContext tenant, IClock clock, CorrectionLedger? corrections, bool recordCorrection,
+        CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var source = await ledger.LoadAsync(command.SourceEntitlementId, cancellationToken);
@@ -282,8 +291,12 @@ public static class TransferEntitlementHandler
                 : null;
         if (policy is null) throw new CommandRefusedException("replacement_policy_unknown", command.ReplacementPolicyCode is null ? "The source policy has no replacement policy." : $"Replacement policy '{command.ReplacementPolicyCode}' does not exist.");
 
-        var metadata = await corrections.PrepareAsync(CorrectionCommand.TransferEntitlement, command.Correction, command.CommandId, EntitlementTransferReason.Replacement, null,
-            null, command.EventTime, CorrectionInitiatingRole.ServiceTechnician, cancellationToken);
+        var metadata = recordCorrection
+            ? await corrections!.PrepareAsync(CorrectionCommand.TransferEntitlement, command.Correction, command.CommandId,
+                EntitlementTransferReason.Replacement, null, null, command.EventTime,
+                CorrectionInitiatingRole.ServiceTechnician, cancellationToken)
+            : command.Correction ?? throw new CommandRefusedException("correction_metadata_required",
+                "An orchestrated entitlement transfer needs its parent correction metadata.");
 
         var rootId = source.RootEntitlementId ?? source.EntitlementId;
         if (policy.Rule == ReplacementRule.StatutoryExtensionOnce)
@@ -334,7 +347,9 @@ public static class TransferEntitlementHandler
             source_entitlement_id = source.EntitlementId, target_entitlement_id = target.EntitlementId, source_unit_id = source.UnitId, target_unit_id = target.UnitId,
             replacement_link_id = command.ReplacementLinkId, policy_applied = policy.Code, computed_end = computedEnd, root_entitlement_id = rootId, chain_length = chainLength, accrual_suppressed = true,
         }, null, cancellationToken, eventId, metadata);
-        await corrections.RecordAsync(CorrectionCommand.TransferEntitlement, metadata, command.ActorRef, command.EventTime, [source.UnitId, target.UnitId], cancellationToken);
+        if (recordCorrection)
+            await corrections!.RecordAsync(CorrectionCommand.TransferEntitlement, metadata, command.ActorRef, command.EventTime,
+                [source.UnitId, target.UnitId], cancellationToken);
         return new(source.EntitlementId, target.EntitlementId, rootId, policy.Code, computedEnd, chainLength, eventId, false);
     }
 

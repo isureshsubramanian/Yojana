@@ -32,6 +32,7 @@ public sealed class WarrantyReplacementQueries(SerialisationDbContext db, ITenan
         var data = await (from document in db.WarrantyReplacements.AsNoTracking()
                           join link in db.ReplacementLinks.AsNoTracking() on new { document.TenantId, document.WarrantyReplacementId } equals new { link.TenantId, link.WarrantyReplacementId }
                           where document.TenantId == tenantId && document.WarrantyReplacementId == id
+                              && link.State != ReplacementLinkState.Corrected
                           select new { Document = document, Link = link }).FirstOrDefaultAsync(cancellationToken);
         if (data is null) return null;
         var lines = await db.WarrantyReplacementLines.AsNoTracking().Where(row => row.TenantId == tenantId && row.WarrantyReplacementId == id)

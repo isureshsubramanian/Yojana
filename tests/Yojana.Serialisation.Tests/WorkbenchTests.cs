@@ -9,13 +9,13 @@ namespace Yojana.Serialisation.Tests;
 public sealed class WorkbenchTests
 {
     [Fact]
-    public void Standard_catalog_maps_every_phase_three_choice_to_existing_commands()
+    public void Standard_catalog_maps_every_enabled_choice_to_an_inline_command_or_screen_handoff()
     {
         var choices = StandardWorkbenchChoices.All.Where(c => !c.Fallback).ToList();
 
-        Assert.Equal(8, choices.Count);
-        Assert.DoesNotContain(choices, c => c.Choice == CorrectionWorkbenchChoice.ReplacedOrExchanged);
-        Assert.DoesNotContain(choices, c => c.Choice == CorrectionWorkbenchChoice.RefurbishedAndReserialised);
+        Assert.Equal(10, choices.Count);
+        Assert.Contains(choices, c => c.Choice == CorrectionWorkbenchChoice.ReplacedOrExchanged);
+        Assert.Contains(choices, c => c.Choice == CorrectionWorkbenchChoice.RefurbishedAndReserialised);
         Assert.All(choices, choice =>
         {
             Assert.NotEmpty(choice.Commands);

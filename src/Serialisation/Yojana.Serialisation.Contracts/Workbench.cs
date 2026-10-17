@@ -10,6 +10,13 @@ public static class WorkbenchTargetKind
     public const string SelectionSet = "selection_set";
 }
 
+/// <summary>Routes that hand the workbench to a sibling-owned document screen instead of adapting that command inline.</summary>
+public static class WorkbenchRouteCommand
+{
+    public const string ShipWarrantyReplacement = "replacement.ship";
+    public const string ReleaseRefurbishment = "refurbishment.release";
+}
+
 /// <summary>One of the P1 lookup and selection-set entry points understood by the correction workbench.</summary>
 public sealed record WorkbenchEntry(
     string Kind,

@@ -5,6 +5,7 @@ import {
   buildCorrectAsBuiltArguments,
   buildCorrectDocumentSerialsArguments,
   buildCorrectSourceDocumentArguments,
+  buildCorrectReplacementLinkArguments,
   buildLateSerializationArguments,
 } from "../src/corrections/workbenchForms.ts";
 
@@ -104,6 +105,21 @@ test("CorrectSourceDocument arguments match the T17 selection and before/after d
     selection_id: "a0000000-0000-0000-0000-000000000001",
     previous_document: { type: "delivery", id: "b0000000-0000-0000-0000-000000000001" },
     corrected_document: { type: "delivery", id: "b0000000-0000-0000-0000-000000000002" },
+    reason: "",
+    event_time: context.eventTime,
+    actor_ref: "",
+    legal_entity_id: context.legalEntityId,
+  });
+});
+
+test("CorrectReplacementLink arguments keep the recorded and actual units distinct", () => {
+  assert.deepEqual(buildCorrectReplacementLinkArguments({
+    recordedReplacementUnitId: "c0000000-0000-0000-0000-000000000001",
+    actualReplacementUnitId: "c0000000-0000-0000-0000-000000000002",
+  }, context), {
+    command_id: EMPTY_COMMAND_ID,
+    recorded_replacement_unit_id: "c0000000-0000-0000-0000-000000000001",
+    actual_replacement_unit_id: "c0000000-0000-0000-0000-000000000002",
     reason: "",
     event_time: context.eventTime,
     actor_ref: "",
