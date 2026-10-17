@@ -228,6 +228,9 @@ public static class UnitEventType
     public const string Released = "unit.released";
     public const string Scrapped = "unit.scrapped";
     public const string Voided = "unit.voided";
+    public const string Merged = "unit.merged";
+    public const string MergeReversed = "unit.merge_reversed";
+    public const string VendorSerialDuplicateAcknowledged = "unit.vendor_serial_duplicate_acknowledged";
     public const string Decommissioned = "unit.decommissioned";
     public const string FlagSet = "unit.flag_set";
     public const string FlagCleared = "unit.flag_cleared";

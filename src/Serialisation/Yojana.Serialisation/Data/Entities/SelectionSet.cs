@@ -43,6 +43,8 @@ public sealed class SelectionSetMember : ITenantScoped
 
     public Guid UnitId { get; set; }
 
+    public Guid? MergedFromUnitId { get; set; }
+
     public string? Serial { get; set; }
 
     /// <summary>Outcome of the last preview or execution (change, skip, block, done, failed), null before any preview.</summary>

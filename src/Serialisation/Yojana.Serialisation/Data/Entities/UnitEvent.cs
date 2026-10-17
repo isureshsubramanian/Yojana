@@ -18,6 +18,9 @@ public abstract class UnitEventRow : ITenantScoped
 
     public Guid UnitId { get; set; }
 
+    /// <summary>The alias unit this fact belonged to before MergeUnits made it reachable from the survivor.</summary>
+    public Guid? MergedFromUnitId { get; set; }
+
     /// <summary>From <c>seq_unit_event</c>; monotonic, so per-tenant monotonic. Guards the projector.</summary>
     public long Seq { get; set; }
 

@@ -167,6 +167,8 @@ public sealed class Entitlement : ITenantScoped
 
     public Guid UnitId { get; set; }
 
+    public Guid? MergedFromUnitId { get; set; }
+
     public required string Scope { get; set; }
 
     public Guid? ScopeChildUnitId { get; set; }
@@ -328,6 +330,8 @@ public sealed class EntitlementRequirement : ITenantScoped
     public Guid RequirementId { get; set; }
 
     public Guid UnitId { get; set; }
+
+    public Guid? MergedFromUnitId { get; set; }
 
     public Guid OwnershipEpisodeId { get; set; }
 

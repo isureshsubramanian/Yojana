@@ -17,6 +17,9 @@ namespace Yojana.Serialisation.Projections;
 /// the units with events but no row, and a random sample of <c>pageSize</c> rows whose seq agrees, which catches
 /// silent corruption of a row's fields. Divergence is reported field by field and, when asked, repaired by
 /// overwriting the row with the folded state (the ledger is the truth).
+/// HIDDEN COUPLING with MergeUnitsHandler: a re-pointed absorbed fact has <c>merged_from_unit_id</c>. Its original delta
+/// describes the alias, not the survivor, so replay advances through its seq but never folds that delta. Removing this
+/// check makes an absorbed commissioning fact replace survivor state; omitting the fact loses reachable history.
 /// </summary>
 public sealed class UnitCurrentHealer(SerialisationDbContext db, ITenantContext tenant, ILogger<UnitCurrentHealer> logger)
 {
@@ -125,12 +128,12 @@ public sealed class UnitCurrentHealer(SerialisationDbContext db, ITenantContext 
     /// <summary>Folds the unit's deltas in seq order into a fresh row; null when no event created current state.</summary>
     public async Task<UnitCurrent?> FoldAsync(TenantId tenantId, Guid unitId, CancellationToken cancellationToken)
     {
-        var live = await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == unitId).Select(e => new { e.Seq, e.EventTime, e.Attributes }).ToListAsync(cancellationToken);
-        var archived = await db.ArchivedEvents.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == unitId).Select(e => new { e.Seq, e.EventTime, e.Attributes }).ToListAsync(cancellationToken);
+        var live = await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == unitId).Select(e => new { e.Seq, e.EventTime, e.Attributes, e.MergedFromUnitId }).ToListAsync(cancellationToken);
+        var archived = await db.ArchivedEvents.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == unitId).Select(e => new { e.Seq, e.EventTime, e.Attributes, e.MergedFromUnitId }).ToListAsync(cancellationToken);
         UnitCurrent? row = null;
         foreach (var e in live.Concat(archived).OrderBy(e => e.Seq))
         {
-            var delta = e.Attributes is null ? null : DeltaOf(e.Attributes);
+            var delta = e.MergedFromUnitId is not null || e.Attributes is null ? null : DeltaOf(e.Attributes);
             if (delta?.Create is { } create)
             {
                 row = new UnitCurrent { TenantId = tenantId, UnitId = unitId, ItemId = create.ItemId, ModelVersionId = create.ModelVersionId, LotId = create.LotId, LifecycleStatus = create.LifecycleStatus, Disposition = create.Disposition };
@@ -148,6 +151,23 @@ public sealed class UnitCurrentHealer(SerialisationDbContext db, ITenantContext 
 
             row.LastEventSeq = e.Seq;
             row.LastEventTime = e.EventTime;
+        }
+
+        // MergeUnits deliberately moves every pre-merge fact to the survivor. The alias therefore has no creating fact;
+        // its retained current row is the readable alias projection and the merge fact is its ledger authority.
+        if (row is null && live.Concat(archived).Any())
+        {
+            var alias = await db.Units.AsNoTracking().AnyAsync(u => u.TenantId == tenantId && u.UnitId == unitId && u.LifecycleStatus == Yojana.Serialisation.Contracts.LifecycleStatus.Merged, cancellationToken);
+            if (alias)
+            {
+                row = await db.Current.AsNoTracking().FirstOrDefaultAsync(c => c.TenantId == tenantId && c.UnitId == unitId, cancellationToken);
+                if (row is not null)
+                {
+                    var last = live.Concat(archived).MaxBy(e => e.Seq)!;
+                    row.LastEventSeq = last.Seq;
+                    row.LastEventTime = last.EventTime;
+                }
+            }
         }
 
         return row;

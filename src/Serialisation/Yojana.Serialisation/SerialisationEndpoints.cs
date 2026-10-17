@@ -42,6 +42,14 @@ public static class SerialisationEndpoints
         units.MapPost("/assign-identifier", (AssignIdentifier command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<AssignIdentifierResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/correct-identifier", (CorrectIdentifier command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<CorrectIdentifierResult>(bus, tenant, command with { ActorRef = Actor(user), Correction = ApiCorrection(command, user) }, ct));
+        units.MapPost("/merge/preview", (PreviewMergeUnits command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<MergeUnitsPreviewResult>(bus, tenant, command with { CommittedBy = CorrectionCommitter(user) }, ct));
+        units.MapPost("/merge", (MergeUnits command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<MergeUnitsResult>(bus, tenant, command with
+            {
+                ActorRef = Actor(user), CommittedBy = CorrectionCommitter(user),
+                Correction = ApiCorrection(command.Correction, command.CommandId, command.Reason, command.Note, user),
+            }, ct));
         units.MapPost("/release", (ReleaseUnit command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ReleaseUnitResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/assemble", (RecordAssembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordAssemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/disassemble", (RecordDisassembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordDisassemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
@@ -273,6 +281,9 @@ public static class SerialisationEndpoints
     private static AmendmentCommitter Committer(ClaimsPrincipal user) =>
         new(user.FindFirstValue(YojanaClaim.UserId) ?? throw new InvalidOperationException("A signed-in user carries a user id claim."), user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToList());
 
+    private static CorrectionCommitter CorrectionCommitter(ClaimsPrincipal user) =>
+        new(Actor(user), user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToList());
+
     private static BulkApproval Approver(ClaimsPrincipal user, BulkApproval? given)
     {
         var committer = Committer(user);
@@ -280,12 +291,14 @@ public static class SerialisationEndpoints
     }
 
     private static CorrectionMetadata ApiCorrection(CorrectIdentifier command, ClaimsPrincipal user)
+        => ApiCorrection(command.Correction, command.CommandId, command.Reason, command.Note, user);
+
+    private static CorrectionMetadata ApiCorrection(CorrectionMetadata? supplied, Guid commandId, string reason, string? note, ClaimsPrincipal user)
     {
-        var supplied = command.Correction;
         return new CorrectionMetadata(
-            supplied?.CorrectionId ?? command.CommandId,
-            supplied?.ReasonCode ?? command.Reason,
-            supplied?.Note ?? command.Note,
+            supplied?.CorrectionId ?? commandId,
+            supplied?.ReasonCode ?? reason,
+            supplied?.Note ?? note,
             supplied?.EvidenceRefs ?? [],
             supplied?.InitiatedVia ?? CorrectionInitiatedVia.Api,
             supplied?.CorrectsCorrectionId,
