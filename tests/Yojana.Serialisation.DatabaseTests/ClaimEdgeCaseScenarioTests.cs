@@ -18,8 +18,8 @@ P4-T10 coverage map (one end-to-end database scenario per owned case):
   78  -> Case_78_parts_are_covered_labour_is_not_and_a_chargeable_quote_is_requested
   108 -> Case_108_a_recall_notice_uses_the_owner_and_custodian_after_resale
 
-Reference scenario step 2 and exit criterion 1 are already covered exactly by
-ClaimTests.Reference_claim_is_approved_for_replacement_and_publishes_the_warranty_cohort.
+Reference scenario step 2 and exit criterion 1 are replayed by
+P4ExitTests.Reference_scenario_step_2_replays_from_recorded_messages_and_publishes_the_February_cohort.
 */
 
 /// <summary>P4-T10: claim and campaign edge cases through public commands and the published outbox.</summary>

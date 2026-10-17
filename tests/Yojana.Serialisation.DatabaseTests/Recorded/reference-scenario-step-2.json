@@ -1,0 +1,65 @@
+{
+  "name": "reference-scenario-step-2",
+  "description": "ADR-0001 reference scenario, step 2: create E1 from the recorded delivery, submit claim C1 with the consumer's replacement choice, and adjudicate it.",
+  "messages": [
+    {
+      "type": "CreateEntitlement",
+      "commandId": "77777777-0000-0000-0000-00000000a001",
+      "serial": "{p}-493445",
+      "coverageFamily": "base_warranty",
+      "policyCode": "REF-12",
+      "contractDate": "2026-02-01",
+      "obligorEntityId": "44444444-0000-0000-0000-00000000d001",
+      "eventTime": "2026-02-03T11:05:00Z",
+      "actorRef": "sales.delivery",
+      "evidence": {
+        "deliver": "2026-02-03T11:05:00Z"
+      },
+      "ownerPartyRef": "33333333-0000-0000-0000-00000000c001",
+      "ownerPartyType": "customer",
+      "country": "DE"
+    },
+    {
+      "type": "SubmitClaim",
+      "commandId": "77777777-0000-0000-0000-00000000a002",
+      "serial": "{p}-493445",
+      "claimDate": "2026-09-01",
+      "claimantPartyRef": "33333333-0000-0000-0000-00000000c001",
+      "settlementPartyRef": "33333333-0000-0000-0000-00000000c001",
+      "serviceEntityId": "44444444-0000-0000-0000-00000000d001",
+      "obligorEntityId": "44444444-0000-0000-0000-00000000d001",
+      "serviceCountry": "DE",
+      "currency": "EUR",
+      "lines": [
+        {
+          "kind": "parts",
+          "coverageFamily": "base_warranty",
+          "requestedAmount": 100
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "attachment",
+          "reference": "evidence:defect-report"
+        }
+      ],
+      "remedy": "replacement",
+      "consumerChoiceEvidenceRef": "evidence:replacement-choice",
+      "eventTime": "2026-09-01T09:00:00Z",
+      "actorRef": "service.desk"
+    },
+    {
+      "type": "AdjudicateClaim",
+      "commandId": "77777777-0000-0000-0000-00000000a003",
+      "claimCommandId": "77777777-0000-0000-0000-00000000a002",
+      "eventTime": "2026-09-02T09:00:00Z",
+      "actorRef": "service.manager"
+    }
+  ],
+  "expect": {
+    "status": "approved",
+    "coverageSource": "warranty",
+    "remedy": "replacement",
+    "cohortPeriod": "2026-02"
+  }
+}
