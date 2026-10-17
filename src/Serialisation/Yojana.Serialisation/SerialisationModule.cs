@@ -54,9 +54,11 @@ public static class SerialisationModule
         builder.Services.AddScoped<UnitQueries>();
         builder.Services.AddScoped<SerialRangeQueries>();
         builder.Services.AddScoped<CompletenessQueries>();
+        builder.Services.AddScoped<AwaitingVendorSerialQueries>();
         builder.Services.AddScoped<BulkExecutor>();
         builder.Services.AddScoped<BulkApprovalRequestQueries>();
         builder.Services.AddScoped<CorrectionLedger>();
+        builder.Services.AddScoped<AssignIdentifiersService>();
         // Coupled to CorrectionApprovalSettings for the same Wolverine constraint documented on that type: replacing
         // this factory with constructor registration exposes PlatformDbContext beside SerialisationDbContext and stops host startup.
         builder.Services.AddScoped(sp => new CorrectionApprovalSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));

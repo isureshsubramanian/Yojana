@@ -30,6 +30,8 @@ public static class OverlayFlag
     public const string CloneSeen = "clone_seen";
     public const string Recalled = "recalled";
     public const string AuthenticityFailed = "authenticity_failed";
+    /// <summary>The production order has not yet supplied this unit's real serial.</summary>
+    public const string AwaitingVendorSerial = "awaiting_vendor_serial";
 }
 
 /// <summary>How a unit came into the tenant's world.</summary>

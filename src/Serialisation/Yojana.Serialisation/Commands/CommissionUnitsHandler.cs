@@ -157,6 +157,9 @@ public static class CommissionUnitsHandler
                 attributes["derived_from_unit_id"] = reuse.ScrappedUnit;
             }
 
+            // CONTRACT with AssignIdentifiers: a production-order creating fact retains its document, and this batch's
+            // event order becomes ledger seq order. Plain vendor lists use that persisted order for deterministic pairing;
+            // dropping the document or reordering these drafts assigns serials to different physical units.
             batchEvents.Add(new UnitEventDraft
             {
                 UnitId = unitId, EventTime = command.EventTime, EventType = eventType, PresetEventId = eventId,
