@@ -27,6 +27,8 @@ public sealed class Claim : ITenantScoped
     public int ChainLength { get; set; }
     public DateTime SubmittedAt { get; set; }
     public DateTime? AdjudicatedAt { get; set; }
+    public string? AdjudicatedBy { get; set; }
+    public string? ReviewerRole { get; set; }
     public DateTime? SettledAt { get; set; }
     public DateTime? ClosedAt { get; set; }
     public required string SubmittedBy { get; set; }

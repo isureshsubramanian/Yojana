@@ -33,7 +33,9 @@ public sealed record CommissionUnits(
     string? Source = null,
     bool SkipInvalidLines = false,
     /// <summary>Case 22: a trade-in of a foreign brand gets a unit and a graded value but is not ours; null = true except for trade-ins.</summary>
-    bool? BrandIsOurs = null);
+    bool? BrandIsOurs = null,
+    /// <summary>How much earlier history is known; claim reconstruction and migration use opening-only instead of inventing facts.</summary>
+    string HistoryDepth = Yojana.Serialisation.Contracts.HistoryDepth.Full);
 
 public sealed record CommissionLineResult(int Index, string? ClientReference, Guid? UnitId, string Outcome, IReadOnlyList<string> Reasons)
 {

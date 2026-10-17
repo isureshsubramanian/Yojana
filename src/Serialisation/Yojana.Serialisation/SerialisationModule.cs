@@ -121,6 +121,10 @@ public static class SerialisationModule
         builder.Services.AddScoped<ClaimLedger>();
         builder.Services.AddScoped<ClaimUnitFacts>();
         builder.Services.AddScoped<ClaimQueries>();
+        builder.Services.AddScoped<LegacyUnknownClaimUnitCreator>();
+        // Coupled to ClaimReviewSettings for the same Wolverine constraint as entitlement approval settings: the
+        // factory hides ITenantSettings' PlatformDbContext from AdjudicateClaimHandler's transactional graph.
+        builder.Services.AddScoped(sp => new ClaimReviewSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.TryAddScoped<IWarrantyClaimsPort, WarrantyClaimsPort>();
         builder.Services.TryAddScoped<ISettlementFormulaPort, FullSettlementFormula>();
         builder.Services.TryAddScoped<IEntitlementRecoveryQuery, Entitlements.RecoveryEntitlementQueries>();

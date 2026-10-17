@@ -53,6 +53,10 @@ public static class CommissionUnitsHandler
         {
             throw new CommandRefusedException("origin_unknown", $"Origin '{command.Origin}' is not a UnitOrigin value.");
         }
+        if (!HistoryDepthIsKnown(command.HistoryDepth))
+        {
+            throw new CommandRefusedException("history_depth_unknown", $"History depth '{command.HistoryDepth}' is not a HistoryDepth value.");
+        }
 
         // Replay: lines whose creating event already exists come back with their unit ids and nothing is written.
         var lineKeys = command.Lines.Select((_, i) => IdempotencyKey.For(Source, "command", command.CommandId, i, Guid.Empty, UnitEventType.Commissioned, command.EventTime)).ToList();
@@ -228,6 +232,7 @@ public static class CommissionUnitsHandler
             var attributes = new Dictionary<string, object?>
             {
                 ["command_id"] = command.CommandId, ["line"] = index, ["item_code"] = profile.ItemCode, ["origin"] = command.Origin,
+                ["history_depth"] = command.HistoryDepth,
                 ["identifiers"] = ids.Select(id => new { type = id.Input.Type, scheme = id.Policy.Scheme, value = id.Normalised, issuer_party_ref = id.Input.IssuerPartyRef }).ToList(),
             };
             if (commissionedLate) attributes["commissioned_late"] = true;
@@ -260,7 +265,7 @@ public static class CommissionUnitsHandler
             {
                 TenantId = tenantId, UnitId = unitId, LifecycleStatus = status, Origin = command.Origin, LotId = line.LotId, ExpiryDate = line.ExpiryDate, BrandIsOurs = command.BrandIsOurs ?? command.Origin != UnitOrigin.TradeIn,
                 DerivedFromUnitId = reuseFrom.TryGetValue(index, out var r) ? r.SourceUnit : null,
-                SerialisationPoint = profile.SerialisationPoint, RetentionClass = profile.RetentionClass, CreatedAt = now, CreatedEventId = eventId,
+                SerialisationPoint = profile.SerialisationPoint, RetentionClass = profile.RetentionClass, HistoryDepth = command.HistoryDepth, CreatedAt = now, CreatedEventId = eventId,
             });
             identifierRows.AddRange(ids.Select(id => id.ToRow(tenantId, unitId, command.EventTime, command.ActorRef, now, eventId)));
             assignments.Add(new UnitItemAssignment { TenantId = tenantId, AssignmentId = TimeOrderedId.New(command.EventTime), UnitId = unitId, ItemId = command.ItemId, ModelVersionId = command.ModelVersionId, ValidFrom = command.EventTime, Reason = ItemAssignmentReason.Initial, EventId = eventId });
@@ -311,4 +316,6 @@ public static class CommissionUnitsHandler
     }
 
     private static bool UnitOriginIsKnown(string origin) => origin is UnitOrigin.Manufactured or UnitOrigin.Purchased or UnitOrigin.VendorAsn or UnitOrigin.TradeIn or UnitOrigin.CustomerSupplied or UnitOrigin.LegacyUnknown or UnitOrigin.Migrated;
+
+    private static bool HistoryDepthIsKnown(string historyDepth) => historyDepth is HistoryDepth.Full or HistoryDepth.Partial or HistoryDepth.OpeningOnly;
 }

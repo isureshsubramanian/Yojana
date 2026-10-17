@@ -1,4 +1,5 @@
 using Xunit;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Contracts;
@@ -52,6 +53,23 @@ public sealed class ClaimRulesTests
     [InlineData(OverlayFlag.Recalled)]
     [InlineData(OverlayFlag.AuthenticityFailed)]
     public void Every_claim_overlay_blocks_with_its_name(string flag) => Assert.Equal(flag, ClaimAdjudicationRules.BlockingFlag([flag]));
+
+    [Fact]
+    public void Low_confidence_cover_names_the_required_reviewer_rule()
+    {
+        var refusal = Assert.Throws<CommandRefusedException>(() =>
+            ClaimAdjudicationRules.RequireLowConfidenceReviewer(null, "reviewer-1", YojanaRole.ServiceManager));
+
+        Assert.Equal("low_confidence_reviewer_required", refusal.Rule);
+        Assert.Contains(YojanaRole.ServiceManager, refusal.Message);
+    }
+
+    [Fact]
+    public void Low_confidence_cover_accepts_the_named_reviewer_role()
+    {
+        ClaimAdjudicationRules.RequireLowConfidenceReviewer(
+            new ClaimReviewer("reviewer-1", [YojanaRole.ServiceManager]), "reviewer-1", YojanaRole.ServiceManager);
+    }
 
     [Fact]
     public async Task Full_formula_applies_the_line_coverage_percentage()

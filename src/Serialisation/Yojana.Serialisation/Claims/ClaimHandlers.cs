@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Identifiers;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Contracts;
@@ -15,13 +16,20 @@ namespace Yojana.Serialisation.Claims;
 public static class SubmitClaimHandler
 {
     public static async Task<SubmitClaimResult> Handle(SubmitClaim command, SerialisationDbContext db, UnitQueries units, ClaimUnitFacts facts,
-        ClaimLedger ledger, ITenantContext tenant, CancellationToken cancellationToken)
+        ClaimLedger ledger, LegacyUnknownClaimUnitCreator legacyUnits, ITenantContext tenant, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         if (await db.Claims.AsNoTracking().FirstOrDefaultAsync(c => c.TenantId == tenantId && c.CommandId == command.CommandId, cancellationToken) is { } replay)
         {
             var replayLines = await db.ClaimLines.AsNoTracking().Where(l => l.TenantId == tenantId && l.ClaimId == replay.ClaimId).OrderBy(l => l.Sequence).Select(l => l.ClaimLineId).ToListAsync(cancellationToken);
             return new(replay.ClaimId, replay.UnitId, replay.Status, replayLines, replay.LastEventId, true);
+        }
+
+        if (command.Lines.Count == 0) throw new CommandRefusedException("claim_lines_required", "A claim must contain at least one line.");
+        if (!ClaimRemedy.All.Contains(command.Remedy)) throw new CommandRefusedException("claim_remedy_invalid", $"'{command.Remedy}' is not a claim remedy.");
+        if (string.IsNullOrWhiteSpace(command.ConsumerChoiceEvidenceRef))
+        {
+            throw new CommandRefusedException("consumer_choice_evidence_required", "The consumer's informed repair-or-replacement choice must be recorded as evidence.");
         }
 
         var unitId = command.UnitId;
@@ -34,19 +42,13 @@ public static class SubmitClaimHandler
             if (unitId == Guid.Empty) unitId = null;
         }
 
+        var claimId = TimeOrderedId.New(command.EventTime);
         if (unitId is null)
         {
-            throw new CommandRefusedException("unit_record_required", "A claim needs an existing unit id or an identifier that resolves to one.",
-                "create the legacy unit through P4-T04 before submitting this claim");
+            unitId = await legacyUnits.CreateAsync(command, claimId, cancellationToken);
         }
 
         await facts.ReadAsync(unitId.Value, cancellationToken);
-        if (command.Lines.Count == 0) throw new CommandRefusedException("claim_lines_required", "A claim must contain at least one line.");
-        if (!ClaimRemedy.All.Contains(command.Remedy)) throw new CommandRefusedException("claim_remedy_invalid", $"'{command.Remedy}' is not a claim remedy.");
-        if (string.IsNullOrWhiteSpace(command.ConsumerChoiceEvidenceRef))
-        {
-            throw new CommandRefusedException("consumer_choice_evidence_required", "The consumer's informed repair-or-replacement choice must be recorded as evidence.");
-        }
 
         var asBuilt = await facts.AsBuiltUnitsAsync(unitId.Value, command.ClaimDate, cancellationToken);
         foreach (var line in command.Lines)
@@ -60,7 +62,6 @@ public static class SubmitClaimHandler
         }
 
         var eventId = ClaimLedger.EventId(command.EventTime);
-        var claimId = TimeOrderedId.New(command.EventTime);
         var claim = new Claim
         {
             TenantId = tenantId, ClaimId = claimId, CommandId = command.CommandId, UnitId = unitId.Value, ClaimDate = command.ClaimDate,
@@ -106,7 +107,8 @@ public static class SubmitClaimHandler
 public static class AdjudicateClaimHandler
 {
     public static async Task<AdjudicateClaimResult> Handle(AdjudicateClaim command, SerialisationDbContext db, ClaimLedger ledger, ClaimUnitFacts facts,
-        PolicyResolver policies, ISettlementFormulaPort formulas, IEntitlementRecoveryQuery recoveries, ITenantContext tenant, CancellationToken cancellationToken)
+        PolicyResolver policies, ISettlementFormulaPort formulas, IEntitlementRecoveryQuery recoveries, ClaimReviewSettings reviewSettings,
+        ITenantContext tenant, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var claim = await ledger.LoadAsync(command.ClaimId, cancellationToken);
@@ -178,6 +180,33 @@ public static class AdjudicateClaimHandler
         if (cohorts.Count > 1) throw new CommandRefusedException("multiple_accrual_cohorts", "One claim cannot draw down more than one warranty accrual cohort.", "split the lines by accrual cohort");
         if (obligors.Count > 1) throw new CommandRefusedException("multiple_obligors", "One claim cannot be posted to more than one obligor.", "split the lines by obligor");
 
+        var selectedEntitlementIds = lines.Select(l => l.EntitlementId).OfType<Guid>().Distinct().ToList();
+        var lowConfidence = selectedEntitlementIds.Count > 0 && await db.Entitlements.AsNoTracking()
+            .AnyAsync(e => e.TenantId == tenantId && selectedEntitlementIds.Contains(e.EntitlementId) && e.Confidence == Confidence.Low, cancellationToken);
+        if (lowConfidence)
+        {
+            var reviewPolicy = await reviewSettings.GetAsync(cancellationToken);
+            ClaimAdjudicationRules.RequireLowConfidenceReviewer(command.ReviewedBy, command.ActorRef, reviewPolicy.LowConfidenceReviewerRole);
+            claim.AdjudicatedBy = command.ReviewedBy!.UserRef;
+            claim.ReviewerRole = reviewPolicy.LowConfidenceReviewerRole;
+        }
+        else
+        {
+            if (command.ReviewedBy is { } reviewer)
+            {
+                // HTTP always supplies the signed-in reviewer. Internal callers that pre-date reviewer evidence remain
+                // trusted for ordinary cover; they can never pass the low-confidence branch above without it.
+                ClaimAdjudicationRules.RequireStandardAdjudicator(reviewer, command.ActorRef);
+                claim.AdjudicatedBy = reviewer.UserRef;
+                claim.ReviewerRole = YojanaRole.ServiceManager;
+            }
+            else
+            {
+                claim.AdjudicatedBy = command.ActorRef;
+                claim.ReviewerRole = null;
+            }
+        }
+
         var totalApproved = lines.Sum(l => l.ApprovedAmount);
         var fullyCovered = lines.All(l => l.DenialReason is null && l.ApprovedAmount == l.RequestedAmount);
         var outcome = fullyCovered ? ClaimStatus.Approved : totalApproved > 0 ? ClaimStatus.PartiallyApproved : ClaimStatus.Denied;
@@ -204,7 +233,7 @@ public static class AdjudicateClaimHandler
                     claim_id = claim.ClaimId, cohort_id = claim.CoverageSource == ClaimCoverageSource.Recall || cohorts.Count == 0 ? (Guid?)null : cohorts.Single(), coverage_source = claim.CoverageSource,
                     approved_amounts_by_line = lines.Select(l => new { claim_line_id = l.ClaimLineId, requested_amount = l.RequestedAmount, approved_amount = l.ApprovedAmount, coverage_pct = l.CoveragePct, coverage_source = l.CoverageSource, entitlement_id = l.EntitlementId }),
                     service_entity_id = claim.ServiceEntityId, obligor_entity_id = claim.ObligorEntityId, status = claim.Status, denial_reason = claim.DenialReason,
-                    chain_length = claim.ChainLength, remedy = claim.Remedy,
+                    chain_length = claim.ChainLength, remedy = claim.Remedy, adjudicated_by = claim.AdjudicatedBy, reviewer_role = claim.ReviewerRole,
                 }),
             },
         };

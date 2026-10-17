@@ -637,6 +637,11 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("adjudicated_at");
 
+                    b.Property<string>("AdjudicatedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("adjudicated_by");
+
                     b.Property<int>("ChainLength")
                         .HasColumnType("int")
                         .HasColumnName("chain_length");
@@ -697,6 +702,11 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)")
                         .HasColumnName("remedy");
+
+                    b.Property<string>("ReviewerRole")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("reviewer_role");
 
                     b.Property<string>("ServiceCountry")
                         .IsRequired()
