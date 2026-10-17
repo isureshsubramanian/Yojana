@@ -2401,9 +2401,19 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(20)")
                         .HasColumnName("status");
 
+                    b.Property<string>("VendorNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("vendor_note");
+
                     b.Property<Guid>("VendorPartyRef")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("vendor_party_ref");
+
+                    b.Property<string>("VendorReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("vendor_reference");
 
                     b.HasKey("TenantId", "RecoveryClaimId")
                         .HasName("pk_recovery_claim");

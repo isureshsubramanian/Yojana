@@ -53,6 +53,7 @@ export const router = createBrowserRouter([
           { path: "corrections/reassign-allocation", lazy: () => import("./corrections/AllocationReassign") },
           { path: "corrections/merge", lazy: () => import("./corrections/MergeUnits") },
           { path: "corrections/vendor-serials", lazy: () => import("./corrections/VendorSerials") },
+          { path: "claims/recovery", lazy: () => import("./recovery/RecoveryClaims") },
           { path: "settings/workbench-choices", lazy: () => import("./corrections/WorkbenchChoices") },
           { path: "claims/campaigns", lazy: () => import("./campaigns/Campaigns") },
           { path: "claims/campaigns/new", lazy: () => import("./campaigns/CampaignEditor") },

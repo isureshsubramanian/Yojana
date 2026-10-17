@@ -69,6 +69,12 @@ public interface IEntitlementRecoveryQuery
 
 public sealed record InboundRecoveryCoverage(Guid EntitlementId, Guid UnitId, Guid VendorPartyRef);
 
+/// <summary>The bounded as-built traversal shared by recovery raising and its operational audit read.</summary>
+public static class InboundRecoveryRules
+{
+    public const int MaximumAssemblyDepth = 5;
+}
+
 /// <summary>
 /// Whether a warranty certificate carrying this entitlement has been issued to the customer (certificates, P6). A
 /// reduction after issue needs the higher approval and a customer notification reference (case 140).

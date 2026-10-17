@@ -28,6 +28,7 @@ export const navigation: NavEntry[] = [
   { path: "/corrections", label: "Correction workbench", icon: "corr", section: "Work" },
   { path: "/claims", label: "Claims", icon: "claim", section: "Work", placeholder: "Claims, campaigns and supplier recovery" },
   { path: "/claims/campaigns", label: "Campaigns", icon: "claim", section: "Work" },
+  { path: "/claims/recovery", label: "Recovery claims", icon: "claim", section: "Work" },
   { path: "/rma", label: "RMA", icon: "rma", section: "Work", placeholder: "RMA, replacement and refurbishment" },
   { path: "/certificates", label: "Certificates", icon: "cert", section: "Work", placeholder: "Certificates and labels" },
   { path: "/imports", label: "Imports", icon: "import", section: "Data", placeholder: "Imports and 3PL capture" },

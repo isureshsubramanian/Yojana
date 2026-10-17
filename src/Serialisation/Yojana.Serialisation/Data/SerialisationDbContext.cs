@@ -799,6 +799,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(r => r.Currency).HasMaxLength(3).IsUnicode(false);
             b.Property(r => r.Status).HasMaxLength(20);
             b.Property(r => r.ApprovedBy).HasMaxLength(200);
+            b.Property(r => r.VendorReference).HasMaxLength(100);
+            b.Property(r => r.VendorNote).HasMaxLength(500);
             b.Property(r => r.RecoveryNumber).HasMaxLength(20).IsUnicode(false);
             b.HasIndex(r => new { r.TenantId, r.RecoveryNumber }).IsUnique();
             b.HasIndex(r => new { r.TenantId, r.CustomerClaimId, r.ClaimLineId, r.InboundEntitlementId, r.ChildUnitId }).IsUnique();

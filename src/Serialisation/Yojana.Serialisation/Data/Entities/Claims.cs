@@ -91,6 +91,8 @@ public sealed class RecoveryClaim : ITenantScoped
     public DateTime RaisedAt { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public string? ApprovedBy { get; set; }
+    public string? VendorReference { get; set; }
+    public string? VendorNote { get; set; }
     public Guid RaisedEventId { get; set; }
     public Guid? ApprovedEventId { get; set; }
 }
