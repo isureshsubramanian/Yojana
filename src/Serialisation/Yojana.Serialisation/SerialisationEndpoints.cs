@@ -10,6 +10,7 @@ using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Documents;
 using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Queries;
@@ -175,6 +176,18 @@ public static class SerialisationEndpoints
         correctionReference.MapPut("/serial-reuse", async (SerialReusePolicy policy, SerialReuseSettings settings, CancellationToken ct) =>
         {
             try { await settings.SetAsync(policy, ct); return Results.Ok(policy); }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+            }
+        }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+        correctionReference.MapGet("/serial-confirmation", async (SerialConfirmationSettings settings, CancellationToken ct) =>
+            Results.Ok(new SerialConfirmationSetting(await settings.GetAsync(ct))))
+            .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+        correctionReference.MapPut("/serial-confirmation", async (SerialConfirmationSetting setting, SerialConfirmationSettings settings, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await settings.SetAsync(setting, ct)); }
             catch (CommandRefusedException ex)
             {
                 return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest,

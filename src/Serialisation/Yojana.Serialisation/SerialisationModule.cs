@@ -128,6 +128,9 @@ public static class SerialisationModule
         // ports stand in until a connector (P8) or an in-house module (P12) registers the real ones.
         var documents = builder.Configuration.GetSection(DocumentOptions.SectionName).Get<DocumentOptions>() ?? new DocumentOptions();
         builder.Services.AddSingleton(documents);
+        // Coupled to SerialConfirmationSettings for the same Wolverine constraint documented on that type: the
+        // factory hides PlatformDbContext from document handlers whose transaction belongs to SerialisationDbContext.
+        builder.Services.AddScoped(sp => new SerialConfirmationSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped<DocumentContext>();
         builder.Services.AddSingleton<InMemoryDocumentPorts>();
         builder.Services.TryAddSingleton<IPurchasingDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());

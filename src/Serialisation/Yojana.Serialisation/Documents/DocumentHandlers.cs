@@ -75,6 +75,29 @@ internal static class Documents
         }
     }
 
+    /// <summary>Evaluates the tenant scan rule once per serial-bearing line; absent markers mean scanned for compatibility.</summary>
+    public static Dictionary<int, SerialConfirmationDecision> SerialConfirmations(IReadOnlyList<DocumentLine> lines, DocumentRef doc, string mode, List<string> exceptions)
+    {
+        var decisions = new Dictionary<int, SerialConfirmationDecision>();
+        foreach (var line in lines.Where(l => l.Serials.Count > 0))
+        {
+            var decision = SerialConfirmationRules.Evaluate(mode, line.SerialCaptureMethod);
+            decisions[line.LineNo] = decision;
+            if (decision.Refusal is { } refusal)
+            {
+                exceptions.Add($"{doc.Type} {doc.Id:N} line {line.LineNo}: {refusal.Rule}: {refusal.Message}; unblocking step: {refusal.UnblockingStep}");
+            }
+        }
+
+        return decisions;
+    }
+
+    /// <summary>The old document-wide flag remains a compatibility input; an explicit line marker always wins.</summary>
+    public static IReadOnlyList<DocumentLine> ShipmentLines(ShipmentDocument document) =>
+        document.SerialsCopiedWithoutScan
+            ? document.Lines.Select(l => l.SerialCaptureMethod is null ? l with { SerialCaptureMethod = SerialCaptureMethodValue.Copied } : l).ToList()
+            : document.Lines;
+
     public static CommissionUnits CommissionFor(ThinEnvelope env, DocumentRef doc, DocumentLine line, string origin, DateTime at, Guid? locationId, string? locationKind, string? source, IEnumerable<DocumentSerial> serials) =>
         new(DeterministicCommandId(env, doc, line.LineNo), line.ItemId, origin,
             serials.Select(s => new CommissionLine([new IdentifierInput(s.IdentifierType ?? IdentifierType.InternalSerial, s.Value, s.IssuerPartyRef)], s.Value, line.LotId, line.ExpiryDate)).ToList(),
@@ -421,7 +444,10 @@ public static class InventoryTransferPostedHandler
         var doc = await ctx.Inventory.GetTransferAsync(message.Document, ct) ?? throw new CommandRefusedException("document_unavailable", $"Transfer {message.Document.Id:N} could not be read through the inventory port.");
         var exceptions = new List<string>();
         var drafts = new List<UnitEventDraft>();
-        var resolved = await Documents.ResolveAllAsync(ctx, doc.Lines, doc.Document, exceptions, ct);
+        var confirmationMode = await ctx.SerialConfirmation.GetAsync(ct);
+        var confirmations = Documents.SerialConfirmations(doc.Lines, doc.Document, confirmationMode, exceptions);
+        var acceptedLines = doc.Lines.Where(l => l.Serials.Count == 0 || confirmations[l.LineNo].Accepted).ToList();
+        var resolved = await Documents.ResolveAllAsync(ctx, acceptedLines, doc.Document, exceptions, ct);
         var seen = await Documents.PrefetchAsync(ctx, resolved.Select(r => (r.Unit.UnitId, Documents.Key(message.Envelope, doc.Document, r.Line.LineNo, r.Unit.UnitId, UnitEventType.CustodyChanged, doc.PostedAt), doc.PostedAt)).ToList(), ct);
         foreach (var (line, serial, unit) in resolved)
         {
@@ -431,7 +457,9 @@ public static class InventoryTransferPostedHandler
             try
             {
                 var move = await ctx.Episodes.PrepareCustodyMoveAsync(unit.UnitId, new CustodyTarget(kind, doc.TwoStep ? null : doc.ToLocationId, null, null, EpisodeReason.Transfer, EpisodeSource.Delivery), UnitEventType.CustodyChanged, key, doc.PostedAt, message.Envelope.Source, message.Envelope.LegalEntityId, Documents.Line(doc.Document, line.LineNo),
-                    new Dictionary<string, object?> { ["message_id"] = message.Envelope.MessageId, ["from_location_id"] = doc.FromLocationId, ["to_location_id"] = doc.ToLocationId, ["two_step"] = doc.TwoStep }, null, true, ct);
+                    new Dictionary<string, object?> { ["message_id"] = message.Envelope.MessageId, ["from_location_id"] = doc.FromLocationId, ["to_location_id"] = doc.ToLocationId, ["two_step"] = doc.TwoStep,
+                        ["serial_confirmation_mode"] = confirmationMode, ["serial_capture_method"] = confirmations[line.LineNo].CaptureMethod,
+                        ["serials_copied_without_scan"] = confirmations[line.LineNo].SerialsCopiedWithoutScan }, null, true, ct);
                 drafts.Add(move.Draft);
             }
             catch (CommandRefusedException ex)
@@ -526,7 +554,10 @@ public static class SalesShipmentPostedHandler
         var exceptions = new List<string>();
         var drafts = new List<UnitEventDraft>();
         var pending = 0;
-        foreach (var line in doc.Lines)
+        var lines = Documents.ShipmentLines(doc);
+        var confirmationMode = await ctx.SerialConfirmation.GetAsync(ct);
+        var confirmations = Documents.SerialConfirmations(lines, doc.Document, confirmationMode, exceptions);
+        foreach (var line in lines)
         {
             if (line.Serials.Count == 0)
             {
@@ -541,11 +572,13 @@ public static class SalesShipmentPostedHandler
             }
         }
 
-        var resolved = await Documents.ResolveAllAsync(ctx, doc.Lines, doc.Document, exceptions, ct);
+        var acceptedLines = lines.Where(l => l.Serials.Count == 0 || confirmations[l.LineNo].Accepted).ToList();
+        var resolved = await Documents.ResolveAllAsync(ctx, acceptedLines, doc.Document, exceptions, ct);
         var known = await Shipments.PrefetchAsync(ctx, message.Envelope, doc, resolved.Select(r => (r.Line.LineNo, r.Line.ItemId, r.Unit.UnitId)).ToList(), doc.PostedAt, ct);
         foreach (var (line, serial, unit) in resolved)
         {
-            exceptions.AddRange(await Shipments.ShipAsync(ctx, message.Envelope, doc, line.LineNo, line.ItemId, unit, serial, doc.PostedAt, doc.SerialsCopiedWithoutScan, drafts, ct, known));
+            exceptions.AddRange(await Shipments.ShipAsync(ctx, message.Envelope, doc, line.LineNo, line.ItemId, unit, serial, doc.PostedAt,
+                confirmationMode, confirmations[line.LineNo], drafts, ct, known));
         }
 
         return await Documents.ReportAsync(ctx, "Sales.ShipmentPosted", doc.Document, drafts, exceptions, pending, ct);
@@ -571,7 +604,8 @@ internal static class Shipments
     }
 
     /// <summary>One unit leaving on a shipment line: completeness at sale (rule 12), custody to in transit or the site, ownership when the trigger is ship.</summary>
-    public static async Task<List<string>> ShipAsync(DocumentContext ctx, ThinEnvelope env, ShipmentDocument doc, int lineNo, Guid itemId, ResolvedUnit unit, DocumentSerial serial, DateTime at, bool copiedWithoutScan, List<UnitEventDraft> drafts, CancellationToken ct, Prefetched? known = null)
+    public static async Task<List<string>> ShipAsync(DocumentContext ctx, ThinEnvelope env, ShipmentDocument doc, int lineNo, Guid itemId, ResolvedUnit unit, DocumentSerial serial, DateTime at,
+        string confirmationMode, SerialConfirmationDecision confirmation, List<UnitEventDraft> drafts, CancellationToken ct, Prefetched? known = null)
     {
         var exceptions = new List<string>();
         var key = Documents.Key(env, doc.Document, lineNo, unit.UnitId, UnitEventType.Shipped, at);
@@ -590,7 +624,9 @@ internal static class Shipments
         {
             var period = await ctx.Periods.ResolveAsync(at, ct);
             var move = await ctx.Episodes.PrepareCustodyMoveAsync(unit.UnitId, target, UnitEventType.Shipped, key, at, env.Source, env.LegalEntityId, Documents.Line(doc.Document, lineNo),
-                new Dictionary<string, object?> { ["message_id"] = env.MessageId, ["customer_party_ref"] = doc.CustomerPartyRef, ["serial_confirmation_mode"] = ctx.Options.SerialConfirmationMode, ["serials_copied_without_scan"] = copiedWithoutScan, ["base_order"] = doc.BaseOrder, ["attribution_completeness"] = env.AttributionCompleteness }, null, false, ct);
+                new Dictionary<string, object?> { ["message_id"] = env.MessageId, ["customer_party_ref"] = doc.CustomerPartyRef, ["serial_confirmation_mode"] = confirmationMode,
+                    ["serial_capture_method"] = confirmation.CaptureMethod, ["serials_copied_without_scan"] = confirmation.SerialsCopiedWithoutScan,
+                    ["base_order"] = doc.BaseOrder, ["attribution_completeness"] = env.AttributionCompleteness }, null, false, ct);
             drafts.Add(move.Draft with { PostingPeriod = period });
             if (ctx.Options.OwnershipTrigger == "ship" || direct)
             {
@@ -621,6 +657,13 @@ public static class ConfirmShipmentSerialsHandler
         var drafts = new List<UnitEventDraft>();
         var exceptions = new List<string>();
         var shipped = 0;
+        var confirmationMode = await ctx.SerialConfirmation.GetAsync(ct);
+        var confirmation = SerialConfirmationRules.Evaluate(confirmationMode, command.SerialCaptureMethod);
+        if (confirmation.Refusal is { } refusal)
+        {
+            exceptions.Add($"{command.Document.Type} {command.Document.Id:N} line {command.Line}: {refusal.Rule}: {refusal.Message}; unblocking step: {refusal.UnblockingStep}");
+            return new ConfirmShipmentSerialsResult(pending.PendingId, 0, (int)Math.Max(0, pending.Quantity - pending.ResolvedCount), exceptions);
+        }
         var units = await ctx.Resolver.ResolveManyAsync(command.Serials, pending.ItemId, ct);
         var known = await Shipments.PrefetchAsync(ctx, env, doc, units.Values.OfType<ResolvedUnit>().Select(u => (command.Line, pending.ItemId, u.UnitId)).ToList(), command.PhysicalShipTime, ct);
         foreach (var serial in command.Serials)
@@ -628,7 +671,8 @@ public static class ConfirmShipmentSerialsHandler
             var unit = units[serial];
             if (unit is null) { exceptions.Add($"serial '{serial.Value}' is unknown"); continue; }
             var before = drafts.Count;
-            exceptions.AddRange(await Shipments.ShipAsync(ctx, env, doc, command.Line, pending.ItemId, unit, serial, command.PhysicalShipTime, false, drafts, ct, known));
+            exceptions.AddRange(await Shipments.ShipAsync(ctx, env, doc, command.Line, pending.ItemId, unit, serial, command.PhysicalShipTime,
+                confirmationMode, confirmation, drafts, ct, known));
             if (drafts.Count > before) shipped++;
         }
 
@@ -652,8 +696,12 @@ public static class SalesDeliveryConfirmedHandler
         var shipment = await ctx.Sales.GetShipmentAsync(confirmation.Shipment, ct) ?? throw new CommandRefusedException("document_unavailable", $"Shipment {confirmation.Shipment.Id:N} behind the confirmation could not be read.");
         var exceptions = new List<string>();
         var drafts = new List<UnitEventDraft>();
-        var lines = confirmation.Serials is { Count: > 0 } s ? shipment.Lines.Select(l => l with { Serials = l.Serials.Where(x => s.Any(y => y.Value == x.Value)).ToList() }).ToList() : shipment.Lines.ToList();
-        var resolved = await Documents.ResolveAllAsync(ctx, lines, shipment.Document, exceptions, ct);
+        var shipmentLines = Documents.ShipmentLines(shipment);
+        var lines = confirmation.Serials is { Count: > 0 } s ? shipmentLines.Select(l => l with { Serials = l.Serials.Where(x => s.Any(y => y.Value == x.Value)).ToList() }).ToList() : shipmentLines.ToList();
+        var confirmationMode = await ctx.SerialConfirmation.GetAsync(ct);
+        var confirmations = Documents.SerialConfirmations(lines, shipment.Document, confirmationMode, exceptions);
+        var acceptedLines = lines.Where(l => l.Serials.Count == 0 || confirmations[l.LineNo].Accepted).ToList();
+        var resolved = await Documents.ResolveAllAsync(ctx, acceptedLines, shipment.Document, exceptions, ct);
         var seen = await Documents.PrefetchAsync(ctx, resolved.Select(r => (r.Unit.UnitId, Documents.Key(message.Envelope, confirmation.Document, r.Line.LineNo, r.Unit.UnitId, UnitEventType.Delivered, confirmation.DeliveredAt), confirmation.DeliveredAt)).ToList(), ct);
         foreach (var (line, serial, unit) in resolved)
         {
@@ -662,7 +710,9 @@ public static class SalesDeliveryConfirmedHandler
             try
             {
                 var move = await ctx.Episodes.PrepareCustodyMoveAsync(unit.UnitId, new CustodyTarget(LocationKind.CustomerSite, confirmation.ShipToLocationId ?? shipment.ShipToLocationId, shipment.CustomerPartyRef, PartyType.Customer, EpisodeReason.Sale, EpisodeSource.CarrierPod), UnitEventType.Delivered, key, confirmation.DeliveredAt, message.Envelope.Source, message.Envelope.LegalEntityId, Documents.Line(shipment.Document, line.LineNo),
-                    new Dictionary<string, object?> { ["message_id"] = message.Envelope.MessageId, ["evidence"] = confirmation.Evidence, ["confirmation_document"] = confirmation.Document }, null, false, ct);
+                    new Dictionary<string, object?> { ["message_id"] = message.Envelope.MessageId, ["evidence"] = confirmation.Evidence, ["confirmation_document"] = confirmation.Document,
+                        ["serial_confirmation_mode"] = confirmationMode, ["serial_capture_method"] = confirmations[line.LineNo].CaptureMethod,
+                        ["serials_copied_without_scan"] = confirmations[line.LineNo].SerialsCopiedWithoutScan }, null, false, ct);
                 drafts.Add(move.Draft);
                 var currentOwner = await ctx.Episodes.OpenAsync(unit.UnitId, EpisodeKind.Ownership, ct);
                 if (ctx.Options.OwnershipTrigger == "deliver" && currentOwner?.PartyRef != shipment.CustomerPartyRef)
@@ -680,6 +730,7 @@ public static class SalesDeliveryConfirmedHandler
         }
 
         var report = await Documents.ReportAsync(ctx, "Sales.DeliveryConfirmed", confirmation.Document, drafts, exceptions, 0, ct);
+        if (report.UnitsAffected == 0) return report;
         // The exception row is the narrow contract between delivery posting and warranty-line retry. It stores the
         // referenced document explicitly; relying on handler order would leave invoice cover unresolved after replay.
         var retries = await ctx.Db.WarrantyLineExceptions.AsNoTracking()

@@ -18,7 +18,7 @@ public sealed class DocumentContext(
     SerialisationDbContext db, IUnitEventWriter writer, BulkIngestion bulk, IdentifierService identifiers, EffectiveItemProfiles items, SerialRangeService ranges, SerialReuseSettings reuseSettings, ITenantContext tenant, IClock clock,
     EpisodeService episodes, UnitResolver resolver, DocumentOptions options, PostingPeriods periods, AsBuiltCompleteness completeness,
     IPurchasingDocumentQueryPort purchasing, IManufacturingDocumentQueryPort manufacturing, IInventoryDocumentQueryPort inventory, ISalesDocumentQueryPort sales, IServiceDocumentQueryPort service,
-    IItemPolicyPort itemPolicies, IMessageBus bus)
+    IItemPolicyPort itemPolicies, SerialConfirmationSettings serialConfirmation, IMessageBus bus)
 {
     public SerialisationDbContext Db => db;
     public IUnitEventWriter Writer => writer;
@@ -36,6 +36,7 @@ public sealed class DocumentContext(
     public ISalesDocumentQueryPort Sales => sales;
     public IServiceDocumentQueryPort Service => service;
     public IItemPolicyPort ItemPolicies => itemPolicies;
+    public SerialConfirmationSettings SerialConfirmation => serialConfirmation;
     public IMessageBus Bus => bus;
 
     /// <summary>
