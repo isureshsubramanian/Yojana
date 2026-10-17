@@ -170,6 +170,15 @@ public static class SerialisationModule
         builder.Services.AddSingleton<InMemoryItemPorts>();
         builder.Services.TryAddSingleton<IItemQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());
         builder.Services.TryAddSingleton<IBomQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());
+        builder.Services.AddSingleton<InMemoryItemNamePort>();
+        builder.Services.TryAddSingleton<IItemNamePort>(sp => sp.GetRequiredService<InMemoryItemNamePort>());
+        builder.Services.AddSingleton<InMemoryPartyNamePort>();
+        builder.Services.TryAddSingleton<IPartyNamePort>(sp => sp.GetRequiredService<InMemoryPartyNamePort>());
+        builder.Services.AddSingleton<InMemoryDocumentNumberRegistry>();
+        builder.Services.AddScoped<IRecordedDocumentReferenceQuery, RecordedDocumentReferenceQuery>();
+        // Unlike the in-memory registry, the fallback resolver is scoped because it reads this request's tenant-filtered
+        // DbContext. A real document module may replace the narrow port registration before this module is added.
+        builder.Services.TryAddScoped<IDocumentNumberPort, DefaultDocumentNumberPort>();
         builder.Services.AddSingleton<InMemoryStockReclassificationPort>();
         builder.Services.TryAddSingleton<IStockReclassificationPort>(sp => sp.GetRequiredService<InMemoryStockReclassificationPort>());
         builder.Services.AddSingleton<InMemoryStockQuantityPort>();

@@ -8,7 +8,8 @@ import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section } from "../units/common";
-import { documentLabel, fmtDate, fmtDateTime, humanise, outcomeTone, shortId, statusLabel, statusTone } from "../units/format";
+import { fmtDate, fmtDateTime, humanise, outcomeTone, shortId, statusLabel, statusTone } from "../units/format";
+import { DocumentField, ItemField, useReferenceNames } from "./ReferenceFields";
 import {
   DEDICATED_SCREENS, commandName, recordedRows, workbenchApi,
   type WorkbenchCandidate, type WorkbenchChoice, type WorkbenchChoiceOption, type WorkbenchEvidenceRef, type WorkbenchPicker,
@@ -50,6 +51,14 @@ export function Component() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const person = usePeople([...(lineage?.lastEvents.map((e) => e.actorRef) ?? []), request?.initiatedBy]);
+  const referenceNames = useReferenceNames({
+    items: [lineage?.state.itemId],
+    parties: lineage?.episodes.map((episode) => episode.partyRef) ?? [],
+    documents: [
+      ...(lineage?.episodes.flatMap((episode) => [episode.openingDocument, episode.closingDocument]) ?? []),
+      ...(lineage?.lastEvents.map((event) => event.document) ?? []),
+    ],
+  });
 
   const resolve = async (value = entryValue) => {
     if (!value.trim()) return;
@@ -175,7 +184,7 @@ export function Component() {
     try { attributes = JSON.stringify(JSON.parse(event.attributes ?? "{}"), null, 2); } catch { /* raw text */ }
     openDrawer({ eyebrow: `Event · ${primary?.rawValue ?? ""}`, title: event.eventType, mono: true }, <>
       <h3>Event</h3>
-      <Kv rows={[["Effective", fmtDateTime(event.eventTime)], ["Recorded", fmtDateTime(event.recordedTime)], ["Actor", person(event.actorRef)], ["Source document", event.document ? documentLabel(event.document) : "—"], ["Event id", shortId(event.eventId, 12)]]} />
+      <Kv rows={[["Effective", fmtDateTime(event.eventTime)], ["Recorded", fmtDateTime(event.recordedTime)], ["Actor", person(event.actorRef)], ["Source document", referenceNames.document(event.document)], ["Event id", shortId(event.eventId, 12)]]} />
       <h3 style={{ marginTop: 16 }}>Is this event the problem?</h3>
       <p className="muted">A wrong event is never edited. Pick what is wrong on the right; the command records a new event that references this one.</p>
       <pre className="raw" style={{ whiteSpace: "pre-wrap", overflow: "auto", maxHeight: 280 }}>{attributes ?? "{}"}</pre>
@@ -221,10 +230,10 @@ export function Component() {
           <section className="card" aria-labelledby="wb-unit">
             <div className="card-header"><h2 id="wb-unit">Unit <span className="serial" style={{ fontSize: 13 }}>{primary?.rawValue ?? (unitId ? shortId(unitId) : "—")}</span></h2>{state && <StatusBadge tone={statusTone(state.lifecycleStatus)}>{statusLabel(state.lifecycleStatus)}</StatusBadge>}</div>
             <div className="card-body">{state ? <Kv rows={[
-              ["Item", shortId(state.itemId, 12)],
-              ["Owner", owner ? `${humanise(owner.partyType)} ${shortId(owner.partyRef)} · since ${fmtDate(owner.validFrom)}` : "no owner recorded"],
-              ["Opened by", owner?.openingDocument ? documentLabel(owner.openingDocument) : "—"],
-              ["Custody", custody ? `${humanise(custody.locationKind ?? custody.partyType)}${custody.partyRef ? ` · ${shortId(custody.partyRef)}` : ""}` : "—"],
+              ["Item", referenceNames.item(state.itemId)],
+              ["Owner", owner ? `${humanise(owner.partyType)} ${referenceNames.party(owner.partyRef)} · since ${fmtDate(owner.validFrom)}` : "no owner recorded"],
+              ["Opened by", referenceNames.document(owner?.openingDocument)],
+              ["Custody", custody ? `${humanise(custody.locationKind ?? custody.partyType)}${custody.partyRef ? ` · ${referenceNames.party(custody.partyRef)}` : ""}` : "—"],
               ["Entitlements", live.length ? live.map((e) => `${e.coverageFamily}${e.endDate ? ` to ${e.endDate}` : ""}`).join(" · ") : "none live"],
               ["Earlier corrections", lineage?.corrections.length ? lineage.corrections.map((c) => humanise(c.command)).join(" · ") : "none"],
               ["Merged into", state.mergedIntoUnitId ? shortId(state.mergedIntoUnitId, 12) : "—"],
@@ -241,7 +250,7 @@ export function Component() {
 
           <section className="card" aria-labelledby="wb-events">
             <div className="card-header"><h2 id="wb-events">Last ten events</h2>{unitId && <Link className="btn ghost" to={`/units/${unitId}`}>Full history</Link>}</div>
-            <div className="card-body"><ol className="timeline">{(lineage?.lastEvents ?? []).map((e, index) => <li key={e.eventId} className={`ev${index === 0 ? " key" : ""}`} style={{ cursor: "pointer" }} onClick={() => showEvent(e)}><span className="t">{e.eventType}</span><span className="m">{fmtDateTime(e.eventTime)} · {person(e.actorRef)}{e.document ? ` · ${documentLabel(e.document)}` : ""}</span></li>)}</ol>{!lineage && <p className="muted">—</p>}</div>
+            <div className="card-body"><ol className="timeline">{(lineage?.lastEvents ?? []).map((e, index) => <li key={e.eventId} className={`ev${index === 0 ? " key" : ""}`} style={{ cursor: "pointer" }} onClick={() => showEvent(e)}><span className="t">{e.eventType}</span><span className="m">{fmtDateTime(e.eventTime)} · {person(e.actorRef)}{e.document ? ` · ${referenceNames.document(e.document)}` : ""}</span></li>)}</ol>{!lineage && <p className="muted">—</p>}</div>
           </section>
         </div>
 
@@ -338,8 +347,8 @@ function CommandForm({ command, unitId, primary, openTypes, args, setArgs, rawAr
       <div className="side"><div className="k">This unit</div><div className="serial">{primary ?? shortId(unitId)}</div></div><div className="arrow">⇄</div>
       <div className="side"><div className="k">Other unit · scan</div><form onSubmit={(event) => { event.preventDefault(); void findOther(); }}><input className="input serial" aria-label="Other unit" value={other} onChange={(event) => setOther(event.target.value)} placeholder="Scan the other label" /></form>{otherLabel && <div className="hint">{otherLabel}</div>}</div>
     </div><div className="form-grid">{typeSelect}<div className="span hint">SwapIdentifiers · both identifiers move in one transaction; uniqueness is checked at the end; entitlements stay with each physical unit.</div><ErrorNote error={error} /></div></>;
-    case "void_unit": return <div className="form-grid"><div className="field span"><label htmlFor="wb-order">Production order id <span className="hint">· optional</span></label><input id="wb-order" className="input serial" value={args.order ?? ""} onChange={(event) => set("order", event.target.value)} placeholder="UUID" /></div><div className="span hint">VoidUnit · lifecycle becomes void, never a delete; refused while components are still issued or once the unit has shipped.</div></div>;
-    case "correct_item": return <div className="form-grid"><div className="field span"><label htmlFor="wb-item">Correct item id</label><input id="wb-item" className="input serial" value={args.item ?? ""} onChange={(event) => set("item", event.target.value)} placeholder="UUID" /></div><div className="span hint">CorrectItem · a new effective-dated item assignment; in stock it is paired with the inventory reclassification.</div></div>;
+    case "void_unit": return <div className="form-grid"><div className="span"><DocumentField id="wb-order" label="Production order" types={["production_order"]} value={GUID.test(args.order ?? "") ? { type: "production_order", id: args.order! } : null} onChange={(value) => set("order", value?.id ?? "")} optional /></div><div className="span hint">VoidUnit · lifecycle becomes void, never a delete; refused while components are still issued or once the unit has shipped.</div></div>;
+    case "correct_item": return <div className="form-grid"><div className="span"><ItemField id="wb-item" label="Correct item" value={GUID.test(args.item ?? "") ? args.item! : null} onChange={(value) => set("item", value ?? "")} /></div><div className="span hint">CorrectItem · a new effective-dated item assignment; in stock it is paired with the inventory reclassification.</div></div>;
     default: return <div className="form-grid"><div className="field span"><label htmlFor="wb-raw">Command arguments <span className="hint">· {commandName(command)} · JSON with snake_case keys, as the command records them</span></label><textarea id="wb-raw" className="textarea serial" style={{ minHeight: 140 }} value={rawArgs} onChange={(event) => setRawArgs(event.target.value)} /></div><div className="span hint">This command has no dedicated form yet. The server still validates every argument and shows its own preview.</div></div>;
   }
 }

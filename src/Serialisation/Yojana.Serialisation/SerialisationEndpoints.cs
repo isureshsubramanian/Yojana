@@ -172,6 +172,57 @@ public static class SerialisationEndpoints
             catch (CommandRefusedException ex) { return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest); }
         }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
 
+        var serialisationReferences = app.MapGroup("/api/serialisation").RequireAuthorization(YojanaPolicy.TenantMember);
+        serialisationReferences.MapPost("/reference-names", async (ReferenceNamesRequest request, IItemNamePort items,
+            IPartyNamePort parties, IDocumentNumberPort documents, CancellationToken ct) =>
+        {
+            // Wire-contract cap mirrored by web/src/corrections/referenceStore.ts; change both sides together so its
+            // batched requests cannot be refused after an otherwise independent client update.
+            const int maximum = 200;
+            if (request.Items.Count > maximum || request.Parties.Count > maximum || request.Documents.Count > maximum)
+            {
+                return Results.Problem(title: "too_many_references",
+                    detail: $"At most {maximum} item, partner and document references resolve in one call.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var itemLabels = await items.NamesAsync(request.Items.Distinct().ToList(), ct);
+            var partyLabels = await parties.NamesAsync(request.Parties.Distinct().ToList(), ct);
+            var documentLabels = await documents.NumbersAsync(request.Documents
+                .DistinctBy(document => new DocumentKey(document.Type, document.Id)).ToList(), ct);
+            return Results.Ok(new ReferenceNamesResponse(
+                itemLabels.ToDictionary(row => row.Key, row => new ItemReferenceView(row.Value.Code, row.Value.Name)),
+                partyLabels.ToDictionary(row => row.Key, row => new PartyReferenceView(row.Value.Code, row.Value.Name, row.Value.PartyType)),
+                documentLabels.ToDictionary(row => $"{row.Key.Type}:{row.Key.Id:D}",
+                    row => new DocumentReferenceView(row.Value.Number, row.Value.Status, row.Value.ItemId))));
+        });
+        serialisationReferences.MapGet("/reference-search", async (string kind, string? type, string? q, int? take,
+            IItemNamePort items, IPartyNamePort parties, IDocumentNumberPort documents, CancellationToken ct) =>
+        {
+            var text = q?.Trim() ?? "";
+            var count = Math.Clamp(take ?? 10, 1, 25);
+            if (text.Length == 0) return Results.Ok(new ReferenceSearchResponse([]));
+            switch (kind)
+            {
+                case "item":
+                    return Results.Ok(new ReferenceSearchResponse((await items.SearchAsync(text, count, ct))
+                        .Select(label => new ReferenceSearchResult("item", label.ItemId, Code: label.Code, Name: label.Name)).ToList()));
+                case "party":
+                    return Results.Ok(new ReferenceSearchResponse((await parties.SearchAsync(text, count, ct))
+                        .Select(label => new ReferenceSearchResult("party", label.PartyRef, Code: label.Code, Name: label.Name, PartyType: label.PartyType)).ToList()));
+                case "document" when !string.IsNullOrWhiteSpace(type):
+                    return Results.Ok(new ReferenceSearchResponse((await documents.FindAsync(type, text, count, ct))
+                        .Select(label => new ReferenceSearchResult("document", label.Document.Id, Type: label.Document.Type,
+                            Number: label.Number, Status: label.Status, ItemId: label.ItemId)).ToList()));
+                case "document":
+                    return Results.Problem(title: "document_type_required", detail: "type is required for document search.",
+                        statusCode: StatusCodes.Status400BadRequest);
+                default:
+                    return Results.Problem(title: "reference_kind_invalid", detail: "kind must be item, party or document.",
+                        statusCode: StatusCodes.Status400BadRequest);
+            }
+        });
+
         var correctionReference = app.MapGroup("/api/correction-reference").RequireAuthorization(YojanaPolicy.TenantMember);
         correctionReference.MapGet("/approval", async (CorrectionApprovalSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
         correctionReference.MapPut("/approval", async (CorrectionApprovalPolicy policy, CorrectionApprovalSettings settings, CancellationToken ct) =>
@@ -586,6 +637,35 @@ public static class SerialisationEndpoints
         var colon = value.IndexOf(':');
         return colon > 0 && Guid.TryParse(value[(colon + 1)..], out var id) ? new DocumentRef(value[..colon], id) : null;
     }
+
+    public sealed record ReferenceNamesRequest(
+        IReadOnlyList<Guid> Items,
+        IReadOnlyList<Guid> Parties,
+        IReadOnlyList<DocumentRef> Documents);
+
+    public sealed record ItemReferenceView(string Code, string? Name);
+
+    public sealed record PartyReferenceView(string Code, string? Name, string? PartyType);
+
+    public sealed record DocumentReferenceView(string Number, string? Status, Guid? ItemId);
+
+    public sealed record ReferenceNamesResponse(
+        IReadOnlyDictionary<Guid, ItemReferenceView> Items,
+        IReadOnlyDictionary<Guid, PartyReferenceView> Parties,
+        IReadOnlyDictionary<string, DocumentReferenceView> Documents);
+
+    public sealed record ReferenceSearchResult(
+        string Kind,
+        Guid Id,
+        string? Type = null,
+        string? Code = null,
+        string? Name = null,
+        string? PartyType = null,
+        string? Number = null,
+        string? Status = null,
+        Guid? ItemId = null);
+
+    public sealed record ReferenceSearchResponse(IReadOnlyList<ReferenceSearchResult> Results);
 
     public sealed record ScanRequest(string Raw);
 }

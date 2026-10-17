@@ -10,6 +10,7 @@ import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDate, humanise, shortId, statusLabel } from "../units/format";
 import { correctionsApi } from "./api";
 import { GUID } from "./format";
+import { useReferenceNames } from "./ReferenceFields";
 import { workbenchApi } from "./workbenchApi";
 import type { MergeUnits, MergeUnitsPreviewResult, MergeUnitsResult } from "./types";
 
@@ -89,7 +90,8 @@ function RecordCard({ label, unit, survivor, onKeep }: { label: "A" | "B"; unit:
   const internal = unit.identifiers.find((row) => row.type === "internal_serial")?.rawValue ?? unit.identifiers[0]?.rawValue ?? shortId(unit.unitId, 12);
   const vendor = unit.identifiers.find((row) => row.type === "vendor_serial")?.rawValue ?? "none";
   const opened = unit.episodes.find((row) => !row.validTo);
-  return <section className={`card correction-record${survivor ? " survivor" : ""}`} aria-labelledby={`merge-record-${label}`}><div className="card-header"><h2 id={`merge-record-${label}`}>Record {label} · {survivor ? "survivor" : "absorbed"}</h2><label className="radiorow"><input type="radio" name="merge-survivor" checked={survivor} onChange={onKeep} /><span>{survivor ? "Keep" : "Keep instead"}</span></label></div><div className="card-body"><Kv rows={[["Internal serial", <span className="serial">{internal}</span>], ["Vendor serial", <span className="serial">{vendor}</span>], ["Item", shortId(unit.itemId, 12)], ["Origin", `${humanise(unit.origin)} · ${fmtDate(unit.lastEventTime)}`], ["Owner", unit.ownerPartyRef ? shortId(unit.ownerPartyRef, 12) : "none"], ["Custody", opened ? `${humanise(opened.kind)} · ${opened.partyRef ? shortId(opened.partyRef, 12) : humanise(opened.locationKind)}` : "none"], ["Lifecycle", statusLabel(unit.lifecycleStatus)], ["Events", unit.eventCount.toLocaleString()]]} /></div></section>;
+  const referenceNames = useReferenceNames({ items: [unit.itemId], parties: [unit.ownerPartyRef, opened?.partyRef] });
+  return <section className={`card correction-record${survivor ? " survivor" : ""}`} aria-labelledby={`merge-record-${label}`}><div className="card-header"><h2 id={`merge-record-${label}`}>Record {label} · {survivor ? "survivor" : "absorbed"}</h2><label className="radiorow"><input type="radio" name="merge-survivor" checked={survivor} onChange={onKeep} /><span>{survivor ? "Keep" : "Keep instead"}</span></label></div><div className="card-body"><Kv rows={[["Internal serial", <span className="serial">{internal}</span>], ["Vendor serial", <span className="serial">{vendor}</span>], ["Item", referenceNames.item(unit.itemId)], ["Origin", `${humanise(unit.origin)} · ${fmtDate(unit.lastEventTime)}`], ["Owner", unit.ownerPartyRef ? referenceNames.party(unit.ownerPartyRef) : "none"], ["Custody", opened ? `${humanise(opened.kind)} · ${opened.partyRef ? referenceNames.party(opened.partyRef) : humanise(opened.locationKind)}` : "none"], ["Lifecycle", statusLabel(unit.lifecycleStatus)], ["Events", unit.eventCount.toLocaleString()]]} /></div></section>;
 }
 function Figure({ label, value, tone }: { label: string; value: number; tone?: "ok" | "bad" }) { return <span className="figure"><span className="k">{label}</span><span className={`v${tone ? ` ${tone}-text` : ""}`}>{value.toLocaleString()}</span></span>; }
 function PreviewRow({ label, detail, count }: { label: string; detail: string; count: number }) { return <tr><td className="primary">{label}</td><td>{detail}</td><td className="num">{count.toLocaleString()}</td></tr>; }

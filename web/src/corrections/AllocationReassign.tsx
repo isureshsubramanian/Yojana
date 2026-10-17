@@ -9,6 +9,7 @@ import { ErrorNote, Kv, Section } from "../units/common";
 import { humanise } from "../units/format";
 import { correctionsApi } from "./api";
 import { GUID, serialSelection } from "./format";
+import { DocumentField, useReferenceNames, type DocumentValue } from "./ReferenceFields";
 import type { CorrectionAllocationPreview, ReassignAllocation, ReassignAllocationResult } from "./types";
 
 const PAGE = 10;
@@ -18,8 +19,6 @@ export function Component() {
   const [commandId, setCommandId] = useState(newCommandId);
   const [fromOrder, setFromOrder] = useState(params.get("from") ?? "");
   const [toOrder, setToOrder] = useState(params.get("to") ?? "");
-  const [fromLabel, setFromLabel] = useState(params.get("fromLabel") ?? "order A");
-  const [toLabel, setToLabel] = useState(params.get("toLabel") ?? "order B");
   const [scheme, setScheme] = useState(params.get("scheme") ?? "default");
   const [mode, setMode] = useState("pairwise_exchange");
   const [fromSerials, setFromSerials] = useState(params.get("fromSerials") ?? "");
@@ -34,6 +33,11 @@ export function Component() {
   const [error, setError] = useState<unknown>(null);
   const rows = preview?.preview.allocationReassignments ?? [];
   const visible = rows.slice((page - 1) * PAGE, page * PAGE);
+  const fromDocument: DocumentValue | null = GUID.test(fromOrder) ? { type: "production_order", id: fromOrder } : null;
+  const toDocument: DocumentValue | null = GUID.test(toOrder) ? { type: "production_order", id: toOrder } : null;
+  const referenceNames = useReferenceNames({ documents: [fromDocument, toDocument] });
+  const fromLabel = fromDocument ? referenceNames.document(fromDocument) : "order A";
+  const toLabel = toDocument ? referenceNames.document(toDocument) : "order B";
 
   const command = useMemo<ReassignAllocation | null>(() => {
     const from = serialSelection(fromSerials, scheme);
@@ -62,7 +66,7 @@ export function Component() {
       <ErrorNote error={error} />
       <div className="cols-2-3">
         <section className="card" aria-labelledby="allocation-orders"><div className="card-header"><h2 id="allocation-orders">Work orders</h2><span className="meta">scheme {scheme || "required"}</span></div><div className="card-body">
-          <div className="correction-source-fields"><div className="field"><label htmlFor="allocation-from-id">From production order UUID</label><input id="allocation-from-id" className="input serial" value={fromOrder} onChange={(event) => { setFromOrder(event.target.value); setPreview(null); }} placeholder="00000000-0000-0000-0000-000000000000" /></div><div className="field"><label htmlFor="allocation-to-id">To production order UUID</label><input id="allocation-to-id" className="input serial" value={toOrder} onChange={(event) => { setToOrder(event.target.value); setPreview(null); }} placeholder="00000000-0000-0000-0000-000000000000" /></div><div className="field"><label htmlFor="allocation-from-label">From display label</label><input id="allocation-from-label" className="input" value={fromLabel} onChange={(event) => setFromLabel(event.target.value)} /></div><div className="field"><label htmlFor="allocation-to-label">To display label</label><input id="allocation-to-label" className="input" value={toLabel} onChange={(event) => setToLabel(event.target.value)} /></div></div>
+          <div className="correction-source-fields"><DocumentField id="allocation-from-id" label="From production order" types={["production_order"]} value={fromDocument} onChange={(value) => { setFromOrder(value?.id ?? ""); setPreview(null); }} /><DocumentField id="allocation-to-id" label="To production order" types={["production_order"]} value={toDocument} onChange={(value) => { setToOrder(value?.id ?? ""); setPreview(null); }} /></div>
           <div className="correction-work-orders"><div className="correction-work-order"><div className="k">From</div><div className="serial">{fromLabel}</div><div className="sub muted">reservation source · before commissioning</div></div><div className="correction-exchange" aria-hidden="true">⇄</div><div className="correction-work-order"><div className="k">To</div><div className="serial">{toLabel}</div><div className="sub muted">reservation destination</div></div></div>
           <div className="form-grid" style={{ marginTop: 14 }}><div className="field span"><span className="lbl">Mode</span><div className="segmented plain" role="group" aria-label="Mode"><button type="button" aria-pressed={mode === "pairwise_exchange"} onClick={() => { setMode("pairwise_exchange"); setPreview(null); }}>Pairwise exchange</button><button type="button" aria-pressed={mode === "move"} onClick={() => { setMode("move"); setPreview(null); }}>Move to the other order</button></div></div>
             <div className="field span"><label htmlFor="allocation-from">Serials leaving {fromLabel} · scan, list or range</label><input id="allocation-from" className="input serial" value={fromSerials} onChange={(event) => { setFromSerials(event.target.value); setPreview(null); }} placeholder="2510-007713 → 2510-007740, or one serial per line" /></div>

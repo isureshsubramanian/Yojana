@@ -1,0 +1,49 @@
+namespace Yojana.Serialisation.Contracts;
+
+/// <summary>An item label supplied by the item-owning module or a connector.</summary>
+public sealed record ItemLabel(Guid ItemId, string Code, string? Name);
+
+/// <summary>
+/// Serialisation's read contract for item names. The item-owning module or a connector implements it; Serialisation
+/// keeps only item references and never reads the item master's storage.
+/// </summary>
+public interface IItemNamePort
+{
+    Task<IReadOnlyDictionary<Guid, ItemLabel>> NamesAsync(IReadOnlyCollection<Guid> itemIds, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<ItemLabel>> SearchAsync(string text, int take, CancellationToken cancellationToken);
+}
+
+/// <summary>A business-partner label supplied by the party-owning module or a connector.</summary>
+public sealed record PartyLabel(Guid PartyRef, string Code, string? Name, string? PartyType);
+
+/// <summary>
+/// Serialisation's read contract for business-partner names. The party-owning module or a connector implements it;
+/// Serialisation keeps opaque party references and never reads partner storage.
+/// </summary>
+public interface IPartyNamePort
+{
+    Task<IReadOnlyDictionary<Guid, PartyLabel>> NamesAsync(IReadOnlyCollection<Guid> partyRefs, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<PartyLabel>> SearchAsync(string text, int take, CancellationToken cancellationToken);
+}
+
+/// <summary>A document identity without its optional line number.</summary>
+public sealed record DocumentKey(string Type, Guid Id)
+{
+    public static DocumentKey From(DocumentRef document) => new(document.Type, document.Id);
+}
+
+/// <summary>A document label supplied by the document-owning module or a connector.</summary>
+public sealed record DocumentLabel(DocumentRef Document, string Number, string? Status = null, Guid? ItemId = null);
+
+/// <summary>
+/// Serialisation's read contract for document numbers. Each document-owning module or connector contributes through
+/// this one boundary; Serialisation stores document references and never reads another module's document tables.
+/// </summary>
+public interface IDocumentNumberPort
+{
+    Task<IReadOnlyDictionary<DocumentKey, DocumentLabel>> NumbersAsync(IReadOnlyCollection<DocumentRef> documents, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<DocumentLabel>> FindAsync(string type, string numberText, int take, CancellationToken cancellationToken);
+}
