@@ -49,7 +49,7 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
     [DatabaseFact]
     public async Task Unknown_serial_reconstructs_once_and_low_confidence_cover_needs_the_named_reviewer()
     {
-        var tenant = await fixture.NewTenantAsync("legacy-claim");
+        var tenant = await fixture.NewTenantAsync("legacy-claim", "EUR");
         var item = Guid.NewGuid();
         var obligor = Guid.NewGuid();
         var claimant = Guid.NewGuid();
@@ -150,6 +150,95 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Claims_are_written_only_in_currencies_the_tenant_accepts()
+    {
+        var setup = await SetUpAsync("cur", 1);
+        var gbp = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<SubmitClaimResult>(setup.Tenant, new SubmitClaim(Guid.NewGuid(), setup.Units[0], null,
+            new DateOnly(2025, 9, 1), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "GB", "GBP", [new ClaimLineInput(ClaimLineKind.Parts, CoverageFamilyCode.Base, 100m)],
+            [], ClaimRemedy.Repair, "choice", new DateTime(2025, 9, 1, 9, 0, 0, DateTimeKind.Utc), "desk")));
+        Assert.Equal("claim_currency_not_accepted", gbp.Rule);
+
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            Assert.Equal(["EUR", "GBP"], await scope.ServiceProvider.GetRequiredService<ITenantCurrency>().SetAcceptedAsync(["gbp"], CancellationToken.None));
+        }
+
+        var accepted = await InvokeAsync<SubmitClaimResult>(setup.Tenant, new SubmitClaim(Guid.NewGuid(), setup.Units[0], null,
+            new DateOnly(2025, 9, 1), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "GB", "GBP", [new ClaimLineInput(ClaimLineKind.Parts, CoverageFamilyCode.Base, 100m)],
+            [], ClaimRemedy.Repair, "choice", new DateTime(2025, 9, 1, 9, 5, 0, DateTimeKind.Utc), "desk"));
+        Assert.Equal(ClaimStatus.Submitted, accepted.Status);
+    }
+
+    [DatabaseFact]
+    public async Task Preview_shows_what_approve_records_and_the_screens_read_numbers_serials_and_summary()
+    {
+        var setup = await SetUpAsync("pv", 4);
+        await AddChildrenAndSupplierCoverAsync(setup, setup.Units[0], setup.Units[1], setup.Units[2], setup.Units[3]);
+        var claim = await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2025, 9, 1), new DateTime(2025, 9, 1, 9, 0, 0, DateTimeKind.Utc), ClaimRemedy.Repair);
+
+        ClaimAdjudicationPreview preview;
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            preview = (await scope.ServiceProvider.GetRequiredService<Claims.ClaimAdjudicationPreviewQuery>().PreviewAsync(claim.ClaimId, YojanaRole.ServiceManager, CancellationToken.None))!;
+            Assert.Equal((ClaimStatus.Approved, ClaimCoverageSource.Warranty, 100m, (string?)null), (preview.Outcome, preview.CoverageSource, preview.ApprovedAmount, preview.Refusal));
+            var line = Assert.Single(preview.Lines);
+            Assert.Equal(PolicyLevel.UnitEntitlement, line.Level);
+            Assert.Equal("matched", line.Stack.Single(s => s.Level == PolicyLevel.UnitEntitlement).Outcome);
+            Assert.All(line.Stack.Where(s => s.Level != PolicyLevel.UnitEntitlement && s.Level != "region"), s => Assert.Equal("not_reached", s.Outcome));
+            Assert.Equal(setup.Units[1], Assert.Single(preview.Recoveries).ChildUnitId);
+            Assert.Equal(9, preview.Recoveries[0].MonthOfTerm);
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            Assert.Empty(await db.Events.Where(e => e.UnitId == setup.Units[0] && e.EventType == ClaimEventType.Adjudicated).ToListAsync());
+        }
+
+        var adjudicated = await InvokeAsync<AdjudicateClaimResult>(setup.Tenant, new AdjudicateClaim(Guid.NewGuid(), claim.ClaimId, new DateTime(2025, 9, 1, 10, 0, 0, DateTimeKind.Utc), "service.manager"));
+        Assert.Equal((preview.Outcome, preview.ApprovedAmount, preview.Recoveries.Count), (adjudicated.Status, adjudicated.Lines.Sum(l => l.ApprovedAmount), adjudicated.RecoveryClaimIds.Count));
+
+        var second = await SubmitAsync(setup.Tenant, setup.Units[2], new DateOnly(2025, 9, 2), new DateTime(2025, 9, 2, 9, 0, 0, DateTimeKind.Utc), ClaimRemedy.Repair);
+        await InvokeAsync<ClaimChangeResult>(setup.Tenant, new RequestClaimEvidence(Guid.NewGuid(), second.ClaimId, "Photo of the drive label", new DateTime(2025, 9, 2, 10, 0, 0, DateTimeKind.Utc), "service.desk"));
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var queries = scope.ServiceProvider.GetRequiredService<Claims.ClaimQueries>();
+            var page = await queries.ListAsync(new ClaimListFilter("all"), new DateOnly(2025, 9, 12), 0, 50, CancellationToken.None);
+            Assert.Equal(["CLM-2025-00001", "CLM-2025-00002"], page.Items.Select(r => r.ClaimNumber));
+            Assert.Equal((true, false), (page.Items[0].RecoveryRaised, page.Items[0].EvidenceRequested));
+            Assert.Equal((true, 10), (page.Items[1].EvidenceRequested, page.Items[1].AgeDays));
+            Assert.StartsWith("PV", page.Items[0].Serial);
+            var open = await queries.ListAsync(new ClaimListFilter("open", Recovery: "none"), new DateOnly(2025, 9, 12), 0, 50, CancellationToken.None);
+            Assert.Equal(second.ClaimId, Assert.Single(open.Items).ClaimId);
+            var byNumber = await queries.ListAsync(new ClaimListFilter("all", Query: "clm-2025-00002"), new DateOnly(2025, 9, 12), 0, 50, CancellationToken.None);
+            Assert.Equal(second.ClaimId, Assert.Single(byNumber.Items).ClaimId);
+
+            var summary = await queries.SummaryAsync(new DateOnly(2025, 9, 12), 5, CancellationToken.None);
+            Assert.Equal((2, 1, 1, 1), (summary.Open, summary.Submitted, summary.ApprovedNotSettled, summary.ApprovedCountThisMonth));
+            Assert.Equal(new MoneyTotal("EUR", 100m), Assert.Single(summary.ApprovedThisMonth));
+            Assert.Equal((1, 1), (summary.RecoveryOpenCount, summary.RecoveryVendorCount));
+            Assert.Equal("CLM-2025-00001", summary.OldestOpenNumber);
+            Assert.Equal([0, 0, 1, 1, 0], summary.AgeBuckets);
+
+            var detail = (await queries.DetailAsync(claim.ClaimId, CancellationToken.None))!;
+            Assert.Equal("RCV-2025-0001", Assert.Single(detail.Recoveries!).RecoveryNumber);
+        }
+    }
+
+    [DatabaseFact]
+    public async Task Adjudicator_denies_a_whole_claim_on_a_finding_with_a_note()
+    {
+        var setup = await SetUpAsync("md", 1);
+        var claim = await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2025, 9, 1), new DateTime(2025, 9, 1, 9, 0, 0, DateTimeKind.Utc), ClaimRemedy.Repair);
+        var noNote = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<AdjudicateClaimResult>(setup.Tenant,
+            new AdjudicateClaim(Guid.NewGuid(), claim.ClaimId, new DateTime(2025, 9, 1, 10, 0, 0, DateTimeKind.Utc), "service.manager", DenialReason: ClaimManualDenialReason.UnauthorisedPartsDamage)));
+        Assert.Equal("claim_denial_note_required", noNote.Rule);
+
+        var denied = await InvokeAsync<AdjudicateClaimResult>(setup.Tenant, new AdjudicateClaim(Guid.NewGuid(), claim.ClaimId, new DateTime(2025, 9, 1, 10, 5, 0, DateTimeKind.Utc), "service.manager",
+            DenialReason: ClaimManualDenialReason.UnauthorisedPartsDamage, DenialNote: "Third-party DIMM fitted in slot A2"));
+        Assert.Equal((ClaimStatus.Denied, ClaimManualDenialReason.UnauthorisedPartsDamage, 0m), (denied.Status, denied.DenialReason, denied.Lines.Sum(l => l.ApprovedAmount)));
+        using var scope = fixture.ScopeFor(setup.Tenant);
+        var note = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().ClaimEvidence.SingleAsync(e => e.ClaimId == claim.ClaimId && e.Kind == ClaimEvidenceKind.AdjudicationNote);
+        Assert.Equal("Third-party DIMM fitted in slot A2", note.Description);
+    }
+
+    [DatabaseFact]
     public async Task Sales_block_alone_does_not_affect_claim_approval()
     {
         var setup = await SetUpAsync("sales-block", 1);
@@ -236,7 +325,7 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
 
     private async Task<ClaimSetup> SetUpAsync(string prefix, int count)
     {
-        var tenant = await fixture.NewTenantAsync(prefix);
+        var tenant = await fixture.NewTenantAsync(prefix, "EUR");
         var obligor = Guid.NewGuid();
         await InvokeAsync<CoverageFamilyRow>(tenant, new DefineCoverageFamily(CoverageFamilyCode.Base, "Base warranty", false, AssuranceOrService.Assurance));
         await InvokeAsync<ReplacementPolicyRow>(tenant, new DefineReplacementPolicy("STD-90", ReplacementRule.MaxRemainingOrMinDays, 90, null, null));

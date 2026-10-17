@@ -16,7 +16,7 @@ namespace Yojana.Serialisation.Claims;
 public static class SubmitClaimHandler
 {
     public static async Task<SubmitClaimResult> Handle(SubmitClaim command, SerialisationDbContext db, UnitQueries units, ClaimUnitFacts facts,
-        ClaimLedger ledger, LegacyUnknownClaimUnitCreator legacyUnits, DocumentNumbers numbers, ITenantContext tenant, CancellationToken cancellationToken)
+        ClaimLedger ledger, LegacyUnknownClaimUnitCreator legacyUnits, DocumentNumbers numbers, ITenantCurrency currencies, ITenantContext tenant, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         if (await db.Claims.AsNoTracking().FirstOrDefaultAsync(c => c.TenantId == tenantId && c.CommandId == command.CommandId, cancellationToken) is { } replay)
@@ -30,6 +30,20 @@ public static class SubmitClaimHandler
         if (string.IsNullOrWhiteSpace(command.ConsumerChoiceEvidenceRef))
         {
             throw new CommandRefusedException("consumer_choice_evidence_required", "The consumer's informed repair-or-replacement choice must be recorded as evidence.");
+        }
+
+        // ITenantCurrency reaches PlatformDbContext; it is safe in this handler only because PlatformSetup registers it
+        // through a factory that Wolverine's code generation does not look inside.
+        var accepted = await currencies.GetAcceptedAsync(cancellationToken);
+        if (accepted.Count == 0)
+        {
+            throw new CommandRefusedException("tenant_currency_not_set_up", "Claims wait for the tenant's currencies to be set up.", "a tenant administrator chooses the working currency under Settings › Currencies");
+        }
+
+        if (!accepted.Contains(command.Currency.Trim().ToUpperInvariant()))
+        {
+            throw new CommandRefusedException("claim_currency_not_accepted", $"'{command.Currency}' is not a currency this tenant accepts ({string.Join(", ", accepted)}).",
+                "a tenant administrator adds it under Settings › Currencies");
         }
 
         var unitId = command.UnitId;
@@ -108,7 +122,7 @@ public static class SubmitClaimHandler
 public static class AdjudicateClaimHandler
 {
     public static async Task<AdjudicateClaimResult> Handle(AdjudicateClaim command, SerialisationDbContext db, ClaimLedger ledger, ClaimUnitFacts facts,
-        PolicyResolver policies, ISettlementFormulaPort formulas, IItemQueryPort items, IEntitlementRecoveryQuery recoveries, ClaimReviewSettings reviewSettings,
+        ClaimLineDecider decider, IItemQueryPort items, IEntitlementRecoveryQuery recoveries, ClaimReviewSettings reviewSettings,
         DocumentNumbers numbers, ITenantContext tenant, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -138,64 +152,33 @@ public static class AdjudicateClaimHandler
 
         ClaimLedger.Transition(claim, ClaimEventType.Adjudicating);
         var lines = await db.ClaimLines.Where(l => l.TenantId == tenantId && l.ClaimId == claim.ClaimId).OrderBy(l => l.Sequence).ToListAsync(cancellationToken);
-        var rootBlock = ClaimAdjudicationRules.BlockingFlag(root.OverlayFlags);
         var coveredSources = new HashSet<string>(StringComparer.Ordinal);
         var cohorts = new HashSet<Guid>();
         var obligors = new HashSet<Guid>();
 
-        foreach (var line in lines)
+        if (command.DenialReason is { } manualReason)
         {
-            var unit = line.UnitId == root.UnitId ? root : await facts.ReadAsync(line.UnitId, cancellationToken);
-            var blocked = rootBlock ?? ClaimAdjudicationRules.BlockingFlag(unit.OverlayFlags);
-            if (blocked is not null)
+            // A finding by the adjudicator (unauthorised parts, misuse, no fault found) denies the whole claim (MOD-07
+            // invariant 1); the policy stack is not asked, and the note is kept as claim evidence.
+            if (!ClaimManualDenialReason.All.Contains(manualReason)) throw new CommandRefusedException("claim_denial_reason_invalid", $"'{manualReason}' is not a claim denial reason.");
+            if (string.IsNullOrWhiteSpace(command.DenialNote)) throw new CommandRefusedException("claim_denial_note_required", "A claim denied by the adjudicator needs a note saying what was found.");
+            foreach (var line in lines) ClaimLineDecider.Apply(line, ClaimLineOutcome.Denied(manualReason));
+            db.ClaimEvidence.Add(new ClaimEvidence
             {
-                Deny(line, $"overlay_{blocked}");
-                continue;
-            }
-
-            if (ClaimAdjudicationRules.ItemDenialReason(item, claim.ClaimDate, line.Kind) is { } itemDenialReason)
+                TenantId = tenantId, EvidenceId = TimeOrderedId.New(command.EventTime), ClaimId = claim.ClaimId, Kind = ClaimEvidenceKind.AdjudicationNote,
+                Reference = manualReason, Description = command.DenialNote.Trim(), RecordedAt = command.EventTime, ActorRef = command.ActorRef,
+            });
+        }
+        else
+        {
+            foreach (var line in lines)
             {
-                Deny(line, itemDenialReason);
-                continue;
-            }
-
-            var resolution = await policies.ResolveAsync(new PolicyQuestion(line.UnitId, unit.ItemId, line.CoverageFamily, claim.ClaimDate,
-                claim.ClaimantPartyRef, Country: claim.ServiceCountry, CoverageDate: claim.ClaimDate, Direction: EntitlementDirection.Outbound), cancellationToken);
-            if (resolution.Level == PolicyLevel.None || resolution.PolicyVersionId is null)
-            {
-                Deny(line, "no_applicable_coverage");
-                continue;
-            }
-
-            if (resolution.OutOfRegion)
-            {
-                Deny(line, "service_country_out_of_region");
-                continue;
-            }
-
-            if (resolution.EntitlementStatus == EntitlementStatus.Suspended)
-            {
-                Deny(line, "entitlement_suspended");
-                continue;
-            }
-
-            var coverage = CoverageFor(resolution.Coverage, line.Kind);
-            var measurements = JsonSerializer.Deserialize<Dictionary<string, decimal>>(line.Measurements, LedgerJson.Options) ?? [];
-            var calculated = await formulas.CalculateAsync(new SettlementFormulaQuestion(resolution.SettlementFormula ?? "full", line.RequestedAmount, coverage, measurements), cancellationToken);
-            line.CoveragePct = coverage;
-            line.ApprovedAmount = Math.Min(line.RequestedAmount, calculated.ApprovedAmount);
-            line.EntitlementId = resolution.EntitlementId;
-            line.PolicyVersionId = resolution.PolicyVersionId;
-            line.AccrualCohortId = resolution.AccrualCohortId;
-            line.SettlementFormula = resolution.SettlementFormula ?? "full";
-            line.ChainLength = resolution.ChainLength;
-            line.CoverageSource = Source(resolution.EntitlementType, resolution.Level);
-            line.DenialReason = line.ApprovedAmount == 0 ? "coverage_percentage_zero" : line.ApprovedAmount < line.RequestedAmount ? "partially_uncovered" : null;
-            if (line.ApprovedAmount > 0)
-            {
-                coveredSources.Add(line.CoverageSource);
-                if (resolution.AccrualCohortId is { } cohort) cohorts.Add(cohort);
-                if (resolution.ObligorEntityId is { } obligor) obligors.Add(obligor);
+                var decided = await decider.DecideAsync(claim, root, item, line, cancellationToken);
+                ClaimLineDecider.Apply(line, decided);
+                if (decided.ApprovedAmount <= 0) continue;
+                coveredSources.Add(decided.CoverageSource);
+                if (decided.AccrualCohortId is { } cohort) cohorts.Add(cohort);
+                if (decided.ObligorEntityId is { } obligor) obligors.Add(obligor);
             }
         }
 
@@ -310,35 +293,6 @@ public static class AdjudicateClaimHandler
             SuccessorItemId: claim.SuccessorItemId);
     }
 
-    private static void Deny(ClaimLine line, string reason)
-    {
-        line.CoveragePct = 0;
-        line.ApprovedAmount = 0;
-        line.CoverageSource = ClaimCoverageSource.Chargeable;
-        line.DenialReason = reason;
-        line.EntitlementId = null;
-        line.PolicyVersionId = null;
-        line.AccrualCohortId = null;
-        line.ChainLength = 0;
-    }
-
-    private static decimal CoverageFor(CoverageTerms? coverage, string kind) => coverage is null ? 0 : kind switch
-    {
-        ClaimLineKind.Parts => coverage.PartsPct,
-        ClaimLineKind.Labour => coverage.LabourPct,
-        ClaimLineKind.Travel => coverage.TravelPct,
-        _ => 0,
-    };
-
-    private static string Source(string? entitlementType, string level) => entitlementType switch
-    {
-        EntitlementType.RecallCampaign => ClaimCoverageSource.Recall,
-        EntitlementType.Goodwill => ClaimCoverageSource.Goodwill,
-        EntitlementType.Contract or EntitlementType.Extended => ClaimCoverageSource.Contract,
-        _ when level == PolicyLevel.CustomerContract => ClaimCoverageSource.Contract,
-        _ => ClaimCoverageSource.Warranty,
-    };
-
     private static async Task<AdjudicateClaimResult> ResultAsync(SerialisationDbContext db, TenantId tenantId, Claim claim, Guid eventId, bool replayed, CancellationToken cancellationToken)
     {
         var lines = await db.ClaimLines.AsNoTracking().Where(l => l.TenantId == tenantId && l.ClaimId == claim.ClaimId).OrderBy(l => l.Sequence).ToListAsync(cancellationToken);
@@ -410,6 +364,38 @@ internal static class ChangeClaimHandler
                 UnitId = claim.UnitId, EventTime = eventTime, EventType = eventType, PresetEventId = eventId,
                 LegalEntityId = claim.ObligorEntityId, ActorRef = actorRef, IdempotencyKey = key,
                 Attributes = JsonObjectText.Of(new { claim_id = claim.ClaimId, status = claim.Status }),
+            },
+        ], cancellationToken);
+        return new(claim.ClaimId, claim.Status, eventId, false);
+    }
+}
+
+public static class RequestClaimEvidenceHandler
+{
+    public static async Task<ClaimChangeResult> Handle(RequestClaimEvidence command, SerialisationDbContext db, ClaimLedger ledger, ITenantContext tenant, CancellationToken cancellationToken)
+    {
+        var claim = await ledger.LoadAsync(command.ClaimId, cancellationToken);
+        var key = ClaimLedger.Key(command.CommandId, claim.ClaimId, ClaimEventType.EvidenceRequested, command.EventTime);
+        if (await ledger.ReplayedAsync(key, command.EventTime, cancellationToken) is { } replayed) return new(claim.ClaimId, claim.Status, replayed.EventId, true);
+        if (claim.Status is not (ClaimStatus.Submitted or ClaimStatus.Adjudicating))
+        {
+            throw new CommandRefusedException("claim_evidence_request_not_allowed", $"Claim {claim.ClaimNumber} is {claim.Status}; evidence can be asked for only before it is decided.");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.Note)) throw new CommandRefusedException("claim_evidence_note_required", "Say what evidence is needed.");
+        db.ClaimEvidence.Add(new ClaimEvidence
+        {
+            TenantId = tenant.TenantId, EvidenceId = TimeOrderedId.New(command.EventTime), ClaimId = claim.ClaimId, Kind = ClaimEvidenceKind.EvidenceRequested,
+            Reference = claim.ClaimNumber, Description = command.Note.Trim(), RecordedAt = command.EventTime, ActorRef = command.ActorRef,
+        });
+        var eventId = ClaimLedger.EventId(command.EventTime);
+        await ledger.AppendAsync(
+        [
+            new UnitEventDraft
+            {
+                UnitId = claim.UnitId, EventTime = command.EventTime, EventType = ClaimEventType.EvidenceRequested, PresetEventId = eventId,
+                LegalEntityId = claim.ServiceEntityId, ActorRef = command.ActorRef, IdempotencyKey = key,
+                Attributes = JsonObjectText.Of(new { claim_id = claim.ClaimId, note = command.Note.Trim() }),
             },
         ], cancellationToken);
         return new(claim.ClaimId, claim.Status, eventId, false);

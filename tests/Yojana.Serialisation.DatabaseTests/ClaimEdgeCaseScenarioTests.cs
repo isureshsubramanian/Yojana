@@ -40,7 +40,7 @@ public sealed class ClaimEdgeCaseScenarioTests(SerialisationHostFixture fixture)
     private async Task<CoveredUnit> CoveredUnitAsync(string prefix, string entitlementType = EntitlementType.Manufacturer,
         CoverageTerms? coverage = null)
     {
-        var tenant = await fixture.NewTenantAsync(prefix);
+        var tenant = await fixture.NewTenantAsync(prefix, "EUR");
         var obligor = Guid.NewGuid();
         await InvokeAsync<CoverageFamilyRow>(tenant,
             new DefineCoverageFamily(CoverageFamilyCode.Base, "Base warranty", false, AssuranceOrService.Assurance));
@@ -188,7 +188,7 @@ public sealed class ClaimEdgeCaseScenarioTests(SerialisationHostFixture fixture)
     [DatabaseFact]
     public async Task Case_73_an_unknown_unit_is_reconstructed_for_review_without_invented_history()
     {
-        var tenant = await fixture.NewTenantAsync("ec73");
+        var tenant = await fixture.NewTenantAsync("ec73", "EUR");
         var item = Guid.NewGuid();
         var serial = "EC73-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
         await InvokeAsync<CoverageFamilyRow>(tenant, new DefineCoverageFamily(CoverageFamilyCode.Base, "Base warranty", false, AssuranceOrService.Assurance));
@@ -249,7 +249,7 @@ public sealed class ClaimEdgeCaseScenarioTests(SerialisationHostFixture fixture)
     [DatabaseFact]
     public async Task Case_108_a_recall_notice_uses_the_owner_and_custodian_after_resale()
     {
-        var tenant = await fixture.NewTenantAsync("ec108");
+        var tenant = await fixture.NewTenantAsync("ec108", "EUR");
         var serial = "10800001";
         var commissioned = await InvokeAsync<CommissionUnitsResult>(tenant, new CommissionUnits(Guid.NewGuid(), Guid.NewGuid(),
             UnitOrigin.Purchased, [new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, serial)])],

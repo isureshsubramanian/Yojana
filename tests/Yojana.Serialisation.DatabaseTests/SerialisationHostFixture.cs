@@ -75,6 +75,17 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         await db.SaveChangesAsync();
         return id;
     }
+
+    /// <summary>A tenant set up with its working currency and the other currencies it accepts on documents.</summary>
+    public async Task<TenantId> NewTenantAsync(string prefix, string currency, params string[] accepted)
+    {
+        var id = await NewTenantAsync(prefix);
+        using var scope = ScopeFor(id);
+        var currencies = scope.ServiceProvider.GetRequiredService<ITenantCurrency>();
+        await currencies.SetAsync(currency, CancellationToken.None);
+        await currencies.SetAcceptedAsync(accepted, CancellationToken.None);
+        return id;
+    }
 }
 
 [CollectionDefinition("serialisation host")]

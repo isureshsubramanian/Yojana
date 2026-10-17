@@ -3,24 +3,113 @@ using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation.Claims;
 
 public sealed class ClaimQueries(SerialisationDbContext db, ITenantContext tenant) : IWarrantyClaimsPort
 {
-    public async Task<ClaimPage> ListAsync(string? status, DateOnly asOf, int skip, int take, CancellationToken cancellationToken)
+    private static readonly string[] Settled = [ClaimStatus.Settled, ClaimStatus.Closed];
+    private static readonly string[] Decided = [ClaimStatus.Approved, ClaimStatus.PartiallyApproved, ClaimStatus.Denied, ClaimStatus.Settled, ClaimStatus.Closed];
+
+    /// <summary>Upper bounds (inclusive) of the ageing buckets in days from submission; the last bucket is open-ended.</summary>
+    public static readonly int[] AgeBucketBounds = [1, 5, 10, 20];
+
+    private IQueryable<Claim> Filtered(ClaimListFilter filter)
     {
         var tenantId = tenant.TenantId;
         var source = db.Claims.AsNoTracking().Where(c => c.TenantId == tenantId);
-        if (!string.IsNullOrWhiteSpace(status)) source = source.Where(c => c.Status == status);
+        source = filter.Status switch
+        {
+            null or "" or "open" => source.Where(c => !Settled.Contains(c.Status)),
+            "all" => source,
+            var status => source.Where(c => c.Status == status),
+        };
+        if (!string.IsNullOrWhiteSpace(filter.CoverageSource)) source = source.Where(c => c.CoverageSource == filter.CoverageSource);
+        if (!string.IsNullOrWhiteSpace(filter.ServiceCountry)) source = source.Where(c => c.ServiceCountry == filter.ServiceCountry);
+        if (filter.Recovery == "raised") source = source.Where(c => c.RecoveryRaised);
+        else if (filter.Recovery == "none") source = source.Where(c => !c.RecoveryRaised);
+        if (!string.IsNullOrWhiteSpace(filter.Query))
+        {
+            // The caller resolves the text to units through identifier lookup; here it also matches a claim number.
+            var number = filter.Query.Trim().ToUpperInvariant();
+            var units = filter.UnitIds ?? [];
+            source = source.Where(c => c.ClaimNumber == number || units.Contains(c.UnitId));
+        }
+
+        return source;
+    }
+
+    public async Task<ClaimPage> ListAsync(ClaimListFilter filter, DateOnly asOf, int skip, int take, CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        var source = Filtered(filter);
         var total = await source.CountAsync(cancellationToken);
-        var rows = await source.OrderBy(c => c.Status == ClaimStatus.Closed).ThenBy(c => c.ClaimDate).ThenBy(c => c.ClaimId)
-            .Skip(Math.Max(0, skip)).Take(Math.Clamp(take, 1, 200))
-            .Select(c => new { Claim = c, Requested = db.ClaimLines.Where(l => l.TenantId == tenantId && l.ClaimId == c.ClaimId).Sum(l => l.RequestedAmount), Approved = db.ClaimLines.Where(l => l.TenantId == tenantId && l.ClaimId == c.ClaimId).Sum(l => l.ApprovedAmount) })
+        take = Math.Clamp(take, 1, 200);
+        skip = Math.Max(0, skip);
+        var rows = await source.OrderBy(c => Settled.Contains(c.Status)).ThenBy(c => c.SubmittedAt).ThenBy(c => c.ClaimId)
+            .Skip(skip).Take(take)
+            .Select(c => new
+            {
+                Claim = c,
+                Requested = db.ClaimLines.Where(l => l.TenantId == tenantId && l.ClaimId == c.ClaimId).Sum(l => l.RequestedAmount),
+                Approved = db.ClaimLines.Where(l => l.TenantId == tenantId && l.ClaimId == c.ClaimId).Sum(l => l.ApprovedAmount),
+                Lines = db.ClaimLines.Count(l => l.TenantId == tenantId && l.ClaimId == c.ClaimId),
+                LastEvidenceKind = db.ClaimEvidence.Where(e => e.TenantId == tenantId && e.ClaimId == c.ClaimId).OrderByDescending(e => e.RecordedAt).Select(e => e.Kind).FirstOrDefault(),
+                ItemId = db.Current.Where(u => u.TenantId == tenantId && u.UnitId == c.UnitId).Select(u => (Guid?)u.ItemId).FirstOrDefault(),
+            })
             .ToListAsync(cancellationToken);
-        return new(rows.Select(x => new ClaimListRow(x.Claim.ClaimId, x.Claim.UnitId, x.Claim.Status, x.Claim.CoverageSource, x.Claim.ClaimDate,
-            x.Requested, x.Approved, Math.Max(0, asOf.DayNumber - x.Claim.ClaimDate.DayNumber), x.Claim.DenialReason)).ToList(), total, Math.Max(0, skip), Math.Clamp(take, 1, 200));
+        var serials = await UnitSerials.DisplayAsync(db, tenantId, rows.Select(r => r.Claim.UnitId), cancellationToken);
+        return new(rows.Select(x => new ClaimListRow(x.Claim.ClaimId, x.Claim.ClaimNumber, x.Claim.UnitId, serials.GetValueOrDefault(x.Claim.UnitId), x.ItemId,
+            x.Claim.ClaimantPartyRef, x.Claim.SettlementPartyRef, x.Claim.Status, x.Claim.CoverageSource, x.Claim.Remedy, x.Claim.ServiceCountry, x.Claim.Currency,
+            x.Claim.ClaimDate, x.Claim.SubmittedAt, x.Requested, x.Approved, AgeDays(x.Claim.SubmittedAt, asOf), x.Claim.DenialReason, x.Claim.RecoveryRaised,
+            x.LastEvidenceKind == ClaimEvidenceKind.EvidenceRequested, x.Lines, Decided.Contains(x.Claim.Status) ? x.Lines : 0)).ToList(), total, skip, take);
+    }
+
+    public async Task<ClaimSummary> SummaryAsync(DateOnly asOf, int targetWorkingDays, CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        var claims = db.Claims.AsNoTracking().Where(c => c.TenantId == tenantId);
+        var open = await claims.Where(c => !Settled.Contains(c.Status))
+            .Select(c => new
+            {
+                c.ClaimId, c.ClaimNumber, c.Status, c.SubmittedAt,
+                LastEvidenceKind = db.ClaimEvidence.Where(e => e.TenantId == tenantId && e.ClaimId == c.ClaimId).OrderByDescending(e => e.RecordedAt).Select(e => e.Kind).FirstOrDefault(),
+            })
+            .ToListAsync(cancellationToken);
+        var monthStart = new DateTime(asOf.Year, asOf.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var monthEnd = monthStart.AddMonths(1);
+        var decided = await claims.Where(c => c.AdjudicatedAt >= monthStart && c.AdjudicatedAt < monthEnd)
+            .Select(c => new
+            {
+                c.Status, c.Currency, c.DenialReason,
+                Approved = db.ClaimLines.Where(l => l.TenantId == tenantId && l.ClaimId == c.ClaimId).Sum(l => l.ApprovedAmount),
+            })
+            .ToListAsync(cancellationToken);
+        var recoveries = await db.RecoveryClaims.AsNoTracking().Where(r => r.TenantId == tenantId && r.Status == RecoveryClaimStatus.Raised)
+            .GroupBy(r => r.Currency).Select(g => new { Currency = g.Key, Amount = g.Sum(r => r.RequestedAmount), Count = g.Count() }).ToListAsync(cancellationToken);
+        var vendors = await db.RecoveryClaims.AsNoTracking().Where(r => r.TenantId == tenantId && r.Status == RecoveryClaimStatus.Raised)
+            .Select(r => r.VendorPartyRef).Distinct().CountAsync(cancellationToken);
+        var sources = await claims.Select(c => c.CoverageSource).Distinct().OrderBy(x => x).ToListAsync(cancellationToken);
+        var countries = await claims.Select(c => c.ServiceCountry).Distinct().OrderBy(x => x).ToListAsync(cancellationToken);
+        var all = await claims.LongCountAsync(cancellationToken);
+
+        var buckets = new int[AgeBucketBounds.Length + 1];
+        foreach (var claim in open) buckets[Bucket(AgeDays(claim.SubmittedAt, asOf))]++;
+        var oldest = open.OrderBy(c => c.SubmittedAt).ThenBy(c => c.ClaimId).FirstOrDefault();
+        var approvedThisMonth = decided.Where(d => d.Status is ClaimStatus.Approved or ClaimStatus.PartiallyApproved or ClaimStatus.Settled or ClaimStatus.Closed && d.Approved > 0).ToList();
+        var deniedThisMonth = decided.Where(d => d.Status == ClaimStatus.Denied || (d.Approved == 0 && d.DenialReason is not null)).ToList();
+        return new ClaimSummary(asOf, open.Count,
+            open.Count(c => c.Status == ClaimStatus.Submitted), open.Count(c => c.Status == ClaimStatus.Adjudicating),
+            open.Count(c => c.Status is ClaimStatus.Approved or ClaimStatus.PartiallyApproved), open.Count(c => c.Status == ClaimStatus.Denied),
+            approvedThisMonth.GroupBy(d => d.Currency).Select(g => new MoneyTotal(g.Key, g.Sum(d => d.Approved))).OrderByDescending(m => m.Amount).ToList(),
+            approvedThisMonth.Count, approvedThisMonth.Count(d => d.Status == ClaimStatus.PartiallyApproved || d.DenialReason == "partially_uncovered"),
+            deniedThisMonth.Count,
+            deniedThisMonth.GroupBy(d => d.DenialReason ?? "no_applicable_coverage").Select(g => new ReasonCount(g.Key, g.Count())).OrderByDescending(r => r.Count).ToList(),
+            recoveries.Select(r => new MoneyTotal(r.Currency, r.Amount)).OrderByDescending(m => m.Amount).ToList(), recoveries.Sum(r => r.Count), vendors,
+            oldest?.ClaimNumber, oldest?.ClaimId, oldest is null ? null : AgeDays(oldest.SubmittedAt, asOf), oldest?.Status,
+            oldest?.LastEvidenceKind == ClaimEvidenceKind.EvidenceRequested, buckets, targetWorkingDays, sources, countries, all);
     }
 
     public async Task<ClaimDetail?> DetailAsync(Guid claimId, CancellationToken cancellationToken)
@@ -30,11 +119,31 @@ public sealed class ClaimQueries(SerialisationDbContext db, ITenantContext tenan
         if (claim is null) return null;
         var lines = await db.ClaimLines.AsNoTracking().Where(l => l.TenantId == tenantId && l.ClaimId == claimId).OrderBy(l => l.Sequence).ToListAsync(cancellationToken);
         var evidence = await db.ClaimEvidence.AsNoTracking().Where(e => e.TenantId == tenantId && e.ClaimId == claimId).OrderBy(e => e.RecordedAt).ThenBy(e => e.EvidenceId).ToListAsync(cancellationToken);
+        var unitIds = lines.Select(l => l.UnitId).Append(claim.UnitId).Distinct().ToList();
+        var serials = await UnitSerials.DisplayAsync(db, tenantId, unitIds, cancellationToken);
+        var items = await db.Current.AsNoTracking().Where(u => u.TenantId == tenantId && unitIds.Contains(u.UnitId)).ToDictionaryAsync(u => u.UnitId, u => u.ItemId, cancellationToken);
+        var recoveries = await db.RecoveryClaims.AsNoTracking().Where(r => r.TenantId == tenantId && r.CustomerClaimId == claimId).OrderBy(r => r.RecoveryNumber)
+            .Select(r => new ClaimRecoveryRef(r.RecoveryClaimId, r.RecoveryNumber, r.VendorPartyRef, r.Status)).ToListAsync(cancellationToken);
         return new ClaimDetail(claim.ClaimId, claim.UnitId, claim.Status, claim.RecoveryRaised, claim.ClaimDate, claim.ClaimantPartyRef, claim.SettlementPartyRef,
             claim.ServiceEntityId, claim.ObligorEntityId, claim.ServiceCountry, claim.Currency, claim.CoverageSource, claim.Remedy, claim.DenialReason, claim.ChainLength,
             JsonSerializer.Deserialize<List<Guid>>(claim.EntitlementIds, LedgerJson.Options) ?? [],
             lines.Select(Decision).ToList(), evidence.Select(e => new ClaimEvidenceRow(e.EvidenceId, e.Kind, e.Reference, e.Description, e.RecordedAt, e.ActorRef)).ToList(),
-            claim.AdjudicatedBy, claim.ReviewerRole, SuccessorItemId: claim.SuccessorItemId);
+            claim.AdjudicatedBy, claim.ReviewerRole, claim.SuccessorItemId, claim.ClaimNumber, serials.GetValueOrDefault(claim.UnitId),
+            items.TryGetValue(claim.UnitId, out var itemId) ? itemId : null, claim.SubmittedAt, claim.SubmittedBy, claim.AdjudicatedAt,
+            lines.Select(l => Row(l, serials, items)).ToList(), recoveries);
+    }
+
+    internal static ClaimLineRow Row(ClaimLine line, IReadOnlyDictionary<Guid, string> serials, IReadOnlyDictionary<Guid, Guid> items) =>
+        new(line.ClaimLineId, line.Sequence, line.UnitId, serials.GetValueOrDefault(line.UnitId), items.TryGetValue(line.UnitId, out var item) ? item : null,
+            line.Kind, line.CoverageFamily, line.Description, line.RequestedAmount, line.CoveragePct, line.ApprovedAmount, line.CoverageSource, line.DenialReason,
+            JsonSerializer.Deserialize<Dictionary<string, decimal>>(line.Measurements, LedgerJson.Options) ?? []);
+
+    public static int AgeDays(DateTime submittedAt, DateOnly asOf) => Math.Max(0, asOf.DayNumber - DateOnly.FromDateTime(submittedAt).DayNumber);
+
+    public static int Bucket(int ageDays)
+    {
+        for (var i = 0; i < AgeBucketBounds.Length; i++) if (ageDays <= AgeBucketBounds[i]) return i;
+        return AgeBucketBounds.Length;
     }
 
     public Task<List<RecoveryClaimRow>> RecoveryListAsync(string? status, CancellationToken cancellationToken)

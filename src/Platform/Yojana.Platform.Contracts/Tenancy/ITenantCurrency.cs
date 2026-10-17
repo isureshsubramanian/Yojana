@@ -9,11 +9,23 @@ public interface ITenantCurrency
 {
     public const string Key = "tenant.currency";
 
+    /// <summary>Setting key of the other currencies documents may be written in (JSON array of codes).</summary>
+    public const string AcceptedKey = "tenant.currencies.accepted";
+
     /// <summary>The configured code, or null while the tenant has not set one up.</summary>
     Task<string?> GetAsync(CancellationToken cancellationToken);
 
-    /// <summary>Sets the code; refuses anything that is not three letters A–Z after trimming and upper-casing.</summary>
+    /// <summary>Sets the code; refuses anything that is not a currency of the catalogue.</summary>
     Task<string> SetAsync(string code, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The currencies documents (claims, recovery claims, quotes) may be written in: the working currency first, then
+    /// the accepted others in code order. Empty while the working currency is not set up.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetAcceptedAsync(CancellationToken cancellationToken);
+
+    /// <summary>Replaces the accepted other currencies; refuses any code outside the catalogue. The working currency is always accepted.</summary>
+    Task<IReadOnlyList<string>> SetAcceptedAsync(IReadOnlyList<string> codes, CancellationToken cancellationToken);
 
     /// <summary>The normalised code (trimmed, upper case), or null when <paramref name="code"/> is not three letters.</summary>
     static string? Normalise(string? code)

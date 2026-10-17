@@ -129,17 +129,24 @@ app.MapGet("/api/auth/me", async (SignInService signIn, PlatformDbContext db, Ht
 
 app.MapPost("/api/auth/sign-out", async (HttpContext http) => { await http.SignOutAsync(); return Results.NoContent(); }).RequireAuthorization();
 
-// The tenant's working currency: every configured amount (approval thresholds, policy values) is in it.
-app.MapGet("/api/tenant/currency", async (ITenantCurrency currency, CancellationToken ct) => Results.Ok(new { currency = await currency.GetAsync(ct) }))
+// The tenant's currencies: the working currency (every configured amount, approval thresholds and policy values, is
+// in it) and the other currencies documents may be written in, both chosen from the ISO 4217 catalogue at setup.
+app.MapGet("/api/tenant/currency", async (ITenantCurrency currency, CancellationToken ct) =>
+    Results.Ok(new { currency = await currency.GetAsync(ct), accepted = await currency.GetAcceptedAsync(ct) }))
     .RequireAuthorization(YojanaPolicy.TenantMember);
+app.MapGet("/api/tenant/currency/catalogue", (ICurrencyCatalogue catalogue) => Results.Ok(catalogue.All)).RequireAuthorization(YojanaPolicy.TenantMember);
 app.MapPut("/api/tenant/currency", async (TenantCurrencyRequest request, ITenantCurrency currency, CancellationToken ct) =>
 {
-    if (ITenantCurrency.Normalise(request.Currency) is null)
+    try
     {
-        return Results.Problem(title: "currency_invalid", detail: $"'{request.Currency}' is not an ISO 4217 currency code (three letters).", statusCode: StatusCodes.Status400BadRequest);
+        var working = await currency.SetAsync(request.Currency, ct);
+        var accepted = request.Accepted is { } others ? await currency.SetAcceptedAsync(others, ct) : await currency.GetAcceptedAsync(ct);
+        return Results.Ok(new { currency = working, accepted });
     }
-
-    return Results.Ok(new { currency = await currency.SetAsync(request.Currency, ct) });
+    catch (ArgumentException ex)
+    {
+        return Results.Problem(title: "currency_invalid", detail: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+    }
 }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
 
 // People: display names for actor references (user ids or e-mail addresses) of members of the selected tenant.
@@ -196,7 +203,7 @@ namespace Yojana.Web
 
     public sealed record PingRequest(string Note);
 
-    public sealed record TenantCurrencyRequest(string Currency);
+    public sealed record TenantCurrencyRequest(string Currency, IReadOnlyList<string>? Accepted = null);
 
     public sealed record PeopleNamesRequest(IReadOnlyList<string> References);
 

@@ -68,6 +68,11 @@ public sealed class ClaimReviewSettings(ITenantSettings settings)
             throw new CommandRefusedException("claim_review_policy_invalid", $"'{policy.LowConfidenceReviewerRole}' is not a tenant role.");
         }
 
+        if (policy.AdjudicationTargetWorkingDays is < 1 or > 60)
+        {
+            throw new CommandRefusedException("claim_review_policy_invalid", "The adjudication target must be between 1 and 60 working days.");
+        }
+
         await settings.SetAsync(Key, JsonSerializer.Serialize(policy, LedgerJson.Options), cancellationToken);
     }
 }

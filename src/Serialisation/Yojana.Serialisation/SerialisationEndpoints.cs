@@ -331,8 +331,20 @@ public static class SerialisationEndpoints
         // Claims and supplier recovery (MOD-07, P4). Identity and reviewer roles come from the session; the endpoint
         // overwrites both values so a request body cannot forge the low-confidence review evidence.
         var claims = app.MapGroup("/api/claims").RequireAuthorization(YojanaPolicy.TenantMember);
-        claims.MapGet("/", async (string? status, int? skip, int? take, ClaimQueries queries, IClock clock, CancellationToken ct) =>
-            Results.Ok(await queries.ListAsync(status, DateOnly.FromDateTime(clock.UtcNow), Math.Max(0, skip ?? 0), take ?? 50, ct)));
+        claims.MapGet("/", async (string? status, string? coverageSource, string? serviceCountry, string? recovery, string? q, int? skip, int? take,
+            ClaimQueries queries, UnitQueries units, IClock clock, CancellationToken ct) =>
+        {
+            IReadOnlyList<Guid>? unitIds = null;
+            if (!string.IsNullOrWhiteSpace(q)) unitIds = (await units.LookupAsync(q.Trim(), null, ct)).Hits.Select(h => h.UnitId).Distinct().ToList();
+            return Results.Ok(await queries.ListAsync(new ClaimListFilter(status ?? "open", coverageSource, serviceCountry, recovery, q, unitIds),
+                DateOnly.FromDateTime(clock.UtcNow), Math.Max(0, skip ?? 0), take ?? 50, ct));
+        });
+        claims.MapGet("/summary", async (ClaimQueries queries, ClaimReviewSettings settings, IClock clock, CancellationToken ct) =>
+            Results.Ok(await queries.SummaryAsync(DateOnly.FromDateTime(clock.UtcNow), (await settings.GetAsync(ct)).AdjudicationTargetWorkingDays, ct)));
+        claims.MapGet("/{claimId:guid}/adjudication-preview", async (Guid claimId, ClaimAdjudicationPreviewQuery preview, ClaimReviewSettings settings, CancellationToken ct) =>
+            await preview.PreviewAsync(claimId, (await settings.GetAsync(ct)).LowConfidenceReviewerRole, ct) is { } model ? Results.Ok(model) : Results.NotFound());
+        claims.MapPost("/{claimId:guid}/request-evidence", (Guid claimId, RequestClaimEvidence command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
         claims.MapGet("/review-policy", async (ClaimReviewSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)))
             .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         claims.MapPut("/review-policy", async (ClaimReviewPolicy policy, ClaimReviewSettings settings, CancellationToken ct) =>

@@ -42,10 +42,21 @@ public sealed record SubmitClaimResult(Guid ClaimId, Guid UnitId, string Status,
 /// <summary>The signed-in adjudicator and the tenant roles established by the trusted entry point.</summary>
 public sealed record ClaimReviewer(string UserRef, IReadOnlyList<string> Roles);
 
-public sealed record AdjudicateClaim(Guid CommandId, Guid ClaimId, DateTime EventTime, string ActorRef, ClaimReviewer? ReviewedBy = null);
+/// <summary>
+/// Adjudicates every line against the policy stack, or, when <see cref="DenialReason"/> is given, records the
+/// adjudicator's claim-level finding (<see cref="ClaimManualDenialReason"/>) with its note instead.
+/// </summary>
+public sealed record AdjudicateClaim(Guid CommandId, Guid ClaimId, DateTime EventTime, string ActorRef, ClaimReviewer? ReviewedBy = null,
+    string? DenialReason = null, string? DenialNote = null);
 
-/// <summary>The tenant-selected role that must review adjudication based on low-confidence cover.</summary>
-public sealed record ClaimReviewPolicy(string LowConfidenceReviewerRole);
+/// <summary>Asks the claimant for more evidence; the claim keeps its status and the request shows on the list until evidence arrives.</summary>
+public sealed record RequestClaimEvidence(Guid CommandId, Guid ClaimId, string Note, DateTime EventTime, string ActorRef);
+
+/// <summary>
+/// Tenant claim settings: the role that must review adjudication based on low-confidence cover, and the adjudication
+/// target the claims list measures ageing against (working days from submission).
+/// </summary>
+public sealed record ClaimReviewPolicy(string LowConfidenceReviewerRole, int AdjudicationTargetWorkingDays = 5);
 
 public sealed record ClaimLineDecision(
     Guid ClaimLineId,
@@ -81,10 +92,6 @@ public sealed record CloseClaim(Guid CommandId, Guid ClaimId, DateTime EventTime
 
 public sealed record ClaimChangeResult(Guid ClaimId, string Status, Guid EventId, bool Replayed);
 
-public sealed record ClaimListRow(Guid ClaimId, Guid UnitId, string Status, string CoverageSource, DateOnly ClaimDate, decimal RequestedAmount, decimal ApprovedAmount, int AgeDays, string? DenialReason);
-
-public sealed record ClaimPage(IReadOnlyList<ClaimListRow> Items, int Total, int Skip, int Take);
-
 public sealed record ClaimEvidenceRow(Guid EvidenceId, string Kind, string Reference, string? Description, DateTime RecordedAt, string ActorRef);
 
 public sealed record ClaimDetail(
@@ -108,7 +115,16 @@ public sealed record ClaimDetail(
     IReadOnlyList<ClaimEvidenceRow> Evidence,
     string? AdjudicatedBy = null,
     string? ReviewerRole = null,
-    Guid? SuccessorItemId = null);
+    Guid? SuccessorItemId = null,
+    string ClaimNumber = "",
+    string? Serial = null,
+    Guid? ItemId = null,
+    DateTime SubmittedAt = default,
+    string SubmittedBy = "",
+    DateTime? AdjudicatedAt = null,
+    IReadOnlyList<ClaimLineRow>? LineRows = null,
+    IReadOnlyList<ClaimRecoveryRef>? Recoveries = null,
+    string? OpenWork = null);
 
 public sealed record RecoveryClaimRow(
     Guid RecoveryClaimId,

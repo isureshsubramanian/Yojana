@@ -21,6 +21,7 @@ public static class ClaimEventType
     public const string RecoveryRaised = "recovery_claim.raised";
     public const string RecoveryApproved = "recovery_claim.approved";
     public const string ChargeableQuoteRequested = "chargeable_quote.requested";
+    public const string EvidenceRequested = "claim.evidence_requested";
 }
 
 public static class ClaimCoverageSource
@@ -57,11 +58,25 @@ public static class ClaimDenialReason
     public const string AfterLastServiceDate = "after_last_service_date";
 }
 
+/// <summary>Findings an adjudicator may deny a whole claim on; the policy stack's own reasons are never chosen by hand.</summary>
+public static class ClaimManualDenialReason
+{
+    public const string UnauthorisedPartsDamage = "unauthorised_parts_damage";
+    public const string MisuseOrAccident = "misuse_or_accident";
+    public const string NoFaultFound = "no_fault_found";
+    public const string EvidenceInsufficient = "evidence_insufficient";
+    public const string TamperedOrMissingLabel = "tampered_or_missing_label";
+
+    public static readonly IReadOnlySet<string> All = new HashSet<string>([UnauthorisedPartsDamage, MisuseOrAccident, NoFaultFound, EvidenceInsufficient, TamperedOrMissingLabel], StringComparer.Ordinal);
+}
+
 public static class ClaimEvidenceKind
 {
     public const string Attachment = "attachment";
     public const string ProofOfPurchase = "proof_of_purchase";
     public const string ConsumerRemedyChoice = "consumer_remedy_choice";
+    public const string AdjudicationNote = "adjudication_note";
+    public const string EvidenceRequested = "evidence_requested";
 }
 
 public static class RecoveryClaimStatus
