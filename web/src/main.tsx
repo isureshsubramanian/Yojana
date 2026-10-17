@@ -4,6 +4,7 @@ import { RouterProvider } from "react-router";
 import "./styles/theme-glass.css";
 import "./styles/base.css";
 import "./styles/layout.css";
+import "./corrections/corrections.css";
 import { IconSprite } from "./shell/Icons";
 import { router } from "./routes";
 

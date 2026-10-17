@@ -1,0 +1,24 @@
+.correction-bar { display: grid; grid-template-columns: minmax(0, 1fr) 52px; align-items: center; gap: 10px; }
+.correction-trend { display: inline-flex; gap: 2px; align-items: flex-end; height: 22px; vertical-align: middle; }
+.correction-trend i { display: block; width: 6px; min-height: 2px; background: var(--accent); opacity: .55; border-radius: 1px; }
+.correction-trend i:last-child { opacity: 1; }
+.correction-work-orders { display: grid; grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr); gap: 8px; align-items: center; }
+.correction-work-order { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.correction-work-order .k { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
+.correction-exchange { text-align: center; color: var(--text-3); font-size: 20px; }
+.correction-records { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap); align-items: start; }
+.correction-record.survivor { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.correction-paste { font-family: var(--font-mono); font-size: 12.5px; min-height: 180px; line-height: 1.5; }
+.correction-source-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+.correction-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.correction-target-grid { display: grid; gap: 10px; }
+.correction-target-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px; gap: 10px; align-items: center; }
+.correction-target-row label { color: var(--text-2); font-size: 13px; }
+.correction-choice-help { white-space: normal; line-height: 1.35; }
+.correction-alert { margin-bottom: var(--gap); }
+.correction-empty-setup { display: grid; gap: 12px; max-width: 780px; }
+@media (max-width: 960px) {
+  .correction-records, .correction-source-fields { grid-template-columns: 1fr; }
+  .correction-work-orders { grid-template-columns: 1fr; }
+  .correction-exchange { transform: rotate(90deg); }
+}
