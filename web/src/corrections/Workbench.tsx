@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { DEFAULT_LEGAL_ENTITY, newCommandId, now, type HistoryRow } from "../api/units";
+import { DEFAULT_LEGAL_ENTITY, newCommandId, now, type DocumentRef, type HistoryRow } from "../api/units";
 import { StatusBadge } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
@@ -12,14 +12,15 @@ import { fmtDate, fmtDateTime, humanise, outcomeTone, shortId, statusLabel, stat
 import { DocumentField, ItemField, useReferenceNames } from "./ReferenceFields";
 import {
   DEDICATED_SCREENS, commandName, recordedRows, workbenchApi,
-  type WorkbenchCandidate, type WorkbenchChoice, type WorkbenchChoiceOption, type WorkbenchEvidenceRef, type WorkbenchPicker,
+  type WorkbenchCandidate, type WorkbenchChoice, type WorkbenchChoiceOption, type WorkbenchEntry, type WorkbenchEvidenceRef, type WorkbenchPicker,
   type WorkbenchPreviewRequest, type WorkbenchPreviewResult, type WorkbenchRequestRow, type WorkbenchUnitLineage,
 } from "./workbenchApi";
+import { StructuredCommandForm, STRUCTURED_COMMANDS } from "./WorkbenchCommandForms";
 
 const ENTRY_KINDS = [["identifier", "Serial or tag"], ["document_line", "Document line"], ["selection_set", "Selection set"]] as const;
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** Commands whose arguments this screen collects itself; the rest hand over to their own screen or take raw arguments. */
-const INLINE = ["correct_identifier", "swap_identifiers", "void_unit", "correct_item"];
+/** Commands whose arguments this screen collects itself; the rest hand over to their own screen. */
+const INLINE = ["correct_identifier", "swap_identifiers", "void_unit", "correct_item", ...STRUCTURED_COMMANDS];
 
 /** P3-T19: the serial correction workbench. Pick what is wrong; every path ends in one existing, audited command. */
 export function Component() {
@@ -29,13 +30,15 @@ export function Component() {
   const [documentType, setDocumentType] = useState("delivery");
   const [candidates, setCandidates] = useState<WorkbenchCandidate[]>([]);
   const [unitId, setUnitId] = useState<string | null>(params.get("unit"));
+  const [resolvedEntry, setResolvedEntry] = useState<WorkbenchEntry | null>(null);
+  const [resolvedSelectionId, setResolvedSelectionId] = useState<string | null>(null);
   const [lineage, setLineage] = useState<WorkbenchUnitLineage | null>(null);
   const [search, setSearch] = useState("");
   const [picker, setPicker] = useState<WorkbenchPicker | null>(null);
   const [choiceId, setChoiceId] = useState<string | null>(null);
   const [option, setOption] = useState<WorkbenchChoiceOption | null>(null);
   const [args, setArgs] = useState<Record<string, string>>({});
-  const [rawArgs, setRawArgs] = useState("{}");
+  const [structuredArguments, setStructuredArguments] = useState<Record<string, unknown> | null>(null);
   const [reasons, setReasons] = useState<string[]>([]);
   const [reason, setReason] = useState("");
   const [corrects, setCorrects] = useState("");
@@ -62,13 +65,13 @@ export function Component() {
 
   const resolve = async (value = entryValue) => {
     if (!value.trim()) return;
-    setBusy(true); setError(null); setCandidates([]); reset();
+    setBusy(true); setError(null); setCandidates([]); setUnitId(null); setResolvedEntry(null); setResolvedSelectionId(null); reset();
     try {
       const entry = entryKind === "document_line"
         ? { kind: entryKind, document: { type: documentType, id: value.trim() } }
         : entryKind === "selection_set" ? { kind: entryKind, selectionId: value.trim() } : { kind: entryKind, value: value.trim() };
       const result = await workbenchApi.resolve(entry);
-      setCandidates(result.candidates);
+      setCandidates(result.candidates); setResolvedEntry(result.entry); setResolvedSelectionId(result.selectionId);
       setUnitId(result.candidates.length === 1 ? result.candidates[0]!.resolvedUnitId : null);
       if (result.candidates.length === 0) setError(new Error(`Nothing resolves from "${value.trim()}". Superseded serials, asset tags and licence ids are accepted.`));
     } catch (reason) { setError(reason); } finally { setBusy(false); }
@@ -105,9 +108,9 @@ export function Component() {
     setLinked(null);
   }, [choices, linked]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function reset() { setChoiceId(null); setOption(null); setPreview(null); setRequest(null); setArgs({}); setRawArgs("{}"); setCommandId(newCommandId()); }
+  function reset() { setChoiceId(null); setOption(null); setPreview(null); setRequest(null); setArgs({}); setStructuredArguments(null); setCommandId(newCommandId()); }
   const pick = (next: WorkbenchChoice) => {
-    setChoiceId(next.choice); setPreview(null); setRequest(null); setArgs({}); setRawArgs("{}"); setCommandId(newCommandId());
+    setChoiceId(next.choice); setPreview(null); setRequest(null); setArgs({}); setStructuredArguments(null); setCommandId(newCommandId());
     const only = next.questions.length === 0 && next.commands[0] ? { value: "only", label: next.label, command: next.commands[0], defaultReason: next.defaultReason, rootCause: next.rootCause } : null;
     setOption(only);
   };
@@ -122,7 +125,9 @@ export function Component() {
   // Arguments travel as the command's own JSON in the ledger's snake_case (WorkbenchCommandDispatcher reads them with
   // LedgerJson.Options); identity and approval fields are overwritten by the server.
   const commandArguments = useMemo<Record<string, unknown> | null>(() => {
-    if (!command || !unitId) return null;
+    if (!command) return null;
+    if (STRUCTURED_COMMANDS.includes(command as typeof STRUCTURED_COMMANDS[number])) return structuredArguments ? { ...structuredArguments, ...(corrects ? { correction: { corrects_correction_id: corrects } } : {}) } : null;
+    if (!unitId) return null;
     const base: Record<string, unknown> = { event_time: now(), actor_ref: "", legal_entity_id: DEFAULT_LEGAL_ENTITY, unit_id: unitId };
     if (corrects) base.correction = { corrects_correction_id: corrects };
     switch (command) {
@@ -130,15 +135,28 @@ export function Component() {
       case "swap_identifiers": { const { unit_id: _, ...rest } = base; return args.type && args.other ? { ...rest, first_unit_id: unitId, second_unit_id: args.other, identifier_type: args.type } : null; }
       case "void_unit": return { ...base, production_order: GUID.test(args.order ?? "") ? { type: "production_order", id: args.order } : null };
       case "correct_item": return GUID.test(args.item ?? "") ? { ...base, corrected_item_id: args.item } : null;
-      default: if (DEDICATED_SCREENS[command]) return null; try { return { ...(JSON.parse(rawArgs) as Record<string, unknown>), ...(corrects ? { correction: base.correction } : {}) }; } catch { return null; }
+      default: return null;
     }
-  }, [command, unitId, args, rawArgs, corrects]);
+  }, [command, unitId, args, structuredArguments, corrects]);
 
-  const previewRequest = useMemo<WorkbenchPreviewRequest | null>(() => choice && command && commandArguments && reason && unitId ? {
+  const commandTarget = useMemo<WorkbenchPreviewRequest["target"] | null>(() => {
+    if (command === "correct_document_serials") {
+      const document = commandArguments?.document;
+      return document && typeof document === "object" ? { kind: "document_line", document: document as DocumentRef } : null;
+    }
+    if (command === "correct_source_document") {
+      const selectionId = commandArguments?.selection_id;
+      return typeof selectionId === "string" ? { kind: "selection_set", selectionId } : null;
+    }
+    if (command === "late_serialization" && resolvedEntry?.document) return { kind: "document_line", document: resolvedEntry.document };
+    return unitId ? { kind: "unit", unitId } : null;
+  }, [command, commandArguments, resolvedEntry, unitId]);
+
+  const previewRequest = useMemo<WorkbenchPreviewRequest | null>(() => choice && command && commandArguments && commandTarget && reason ? {
     commandId, choice: choice.choice, reason, note: note || null, evidence,
     answers: { command, arguments: commandArguments, narrowing: option && choice.questions[0] ? { [choice.questions[0].key]: option.value } : null },
-    target: { kind: "unit", unitId },
-  } : null, [choice, command, commandArguments, reason, unitId, commandId, note, evidence, option]);
+    target: commandTarget,
+  } : null, [choice, command, commandArguments, commandTarget, reason, commandId, note, evidence, option]);
   const previewKey = useMemo(() => previewRequest ? JSON.stringify({ ...previewRequest, answers: { ...previewRequest.answers, arguments: { ...(previewRequest.answers.arguments as object), eventTime: undefined } } }) : null, [previewRequest]);
 
   useEffect(() => {
@@ -278,8 +296,8 @@ export function Component() {
           {choice && !choice.fallback && <section className="card" aria-labelledby="wb-narrow">
             <div className="card-header"><h2 id="wb-narrow">{choice.questions[0]?.prompt ?? "The command"}</h2><span className="meta">Step 2 of 3 · narrows to one command</span></div>
             <div className="card-body">
-              {choice.questions.length > 0 && <div className="segmented" role="group" aria-label="Which" style={{ marginBottom: 14, flexWrap: "wrap" }}>{options.map((o) => <button key={o.value} type="button" aria-pressed={option?.value === o.value} onClick={() => { setOption(o); setPreview(null); setArgs({}); setCommandId(newCommandId()); }}>{o.label}</button>)}</div>}
-              {command && <CommandForm command={command} unitId={unitId} primary={primary?.rawValue ?? null} openTypes={openTypes} args={args} setArgs={setArgs} rawArgs={rawArgs} setRawArgs={setRawArgs} />}
+              {choice.questions.length > 0 && <div className="segmented" role="group" aria-label="Which" style={{ marginBottom: 14, flexWrap: "wrap" }}>{options.map((o) => <button key={o.value} type="button" aria-pressed={option?.value === o.value} onClick={() => { setOption(o); setPreview(null); setArgs({}); setStructuredArguments(null); setCommandId(newCommandId()); }}>{o.label}</button>)}</div>}
+              {command && <CommandForm command={command} unitId={unitId} primary={primary?.rawValue ?? null} openTypes={openTypes} args={args} setArgs={setArgs} candidates={candidates} lineage={lineage} initialDocument={resolvedEntry?.document ?? null} initialSelectionId={resolvedSelectionId} reason={reason} corrects={corrects} setStructuredArguments={setStructuredArguments} />}
             </div>
           </section>}
 
@@ -322,8 +340,9 @@ export function Component() {
   </>;
 }
 
-function CommandForm({ command, unitId, primary, openTypes, args, setArgs, rawArgs, setRawArgs }: {
-  command: string; unitId: string | null; primary: string | null; openTypes: string[]; args: Record<string, string>; setArgs: (value: Record<string, string>) => void; rawArgs: string; setRawArgs: (value: string) => void;
+function CommandForm({ command, unitId, primary, openTypes, args, setArgs, candidates, lineage, initialDocument, initialSelectionId, reason, corrects, setStructuredArguments }: {
+  command: string; unitId: string | null; primary: string | null; openTypes: string[]; args: Record<string, string>; setArgs: (value: Record<string, string>) => void;
+  candidates: WorkbenchCandidate[]; lineage: WorkbenchUnitLineage | null; initialDocument: WorkbenchEntry["document"]; initialSelectionId: string | null; reason: string; corrects: string; setStructuredArguments: (value: Record<string, unknown> | null) => void;
 }) {
   const set = (key: string, value: string) => setArgs({ ...args, [key]: value });
   const [other, setOther] = useState("");
@@ -339,6 +358,7 @@ function CommandForm({ command, unitId, primary, openTypes, args, setArgs, rawAr
     } catch (reason) { setError(reason); }
   };
   const typeSelect = <div className="field"><label htmlFor="wb-type">Identifier type</label><select id="wb-type" className="select" value={args.type ?? ""} onChange={(event) => set("type", event.target.value)}><option value="">Choose…</option>{openTypes.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>;
+  if (STRUCTURED_COMMANDS.includes(command as typeof STRUCTURED_COMMANDS[number])) return <StructuredCommandForm command={command} unitId={unitId} primary={primary} candidates={candidates} lineage={lineage} initialDocument={initialDocument ?? null} initialSelectionId={initialSelectionId} reason={reason} corrects={corrects} onArguments={setStructuredArguments} />;
   const dedicated = DEDICATED_SCREENS[command];
   if (dedicated) return <div className="note info"><strong>{commandName(command)}</strong>&nbsp;has its own screen with the command's full preview.&nbsp;<Link className="btn primary" to={`${dedicated.path}${dedicated.path.includes("?") ? "&" : "?"}unit=${unitId ?? ""}`}>Open {dedicated.label}</Link></div>;
   switch (command) {
@@ -349,7 +369,7 @@ function CommandForm({ command, unitId, primary, openTypes, args, setArgs, rawAr
     </div><div className="form-grid">{typeSelect}<div className="span hint">SwapIdentifiers · both identifiers move in one transaction; uniqueness is checked at the end; entitlements stay with each physical unit.</div><ErrorNote error={error} /></div></>;
     case "void_unit": return <div className="form-grid"><div className="span"><DocumentField id="wb-order" label="Production order" types={["production_order"]} value={GUID.test(args.order ?? "") ? { type: "production_order", id: args.order! } : null} onChange={(value) => set("order", value?.id ?? "")} optional /></div><div className="span hint">VoidUnit · lifecycle becomes void, never a delete; refused while components are still issued or once the unit has shipped.</div></div>;
     case "correct_item": return <div className="form-grid"><div className="span"><ItemField id="wb-item" label="Correct item" value={GUID.test(args.item ?? "") ? args.item! : null} onChange={(value) => set("item", value ?? "")} /></div><div className="span hint">CorrectItem · a new effective-dated item assignment; in stock it is paired with the inventory reclassification.</div></div>;
-    default: return <div className="form-grid"><div className="field span"><label htmlFor="wb-raw">Command arguments <span className="hint">· {commandName(command)} · JSON with snake_case keys, as the command records them</span></label><textarea id="wb-raw" className="textarea serial" style={{ minHeight: 140 }} value={rawArgs} onChange={(event) => setRawArgs(event.target.value)} /></div><div className="span hint">This command has no dedicated form yet. The server still validates every argument and shows its own preview.</div></div>;
+    default: return <div className="note warn"><strong>No workbench form is registered for {commandName(command)}.</strong>&nbsp;Nothing can be submitted from this route. Use the command's dedicated screen or ask an administrator to correct the choice configuration.</div>;
   }
 }
 
