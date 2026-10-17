@@ -56,6 +56,23 @@ public sealed record RmaLineCoverageDecision(
     Guid? PolicyVersionId,
     string? DenialReason);
 
+public sealed record RecordReturnDispatched(
+    Guid CommandId,
+    Guid RmaId,
+    DateTime DispatchedAt,
+    string? CarrierName = null,
+    string? TrackingReference = null,
+    string ActorRef = "");
+
+public sealed record RecordReturnDispatchedResult(
+    Guid RmaId,
+    string Stage,
+    DateTime DispatchedAt,
+    string? CarrierName,
+    string? TrackingReference,
+    Guid EventId,
+    bool Replayed);
+
 public sealed record ReturnReceiptLineInput(
     Guid RmaLineId,
     DocumentSerial? ReceivedIdentifier,
@@ -69,7 +86,7 @@ public sealed record ReceiveReturn(
     Guid RmaId,
     Guid ReceivingLocationId,
     IReadOnlyList<ReturnReceiptLineInput> Lines,
-    DateTime DispatchedAt,
+    DateTime? DispatchedAt,
     DateTime ReceivedAt,
     DateTime EventTime,
     string ActorRef = "");
@@ -97,3 +114,17 @@ public sealed record DispositionRma(
 public sealed record DispositionRmaResult(Guid RmaId, string Stage, IReadOnlyList<RmaDispositionResultLine> Lines, Guid EventId, bool Replayed);
 
 public sealed record RmaDispositionResultLine(Guid RmaLineId, string Disposition, Guid? ReplacementIntentId, string? EntitlementClosedReason);
+
+public sealed record CloseRma(
+    Guid CommandId,
+    Guid RmaId,
+    DateTime EventTime,
+    string ActorRef = "");
+
+public sealed record CloseRmaResult(
+    Guid RmaId,
+    string Stage,
+    bool Closed,
+    IReadOnlyList<RmaOpenFollowUp> OpenFollowUps,
+    Guid? EventId,
+    bool Replayed);

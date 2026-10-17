@@ -185,8 +185,10 @@ public sealed class ShipWarrantyReplacementHandler
         if (source.Status != EntitlementStatus.Active) throw new CommandRefusedException("source_entitlement_not_active", $"Source entitlement {source.EntitlementId} is {source.Status}.");
         await ValidateAssetTagAsync(db, tenantId, link, command.EventTime, cancellationToken);
         var originalOwner = await episodes.OpenAsync(link.OriginalUnitId, EpisodeKind.Ownership, cancellationToken);
-        if (originalOwner is not { PartyRef: { } ownerPartyRef, PartyType: { } ownerPartyType })
-            throw new CommandRefusedException("original_ownership_missing", "The original unit has no open ownership episode to identify the replacement customer.");
+        var ownerPartyRef = source.OwnerPartyRef ?? originalOwner?.PartyRef
+            ?? throw new CommandRefusedException("replacement_customer_missing", "The source entitlement and original unit do not identify the replacement customer.");
+        var ownerPartyType = source.OwnerPartyType ?? originalOwner?.PartyType
+            ?? throw new CommandRefusedException("replacement_customer_missing", "The source entitlement and original unit do not identify the replacement customer.");
         var replacementOwner = await episodes.OpenAsync(link.ReplacementUnitId, EpisodeKind.Ownership, cancellationToken);
         if (replacementOwner is not null && replacementOwner.PartyType != PartyType.Us
             && (replacementOwner.PartyRef != ownerPartyRef || replacementOwner.PartyType != ownerPartyType))

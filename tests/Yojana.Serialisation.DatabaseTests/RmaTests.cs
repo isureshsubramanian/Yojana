@@ -8,6 +8,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ports;
+using Yojana.Serialisation.Replacements;
 
 namespace Yojana.Serialisation.DatabaseTests;
 
@@ -47,6 +48,11 @@ public sealed class RmaTests(SerialisationHostFixture fixture)
         Assert.True((await InvokeAsync<AuthoriseRmaResult>(setup.Tenant, authorise)).Replayed);
         Assert.Equal(100m, Assert.Single(authorised.Lines).CoveragePct);
 
+        var dispatch = new RecordReturnDispatched(Guid.NewGuid(), requested.RmaId, At.AddHours(2), "Asterline Freight", "AF-10001");
+        var dispatched = await InvokeAsync<RecordReturnDispatchedResult>(setup.Tenant, dispatch);
+        Assert.Equal(RmaStage.InTransit, dispatched.Stage);
+        Assert.True((await InvokeAsync<RecordReturnDispatchedResult>(setup.Tenant, dispatch)).Replayed);
+
         var receiptCommand = Receive(requested.RmaId, requested.LineIds[0], setup.Serial, Guid.NewGuid());
         var received = await InvokeAsync<ReceiveReturnResult>(setup.Tenant, receiptCommand);
         Assert.Equal(RmaStage.Received, received.Stage);
@@ -54,11 +60,12 @@ public sealed class RmaTests(SerialisationHostFixture fixture)
 
         var dispositionCommand = new DispositionRma(Guid.NewGuid(), requested.RmaId,
             [new(requested.LineIds[0], RmaDisposition.RepairAndReturn)], new DateOnly(2026, 9, 1), At.AddHours(5));
-        var closed = await InvokeAsync<DispositionRmaResult>(setup.Tenant, dispositionCommand);
-        Assert.Equal(RmaStage.Closed, closed.Stage);
+        var dispositioned = await InvokeAsync<DispositionRmaResult>(setup.Tenant, dispositionCommand);
+        Assert.Equal(RmaStage.Dispositioned, dispositioned.Stage);
         Assert.True((await InvokeAsync<DispositionRmaResult>(setup.Tenant, dispositionCommand)).Replayed);
         var publishedDisposition = Assert.Single(await PublishedEventSink.WaitForAsync<RmaDispositioned>(e => e.RmaId == requested.RmaId, 1, TimeSpan.FromSeconds(20)));
         Assert.Equal(RmaDisposition.RepairAndReturn, publishedDisposition.Disposition);
+        await WaitForStageAsync(setup.Tenant, requested.RmaId, RmaStage.Closed);
 
         var redisposition = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<DispositionRmaResult>(setup.Tenant,
             dispositionCommand with { CommandId = Guid.NewGuid() }));
@@ -76,6 +83,128 @@ public sealed class RmaTests(SerialisationHostFixture fixture)
         Assert.NotNull(saved.ReceivedAt);
         Assert.NotNull(saved.DispositionedAt);
         Assert.NotNull(saved.ClosedAt);
+    }
+
+    [DatabaseFact]
+    public async Task Dispatch_then_receive_moves_only_custody_and_does_not_record_dispatch_twice()
+    {
+        var setup = await SetUpReturnedUnitAsync("rma-dispatch");
+        var requested = await InvokeAsync<RequestRmaResult>(setup.Tenant, Request(setup, Guid.NewGuid()));
+        await InvokeAsync<AuthoriseRmaResult>(setup.Tenant, new AuthoriseRma(Guid.NewGuid(), requested.RmaId, At.AddHours(1)));
+        var command = new RecordReturnDispatched(Guid.NewGuid(), requested.RmaId, At.AddHours(2), "Asterline Freight", "AF-10002");
+        var dispatched = await InvokeAsync<RecordReturnDispatchedResult>(setup.Tenant, command);
+        Assert.True((await InvokeAsync<RecordReturnDispatchedResult>(setup.Tenant, command)).Replayed);
+
+        using (var dispatchedScope = fixture.ScopeFor(setup.Tenant))
+        {
+            var db = dispatchedScope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var owner = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == setup.Unit && row.Kind == EpisodeKind.Ownership && row.ValidTo == null);
+            var holder = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == setup.Unit && row.Kind == EpisodeKind.Custody && row.ValidTo == null);
+            Assert.Equal((setup.Customer, PartyType.Customer), (owner.PartyRef, owner.PartyType));
+            Assert.Equal((LocationKind.Returning, setup.Customer, PartyType.Customer), (holder.LocationKind, holder.PartyRef, holder.PartyType));
+            Assert.Equal(EntitlementStatus.Active, await db.Entitlements.Where(row => row.EntitlementId == setup.EntitlementId).Select(row => row.Status).SingleAsync());
+            Assert.Single(await db.Identifiers.Where(row => row.UnitId == setup.Unit && row.ValidTo == null).ToListAsync());
+            Assert.Equal(dispatched.EventId, await db.Events.Where(row => row.UnitId == setup.Unit && row.EventType == RmaEventType.Dispatched).Select(row => row.EventId).SingleAsync());
+        }
+
+        var receiptCommand = Receive(requested.RmaId, requested.LineIds[0], setup.Serial, Guid.NewGuid());
+        await InvokeAsync<ReceiveReturnResult>(setup.Tenant, receiptCommand);
+        using var receivedScope = fixture.ScopeFor(setup.Tenant);
+        var receivedDb = receivedScope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var receivedHolder = await receivedDb.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == setup.Unit && row.Kind == EpisodeKind.Custody && row.ValidTo == null);
+        var receivedOwner = await receivedDb.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == setup.Unit && row.Kind == EpisodeKind.Ownership && row.ValidTo == null);
+        Assert.Equal((LocationKind.Quarantine, receiptCommand.ReceivingLocationId, (Guid?)null, PartyType.Us),
+            (receivedHolder.LocationKind, receivedHolder.LocationId, receivedHolder.PartyRef, receivedHolder.PartyType));
+        Assert.Equal((setup.Customer, PartyType.Customer), (receivedOwner.PartyRef, receivedOwner.PartyType));
+        Assert.Equal(EntitlementStatus.Active, await receivedDb.Entitlements.Where(row => row.EntitlementId == setup.EntitlementId).Select(row => row.Status).SingleAsync());
+        Assert.Single(await receivedDb.Identifiers.Where(row => row.UnitId == setup.Unit && row.ValidTo == null).ToListAsync());
+        Assert.Equal(1, await receivedDb.Events.CountAsync(row => row.UnitId == setup.Unit && row.EventType == RmaEventType.Dispatched));
+        Assert.Contains(await receivedDb.Events.Where(row => row.UnitId == setup.Unit).Select(row => row.EventType).ToListAsync(), eventType => eventType == RmaEventType.Received);
+    }
+
+    [DatabaseFact]
+    public async Task Receipt_directly_from_authorised_skips_dispatch_without_inventing_an_in_transit_fact()
+    {
+        var setup = await SetUpReturnedUnitAsync("rma-direct-receipt");
+        var requested = await InvokeAsync<RequestRmaResult>(setup.Tenant, Request(setup, Guid.NewGuid()));
+        await InvokeAsync<AuthoriseRmaResult>(setup.Tenant, new AuthoriseRma(Guid.NewGuid(), requested.RmaId, At.AddHours(1)));
+        var receiptCommand = Receive(requested.RmaId, requested.LineIds[0], setup.Serial, Guid.NewGuid()) with { DispatchedAt = null };
+        var received = await InvokeAsync<ReceiveReturnResult>(setup.Tenant, receiptCommand);
+        Assert.Equal(RmaStage.Received, received.Stage);
+
+        using var scope = fixture.ScopeFor(setup.Tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var rma = await db.Rmas.AsNoTracking().SingleAsync(row => row.RmaId == requested.RmaId);
+        Assert.Null(rma.InTransitAt);
+        Assert.False(await db.Events.AnyAsync(row => row.UnitId == setup.Unit && row.EventType == RmaEventType.Dispatched));
+        var holder = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == setup.Unit && row.Kind == EpisodeKind.Custody && row.ValidTo == null);
+        var owner = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == setup.Unit && row.Kind == EpisodeKind.Ownership && row.ValidTo == null);
+        Assert.Equal((LocationKind.Quarantine, receiptCommand.ReceivingLocationId, (Guid?)null, PartyType.Us),
+            (holder.LocationKind, holder.LocationId, holder.PartyRef, holder.PartyType));
+        Assert.Equal((setup.Customer, PartyType.Customer), (owner.PartyRef, owner.PartyType));
+        Assert.Equal(EntitlementStatus.Active, await db.Entitlements.Where(row => row.EntitlementId == setup.EntitlementId).Select(row => row.Status).SingleAsync());
+        Assert.Single(await db.Identifiers.Where(row => row.UnitId == setup.Unit && row.ValidTo == null).ToListAsync());
+        Assert.Contains(await db.Events.Where(row => row.UnitId == setup.Unit).Select(row => row.EventType).ToListAsync(), eventType => eventType == RmaEventType.Received);
+    }
+
+    [DatabaseFact]
+    public async Task Replacement_disposition_stays_open_reports_its_follow_up_and_closes_when_shipped()
+    {
+        var setup = await SetUpReturnedUnitAsync("rma-replacement-close");
+        var requested = await InvokeAsync<RequestRmaResult>(setup.Tenant, Request(setup, Guid.NewGuid()));
+        await InvokeAsync<AuthoriseRmaResult>(setup.Tenant, new AuthoriseRma(Guid.NewGuid(), requested.RmaId, At.AddHours(1)));
+        await InvokeAsync<ReceiveReturnResult>(setup.Tenant, Receive(requested.RmaId, requested.LineIds[0], setup.Serial, Guid.NewGuid()) with { DispatchedAt = null });
+        var dispositioned = await InvokeAsync<DispositionRmaResult>(setup.Tenant, new DispositionRma(Guid.NewGuid(), requested.RmaId,
+            [new(requested.LineIds[0], RmaDisposition.Replace)], new DateOnly(2026, 9, 1), At.AddHours(5)));
+        Assert.Equal(RmaStage.Dispositioned, dispositioned.Stage);
+        await WaitForStageAsync(setup.Tenant, requested.RmaId, RmaStage.Dispositioned);
+
+        var close = new CloseRma(Guid.NewGuid(), requested.RmaId, At.AddHours(6), "supervisor");
+        var refused = await InvokeAsync<CloseRmaResult>(setup.Tenant, close);
+        Assert.False(refused.Closed);
+        var followUp = Assert.Single(refused.OpenFollowUps);
+        Assert.Equal((requested.LineIds[0], RmaDisposition.Replace, "replacement_not_shipped"),
+            (followUp.RmaLineId, followUp.Disposition, followUp.Code));
+        Assert.False((await InvokeAsync<CloseRmaResult>(setup.Tenant, close)).Closed);
+
+        var (replacementUnit, _) = await CommissionAsync(setup.Tenant, setup.Item,
+            "REPL-" + Guid.NewGuid().ToString("N")[..8], At.AddDays(-10));
+        var created = await InvokeAsync<CreateWarrantyReplacementResult>(setup.Tenant, new CreateWarrantyReplacement(
+            Guid.NewGuid(), ReplacementSourceKind.Rma, requested.RmaId, setup.EntitlementId, replacementUnit,
+            ReplacementReason.WarrantyDefect, ReplacementPricePolicy.Zero, 0m, "EUR", "DE", false, false,
+            At.AddHours(6), Entity, "service.desk", ReplacementConditionAllowed.Any));
+        var shipped = await InvokeAsync<ShipWarrantyReplacementResult>(setup.Tenant, new ShipWarrantyReplacement(
+            Guid.NewGuid(), created.Document.Document.WarrantyReplacementId, new DateOnly(2026, 9, 1),
+            At.AddHours(7), "warehouse"));
+        Assert.Equal(ReplacementLinkState.ClosedReturned, shipped.LinkState);
+        await WaitForStageAsync(setup.Tenant, requested.RmaId, RmaStage.Closed);
+        Assert.True((await InvokeAsync<CloseRmaResult>(setup.Tenant,
+            new CloseRma(Guid.NewGuid(), requested.RmaId, At.AddHours(8), "supervisor"))).Replayed);
+
+        using var scope = fixture.ScopeFor(setup.Tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var rma = await db.Rmas.AsNoTracking().SingleAsync(row => row.RmaId == requested.RmaId);
+        Assert.Equal(At.AddHours(7), rma.ClosedAt);
+        var originalOwner = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == setup.Unit && row.Kind == EpisodeKind.Ownership && row.ValidTo == null);
+        var originalHolder = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == setup.Unit && row.Kind == EpisodeKind.Custody && row.ValidTo == null);
+        var replacementOwner = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == replacementUnit && row.Kind == EpisodeKind.Ownership && row.ValidTo == null);
+        var replacementHolder = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == replacementUnit && row.Kind == EpisodeKind.Custody && row.ValidTo == null);
+        Assert.Equal((Entity, PartyType.Us, LocationKind.Quarantine, (Guid?)null, PartyType.Us),
+            (originalOwner.PartyRef, originalOwner.PartyType, originalHolder.LocationKind, originalHolder.PartyRef, originalHolder.PartyType));
+        Assert.Equal((setup.Customer, PartyType.Customer, LocationKind.CustomerSite, setup.Customer, PartyType.Customer),
+            (replacementOwner.PartyRef, replacementOwner.PartyType, replacementHolder.LocationKind, replacementHolder.PartyRef, replacementHolder.PartyType));
+        var sourceEntitlement = await db.Entitlements.AsNoTracking().SingleAsync(row => row.EntitlementId == setup.EntitlementId);
+        var targetEntitlement = await db.Entitlements.AsNoTracking().SingleAsync(row => row.EntitlementId == shipped.TargetEntitlementId);
+        Assert.Equal((EntitlementStatus.Closed, EntitlementClosedReason.Replaced), (sourceEntitlement.Status, sourceEntitlement.ClosedReason));
+        Assert.Equal((EntitlementStatus.Active, replacementUnit, setup.Customer), (targetEntitlement.Status, targetEntitlement.UnitId, targetEntitlement.OwnerPartyRef));
+        Assert.Single(await db.Identifiers.Where(row => row.UnitId == setup.Unit && row.ValidTo == null).ToListAsync());
+        Assert.Single(await db.Identifiers.Where(row => row.UnitId == replacementUnit && row.ValidTo == null).ToListAsync());
+        var originalEvents = await db.Events.Where(row => row.UnitId == setup.Unit).Select(row => row.EventType).ToListAsync();
+        var replacementEvents = await db.Events.Where(row => row.UnitId == replacementUnit).Select(row => row.EventType).ToListAsync();
+        Assert.Contains(RmaEventType.Dispositioned, originalEvents);
+        Assert.Contains(ReplacementEventType.Shipped, replacementEvents);
+        Assert.Contains(UnitEventType.OwnershipOpened, replacementEvents);
+        Assert.Contains(UnitEventType.Shipped, replacementEvents);
     }
 
     [DatabaseTheory]
@@ -288,6 +417,7 @@ public sealed class RmaTests(SerialisationHostFixture fixture)
         var command = new DispositionRma(Guid.NewGuid(), requested.RmaId,
             [new(requested.LineIds[0], disposition, vendor)], new DateOnly(2026, 9, 1), At.AddHours(5));
         var result = await InvokeAsync<DispositionRmaResult>(setup.Tenant, command);
+        Assert.Equal(RmaStage.Dispositioned, result.Stage);
         var resultLine = Assert.Single(result.Lines);
         Assert.Equal(closeReason, resultLine.EntitlementClosedReason);
         Assert.Equal(disposition == RmaDisposition.Replace, resultLine.ReplacementIntentId is not null);
@@ -299,16 +429,26 @@ public sealed class RmaTests(SerialisationHostFixture fixture)
                 .CountAsync(e => e.UnitId == setup.Unit && e.Kind == EpisodeKind.Ownership);
         }
         Assert.True((await InvokeAsync<DispositionRmaResult>(setup.Tenant, command)).Replayed);
+        if (disposition == RmaDisposition.Replace)
+            await WaitForStageAsync(setup.Tenant, requested.RmaId, RmaStage.Dispositioned);
+        else
+            await WaitForStageAsync(setup.Tenant, requested.RmaId, RmaStage.Closed);
 
         using var scope = fixture.ScopeFor(setup.Tenant);
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var current = await db.Current.AsNoTracking().SingleAsync(c => c.UnitId == setup.Unit);
         Assert.Equal(expectedLocation, current.LocationKind);
+        var currentHolder = await db.Episodes.AsNoTracking().SingleAsync(e => e.UnitId == setup.Unit
+            && e.Kind == EpisodeKind.Custody && e.ValidTo == null);
+        Assert.Equal(expectedLocation, currentHolder.LocationKind);
         var entitlementStatus = await db.Entitlements.AsNoTracking().Where(e => e.EntitlementId == setup.EntitlementId).Select(e => new { e.Status, e.ClosedReason }).SingleAsync();
         Assert.Equal(closeReason is null ? EntitlementStatus.Active : EntitlementStatus.Closed, entitlementStatus.Status);
         Assert.Equal(closeReason, entitlementStatus.ClosedReason);
         Assert.Equal(0, await db.RmaLines.CountAsync(l => l.RmaId == requested.RmaId && l.Disposition == disposition && l.ReplacementIntentId != null && disposition != RmaDisposition.Replace));
         Assert.Equal(ownershipEpisodeCount, await db.Episodes.CountAsync(e => e.UnitId == setup.Unit && e.Kind == EpisodeKind.Ownership));
+        Assert.Single(await db.Identifiers.Where(row => row.UnitId == setup.Unit && row.ValidTo == null).ToListAsync());
+        Assert.Contains(RmaEventType.Dispositioned,
+            await db.Events.Where(row => row.UnitId == setup.Unit).Select(row => row.EventType).ToListAsync());
 
         var line = await db.RmaLines.AsNoTracking().SingleAsync(l => l.RmaLineId == requested.LineIds[0]);
         var customerEpisode = await db.Episodes.AsNoTracking().SingleAsync(e => e.EpisodeId == line.OwnershipEpisodeId);
@@ -478,6 +618,23 @@ public sealed class RmaTests(SerialisationHostFixture fixture)
         return (await scope.ServiceProvider.GetRequiredService<Yojana.Serialisation.Rmas.RmaQueries>().DetailAsync(rmaId, CancellationToken.None))!;
     }
 
+    private async Task WaitForStageAsync(TenantId tenant, Guid rmaId, string expected)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            using var scope = fixture.ScopeFor(tenant);
+            var stage = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Rmas.AsNoTracking()
+                .Where(row => row.RmaId == rmaId).Select(row => row.Stage).SingleAsync();
+            if (stage == expected) return;
+            await Task.Delay(100);
+        }
+
+        using var finalScope = fixture.ScopeFor(tenant);
+        var actual = await finalScope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Rmas.AsNoTracking()
+            .Where(row => row.RmaId == rmaId).Select(row => row.Stage).SingleAsync();
+        Assert.Fail($"RMA {rmaId} stayed at {actual}; expected {expected}.");
+    }
+
     private async Task AssertRefusedAsync<T>(TenantId tenant, object command, string rule) where T : class
     {
         var refused = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<T>(tenant, command));
@@ -496,7 +653,7 @@ public sealed class RmaTests(SerialisationHostFixture fixture)
     {
         var tenant = await fixture.NewTenantAsync(prefix);
         await InvokeAsync<CoverageFamilyRow>(tenant, new DefineCoverageFamily(CoverageFamilyCode.Base, "Base warranty", false, AssuranceOrService.Assurance));
-        await InvokeAsync<ReplacementPolicyRow>(tenant, new DefineReplacementPolicy("RMA-90", ReplacementRule.MaxRemainingOrMinDays, 90, null, null));
+        await InvokeAsync<ReplacementPolicyRow>(tenant, new DefineReplacementPolicy("STD-90", ReplacementRule.MaxRemainingOrMinDays, 90, null, null));
         var policyCode = "RMA-" + Guid.NewGuid().ToString("N")[..8];
         var terms = PolicyValidatorTestsTerms.Standard24();
         var policy = await InvokeAsync<PolicyDraftResult>(tenant, new CreatePolicyDraft(Guid.NewGuid(), policyCode, policyCode,

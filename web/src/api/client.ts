@@ -11,7 +11,12 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, init?: { method?: "GET" | "POST" | "PUT"; body?: unknown; signal?: AbortSignal | undefined }): Promise<T> {
+export async function api<T>(path: string, init?: {
+  method?: "GET" | "POST" | "PUT" | undefined;
+  body?: unknown;
+  signal?: AbortSignal | undefined;
+  acceptedStatuses?: readonly number[] | undefined;
+}): Promise<T> {
   const response = await fetch(path, {
     method: init?.method ?? "GET",
     credentials: "same-origin",
@@ -19,7 +24,7 @@ export async function api<T>(path: string, init?: { method?: "GET" | "POST" | "P
     body: init?.body === undefined ? null : JSON.stringify(init.body),
     ...(init?.signal ? { signal: init.signal } : {}),
   });
-  if (!response.ok) {
+  if (!response.ok && !init?.acceptedStatuses?.includes(response.status)) {
     const problem = await describe(response);
     throw new ApiError(response.status, problem.message, problem.rule, problem.unblockingStep);
   }

@@ -2,7 +2,7 @@ using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Serialisation.Rmas;
 
-/// <summary>The six-stage lifecycle as an explicit table; commands may traverse more than one adjacent edge atomically.</summary>
+/// <summary>The six-stage lifecycle as an explicit table. Receipt may skip the unrecorded dispatch stage.</summary>
 public static class RmaStateMachine
 {
     private static readonly Dictionary<string, string> NextStage = new(StringComparer.Ordinal)
@@ -24,5 +24,16 @@ public static class RmaStateMachine
         if (next != expectedNext)
             throw new CommandRefusedException("rma_transition_not_allowed", $"RMA {rma.RmaId} is '{rma.Stage}'; it cannot move to '{expectedNext}'.", $"the next allowed stage is '{next}'");
         rma.Stage = next;
+    }
+
+    public static void Receive(Data.Entities.Rma rma)
+    {
+        if (rma.Stage == RmaStage.Authorised)
+        {
+            rma.Stage = RmaStage.Received;
+            return;
+        }
+
+        Transition(rma, RmaStage.Received);
     }
 }
