@@ -74,6 +74,20 @@ public static class SerialisationEndpoints
             }
         }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
 
+        var corrections = app.MapGroup("/api/corrections").RequireAuthorization(YojanaPolicy.TenantMember);
+        corrections.MapPost("/document-serials/preview", (PreviewCorrectDocumentSerials command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CorrectionPreview>(bus, tenant, command with
+            {
+                ActorRef = Actor(user), CommittedBy = CorrectionActor(user),
+                Correction = ApiCorrection(Guid.Empty, command.Reason, command.Correction, user),
+            }, ct));
+        corrections.MapPost("/document-serials", (CorrectDocumentSerials command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CorrectDocumentSerialsResult>(bus, tenant, command with
+            {
+                ActorRef = Actor(user), CommittedBy = CorrectionActor(user),
+                Correction = ApiCorrection(command.CommandId, command.Reason, command.Correction, user),
+            }, ct));
+
         var ranges = app.MapGroup("/api/serial-ranges").RequireAuthorization(YojanaPolicy.TenantMember);
         ranges.MapGet("/schemes", (SerialRangeQueries queries) => Results.Ok(queries.Schemes()));
         ranges.MapGet("/", async (string scheme, string? status, int? skip, int? take, SerialRangeQueries queries, CancellationToken ct) =>
@@ -280,12 +294,14 @@ public static class SerialisationEndpoints
     }
 
     private static CorrectionMetadata ApiCorrection(CorrectIdentifier command, ClaimsPrincipal user)
+        => ApiCorrection(command.CommandId, command.Reason, command.Correction, user, command.Note);
+
+    private static CorrectionMetadata ApiCorrection(Guid commandId, string reason, CorrectionMetadata? supplied, ClaimsPrincipal user, string? legacyNote = null)
     {
-        var supplied = command.Correction;
         return new CorrectionMetadata(
-            supplied?.CorrectionId ?? command.CommandId,
-            supplied?.ReasonCode ?? command.Reason,
-            supplied?.Note ?? command.Note,
+            supplied?.CorrectionId ?? commandId,
+            supplied?.ReasonCode ?? reason,
+            supplied?.Note ?? legacyNote,
             supplied?.EvidenceRefs ?? [],
             supplied?.InitiatedVia ?? CorrectionInitiatedVia.Api,
             supplied?.CorrectsCorrectionId,
@@ -295,13 +311,19 @@ public static class SerialisationEndpoints
             null);
     }
 
+    private static CorrectionCommitter CorrectionActor(ClaimsPrincipal user)
+    {
+        var committer = Committer(user);
+        return new(committer.UserRef, committer.Roles);
+    }
+
     private static string InitiatingRole(ClaimsPrincipal user)
     {
         var roles = user.FindAll(YojanaClaim.Role).Select(c => c.Value).ToHashSet(StringComparer.Ordinal);
         if (roles.Contains(YojanaRole.CustomerService)) return CorrectionInitiatingRole.CustomerService;
-        if (roles.Contains(YojanaRole.WarehouseLead)) return CorrectionInitiatingRole.WarehouseLead;
+        if (roles.Contains(YojanaRole.WarehouseLead) || roles.Contains(YojanaRole.ShippingSupervisor)) return CorrectionInitiatingRole.WarehouseLead;
         if (roles.Contains(YojanaRole.ProductionSupervisor)) return CorrectionInitiatingRole.ProductionSupervisor;
-        if (roles.Contains(YojanaRole.Technician)) return CorrectionInitiatingRole.ServiceTechnician;
+        if (roles.Contains(YojanaRole.Technician) || roles.Contains(YojanaRole.ServiceSupervisor)) return CorrectionInitiatingRole.ServiceTechnician;
         return CorrectionInitiatingRole.SerialAdministrator;
     }
 

@@ -72,6 +72,48 @@ public sealed record CorrectIdentifier(Guid CommandId, Guid UnitId, string Ident
 
 public sealed record CorrectIdentifierResult(Guid UnitId, Guid SupersededIdentifierId, Guid NewIdentifierId, string OldNormalisedValue, string NewNormalisedValue, Guid CorrectionId = default);
 
+/// <summary>Who is attempting to commit a correction; HTTP endpoints replace both fields from signed-in claims.</summary>
+public sealed record CorrectionCommitter(string UserRef, IReadOnlyList<string> Roles);
+
+/// <summary>
+/// Replaces the serial side of a posted delivery, transfer or receipt without changing stock quantity (ADR-0001 case
+/// 141). The two stored selections are paired by item and normalised serial order; they must have equal counts per item.
+/// </summary>
+public sealed record CorrectDocumentSerials(
+    Guid CommandId,
+    DocumentRef Document,
+    Guid RecordedSelectionId,
+    Guid PhysicalSelectionId,
+    string Reason,
+    DateTime EventTime,
+    string ActorRef,
+    Guid LegalEntityId,
+    CorrectionMetadata? Correction = null,
+    CorrectionCommitter? CommittedBy = null);
+
+/// <summary>The dry-run form consumed by the workbench and approver view; it performs the command's full validation.</summary>
+public sealed record PreviewCorrectDocumentSerials(
+    DocumentRef Document,
+    Guid RecordedSelectionId,
+    Guid PhysicalSelectionId,
+    string Reason,
+    DateTime EventTime,
+    string ActorRef,
+    Guid LegalEntityId,
+    CorrectionMetadata? Correction = null,
+    CorrectionCommitter? CommittedBy = null);
+
+public sealed record CorrectDocumentSerialsResult(
+    Guid CorrectionId,
+    DocumentRef Document,
+    int Reversed,
+    int Shipped,
+    int EntitlementsVoided,
+    int EntitlementsCreated,
+    bool WholeListReplacement,
+    bool FinanceReviewRequired,
+    bool Replayed = false);
+
 /// <summary>Release a <c>pre_release</c> unit on its release signature; freezes the as-built into BuildRecord version 1 (or the next version after reassembly).</summary>
 public sealed record ReleaseUnit(Guid CommandId, Guid UnitId, DateTime EventTime, string ActorRef, Guid LegalEntityId, string ReleaseSignatureRef, DocumentRef? Document = null, string? Revision = null, Guid? FacilityId = null, string? TestResultsJson = null);
 
