@@ -16,6 +16,8 @@ namespace Yojana.Serialisation.Entitlements;
 
 public static class SalesInvoicePostedHandler
 {
+    internal sealed record ResolvedWarrantyLine(WarrantyPolicyVersion Version, PolicyTerms Terms);
+
     public static async Task<ConsumedEventResult> Handle(SalesInvoicePosted message, ISalesDocumentQueryPort sales, SerialisationDbContext db,
         SelectionSetResolver selections, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbished,
         WarrantyReferenceSettings reference, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates,
@@ -46,16 +48,13 @@ public static class SalesInvoicePostedHandler
         WarrantyReferenceSettings reference, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates,
         ITenantCurrency currency, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
-        if (line.Target is null) throw new CommandRefusedException("target_rule_missing", "A warranty-service line needs a target rule.");
-        var version = line.PolicyVersionId is { } versionId
-            ? await db.PolicyVersions.AsNoTracking().FirstOrDefaultAsync(v => v.TenantId == tenant.TenantId && v.PolicyVersionId == versionId, cancellationToken)
-            : await db.PolicyVersions.AsNoTracking().Where(v => v.TenantId == tenant.TenantId && v.PolicyCode == line.PolicyCode && v.Status == PolicyVersionStatus.Published && v.AppliesToContractsFrom <= DateOnly.FromDateTime(invoice.PostedAt)).OrderByDescending(v => v.Version).FirstOrDefaultAsync(cancellationToken);
-        if (version is null) throw new CommandRefusedException("no_policy", "The warranty-service line has no applicable published policy.");
-        var terms = await store.ReadTermsAsync(version, cancellationToken);
-        if (WarrantyLineRules.Regulation(terms, await reference.GetAsync(cancellationToken), invoice.Country, invoice.RegionGroup, invoice.HasLicensedObligor) is { } regulation)
-            throw new CommandRefusedException(regulation, "The regulated plan is not permitted, or lacks required obligor evidence, in this jurisdiction.");
+        var target = line.Target
+            ?? throw new CommandRefusedException("target_rule_missing", "A warranty-service line needs a target rule.");
+        var resolvedLine = await ResolveLineAsync(invoice, line, db, store, reference, tenant, cancellationToken);
+        var version = resolvedLine.Version;
+        var terms = resolvedLine.Terms;
 
-        var source = TargetSource(invoice, line.Target, suppliedSerials);
+        var source = TargetSource(invoice, target, suppliedSerials);
         var selectionId = Deterministic(invoice.Document, line.LineNo, "selection");
         // An unresolved target is deliberately re-evaluated: a stored empty selection is evidence from the earlier
         // attempt, not a permanent answer after serials or a referenced delivery arrive.
@@ -71,7 +70,7 @@ public static class SalesInvoicePostedHandler
         await db.SaveChangesAsync(cancellationToken);
         if (resolved.Resolved == 0)
         {
-            var reason = line.Target.Rule == WarrantyTargetRule.ReferencedDocument ? "referenced_document_not_posted" : "serials_not_captured";
+            var reason = target.Rule == WarrantyTargetRule.ReferencedDocument ? "referenced_document_not_posted" : "serials_not_captured";
             throw new CommandRefusedException(reason, "The warranty line has no resolved serialised target units.");
         }
         if (resolved.Unknown.Count > 0 || resolved.Rejected.Count > 0) throw new CommandRefusedException("target_not_serialised", "One or more warranty targets are not known serialised units.");
@@ -96,7 +95,8 @@ public static class SalesInvoicePostedHandler
                 await CreateEntitlementHandler.CreateAsync(new CreateEntitlement(commandId, unitId, version.CoverageFamily, contractDate, invoice.ObligorEntityId, invoice.PostedAt,
                     envelope.Source, new Dictionary<string, DateTime> { [StartTrigger.Invoice] = invoice.PostedAt, [StartTrigger.PlanPurchase] = invoice.PostedAt }, version.PolicyVersionId,
                     invoice.CustomerPartyRef, PartyType.Customer, invoice.CustomerPartyRef, PartyType.Customer, Country: invoice.Country, SiteLocationId: invoice.SiteLocationId,
-                    StartEvidenceRef: $"{invoice.Document.Type}:{invoice.Document.Id:N}", SourceDocument: sourceDocument, CustomerPoRef: invoice.CustomerPoRef),
+                    StartEvidenceRef: $"{invoice.Document.Type}:{invoice.Document.Id:N}", SourceDocument: sourceDocument, CustomerPoRef: invoice.CustomerPoRef,
+                    Channel: invoice.Channel),
                     db, ledger, resolver, store, zones, refurbished, tenant, clock, null, [], false, null, null, null, cancellationToken);
             }
             else
@@ -120,6 +120,29 @@ public static class SalesInvoicePostedHandler
             }
         }
         return unitIds.Count;
+    }
+
+    /// <summary>
+    /// The one warranty-line policy derivation used by ordinary invoice posting and source-document correction. Keeping
+    /// version selection and jurisdiction validation here prevents a correction from quietly applying today's policy.
+    /// </summary>
+    internal static async Task<ResolvedWarrantyLine> ResolveLineAsync(InvoiceDocument invoice, InvoiceLine line,
+        SerialisationDbContext db, PolicyStore store, WarrantyReferenceSettings reference, ITenantContext tenant,
+        CancellationToken cancellationToken)
+    {
+        if (line.Target is null) throw new CommandRefusedException("target_rule_missing", "A warranty-service line needs a target rule.");
+        var version = line.PolicyVersionId is { } versionId
+            ? await db.PolicyVersions.AsNoTracking().FirstOrDefaultAsync(v => v.TenantId == tenant.TenantId && v.PolicyVersionId == versionId, cancellationToken)
+            : await db.PolicyVersions.AsNoTracking().Where(v => v.TenantId == tenant.TenantId && v.PolicyCode == line.PolicyCode
+                    && v.Status == PolicyVersionStatus.Published && v.AppliesToContractsFrom <= DateOnly.FromDateTime(invoice.PostedAt))
+                .OrderByDescending(v => v.Version).FirstOrDefaultAsync(cancellationToken);
+        if (version is null) throw new CommandRefusedException("no_policy", "The warranty-service line has no applicable published policy.");
+        if (version.Status != PolicyVersionStatus.Published)
+            throw new CommandRefusedException("policy_not_published", $"{version.PolicyCode} v{version.Version} is not published.");
+        var terms = await store.ReadTermsAsync(version, cancellationToken);
+        if (WarrantyLineRules.Regulation(terms, await reference.GetAsync(cancellationToken), invoice.Country, invoice.RegionGroup, invoice.HasLicensedObligor) is { } regulation)
+            throw new CommandRefusedException(regulation, "The regulated plan is not permitted, or lacks required obligor evidence, in this jurisdiction.");
+        return new(version, terms);
     }
 
     private static SelectionSource TargetSource(InvoiceDocument invoice, WarrantyLineTarget target, IReadOnlyList<string>? suppliedSerials) => target.Rule switch

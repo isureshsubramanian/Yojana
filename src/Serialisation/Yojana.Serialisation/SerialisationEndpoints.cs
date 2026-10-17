@@ -87,6 +87,20 @@ public static class SerialisationEndpoints
                 ActorRef = Actor(user), CommittedBy = CorrectionCommitter(user),
                 Correction = ApiCorrection(command.CommandId, command.Reason, null, command.Correction, user),
             }, ct));
+        corrections.MapPost("/source-document/preview", (PreviewCorrectSourceDocument command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CorrectionPreview>(bus, tenant, command with
+            {
+                ActorRef = Actor(user),
+                CommittedBy = CorrectionCommitter(user),
+                Correction = ApiCorrection(Guid.Empty, command.Reason, command.Note, command.Correction, user),
+            }, ct));
+        corrections.MapPost("/source-document", (CorrectSourceDocument command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CorrectSourceDocumentResult>(bus, tenant, command with
+            {
+                ActorRef = Actor(user),
+                CommittedBy = CorrectionCommitter(user),
+                Correction = ApiCorrection(command.CommandId, command.Reason, command.Note, command.Correction, user),
+            }, ct));
         corrections.MapPost("/reassign-allocation/preview", (ReassignAllocation command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<ReassignAllocationResult>(bus, tenant, command with
             {

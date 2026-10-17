@@ -177,6 +177,47 @@ public sealed record CorrectDocumentSerialsResult(
     bool Replayed = false);
 
 /// <summary>
+/// Corrects the ownership source for a stored selection. The ledger rows written by the previous document remain
+/// immutable; compensating facts make <see cref="CorrectedDocument"/> the effective source. A reversal swaps the two
+/// documents and names the earlier correction through <see cref="CorrectionMetadata.CorrectsCorrectionId"/>.
+/// </summary>
+public sealed record CorrectSourceDocument(
+    Guid CommandId,
+    Guid SelectionId,
+    DocumentRef PreviousDocument,
+    DocumentRef CorrectedDocument,
+    string Reason,
+    DateTime EventTime,
+    string ActorRef,
+    Guid LegalEntityId,
+    string? Note = null,
+    CorrectionMetadata? Correction = null,
+    CorrectionCommitter? CommittedBy = null);
+
+/// <summary>The dry-run form consumed by the workbench and approver view.</summary>
+public sealed record PreviewCorrectSourceDocument(
+    Guid SelectionId,
+    DocumentRef PreviousDocument,
+    DocumentRef CorrectedDocument,
+    string Reason,
+    DateTime EventTime,
+    string ActorRef,
+    Guid LegalEntityId,
+    string? Note = null,
+    CorrectionMetadata? Correction = null,
+    CorrectionCommitter? CommittedBy = null);
+
+public sealed record CorrectSourceDocumentResult(
+    Guid CorrectionId,
+    int UnitsCorrected,
+    int RelatedEventsRepointed,
+    int EntitlementsSuperseded,
+    int EntitlementsCreated,
+    int LabelReprintsRequested,
+    bool OwnerChanged,
+    bool Replayed = false);
+
+/// <summary>
 /// Identity rule 13: selected reservations may move before commissioning without changing an identity. A pairwise
 /// exchange pairs the two selections in their supplied order; a move uses only <see cref="FromSerials"/>. The serial
 /// selections use the pasted-list and scheme-validated range shapes already used by bulk selection sets.

@@ -266,6 +266,7 @@ public static class UnitEventType
     public const string OwnershipOpened = "ownership.opened";
     public const string OwnershipClosed = "ownership.closed";
     public const string OwnershipTransferred = "ownership.transferred";
+    public const string OwnershipSourceDocumentCorrected = "ownership.source_document_corrected";
 }
 
 /// <summary>Non-unit facts owned by Serialisation and published across the item boundary.</summary>

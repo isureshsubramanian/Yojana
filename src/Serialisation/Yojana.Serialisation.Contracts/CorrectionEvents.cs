@@ -57,6 +57,21 @@ public sealed record AssetTagPrintJobRequested(
     Guid LegalEntityId,
     string ActorRef);
 
+/// <summary>
+/// Transactional-outbox request for labels whose entitlement-derived values changed after a source-document correction.
+/// P3 records the request only; P6 selects the template and renders the replacement label.
+/// </summary>
+public sealed record LabelReprintJobRequested(
+    Guid RequestId,
+    Guid UnitId,
+    Guid CorrectionId,
+    Guid TriggeringEventId,
+    DocumentRef CorrectedSourceDocument,
+    string Reason,
+    DateTime RequestedAt,
+    Guid LegalEntityId,
+    string ActorRef);
+
 public sealed record UnitItemCorrected(
     PublishedEventHeader Header,
     PublishedCorrection Correction,
