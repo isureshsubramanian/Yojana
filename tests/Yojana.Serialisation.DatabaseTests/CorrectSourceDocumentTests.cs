@@ -196,6 +196,10 @@ public sealed class CorrectSourceDocumentTests(SerialisationHostFixture fixture)
             BaseOrder: wrongOrder, CustomerPoRef: "PO-WRONG");
         Documents.Add(wrongDelivery);
         await InvokeAsync<ConsumedEventResult>(tenant, new SalesShipmentPosted(new(Guid.NewGuid(), Entity, ShippedAt, "test"), wrongDelivery.Document));
+        // The tenant default opens ownership on delivery, not shipment, so the episode being corrected needs the POD.
+        var pod = new DeliveryConfirmation(new DocumentRef("pod", Guid.NewGuid()), wrongDelivery.Document, ShippedAt, site);
+        Documents.Add(pod);
+        await InvokeAsync<ConsumedEventResult>(tenant, new SalesDeliveryConfirmed(new(Guid.NewGuid(), Entity, ShippedAt, "test"), pod.Document));
 
         var wrongInvoice = new InvoiceDocument(new("invoice", Guid.NewGuid()), wrongOrder, customer, Entity,
             ShippedAt.AddDays(1), [new InvoiceLine(7, Guid.NewGuid(), count, count * 10m, "GBP", "warranty_service",

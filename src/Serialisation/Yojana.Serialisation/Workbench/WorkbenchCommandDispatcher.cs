@@ -125,6 +125,13 @@ public sealed class WorkbenchCommandDispatcher(IMessageBus bus, ITenantContext t
                     request.Reason, command.EventTime, committer.UserRef, command.LegalEntityId, metadata, Committer(committer));
                 return await bus.InvokeAsync<CorrectionPreview>(preview, options, cancellationToken);
             }
+            case CorrectionCommand.CorrectSourceDocument:
+            {
+                var command = Read<CorrectSourceDocument>(request);
+                var preview = new PreviewCorrectSourceDocument(command.SelectionId, command.PreviousDocument, command.CorrectedDocument,
+                    request.Reason, command.EventTime, committer.UserRef, command.LegalEntityId, request.Note, metadata, Committer(committer));
+                return await bus.InvokeAsync<CorrectionPreview>(preview, options, cancellationToken);
+            }
             case "entitlement.amend":
             case "entitlement.supersede":
             case "entitlement.attach_extended":
@@ -186,6 +193,11 @@ public sealed class WorkbenchCommandDispatcher(IMessageBus bus, ITenantContext t
                 Correction = metadata, CommittedBy = Committer(committer), PreviewOnly = false,
             }, options, cancellationToken),
             CorrectionCommand.CorrectDocumentSerials => await CommitDocumentAsync(request, committer, metadata, options, cancellationToken),
+            CorrectionCommand.CorrectSourceDocument => await bus.InvokeAsync<CorrectSourceDocumentResult>(Read<CorrectSourceDocument>(request) with
+            {
+                CommandId = request.CommandId, Reason = request.Reason, ActorRef = committer.UserRef, Note = request.Note,
+                Correction = metadata, CommittedBy = Committer(committer),
+            }, options, cancellationToken),
             "entitlement.amend" or "entitlement.supersede" or "entitlement.attach_extended" or "entitlement.close" or "entitlement.backfill"
                 => await CommitBulkAsync(request, committer, approvals, initiatingRole, cancellationToken),
             _ => throw new CommandRefusedException("workbench_command_unavailable", $"Command '{request.Answers.Command}' has no workbench commit adapter."),

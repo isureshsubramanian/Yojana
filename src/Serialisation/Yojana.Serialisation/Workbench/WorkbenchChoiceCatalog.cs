@@ -13,6 +13,9 @@ public interface IWorkbenchChoiceCatalog
 /// <summary>The ADR table as code until P3-T16b moves the same narrow contract to tenant data.</summary>
 public sealed class BuiltInWorkbenchChoiceCatalog : IWorkbenchChoiceCatalog
 {
+    // Declared before Choices: the Choices initialiser fills it, and static initialisers run in source order.
+    private static readonly Dictionary<(string Choice, string Command), WorkbenchChoiceOption> Routes = [];
+
     private static readonly IReadOnlyList<WorkbenchChoice> Choices =
     [
         Choice(CorrectionWorkbenchChoice.WrongDocumentSerials, "Wrong serials recorded on a shipment, transfer or receipt", "Documents and orders",
@@ -57,7 +60,9 @@ public sealed class BuiltInWorkbenchChoiceCatalog : IWorkbenchChoiceCatalog
     public WorkbenchChoiceOption Route(string choice, string command)
     {
         var selected = Get(choice);
+        // A single-route choice asks no narrowing question, so its one option lives only in this table.
         return selected.Questions.SelectMany(q => q.Options).FirstOrDefault(o => o.Command == command)
+            ?? Routes.GetValueOrDefault((choice, command))
             ?? throw new CommandRefusedException("workbench_route_invalid", $"Command '{command}' is not a route from workbench choice '{choice}'.", "choose one of the choice's narrowing answers");
     }
 
@@ -66,6 +71,7 @@ public sealed class BuiltInWorkbenchChoiceCatalog : IWorkbenchChoiceCatalog
 
     private static WorkbenchChoice Choice(string choice, string label, string area, string help, int rootCause, params WorkbenchChoiceOption[] options)
     {
+        foreach (var option in options) Routes[(choice, option.Command)] = option;
         var question = options.Length == 1
             ? Array.Empty<WorkbenchNarrowingQuestion>()
             : [new WorkbenchNarrowingQuestion("route", "Which situation applies?", options)];
