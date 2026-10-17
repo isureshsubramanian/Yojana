@@ -25,14 +25,14 @@ public sealed class WorkbenchAcceptanceTests(SerialisationHostFixture fixture)
     // example are choice rows: the acceptance criterion also requires every standard catalogue option to be executable.
     private static readonly IReadOnlyList<string[]> MatrixRows =
     [
-        ["T62/T66a/T71/T74", "correct", CorrectionWorkbenchChoice.WrongDocumentSerials, WorkbenchTargetKind.DocumentLine, CorrectionCommand.CorrectDocumentSerials, UnitEventType.ShipmentReversed],
+        ["T62/T66a/T71/T74", "route", CorrectionWorkbenchChoice.WrongDocumentSerials, WorkbenchTargetKind.DocumentLine, CorrectionCommand.CorrectDocumentSerials, UnitEventType.ShipmentReversed],
         ["T31", "mistyped", CorrectionWorkbenchChoice.MistypedOrCrossed, WorkbenchTargetKind.Unit, CorrectionCommand.CorrectIdentifier, UnitEventType.IdentifierCorrected],
         ["T1/T40/T67", "crossed", CorrectionWorkbenchChoice.MistypedOrCrossed, WorkbenchTargetKind.Unit, CorrectionCommand.SwapIdentifiers, UnitEventType.IdentifiersSwapped],
-        ["T2/T67", "correct", CorrectionWorkbenchChoice.WrongItem, WorkbenchTargetKind.Unit, CorrectionCommand.CorrectItem, UnitEventType.ItemCorrected],
-        ["T70", "correct", CorrectionWorkbenchChoice.WrongOrder, WorkbenchTargetKind.SelectionSet, CorrectionCommand.CorrectSourceDocument, UnitEventType.OwnershipSourceDocumentCorrected],
+        ["T2/T67", "route", CorrectionWorkbenchChoice.WrongItem, WorkbenchTargetKind.Unit, CorrectionCommand.CorrectItem, UnitEventType.ItemCorrected],
+        ["T70", "route", CorrectionWorkbenchChoice.WrongOrder, WorkbenchTargetKind.SelectionSet, CorrectionCommand.CorrectSourceDocument, UnitEventType.OwnershipSourceDocumentCorrected],
         ["T40/T68", "move", CorrectionWorkbenchChoice.WrongAllocation, WorkbenchTargetKind.DocumentLine, CorrectionCommand.ReassignAllocation, "unit.allocation_reassigned"],
         ["T3/T45/T53", "void", CorrectionWorkbenchChoice.WrongAllocation, WorkbenchTargetKind.Unit, CorrectionCommand.VoidUnit, UnitEventType.Voided],
-        ["T33", "merge", CorrectionWorkbenchChoice.DuplicateUnit, WorkbenchTargetKind.Unit, CorrectionCommand.MergeUnits, UnitEventType.Merged],
+        ["T33", "route", CorrectionWorkbenchChoice.DuplicateUnit, WorkbenchTargetKind.Unit, CorrectionCommand.MergeUnits, UnitEventType.Merged],
         // T51 covers the resulting as-built correction only; its rework lifecycle is deliberately outside P3.
         ["T13/T15/T51", "as_built", CorrectionWorkbenchChoice.WrongComponents, WorkbenchTargetKind.Unit, CorrectionCommand.CorrectAsBuilt, UnitEventType.AsBuiltCorrected],
         ["T16", "late_serialisation", CorrectionWorkbenchChoice.WrongComponents, WorkbenchTargetKind.DocumentLine, CorrectionCommand.LateSerialization, ItemEventType.TrackingModeChanged],

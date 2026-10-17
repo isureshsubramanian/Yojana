@@ -41,9 +41,9 @@ public sealed class SourceDocumentCorrectionEntitlements(
         OwnershipSourceDocument previous, OwnershipSourceDocument corrected, CancellationToken cancellationToken)
     {
         var plan = await LinesAsync(corrected, cancellationToken);
-        EnsureWarrantyLines(plan);
         var rows = await LiveAsync(unitIds, cancellationToken);
         var previousDocuments = SourceDocuments(previous);
+        EnsureWarrantyLines(plan, rows.Count(e => IsFrom(e, previousDocuments)));
         var changes = new List<CorrectionEntitlementPreview>();
         foreach (var unitId in unitIds.Order())
         {
@@ -73,11 +73,11 @@ public sealed class SourceDocumentCorrectionEntitlements(
         if (units.Count != ids.Count) throw new CommandRefusedException("unit_unknown", "At least one selected unit has no current projection.");
 
         var lines = await LinesAsync(corrected, cancellationToken);
-        EnsureWarrantyLines(lines);
 
         var live = await LiveAsync(ids, cancellationToken);
         var previousDocuments = SourceDocuments(previous);
         var wrong = live.Where(e => IsFrom(e, previousDocuments)).ToList();
+        EnsureWarrantyLines(lines, wrong.Count);
         if (wrong.FirstOrDefault(e => e.Status == EntitlementStatus.Suspended) is { } suspended)
             throw new CommandRefusedException("source_entitlement_suspended", $"Entitlement {suspended.EntitlementId} is suspended.",
                 "resume it, correct the source document, then suspend the corrected entitlement if still required");
@@ -214,9 +214,13 @@ public sealed class SourceDocumentCorrectionEntitlements(
         return lines;
     }
 
-    private static void EnsureWarrantyLines(IReadOnlyCollection<LinePlan> lines)
+    /// <summary>
+    /// A corrected source without warranty lines is refused only when cover derived from the wrong source would be closed
+    /// with nothing to replace it; units that carry no such cover simply move to the right document (P3-T17 finding).
+    /// </summary>
+    private static void EnsureWarrantyLines(IReadOnlyCollection<LinePlan> lines, int coverFromPreviousSource)
     {
-        if (lines.Count == 0)
+        if (lines.Count == 0 && coverFromPreviousSource > 0)
             throw new CommandRefusedException("correct_source_has_no_warranty_lines", "The corrected source document has no warranty-service lines.",
                 "post or link the warranty lines to the corrected order or delivery before correcting its source");
     }

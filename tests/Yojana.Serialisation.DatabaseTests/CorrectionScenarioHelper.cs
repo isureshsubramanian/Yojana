@@ -48,7 +48,7 @@ internal sealed class CorrectionScenarioHelper(SerialisationHostFixture fixture,
         var displayed = await service.PreviewAsync(request, CancellationToken.None);
         var raised = await service.InitiateAsync(Guid.NewGuid(), request, initiator, CancellationToken.None);
         Assert.Equal(displayed.PreviewHash, raised.PreviewHash);
-        Assert.Equal(WorkbenchRequestStatus.AwaitingApproval, raised.Status);
+        Assert.True(raised.Status == WorkbenchRequestStatus.AwaitingApproval, $"Request is {raised.Status}: {raised.Preview.Refusal?.Rule} {raised.Preview.Refusal?.Message}");
         foreach (var approver in approvers)
         {
             raised = await service.ApproveAsync(raised.RequestId, approver, "scenario approval", CancellationToken.None);
