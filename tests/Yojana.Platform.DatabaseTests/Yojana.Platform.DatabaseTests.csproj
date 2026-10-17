@@ -10,4 +10,7 @@
     <ProjectReference Include="../../src/Platform/Yojana.Platform/Yojana.Platform.csproj" />
     <ProjectReference Include="../../src/Web/Yojana.Web/Yojana.Web.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="../../src/Web/Yojana.Web/DevData/reference-labels.json" Link="DevData/reference-labels.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

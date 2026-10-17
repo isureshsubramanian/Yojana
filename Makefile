@@ -9,7 +9,7 @@ CLIENT := web
 GATES := dotnet run --project tools/Yojana.Gates --
 CONFIG ?= Debug
 
-.PHONY: help env hooks build test test-db gate bench licences notices names budget self-test db-up db-down db-wait migrate seed run restore clean db-reset web-install web-check web-test web web-dev web-lcp
+.PHONY: help env hooks build test test-db gate bench licences notices names budget self-test db-up db-down db-wait migrate seed demo run restore clean db-reset web-install web-check web-test web web-dev web-lcp
 
 help:
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -88,6 +88,9 @@ migrate: build ## Apply migrations to the development database
 
 seed: build ## Migrate and seed the DEV tenant and its users
 	dotnet run --project $(WEB) -c $(CONFIG) --no-build -- --seed
+
+demo: ## Load the IT-hardware demo dataset into the running development host
+	node tools/demo-data/it-hardware.mjs --base "$${YOJANA_DEMO_BASE:-http://localhost:5080}"
 
 bench: build ## P1-T21 storage benchmark against YOJANA_BENCH_SQL_HOST / YOJANA_BENCH_SQL_PASSWORD (BENCH_ARGS="measure --samples 500 ...")
 	@test -n "$(YOJANA_BENCH_SQL_HOST)" || { echo "YOJANA_BENCH_SQL_HOST is not set (see .env.example)"; exit 1; }
