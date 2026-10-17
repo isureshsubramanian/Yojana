@@ -24,4 +24,14 @@ public static class ConditionGrades
 
     public static bool IsRefurbished(string grade) =>
         grade is RefurbishedA or RefurbishedB or RefurbishedC or Remanufactured;
+
+    // Warranty policy rows pre-date the condition vocabulary and store the commercial A/B/C grade.
+    // Keep that representation at the policy boundary; condition history remains on the explicit codes above.
+    public static string WarrantyPolicyGrade(string grade) => grade switch
+    {
+        RefurbishedA => "A",
+        RefurbishedB => "B",
+        RefurbishedC => "C",
+        _ => grade,
+    };
 }

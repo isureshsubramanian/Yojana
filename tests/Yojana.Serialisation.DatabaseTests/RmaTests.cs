@@ -64,7 +64,11 @@ public sealed class RmaTests(SerialisationHostFixture fixture)
         Assert.Equal(RmaStage.Dispositioned, dispositioned.Stage);
         Assert.True((await InvokeAsync<DispositionRmaResult>(setup.Tenant, dispositionCommand)).Replayed);
         var publishedDisposition = Assert.Single(await PublishedEventSink.WaitForAsync<RmaDispositioned>(e => e.RmaId == requested.RmaId, 1, TimeSpan.FromSeconds(20)));
-        Assert.Equal(RmaDisposition.RepairAndReturn, publishedDisposition.Disposition);
+        Assert.Equal((requested.RmaId, requested.LineIds[0], setup.Unit, RmaDisposition.RepairAndReturn, null, null),
+            (publishedDisposition.RmaId, publishedDisposition.RmaLineId, publishedDisposition.UnitId,
+                publishedDisposition.Disposition, publishedDisposition.EntitlementClosedReason, publishedDisposition.ReplacementIntentId));
+        Assert.Equal((RmaDispositioned.Schema, RmaDispositioned.Version, setup.Unit),
+            (publishedDisposition.Header.Schema, publishedDisposition.Header.Version, publishedDisposition.Header.UnitId));
         await WaitForStageAsync(setup.Tenant, requested.RmaId, RmaStage.Closed);
 
         var redisposition = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<DispositionRmaResult>(setup.Tenant,
@@ -517,8 +521,21 @@ public sealed class RmaTests(SerialisationHostFixture fixture)
         }
         var publishedAuthorised = Assert.Single(await PublishedEventSink.WaitForAsync<RmaAuthorised>(e => e.RmaId == requested.RmaId, 1, TimeSpan.FromSeconds(20)));
         var publishedReceived = Assert.Single(await PublishedEventSink.WaitForAsync<RmaReceived>(e => e.RmaId == requested.RmaId, 1, TimeSpan.FromSeconds(20)));
-        Assert.Equal((authorised.RmaNumber, setup.Unit, setup.Shipment), (publishedAuthorised.RmaNumber, publishedAuthorised.AuthorisedUnitId, publishedAuthorised.OriginalSaleRef));
-        Assert.Equal((received.Lines[0].ReturnReceiptId, "2026-10", ConditionGrades.Defective), (publishedReceived.ReturnReceiptId, publishedReceived.PostingPeriod, publishedReceived.ConditionGrade));
+        Assert.Equal((requested.RmaId, requested.LineIds[0], authorised.RmaNumber, setup.Unit, setup.Shipment,
+                100m, ClaimCoverageSource.Warranty, (Guid?)setup.EntitlementId),
+            (publishedAuthorised.RmaId, publishedAuthorised.RmaLineId, publishedAuthorised.RmaNumber,
+                publishedAuthorised.AuthorisedUnitId, publishedAuthorised.OriginalSaleRef, publishedAuthorised.CoveragePct,
+                publishedAuthorised.CoverageSource, publishedAuthorised.EntitlementId));
+        Assert.NotEqual(Guid.Empty, publishedAuthorised.OwnershipEpisodeId);
+        Assert.Equal((RmaAuthorised.Schema, RmaAuthorised.Version),
+            (publishedAuthorised.Header.Schema, publishedAuthorised.Header.Version));
+        Assert.Equal((requested.RmaId, requested.LineIds[0], received.Lines[0].ReturnReceiptId, setup.Unit, (Guid?)setup.Unit,
+                (Guid?)null, ReturnOutcome.Accepted, ConditionGrades.Defective, "graded_value", "2026-10"),
+            (publishedReceived.RmaId, publishedReceived.RmaLineId, publishedReceived.ReturnReceiptId,
+                publishedReceived.AuthorisedUnitId, publishedReceived.ReceivedUnitId, publishedReceived.ProvisionalUnitId,
+                publishedReceived.Outcome, publishedReceived.ConditionGrade, publishedReceived.ValuationRule, publishedReceived.PostingPeriod));
+        Assert.Equal((RmaReceived.Schema, RmaReceived.Version),
+            (publishedReceived.Header.Schema, publishedReceived.Header.Version));
     }
 
     [DatabaseFact]

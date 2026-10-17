@@ -191,7 +191,12 @@ public sealed class RefurbishmentTests(SerialisationHostFixture fixture)
         Assert.True(replay.Replayed);
         Assert.Equal(released.EventId, replay.EventId);
         var published = Assert.Single(await PublishedEventSink.WaitForAsync<RefurbishmentReleased>(e => e.WorkOrderId == opened.WorkOrderId, 1, TimeSpan.FromSeconds(20)));
-        Assert.Equal((900m, 1, ConditionGrades.RefurbishedA), (published.TotalCost, published.CycleNumber, published.Grade));
+        Assert.Equal((opened.WorkOrderId, opened.WorkOrderNumber, setup.UnitId, setup.UnitId, RefurbishmentKind.Refurbish,
+                ConditionGrades.RefurbishedA, 1, RefurbishmentIdentity.SameUnitSameSerial, 900m, "EUR"),
+            (published.WorkOrderId, published.WorkOrderNumber, published.SourceUnitId, published.ReleasedUnitId,
+                published.Kind, published.Grade, published.CycleNumber, published.IdentityPolicy, published.TotalCost, published.Currency));
+        Assert.Equal((RefurbishmentReleased.Schema, RefurbishmentReleased.Version, setup.UnitId),
+            (published.Header.Schema, published.Header.Version, published.Header.UnitId));
         Assert.Equal(3, (await PublishedEventSink.WaitForAsync<RefurbishmentCostPosted>(e => e.WorkOrderId == opened.WorkOrderId, 3, TimeSpan.FromSeconds(20))).Count);
         using var releaseSchema = System.Text.Json.JsonDocument.Parse(PublishedEventSchemas.Read(RefurbishmentReleased.Schema, RefurbishmentReleased.Version));
         using var costSchema = System.Text.Json.JsonDocument.Parse(PublishedEventSchemas.Read(RefurbishmentCostPosted.Schema, RefurbishmentCostPosted.Version));

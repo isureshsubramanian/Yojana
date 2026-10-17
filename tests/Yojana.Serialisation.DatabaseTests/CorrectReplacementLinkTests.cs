@@ -108,8 +108,19 @@ public sealed class CorrectReplacementLinkTests(SerialisationHostFixture fixture
 
         var corrected = Assert.Single(await PublishedEventSink.WaitForAsync<ReplacementLinkCorrected>(message =>
             message.Correction.CorrectionId == correctionId, 1, TimeSpan.FromSeconds(20)));
-        Assert.Equal((setup.RecordedUnitId, setup.ActualUnitId, setup.PolicyApplied, setup.ComputedEnd),
-            (corrected.RecordedReplacementUnitId, corrected.ActualReplacementUnitId, corrected.PolicyApplied, corrected.ComputedEnd));
+        Assert.Equal((first.PreviousReplacementLinkId, first.CorrectedReplacementLinkId, setup.OriginalUnitId,
+                setup.RecordedUnitId, setup.ActualUnitId, first.VoidedEntitlementId, first.TargetEntitlementId,
+                ReplacementReason.WarrantyDefect, setup.PolicyApplied, setup.ComputedEnd, true),
+            (corrected.PreviousReplacementLinkId, corrected.CorrectedReplacementLinkId, corrected.OriginalUnitId,
+                corrected.RecordedReplacementUnitId, corrected.ActualReplacementUnitId, corrected.VoidedEntitlementId,
+                corrected.TargetEntitlementId, corrected.ReplacementReason, corrected.PolicyApplied,
+                corrected.ComputedEnd, corrected.AssetTagRepointed));
+        Assert.NotEqual(Guid.Empty, corrected.WarrantyReplacementId);
+        Assert.Equal((CorrectReplacementLinkReason.WrongUnitRecorded, CorrectionInitiatedVia.Api, (Guid?)null),
+            (corrected.Correction.ReasonCode, corrected.Correction.InitiatedVia, corrected.Correction.CorrectsCorrectionId));
+        Assert.Empty(corrected.Correction.ApproverRefs);
+        Assert.Equal((ReplacementLinkCorrected.Schema, ReplacementLinkCorrected.Version, setup.ActualUnitId, "service.manager"),
+            (corrected.Header.Schema, corrected.Header.Version, corrected.Header.UnitId, corrected.Header.ActorRef));
         var certificates = await PublishedEventSink.WaitForAsync<CertificateReissueRequested>(message =>
             message.ReplacementLinkId == first.CorrectedReplacementLinkId, 2, TimeSpan.FromSeconds(20));
         Assert.Equal(new[] { setup.RecordedUnitId, setup.ActualUnitId }.Order().ToList(), certificates.Select(message => message.Header.UnitId).Order().ToList());
@@ -181,6 +192,13 @@ public sealed class CorrectReplacementLinkTests(SerialisationHostFixture fixture
                 Currency = "EUR", CoverageSource = ClaimCoverageSource.Warranty, Remedy = ClaimRemedy.Replacement,
                 Status = ClaimStatus.Approved, EntitlementIds = JsonSerializer.Serialize(new[] { entitlement.EntitlementId }, LedgerJson.Options),
                 SubmittedAt = At.AddDays(1), AdjudicatedAt = At.AddDays(2), SubmittedBy = "desk", LastEventId = Guid.NewGuid(),
+            });
+            db.ClaimLines.Add(new ClaimLine
+            {
+                TenantId = tenant, ClaimLineId = Guid.NewGuid(), ClaimId = claimId, UnitId = original, Sequence = 1,
+                Kind = ClaimLineKind.Parts, CoverageFamily = "base_warranty", RequestedAmount = 100m,
+                CoveragePct = 100m, ApprovedAmount = 100m, CoverageSource = ClaimCoverageSource.Warranty,
+                EntitlementId = entitlement.EntitlementId, PolicyVersionId = draft.PolicyVersionId, Measurements = "{}",
             });
             await db.SaveChangesAsync();
         }

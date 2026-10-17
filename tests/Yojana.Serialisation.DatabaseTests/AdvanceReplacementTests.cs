@@ -92,7 +92,12 @@ public sealed class AdvanceReplacementTests(SerialisationHostFixture fixture)
         Assert.Equal((1, 1), (first.Published, first.HoldsSet));
         Assert.Equal((0, 0), (second.Published, second.HoldsSet));
         var published = Assert.Single(await PublishedEventSink.WaitForAsync<ReplacementReturnOverdue>(message => message.ReplacementLinkId == shipped.ReplacementLinkId, 1, TimeSpan.FromSeconds(20)));
-        Assert.Equal((world.Customer, 6, NonReturnPriceBasis.List), (published.PartyRef, published.DaysOverdue, published.NonReturnPriceBasis));
+        Assert.Equal((shipped.ReplacementLinkId, overdueCase.OriginalUnitId, overdueCase.ReplacementUnitId,
+                world.Customer, new DateOnly(2026, 9, 6), NonReturnPriceBasis.List, 6),
+            (published.ReplacementLinkId, published.OriginalUnitId, published.ReplacementUnitId,
+                published.PartyRef, published.ReturnDue, published.NonReturnPriceBasis, published.DaysOverdue));
+        Assert.Equal((ReplacementReturnOverdue.Schema, ReplacementReturnOverdue.Version, overdueCase.OriginalUnitId),
+            (published.Header.Schema, published.Header.Version, published.Header.UnitId));
         Assert.Equal(new DateTime(2026, 9, 7, 0, 0, 0, DateTimeKind.Utc), published.Header.EventTime);
 
         var blockedCase = await P5AdvanceTestData.AddCustomerCaseAsync(fixture, world, "blocked");

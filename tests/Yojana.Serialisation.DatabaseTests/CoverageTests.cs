@@ -113,8 +113,11 @@ public sealed class CoverageTests(SerialisationHostFixture fixture)
 
         var history = await scope.ServiceProvider.GetRequiredService<CoverageDecisionQueries>()
             .ForUnitAsync(setup.UnitId, CancellationToken.None);
-        Assert.Equal(2, history.Items.Count);
-        Assert.All(history.Items, decision =>
+        // Only this event's decisions: the entitlement created in setup publishes its own CoverageChanged, which the
+        // outbox may deliver after the work exists and which then adds legitimate decisions of its own.
+        var fromThisEvent = history.Items.Where(decision => decision.SourceEventId == changed.Header.EventId).ToList();
+        Assert.Equal(2, fromThisEvent.Count);
+        Assert.All(fromThisEvent, decision =>
         {
             Assert.Equal(CoverageDecisionReason.EntitlementChanged, decision.Reason);
             Assert.Equal(0m, decision.Before.ApprovedAmount);
@@ -135,8 +138,14 @@ public sealed class CoverageTests(SerialisationHostFixture fixture)
         using var scope = fixture.ScopeFor(setup.Tenant);
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         Assert.Equal(1, await db.CoverageDecisions.CountAsync(d => d.SourceEventId == changed.Header.EventId));
-        Assert.Equal(1, await db.Events.CountAsync(e => e.UnitId == setup.UnitId
-            && e.EventType == CoverageEventType.DecisionChanged && e.DocumentId == work.OpenClaimId));
+        // Count only the decision events this replayed source event produced: creating the entitlement in setup publishes
+        // its own Entitlement.CoverageChanged, and when the outbox delivers it after the claim exists it legitimately
+        // adds a decision of its own (that was this test's intermittent failure).
+        var fromThisEvent = await db.CoverageDecisions.Where(d => d.SourceEventId == changed.Header.EventId)
+            .Select(d => d.CoverageDecisionId.ToString()).ToListAsync();
+        var claimDecisionEvents = await db.Events.Where(e => e.UnitId == setup.UnitId
+            && e.EventType == CoverageEventType.DecisionChanged && e.DocumentId == work.OpenClaimId).Select(e => e.Attributes ?? "").ToListAsync();
+        Assert.Equal(1, claimDecisionEvents.Count(attributes => fromThisEvent.Any(id => attributes.Contains(id, StringComparison.OrdinalIgnoreCase))));
     }
 
     private async Task<CoveredUnit> SetUpCoveredUnitAsync(string prefix, DurationRule duration,
