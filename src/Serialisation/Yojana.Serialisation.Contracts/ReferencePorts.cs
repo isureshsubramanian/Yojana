@@ -28,6 +28,20 @@ public interface IPartyNamePort
     Task<IReadOnlyList<PartyLabel>> SearchAsync(string text, int take, CancellationToken cancellationToken);
 }
 
+/// <summary>A stock-location label supplied by the location-owning module or a connector.</summary>
+public sealed record LocationLabel(Guid LocationId, string Code, string? Name, string? Kind);
+
+/// <summary>
+/// Serialisation's narrow read contract for location names. Inventory owns the location master; Serialisation keeps
+/// only opaque location references on custody episodes.
+/// </summary>
+public interface ILocationNamePort
+{
+    Task<IReadOnlyDictionary<Guid, LocationLabel>> NamesAsync(IReadOnlyCollection<Guid> locationIds, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<LocationLabel>> SearchAsync(string text, int take, string? kind, CancellationToken cancellationToken);
+}
+
 /// <summary>A document identity without its optional line number.</summary>
 public sealed record DocumentKey(string Type, Guid Id)
 {

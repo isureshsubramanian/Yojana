@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createReferenceStore, documentLabelText, itemLabelText, lotLabelText, MAX_REFERENCE_NAMES, partyLabelText } from "../src/corrections/referenceStore.ts";
+import { createReferenceStore, documentLabelText, itemLabelText, locationLabelText, lotLabelText, MAX_REFERENCE_NAMES, partyLabelText } from "../src/corrections/referenceStore.ts";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const ITEM = "1a2b3c4d-1111-2222-3333-444444444444";
 const PARTY = "5e6f7788-1111-2222-3333-444444444444";
+const LOCATION = "7a8b9c0d-1111-2222-3333-444444444444";
 const DOCUMENT = { type: "production_order", id: "90abcdef-1111-2222-3333-444444444444" };
 
 test("reference labels use business names and short-id loading fallbacks", () => {
@@ -15,6 +16,9 @@ test("reference labels use business names and short-id loading fallbacks", () =>
   assert.equal(documentLabelText(DOCUMENT, { number: "MO-2026-731", status: "released", itemId: null }), "MO-2026-731");
   assert.equal(itemLabelText(ITEM, undefined), "1A2B3C4D");
   assert.equal(documentLabelText(DOCUMENT, undefined), "90ABCDEF");
+  assert.equal(locationLabelText(LOCATION, { code: "LDS-Q1", name: "Leeds service centre · quarantine bay Q1", kind: "quarantine" }), "LDS-Q1 · Leeds service centre · quarantine bay Q1");
+  assert.equal(locationLabelText(LOCATION, { code: "LOC-7A8B9C0D", name: null, kind: "quarantine" }), "LOC-7A8B9C0D");
+  assert.equal(locationLabelText(LOCATION, undefined), "7A8B9C0D");
 });
 
 test("lot labels combine the lot number with the item name without exposing either id", () => {
@@ -26,25 +30,27 @@ test("lot labels combine the lot number with the item name without exposing eith
 });
 
 test("references requested in one tick are batched per tenant store and cached", async () => {
-  const calls: { items: string[]; parties: string[]; documents: { type: string; id: string }[] }[] = [];
+  const calls: { items: string[]; parties: string[]; documents: { type: string; id: string }[]; locations: string[] }[] = [];
   const store = createReferenceStore(async (request) => {
     calls.push(request);
     return {
       items: Object.fromEntries(request.items.map((id) => [id, { code: `ITEM-${id.slice(0, 8).toUpperCase()}`, name: null }])),
       parties: Object.fromEntries(request.parties.map((id) => [id, { code: "C-200", name: "Northwind Plant", partyType: "customer" }])),
       documents: Object.fromEntries(request.documents.map((document) => [`${document.type}:${document.id}`, { number: "MO-2026-731", status: null, itemId: null }])),
+      locations: Object.fromEntries(request.locations.map((id) => [id, { code: "LDS-Q1", name: "Leeds service centre · quarantine bay Q1", kind: "quarantine" }])),
     };
   });
   const itemIds = Array.from({ length: MAX_REFERENCE_NAMES + 1 }, () => crypto.randomUUID());
 
-  store.request({ items: itemIds.slice(0, 100), parties: [PARTY], documents: [DOCUMENT] });
+  store.request({ items: itemIds.slice(0, 100), parties: [PARTY], documents: [DOCUMENT], locations: [LOCATION] });
   store.request({ items: itemIds.slice(100), parties: [PARTY], documents: [DOCUMENT] });
   await settle();
 
-  assert.deepEqual(calls.map((call) => [call.items.length, call.parties.length, call.documents.length]), [[200, 1, 1], [1, 0, 0]]);
+  assert.deepEqual(calls.map((call) => [call.items.length, call.parties.length, call.documents.length, call.locations.length]), [[200, 1, 1, 1], [1, 0, 0, 0]]);
   assert.equal(store.party(PARTY)?.name, "Northwind Plant");
   assert.equal(store.document(DOCUMENT)?.number, "MO-2026-731");
-  store.request({ items: itemIds, parties: [PARTY], documents: [DOCUMENT] });
+  assert.equal(store.location(LOCATION)?.name, "Leeds service centre · quarantine bay Q1");
+  store.request({ items: itemIds, parties: [PARTY], documents: [DOCUMENT], locations: [LOCATION] });
   await settle();
   assert.equal(calls.length, 2, "known references are not fetched twice");
 });

@@ -55,6 +55,110 @@ public sealed class InMemoryPartyNamePort : IPartyNamePort
             label => label.Code, label => label.Name));
 }
 
+/// <summary>Registered location labels shared by default location-port scopes in development and tests.</summary>
+public sealed class InMemoryLocationNameRegistry
+{
+    private readonly ConcurrentDictionary<Guid, LocationLabel> labels = new();
+
+    public void Register(LocationLabel label) => labels[label.LocationId] = label;
+
+    public bool TryGet(Guid locationId, out LocationLabel label) => labels.TryGetValue(locationId, out label!);
+
+    public IReadOnlyList<LocationLabel> Search(string text, int take, string? kind) =>
+        ReferenceFallback.Ranked(labels.Values.Where(label => kind is null
+                || string.Equals(label.Kind, kind, StringComparison.OrdinalIgnoreCase)), text, take,
+            label => label.Code, label => label.Name);
+}
+
+/// <summary>A location reference observed on one of this tenant's custody episodes.</summary>
+public sealed record RecordedLocationReference(Guid LocationId, string? Kind);
+
+/// <summary>Tenant-scoped location references that Serialisation has recorded in custody history.</summary>
+public interface IRecordedLocationReferenceQuery
+{
+    Task<IReadOnlyDictionary<Guid, string?>> KindsAsync(IReadOnlyCollection<Guid> locationIds, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<RecordedLocationReference>> CandidatesAsync(
+        string idPrefix, string? kind, int take, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Default location-name port. Catalogue labels win; short fallback labels cover locations already observed in
+/// custody history until the Inventory location master replaces this port.
+/// </summary>
+public sealed class DefaultLocationNamePort(InMemoryLocationNameRegistry registry, IRecordedLocationReferenceQuery recorded) : ILocationNamePort
+{
+    public async Task<IReadOnlyDictionary<Guid, LocationLabel>> NamesAsync(
+        IReadOnlyCollection<Guid> locationIds, CancellationToken cancellationToken)
+    {
+        var ids = locationIds.Distinct().ToList();
+        var missing = ids.Where(id => !registry.TryGet(id, out _)).ToList();
+        IReadOnlyDictionary<Guid, string?> recordedKinds = missing.Count == 0
+            ? new Dictionary<Guid, string?>()
+            : await recorded.KindsAsync(missing, cancellationToken);
+
+        return ids.ToDictionary(id => id, id => registry.TryGet(id, out var registered)
+            ? registered
+            : new LocationLabel(id, ReferenceFallback.LocationCode(id), null,
+                recordedKinds.TryGetValue(id, out var kind) ? kind : null));
+    }
+
+    public async Task<IReadOnlyList<LocationLabel>> SearchAsync(
+        string text, int take, string? kind, CancellationToken cancellationToken)
+    {
+        var registered = registry.Search(text, take, kind);
+        if (registered.Count >= take) return registered;
+
+        if (ReferenceFallback.LocationIdPrefix(text) is not { } idPrefix) return registered;
+        var registeredIds = registered.Select(label => label.LocationId).ToHashSet();
+        var candidates = await recorded.CandidatesAsync(idPrefix, kind, take + registered.Count, cancellationToken);
+        var fallback = candidates
+            .Where(candidate => !registeredIds.Contains(candidate.LocationId))
+            .DistinctBy(candidate => candidate.LocationId)
+            .Select(candidate => new LocationLabel(candidate.LocationId,
+                ReferenceFallback.LocationCode(candidate.LocationId), null, candidate.Kind))
+            .OrderByDescending(label => label.Code.Equals(text.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ThenBy(label => label.Code, StringComparer.OrdinalIgnoreCase)
+            .Take(Math.Max(0, take - registered.Count));
+        return [.. registered, .. fallback];
+    }
+}
+
+/// <summary>Reads only tenant-filtered custody history for location fallback labels.</summary>
+public sealed class RecordedLocationReferenceQuery(SerialisationDbContext db, ITenantContext tenant) : IRecordedLocationReferenceQuery
+{
+    public async Task<IReadOnlyDictionary<Guid, string?>> KindsAsync(
+        IReadOnlyCollection<Guid> locationIds, CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        var ids = locationIds.Distinct().ToList();
+        var rows = await db.Episodes.AsNoTracking()
+            .Where(episode => episode.TenantId == tenantId && episode.LocationId != null
+                && ids.Contains(episode.LocationId.Value))
+            .OrderByDescending(episode => episode.ValidFrom)
+            .Select(episode => new { LocationId = episode.LocationId!.Value, episode.LocationKind })
+            .ToListAsync(cancellationToken);
+        return rows.GroupBy(row => row.LocationId)
+            .ToDictionary(group => group.Key, group => group.Select(row => row.LocationKind).FirstOrDefault());
+    }
+
+    public async Task<IReadOnlyList<RecordedLocationReference>> CandidatesAsync(
+        string idPrefix, string? kind, int take, CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        var rows = await db.Episodes.AsNoTracking()
+            .Where(episode => episode.TenantId == tenantId && episode.LocationId != null
+                && episode.LocationId.Value.ToString().StartsWith(idPrefix)
+                && (kind == null || episode.LocationKind == kind))
+            .OrderByDescending(episode => episode.ValidFrom)
+            .Select(episode => new { LocationId = episode.LocationId!.Value, episode.LocationKind })
+            .Take(take * 3)
+            .ToListAsync(cancellationToken);
+        return rows.DistinctBy(row => row.LocationId).Take(take)
+            .Select(row => new RecordedLocationReference(row.LocationId, row.LocationKind)).ToList();
+    }
+}
+
 /// <summary>Registered document labels shared by default document-port scopes in tests and recorded scenarios.</summary>
 public sealed class InMemoryDocumentNumberRegistry
 {
@@ -194,6 +298,16 @@ public static class ReferenceFallback
     public static string ItemCode(Guid itemId) => "ITEM-" + ShortHex(itemId);
 
     public static string PartyCode(Guid partyRef) => "BP-" + ShortHex(partyRef);
+
+    public static string LocationCode(Guid locationId) => "LOC-" + ShortHex(locationId);
+
+    public static string? LocationIdPrefix(string text)
+    {
+        var value = text.Trim();
+        const string prefix = "LOC-";
+        if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) value = value[prefix.Length..];
+        return value.Length <= 8 && value.All(Uri.IsHexDigit) ? value.ToUpperInvariant() : null;
+    }
 
     public static string DocumentNumber(DocumentRef document) => DocumentPrefix(document.Type) + ShortHex(document.Id);
 

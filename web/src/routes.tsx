@@ -66,6 +66,12 @@ export const router = createBrowserRouter([
           { path: "claims/campaigns/:campaignId", lazy: () => import("./campaigns/CampaignEditor") },
           { path: "claims/campaigns/:campaignId/units", lazy: () => import("./campaigns/CampaignUnits") },
           { path: "claims/:claimId", lazy: () => import("./claims/ClaimAdjudication") },
+          // Return collection routes stay above the id route so "receipt" is never treated as an RMA id.
+          { path: "returns", lazy: () => import("./returns/Returns") },
+          { path: "returns/receipt", lazy: () => import("./returns/ReturnReceipt") },
+          { path: "returns/:rmaId", lazy: () => import("./returns/RmaDetail") },
+          { path: "replacements/new", lazy: () => import("./returns/WarrantyReplacement") },
+          { path: "replacements/:id", lazy: () => import("./returns/WarrantyReplacement") },
           ...patterns,
           ...placeholders,
           { path: "*", lazy: () => import("./pages/Placeholder") },

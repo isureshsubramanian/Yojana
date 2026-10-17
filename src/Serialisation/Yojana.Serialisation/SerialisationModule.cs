@@ -208,6 +208,11 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<IItemNamePort>(sp => sp.GetRequiredService<InMemoryItemNamePort>());
         builder.Services.AddSingleton<InMemoryPartyNamePort>();
         builder.Services.TryAddSingleton<IPartyNamePort>(sp => sp.GetRequiredService<InMemoryPartyNamePort>());
+        builder.Services.AddSingleton<InMemoryLocationNameRegistry>();
+        builder.Services.AddScoped<IRecordedLocationReferenceQuery, RecordedLocationReferenceQuery>();
+        // Inventory owns the location master later; this default decorates its development catalogue with only the
+        // tenant-filtered custody-history fallback exposed by the narrow location-name port.
+        builder.Services.TryAddScoped<ILocationNamePort, DefaultLocationNamePort>();
         builder.Services.AddSingleton<InMemoryDocumentNumberRegistry>();
         builder.Services.AddScoped<IRecordedDocumentReferenceQuery, RecordedDocumentReferenceQuery>();
         // Unlike the in-memory registry, the fallback resolver is scoped because it reads this request's tenant-filtered

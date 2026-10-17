@@ -9,6 +9,7 @@ public sealed class ReferencePortTests
     private static readonly Guid ItemId = Guid.Parse("1a2b3c4d-1111-2222-3333-444444444444");
     private static readonly Guid PartyRef = Guid.Parse("5e6f7788-1111-2222-3333-444444444444");
     private static readonly Guid DocumentId = Guid.Parse("90abcdef-1111-2222-3333-444444444444");
+    private static readonly Guid LocationId = Guid.Parse("7a8b9c0d-1111-2222-3333-444444444444");
 
     [Fact]
     public async Task Defaults_use_item_facts_and_one_shared_fallback_format()
@@ -91,6 +92,22 @@ public sealed class ReferencePortTests
         Assert.Equal(ItemId, result.ItemId);
     }
 
+    [Fact]
+    public async Task Default_location_port_names_recorded_custody_locations_with_a_short_fallback()
+    {
+        var registry = new InMemoryLocationNameRegistry();
+        var locations = new DefaultLocationNamePort(registry,
+            new RecordedLocations([new RecordedLocationReference(LocationId, "quarantine")]));
+
+        var result = (await locations.NamesAsync([LocationId], CancellationToken.None))[LocationId];
+
+        Assert.Equal("LOC-7A8B9C0D", result.Code);
+        Assert.Null(result.Name);
+        Assert.Equal("quarantine", result.Kind);
+        Assert.Equal(LocationId, Assert.Single(await locations.SearchAsync(
+            "LOC-7A8B", 10, "quarantine", CancellationToken.None)).LocationId);
+    }
+
     private sealed class ItemFacts(ItemSerialisationProfile? profile) : IItemQueryPort
     {
         public Task<ItemSerialisationProfile?> GetAsync(Guid itemId, CancellationToken cancellationToken) => Task.FromResult(profile);
@@ -101,5 +118,21 @@ public sealed class ReferencePortTests
         public Task<IReadOnlyList<DocumentRef>> CandidatesAsync(string type, string idPrefix, int take, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<DocumentRef>>(documents.Where(document => document.Type == type
                 && document.Id.ToString("N").StartsWith(idPrefix, StringComparison.OrdinalIgnoreCase)).Take(take).ToList());
+    }
+
+    private sealed class RecordedLocations(IReadOnlyList<RecordedLocationReference> locations) : IRecordedLocationReferenceQuery
+    {
+        public Task<IReadOnlyDictionary<Guid, string?>> KindsAsync(
+            IReadOnlyCollection<Guid> locationIds, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyDictionary<Guid, string?>>(locations
+                .Where(location => locationIds.Contains(location.LocationId))
+                .ToDictionary(location => location.LocationId, location => location.Kind));
+
+        public Task<IReadOnlyList<RecordedLocationReference>> CandidatesAsync(
+            string idPrefix, string? kind, int take, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<RecordedLocationReference>>(locations
+                .Where(location => location.LocationId.ToString("N").StartsWith(idPrefix, StringComparison.OrdinalIgnoreCase)
+                    && (kind is null || location.Kind == kind))
+                .Take(take).ToList());
     }
 }

@@ -3,9 +3,11 @@ namespace Yojana.Serialisation.Contracts;
 public sealed record RmaListFilter(string? Stage, int? MinimumAgeDays, int? MaximumAgeDays, string? Find);
 
 public sealed record RmaListRow(Guid RmaId, string? RmaNumber, string Stage, DateOnly RequestDate, DateTime UpdatedAt,
-    int AgeDays, Guid ReturningPartyRef, int LineCount, int ExceptionCount);
+    int AgeDays, Guid ReturningPartyRef, int LineCount, int ExceptionCount, Guid? PrimaryUnitId, string? PrimarySerial,
+    Guid? PrimaryItemId, string? ReceiptOutcome, string? ConditionGrade, string? CoverageSource, DateTime? ReceivedAt,
+    string RequestedBy, string? LastActorRef);
 
-public sealed record RmaStageCount(string Stage, int Count);
+public sealed record RmaStageCount(string Stage, int Count, int? OldestAgeDays, int ExceptionCount);
 
 public sealed record RmaListResult(IReadOnlyList<RmaListRow> Rows, IReadOnlyList<RmaStageCount> Summary, int Total, int Skip, int Take);
 
@@ -25,6 +27,8 @@ public sealed record RmaDetail(
     DateTime? ReceivedAt,
     DateTime? DispositionedAt,
     DateTime? ClosedAt,
+    string RequestedBy,
+    string? LastActorRef,
     IReadOnlyList<RmaDetailLine> Lines);
 
 public sealed record RmaDetailLine(
@@ -49,4 +53,15 @@ public sealed record RmaDetailLine(
     string? ValuationRule,
     string? Disposition,
     Guid? ReplacementIntentId,
-    string? EntitlementClosedReason);
+    string? EntitlementClosedReason,
+    string? Description,
+    Guid? RequestedItemId,
+    string? RequestedSerial,
+    string? AuthorisedSerial,
+    Guid? ReceivedItemId,
+    string? ReceivedSerial,
+    DateTime? ReceiptBusinessTime,
+    string? PostingPeriod,
+    string? ReceivedBy,
+    Guid? ReceivingLocationId,
+    string? ExceptionNote);

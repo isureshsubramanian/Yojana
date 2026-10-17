@@ -23,10 +23,11 @@ public sealed class DevReferenceCatalogueTests
         var warranties = new InMemoryWarrantyPorts();
         var partyPort = new InMemoryPartyNamePort();
         var documents = new InMemoryDocumentNumberRegistry();
+        var locations = new InMemoryLocationNameRegistry();
 
-        var counts = DevReferenceCatalogue.Load(new TestEnvironment(Environments.Development), path, itemProfiles, itemPort, warranties, partyPort, documents);
+        var counts = DevReferenceCatalogue.Load(new TestEnvironment(Environments.Development), path, itemProfiles, itemPort, warranties, partyPort, documents, locations);
 
-        Assert.Equal(new DevReferenceCatalogueCounts(expected.Items.Count, expected.Parties.Count, expected.Documents.Count), counts);
+        Assert.Equal(new DevReferenceCatalogueCounts(expected.Items.Count, expected.Parties.Count, expected.Documents.Count, expected.Locations.Count), counts);
         var itemLabels = await itemPort.NamesAsync(expected.Items.Select(row => row.Id).ToList(), CancellationToken.None);
         var partyLabels = await partyPort.NamesAsync(expected.Parties.Select(row => row.Id).ToList(), CancellationToken.None);
         Assert.All(expected.Items, row => Assert.Equal((row.Code, row.Name), (itemLabels[row.Id].Code, itemLabels[row.Id].Name)));
@@ -44,6 +45,11 @@ public sealed class DevReferenceCatalogueTests
             Assert.True(documents.TryGet(new DocumentKey(row.Type, row.Id), out var label));
             Assert.Equal((row.Number, row.Status, row.ItemId), (label.Number, label.Status, label.ItemId));
         });
+        Assert.All(expected.Locations, row =>
+        {
+            Assert.True(locations.TryGet(row.Id, out var label));
+            Assert.Equal((row.Code, row.Name, row.Kind), (label.Code, label.Name, label.Kind));
+        });
     }
 
     [Theory]
@@ -57,13 +63,15 @@ public sealed class DevReferenceCatalogueTests
         var warranties = new InMemoryWarrantyPorts();
         var partyPort = new InMemoryPartyNamePort();
         var documents = new InMemoryDocumentNumberRegistry();
+        var locations = new InMemoryLocationNameRegistry();
 
-        var counts = DevReferenceCatalogue.Load(new TestEnvironment(environmentName), "file-must-not-be-opened.json", itemProfiles, itemPort, warranties, partyPort, documents);
+        var counts = DevReferenceCatalogue.Load(new TestEnvironment(environmentName), "file-must-not-be-opened.json", itemProfiles, itemPort, warranties, partyPort, documents, locations);
 
-        Assert.Equal(new DevReferenceCatalogueCounts(0, 0, 0), counts);
+        Assert.Equal(new DevReferenceCatalogueCounts(0, 0, 0, 0), counts);
         Assert.Null((await itemPort.NamesAsync([unknown], CancellationToken.None))[unknown].Name);
         Assert.Null((await partyPort.NamesAsync([unknown], CancellationToken.None))[unknown].Name);
         Assert.False(documents.TryGet(new DocumentKey("invoice", unknown), out _));
+        Assert.False(locations.TryGet(unknown, out _));
     }
 
     private sealed class TestEnvironment(string environmentName) : IHostEnvironment

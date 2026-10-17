@@ -14,11 +14,13 @@ public sealed class DemoCatalogue
         Items = source.Items.ToDictionary(row => row.Code, StringComparer.Ordinal);
         Parties = source.Parties.ToDictionary(row => row.Code, StringComparer.Ordinal);
         Documents = source.Documents.ToDictionary(row => row.Number, StringComparer.Ordinal);
+        Locations = source.Locations.ToDictionary(row => row.Code, StringComparer.Ordinal);
     }
 
     public IReadOnlyDictionary<string, CatalogueItem> Items { get; }
     public IReadOnlyDictionary<string, CatalogueParty> Parties { get; }
     public IReadOnlyDictionary<string, CatalogueDocument> Documents { get; }
+    public IReadOnlyDictionary<string, CatalogueLocation> Locations { get; }
 
     public static DemoCatalogue Load(string path)
     {
@@ -54,6 +56,10 @@ public sealed class DemoCatalogue
         var documents = services.GetRequiredService<InMemoryDocumentNumberRegistry>();
         foreach (var document in Documents.Values)
             documents.Register(new DocumentLabel(new DocumentRef(document.Type, document.Id), document.Number, document.Status, document.ItemId));
+
+        var locations = services.GetRequiredService<InMemoryLocationNameRegistry>();
+        foreach (var location in Locations.Values)
+            locations.Register(new LocationLabel(location.Id, location.Code, location.Name, location.Kind));
     }
 
     // Shared JSON contract: the web host's DevReferenceCatalogue reads this same development-only source. Keeping the
@@ -61,7 +67,8 @@ public sealed class DemoCatalogue
     public sealed record CatalogueFile(
         IReadOnlyList<CatalogueItem> Items,
         IReadOnlyList<CatalogueParty> Parties,
-        IReadOnlyList<CatalogueDocument> Documents);
+        IReadOnlyList<CatalogueDocument> Documents,
+        IReadOnlyList<CatalogueLocation> Locations);
 
     public sealed record CatalogueItem(
         Guid Id,
@@ -83,4 +90,5 @@ public sealed class DemoCatalogue
     public sealed record ItemWarranty(string CoverageFamily, string PolicyCode, bool EntitlementRequiredOnSale = true);
     public sealed record CatalogueParty(Guid Id, string Code, string? Name, string PartyType);
     public sealed record CatalogueDocument(Guid Id, string Type, string Number, string? Status = null, Guid? ItemId = null);
+    public sealed record CatalogueLocation(Guid Id, string Code, string? Name, string Kind);
 }

@@ -2,7 +2,7 @@
 export type IconName =
   | "units" | "ent" | "corr" | "claim" | "rma" | "cert" | "import" | "int" | "set" | "scan" | "chev" | "bell"
   | "home" | "plus" | "filter" | "print" | "x" | "down" | "search" | "range" | "tree" | "check" | "panel"
-  | "campaign" | "recover" | "policy" | "layers" | "upload" | "coins" | "sliders" | "list" | "grid";
+  | "campaign" | "recover" | "policy" | "layers" | "upload" | "coins" | "sliders" | "list" | "grid" | "returns";
 
 export function IconSprite() {
   return (
@@ -12,6 +12,7 @@ export function IconSprite() {
       <symbol id="i-corr" viewBox="0 0 24 24"><path d="M4 20h4l10-10-4-4L4 16v4z" /><path d="M12 8l4 4" /></symbol>
       <symbol id="i-claim" viewBox="0 0 24 24"><path d="M6 3h9l5 5v13H6z" /><path d="M15 3v5h5" /><path d="M9 13h6M9 17h6" /></symbol>
       <symbol id="i-rma" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7" /><path d="M4 4v5h5" /></symbol>
+      <symbol id="i-returns" viewBox="0 0 24 24"><path d="M5 8h11l3 4v7H5z" /><path d="M8 8V5h7v3" /><path d="M9 14H3m0 0 3-3m-3 3 3 3" /></symbol>
       <symbol id="i-cert" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5" /><path d="M8.5 13.5L7 21l5-2 5 2-1.5-7.5" /></symbol>
       <symbol id="i-campaign" viewBox="0 0 24 24"><path d="M3 10v4h3l8 4V6l-8 4H3z" /><path d="M17 9a4 4 0 0 1 0 6" /><path d="M6 14l1.5 5h2.5l-1-4" /></symbol>
       <symbol id="i-recover" viewBox="0 0 24 24"><circle cx="15" cy="12" r="5" /><circle cx="15" cy="12" r="2" /><path d="M3 12h7" /><path d="M6 9l-3 3 3 3" /></symbol>

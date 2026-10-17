@@ -173,7 +173,37 @@ public sealed record WarrantyReplacementDetail(
     string? ReturnReasonCode,
     string? RestockingFeeRule,
     string? StockPostingReference,
-    IReadOnlyList<WarrantyReplacementLineRow> Lines);
+    IReadOnlyList<WarrantyReplacementLineRow> Lines,
+    WarrantyReplacementUnitView OriginalUnit,
+    WarrantyReplacementUnitView ReplacementUnit,
+    Guid? OwnerPartyRef,
+    string? CustomerAssetTag,
+    string ReplacementPolicyCode,
+    int ChainLength,
+    IReadOnlyList<WarrantyReplacementCheck> Checks,
+    IReadOnlyList<WarrantyReplacementTransferRow> Transfers);
+
+public sealed record WarrantyReplacementUnitView(
+    Guid UnitId,
+    string? Serial,
+    Guid ItemId,
+    string ConditionGrade,
+    string LifecycleStatus,
+    string? LocationKind,
+    Guid? LocationId);
+
+public sealed record WarrantyReplacementCheck(string Code, string Label, string Detail, string Outcome, bool Passed);
+
+public sealed record WarrantyReplacementTransferRow(
+    Guid? EntitlementId,
+    string CoverageFamily,
+    string EntitlementType,
+    Guid UnitId,
+    string? UnitSerial,
+    DateOnly? StartDate,
+    DateOnly? EndDate,
+    string Effect,
+    string Detail);
 
 public sealed record WarrantyReplacementPage(IReadOnlyList<WarrantyReplacementRow> Rows, int Total, int Skip, int Take);
 

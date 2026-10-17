@@ -1,0 +1,41 @@
+import { api } from "../api/client";
+import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
+import type { ReplacementCreateDraft, RmaDetail, RmaListResult, WarrantyReplacementDetail } from "./types";
+
+export interface RmaFilters { stage: string; minimumAgeDays: number | null; maximumAgeDays: number | null; q: string }
+
+function query(values: Record<string, string | number | null | undefined>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) if (value !== null && value !== undefined && value !== "") params.set(key, String(value));
+  const text = params.toString(); return text ? `?${text}` : "";
+}
+
+export const returnsApi = {
+  list: (filters: RmaFilters, skip: number, take: number, signal?: AbortSignal) =>
+    api<RmaListResult>(`/api/rmas/${query({ ...filters, skip, take })}`, { signal }),
+  detail: (id: string, signal?: AbortSignal) => api<RmaDetail>(`/api/rmas/${id}`, { signal }),
+  authorise: (id: string) => api<unknown>(`/api/rmas/${id}/authorise`, { method: "POST", body: { commandId: newCommandId(), rmaId: id, eventTime: now() } }),
+  receive: (id: string, body: { receivingLocationId: string; dispatchedAt: string; receivedAt: string; lines: { rmaLineId: string; receivedIdentifier: { value: string; issuerPartyRef: null; identifierType: null; erpSerialId: null } | null; conditionGrade: string; valuationRule: string; outcome: string; exceptionNote: string | null }[] }) =>
+    api<unknown>(`/api/rmas/${id}/receive`, { method: "POST", body: { commandId: newCommandId(), rmaId: id, ...body, eventTime: body.receivedAt } }),
+  disposition: (id: string, lines: { rmaLineId: string; disposition: string; vendorPartyRef: string | null }[]) =>
+    api<unknown>(`/api/rmas/${id}/disposition`, { method: "POST", body: { commandId: newCommandId(), rmaId: id, lines, effectiveDate: new Date().toISOString().slice(0, 10), eventTime: now() } }),
+};
+
+export const replacementApi = {
+  detail: (id: string, signal?: AbortSignal) => api<WarrantyReplacementDetail>(`/api/warranty-replacements/${id}`, { signal }),
+  create: (draft: ReplacementCreateDraft) => api<{ document: WarrantyReplacementDetail; replayed: boolean }>("/api/warranty-replacements/", {
+    method: "POST", body: {
+      commandId: newCommandId(), ...draft, differenceAmount: draft.pricePolicy === "zero" ? 0 : draft.differenceAmount,
+      replacementPolicyCode: draft.replacementPolicyCode || null, returnDue: draft.returnDue || null,
+      nonReturnPriceBasis: draft.returnDue ? draft.nonReturnPriceBasis : null, legalEntityId: DEFAULT_LEGAL_ENTITY,
+      replacementConditionAllowed: replacementConditionAllowed(draft.replacementReason), eventTime: now(),
+    },
+  }),
+  ship: (id: string) => api<unknown>(`/api/warranty-replacements/${id}/ship`, { method: "POST", body: { commandId: newCommandId(), warrantyReplacementId: id, replacementDate: new Date().toISOString().slice(0, 10), eventTime: now() } }),
+};
+
+function replacementConditionAllowed(reason: string): string {
+  if (reason === "dead_on_arrival" || reason === "seller_error") return "new";
+  if (reason === "warranty_defect") return "new_or_refurbished";
+  return "any";
+}
