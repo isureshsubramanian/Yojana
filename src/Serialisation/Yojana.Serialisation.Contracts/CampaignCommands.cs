@@ -42,6 +42,17 @@ public static class CampaignStatus
     public static readonly IReadOnlyList<string> All = [Draft, Selected, Active, Closed];
 }
 
+public static class CampaignReason
+{
+    public const string Safety = "safety";
+    public const string Reliability = "reliability";
+    public const string Firmware = "firmware";
+    public const string Regulatory = "regulatory";
+    public const string Goodwill = "goodwill";
+
+    public static readonly IReadOnlyList<string> All = [Safety, Reliability, Firmware, Regulatory, Goodwill];
+}
+
 public sealed record CreateCampaign(
     Guid CommandId,
     string Code,
@@ -50,7 +61,10 @@ public sealed record CreateCampaign(
     string ReserveTag,
     IReadOnlyList<CampaignCriterionInput> Criteria,
     DateTime EventTime,
-    string ActorRef);
+    string ActorRef,
+    string ReasonCode,
+    string? ReasonNote,
+    DateOnly? RunsUntil);
 
 public sealed record UpdateCampaign(
     Guid CommandId,
@@ -62,7 +76,10 @@ public sealed record UpdateCampaign(
     string Status,
     IReadOnlyList<CampaignCriterionInput> Criteria,
     DateTime EventTime,
-    string ActorRef);
+    string ActorRef,
+    string ReasonCode,
+    string? ReasonNote,
+    DateOnly? RunsUntil);
 
 public sealed record PreviewCampaign(Guid CampaignId, int Skip = 0, int Take = 50);
 
@@ -96,7 +113,10 @@ public sealed record CampaignRow(
     string CreatedBy,
     DateTime UpdatedAt,
     string UpdatedBy,
-    DateTime? SelectedAt);
+    DateTime? SelectedAt,
+    string ReasonCode,
+    string? ReasonNote,
+    DateOnly? RunsUntil);
 
 /// <summary>Recipients are snapshotted when the unit is selected; callers de-duplicate equal owner and custodian refs.</summary>
 public sealed record CampaignUnitRow(
@@ -131,7 +151,9 @@ public sealed record CampaignListRow(
     string Status,
     int SelectedUnits,
     DateTime? SelectedAt,
-    string ReserveTag);
+    string ReserveTag,
+    string ReasonCode,
+    DateOnly? RunsUntil);
 
 public sealed record CampaignFunnelStep(string Kind, int Count);
 

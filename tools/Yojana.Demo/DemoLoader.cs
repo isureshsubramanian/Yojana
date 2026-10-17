@@ -464,7 +464,8 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             new CampaignCriterionInput(CampaignCriterionKind.Firmware, FirmwareValue: "1.2.0", FirmwareKey: "psu.firmware"),
             new CampaignCriterionInput(CampaignCriterionKind.Firmware, FirmwareValue: "1.2.1", FirmwareKey: "psu.firmware"),
             new CampaignCriterionInput(CampaignCriterionKind.Firmware, FirmwareValue: "1.2.2", FirmwareKey: "psu.firmware"),
-        ], at, actor), cancellationToken);
+        ], at, actor, CampaignReason.Reliability,
+            "Power-supply components from the affected lot can degrade on the listed firmware releases.", today.AddMonths(6)), cancellationToken);
         await InvokeAsync<SelectCampaignUnitsResult>(new SelectCampaignUnits(DemoIds.FromName("campaign-select:RC-PSU-1600-26A"), recallId,
             at.AddHours(1), LegalEntityId, actor), cancellationToken);
 
@@ -476,7 +477,8 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             new CampaignCriterionInput(CampaignCriterionKind.IdentifierRange, Scheme: IdentifierScheme.Internal,
                 RangeStart: Serial("RS-1100", 1), RangeEnd: Serial("RS-1100", 36)),
             new CampaignCriterionInput(CampaignCriterionKind.Firmware, FirmwareValue: "3.4.0", FirmwareKey: "bmc.firmware"),
-        ], at.AddMinutes(10), actor), cancellationToken);
+        ], at.AddMinutes(10), actor, CampaignReason.Firmware,
+            "Bring eligible management controllers onto the supported firmware release.", null), cancellationToken);
     }
 
     private async Task PrintSummaryAsync(CancellationToken cancellationToken)

@@ -13,6 +13,7 @@ function query(values: Record<string, string | number | boolean | null | undefin
 function command(draft: CampaignDraft) {
   return {
     code: draft.code, name: draft.name, coverageSource: draft.coverageSource, reserveTag: draft.reserveTag,
+    reasonCode: draft.reasonCode, reasonNote: draft.reasonNote.trim() || null, runsUntil: draft.runsUntil || null,
     criteria: draft.criteria.map(({ kind, scheme, rangeStart, rangeEnd, lotId, childUnitId, childItemId, firmwareValue, effectiveAt, childLotId, firmwareKey }) =>
       ({ kind, scheme, rangeStart, rangeEnd, lotId: guid(lotId), childUnitId: guid(childUnitId), childItemId: guid(childItemId), firmwareValue, effectiveAt, childLotId: guid(childLotId), firmwareKey })),
     eventTime: now(),

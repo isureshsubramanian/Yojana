@@ -36,7 +36,8 @@ public sealed class CampaignTests(SerialisationHostFixture fixture)
     {
         var id = Guid.NewGuid();
         return InvokeAsync<CampaignResult>(tenant, new CreateCampaign(id, code, "Campaign " + code,
-            CampaignCoverageSource.Recall, "recall:" + code, criteria, At.AddDays(10), "service-manager"));
+            CampaignCoverageSource.Recall, "recall:" + code, criteria, At.AddDays(10), "service-manager",
+            CampaignReason.Safety, null, null));
     }
 
     [DatabaseFact]
@@ -130,6 +131,7 @@ public sealed class CampaignTests(SerialisationHostFixture fixture)
         Assert.Equal(currentOwner, publishedUnit.OwnerPartyRef);
         Assert.Equal(custodian, publishedUnit.CustodianPartyRef);
         Assert.NotEqual(invoiceCustomer, publishedUnit.OwnerPartyRef);
+        Assert.Equal((CampaignReason.Safety, (DateOnly?)null), (published.ReasonCode, published.RunsUntil));
         Assert.Equal(1, first.Added);
 
         var next = await UnitAsync(tenant, "41000002", item, lot);
@@ -177,6 +179,7 @@ public sealed class CampaignTests(SerialisationHostFixture fixture)
         var row = Assert.Single(page.Items, value => value.CampaignId == campaign.Campaign.CampaignId);
         Assert.Equal(1, row.SelectedUnits);
         Assert.Equal(CampaignStatus.Selected, row.Status);
+        Assert.Equal((CampaignReason.Safety, (DateOnly?)null), (row.ReasonCode, row.RunsUntil));
     }
 
     [DatabaseFact]
@@ -253,6 +256,55 @@ public sealed class CampaignTests(SerialisationHostFixture fixture)
     public void Recipient_export_has_a_stable_csv_header()
     {
         Assert.Equal("serial,owner,custodian,selected_at\r\n", CampaignRecipientCsv.Header);
+    }
+
+    [DatabaseFact]
+    public async Task Reason_is_required_and_unknown_codes_are_refused()
+    {
+        var tenant = await fixture.NewTenantAsync("cr");
+        var criterion = new CampaignCriterionInput(CampaignCriterionKind.Lot, LotId: Guid.NewGuid());
+
+        var required = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<CampaignResult>(tenant,
+            new CreateCampaign(Guid.NewGuid(), "NO-REASON", "No reason", CampaignCoverageSource.Recall, "recall:no-reason",
+                [criterion], At, "service-manager", "", null, null)));
+        var unknown = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<CampaignResult>(tenant,
+            new CreateCampaign(Guid.NewGuid(), "BAD-REASON", "Bad reason", CampaignCoverageSource.Recall, "recall:bad-reason",
+                [criterion], At, "service-manager", "other", null, null)));
+
+        Assert.Equal("campaign_reason_required", required.Rule);
+        Assert.Equal("campaign_reason_unknown", unknown.Rule);
+    }
+
+    [DatabaseFact]
+    public async Task Runs_until_is_inclusive_stops_later_selection_and_cannot_move_before_first_selection()
+    {
+        var tenant = await fixture.NewTenantAsync("ce");
+        var lot = Guid.NewGuid();
+        await UnitAsync(tenant, "61000001", Guid.NewGuid(), lot);
+        var criterion = new CampaignCriterionInput(CampaignCriterionKind.Lot, LotId: lot);
+        var campaignId = Guid.NewGuid();
+        var campaign = await InvokeAsync<CampaignResult>(tenant, new CreateCampaign(campaignId, "ENDS", "Ends",
+            CampaignCoverageSource.Recall, "recall:ends", [criterion], At, "service-manager",
+            CampaignReason.Regulatory, "Regulatory inspection", new DateOnly(2026, 9, 12)));
+
+        await InvokeAsync<SelectCampaignUnitsResult>(tenant,
+            new SelectCampaignUnits(Guid.NewGuid(), campaignId, At.AddDays(11), Entity, "service-manager"));
+        var ended = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<SelectCampaignUnitsResult>(tenant,
+            new SelectCampaignUnits(Guid.NewGuid(), campaignId, At.AddDays(12), Entity, "service-manager")));
+        var beforeSelection = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<CampaignResult>(tenant,
+            new UpdateCampaign(Guid.NewGuid(), campaignId, campaign.Campaign.Code, campaign.Campaign.Name,
+                campaign.Campaign.CoverageSource, campaign.Campaign.ReserveTag, CampaignStatus.Selected, [criterion],
+                At.AddDays(12), "service-manager", CampaignReason.Regulatory, "Regulatory inspection", new DateOnly(2026, 9, 11))));
+
+        Assert.Equal("campaign_selection_ended", ended.Rule);
+        Assert.Equal("campaign_runs_until_before_selection", beforeSelection.Rule);
+
+        var moved = await InvokeAsync<CampaignResult>(tenant,
+            new UpdateCampaign(Guid.NewGuid(), campaignId, campaign.Campaign.Code, campaign.Campaign.Name,
+                campaign.Campaign.CoverageSource, campaign.Campaign.ReserveTag, CampaignStatus.Selected, [criterion],
+                At.AddDays(12), "service-manager", CampaignReason.Regulatory, "Extended inspection", new DateOnly(2026, 10, 1)));
+        Assert.Equal(new DateOnly(2026, 10, 1), moved.Campaign.RunsUntil);
+        Assert.Equal("Extended inspection", moved.Campaign.ReasonNote);
     }
 
     private async Task FirmwareAsync(TenantId tenant, Guid unitId, string value, DateTime at)

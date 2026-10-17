@@ -5,10 +5,11 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote } from "../units/common";
 import { fmtDate } from "../units/format";
 import { campaignApi } from "./api";
-import { campaignTone, title } from "./format";
+import { campaignSchedule, campaignTone, title } from "./format";
 import type { CampaignListRow, Page } from "./types";
 
 const PAGE = 50;
+const TODAY = new Date().toISOString().slice(0, 10);
 
 export function Component() {
   const navigate = useNavigate();
@@ -25,12 +26,12 @@ export function Component() {
     return () => controller.abort();
   }, [status, page]);
   const columns: GridColumn<CampaignListRow>[] = [
-    { key: "code", label: "Code · name", width: 30, mono: true, render: (row) => <>{row.code}<span className="sub" style={{ fontFamily: "var(--font-body)" }}>{row.name}</span></> },
-    { key: "source", label: "Coverage source", width: 14, render: (row) => title(row.coverageSource) },
-    { key: "status", label: "Status", width: 13, render: (row) => <StatusBadge tone={campaignTone(row.status)}>{title(row.status)}</StatusBadge> },
-    { key: "units", label: "Units selected", width: 14, numeric: true, render: (row) => row.selectedUnits.toLocaleString() },
-    { key: "date", label: "Selected", width: 13, render: (row) => fmtDate(row.selectedAt) },
-    { key: "reserve", label: "Reserve tag", width: 16, mono: true, render: (row) => row.reserveTag },
+    { key: "code", label: "Code · name", width: 25, mono: true, render: (row) => <>{row.code}<span className="sub" style={{ fontFamily: "var(--font-body)" }}>{row.name}</span></> },
+    { key: "source", label: "Cover · reason", width: 14, render: (row) => <>{title(row.coverageSource)}<span className="sub">{title(row.reasonCode)}</span></> },
+    { key: "status", label: "Status", width: 12, render: (row) => { const schedule = campaignSchedule(row.runsUntil, TODAY); return <><StatusBadge tone={schedule.ended ? "neutral" : campaignTone(row.status)}>{schedule.ended ? "Ended" : title(row.status)}</StatusBadge><span className="sub">{schedule.label}</span></>; } },
+    { key: "units", label: "Units selected", width: 13, numeric: true, render: (row) => row.selectedUnits.toLocaleString() },
+    { key: "date", label: "Selected", width: 12, render: (row) => fmtDate(row.selectedAt) },
+    { key: "reserve", label: "Reserve tag", width: 24, mono: true, render: (row) => row.reserveTag },
   ];
   return <main className="content" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Campaigns" }]} />

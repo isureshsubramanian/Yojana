@@ -20,3 +20,9 @@ export function title(value: string): string {
 }
 
 export function pageNumber(skip: number, take: number): number { return Math.floor(skip / take) + 1; }
+
+export function campaignSchedule(runsUntil: string | null, today: string): { ended: boolean; label: string } {
+  if (!runsUntil) return { ended: false, label: "No end date" };
+  const ended = runsUntil < today;
+  return { ended, label: `${ended ? "Ended" : "Runs until"} ${runsUntil}` };
+}

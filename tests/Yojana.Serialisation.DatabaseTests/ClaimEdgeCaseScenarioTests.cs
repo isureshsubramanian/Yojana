@@ -271,7 +271,7 @@ public sealed class ClaimEdgeCaseScenarioTests(SerialisationHostFixture fixture)
         await InvokeAsync<CampaignResult>(tenant, new CreateCampaign(campaignId, "EC108-" + Guid.NewGuid().ToString("N")[..6],
             "Recall notice", CampaignCoverageSource.Recall, "recall:ec108",
             [new CampaignCriterionInput(CampaignCriterionKind.IdentifierRange, Scheme: "internal", RangeStart: serial, RangeEnd: serial)],
-            At.AddDays(-2), "service.manager"));
+            At.AddDays(-2), "service.manager", CampaignReason.Safety, "Owner and custodian notification", null));
         var selectionId = Guid.NewGuid();
 
         await InvokeAsync<SelectCampaignUnitsResult>(tenant,

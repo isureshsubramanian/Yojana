@@ -10,11 +10,12 @@ import { openDrawer, updateDrawer } from "../shell/drawerStore";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { fmtDate, humanise } from "../units/format";
 import { campaignApi } from "./api";
-import { repairPresentation, title } from "./format";
+import { campaignSchedule, repairPresentation, title } from "./format";
 import type { Campaign, CampaignMatchEvidence, CampaignUnitRow, CampaignUnitsSummary, Page, SelectCampaignResult } from "./types";
 import "./campaigns.css";
 
 const PAGE = 50;
+const TODAY = new Date().toISOString().slice(0, 10);
 
 export function Component() {
   const { campaignId = "" } = useParams();
@@ -77,13 +78,15 @@ export function Component() {
     { label: "Repaired", value: summary.repaired.toLocaleString(), detail: `${campaign?.coverageSource ?? "campaign"} claims settled or closed` },
     { label: "In our hands", value: summary.inOurHands.toLocaleString(), detail: "warehouse, 3PL or in repair · fix before shipping" },
   ] : [];
+  const schedule = campaignSchedule(campaign?.runsUntil ?? null, TODAY);
 
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Campaigns", to: "/claims/campaigns" }, { label: campaign?.code ?? "Campaign", to: `/claims/campaigns/${campaignId}` }, { label: "Units" }]} />
-      <div className="page-header"><div><div className="eyebrow">Campaign {campaign?.code ?? "…"} · {campaign?.coverageSource ?? "…"} · {campaign?.status ?? "…"} · reserve {campaign?.reserveTag ?? "…"}</div><h1>Selected units and who to notify</h1><p className="sub">Recipients are the owner and custodian captured when each unit was selected · the invoice customer is reference only and is never notified for that reason</p></div><div className="actions"><Link className="btn" to={`/claims/campaigns/${campaignId}`}>Criteria</Link><a className="btn" href={campaignApi.exportUrl(campaignId)}><Icon name="down" />Export recipients</a><button type="button" className="btn primary" disabled={busy || campaign?.status === "active" || campaign?.status === "closed"} onClick={() => void reselect()}><Icon name="check" />Re-select new matches</button></div></div>
+      <div className="page-header"><div><div className="eyebrow">Campaign {campaign?.code ?? "…"} · {campaign?.coverageSource ?? "…"} · {campaign?.status ?? "…"} · reserve {campaign?.reserveTag ?? "…"}</div><h1>Selected units and who to notify</h1><p className="sub">Recipients are the owner and custodian captured when each unit was selected · the invoice customer is reference only and is never notified for that reason</p></div><div className="actions"><Link className="btn" to={`/claims/campaigns/${campaignId}`}>Criteria</Link><a className="btn" href={campaignApi.exportUrl(campaignId)}><Icon name="down" />Export recipients</a><button type="button" className="btn primary" disabled={busy || schedule.ended || campaign?.status === "active" || campaign?.status === "closed"} onClick={() => void reselect()}><Icon name="check" />{schedule.ended ? "Selection ended" : "Re-select new matches"}</button></div></div>
       <div className="stack">
         {summary && <KpiStrip kpis={kpis} label="Campaign unit figures" />}
+        {schedule.ended && <div className="note"><strong>Re-selection closed.</strong>&nbsp;This campaign ended on {campaign?.runsUntil}; existing selections remain in its history.</div>}
         {notice && <div className="note"><strong>Selection complete.</strong>&nbsp;{notice}</div>}
         <section className="card" aria-labelledby="campaign-unit-filters"><div className="card-body"><div className="toolbar"><div className="scanbox plain"><Icon name="scan" /><input className="input" type="search" placeholder="Find serial" aria-label="Find a campaign unit by serial" value={serial} onChange={(event) => { setSerial(event.target.value); setPage(1); }} /></div><div style={{ minWidth: 240 }}><PartyField id="campaign-owner" label="Owner" value={owner} onChange={(value) => { setOwner(value); setPage(1); }} optional /></div><Filter label="Custody" value={custody} onChange={(value) => { setCustody(value); setPage(1); }} options={[["", "All"], ["warehouse", "Warehouse"], ["at_3pl", "3PL"], ["in_repair", "In repair"], ["customer_site", "Customer site"]]} /><Filter label="Owner differs from invoice" value={differs} onChange={(value) => { setDiffers(value); setPage(1); }} options={[["", "Any"], ["yes", "Yes"], ["no", "No"]]} /><Filter label="Repair" value={repair} onChange={(value) => { setRepair(value); setPage(1); }} options={[["", "Any"], ["with_claim", "Claim exists"], ["without_claim", "No claim"], ["repaired", "Repaired"]]} /></div></div></section>
         <section className="card" aria-labelledby="campaign-units"><div className="card-header"><h2 id="campaign-units">Units <span className="meta">{data?.total.toLocaleString() ?? "—"} units · {summary?.recipients.toLocaleString() ?? "—"} recipients</span></h2><span className="meta">Sorted by serial</span></div><DataGrid columns={columns} page={{ rows: data?.items ?? [], total: data?.total ?? 0, page, pageSize: PAGE, continuation: null }} rowId={(row) => row.unitId} onPage={setPage} onRowClick={openUnit} activeRowId={active} loading={loading} emptyText="No selected units match these filters." /></section>

@@ -824,6 +824,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.ToTable("campaign", t =>
             {
                 t.HasCheckConstraint("ck_campaign_coverage_source", "coverage_source IN ('recall', 'goodwill')");
+                t.HasCheckConstraint("ck_campaign_reason_code", "reason_code IN ('safety', 'reliability', 'firmware', 'regulatory', 'goodwill')");
                 t.HasCheckConstraint("ck_campaign_status", "status IN ('draft', 'selected', 'active', 'closed')");
             });
             b.HasKey(c => new { c.TenantId, c.CampaignId });
@@ -831,6 +832,9 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.Name).HasMaxLength(200);
             b.Property(c => c.CoverageSource).HasMaxLength(20);
             b.Property(c => c.ReserveTag).HasMaxLength(100);
+            b.Property(c => c.ReasonCode).HasMaxLength(20).IsUnicode(false);
+            b.Property(c => c.ReasonNote).HasMaxLength(500);
+            b.Property(c => c.RunsUntil).HasColumnType("date");
             b.Property(c => c.Status).HasMaxLength(20);
             b.Property(c => c.CreatedBy).HasMaxLength(200);
             b.Property(c => c.UpdatedBy).HasMaxLength(200);

@@ -7,4 +7,5 @@
 .campaign-add { display: flex; align-items: center; gap: 8px; }
 .campaign-funnel .job .t { font-variant-numeric: tabular-nums; }
 .campaign-funnel .job:last-child .badge { color: var(--success); background: var(--success-soft); }
+.campaign-reason-note { min-height: 52px; }
 @media (max-width: 780px) { .campaign-criterion { grid-template-columns: 1fr 32px; } .campaign-criterion > .kind { grid-column: 1 / -1; } .campaign-criterion .values { grid-template-columns: 1fr; } }

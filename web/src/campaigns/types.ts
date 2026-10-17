@@ -1,4 +1,5 @@
 export type CampaignCriterionKind = "identifier_range" | "child" | "firmware" | "lot";
+export type CampaignReason = "safety" | "reliability" | "firmware" | "regulatory" | "goodwill";
 
 export interface CampaignCriterion {
   criterionId: string;
@@ -19,9 +20,10 @@ export interface Campaign {
   campaignId: string; code: string; name: string; coverageSource: "recall" | "goodwill"; reserveTag: string;
   status: "draft" | "selected" | "active" | "closed"; criteria: CampaignCriterion[];
   createdAt: string; createdBy: string; updatedAt: string; updatedBy: string; selectedAt: string | null;
+  reasonCode: CampaignReason; reasonNote: string | null; runsUntil: string | null;
 }
 
-export interface CampaignListRow { campaignId: string; code: string; name: string; coverageSource: string; status: string; selectedUnits: number; selectedAt: string | null; reserveTag: string }
+export interface CampaignListRow { campaignId: string; code: string; name: string; coverageSource: string; status: string; selectedUnits: number; selectedAt: string | null; reserveTag: string; reasonCode: CampaignReason; runsUntil: string | null }
 export interface Page<T> { items: T[]; total: number; skip: number; take: number }
 
 export interface CampaignMatchRow {
@@ -46,5 +48,6 @@ export interface SelectCampaignResult { campaignId: string; matched: number; add
 
 export interface CampaignDraft {
   code: string; name: string; coverageSource: "recall" | "goodwill"; reserveTag: string; status: Campaign["status"];
+  reasonCode: CampaignReason; reasonNote: string; runsUntil: string;
   criteria: CampaignCriterion[];
 }
