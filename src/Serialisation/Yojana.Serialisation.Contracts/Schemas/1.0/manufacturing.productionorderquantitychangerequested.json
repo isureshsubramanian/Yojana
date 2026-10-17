@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/manufacturing.productionorderquantitychangerequested.json",
+  "title": "Manufacturing.ProductionOrderQuantityChangeRequested",
+  "type": "object",
+  "required": ["envelope", "production_order", "old_quantity", "new_quantity"],
+  "properties": {
+    "envelope": { "$ref": "#/$defs/envelope" },
+    "production_order": { "$ref": "#/$defs/document_ref" },
+    "old_quantity": { "type": "integer", "minimum": 0 },
+    "new_quantity": { "type": "integer", "minimum": 0 },
+    "surplus_unit_ids": {
+      "anyOf": [
+        { "type": "array", "items": { "type": "string", "format": "uuid" }, "uniqueItems": true },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "envelope": {
+      "type": "object",
+      "required": ["message_id", "legal_entity_id", "occurred_at", "source", "attribution_completeness", "capture_mode"],
+      "properties": {
+        "message_id": { "type": "string", "format": "uuid" },
+        "legal_entity_id": { "type": "string", "format": "uuid" },
+        "occurred_at": { "type": "string", "format": "date-time" },
+        "source": { "type": "string" },
+        "attribution_completeness": { "type": "string", "enum": ["complete", "partial", "unknown"] },
+        "connection_id": { "type": ["string", "null"], "format": "uuid" },
+        "connector_code": { "type": ["string", "null"] },
+        "capture_mode": { "type": "string" }
+      }
+    },
+    "document_ref": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "production_order" },
+        "id": { "type": "string", "format": "uuid" },
+        "line": { "type": ["integer", "null"] }
+      }
+    }
+  }
+}

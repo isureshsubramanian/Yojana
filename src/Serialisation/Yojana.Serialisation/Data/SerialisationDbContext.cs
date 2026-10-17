@@ -61,6 +61,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<CorrectionRecord> Corrections => Set<CorrectionRecord>();
 
+    public DbSet<ManufacturingMessageReceipt> ManufacturingMessageReceipts => Set<ManufacturingMessageReceipt>();
+
     public DbSet<SearchEntry> SearchEntries => Set<SearchEntry>();
 
     public DbSet<SearchTerm> SearchTerms => Set<SearchTerm>();
@@ -321,6 +323,15 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.Note).HasMaxLength(2000);
             b.HasIndex(c => new { c.TenantId, c.EventTime, c.RootCauseCategory, c.InitiatingRole, c.InitiatedVia });
             b.HasIndex(c => new { c.TenantId, c.CorrectsCorrectionId });
+        });
+
+        modelBuilder.Entity<ManufacturingMessageReceipt>(b =>
+        {
+            b.ToTable("manufacturing_message_receipt", t => t.HasCheckConstraint("ck_manufacturing_message_receipt_result_json", "ISJSON(result_json) = 1"));
+            b.HasKey(r => new { r.TenantId, r.MessageId });
+            b.Property(r => r.MessageType).HasMaxLength(100);
+            b.Property(r => r.PayloadHash).HasMaxLength(64).IsUnicode(false);
+            b.HasIndex(r => new { r.TenantId, r.ProcessedAt });
         });
 
         modelBuilder.Entity<SearchEntry>(b =>

@@ -32,6 +32,12 @@ public static class RecordAssemblyHandler
             return new RecordAssemblyResult(parent.UnitId, links, [], parent.LifecycleStatus);
         }
 
+        if (parent.LifecycleStatus == LifecycleStatus.Void && command.Installs.Count > 0)
+        {
+            throw new CommandRefusedException("component_reissue_to_voided_unit", $"Components cannot be issued to voided unit {parent.UnitId}.",
+                "reverse the void with a later correction before issuing components");
+        }
+
         if (parent.LifecycleStatus is LifecycleStatus.Void or LifecycleStatus.Scrapped or LifecycleStatus.ScrappedPreRelease or LifecycleStatus.Decommissioned or LifecycleStatus.Merged)
         {
             throw new CommandRefusedException("parent_not_assemblable", $"Parent unit {parent.UnitId} is {parent.LifecycleStatus}.", "a scrapped, voided or decommissioned unit takes no components");

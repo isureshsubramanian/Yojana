@@ -5,7 +5,11 @@ namespace Yojana.Serialisation.Contracts;
 // publisher's query port, so the message stays small, replayable and free of the publisher's model. Published by the
 // integration gateway (P8) from canonical events, or by in-house modules (P12).
 
-/// <summary>Envelope facts every thin event carries (ADR-0002 envelope, reduced to what the module needs).</summary>
+/// <summary>
+/// Envelope facts every thin event carries (ADR-0002 envelope, reduced to what the module needs). Tenant id is
+/// deliberately absent: the authenticated Wolverine transport envelope supplies it and tenant middleware establishes
+/// <c>ITenantContext</c> before a handler opens a database connection.
+/// </summary>
 public sealed record ThinEnvelope(
     Guid MessageId,
     Guid LegalEntityId,

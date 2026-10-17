@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/unit.productionorderreconciled.json",
+  "title": "Unit.ProductionOrderReconciled",
+  "type": "object",
+  "required": [
+    "header",
+    "request_message_id",
+    "production_order",
+    "old_quantity",
+    "new_quantity",
+    "selected_unit_ids",
+    "voided_unit_ids",
+    "refusals",
+    "can_apply_quantity_change"
+  ],
+  "properties": {
+    "header": { "$ref": "#/$defs/header" },
+    "request_message_id": { "type": "string", "format": "uuid" },
+    "production_order": { "$ref": "#/$defs/document_ref" },
+    "old_quantity": { "type": "integer", "minimum": 0 },
+    "new_quantity": { "type": "integer", "minimum": 0 },
+    "selected_unit_ids": { "type": "array", "items": { "type": "string", "format": "uuid" }, "uniqueItems": true },
+    "voided_unit_ids": { "type": "array", "items": { "type": "string", "format": "uuid" }, "uniqueItems": true },
+    "refusals": { "type": "array", "items": { "$ref": "#/$defs/refusal" } },
+    "can_apply_quantity_change": { "type": "boolean" }
+  },
+  "$defs": {
+    "header": {
+      "type": "object",
+      "required": ["schema", "version", "event_id", "event_time", "recorded_time", "legal_entity_id", "actor_ref"],
+      "properties": {
+        "schema": { "const": "Unit.ProductionOrderReconciled" },
+        "version": { "const": "1.0" },
+        "event_id": { "type": "string", "format": "uuid" },
+        "event_time": { "type": "string", "format": "date-time" },
+        "recorded_time": { "type": "string", "format": "date-time" },
+        "legal_entity_id": { "type": "string", "format": "uuid" },
+        "actor_ref": { "type": "string" },
+        "document": {
+          "anyOf": [
+            { "$ref": "#/$defs/document_ref" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "document_ref": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "type": "string" },
+        "id": { "type": "string", "format": "uuid" },
+        "line": { "type": ["integer", "null"] }
+      }
+    },
+    "refusal": {
+      "type": "object",
+      "required": ["rule", "message"],
+      "properties": {
+        "unit_id": { "type": ["string", "null"], "format": "uuid" },
+        "assembly_link_id": { "type": ["string", "null"], "format": "uuid" },
+        "rule": { "type": "string" },
+        "message": { "type": "string" },
+        "unblocking_step": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/manufacturing.componentreturned.json",
+  "title": "Manufacturing.ComponentReturned",
+  "type": "object",
+  "required": ["envelope", "production_order", "warehouse_location_id", "components"],
+  "properties": {
+    "envelope": { "$ref": "#/$defs/envelope" },
+    "production_order": { "$ref": "#/$defs/document_ref" },
+    "warehouse_location_id": { "type": "string", "format": "uuid" },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/component" }
+    }
+  },
+  "$defs": {
+    "envelope": {
+      "type": "object",
+      "required": ["message_id", "legal_entity_id", "occurred_at", "source", "attribution_completeness", "capture_mode"],
+      "properties": {
+        "message_id": { "type": "string", "format": "uuid" },
+        "legal_entity_id": { "type": "string", "format": "uuid" },
+        "occurred_at": { "type": "string", "format": "date-time" },
+        "source": { "type": "string" },
+        "attribution_completeness": { "type": "string", "enum": ["complete", "partial", "unknown"] },
+        "connection_id": { "type": ["string", "null"], "format": "uuid" },
+        "connector_code": { "type": ["string", "null"] },
+        "capture_mode": { "type": "string" }
+      }
+    },
+    "document_ref": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "production_order" },
+        "id": { "type": "string", "format": "uuid" },
+        "line": { "type": ["integer", "null"] }
+      }
+    },
+    "component": {
+      "type": "object",
+      "required": ["parent_unit_id", "assembly_link_id"],
+      "properties": {
+        "parent_unit_id": { "type": "string", "format": "uuid" },
+        "assembly_link_id": { "type": "string", "format": "uuid" }
+      }
+    }
+  }
+}

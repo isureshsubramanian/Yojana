@@ -121,7 +121,8 @@
             "workbench",
             "api",
             "migration",
-            "system"
+            "system",
+            "integration"
           ]
         },
         "corrects_correction_id": {

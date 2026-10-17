@@ -3,7 +3,7 @@
     <ProjectReference Include="../../Platform/Yojana.Platform.Contracts/Yojana.Platform.Contracts.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- JSON schemas of the published events, one folder per major.minor; embedded so a consumer can validate against the version it was built with. -->
+    <!-- JSON schemas of published and consumed integration contracts, embedded so either side can validate its version. -->
     <EmbeddedResource Include="Schemas/**/*.json" LogicalName="Yojana.Serialisation.Contracts.Schemas.%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>
