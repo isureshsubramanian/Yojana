@@ -59,6 +59,7 @@
 .progress.ok i { background: var(--success); }
 .radiorow { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: start; gap: 10px; font-size: 13px; line-height: 1.4; }
 .radiorow input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--accent); }
+.radiorow strong + .help, .radiorow strong + .sub { display: block; margin-top: 2px; }
 .chip-select { height: 32px; padding: 0 28px 0 12px; border-radius: 999px; font: inherit; font-size: 13px; font-weight: 500; color: var(--text-1); background-color: var(--surface-1); border: 1px solid var(--border-strong); width: auto; }
 .chip-select.on { color: var(--accent); background-color: var(--accent-soft); border-color: transparent; }
 
