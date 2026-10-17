@@ -78,11 +78,14 @@ public sealed record UnitAsBuiltCorrected(
     string Change,
     DateTime EffectiveAt,
     PublishedAssemblyLink? Removed,
-    PublishedAssemblyLink? Installed) : IPublishedUnitEvent
+    PublishedAssemblyLink? Installed,
+    IReadOnlyList<PublishedAsBuiltChange>? Changes = null) : IPublishedUnitEvent
 {
     public const string Schema = "Unit.AsBuiltCorrected";
     public const string Version = "1.0";
 }
+
+public sealed record PublishedAsBuiltChange(string Change, PublishedAssemblyLink? Removed, PublishedAssemblyLink? Installed);
 
 public sealed record PublishedAssemblyLink(
     Guid AssemblyLinkId,

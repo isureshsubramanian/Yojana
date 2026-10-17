@@ -59,6 +59,18 @@ public static class SerialisationEndpoints
         units.MapPost("/flag", (SetUnitFlag command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<UnitFlagResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/unflag", (ClearUnitFlag command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<UnitFlagResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
 
+        var corrections = app.MapGroup("/api/corrections").RequireAuthorization(YojanaPolicy.TenantMember);
+        corrections.MapPost("/as-built", (CorrectAsBuilt command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+        {
+            var secured = Secure(command, user);
+            return Invoke<CorrectAsBuiltResult>(bus, tenant, secured, ct);
+        });
+        corrections.MapPost("/as-built/preview", (PreviewCorrectAsBuilt preview, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+        {
+            var secured = preview with { Command = Secure(preview.Command, user) };
+            return Invoke<CorrectionPreview>(bus, tenant, secured, ct);
+        });
+
         var correctionReference = app.MapGroup("/api/correction-reference").RequireAuthorization(YojanaPolicy.TenantMember);
         correctionReference.MapGet("/approval", async (CorrectionApprovalSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
         correctionReference.MapPut("/approval", async (CorrectionApprovalPolicy policy, CorrectionApprovalSettings settings, CancellationToken ct) =>
@@ -295,11 +307,22 @@ public static class SerialisationEndpoints
 
     private static CorrectionMetadata ApiCorrection(CorrectIdentifier command, ClaimsPrincipal user)
     {
-        var supplied = command.Correction;
+        return ApiCorrection(command.CommandId, command.Reason, command.Note, command.Correction, user);
+    }
+
+    private static CorrectAsBuilt Secure(CorrectAsBuilt command, ClaimsPrincipal user) => command with
+    {
+        ActorRef = Actor(user),
+        Correction = ApiCorrection(command.CommandId, command.Reason, command.Note, command.Correction, user),
+        CommittedBy = CorrectionCommitter(user),
+    };
+
+    private static CorrectionMetadata ApiCorrection(Guid commandId, string reason, string? note, CorrectionMetadata? supplied, ClaimsPrincipal user)
+    {
         return new CorrectionMetadata(
-            supplied?.CorrectionId ?? command.CommandId,
-            supplied?.ReasonCode ?? command.Reason,
-            supplied?.Note ?? command.Note,
+            supplied?.CorrectionId ?? commandId,
+            supplied?.ReasonCode ?? reason,
+            supplied?.Note ?? note,
             supplied?.EvidenceRefs ?? [],
             supplied?.InitiatedVia ?? CorrectionInitiatedVia.Api,
             supplied?.CorrectsCorrectionId,

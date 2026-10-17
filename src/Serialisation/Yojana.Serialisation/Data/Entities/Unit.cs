@@ -164,6 +164,9 @@ public sealed class AssemblyLink : ITenantScoped
 
     public DateTime InstalledAt { get; set; }
 
+    /// <summary>Repository time for a link captured after the physical fit; null on rows created before P3-T05.</summary>
+    public DateTime? RecordedAt { get; set; }
+
     public DateTime? RemovedAt { get; set; }
 
     public Guid InstallingEventId { get; set; }

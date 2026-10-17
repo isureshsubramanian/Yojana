@@ -119,6 +119,16 @@ public static class AssemblyRelation
     public const string CoProductSibling = "co_product_sibling";
 }
 
+/// <summary>How CorrectAsBuilt changes one effective-dated component link.</summary>
+public static class AsBuiltCorrectionChange
+{
+    public const string Add = "add";
+    public const string Remove = "remove";
+    public const string Replace = "replace";
+
+    public static readonly IReadOnlyList<string> All = [Add, Remove, Replace];
+}
+
 /// <summary>Release status of an installed child (as-built and maintenance vocabulary).</summary>
 public static class ReleaseStatus
 {
@@ -229,6 +239,7 @@ public static class UnitEventType
     /// <summary>On the child: it came out of a parent.</summary>
     public const string Removed = "unit.removed";
     public const string Reassembled = "unit.reassembled";
+    public const string AsBuiltCorrected = "unit.asbuilt_corrected";
     public const string Released = "unit.released";
     public const string Scrapped = "unit.scrapped";
     public const string Voided = "unit.voided";

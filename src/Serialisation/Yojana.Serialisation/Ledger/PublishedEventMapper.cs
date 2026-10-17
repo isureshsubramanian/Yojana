@@ -95,6 +95,15 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     Bool(a, "document_mismatch"), Str(a, "inventory_reclassification_ref"), Bool(a, "warranty_policy_changed"));
             }
 
+            case UnitEventType.AsBuiltCorrected:
+            {
+                var asBuiltChanges = a?.TryGetProperty("changes", out var listed) == true && listed.ValueKind == JsonValueKind.Array
+                    ? listed.EnumerateArray().Select(c => new PublishedAsBuiltChange(Str(c, "change") ?? "", AssemblyLink(c, "removed"), AssemblyLink(c, "installed"))).ToList()
+                    : [];
+                return new UnitAsBuiltCorrected(Header(UnitAsBuiltCorrected.Schema, UnitAsBuiltCorrected.Version), Correction(a), Str(a, "change") ?? "",
+                    DateTimeValue(a, "effective_at") ?? e.EventTime, AssemblyLink(a, "removed"), AssemblyLink(a, "installed"), asBuiltChanges);
+            }
+
             case UnitEventType.OwnershipOpened or UnitEventType.OwnershipTransferred:
                 return new OwnershipOpened(Header(OwnershipOpened.Schema, OwnershipOpened.Version), GuidOrNull(a, "episode_id") ?? Guid.Empty, GuidOrNull(a, "party_ref") ?? Guid.Empty, Str(a, "party_type") ?? "", Str(a, "reason") ?? "", Str(a, "source") ?? "", Str(a, "confidence") ?? "", Str(a, "customer_po_ref"), Str(a, "customer_item_ref"), GuidOrNull(a, "previous_episode_id"));
             case UnitEventType.OwnershipClosed:
@@ -173,6 +182,9 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
 
     private static DateOnly? Date(JsonElement? element, string name) => Str(element, name) is { } text && DateOnly.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out var date) ? date : null;
 
+    private static DateTime? DateTimeValue(JsonElement? element, string name) =>
+        element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String && p.TryGetDateTime(out var value) ? value : null;
+
     private static List<Guid> Guids(JsonElement element, string name) => element.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Array ? p.EnumerateArray().Select(i => i.GetGuid()).Order().ToList() : [];
 
     private static string? Str(JsonElement? element, string name) => element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
@@ -209,6 +221,14 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
     private static PublishedSwappedIdentifier SwappedIdentifier(JsonElement? element) =>
         new(GuidOrNull(element, "identifier_id") ?? Guid.Empty, Str(element, "type") ?? "", Str(element, "scheme") ?? "",
             Str(element, "value") ?? "", GuidOrNull(element, "issuer_party_ref"));
+
+    private static PublishedAssemblyLink? AssemblyLink(JsonElement? attributes, string name)
+    {
+        if (attributes is not { ValueKind: JsonValueKind.Object } a || !a.TryGetProperty(name, out var link) || link.ValueKind != JsonValueKind.Object) return null;
+        return new(GuidOrNull(link, "assembly_link_id") ?? Guid.Empty, GuidOrNull(link, "child_unit_id"), GuidOrNull(link, "child_item_id"), GuidOrNull(link, "child_lot_id"),
+            link.TryGetProperty("quantity", out var quantity) && quantity.ValueKind == JsonValueKind.Number ? quantity.GetDecimal() : null,
+            Str(link, "relation") ?? "", Str(link, "slot"));
+    }
 }
 
 /// <summary>

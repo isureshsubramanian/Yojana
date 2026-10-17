@@ -100,7 +100,7 @@ public sealed class SwapIdentifiersTests(SerialisationHostFixture fixture)
         Assert.Contains(published, e => e.Header.UnitId == secondUnit && e.GivenIdentifier.Value == $"{prefix}002" && e.ReceivedIdentifier.Value == $"{prefix}001");
         var printRequests = await WaitForPrintRequestsAsync(r => r.SwapId == firstSwapId, 2, TimeSpan.FromSeconds(20));
         Assert.Equal(2, printRequests.Count);
-        Assert.Equal([firstUnit, secondUnit], printRequests.Select(r => r.UnitId).Order().ToArray());
+        Assert.Equal(new[] { firstUnit, secondUnit }.Order().ToArray(), printRequests.Select(r => r.UnitId).Order().ToArray());
 
         var replay = await InvokeAsync<SwapIdentifiersResult>(tenant, firstCommand);
         Assert.True(replay.Replayed);

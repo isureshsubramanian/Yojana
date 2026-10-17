@@ -29,13 +29,76 @@
       "format": "date-time"
     },
     "removed": {
-      "$ref": "#/$defs/assembly_link"
+      "anyOf": [
+        {
+          "$ref": "#/$defs/assembly_link"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "installed": {
-      "$ref": "#/$defs/assembly_link"
+      "anyOf": [
+        {
+          "$ref": "#/$defs/assembly_link"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "changes": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/as_built_change"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "$defs": {
+    "as_built_change": {
+      "type": "object",
+      "required": [
+        "change"
+      ],
+      "properties": {
+        "change": {
+          "type": "string",
+          "enum": [
+            "add",
+            "remove",
+            "replace"
+          ]
+        },
+        "removed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/assembly_link"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "installed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/assembly_link"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "header": {
       "type": "object",
       "required": [
