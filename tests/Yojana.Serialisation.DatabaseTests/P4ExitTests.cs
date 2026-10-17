@@ -34,7 +34,7 @@ public sealed class P4ExitTests(SerialisationHostFixture fixture)
         var terms = PolicyValidatorTestsTerms.Standard24() with
         {
             Duration = new DurationRule(12, DurationRule.Months),
-            Start = new StartRule(StartTrigger.Deliver, [], null),
+            Start = new StartRule(StartTrigger.Deliver, [], 90),
             ReferenceTimeZoneRule = PolicyTerms.TimeZoneUtc,
             Refurbished = [],
         };

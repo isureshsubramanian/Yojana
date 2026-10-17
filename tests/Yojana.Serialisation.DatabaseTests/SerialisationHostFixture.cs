@@ -71,7 +71,9 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         using var scope = ScopeFor(null);
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var id = new TenantId(Guid.NewGuid());
-        db.Tenants.Add(new Tenant { Id = id, Code = (prefix + Guid.NewGuid().ToString("N"))[..20], Name = "test " + prefix, CreatedAt = DateTime.UtcNow });
+        // Keep at least eight random characters: a prefix that filled the 20-character code alone repeated across runs.
+        var stem = prefix.Length > 12 ? prefix[..12] : prefix;
+        db.Tenants.Add(new Tenant { Id = id, Code = stem + Guid.NewGuid().ToString("N")[..(20 - stem.Length)], Name = "test " + prefix, CreatedAt = DateTime.UtcNow });
         await db.SaveChangesAsync();
         return id;
     }
