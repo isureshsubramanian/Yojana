@@ -216,6 +216,10 @@ public static class CommissionUnitsHandler
                 attributes["serial_reuse_outcome"] = reuse.Outcome;
             }
 
+            // CONTRACT with AssignIdentifiers: a production-order creating fact retains its document and the `command_id`
+            // and `line` attributes above; allocation order is (this command's first seq, line), because the event writer
+            // orders seq by unit id within one append. Dropping the document or either attribute assigns plain vendor
+            // lists to different physical units.
             batchEvents.Add(new UnitEventDraft
             {
                 UnitId = unitId, EventTime = command.EventTime, EventType = eventType, PresetEventId = eventId,

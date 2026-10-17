@@ -77,6 +77,12 @@ public static class SerialisationEndpoints
             var secured = preview with { Command = Secure(preview.Command, user) };
             return Invoke<CorrectionPreview>(bus, tenant, secured, ct);
         });
+        corrections.MapPost("/assign-identifiers/preview", (AssignIdentifiers command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<AssignIdentifiersPreview>(bus, tenant, new PreviewAssignIdentifiers(Secure(command, user)), ct));
+        corrections.MapPost("/assign-identifiers", (AssignIdentifiers command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<AssignIdentifiersResult>(bus, tenant, Secure(command, user), ct));
+        corrections.MapGet("/production-orders/{productionOrderId:guid}/awaiting-vendor-serial", async (Guid productionOrderId, AwaitingVendorSerialQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.ByProductionOrderAsync(new DocumentRef("production_order", productionOrderId), ct)));
 
         var correctionReference = app.MapGroup("/api/correction-reference").RequireAuthorization(YojanaPolicy.TenantMember);
         correctionReference.MapGet("/approval", async (CorrectionApprovalSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
@@ -379,6 +385,27 @@ public static class SerialisationEndpoints
             InitiatingRole(user),
             // The signed-in committer, from claims, is the only approval the API can attest; never the request body.
             [new CorrectionApprover(actor, roles)]);
+    }
+
+    private static AssignIdentifiers Secure(AssignIdentifiers command, ClaimsPrincipal user)
+    {
+        var supplied = command.Correction;
+        var committer = Committer(user);
+        return command with
+        {
+            ActorRef = committer.UserRef,
+            CommittedBy = new CorrectionApprover(committer.UserRef, committer.Roles),
+            Correction = new CorrectionMetadata(
+                supplied?.CorrectionId ?? command.CommandId,
+                supplied?.ReasonCode ?? command.Reason,
+                supplied?.Note ?? command.Note,
+                supplied?.EvidenceRefs ?? [],
+                supplied?.InitiatedVia ?? CorrectionInitiatedVia.Api,
+                supplied?.CorrectsCorrectionId,
+                InitiatingRole(user),
+                // Approvals are server records. Request bodies may name neither an approver nor their roles.
+                null),
+        };
     }
 
     private static string InitiatingRole(ClaimsPrincipal user)

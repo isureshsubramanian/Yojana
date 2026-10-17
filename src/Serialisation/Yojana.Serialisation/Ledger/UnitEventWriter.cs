@@ -80,6 +80,8 @@ public sealed class UnitEventWriter(SerialisationDbContext db, ITenantContext te
 
         // Seq order within the append: per unit by business time, then by the caller's order (recorded time is the
         // same instant for the whole append), so the history ordering rule and seq never disagree for one append.
+        // Consequence: seq across units in one append is unit-id order, not the caller's line order. AssignIdentifiers
+        // derives allocation order from the commissioning fact's `line` attribute for that reason; keep both in step.
         var ordered = fresh.Select((d, i) => (Draft: d, Index: i)).OrderBy(x => x.Draft.UnitId).ThenBy(x => x.Draft.EventTime).ThenBy(x => x.Index).ToList();
         var firstSeq = await NextRangeAsync(ordered.Count, cancellationToken);
         var written = new List<UnitEvent>(ordered.Count);

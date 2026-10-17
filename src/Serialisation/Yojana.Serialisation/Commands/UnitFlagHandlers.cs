@@ -10,7 +10,7 @@ namespace Yojana.Serialisation.Commands;
 /// <summary>Overlay flags (ADR-0001 PhysicalUnit `overlay_flags`; case 30): a lost or stolen unit that reappears (its flag cleared after a custody fact) raises an investigation task; the events stay.</summary>
 public static class UnitFlagHandler
 {
-    private static readonly string[] Known = [OverlayFlag.Lost, OverlayFlag.Stolen, OverlayFlag.WrittenOff, OverlayFlag.CloneSeen, OverlayFlag.Recalled, OverlayFlag.AuthenticityFailed, OverlayFlag.DocumentMismatch];
+    private static readonly string[] Known = [OverlayFlag.Lost, OverlayFlag.Stolen, OverlayFlag.WrittenOff, OverlayFlag.CloneSeen, OverlayFlag.Recalled, OverlayFlag.AuthenticityFailed, OverlayFlag.DocumentMismatch, OverlayFlag.AwaitingVendorSerial];
 
     public static Task<UnitFlagResult> Handle(SetUnitFlag command, SerialisationDbContext db, IUnitEventWriter writer, ITenantContext tenant, CancellationToken ct) =>
         ApplyAsync(command.CommandId, command.UnitId, command.Flag, true, command.EventTime, command.ActorRef, command.LegalEntityId, command.Reason, command.Document, db, writer, tenant, ct);
