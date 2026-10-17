@@ -199,7 +199,7 @@ public static class SerialisationEndpoints
                     row => new DocumentReferenceView(row.Value.Number, row.Value.Status, row.Value.ItemId))));
         });
         serialisationReferences.MapGet("/reference-search", async (string kind, string? type, string? q, int? take,
-            IItemNamePort items, IPartyNamePort parties, IDocumentNumberPort documents, CancellationToken ct) =>
+            IItemNamePort items, IPartyNamePort parties, IDocumentNumberPort documents, UnitQueries unitQueries, CancellationToken ct) =>
         {
             var text = q?.Trim() ?? "";
             var count = Math.Clamp(take ?? 10, 1, 25);
@@ -212,6 +212,13 @@ public static class SerialisationEndpoints
                 case "party":
                     return Results.Ok(new ReferenceSearchResponse((await parties.SearchAsync(text, count, ct))
                         .Select(label => new ReferenceSearchResult("party", label.PartyRef, Code: label.Code, Name: label.Name, PartyType: label.PartyType)).ToList()));
+                case "unit":
+                    // Units belong to this module, so the picker reads the unit search directly: live identifiers only,
+                    // one result per unit, labelled with the identifier as printed.
+                    var units = await unitQueries.SearchAsync(new UnitSearch(text, IncludeSuperseded: false, Take: count * 3), ct);
+                    return Results.Ok(new ReferenceSearchResponse(units.Page.Items.DistinctBy(row => row.UnitId).Take(count)
+                        .Select(row => new ReferenceSearchResult("unit", row.UnitId, Type: row.IdentifierType,
+                            Number: row.RawValue ?? row.Identifier, Status: row.LifecycleStatus, ItemId: row.ItemId)).ToList()));
                 case "document" when !string.IsNullOrWhiteSpace(type):
                     return Results.Ok(new ReferenceSearchResponse((await documents.FindAsync(type, text, count, ct))
                         .Select(label => new ReferenceSearchResult("document", label.Document.Id, Type: label.Document.Type,
@@ -220,7 +227,7 @@ public static class SerialisationEndpoints
                     return Results.Problem(title: "document_type_required", detail: "type is required for document search.",
                         statusCode: StatusCodes.Status400BadRequest);
                 default:
-                    return Results.Problem(title: "reference_kind_invalid", detail: "kind must be item, party or document.",
+                    return Results.Problem(title: "reference_kind_invalid", detail: "kind must be item, party, document or unit.",
                         statusCode: StatusCodes.Status400BadRequest);
             }
         });

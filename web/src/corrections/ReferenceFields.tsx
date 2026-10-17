@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { api } from "../api/client";
+import { units, type UnitDetail } from "../api/units";
 import { useSession } from "../session/session";
 import {
   createReferenceStore, documentLabelText, itemLabelText, lotLabelText, partyLabelText,
@@ -19,7 +20,7 @@ type ReferenceNamesResponse = {
 };
 
 type SearchResult = {
-  kind: "item" | "party" | "document"; id: string; type: string | null; code: string | null; name: string | null;
+  kind: "item" | "party" | "document" | "unit"; id: string; type: string | null; code: string | null; name: string | null;
   partyType: string | null; number: string | null; status: string | null; itemId: string | null;
 };
 
@@ -99,6 +100,29 @@ export function DocumentField({ id, label, types, value, onChange, optional, hin
   return <div className="reference-field-with-type"><div className="field"><label htmlFor={`${id}-type`}>{label}{optional && <span className="hint"> · optional</span>}</label><select id={`${id}-type`} className="select" value={selectedType} onChange={(event) => { setSelectedType(event.target.value); if (value) onChange(null); }}>{types.map((candidate) => <option key={candidate} value={candidate}>{friendlyType(candidate)}</option>)}</select></div>{picker}</div>;
 }
 
+/** A serialised unit, chosen by any live identifier; the value is the unit id. Shown as the serial a person recognises and its item. */
+export function UnitField({ id, label, value, onChange, optional, hint }: FieldProps<string>) {
+  const [serial, setSerial] = useState<{ unitId: string; serial: string; itemId: string } | null>(null);
+  useEffect(() => {
+    if (!value || serial?.unitId === value) return;
+    const controller = new AbortController();
+    units.detail(value, controller.signal).then((unit) => setSerial({ unitId: value, serial: displaySerial(unit) ?? value.slice(0, 8), itemId: unit.itemId }))
+      .catch(() => { if (!controller.signal.aborted) setSerial({ unitId: value, serial: value.slice(0, 8), itemId: "" }); });
+    return () => controller.abort();
+  }, [value, serial?.unitId]);
+  const names = useReferenceNames({ items: [serial?.unitId === value ? serial.itemId || null : null] });
+  const known = value && serial?.unitId === value ? serial : null;
+  const selectedLabel = !value ? "" : known ? (known.itemId ? `${known.serial} · ${names.item(known.itemId)}` : known.serial) : "…";
+  return <ReferencePicker id={id} label={label} value={value} selectedLabel={selectedLabel} onChange={onChange} optional={optional} hint={hint}
+    kind="unit" placeholder="Search by serial or other identifier" noResult={(query) => `No unit ${query} found`} />;
+}
+
+/** The serial a person recognises: the live internal serial as written, else any live identifier (mirrors Claims/UnitSerials.cs). */
+function displaySerial(unit: UnitDetail): string | null {
+  const live = unit.identifiers.filter((identifier) => identifier.validTo === null);
+  return (live.find((identifier) => identifier.type === "internal_serial") ?? [...live].sort((a, b) => a.type.localeCompare(b.type))[0])?.rawValue ?? null;
+}
+
 /** A lot document, chosen by its number; the value crossing the component boundary is the lot id. */
 export function LotField({ id, label, value, onChange, optional, hint }: FieldProps<string>) {
   return <DocumentField id={id} label={label} types={["lot"]} value={value ? { type: "lot", id: value } : null}
@@ -107,7 +131,7 @@ export function LotField({ id, label, value, onChange, optional, hint }: FieldPr
 
 function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, hint, kind, documentType, placeholder, noResult, hideLabel = false }: {
   id: string; label: string; value: string | null; selectedLabel: string; onChange: (value: string | null) => void; optional: boolean | undefined; hint: string | undefined;
-  kind: "item" | "party" | "document"; documentType?: string; placeholder: string; noResult: (query: string) => string; hideLabel?: boolean;
+  kind: "item" | "party" | "document" | "unit"; documentType?: string; placeholder: string; noResult: (query: string) => string; hideLabel?: boolean;
 }) {
   const listId = `${useId().replace(/:/g, "")}-reference-options`;
   const [query, setQuery] = useState("");
@@ -151,7 +175,7 @@ function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, 
       const controller = new AbortController(); request.current = controller; setLoading(true);
       try { choices = await search(text, controller.signal); setResults(choices); } catch (reason) { if (aborted(reason)) return; choices = []; } finally { setLoading(false); }
     }
-    const exact = choices.find((result) => (kind === "document" ? result.number : result.code)?.toLowerCase() === text.toLowerCase());
+    const exact = choices.find((result) => (kind === "document" || kind === "unit" ? result.number : result.code)?.toLowerCase() === text.toLowerCase());
     const choice = exact ?? (active >= 0 ? choices[active] : undefined);
     if (choice) choose(choice);
     else { setMessage(noResult(text)); setOpen(true); }
@@ -189,12 +213,12 @@ function resultLabel(result: SearchResult, itemName: string | null): string {
   if (result.kind === "item") return result.name ? `${result.code} · ${result.name}` : result.code ?? result.id;
   if (result.kind === "party") return result.name ? `${result.name} (${result.code})` : result.code ?? result.id;
   const number = result.number ?? result.id;
-  return result.type === "lot" && itemName ? `${number} · ${itemName}` : number;
+  return (result.type === "lot" || result.kind === "unit") && itemName ? `${number} · ${itemName}` : number;
 }
 
 function resultMeta(result: SearchResult): string | null {
   if (result.kind === "party") return result.partyType ? friendlyType(result.partyType) : null;
-  if (result.kind === "document") return result.status ? friendlyType(result.status) : null;
+  if (result.kind === "document" || result.kind === "unit") return result.status ? friendlyType(result.status) : null;
   return null;
 }
 
