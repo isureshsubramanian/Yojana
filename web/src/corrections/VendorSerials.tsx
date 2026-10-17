@@ -9,6 +9,7 @@ import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDateTime, humanise, shortId } from "../units/format";
 import { correctionsApi } from "./api";
 import { GUID, identifierLines } from "./format";
+import { DocumentField, useReferenceNames, type DocumentValue } from "./ReferenceFields";
 import type { AssignIdentifiers, AssignIdentifiersPreview, AssignIdentifiersResult, AwaitingVendorSerialReport, IdentifierAssignmentLineResult } from "./types";
 
 const PAGE = 8;
@@ -16,7 +17,6 @@ const PAGE = 8;
 export function Component() {
   const [params] = useSearchParams();
   const [productionOrderId, setProductionOrderId] = useState(params.get("productionOrder") ?? "");
-  const [productionOrderLabel, setProductionOrderLabel] = useState(params.get("label") ?? "Production order");
   const [mode, setMode] = useState("allocation_order");
   const [text, setText] = useState(params.get("serials") ?? "");
   const [reason, setReason] = useState("vendor_list");
@@ -31,6 +31,9 @@ export function Component() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const parsed = useMemo(() => identifierLines(text, mode === "explicit_pairs"), [text, mode]);
+  const productionOrder: DocumentValue | null = GUID.test(productionOrderId) ? { type: "production_order", id: productionOrderId } : null;
+  const referenceNames = useReferenceNames({ documents: [productionOrder] });
+  const productionOrderLabel = productionOrder ? referenceNames.document(productionOrder) : "Production order";
 
   const loadReport = async (id = productionOrderId) => { if (!GUID.test(id)) return; setBusy(true); setError(null); try { setReport(await correctionsApi.awaitingVendorSerial(id)); } catch (reason) { setError(reason); } finally { setBusy(false); } };
   useEffect(() => { if (GUID.test(productionOrderId)) void loadReport(productionOrderId); }, []); // initial route handoff only
@@ -65,7 +68,7 @@ export function Component() {
         ]} />
         <div className="cols-2-3">
           <section className="card" aria-labelledby="vendor-list"><div className="card-header"><h2 id="vendor-list">Vendor list</h2><span className="meta">pasted · file import arrives with P7</span></div><div className="card-body"><div className="form-grid">
-            <div className="field span"><label htmlFor="vendor-order">Production order UUID</label><div className="correction-toolbar"><input id="vendor-order" className="input serial" value={productionOrderId} onChange={(event) => { setProductionOrderId(event.target.value); setReport(null); setPreview(null); }} placeholder="00000000-0000-0000-0000-000000000000" /><button type="button" className="btn" disabled={!GUID.test(productionOrderId) || busy} onClick={() => void loadReport()}>Load order</button></div></div><div className="field span"><label htmlFor="vendor-order-label">Display label</label><input id="vendor-order-label" className="input" value={productionOrderLabel} onChange={(event) => setProductionOrderLabel(event.target.value)} placeholder="PO-2026-00731" /></div>
+            <div className="span"><div className="correction-toolbar"><div style={{ flex: "1 1 280px" }}><DocumentField id="vendor-order" label="Production order" types={["production_order"]} value={productionOrder} onChange={(value) => { setProductionOrderId(value?.id ?? ""); setReport(null); setPreview(null); }} /></div><button type="button" className="btn" disabled={!productionOrder || busy} onClick={() => void loadReport()}>Load order</button></div></div>
             <div className="field span"><span className="lbl">Apply by</span><div className="segmented plain" role="group" aria-label="Apply by"><button type="button" aria-pressed={mode === "allocation_order"} onClick={() => { setMode("allocation_order"); setPreview(null); }}>Allocation order</button><button type="button" aria-pressed={mode === "explicit_pairs"} onClick={() => { setMode("explicit_pairs"); setPreview(null); }}>Explicit pairing</button></div></div>
             <div className="field span"><label htmlFor="vendor-lines">{mode === "allocation_order" ? "Serials · one per line" : "Pairs · unit UUID, vendor serial · one per line"}</label><textarea id="vendor-lines" className="textarea correction-paste" value={text} onChange={(event) => { setText(event.target.value); setPreview(null); }} placeholder={mode === "allocation_order" ? "RXV-4410-00191\nRXV-4410-00192" : "00000000-0000-0000-0000-000000000000, RXV-4410-00191"} /></div>
             <div className="field"><label htmlFor="vendor-reason">Reason code</label><select id="vendor-reason" className="select" value={reason} onChange={(event) => { setReason(event.target.value); setPreview(null); }}><option value="vendor_list">vendor_list</option><option value="vendor_list_supplement">vendor_list_supplement</option><option value="late_capture">late_capture</option></select></div><div className="field"><label htmlFor="vendor-evidence">Evidence</label><input id="vendor-evidence" className="input" value={evidence} onChange={(event) => { setEvidence(event.target.value); setPreview(null); }} placeholder="Vendor e-mail or ASN reference" /></div>
@@ -78,7 +81,7 @@ export function Component() {
         </div>
       </div>
     </main>
-    <Rail label="Vendor serial assignment"><Section title="Production order"><Kv rows={[["Document", productionOrderLabel], ["UUID", productionOrderId ? shortId(productionOrderId, 12) : "—"], ["Awaiting", report?.count ?? "—"], ["List lines", parsed.lines.length], ["Mode", humanise(mode)], ["Reason", reason]]} /></Section>{report && <Section title="Awaiting sample">{report.units.slice(0, 6).map((unit) => <div className="job" key={unit.unitId}><div><div className="t serial">{unit.provisionalIdentifier}</div><div className="s">allocated {fmtDateTime(unit.allocatedAt)}</div></div><UnitLink unitId={unit.unitId}>{shortId(unit.unitId)}</UnitLink></div>)}</Section>}</Rail>
+    <Rail label="Vendor serial assignment"><Section title="Production order"><Kv rows={[["Document", productionOrderLabel], ["Awaiting", report?.count ?? "—"], ["List lines", parsed.lines.length], ["Mode", humanise(mode)], ["Reason", reason]]} /></Section>{report && <Section title="Awaiting sample">{report.units.slice(0, 6).map((unit) => <div className="job" key={unit.unitId}><div><div className="t serial">{unit.provisionalIdentifier}</div><div className="s">allocated {fmtDateTime(unit.allocatedAt)}</div></div><UnitLink unitId={unit.unitId}>{shortId(unit.unitId)}</UnitLink></div>)}</Section>}</Rail>
   </>;
 }
 
