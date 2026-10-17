@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ageBucketLabel, campaignCoverNote, campaignCoverTerms, campaignOptionHint, coverageSourceLabel, humanise, money, moneyTotals, stackOutcome } from "../src/claims/format.ts";
+import { ageBucketLabel, campaignCoverNote, campaignCoverTerms, campaignOptionHint, coverageSourceLabel, humanise, money, moneyTotals, overlayFlagsText, stackOutcome } from "../src/claims/format.ts";
 import type { ClaimCampaignOption } from "../src/claims/types.ts";
 
 const catalogue = [
@@ -41,4 +41,10 @@ test("campaign claim guidance uses plain English reasons", () => {
   assert.equal(coverageSourceLabel("recall", "RC-26-04"), "Recall · RC-26-04");
   assert.equal(campaignCoverTerms(endedRecall), "covers parts 100% · labour 50% · travel 0%");
   assert.equal(campaignCoverTerms({ partsPct: 100, labourPct: 100, travelPct: 100 }), null);
+});
+
+test("overlay flags read as words and None when clear", () => {
+  assert.equal(overlayFlagsText("[]"), "None");
+  assert.equal(overlayFlagsText(null), "None");
+  assert.equal(overlayFlagsText('["recalled","clone_seen"]'), "Recalled, Clone seen");
 });

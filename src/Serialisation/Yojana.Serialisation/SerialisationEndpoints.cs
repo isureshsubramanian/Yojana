@@ -349,7 +349,7 @@ public static class SerialisationEndpoints
         claims.MapGet("/campaign-options", async (Guid unitId, DateOnly claimDate, ICampaignCoverPort campaigns, CancellationToken ct) =>
             Results.Ok((await campaigns.ListForUnitAsync(unitId, claimDate, ct)).Select(campaign => new ClaimCampaignOption(
                 campaign.CampaignId, campaign.Code, campaign.Name, campaign.CoverageSource, campaign.ReserveTag, campaign.ReasonCode,
-                campaign.RunsUntil, campaign.CoversOn(claimDate), campaign.NotCoveredReason(claimDate)))));
+                campaign.RunsUntil, campaign.CoversOn(claimDate), campaign.NotCoveredReason(claimDate), campaign.PartsPct, campaign.LabourPct, campaign.TravelPct))));
         claims.MapGet("/summary", async (ClaimQueries queries, ClaimReviewSettings settings, IClock clock, CancellationToken ct) =>
             Results.Ok(await queries.SummaryAsync(DateOnly.FromDateTime(clock.UtcNow), (await settings.GetAsync(ct)).AdjudicationTargetWorkingDays, ct)));
         claims.MapGet("/{claimId:guid}/adjudication-preview", async (Guid claimId, ClaimAdjudicationPreviewQuery preview, ClaimReviewSettings settings, CancellationToken ct) =>

@@ -11,7 +11,7 @@ import { openDrawer } from "../shell/drawerStore";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { claimsApi } from "./api";
-import { COUNTRY_CODES, LINE_KINDS, REMEDIES, campaignCoverTerms, campaignOptionHint, countryName, humanise, money } from "./format";
+import { COUNTRY_CODES, LINE_KINDS, REMEDIES, campaignCoverTerms, campaignOptionHint, countryName, humanise, money, overlayFlagsText } from "./format";
 import type { CampaignCoverageSource, ClaimCampaignOption, ClaimEvidenceInput, CoverageFamily, CurrencyInfo, SubmitClaim, TenantCurrency } from "./types";
 import "./claims.css";
 
@@ -168,7 +168,7 @@ export function Component() {
               ["Serial", <span className="serial">{hit?.rawValue ?? identifier}</span>], ["Item", names.item(unit.itemId)], ["Owner now", names.party(unit.ownerPartyRef)],
               ["Custody", unit.custodyPartyRef ? names.party(unit.custodyPartyRef) : unit.locationKind ? `${humanise(unit.locationKind)}${unit.locationId ? " · location recorded" : ""}` : "—"],
               ["Live coverage", activeCover.length ? activeCover.map((cover) => `${cover.coverageFamilyName} · ${cover.startDate ?? "open"} → ${cover.endDate ?? "open"} · region ${cover.regionScope.join(", ") || "any"}`).join("; ") : "No active cover returned"],
-              ["Overlay flags", unit.overlayFlags || "None"], ["As-built children", children.length.toLocaleString()],
+              ["Overlay flags", overlayFlagsText(unit.overlayFlags)], ["As-built children", children.length.toLocaleString()],
             ]} /> : <p className="muted">{mode === "unit" ? "Scan or enter an identifier above, then resolve it. Only facts returned by the unit and entitlement APIs appear here." : "The submitted identifier, item and proof of purchase let the server reconstruct a low-confidence record. No sale, shipment or delivery facts are inferred."}</p>}
           </div></section>
           <section className="card" aria-labelledby="claim-lines"><div className="card-header"><h2 id="claim-lines">What is claimed <span className="meta">{lines.length} {lines.length === 1 ? "line" : "lines"} · coverage is decided per line</span></h2><button type="button" className="btn sm" onClick={() => setLines((current) => [...current, draftLine(defaultFamily(families))])}><Icon name="plus" />Add line</button></div>

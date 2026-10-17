@@ -42,14 +42,16 @@ export function Component() {
     load(campaignId, controller.signal).catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) { setError(reason); setLoading(false); } });
     return () => controller.abort();
   }, [campaignId, load]);
+  // Once active or closed the selection is fixed: the server refuses a preview, so the editor shows the selected units instead.
+  const selectionFixed = campaign?.status === "active" || campaign?.status === "closed";
   useEffect(() => {
-    if (!campaignId || loading) return;
+    if (!campaignId || loading || selectionFixed) return;
     const controller = new AbortController();
     Promise.all([campaignApi.preview(campaignId, (previewPage - 1) * PAGE, PAGE, controller.signal), campaignApi.funnel(campaignId, controller.signal)])
       .then(([nextPreview, nextFunnel]) => { setPreview(nextPreview); setFunnel(nextFunnel); })
       .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
     return () => controller.abort();
-  }, [campaignId, loading, previewPage, campaign?.updatedAt]);
+  }, [campaignId, loading, previewPage, campaign?.updatedAt, selectionFixed]);
 
   const people = usePeople([campaign?.createdBy]);
   const names = useReferenceNames({ items: preview?.page.items.map((row) => row.itemId) ?? [], parties: preview?.page.items.flatMap((row) => [row.ownerPartyRef, row.custodianPartyRef]) ?? [] });
@@ -107,7 +109,7 @@ export function Component() {
       <div className="cols-3-2 top">
         <div className="stack">
           <section className="card" aria-labelledby="campaign-criteria"><div className="card-header"><h2 id="campaign-criteria">Criteria <span className="meta">all {grouped} kinds must match · any row within a kind</span></h2><div className="campaign-add"><select className="select" aria-label="Criterion kind" value={addKind} onChange={(event) => setAddKind(event.target.value as CampaignCriterionKind)}><option value="identifier_range">Serial range</option><option value="child">Child unit or item</option><option value="firmware">Firmware</option><option value="lot">Lot</option></select><button type="button" className="btn sm" onClick={addCriterion}><Icon name="plus" />Add</button></div></div><div className="card-body">{draft.criteria.map((criterion, index) => <CriterionEditor key={criterion.criterionId} criterion={criterion} onChange={(patch) => updateCriterion(index, patch)} onRemove={() => removeCriterion(index)} />)}{draft.criteria.length === 0 && <p className="muted">Add at least one criterion. Different kinds narrow with AND; repeated rows of one kind widen with OR.</p>}</div></section>
-          <section className="card" aria-labelledby="campaign-preview"><div className="card-header"><h2 id="campaign-preview">Preview <span className="meta">{preview ? `${preview.page.total.toLocaleString()} units match` : isNew ? "save to preview" : "loading"}</span></h2><span className="meta">re-run on select</span></div><DataGrid columns={columns} page={{ rows: preview?.page.items ?? [], total: preview?.page.total ?? 0, page: previewPage, pageSize: PAGE, continuation: null }} rowId={(row) => row.unitId} onPage={setPreviewPage} onRowClick={openMatch} activeRowId={active} loading={loading} dense emptyText={isNew ? "Save the campaign to preview its criteria." : "No units match all criterion kinds."} footerNote="Owner and custodian are read from current episodes" /></section>
+          <section className="card" aria-labelledby="campaign-preview"><div className="card-header"><h2 id="campaign-preview">Preview <span className="meta">{selectionFixed ? `selection fixed · ${draft.status}` : preview ? `${preview.page.total.toLocaleString()} units match` : isNew ? "save to preview" : "loading"}</span></h2>{selectionFixed && campaignId ? <Link className="btn sm" to={`/claims/campaigns/${campaignId}/units`}>Selected units</Link> : <span className="meta">re-run on select</span>}</div>{selectionFixed ? <div className="card-body"><p className="muted">This campaign is {draft.status}, so its selection no longer changes. The units it selected, with their recipients and claims, are on the units list.</p></div> : <DataGrid columns={columns} page={{ rows: preview?.page.items ?? [], total: preview?.page.total ?? 0, page: previewPage, pageSize: PAGE, continuation: null }} rowId={(row) => row.unitId} onPage={setPreviewPage} onRowClick={openMatch} activeRowId={active} loading={loading} dense emptyText={isNew ? "Save the campaign to preview its criteria." : "No units match all criterion kinds."} footerNote="Owner and custodian are read from current episodes" />}</section>
         </div>
         <div className="stack">
           <section className="card" aria-labelledby="campaign-settings">
@@ -123,7 +125,7 @@ export function Component() {
               <div className="field span"><label htmlFor="campaign-reason-note">Reason note · optional</label><textarea id="campaign-reason-note" className="textarea campaign-reason-note" maxLength={500} value={draft.reasonNote} onChange={(event) => setField("reasonNote", event.target.value)} /></div>
             </div></div>
           </section>
-          <section className="card campaign-funnel" aria-labelledby="campaign-funnel"><div className="card-header"><h2 id="campaign-funnel">How the criteria narrow</h2></div><div className="card-body">{funnel.map((step, index) => <div className="job" key={step.kind}><div><div className="t">{step.count.toLocaleString()} units after {humanise(step.kind)}</div><div className="s">cumulative AND step</div></div><StatusBadge tone={index === funnel.length - 1 ? "ok" : "neutral"}>{index === funnel.length - 1 ? "Selected" : title(step.kind)}</StatusBadge></div>)}{funnel.length === 0 && <p className="muted">Save the criteria to see each cumulative AND step.</p>}</div></section>
+          <section className="card campaign-funnel" aria-labelledby="campaign-funnel"><div className="card-header"><h2 id="campaign-funnel">How the criteria narrow</h2></div><div className="card-body">{funnel.map((step, index) => <div className="job" key={step.kind}><div><div className="t">{step.count.toLocaleString()} units after {humanise(step.kind)}</div><div className="s">cumulative AND step</div></div><StatusBadge tone={index === funnel.length - 1 ? "ok" : "neutral"}>{index === funnel.length - 1 ? "Selected" : title(step.kind)}</StatusBadge></div>)}{funnel.length === 0 && (selectionFixed ? <p className="muted">The selection is fixed; the criteria are kept as the record of how units were chosen.</p> : <p className="muted">Save the criteria to see each cumulative AND step.</p>)}</div></section>
           <div className="note"><strong>Re-selecting later</strong>&nbsp;adds units that match since the last selection and never removes one already selected.</div>
           <ErrorNote error={error} />
         </div>

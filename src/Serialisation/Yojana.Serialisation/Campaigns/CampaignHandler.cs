@@ -177,7 +177,7 @@ public static class CampaignHandler
     private static void EnsureSelectable(Campaign campaign)
     {
         if (campaign.Status is CampaignStatus.Active or CampaignStatus.Closed)
-            throw new CommandRefusedException("campaign_not_selectable", $"A {campaign.Status} campaign cannot change its selected units.");
+            throw new CommandRefusedException("campaign_not_selectable", $"Campaign {campaign.Code} is {campaign.Status}; its selected units can no longer change.");
     }
 
     private static void ValidateCampaign(string code, string name, string coverageSource, string reserveTag, string reasonCode, string? reasonNote,

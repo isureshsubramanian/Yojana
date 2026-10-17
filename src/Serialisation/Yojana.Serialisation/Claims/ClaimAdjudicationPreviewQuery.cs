@@ -32,6 +32,8 @@ public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext
         var serials = new Dictionary<Guid, string>(await UnitSerials.DisplayAsync(db, tenantId, unitIds, cancellationToken));
         var itemIds = await db.Current.AsNoTracking().Where(u => u.TenantId == tenantId && unitIds.Contains(u.UnitId)).ToDictionaryAsync(u => u.UnitId, u => u.ItemId, cancellationToken);
         var decided = claim.Status is not (ClaimStatus.Submitted or ClaimStatus.Adjudicating);
+        // Lines decided (or about to be decided) under the campaign show the campaign where a policy would otherwise be named.
+        var campaignLines = decided ? claim.CampaignId is not null && claim.CampaignCoverReason is null && namedCampaign is not null : liveCampaign is not null;
 
         // A recorded line keeps only its policy version id; name it so the screen shows which policy covered it.
         var recordedVersionIds = decided ? lines.Select(l => l.PolicyVersionId).OfType<Guid>().Distinct().ToList() : [];
@@ -52,9 +54,10 @@ public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext
             previews.Add(new ClaimLinePreview(line.ClaimLineId, line.Sequence, line.UnitId, serials.GetValueOrDefault(line.UnitId),
                 itemIds.TryGetValue(line.UnitId, out var itemId) ? itemId : null, line.UnitId != claim.UnitId, line.Kind, line.CoverageFamily, line.Description,
                 line.RequestedAmount, outcome.CoveragePct, outcome.ApprovedAmount, outcome.CoverageSource,
-                liveCampaign is not null && !decided ? "campaign" : resolution?.Level ?? (outcome.EntitlementId is null ? PolicyLevel.None : PolicyLevel.UnitEntitlement),
-                resolution?.PolicyCode ?? Recorded(outcome.PolicyVersionId)?.PolicyCode, resolution?.Version ?? Recorded(outcome.PolicyVersionId)?.Version, outcome.EntitlementId, start ?? resolution?.StartDate, end ?? resolution?.EndDate, outcome.DenialReason,
-                liveCampaign is not null && !decided ? [new PolicyStackStep("campaign", "matched", $"{liveCampaign.Code} · {liveCampaign.Name}")]
+                campaignLines ? "campaign" : resolution?.Level ?? (outcome.EntitlementId is null ? PolicyLevel.None : PolicyLevel.UnitEntitlement),
+                campaignLines ? namedCampaign!.Code : resolution?.PolicyCode ?? Recorded(outcome.PolicyVersionId)?.PolicyCode,
+                campaignLines ? null : resolution?.Version ?? Recorded(outcome.PolicyVersionId)?.Version, outcome.EntitlementId, start ?? resolution?.StartDate, end ?? resolution?.EndDate, outcome.DenialReason,
+                campaignLines ? [new PolicyStackStep("campaign", "matched", $"{namedCampaign!.Code} · {namedCampaign.Name} · parts {namedCampaign.PartsPct:0.##}% · labour {namedCampaign.LabourPct:0.##}% · travel {namedCampaign.TravelPct:0.##}%")]
                     : resolution is null ? [] : Stack(resolution, serials)));
         }
 

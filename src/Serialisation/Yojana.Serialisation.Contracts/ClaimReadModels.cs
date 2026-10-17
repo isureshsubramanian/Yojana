@@ -49,7 +49,10 @@ public sealed record ClaimCampaignOption(
     string ReasonCode,
     DateOnly? RunsUntil,
     bool CoversOnDate,
-    string? NotCoveredReason);
+    string? NotCoveredReason,
+    decimal PartsPct,
+    decimal LabourPct,
+    decimal TravelPct);
 
 public sealed record ClaimPage(IReadOnlyList<ClaimListRow> Items, int Total, int Skip, int Take);
 

@@ -107,3 +107,10 @@ export function campaignCoverNote(code: string, reason: CampaignCoverReason, run
 export function coverageSourceLabel(source: string, campaignCode: string | null): string {
   return `${humanise(source)}${campaignCode ? ` · ${campaignCode}` : ""}`;
 }
+
+/** The unit's overlay flags arrive as the stored JSON array text; shown as words, "None" when clear. */
+export function overlayFlagsText(raw: string | null | undefined): string {
+  let flags: unknown = [];
+  try { flags = JSON.parse(raw || "[]"); } catch { return raw || "None"; }
+  return Array.isArray(flags) && flags.length > 0 ? flags.map((flag) => humanise(String(flag))).join(", ") : "None";
+}
