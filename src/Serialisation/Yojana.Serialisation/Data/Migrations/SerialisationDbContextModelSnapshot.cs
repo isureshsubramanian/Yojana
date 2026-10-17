@@ -487,6 +487,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("child_item_id");
 
+                    b.Property<Guid?>("ChildLotId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("child_lot_id");
+
                     b.Property<Guid?>("ChildUnitId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("child_unit_id");
@@ -494,6 +498,11 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<DateTime?>("EffectiveAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("effective_at");
+
+                    b.Property<string>("FirmwareKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("firmware_key");
 
                     b.Property<string>("FirmwareValue")
                         .HasMaxLength(200)
@@ -555,7 +564,7 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.ToTable("campaign_criteria", "serialisation", t =>
                         {
-                            t.HasCheckConstraint("ck_campaign_criteria_shape", "(kind = 'identifier_range' AND scheme IS NOT NULL AND identifier_type IS NOT NULL AND range_start IS NOT NULL AND range_end IS NOT NULL AND range_start_ordinal IS NOT NULL AND range_end_ordinal IS NOT NULL AND lot_id IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL AND firmware_value IS NULL AND effective_at IS NULL)\nOR (kind = 'lot' AND lot_id IS NOT NULL AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL AND firmware_value IS NULL AND effective_at IS NULL)\nOR (kind = 'child' AND ((child_unit_id IS NOT NULL AND child_item_id IS NULL) OR (child_unit_id IS NULL AND child_item_id IS NOT NULL)) AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND lot_id IS NULL AND firmware_value IS NULL AND effective_at IS NULL)\nOR (kind = 'firmware' AND firmware_value IS NOT NULL AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND lot_id IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL)");
+                            t.HasCheckConstraint("ck_campaign_criteria_shape", "(kind = 'identifier_range' AND scheme IS NOT NULL AND identifier_type IS NOT NULL AND range_start IS NOT NULL AND range_end IS NOT NULL AND range_start_ordinal IS NOT NULL AND range_end_ordinal IS NOT NULL AND lot_id IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL AND child_lot_id IS NULL AND firmware_key IS NULL AND firmware_value IS NULL AND effective_at IS NULL)\nOR (kind = 'lot' AND lot_id IS NOT NULL AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL AND child_lot_id IS NULL AND firmware_key IS NULL AND firmware_value IS NULL AND effective_at IS NULL)\nOR (kind = 'child' AND ((child_unit_id IS NOT NULL AND child_item_id IS NULL) OR (child_unit_id IS NULL AND child_item_id IS NOT NULL)) AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND lot_id IS NULL AND firmware_key IS NULL AND firmware_value IS NULL AND effective_at IS NULL)\nOR (kind = 'firmware' AND firmware_key IS NOT NULL AND firmware_value IS NOT NULL AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND lot_id IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL AND child_lot_id IS NULL)");
                         });
                 });
 

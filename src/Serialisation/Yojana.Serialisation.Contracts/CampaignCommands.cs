@@ -10,7 +10,9 @@ public sealed record CampaignCriterionInput(
     Guid? ChildUnitId = null,
     Guid? ChildItemId = null,
     string? FirmwareValue = null,
-    DateTime? EffectiveAt = null);
+    DateTime? EffectiveAt = null,
+    Guid? ChildLotId = null,
+    string? FirmwareKey = null);
 
 public static class CampaignCriterionKind
 {
@@ -78,7 +80,9 @@ public sealed record CampaignCriterionRow(
     Guid? ChildUnitId,
     Guid? ChildItemId,
     string? FirmwareValue,
-    DateTime? EffectiveAt);
+    DateTime? EffectiveAt,
+    Guid? ChildLotId,
+    string? FirmwareKey);
 
 public sealed record CampaignRow(
     Guid CampaignId,
@@ -108,10 +112,69 @@ public sealed record CampaignUnitRow(
 public sealed record CampaignMatchRow(
     Guid UnitId,
     string? Serial,
+    Guid ItemId,
     Guid? OwnerPartyRef,
     string? OwnerPartyType,
     Guid? CustodianPartyRef,
-    string? CustodianPartyType);
+    string? CustodianPartyType,
+    string? CustodyKind,
+    string? MatchedChildSerial,
+    string? FirmwareKey,
+    string? FirmwareValue,
+    DateTime? FirmwareSince);
+
+public sealed record CampaignListRow(
+    Guid CampaignId,
+    string Code,
+    string Name,
+    string CoverageSource,
+    string Status,
+    int SelectedUnits,
+    DateTime? SelectedAt,
+    string ReserveTag);
+
+public sealed record CampaignFunnelStep(string Kind, int Count);
+
+public sealed record CampaignMatchEvidence(string Kind, string Label, string Value);
+
+public sealed record CampaignUnitDetailRow(
+    Guid UnitId,
+    string? Serial,
+    Guid? OwnerPartyRef,
+    string? OwnerPartyType,
+    DateTime? OwnerSince,
+    Guid? CustodianPartyRef,
+    string? CustodianPartyType,
+    string? CustodyKind,
+    string? CustodyAtSelection,
+    DateTime? CustodySince,
+    Guid? InvoicePartyRef,
+    DateTime SelectedAt,
+    string SelectedBy,
+    Guid? ClaimId,
+    string? ClaimNumber,
+    string? ClaimStatus);
+
+public sealed record CampaignUnitsSummary(
+    int UnitsSelected,
+    DateTime? SelectedAt,
+    int AddedSinceFirstSelection,
+    int Recipients,
+    int Owners,
+    int CustodiansNotOwner,
+    int OwnerDiffersFromInvoice,
+    int Repaired,
+    int InOurHands);
+
+public static class CampaignRecipientCsv
+{
+    public const string Header = "serial,owner,custodian,selected_at\r\n";
+
+    public static string Row(CampaignUnitDetailRow row, string? owner, string? custodian) => string.Join(',',
+        Csv(row.Serial), Csv(owner), Csv(custodian), Csv(row.SelectedAt.ToString("O"))) + "\r\n";
+
+    private static string Csv(string? value) => $"\"{(value ?? "").Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+}
 
 public sealed record CampaignResult(CampaignRow Campaign, bool Replayed = false);
 

@@ -838,10 +838,10 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
         modelBuilder.Entity<CampaignCriterion>(b =>
         {
             b.ToTable("campaign_criteria", t => t.HasCheckConstraint("ck_campaign_criteria_shape", """
-                (kind = 'identifier_range' AND scheme IS NOT NULL AND identifier_type IS NOT NULL AND range_start IS NOT NULL AND range_end IS NOT NULL AND range_start_ordinal IS NOT NULL AND range_end_ordinal IS NOT NULL AND lot_id IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL AND firmware_value IS NULL AND effective_at IS NULL)
-                OR (kind = 'lot' AND lot_id IS NOT NULL AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL AND firmware_value IS NULL AND effective_at IS NULL)
-                OR (kind = 'child' AND ((child_unit_id IS NOT NULL AND child_item_id IS NULL) OR (child_unit_id IS NULL AND child_item_id IS NOT NULL)) AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND lot_id IS NULL AND firmware_value IS NULL AND effective_at IS NULL)
-                OR (kind = 'firmware' AND firmware_value IS NOT NULL AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND lot_id IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL)
+                (kind = 'identifier_range' AND scheme IS NOT NULL AND identifier_type IS NOT NULL AND range_start IS NOT NULL AND range_end IS NOT NULL AND range_start_ordinal IS NOT NULL AND range_end_ordinal IS NOT NULL AND lot_id IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL AND child_lot_id IS NULL AND firmware_key IS NULL AND firmware_value IS NULL AND effective_at IS NULL)
+                OR (kind = 'lot' AND lot_id IS NOT NULL AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL AND child_lot_id IS NULL AND firmware_key IS NULL AND firmware_value IS NULL AND effective_at IS NULL)
+                OR (kind = 'child' AND ((child_unit_id IS NOT NULL AND child_item_id IS NULL) OR (child_unit_id IS NULL AND child_item_id IS NOT NULL)) AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND lot_id IS NULL AND firmware_key IS NULL AND firmware_value IS NULL AND effective_at IS NULL)
+                OR (kind = 'firmware' AND firmware_key IS NOT NULL AND firmware_value IS NOT NULL AND scheme IS NULL AND identifier_type IS NULL AND range_start IS NULL AND range_end IS NULL AND range_start_ordinal IS NULL AND range_end_ordinal IS NULL AND lot_id IS NULL AND child_unit_id IS NULL AND child_item_id IS NULL AND child_lot_id IS NULL)
                 """));
             b.HasKey(c => new { c.TenantId, c.CriterionId });
             b.Property(c => c.Kind).HasMaxLength(30);
@@ -849,6 +849,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.IdentifierType).HasMaxLength(40);
             b.Property(c => c.RangeStart).HasMaxLength(100);
             b.Property(c => c.RangeEnd).HasMaxLength(100);
+            b.Property(c => c.FirmwareKey).HasMaxLength(100);
             b.Property(c => c.FirmwareValue).HasMaxLength(200);
             b.HasOne<Campaign>().WithMany().HasForeignKey(c => new { c.TenantId, c.CampaignId }).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(c => new { c.TenantId, c.CampaignId, c.Kind });

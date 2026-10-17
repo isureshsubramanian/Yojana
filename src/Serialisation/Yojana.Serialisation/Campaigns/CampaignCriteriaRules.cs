@@ -56,8 +56,10 @@ public static class CampaignCriteriaRules
                         throw new CommandRefusedException("campaign_criterion_invalid", "A child criterion names either child_unit_id or child_item_id, not both.");
                     row.ChildUnitId = input.ChildUnitId;
                     row.ChildItemId = input.ChildItemId;
+                    row.ChildLotId = input.ChildLotId;
                     break;
                 case CampaignCriterionKind.Firmware:
+                    row.FirmwareKey = string.IsNullOrWhiteSpace(input.FirmwareKey) ? "firmware" : input.FirmwareKey.Trim();
                     row.FirmwareValue = Required(input.FirmwareValue, "firmware_value");
                     row.EffectiveAt = input.EffectiveAt;
                     break;

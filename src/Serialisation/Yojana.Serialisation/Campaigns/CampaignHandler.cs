@@ -103,7 +103,7 @@ public static class CampaignHandler
         var matched = await facts.MatchingUnitIdsAsync(campaign.Criteria, cancellationToken);
         var take = Math.Clamp(command.Take, 1, 200);
         var ids = matched.Order().Skip(Math.Max(0, command.Skip)).Take(take).ToList();
-        var rows = (await facts.CurrentMatchesAsync(ids, cancellationToken)).ToDictionary(r => r.UnitId);
+        var rows = (await facts.CurrentMatchesAsync(ids, campaign.Criteria, cancellationToken)).ToDictionary(r => r.UnitId);
         return new(command.CampaignId, new Page<CampaignMatchRow>(ids.Select(id => rows[id]).ToList(), matched.Count, Math.Max(0, command.Skip), take));
     }
 
@@ -167,7 +167,7 @@ public static class CampaignHandler
     internal static CampaignRow ToRow(Campaign campaign, IReadOnlyList<CampaignCriterion> criteria) => new(
         campaign.CampaignId, campaign.Code, campaign.Name, campaign.CoverageSource, campaign.ReserveTag, campaign.Status,
         criteria.Select(c => new CampaignCriterionRow(c.CriterionId, c.Kind, c.Scheme, c.RangeStart, c.RangeEnd, c.LotId,
-            c.ChildUnitId, c.ChildItemId, c.FirmwareValue, c.EffectiveAt)).ToList(), campaign.CreatedAt, campaign.CreatedBy,
+            c.ChildUnitId, c.ChildItemId, c.FirmwareValue, c.EffectiveAt, c.ChildLotId, c.FirmwareKey)).ToList(), campaign.CreatedAt, campaign.CreatedBy,
         campaign.UpdatedAt, campaign.UpdatedBy, campaign.SelectedAt);
 }
 
