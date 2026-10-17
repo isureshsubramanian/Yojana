@@ -227,7 +227,7 @@ public sealed class CampaignTests(SerialisationHostFixture fixture)
             var db = writeScope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
             db.Claims.Add(new Claim
             {
-                TenantId = tenant, ClaimId = Guid.NewGuid(), CommandId = Guid.NewGuid(), UnitId = unit,
+                TenantId = tenant, ClaimId = Guid.NewGuid(), ClaimNumber = "CLM-2026-00001", CommandId = Guid.NewGuid(), UnitId = unit,
                 ClaimDate = DateOnly.FromDateTime(selectedAt), ClaimantPartyRef = owner, SettlementPartyRef = owner,
                 ServiceEntityId = Entity, ObligorEntityId = Entity, ServiceCountry = "GB", Currency = "GBP",
                 CoverageSource = CampaignCoverageSource.Recall, Remedy = ClaimRemedy.Repair, Status = ClaimStatus.Settled,

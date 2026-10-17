@@ -109,7 +109,7 @@ public sealed class CampaignQueries(SerialisationDbContext db, CampaignSelection
         var rows = await query.OrderBy(row => row.Serial).ThenBy(row => row.UnitId).Skip(skip).Take(take)
             .Select(row => new CampaignUnitDetailRow(row.UnitId, row.Serial, row.OwnerPartyRef, row.OwnerPartyType,
                 row.OwnerSince, row.CustodianPartyRef, row.CustodianPartyType, row.CustodyKind, row.CustodyAtSelection, row.CustodySince,
-                row.InvoicePartyRef, row.SelectedAt, row.SelectedBy, row.ClaimId, null, row.ClaimStatus))
+                row.InvoicePartyRef, row.SelectedAt, row.SelectedBy, row.ClaimId, row.ClaimNumber, row.ClaimStatus))
             .ToListAsync(cancellationToken);
         return new(rows, total, skip, take);
     }
@@ -172,20 +172,40 @@ public sealed class CampaignQueries(SerialisationDbContext db, CampaignSelection
                let claim = db.Claims.Where(c => c.TenantId == tenant.TenantId && c.UnitId == selected.UnitId
                    && c.CoverageSource == campaign.CoverageSource && c.SubmittedAt >= selected.SelectedAt)
                    .OrderByDescending(c => c.SubmittedAt).FirstOrDefault()
-               select new UnitFact(selected.UnitId, serial, selected.OwnerPartyRef, selected.OwnerPartyType,
-                   ownerEpisode == null ? null : ownerEpisode.ValidFrom, selected.CustodianPartyRef, selected.CustodianPartyType,
-                   currentCustody, custodyEpisode == null ? null : custodyEpisode.LocationKind,
-                   custodyEpisode == null ? null : custodyEpisode.ValidFrom,
-                   invoiceParty, selected.SelectedAt, selected.SelectedBy, claim == null ? null : claim.ClaimId,
-                   claim == null ? null : claim.Status);
+               // Member initialisation, not a constructor: EF translates later filters on these members into SQL.
+               select new UnitFact
+               {
+                   UnitId = selected.UnitId, Serial = serial, OwnerPartyRef = selected.OwnerPartyRef, OwnerPartyType = selected.OwnerPartyType,
+                   OwnerSince = ownerEpisode == null ? null : ownerEpisode.ValidFrom, CustodianPartyRef = selected.CustodianPartyRef,
+                   CustodianPartyType = selected.CustodianPartyType, CustodyKind = currentCustody,
+                   CustodyAtSelection = custodyEpisode == null ? null : custodyEpisode.LocationKind,
+                   CustodySince = custodyEpisode == null ? null : custodyEpisode.ValidFrom, InvoicePartyRef = invoiceParty,
+                   SelectedAt = selected.SelectedAt, SelectedBy = selected.SelectedBy, ClaimId = claim == null ? null : claim.ClaimId,
+                   ClaimNumber = claim == null ? null : claim.ClaimNumber, ClaimStatus = claim == null ? null : claim.Status,
+               };
     }
 
     private Task<List<CampaignCriterion>> CriteriaAsync(Guid campaignId, CancellationToken cancellationToken) =>
         db.CampaignCriteria.AsNoTracking().Where(c => c.TenantId == tenant.TenantId && c.CampaignId == campaignId)
             .OrderBy(c => c.Kind).ThenBy(c => c.CriterionId).ToListAsync(cancellationToken);
 
-    private sealed record UnitFact(Guid UnitId, string? Serial, Guid? OwnerPartyRef, string? OwnerPartyType,
-        DateTime? OwnerSince, Guid? CustodianPartyRef, string? CustodianPartyType, string? CustodyKind,
-        string? CustodyAtSelection, DateTime? CustodySince, Guid? InvoicePartyRef, DateTime SelectedAt, string SelectedBy, Guid? ClaimId,
-        string? ClaimStatus);
+    private sealed class UnitFact
+    {
+        public Guid UnitId { get; init; }
+        public string? Serial { get; init; }
+        public Guid? OwnerPartyRef { get; init; }
+        public string? OwnerPartyType { get; init; }
+        public DateTime? OwnerSince { get; init; }
+        public Guid? CustodianPartyRef { get; init; }
+        public string? CustodianPartyType { get; init; }
+        public string? CustodyKind { get; init; }
+        public string? CustodyAtSelection { get; init; }
+        public DateTime? CustodySince { get; init; }
+        public Guid? InvoicePartyRef { get; init; }
+        public DateTime SelectedAt { get; init; }
+        public string SelectedBy { get; init; } = "";
+        public Guid? ClaimId { get; init; }
+        public string? ClaimNumber { get; init; }
+        public string? ClaimStatus { get; init; }
+    }
 }
