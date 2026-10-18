@@ -461,7 +461,7 @@ internal static class ReplacementLinkCorrectionPlan
                 "The actual replacement unit already has a customer asset tag.");
 
         var shipment = await db.Events.AsNoTracking().SingleAsync(row => row.TenantId == tenantId
-            && row.EventId == previous.ShippedEventId!.Value, cancellationToken);
+            && row.UnitId == recordedUnitId && row.EventId == previous.ShippedEventId!.Value, cancellationToken);
         var sourceEntitlement = await db.Entitlements.AsNoTracking().SingleAsync(row => row.TenantId == tenantId
             && row.EntitlementId == previous.SourceEntitlementId, cancellationToken);
         var replacementDate = sourceEntitlement.ClosedEffective ?? DateOnly.FromDateTime(shipment.EventTime);

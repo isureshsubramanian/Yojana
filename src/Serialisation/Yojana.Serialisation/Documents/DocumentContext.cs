@@ -113,7 +113,7 @@ public sealed class DocumentContext(
         {
             var values = chunk.Select(k => k.Key).ToList();
             var times = chunk.Select(k => k.At).Distinct().ToList();
-            var rows = await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && times.Contains(e.EventTime) && values.Contains(e.IdempotencyKey)).Select(e => new { e.IdempotencyKey, e.EventTime }).ToListAsync(cancellationToken);
+            var rows = await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && values.Contains(e.IdempotencyKey) && times.Contains(e.EventTime)).Select(e => new { e.IdempotencyKey, e.EventTime }).ToListAsync(cancellationToken);
             seen.UnionWith(rows.Select(r => (r.IdempotencyKey, r.EventTime)));
         }
 

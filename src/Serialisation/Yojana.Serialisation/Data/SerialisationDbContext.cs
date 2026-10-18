@@ -221,9 +221,10 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(i => new { i.TenantId, i.UnitId });
             b.HasIndex(i => new { i.TenantId, i.SwappedWithIdentifierId });
             b.HasIndex(i => new { i.TenantId, i.MergedFromUnitId });
-            // Lookup by any identifier, open or superseded; prefix search uses LIKE 'value%' on it.
-            b.HasIndex(i => new { i.TenantId, i.NormalisedValue })
-                .IncludeProperties(i => new { i.UnitId, i.Type, i.ScopeKey, i.ValidTo });
+            // Lookup by any identifier, open or superseded; prefix search uses LIKE 'value%' and the browse path can
+            // stop after TOP(n+1) without sorting the tenant's whole identifier set.
+            b.HasIndex(i => new { i.TenantId, i.NormalisedValue, i.Type, i.UnitId })
+                .IncludeProperties(i => new { i.Scheme, i.RawValue, i.ScopeKey, i.ValidTo, i.SupersededByIdentifierId });
         });
 
         modelBuilder.Entity<UnitItemAssignment>(b =>

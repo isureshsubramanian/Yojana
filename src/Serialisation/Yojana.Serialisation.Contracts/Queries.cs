@@ -32,7 +32,14 @@ public sealed record UnitSearch(string? Prefix, string? IdentifierType = null, G
 /// <summary>One matching identifier row; <c>Identifier</c> is the normalised value the match ran on, <c>RawValue</c> the string as printed on the label (what screens show).</summary>
 public sealed record UnitSearchRow(Guid UnitId, string Identifier, string IdentifierType, string Scheme, bool Open, string? ResolvesTo, Guid ItemId, Guid? ModelVersionId, string LifecycleStatus, string Disposition, string? LocationKind, Guid? LocationId, Guid? OwnerPartyRef, Guid? CustodyPartyRef, string? LastEventType, DateTime LastEventTime, string? RawValue = null);
 
-public sealed record UnitSearchResult(Page<UnitSearchRow> Page, int Identifiers, int Units, int Items, int IdentifierTypes, int Superseded, long ServedInMilliseconds);
+/// <summary>
+/// A bounded search result. <see cref="Identifiers"/> is the number visited up to the end of this page, never an
+/// unbounded count over the full match set. When <see cref="TotalIsLowerBound"/> is true callers display it with a
+/// trailing plus sign; the other summary figures describe the returned page sample.
+/// </summary>
+public sealed record UnitSearchResult(Page<UnitSearchRow> Page, int Identifiers, int Units, int Items, int IdentifierTypes,
+    int Superseded, long ServedInMilliseconds, bool HasMore = false, bool TotalIsLowerBound = false,
+    bool SummaryIsSample = false);
 
 public sealed record IdentifierRow(Guid IdentifierId, string Type, string Scheme, string RawValue, string NormalisedValue, string ScopeKey, Guid? IssuerPartyRef, string? Qualifier, DateTime ValidFrom, DateTime? ValidTo, Guid? SupersededByIdentifierId, Guid? SupersedesIdentifierId, string? CorrectionReason, string ActorRef);
 

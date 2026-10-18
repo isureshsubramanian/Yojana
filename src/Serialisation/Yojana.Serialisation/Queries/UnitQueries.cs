@@ -65,17 +65,39 @@ public sealed class UnitQueries(SerialisationDbContext db, IIdentifierPolicySour
         if (search.LocationId is { } location) query = query.Where(x => x.c.LocationId == location);
         if (search.Document is { } document) query = query.Where(x => db.Events.Any(e => e.TenantId == tenantId && e.DocumentType == document.Type && e.DocumentId == document.Id && e.UnitId == x.c.UnitId));
 
-        var total = await query.CountAsync(cancellationToken);
-        var stats = await query.GroupBy(_ => 1).Select(g => new { Units = g.Select(x => x.i.UnitId).Distinct().Count(), Items = g.Select(x => x.c.ItemId).Distinct().Count(), Types = g.Select(x => x.i.Type).Distinct().Count(), Superseded = g.Count(x => x.i.ValidTo != null) }).FirstOrDefaultAsync(cancellationToken);
-        var ordered = search.Sort == "last_event" ? query.OrderByDescending(x => x.c.LastEventTime).ThenBy(x => x.i.NormalisedValue) : query.OrderBy(x => x.i.NormalisedValue).ThenBy(x => x.i.Type);
-        var rows = await ordered.Skip(search.Skip).Take(take).Select(x => new { x.i.UnitId, x.i.NormalisedValue, x.i.RawValue, x.i.Type, x.i.Scheme, x.i.ValidTo, x.i.SupersededByIdentifierId, x.c.ItemId, x.c.ModelVersionId, x.c.LifecycleStatus, x.c.Disposition, x.c.LocationKind, x.c.LocationId, x.c.OwnerPartyRef, x.c.CustodyPartyRef, x.c.LastEventTime }).ToListAsync(cancellationToken);
+        // The extra row is the continuation signal. Do not replace this with Count/Distinct over the match set: at
+        // benchmark scale those synchronous summaries each scan roughly a million identifier/current rows and hold a
+        // pooled connection for tens of seconds. The screen deliberately reports a lower bound and a page sample.
+        var ordered = search.Sort == "last_event"
+            ? query.OrderByDescending(x => x.c.LastEventTime).ThenBy(x => x.i.NormalisedValue).ThenBy(x => x.i.Type).ThenBy(x => x.i.UnitId)
+            : query.OrderBy(x => x.i.NormalisedValue).ThenBy(x => x.i.Type).ThenBy(x => x.i.UnitId);
+        var bounded = await ordered.Skip(search.Skip).Take(take + 1).Select(x => new { x.i.UnitId, x.i.NormalisedValue, x.i.RawValue, x.i.Type, x.i.Scheme, x.i.ValidTo, x.i.SupersededByIdentifierId, x.c.ItemId, x.c.ModelVersionId, x.c.LifecycleStatus, x.c.Disposition, x.c.LocationKind, x.c.LocationId, x.c.OwnerPartyRef, x.c.CustodyPartyRef, x.c.LastEventTime }).ToListAsync(cancellationToken);
+        var hasMore = bounded.Count > take;
+        var rows = bounded.Take(take).ToList();
         var unitIds = rows.Select(r => r.UnitId).Distinct().ToList();
-        var lastTypes = await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && unitIds.Contains(e.UnitId)).GroupBy(e => e.UnitId).Select(g => new { UnitId = g.Key, Type = g.OrderByDescending(e => e.Seq).Select(e => e.EventType).First() }).ToDictionaryAsync(x => x.UnitId, x => x.Type, cancellationToken);
+        // unit_current identifies the latest state-changing fact. Joining that exact time and seq produces bounded
+        // seeks and intentionally excludes state-neutral certificate/label audit events.
+        var lastTypes = unitIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await (from current in db.Current.AsNoTracking()
+                     join @event in db.Events.AsNoTracking()
+                         on new { current.TenantId, current.UnitId, EventTime = current.LastEventTime }
+                         equals new { @event.TenantId, @event.UnitId, @event.EventTime }
+                     where current.TenantId == tenantId && unitIds.Contains(current.UnitId)
+                         && @event.Seq == current.LastEventSeq
+                     select new { current.UnitId, @event.EventType })
+                .ToDictionaryAsync(row => row.UnitId, row => row.EventType, cancellationToken);
         var successors = rows.Where(r => r.SupersededByIdentifierId != null).Select(r => r.SupersededByIdentifierId!.Value).ToList();
         var resolvesTo = successors.Count == 0 ? new Dictionary<Guid, string>() : await db.Identifiers.AsNoTracking().Where(i => i.TenantId == tenantId && successors.Contains(i.IdentifierId)).ToDictionaryAsync(i => i.IdentifierId, i => i.NormalisedValue, cancellationToken);
         var page = rows.Select(r => new UnitSearchRow(r.UnitId, r.NormalisedValue, r.Type, r.Scheme, r.ValidTo == null, r.SupersededByIdentifierId is { } s && resolvesTo.TryGetValue(s, out var v) ? v : null, r.ItemId, r.ModelVersionId, r.LifecycleStatus, r.Disposition, r.LocationKind, r.LocationId, r.OwnerPartyRef, r.CustodyPartyRef, lastTypes.TryGetValue(r.UnitId, out var lt) ? lt : null, r.LastEventTime, r.RawValue)).ToList();
         watch.Stop();
-        return new UnitSearchResult(new Page<UnitSearchRow>(page, total, search.Skip, take), total, stats?.Units ?? 0, stats?.Items ?? 0, stats?.Types ?? 0, stats?.Superseded ?? 0, watch.ElapsedMilliseconds);
+        var visited = search.Skip + page.Count;
+        var pagingTotal = visited + (hasMore ? 1 : 0);
+        var sample = rows.Count > 0;
+        return new UnitSearchResult(new Page<UnitSearchRow>(page, pagingTotal, search.Skip, take), visited,
+            rows.Select(row => row.UnitId).Distinct().Count(), rows.Select(row => row.ItemId).Distinct().Count(),
+            rows.Select(row => row.Type).Distinct().Count(), rows.Count(row => row.ValidTo != null),
+            watch.ElapsedMilliseconds, hasMore, hasMore, sample && (hasMore || search.Skip > 0));
     }
 
     public async Task<UnitDetail?> DetailAsync(Guid unitId, CancellationToken cancellationToken)

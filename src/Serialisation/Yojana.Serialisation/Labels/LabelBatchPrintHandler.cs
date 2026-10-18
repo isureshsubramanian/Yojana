@@ -55,13 +55,14 @@ public static class LabelBatchPrintHandler
         var unitIdsWithHits = identifiers.Select(row => row.UnitId).Distinct().ToList();
         var legalEntities = unitIdsWithHits.Count == 0
             ? new Dictionary<Guid, Guid>()
-            : await db.Events.AsNoTracking().Where(row => row.TenantId == tenantId && unitIdsWithHits.Contains(row.UnitId))
-                .GroupBy(row => row.UnitId)
-                .Select(group => new
-                {
-                    UnitId = group.Key,
-                    LegalEntityId = group.OrderByDescending(row => row.Seq).Select(row => row.LegalEntityId).First(),
-                }).ToDictionaryAsync(row => row.UnitId, row => row.LegalEntityId, cancellationToken);
+            : await (from current in db.Current.AsNoTracking()
+                     join @event in db.Events.AsNoTracking()
+                         on new { current.TenantId, current.UnitId, EventTime = current.LastEventTime }
+                         equals new { @event.TenantId, @event.UnitId, @event.EventTime }
+                     where current.TenantId == tenantId && unitIdsWithHits.Contains(current.UnitId)
+                         && @event.Seq == current.LastEventSeq
+                     select new { current.UnitId, @event.LegalEntityId })
+                .ToDictionaryAsync(row => row.UnitId, row => row.LegalEntityId, cancellationToken);
 
         var outcomes = new List<LabelBatchPrintOutcome>(serials.Count);
         for (var sequence = 0; sequence < serials.Count; sequence++)

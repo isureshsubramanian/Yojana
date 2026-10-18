@@ -10,7 +10,7 @@ export interface LookupHit { unitId: string; identifierId: string; identifierTyp
 export interface LookupResult { query: string; resolution: "exact" | "superseded" | "ambiguous" | "none"; hits: LookupHit[] }
 
 export interface UnitSearchRow { unitId: string; identifier: string; identifierType: string; scheme: string; open: boolean; resolvesTo: string | null; itemId: string; modelVersionId: string | null; lifecycleStatus: string; disposition: string; locationKind: string | null; locationId: string | null; ownerPartyRef: string | null; custodyPartyRef: string | null; lastEventType: string | null; lastEventTime: string; rawValue: string | null }
-export interface UnitSearchResult { page: Page<UnitSearchRow>; identifiers: number; units: number; items: number; identifierTypes: number; superseded: number; servedInMilliseconds: number }
+export interface UnitSearchResult { page: Page<UnitSearchRow>; identifiers: number; units: number; items: number; identifierTypes: number; superseded: number; servedInMilliseconds: number; hasMore: boolean; totalIsLowerBound: boolean; summaryIsSample: boolean }
 export interface UnitSearchParams { q?: string | undefined; type?: string | undefined; status?: string | undefined; superseded?: boolean | undefined; document?: string | undefined; sort?: string | undefined; skip?: number | undefined; take?: number | undefined }
 
 export interface IdentifierRow { identifierId: string; type: string; scheme: string; rawValue: string; normalisedValue: string; scopeKey: string; issuerPartyRef: string | null; qualifier: string | null; validFrom: string; validTo: string | null; supersededByIdentifierId: string | null; supersedesIdentifierId: string | null; correctionReason: string | null; actorRef: string }

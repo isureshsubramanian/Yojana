@@ -20,22 +20,25 @@ public sealed class PlatformOptions
     /// Applies the environment password to a password-less SQL login string. Fails loudly when a login needs a
     /// password and none is available, so a misconfigured host never falls back to a built-in default.
     /// </summary>
-    public static string Resolve(string connectionString, Func<string, string?> environment)
+    public static string Resolve(string connectionString, Func<string, string?> environment, int maxPoolSize = 200)
     {
+        if (maxPoolSize <= 0) throw new ArgumentOutOfRangeException(nameof(maxPoolSize), "Max pool size must be positive.");
         var builder = new SqlConnectionStringBuilder(connectionString);
         var usesLogin = !string.IsNullOrEmpty(builder.UserID) && !builder.IntegratedSecurity && builder.Authentication == SqlAuthenticationMethod.NotSpecified;
-        if (!usesLogin || !string.IsNullOrEmpty(builder.Password))
+        if (usesLogin && string.IsNullOrEmpty(builder.Password))
         {
-            return connectionString;
+            var password = environment(PasswordVariable);
+            if (string.IsNullOrEmpty(password))
+            {
+                throw new InvalidOperationException($"The connection string uses SQL login '{builder.UserID}' without a password and {PasswordVariable} is not set. Run `make env` (development) or set the variable.");
+            }
+
+            builder.Password = password;
         }
 
-        var password = environment(PasswordVariable);
-        if (string.IsNullOrEmpty(password))
-        {
-            throw new InvalidOperationException($"The connection string uses SQL login '{builder.UserID}' without a password and {PasswordVariable} is not set. Run `make env` (development) or set the variable.");
-        }
-
-        builder.Password = password;
+        // A 120-engineer deployment needs room for the active HTTP set plus Wolverine, Quartz and health reads.
+        // Keeping this explicit also prevents a provider-default change from silently resizing the production pool.
+        builder.MaxPoolSize = maxPoolSize;
         return builder.ConnectionString;
     }
 
@@ -50,4 +53,7 @@ public sealed class PlatformOptions
     public string QuartzSchema { get; set; } = "quartz";
 
     public string ServiceName { get; set; } = "yojana";
+
+    /// <summary>Shared SQL pool capacity. 200 covers the supported 120 interactive sessions plus background work.</summary>
+    public int MaxPoolSize { get; set; } = 200;
 }

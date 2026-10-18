@@ -94,6 +94,7 @@ export function Component() {
   const [active, setActive] = useState<string | null>(null);
   const selectedSerials = result ? result.page.items.filter((r) => selected.has(rowId(r))).map((r) => r.rawValue ?? r.identifier) : [];
   const grid = result ? toPage(result.page) : { rows: [], total: 0, page: 1, pageSize: PAGE, continuation: null };
+  const resultCount = result ? `${result.identifiers.toLocaleString()}${result.totalIsLowerBound ? "+" : ""}` : "";
 
   return (
     <>
@@ -101,7 +102,7 @@ export function Component() {
         <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Units" }]} />
         <PageHeader
           title="Units"
-          sub={result ? `${result.units.toLocaleString()} units · ${result.identifiers.toLocaleString()} identifiers match · lookup by any identifier` : "Lookup by any identifier: internal, vendor, customer, IMEI, SGTIN, asset tag"}
+          sub={result ? `${resultCount} identifier results · ${result.units.toLocaleString()} units in this page sample · lookup by any identifier` : "Lookup by any identifier: internal, vendor, customer, IMEI, SGTIN, asset tag"}
           actions={<>
             <Link className="btn" to="/units/ranges">Allocate serials</Link>
             <Link className="btn" to="/units/completeness">As-built completeness</Link>
@@ -135,11 +136,12 @@ export function Component() {
             <div className="card-header">
               <h2 id="h-results">
                 {q ? <>Matches for <span className="serial">{q}</span></> : docRef ? <>Units on {documentLabel(docRef)}</> : "Matches"}
-                {result && <span className="meta">{resolution === "ambiguous" ? "ambiguous · " : "prefix · "}{result.identifiers.toLocaleString()} identifiers on {result.units.toLocaleString()} units · {result.items} items · {result.identifierTypes} identifier types{result.superseded ? ` · ${result.superseded} superseded` : ""}</span>}
+                {result && <span className="meta">{resolution === "ambiguous" ? "ambiguous · " : "prefix · "}{resultCount} results · page sample: {result.units.toLocaleString()} units · {result.items} items · {result.identifierTypes} identifier types{result.superseded ? ` · ${result.superseded} superseded` : ""}</span>}
               </h2>
               <span className="meta nowrap">{result ? `Served in ${result.servedInMilliseconds} ms` : "Sorted by identifier"}</span>
             </div>
             <DataGrid columns={columns} page={grid} rowId={rowId} onPage={(p) => set({ page: String(p) })} loading={loading} viewportHeight={560}
+              footerNote={result?.totalIsLowerBound ? `${resultCount} results; more available` : undefined}
               emptyText={q || docRef ? "No identifier starts with that." : "Scan or type an identifier to begin."}
               selection={{ selected, onChange: setSelected, label: (r) => r.rawValue ?? r.identifier }}
               onRowClick={(r) => { setActive(rowId(r)); rowClick(r); }} activeRowId={active} describedBy="h-results" />
@@ -148,7 +150,7 @@ export function Component() {
       </main>
       <Rail label="This lookup">
         <Section title="This lookup">
-          <Kv rows={[["Query", q ? <span className="serial">{q}</span> : "—"], ["Resolution", resolution ?? (q ? "prefix" : "—")], ["Identifiers", result?.identifiers.toLocaleString() ?? "—"], ["Units", result?.units.toLocaleString() ?? "—"], ["Identifier types", result?.identifierTypes ?? "—"], ["Superseded", result?.superseded ?? "—"], ["Served in", result ? `${result.servedInMilliseconds} ms` : "—"]]} />
+          <Kv rows={[["Query", q ? <span className="serial">{q}</span> : "—"], ["Resolution", resolution ?? (q ? "prefix" : "—")], ["Identifier results", result ? resultCount : "—"], ["Units in page sample", result?.units.toLocaleString() ?? "—"], ["Identifier types in sample", result?.identifierTypes ?? "—"], ["Superseded in sample", result?.superseded ?? "—"], ["Served in", result ? `${result.servedInMilliseconds} ms` : "—"]]} />
         </Section>
         <Section title="Selection">
           <p className="muted">{selected.size === 0 ? "Select rows to release them as one selection set, or address a set by document, item, date range or pasted list." : `${selected.size} identifiers selected on this page.`}</p>
