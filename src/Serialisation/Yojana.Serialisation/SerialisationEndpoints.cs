@@ -17,6 +17,7 @@ using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Queries;
 using Yojana.Serialisation.Search;
+using Yojana.Serialisation.TimeZones;
 using Yojana.Serialisation.Selection;
 using Yojana.Serialisation.Workbench;
 using Yojana.Serialisation.Campaigns;
@@ -891,6 +892,41 @@ public static class SerialisationEndpoints
             }, "text/csv; charset=utf-8", $"campaign-{campaignId:N}-recipients.csv"));
 
         // P6 certificate read and selection issue/reprint surface.
+        var generalSettings = app.MapGroup("/api/settings").RequireAuthorization(YojanaPolicy.TenantMember);
+        generalSettings.MapGet("/time-zone", async (TenantTimeZoneSettings settings, CancellationToken ct) =>
+            Results.Ok(await settings.GetAsync(ct))).RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        generalSettings.MapPut("/time-zone", async (UpdateTenantTimeZoneSettings update,
+            TenantTimeZoneSettings settings, ClaimsPrincipal user, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(update.ExpectedVersion))
+                return Results.Problem(title: "document_version_required",
+                    detail: "ExpectedVersion is required for a settings edit.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            try
+            {
+                return Results.Ok(await settings.SetAsync(update, Actor(user), ct));
+            }
+            catch (TenantSettingVersionConflictException ex)
+            {
+                return Results.Problem(title: "document_changed",
+                    detail: "Time-zone settings changed after this screen was loaded; reload to see the current values.",
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["rule"] = "document_changed",
+                        ["expectedVersion"] = ex.ExpectedVersion,
+                        ["currentVersion"] = ex.CurrentVersion,
+                        ["unblockingStep"] = "reload to see the current time-zone settings",
+                    });
+            }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+            }
+        }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
+
         var certificates = app.MapGroup("/api/certificates").RequireAuthorization(YojanaPolicy.TenantMember);
         certificates.MapGet("/settings/release-record-issue-point", async (
             ReleaseRecordIssuePointSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)))

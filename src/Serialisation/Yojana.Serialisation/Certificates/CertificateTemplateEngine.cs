@@ -3,6 +3,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.TimeZones;
 
 namespace Yojana.Serialisation.Certificates;
 
@@ -246,7 +247,8 @@ public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalo
         string timePattern)
     {
         var local = TimeZoneInfo.ConvertTime(value.ToUniversalTime(), timeZone);
-        return languages.FormatDateTime(language, local, datePattern, timePattern, Abbreviation(timeZone, local));
+        return languages.FormatDateTime(language, local, datePattern, timePattern,
+            DocumentTimeZoneFormatter.Abbreviation(timeZone, local));
     }
 
     private static CertificatePresentationSnapshot Presentation(JsonElement payload, string language)
@@ -275,20 +277,6 @@ public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalo
     private static TimeZoneInfo ResolveTimeZone(string? timeZone) =>
         timeZone is not null && TimeZoneInfo.TryFindSystemTimeZoneById(timeZone, out var resolved)
             ? resolved : TimeZoneInfo.Utc;
-
-    private static string Abbreviation(TimeZoneInfo timeZone, DateTimeOffset local)
-    {
-        if (timeZone.Equals(TimeZoneInfo.Utc) || timeZone.Id.Equals("UTC", StringComparison.OrdinalIgnoreCase))
-            return "UTC";
-        var name = timeZone.IsDaylightSavingTime(local) ? timeZone.DaylightName : timeZone.StandardName;
-        if (name.Contains("Coordinated Universal", StringComparison.OrdinalIgnoreCase)) return "UTC";
-        var letters = name.Split([' ', '-', '_'], StringSplitOptions.RemoveEmptyEntries)
-            .Where(word => !word.Equals("of", StringComparison.OrdinalIgnoreCase))
-            .Select(word => char.ToUpperInvariant(word[0])).ToArray();
-        if (letters.Length is > 1 and <= 5) return new string(letters);
-        var sign = local.Offset < TimeSpan.Zero ? "-" : "+";
-        return $"UTC{sign}{local.Offset.Duration():hh\\:mm}";
-    }
 
     private static DateTimeOffset? Date(string value)
     {

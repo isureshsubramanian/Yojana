@@ -158,8 +158,10 @@ public static class CreateEntitlementHandler
     internal static async Task<string> ZoneAsync(string rule, Guid? site, Guid obligor, ITimeZonePort zones, CancellationToken cancellationToken)
     {
         var candidates = new List<string?>();
-        if (rule == PolicyTerms.TimeZoneCustomerSite && site is { } location) candidates.Add(await zones.ForLocationAsync(location, cancellationToken));
-        if (rule != PolicyTerms.TimeZoneUtc) candidates.Add(await zones.ForLegalEntityAsync(obligor, cancellationToken));
+        if (rule == PolicyTerms.TimeZoneCustomerSite && site is { } location)
+            candidates.Add(await zones.ForLocationAsync(location, TimeZonePurpose.EntitlementCalendar, cancellationToken));
+        if (rule != PolicyTerms.TimeZoneUtc)
+            candidates.Add(await zones.ForLegalEntityAsync(obligor, TimeZonePurpose.EntitlementCalendar, cancellationToken));
         return candidates.FirstOrDefault(z => z is not null && TermArithmetic.IsKnownZone(z)) ?? "UTC";
     }
 }

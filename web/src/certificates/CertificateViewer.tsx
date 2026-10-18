@@ -10,7 +10,7 @@ import { openDrawer } from "../shell/drawerStore";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 import { certificateApi } from "./api";
-import { fmtDateTime, formLabel, humanise, shortHash, statusTone } from "./format";
+import { formLabel, humanise, shortHash, statusTone } from "./format";
 import type { CertificateDetail, CertificateListRow, CertificateVersionChain } from "./types";
 import "./certificates.css";
 
@@ -37,10 +37,10 @@ export function Component() {
   const totalVersions = ownChain?.reduce((maximum, row) => Math.max(maximum, row.version), certificate.version) ?? certificate.version;
   const predecessor = certificate.supersedesCertificateId
     ? ownChain?.find((row) => row.certificateId === certificate.supersedesCertificateId)?.trackingNumber : null;
-  const eyebrow = `${humanise(certificate.documentKind)} · version ${certificate.version} of ${totalVersions} · issued ${fmtDateTime(certificate.issuedAt)}`
+  const eyebrow = `${humanise(certificate.documentKind)} · version ${certificate.version} of ${totalVersions} · issued ${certificate.issuedAtDisplay}`
     + (predecessor ? ` · supersedes ${predecessor} (${humanise(certificate.supersedeReason)})` : "");
   const openVersion = (row: CertificateListRow) => openDrawer({ eyebrow: `${humanise(row.documentKind)} · version ${row.version}`, title: row.trackingNumber, mono: true }, <>
-    <Section title="Version"><Kv rows={[["Status", humanise(row.status)], ["Issued", fmtDateTime(row.issuedAt)], ["Form", formLabel(row.formType, row.documentKind)], ["Provenance", humanise(row.provenance)]]} /></Section>
+    <Section title="Version"><Kv rows={[["Status", humanise(row.status)], ["Issued", row.issuedAtDisplay], ["Form", formLabel(row.formType, row.documentKind)], ["Provenance", humanise(row.provenance)]]} /></Section>
     <div className="act"><Link className="btn primary block" to={`/certificates/${row.certificateId}`}>Open this version</Link></div>
   </>);
 
@@ -64,10 +64,10 @@ export function Component() {
             <ChainCard title="Release record chain" meta="build facts only" rows={chain?.releaseRecords ?? []} currentId={certificate.certificateId} onOpen={openVersion} />
             <ChainCard title="Warranty certificate chain" meta="separate · entitlements and owner" rows={chain?.warrantyCertificates ?? []} currentId={certificate.certificateId} onOpen={openVersion} empty="No warranty certificate exists for this unit yet. A warranty change never creates a release-record version." />
             <section className="card" aria-labelledby="certificate-signatures"><div className="card-header"><h2 id="certificate-signatures">Signatures</h2><span className="meta">bound to the payload hash</span></div>
-              <table className="table dense"><thead><tr><th>Signer</th><th>Meaning</th><th>When</th></tr></thead><tbody>{certificate.signatures.map((row) => <tr key={row.signatureId} tabIndex={0} onClick={() => openDrawer({ eyebrow: "Signature", title: row.printedName }, <Section title="Signature"><Kv rows={[["Printed name", row.printedName], ["Meaning", humanise(row.meaning)], ["Method", humanise(row.method)], ["Bound to", <span className="mono" key="hash">{shortHash(row.hashSigned)}</span>], ["Time", fmtDateTime(row.signedAt)]]} /></Section>)}><td className="primary">{row.printedName}<span className="sub">{humanise(row.method)}</span></td><td>{humanise(row.meaning)}</td><td>{fmtDateTime(row.signedAt)}</td></tr>)}</tbody></table>
+              <table className="table dense"><thead><tr><th>Signer</th><th>Meaning</th><th>When</th></tr></thead><tbody>{certificate.signatures.map((row) => <tr key={row.signatureId} tabIndex={0} onClick={() => openDrawer({ eyebrow: "Signature", title: row.printedName }, <Section title="Signature"><Kv rows={[["Printed name", row.printedName], ["Meaning", humanise(row.meaning)], ["Method", humanise(row.method)], ["Bound to", <span className="mono" key="hash">{shortHash(row.hashSigned)}</span>], ["Time", row.signedAtDisplay]]} /></Section>)}><td className="primary">{row.printedName}<span className="sub">{humanise(row.method)}</span></td><td>{humanise(row.meaning)}</td><td>{row.signedAtDisplay}</td></tr>)}</tbody></table>
             </section>
             <section className="card" aria-labelledby="certificate-reprints"><div className="card-header"><h2 id="certificate-reprints">Reprint log</h2><span className="meta">Copy access events</span></div>
-              {certificate.reprints.length ? <table className="table dense"><thead><tr><th>By</th><th>Recipient</th><th>When</th></tr></thead><tbody>{certificate.reprints.map((row) => <tr key={row.reprintId} tabIndex={0} onClick={() => openDrawer({ eyebrow: "Reprint · Copy", title: people(row.requestedBy) }, <Section title="Reprint"><Kv rows={[["Requested by", people(row.requestedBy)], ["Recipient", row.recipient ?? "not recorded"], ["Version", row.version], ["Time", fmtDateTime(row.at)]]} /></Section>)}><td className="primary">{people(row.requestedBy)}</td><td>{row.recipient ?? "—"}</td><td>{fmtDateTime(row.at)}</td></tr>)}</tbody></table> : <div className="card-body muted">No reprints recorded.</div>}
+              {certificate.reprints.length ? <table className="table dense"><thead><tr><th>By</th><th>Recipient</th><th>When</th></tr></thead><tbody>{certificate.reprints.map((row) => <tr key={row.reprintId} tabIndex={0} onClick={() => openDrawer({ eyebrow: "Reprint · Copy", title: people(row.requestedBy) }, <Section title="Reprint"><Kv rows={[["Requested by", people(row.requestedBy)], ["Recipient", row.recipient ?? "not recorded"], ["Version", row.version], ["Time", row.atDisplay]]} /></Section>)}><td className="primary">{people(row.requestedBy)}</td><td>{row.recipient ?? "—"}</td><td>{row.atDisplay}</td></tr>)}</tbody></table> : <div className="card-body muted">No reprints recorded.</div>}
             </section>
             <section className="card" aria-labelledby="certificate-snapshots"><div className="card-header"><h2 id="certificate-snapshots">Snapshots on this version</h2></div><div className="card-body"><Kv rows={[
               ["Issuer", certificate.issuer.name], ["Owner", certificate.owner?.name ?? "not present on this document"],
@@ -83,7 +83,7 @@ export function Component() {
 
 function ChainCard({ title, meta, rows, currentId, onOpen, empty }: { title: string; meta: string; rows: CertificateListRow[]; currentId: string; onOpen: (row: CertificateListRow) => void; empty?: string }) {
   return <section className="card"><div className="card-header"><h2>{title}</h2><span className="meta">{meta}</span></div><div className="card-body">
-    {rows.length ? <ol className="certificate-chain">{[...rows].sort((a, b) => b.version - a.version).map((row) => <li key={row.certificateId} aria-current={row.certificateId === currentId} onClick={() => onOpen(row)}><span className="chain-version">{row.version}</span><span><span className="t mono">{row.trackingNumber}</span><span className="sub">{fmtDateTime(row.issuedAt)} · {humanise(row.provenance)}</span></span><StatusBadge tone={statusTone(row.status)}>{humanise(row.status)}</StatusBadge></li>)}</ol> : <div className="note">{empty ?? "No versions."}</div>}
+    {rows.length ? <ol className="certificate-chain">{[...rows].sort((a, b) => b.version - a.version).map((row) => <li key={row.certificateId} aria-current={row.certificateId === currentId} onClick={() => onOpen(row)}><span className="chain-version">{row.version}</span><span><span className="t mono">{row.trackingNumber}</span><span className="sub">{row.issuedAtDisplay} · {humanise(row.provenance)}</span></span><StatusBadge tone={statusTone(row.status)}>{humanise(row.status)}</StatusBadge></li>)}</ol> : <div className="note">{empty ?? "No versions."}</div>}
   </div></section>;
 }
 

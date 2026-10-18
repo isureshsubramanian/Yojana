@@ -32,7 +32,8 @@ public sealed class LabelPrintService(SerialisationDbContext db, ITenantContext 
             return Result(rejected, false);
         }
         var (template, version) = selected.Value;
-        var render = await renderer.RenderAsync(template, version, command.UnitId, command.IdentifierId, command.PrintAt, cancellationToken);
+        var render = await renderer.RenderAsync(template, version, command.UnitId, command.IdentifierId,
+            command.PrintAt, cancellationToken, legalEntityId: command.LegalEntityId);
         if (render.RejectionReason is not null || render.Payload is null)
         {
             var rejected = Rejected(command, jobNumber,

@@ -17,6 +17,7 @@ using Yojana.Serialisation.Ports;
 using Yojana.Serialisation.Queries;
 using Yojana.Serialisation.Refurbishments;
 using Yojana.Serialisation.Replacements;
+using Yojana.Serialisation.TimeZones;
 
 namespace Yojana.Demo;
 
@@ -56,6 +57,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
     };
 
     private Guid LegalEntityId => Party("LE-ASTERRA").Id;
+    private Guid UkLegalEntityId => Party("LE-ASTERRA-UK").Id;
     private Guid ServiceEntityId => Party("S-ASTERRA").Id;
     private Guid WarehouseId => Location("LDS-WA-01").Id;
     private Guid QuarantineId => Location("LDS-Q1").Id;
@@ -353,6 +355,15 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         var currency = scope.ServiceProvider.GetRequiredService<ITenantCurrency>();
         await currency.SetAsync("EUR", cancellationToken);
         await currency.SetAcceptedAsync(["GBP", "INR", "USD"], cancellationToken);
+        var timeZones = scope.ServiceProvider.GetRequiredService<TenantTimeZoneSettings>();
+        var currentTimeZones = await timeZones.GetAsync(cancellationToken);
+        var expectedOverrides = new[] { new LegalEntityTimeZoneOverride(UkLegalEntityId, "Europe/London") };
+        if (currentTimeZones.TenantTimeZone != "Asia/Kolkata"
+            || !currentTimeZones.LegalEntityOverrides.SequenceEqual(expectedOverrides))
+        {
+            await timeZones.SetAsync(new UpdateTenantTimeZoneSettings("Asia/Kolkata", expectedOverrides,
+                currentTimeZones.Version), actor, cancellationToken);
+        }
         var certificateSettings = scope.ServiceProvider.GetRequiredService<ReleaseRecordIssuePointSettings>();
         var currentCertificateSettings = await certificateSettings.GetAsync(cancellationToken);
         var certificateOverrides = new[]
@@ -601,6 +612,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         var sales = SalesPlan();
         foreach (var sale in sales)
         {
+            var legalEntityId = LegalEntityFor(sale.Country);
             var shippedAt = DemoDates.At(today.AddDays(-sale.DaysAgo), 9);
             var shipmentRef = Document(sale.ShipmentNumber, "shipment");
             var orderRef = new DocumentRef("sales_order", DemoIds.FromName("order:" + sale.Key));
@@ -612,19 +624,21 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             var shipmentAlreadyPosted = await HasDocumentEventsAsync(shipmentRef, UnitEventType.Shipped,
                 sale.Units, cancellationToken);
             await InvokeAsync<ConsumedEventResult>(new SalesShipmentPosted(
-                Envelope("shipment:" + sale.Key, shippedAt), shipmentRef), cancellationToken);
+                Envelope("shipment:" + sale.Key, shippedAt, legalEntityId), shipmentRef), cancellationToken);
 
             var deliveredAt = shippedAt.AddDays(2);
             var deliveryRef = new DocumentRef("delivery_confirmation", DemoIds.FromName("delivery:" + sale.Key));
             documents.Add(new DeliveryConfirmation(deliveryRef, shipmentRef, deliveredAt, shipment.ShipToLocationId));
-            await InvokeAsync<ConsumedEventResult>(new SalesDeliveryConfirmed(Envelope("delivery:" + sale.Key, deliveredAt), deliveryRef), cancellationToken);
+            await InvokeAsync<ConsumedEventResult>(new SalesDeliveryConfirmed(
+                Envelope("delivery:" + sale.Key, deliveredAt, legalEntityId), deliveryRef), cancellationToken);
 
             var invoiceRef = Document(sale.InvoiceNumber, "invoice");
             var invoiceLines = sale.Units.GroupBy(unit => unit.Code).Select((group, index) =>
                 new InvoiceLine(index + 1, Item(group.Key).Id, group.Count(), 1000m + index * 250m, sale.Currency)).ToList();
-            documents.Add(new InvoiceDocument(invoiceRef, orderRef, sale.InvoiceParty.Id, LegalEntityId, shippedAt.AddDays(1), invoiceLines,
+            documents.Add(new InvoiceDocument(invoiceRef, orderRef, sale.InvoiceParty.Id, legalEntityId, shippedAt.AddDays(1), invoiceLines,
                 shipment.CustomerPoRef, sale.Country, Channel: sale.Channel));
-            await InvokeAsync<ConsumedEventResult>(new SalesInvoicePosted(Envelope("invoice:" + sale.Key, shippedAt.AddDays(1)), invoiceRef), cancellationToken);
+            await InvokeAsync<ConsumedEventResult>(new SalesInvoicePosted(
+                Envelope("invoice:" + sale.Key, shippedAt.AddDays(1), legalEntityId), invoiceRef), cancellationToken);
 
             if (!shipmentAlreadyPosted)
             {
@@ -635,11 +649,11 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
                     foreach (var unit in sale.Units)
                     {
                         await InvokeAsync<OpenOwnershipResult>(new OpenOwnership(DemoIds.FromName($"end-owner:{sale.Key}:{unit.Serial}"), unit.UnitId,
-                            sale.EndOwner.Id, PartyType.Customer, EpisodeReason.Sale, deliveredAt.AddHours(2), actor, LegalEntityId,
+                            sale.EndOwner.Id, PartyType.Customer, EpisodeReason.Sale, deliveredAt.AddHours(2), actor, legalEntityId,
                             EpisodeSource.Registration, Document: invoiceRef, CustomerPoRef: shipment.CustomerPoRef), cancellationToken);
                         await WaitForEntitlementRequirementsAsync([unit], cancellationToken);
                         await InvokeAsync<ChangeCustodyResult>(new ChangeCustody(DemoIds.FromName($"end-custody:{sale.Key}:{unit.Serial}"), unit.UnitId,
-                            LocationKind.CustomerSite, EpisodeReason.Sale, deliveredAt.AddHours(2), actor, LegalEntityId,
+                            LocationKind.CustomerSite, EpisodeReason.Sale, deliveredAt.AddHours(2), actor, legalEntityId,
                             shipment.ShipToLocationId, sale.EndOwner.Id, PartyType.Customer, EpisodeSource.Registration, Document: invoiceRef), cancellationToken);
                     }
                 }
@@ -1564,7 +1578,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         }
         if (await HasAnyEntitlementAsync(unit.UnitId, family, cancellationToken)) return;
         await InvokeAsync<CreateEntitlementResult>(new CreateEntitlement(DemoIds.FromName($"entitlement:{family}:{unit.Serial}"), unit.UnitId,
-            family, contractDate, LegalEntityId, eventTime.AddHours(3), actor,
+            family, contractDate, LegalEntityFor(country), eventTime.AddHours(3), actor,
             new Dictionary<string, DateTime> { [StartTrigger.Invoice] = eventTime }, policyVersionId,
             owner.Id, PartyType.EndUser, owner.Id, PartyType.EndUser, "new", channel, country,
             StartEvidenceRef: invoice.Id.ToString("N"), SourceDocument: invoice, CustomerPoRef: $"PO-{owner.Code}-{today.Year}",
@@ -1689,7 +1703,10 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
     private List<DemoUnit> Units(string code) => units.TryGetValue(code, out var rows) ? rows : [];
     private DocumentRef Document(string number, string type) => catalogue.Documents.TryGetValue(number, out var row)
         ? new DocumentRef(row.Type, row.Id) : new DocumentRef(type, DemoIds.FromName("document:" + number));
-    private ThinEnvelope Envelope(string name, DateTime at) => new(DemoIds.FromName("message:" + name), LegalEntityId, at, Source);
+    private Guid LegalEntityFor(string country) => country == "GB" ? UkLegalEntityId : LegalEntityId;
+
+    private ThinEnvelope Envelope(string name, DateTime at, Guid? legalEntityId = null) =>
+        new(DemoIds.FromName("message:" + name), legalEntityId ?? LegalEntityId, at, Source);
     private static string Serial(string code, int sequence) => SerialPrefixes.TryGetValue(code, out var prefix)
         ? $"{prefix}{sequence:D6}"
         : throw new InvalidOperationException($"Serial prefix for catalogue item '{code}' is missing.");

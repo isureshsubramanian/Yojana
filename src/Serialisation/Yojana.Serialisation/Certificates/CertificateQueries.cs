@@ -7,7 +7,8 @@ using Yojana.Serialisation.Data;
 namespace Yojana.Serialisation.Certificates;
 
 public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext tenant, ICertificateUnitReadPort units,
-    IPartyNamePort partyNames, ICertificateRenderer renderer, ICertificateBundleRenderer bundleRenderer)
+    IPartyNamePort partyNames, ICertificateRenderer renderer, ICertificateBundleRenderer bundleRenderer,
+    CertificateTemplateEngine templateEngine)
 {
     public async Task<CertificateRenderResult?> RenderAsync(Guid certificateId, CancellationToken cancellationToken)
     {
@@ -55,9 +56,16 @@ public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext
         var row = await db.CertificateInstances.AsNoTracking().FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId
             && item.CertificateId == certificateId, cancellationToken);
         if (row is null) return null;
-        var signatures = await db.CertificateSignatures.AsNoTracking().Where(item => item.TenantId == tenant.TenantId && item.CertificateId == certificateId)
-            .OrderBy(item => item.SignedAt).Select(item => new CertificateSignatureRow(item.SignatureId, item.PrintedName,
-                item.Meaning, item.SignedAt, item.HashSigned, item.SignatureMethod)).ToListAsync(cancellationToken);
+        using var payloadDocument = JsonDocument.Parse(row.Payload);
+        var payload = payloadDocument.RootElement.Clone();
+        var signatureRows = await db.CertificateSignatures.AsNoTracking().Where(item => item.TenantId == tenant.TenantId && item.CertificateId == certificateId)
+            .OrderBy(item => item.SignedAt).Select(item => new
+            {
+                item.SignatureId, item.PrintedName, item.Meaning, item.SignedAt, item.HashSigned, item.SignatureMethod,
+            }).ToListAsync(cancellationToken);
+        var signatures = signatureRows.Select(item => new CertificateSignatureRow(item.SignatureId, item.PrintedName,
+            item.Meaning, item.SignedAt, DisplayTime(row.Language, item.SignedAt, payload), item.HashSigned,
+            item.SignatureMethod)).ToList();
         var reprints = await db.ReprintLogs.AsNoTracking().Where(item => item.TenantId == tenant.TenantId && item.CertificateId == certificateId)
             .OrderByDescending(item => item.At).ToListAsync(cancellationToken);
         var recipientIds = reprints.Where(item => item.RecipientPartyRef != null).Select(item => item.RecipientPartyRef!.Value).Distinct().ToList();
@@ -68,12 +76,14 @@ public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext
             itemIds.TryGetValue(row.UnitId, out var itemId) ? itemId : null,
             serials.GetValueOrDefault(row.UnitId) ?? "Unlabelled unit",
             row.DocumentKind, row.FormType, row.Version, row.TrackingNumber, row.TemplateVersionId, row.AsBuiltRevisionId,
-            JsonDocument.Parse(row.Payload).RootElement.Clone(), row.PayloadHash, row.SupersedesCertificateId, row.SupersedeReason,
+            payload, row.PayloadHash, row.SupersedesCertificateId, row.SupersedeReason,
             row.TriggeringEventId, Deserialize<CertificateIssuerSnapshot>(row.IssuerSnapshot),
             row.OwnerSnapshot is null ? null : Deserialize<CertificateOwnerSnapshot>(row.OwnerSnapshot),
             Deserialize<CertificateBrandingSnapshot>(row.BrandingSnapshot), row.Language, row.Provenance,
-            Deserialize<List<string>>(row.Unknowns), Deserialize<List<string>>(row.Evidence), row.IssuedAt, row.Status,
+            Deserialize<List<string>>(row.Unknowns), Deserialize<List<string>>(row.Evidence), row.IssuedAt,
+            DisplayTime(row.Language, row.IssuedAt, payload), row.Status,
             signatures, reprints.Select(item => new CertificateReprintRow(item.ReprintId, item.Version, item.RequestedBy, item.At,
+                DisplayTime(row.Language, item.At, payload),
                 item.RecipientPartyRef is { } recipient && recipients.TryGetValue(recipient, out var name) ? name.Name ?? name.Code : null)).ToList());
     }
 
@@ -116,11 +126,19 @@ public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext
         var unitIds = entities.Select(row => row.UnitId).Distinct().ToList();
         var serials = await units.PrimarySerialsAsync(unitIds, cancellationToken);
         var itemIds = await units.CurrentItemIdsAsync(unitIds, cancellationToken);
-        return entities.Select(row => new CertificateListRow(row.CertificateId, row.UnitId,
-            itemIds.TryGetValue(row.UnitId, out var itemId) ? itemId : null,
-            serials.GetValueOrDefault(row.UnitId) ?? "Unlabelled unit", row.DocumentKind, row.FormType, row.Version,
-            row.TrackingNumber, row.Status, row.IssuedAt, row.Provenance)).ToList();
+        return entities.Select(row =>
+        {
+            using var document = JsonDocument.Parse(row.Payload);
+            return new CertificateListRow(row.CertificateId, row.UnitId,
+                itemIds.TryGetValue(row.UnitId, out var itemId) ? itemId : null,
+                serials.GetValueOrDefault(row.UnitId) ?? "Unlabelled unit", row.DocumentKind, row.FormType, row.Version,
+                row.TrackingNumber, row.Status, row.IssuedAt,
+                DisplayTime(row.Language, row.IssuedAt, document.RootElement), row.Provenance);
+        }).ToList();
     }
+
+    private string DisplayTime(string language, DateTime value, JsonElement payload) =>
+        templateEngine.FormatDateTime(language, value, payload);
 
     internal static CertificateRenderRequest RenderRequest(Data.Entities.CertificateInstance row,
         Data.Entities.CertificateSignature? signature, string? supersedesTrackingNumber) => new(row.Payload,

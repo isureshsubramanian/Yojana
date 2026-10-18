@@ -257,17 +257,19 @@ public interface ICertificateEntitlementReadPort
 }
 
 public sealed record CertificateSignatureRow(Guid SignatureId, string PrintedName, string Meaning, DateTime SignedAt,
-    string HashSigned, string Method);
-public sealed record CertificateReprintRow(Guid ReprintId, int Version, string RequestedBy, DateTime At, string? Recipient);
+    string SignedAtDisplay, string HashSigned, string Method);
+public sealed record CertificateReprintRow(Guid ReprintId, int Version, string RequestedBy, DateTime At,
+    string AtDisplay, string? Recipient);
 public sealed record CertificateDetail(Guid CertificateId, Guid UnitId, Guid? ItemId, string PrimarySerial, string DocumentKind,
     string FormType, int Version, string TrackingNumber, Guid TemplateVersionId, Guid? AsBuiltRevisionId,
     JsonElement Payload, string PayloadHash, Guid? SupersedesCertificateId, string? SupersedeReason,
     Guid TriggeringEventId, CertificateIssuerSnapshot Issuer, CertificateOwnerSnapshot? Owner,
     CertificateBrandingSnapshot Branding, string Language, string Provenance, IReadOnlyList<string> Unknowns,
-    IReadOnlyList<string> Evidence, DateTime IssuedAt, string Status,
+    IReadOnlyList<string> Evidence, DateTime IssuedAt, string IssuedAtDisplay, string Status,
     IReadOnlyList<CertificateSignatureRow> Signatures, IReadOnlyList<CertificateReprintRow> Reprints);
 public sealed record CertificateListRow(Guid CertificateId, Guid UnitId, Guid? ItemId, string PrimarySerial, string DocumentKind,
-    string FormType, int Version, string TrackingNumber, string Status, DateTime IssuedAt, string Provenance);
+    string FormType, int Version, string TrackingNumber, string Status, DateTime IssuedAt, string IssuedAtDisplay,
+    string Provenance);
 public sealed record CertificateVersionChain(IReadOnlyList<CertificateListRow> ReleaseRecords,
     IReadOnlyList<CertificateListRow> WarrantyCertificates);
 

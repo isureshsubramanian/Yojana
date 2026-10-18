@@ -128,6 +128,33 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Time_bearing_label_uses_the_issuing_zone_and_reprint_keeps_the_stored_payload()
+    {
+        var tenant = await fixture.NewTenantAsync("labels-zone");
+        var unit = await UnitAsync(tenant, "ZONE", "ZONE-MFG");
+        var issuer = Guid.NewGuid();
+        var ports = fixture.Services.GetRequiredService<InMemoryWarrantyPorts>();
+        ports.RegisterZone(issuer, "Asia/Kolkata");
+        var template = await ActiveTemplateAsync(tenant, unit.UnitId, "Time-bearing label",
+            LabelTemplateAppliesTo.ItemFamily, "systems", "PRINTED={{printed}}",
+            [new("printed", LabelBindableField.PrintedAt, true)]);
+
+        var printed = await InvokeAsync<LabelPrintResult>(tenant, new PrintLabel(Guid.NewGuid(), unit.UnitId,
+            template.TemplateId, null, "line-1", At.AddMinutes(2), issuer, "label.printer"));
+        using var scope = fixture.ScopeFor(tenant);
+        var queries = scope.ServiceProvider.GetRequiredService<LabelQueries>();
+        var original = await queries.JobAsync(printed.JobId, CancellationToken.None);
+        Assert.Contains("2026-09-01 13:32 IST", original!.RenderedPayload, StringComparison.Ordinal);
+
+        ports.RegisterZone(issuer, "Europe/London");
+        var reprinted = await InvokeAsync<LabelPrintResult>(tenant, new ReprintLabel(Guid.NewGuid(), printed.JobId,
+            "line-1", At.AddMinutes(3), issuer, "label.printer"));
+        var copy = await queries.JobAsync(reprinted.JobId, CancellationToken.None);
+        Assert.Equal(original.RenderedPayload, copy!.RenderedPayload);
+        Assert.Equal(original.PayloadHash, copy.PayloadHash);
+    }
+
+    [DatabaseFact]
     public async Task A_label_administrator_without_the_legal_reviewer_role_cannot_sign()
     {
         var tenant = await fixture.NewTenantAsync("labels-legal-role");

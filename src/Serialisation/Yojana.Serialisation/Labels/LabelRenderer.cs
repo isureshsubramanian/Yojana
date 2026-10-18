@@ -4,6 +4,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.TimeZones;
 
 namespace Yojana.Serialisation.Labels;
 
@@ -16,11 +17,11 @@ public sealed record LabelRenderOutcome(
 
 /// <summary>Small, non-executable {{name}} substitution engine over the fixed field catalogue.</summary>
 public sealed class LabelRenderer(SerialisationDbContext db, ITenantContext tenant, IItemNamePort itemNames,
-    LabelSettings settings, IBarcodeEncoder barcodes, ILabelLookupUrlBuilder lookupUrls)
+    LabelSettings settings, IBarcodeEncoder barcodes, ILabelLookupUrlBuilder lookupUrls, ITimeZonePort timeZones)
 {
     public async Task<LabelRenderOutcome> RenderAsync(LabelTemplate template, LabelTemplateVersion version, Guid unitId,
         Guid? identifierId, DateTime at, CancellationToken cancellationToken, bool enforceExpirySetting = true,
-        bool includeBarcodePreview = false)
+        bool includeBarcodePreview = false, Guid? legalEntityId = null)
     {
         var tenantId = tenant.TenantId;
         var unit = await db.Units.AsNoTracking().FirstOrDefaultAsync(row => row.TenantId == tenantId && row.UnitId == unitId, cancellationToken);
@@ -51,6 +52,12 @@ public sealed class LabelRenderer(SerialisationDbContext db, ITenantContext tena
             .Select(row => row.EndDate).FirstOrDefaultAsync(cancellationToken);
         var policy = await settings.GetAsync(cancellationToken);
         var lookupUrl = selectedIdentifier is null ? null : lookupUrls.ForSerial(selectedIdentifier.RawValue);
+        var timeZoneId = await timeZones.ForLegalEntityAsync(legalEntityId ?? Guid.Empty,
+            TimeZonePurpose.DocumentPresentation, cancellationToken) ?? "UTC";
+        var timeZone = TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId, out var configured)
+            ? configured : TimeZoneInfo.Utc;
+        var localPrintTime = TimeZoneInfo.ConvertTime(new DateTimeOffset(
+            DateTime.SpecifyKind(at, DateTimeKind.Utc)), timeZone);
 
         string? Identifier(string type) => identifiers.FirstOrDefault(row => row.Type == type)?.RawValue;
         var values = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -68,6 +75,7 @@ public sealed class LabelRenderer(SerialisationDbContext db, ITenantContext tena
             [LabelBindableField.AsBuiltRevision] = build?.Revision,
             [LabelBindableField.AsBuiltBuildDate] = build is null ? null : build.ReleasedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             [LabelBindableField.BaseEntitlementEndDate] = !enforceExpirySetting || policy.PrintExpiryDates ? Date(baseEnd) : null,
+            [LabelBindableField.PrintedAt] = $"{localPrintTime:yyyy-MM-dd HH:mm} {DocumentTimeZoneFormatter.Abbreviation(timeZone, localPrintTime)}",
             [LabelBindableField.LookupUrl] = lookupUrl,
         };
 

@@ -13,7 +13,8 @@ namespace Yojana.Serialisation.Ports;
 /// Claims (P4) default to none open, which is true while no claim can exist.
 /// </para>
 /// </summary>
-public sealed class InMemoryWarrantyPorts : IItemPolicyPort, ICustomerContractPort, IVendorWarrantyTermsPort, ITimeZonePort, IWarrantyClaimsPort, IWarrantyCertificatePort
+public sealed class InMemoryWarrantyPorts : IItemPolicyPort, ICustomerContractPort, IVendorWarrantyTermsPort,
+    ITimeZonePort, ITimeZoneSourcePort, IWarrantyClaimsPort, IWarrantyCertificatePort
 {
     private readonly ConcurrentDictionary<Guid, List<ItemWarrantyPolicy>> policies = new();
     private readonly ConcurrentDictionary<Guid, List<(Guid ItemId, CustomerContractTerm Term)>> contracts = new();
@@ -45,9 +46,17 @@ public sealed class InMemoryWarrantyPorts : IItemPolicyPort, ICustomerContractPo
     public Task<VendorWarrantyTerm?> TermsForAsync(Guid vendorPartyRef, Guid itemId, DateOnly receiptDate, CancellationToken cancellationToken) =>
         Task.FromResult(vendorTerms.TryGetValue((vendorPartyRef, itemId), out var version) ? new VendorWarrantyTerm(vendorPartyRef, itemId, version) : null);
 
-    public Task<string?> ForLocationAsync(Guid locationId, CancellationToken cancellationToken) => Task.FromResult(zones.TryGetValue(locationId, out var z) ? z : null);
+    public Task<string?> ForLocationAsync(Guid locationId, string purpose, CancellationToken cancellationToken) =>
+        ForLocationAsync(locationId, cancellationToken);
 
-    public Task<string?> ForLegalEntityAsync(Guid legalEntityId, CancellationToken cancellationToken) => Task.FromResult(zones.TryGetValue(legalEntityId, out var z) ? z : null);
+    public Task<string?> ForLegalEntityAsync(Guid legalEntityId, string purpose, CancellationToken cancellationToken) =>
+        ForLegalEntityAsync(legalEntityId, cancellationToken);
+
+    public Task<string?> ForLocationAsync(Guid locationId, CancellationToken cancellationToken) =>
+        Task.FromResult(zones.TryGetValue(locationId, out var z) ? z : null);
+
+    public Task<string?> ForLegalEntityAsync(Guid legalEntityId, CancellationToken cancellationToken) =>
+        Task.FromResult(zones.TryGetValue(legalEntityId, out var z) ? z : null);
 
     public Task<bool> HasOpenClaimsAsync(Guid unitId, Guid entitlementId, CancellationToken cancellationToken) => Task.FromResult(openClaims.TryGetValue(entitlementId, out var open) && open);
 

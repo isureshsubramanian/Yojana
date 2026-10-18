@@ -43,7 +43,8 @@ public sealed class TenantAssetCertificatePresentationPort(SerialisationDbContex
         var labels = await partyNames.NamesAsync([issuerEntityId], cancellationToken);
         var issuer = labels.GetValueOrDefault(issuerEntityId);
         var text = ParseText(binding?.StaticText);
-        var configuredZone = await timeZones.ForLegalEntityAsync(issuerEntityId, cancellationToken);
+        var configuredZone = await timeZones.ForLegalEntityAsync(issuerEntityId,
+            TimeZonePurpose.DocumentPresentation, cancellationToken);
         var timeZone = configuredZone is not null && TimeZoneInfo.TryFindSystemTimeZoneById(configuredZone, out _)
             ? configuredZone : "UTC";
         var dateFormat = await dateFormats.ResolveAsync(language, cancellationToken);
