@@ -9,6 +9,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Messaging.Smoke;
+using Yojana.Platform.Presence;
 using Yojana.Platform.Scheduling;
 using Yojana.Platform.Scheduling.Smoke;
 using Yojana.Platform.Security;
@@ -91,6 +92,91 @@ public sealed class MessagingAndSchedulingTests(PlatformHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Recurring_job_reconciliation_writes_only_missing_or_changed_schedules_at_tenant_volume()
+    {
+        const string heartbeatName = "test.recurring_heartbeat";
+        const string cleanupName = "test.recurring_cleanup";
+        const string changedCron = "0 1/5 * * * ?";
+        var run = Guid.NewGuid().ToString("N")[..6];
+        var tenants = Enumerable.Range(1, 1000).Select(index => new Tenant
+        {
+            Id = new TenantId(Guid.NewGuid()),
+            Code = $"sched-{index:D4}-{run}",
+            Name = $"Aster scheduling tenant {index}",
+            CreatedAt = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc),
+        }).ToList();
+        var allTenantIds = tenants.Select(tenant => tenant.Id).ToList();
+        var scheduler = await fixture.Services.GetRequiredService<ISchedulerFactory>().GetScheduler();
+        var reconciler = new RecurringTenantJobScheduler(
+        [
+            RecurringTenantJob.For<SmokeHeartbeatJob>(heartbeatName, SmokeHeartbeatJob.Cron),
+            RecurringTenantJob.For<PresenceCleanupJob>(cleanupName, PresenceCleanupJob.Cron),
+        ]);
+
+        using (var scope = fixture.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            db.Tenants.AddRange(tenants);
+            await db.SaveChangesAsync();
+        }
+
+        try
+        {
+            var first = await reconciler.EnsureScheduledAsync(scheduler, allTenantIds, CancellationToken.None);
+            Assert.Equal(2000, first.CreatedJobCount);
+            Assert.Equal(0, first.UpdatedJobCount);
+
+            var second = await reconciler.EnsureScheduledAsync(scheduler, allTenantIds, CancellationToken.None);
+            Assert.Equal(0, second.ScheduledJobCount);
+            Assert.Equal(2000, second.UnchangedJobCount);
+
+            var changed = new RecurringTenantJobScheduler(
+            [
+                RecurringTenantJob.For<SmokeHeartbeatJob>(heartbeatName, changedCron),
+                RecurringTenantJob.For<PresenceCleanupJob>(cleanupName, PresenceCleanupJob.Cron),
+            ]);
+            var cronResult = await changed.EnsureScheduledAsync(scheduler, allTenantIds, CancellationToken.None);
+            Assert.Equal(1000, cronResult.UpdatedJobCount);
+            Assert.Equal(1000, cronResult.UnchangedJobCount);
+            var sample = Assert.IsAssignableFrom<ICronTrigger>(await scheduler.GetTrigger(
+                new TriggerKey(heartbeatName, TenantJob.KeyFor(heartbeatName, allTenantIds[0]).Group)));
+            Assert.Equal(changedCron, sample.CronExpressionString);
+
+            var newTenant = new Tenant
+            {
+                Id = new TenantId(Guid.NewGuid()),
+                Code = $"sched-new-{run}",
+                Name = "Aster newly provisioned tenant",
+                CreatedAt = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc),
+            };
+            using (var scope = fixture.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                db.Tenants.Add(newTenant);
+                await db.SaveChangesAsync();
+            }
+
+            allTenantIds.Add(newTenant.Id);
+            var newTenantResult = await changed.EnsureScheduledAsync(scheduler, [newTenant.Id], CancellationToken.None);
+            Assert.Equal(2, newTenantResult.CreatedJobCount);
+            Assert.True(await scheduler.Exists(TenantJob.KeyFor(heartbeatName, newTenant.Id)));
+            Assert.True(await scheduler.Exists(TenantJob.KeyFor(cleanupName, newTenant.Id)));
+        }
+        finally
+        {
+            var keys = allTenantIds.SelectMany(tenant => new[]
+            {
+                TenantJob.KeyFor(heartbeatName, tenant),
+                TenantJob.KeyFor(cleanupName, tenant),
+            }).ToList();
+            await scheduler.DeleteJobs(keys, CancellationToken.None);
+            using var scope = fixture.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            await db.Tenants.Where(tenant => allTenantIds.Contains(tenant.Id)).ExecuteDeleteAsync();
+        }
+    }
+
+    [DatabaseFact]
     public async Task Seeding_is_idempotent_and_sign_in_yields_tenant_and_role_claims()
     {
         await DevelopmentSeeder.SeedAsync(fixture.Services, "Test!Pass2026", CancellationToken.None);
@@ -107,5 +193,8 @@ public sealed class MessagingAndSchedulingTests(PlatformHostFixture fixture)
         Assert.Equal(DevelopmentSeeder.DevTenantId.ToString(), principal.FindFirst(Contracts.Security.YojanaClaim.TenantId)!.Value);
         Assert.Contains(principal.FindAll(Contracts.Security.YojanaClaim.Role), c => c.Value == Contracts.Security.YojanaRole.ServiceManager);
         Assert.True(principal.IsInRole(Contracts.Security.YojanaRole.ServiceManager));
+        var scheduler = await fixture.Services.GetRequiredService<ISchedulerFactory>().GetScheduler();
+        Assert.True(await scheduler.Exists(TenantJob.KeyFor(SmokeHeartbeatJob.JobName, DevelopmentSeeder.DevTenantId)));
+        Assert.True(await scheduler.Exists(TenantJob.KeyFor(PresenceCleanupJob.JobName, DevelopmentSeeder.DevTenantId)));
     }
 }
