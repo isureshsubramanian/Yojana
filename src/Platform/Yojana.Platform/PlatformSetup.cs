@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Quartz;
 using Wolverine;
 using Wolverine.EntityFrameworkCore;
+using Wolverine.ErrorHandling;
 using Wolverine.SqlServer;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Shell;
@@ -132,6 +133,14 @@ public static class PlatformSetup
             opts.UseEntityFrameworkCoreTransactions();
             opts.Policies.AutoApplyTransactions();
             opts.Policies.UseDurableLocalQueues();
+            // Optimistic concurrency (rowversion on unit_current, guarded closures in bulk ingestion) is designed as
+            // "two units of work race, one fails at SaveChanges and retries from a fresh read". This is that retry, for
+            // every handler, commands and background work alike: each attempt runs in a new scope with a new DbContext
+            // (the generated handlers hold no DbContext between calls), the failed attempt's transaction has rolled back,
+            // and commands replay by CommandId, so repeating one never acts twice. A handler may set a longer schedule of
+            // its own (EntitlementCoverageChangedHandler does); chain rules are tried before this one.
+            opts.OnException<DbUpdateConcurrencyException>()
+                .RetryWithCooldown(TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(500));
             opts.AutoBuildMessageStorageOnStartup = options.AutoBuildMessageStorage ? AutoCreate.CreateOrUpdate : AutoCreate.None;
             foreach (var assembly in HandlerAssemblies)
             {
