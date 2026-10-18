@@ -69,6 +69,30 @@ public sealed record ReleaseRecordIssuePointSettingsView(string DefaultIssuePoin
 public sealed record UpdateReleaseRecordIssuePointSettings(string DefaultIssuePoint,
     IReadOnlyList<ReleaseRecordIssuePointOverride> ItemClassOverrides, string ExpectedVersion);
 
+public static class CertificateDatePattern
+{
+    public const string DayMonthNameYear = "d MMM yyyy";
+    public const string DayMonthYear = "dd/MM/yyyy";
+    public const string MonthDayYear = "MM/dd/yyyy";
+    public const string YearMonthDay = "yyyy-MM-dd";
+    public static readonly IReadOnlyList<string> All =
+        [DayMonthNameYear, DayMonthYear, MonthDayYear, YearMonthDay];
+}
+
+public static class CertificateTimePattern
+{
+    public const string TwentyFourHour = "HH:mm";
+    public const string TwelveHour = "h:mm tt";
+    public static readonly IReadOnlyList<string> All = [TwentyFourHour, TwelveHour];
+}
+
+public sealed record CertificateDateFormatChoice(string Language, string DatePattern, string TimePattern);
+public sealed record CertificateDateFormatPolicy(IReadOnlyList<CertificateDateFormatChoice> Languages);
+public sealed record CertificateDateFormatSettingsView(IReadOnlyList<CertificateDateFormatChoice> Languages,
+    string Version);
+public sealed record UpdateCertificateDateFormatSettings(IReadOnlyList<CertificateDateFormatChoice> Languages,
+    string ExpectedVersion);
+
 public static class CertificateTemplateStatus
 {
     public const string Draft = "draft";
@@ -88,6 +112,7 @@ public sealed record CertificateProvenanceSnapshot(string Kind, IReadOnlyList<st
 public sealed record CertificateIssuerSnapshot(string Name, string? RegistrationCode, string? Address = null);
 public sealed record CertificateBrandingSnapshot(string Profile, string? DisplayName, string? Mark,
     Guid? LogoAssetId = null, string? LogoSha256 = null, string? LogoMediaType = null);
+public sealed record CertificatePresentationSnapshot(string TimeZone, string DatePattern, string TimePattern);
 public sealed record CertificateOwnerSnapshot(string Code, string Name, string? Kind, DateTime EffectiveFrom);
 
 public sealed record ReleaseIdentifierSnapshot(
@@ -157,6 +182,7 @@ public sealed record ReleaseRecordPayload(
     ReleaseLifeEpisodeSnapshot? LifeEpisode,
     CertificateIssuerSnapshot Issuer,
     CertificateBrandingSnapshot Branding,
+    CertificatePresentationSnapshot Presentation,
     CertificateProvenanceSnapshot Provenance);
 
 public sealed record WarrantyEntitlementSnapshot(
@@ -178,6 +204,7 @@ public sealed record WarrantyCertificatePayload(
     CertificateOwnerSnapshot Owner,
     CertificateIssuerSnapshot Issuer,
     CertificateBrandingSnapshot Branding,
+    CertificatePresentationSnapshot Presentation,
     CertificateProvenanceSnapshot Provenance);
 
 public sealed record CertificateUnitIdentifierFact(Guid IdentifierId, string Type, string Scheme, string Value, Guid? IssuerRef,

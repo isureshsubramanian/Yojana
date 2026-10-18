@@ -142,6 +142,7 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
             CertificateDocumentKind.WarrantyCertificate => FieldCatalogue.For<WarrantyCertificatePayload>(),
             _ => throw new ArgumentException($"Unknown document kind '{documentKind}'.", nameof(documentKind)),
         };
+        payload = payload.Where(row => !CertificateTemplateEngine.IsRawReferencePath(row.Path)).ToList();
         // The certificate module knows only a read-only placeholder seam. Which jurisdiction text applies remains the
         // catalogue port's decision and never becomes a country rule in template code.
         var presentation = new[]
@@ -425,11 +426,13 @@ internal static class FieldCatalogue
             var element = CollectionElement(property.PropertyType);
             if (element is not null)
             {
+                if (element == typeof(Guid)) continue;
                 result.Add(new CertificateFieldCatalogueEntry(path, "array", true));
                 if (!IsScalar(element)) Walk(element, path, true, result, stack);
             }
             else if (IsScalar(Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType))
             {
+                if ((Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType) == typeof(Guid)) continue;
                 result.Add(new CertificateFieldCatalogueEntry(path, ScalarName(property.PropertyType), repeating));
             }
             else Walk(property.PropertyType, path, repeating, result, stack);

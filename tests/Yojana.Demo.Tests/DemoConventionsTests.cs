@@ -70,6 +70,27 @@ public sealed class DemoConventionsTests
     }
 
     [Fact]
+    public void Demo_catalogue_registers_facility_display_names_for_certificate_snapshots()
+    {
+        var catalogue = DemoCatalogue.Load(Path.Combine(AppContext.BaseDirectory, "DevData", "reference-labels.json"));
+        var services = new ServiceCollection();
+        services.AddSingleton<InMemoryItemPorts>();
+        services.AddSingleton<IItemQueryPort>(provider => provider.GetRequiredService<InMemoryItemPorts>());
+        services.AddSingleton<InMemoryItemNamePort>();
+        services.AddSingleton<InMemoryWarrantyPorts>();
+        services.AddSingleton<InMemoryPartyNamePort>();
+        services.AddSingleton<InMemoryDocumentNumberRegistry>();
+        services.AddSingleton<InMemoryLocationNameRegistry>();
+        using var provider = services.BuildServiceProvider();
+
+        catalogue.Register(provider);
+
+        var expected = catalogue.Locations["LDS-WA-01"];
+        Assert.True(provider.GetRequiredService<InMemoryLocationNameRegistry>().TryGet(expected.Id, out var registered));
+        Assert.Equal((expected.Code, expected.Name, expected.Kind), (registered.Code, registered.Name, registered.Kind));
+    }
+
+    [Fact]
     public void Phase_five_sanitisation_flags_follow_the_item_catalogue()
     {
         var catalogue = DemoCatalogue.Load(Path.Combine(AppContext.BaseDirectory, "DevData", "reference-labels.json"));

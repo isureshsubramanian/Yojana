@@ -922,6 +922,41 @@ public static class SerialisationEndpoints
                     extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
             }
         }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        certificates.MapGet("/settings/date-format", async (
+            CertificateDateFormatSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        certificates.MapPut("/settings/date-format", async (
+            UpdateCertificateDateFormatSettings update, CertificateDateFormatSettings settings,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(update.ExpectedVersion))
+                return Results.Problem(title: "document_version_required",
+                    detail: "ExpectedVersion is required for a settings edit.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            try
+            {
+                return Results.Ok(await settings.SetAsync(update, ct));
+            }
+            catch (TenantSettingVersionConflictException ex)
+            {
+                return Results.Problem(title: "document_changed",
+                    detail: "Certificate date and time settings changed after this screen was loaded; reload to see the current values.",
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["rule"] = "document_changed",
+                        ["expectedVersion"] = ex.ExpectedVersion,
+                        ["currentVersion"] = ex.CurrentVersion,
+                        ["unblockingStep"] = "reload to see the current settings",
+                    });
+            }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+            }
+        }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
         certificates.MapGet("/", async (string? kind, string? formType, string? status, string? unitSerial,
             DateTime? issuedFrom, DateTime? issuedTo, int? skip, int? take, CertificateQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.PageAsync(kind, formType, status, unitSerial, issuedFrom, issuedTo,

@@ -70,7 +70,10 @@ public sealed class CertificateTests
 
         var (payload, snapshot) = await builder.BuildAsync(unit,
             new CertificateTriggerSnapshot("Entitlement.CoverageChanged", Guid.NewGuid(), new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc)),
-            new CertificatePresentation(new CertificateIssuerSnapshot("Issuer", "I-1"), new CertificateBrandingSnapshot("default", null, null)),
+            new CertificatePresentation(new CertificateIssuerSnapshot("Issuer", "I-1"),
+                new CertificateBrandingSnapshot("default", null, null),
+                new CertificatePresentationSnapshot("UTC", CertificateDatePattern.DayMonthNameYear,
+                    CertificateTimePattern.TwentyFourHour)),
             new CertificateProvenanceSnapshot(CertificateProvenance.SystemGenerated, [], []), CancellationToken.None);
 
         Assert.Equal("Fictional Field Lab", snapshot.Name);
@@ -107,6 +110,71 @@ public sealed class CertificateTests
 
         Assert.Equal("20 Jul 2026|20 Jul 2026, 14:05 UTC|Serial number|EUR 1,234.50", html);
         Assert.DoesNotContain(".123", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Certificate_datetime_helpers_use_the_snapshotted_zone_with_its_abbreviation()
+    {
+        using var payload = JsonDocument.Parse("""
+            {"presentation":{"time_zone":"Asia/Kolkata","date_pattern":"d MMM yyyy","time_pattern":"HH:mm"},"tested_at":"2026-07-20T14:05:06Z"}
+            """);
+        var request = RenderRequest() with
+        {
+            Signature = new CertificateRenderSignature("Fictional signer", "release",
+                DateTime.SpecifyKind(RenderedAt, DateTimeKind.Unspecified), "authenticated_user"),
+            Metadata = RenderRequest().Metadata! with
+            {
+                IssuedAt = DateTime.SpecifyKind(RenderedAt, DateTimeKind.Unspecified),
+            },
+        };
+
+        var html = TemplateEngine().Render(
+            "{{datetime tested_at}}|{{datetime certificate.issued_at}}|{{datetime signature.signed_at}}",
+            payload.RootElement, request, "en");
+
+        Assert.Equal("20 Jul 2026, 19:35 IST|20 Jul 2026, 19:35 IST|20 Jul 2026, 19:35 IST", html);
+    }
+
+    [Theory]
+    [InlineData(CertificateDatePattern.DayMonthNameYear, "20 Jul 2026", "20 Jul 2026, 14:05 UTC")]
+    [InlineData(CertificateDatePattern.DayMonthYear, "20/07/2026", "20/07/2026, 14:05 UTC")]
+    [InlineData(CertificateDatePattern.MonthDayYear, "07/20/2026", "07/20/2026, 14:05 UTC")]
+    [InlineData(CertificateDatePattern.YearMonthDay, "2026-07-20", "2026-07-20, 14:05 UTC")]
+    public void Certificate_helpers_use_each_snapshotted_date_pattern(string pattern, string expectedDate,
+        string expectedDateTime)
+    {
+        using var payload = JsonDocument.Parse($$"""
+            {"presentation":{"time_zone":"UTC","date_pattern":"{{pattern}}","time_pattern":"HH:mm"},"tested_at":"2026-07-20T14:05:06Z"}
+            """);
+
+        var html = TemplateEngine().Render("{{date tested_at}}|{{datetime tested_at}}", payload.RootElement,
+            RenderRequest(), "en");
+
+        Assert.Equal($"{expectedDate}|{expectedDateTime}", html);
+    }
+
+    [Fact]
+    public void Certificate_datetime_helper_supports_the_snapshotted_twelve_hour_pattern()
+    {
+        using var payload = JsonDocument.Parse("""
+            {"presentation":{"time_zone":"UTC","date_pattern":"MM/dd/yyyy","time_pattern":"h:mm tt"},"tested_at":"2026-07-20T14:05:06Z"}
+            """);
+
+        var html = TemplateEngine().Render("{{datetime tested_at}}", payload.RootElement, RenderRequest(), "en-US");
+
+        Assert.Equal("07/20/2026, 2:05 PM UTC", html);
+    }
+
+    [Theory]
+    [InlineData("en", CertificateDatePattern.DayMonthNameYear, CertificateTimePattern.TwentyFourHour)]
+    [InlineData("en-US", CertificateDatePattern.MonthDayYear, CertificateTimePattern.TwelveHour)]
+    [InlineData("fr", CertificateDatePattern.DayMonthYear, CertificateTimePattern.TwentyFourHour)]
+    public void Certificate_date_format_defaults_follow_the_language_culture(string language,
+        string expectedDatePattern, string expectedTimePattern)
+    {
+        var choice = CertificateDateFormatSettings.DefaultFor(language);
+
+        Assert.Equal((expectedDatePattern, expectedTimePattern), (choice.DatePattern, choice.TimePattern));
     }
 
     [Fact]
@@ -149,6 +217,21 @@ public sealed class CertificateTests
         Assert.False(validation.Valid);
         Assert.Equal(["owner.name"], validation.PartyFieldViolations);
         Assert.Contains(validation.Errors, error => error.Contains("not closed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Certificate_templates_never_render_opaque_database_references()
+    {
+        using var payload = JsonDocument.Parse("""
+            {"trigger":{"event_id":"11111111-1111-1111-1111-111111111111"},
+             "source_lots":["22222222222222222222222222222222"],
+             "as_maintained":[{"lot_reference":"33333333333333333333333333333333"}]}
+            """);
+
+        var html = TemplateEngine().Render("{{trigger.event_id}}|{{#each source_lots}}{{this}}{{/each}}|{{#each as_maintained}}{{lot_reference}}{{/each}}",
+            payload.RootElement, RenderRequest(), "en");
+
+        Assert.Equal("||", html);
     }
 
     private static IEnumerable<string> MemberPaths(Type type, string prefix = "", HashSet<Type>? stack = null)

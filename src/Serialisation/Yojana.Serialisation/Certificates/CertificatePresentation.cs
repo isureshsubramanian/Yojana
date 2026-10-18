@@ -6,7 +6,8 @@ using System.Text.Json;
 
 namespace Yojana.Serialisation.Certificates;
 
-public sealed record CertificatePresentation(CertificateIssuerSnapshot Issuer, CertificateBrandingSnapshot Branding);
+public sealed record CertificatePresentation(CertificateIssuerSnapshot Issuer, CertificateBrandingSnapshot Branding,
+    CertificatePresentationSnapshot Snapshot);
 
 /// <summary>Resolves immutable issue-time presentation without binding the certificate engine to tenant-setting storage.</summary>
 public interface ICertificatePresentationPort
@@ -20,7 +21,7 @@ public interface ICertificatePresentationPort
 /// id and content hash, so the renderer and versioning engine never reach into asset-store internals.
 /// </summary>
 public sealed class TenantAssetCertificatePresentationPort(SerialisationDbContext db, ITenantContext tenant,
-    IPartyNamePort partyNames) : ICertificatePresentationPort
+    IPartyNamePort partyNames, ITimeZonePort timeZones, CertificateDateFormatSettings dateFormats) : ICertificatePresentationPort
 {
     public async Task<CertificatePresentation> ResolveAsync(Guid issuerEntityId, string documentKind, string formType,
         string language, Guid templateVersionId, CancellationToken cancellationToken)
@@ -42,12 +43,17 @@ public sealed class TenantAssetCertificatePresentationPort(SerialisationDbContex
         var labels = await partyNames.NamesAsync([issuerEntityId], cancellationToken);
         var issuer = labels.GetValueOrDefault(issuerEntityId);
         var text = ParseText(binding?.StaticText);
+        var configuredZone = await timeZones.ForLegalEntityAsync(issuerEntityId, cancellationToken);
+        var timeZone = configuredZone is not null && TimeZoneInfo.TryFindSystemTimeZoneById(configuredZone, out _)
+            ? configuredZone : "UTC";
+        var dateFormat = await dateFormats.ResolveAsync(language, cancellationToken);
         return new CertificatePresentation(
             new CertificateIssuerSnapshot(text.GetValueOrDefault("issuer_display_name") ?? issuer?.Name ?? issuer?.Code ?? "Issuing entity",
                 text.GetValueOrDefault("issuer_registration_code"), text.GetValueOrDefault("issuer_address")),
             asset is null
                 ? new CertificateBrandingSnapshot("default", null, null)
-                : new CertificateBrandingSnapshot("tenant_logo", null, null, asset.AssetId, asset.Sha256, asset.MediaType));
+                : new CertificateBrandingSnapshot("tenant_logo", null, null, asset.AssetId, asset.Sha256, asset.MediaType),
+            new CertificatePresentationSnapshot(timeZone, dateFormat.DatePattern, dateFormat.TimePattern));
     }
 
     private static Dictionary<string, Guid> ParseBindings(string? value)

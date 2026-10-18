@@ -12,8 +12,9 @@ namespace Yojana.Serialisation.Certificates;
 /// </summary>
 public interface ICertificateTemplateLanguageCatalogue
 {
-    string FormatDate(string language, DateTimeOffset value);
-    string FormatDateTime(string language, DateTimeOffset value);
+    string FormatDate(string language, DateTimeOffset value, string datePattern);
+    string FormatDateTime(string language, DateTimeOffset value, string datePattern, string timePattern,
+        string zoneAbbreviation);
     string FormatMoney(string language, decimal value, string currency);
     string Label(string language, string value);
 }
@@ -92,13 +93,12 @@ public sealed class BuiltInCertificateTemplateLanguageCatalogue : ICertificateTe
         ["fail"] = "Fail",
     };
 
-    public string FormatDate(string language, DateTimeOffset value) => IsEnglish(language)
-        ? value.UtcDateTime.ToString("dd MMM yyyy", English)
-        : value.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    public string FormatDate(string language, DateTimeOffset value, string datePattern) =>
+        value.DateTime.ToString(datePattern, CertificateDateFormatSettings.Culture(language));
 
-    public string FormatDateTime(string language, DateTimeOffset value) => IsEnglish(language)
-        ? value.UtcDateTime.ToString("dd MMM yyyy, HH:mm 'UTC'", English)
-        : value.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture);
+    public string FormatDateTime(string language, DateTimeOffset value, string datePattern, string timePattern,
+        string zoneAbbreviation) =>
+        $"{value.DateTime.ToString($"{datePattern}, {timePattern}", CertificateDateFormatSettings.Culture(language))} {zoneAbbreviation}";
 
     public string FormatMoney(string language, decimal value, string currency)
     {
@@ -172,13 +172,20 @@ public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalo
     {
         var parsed = Parse(template ?? "");
         if (parsed.Errors.Count > 0) throw new InvalidOperationException(string.Join(' ', parsed.Errors));
-        return Render(parsed.Nodes, new RenderScope(payload, payload), request, language);
+        var presentation = Presentation(payload, language);
+        return Render(parsed.Nodes, new RenderScope(payload, payload), request, language,
+            ResolveTimeZone(presentation.TimeZone), presentation.DatePattern, presentation.TimePattern);
     }
 
-    public string FormatDateTime(string language, DateTime value) =>
-        languages.FormatDateTime(language, new DateTimeOffset(value.ToUniversalTime(), TimeSpan.Zero));
+    public string FormatDateTime(string language, DateTime value, JsonElement payload)
+    {
+        var presentation = Presentation(payload, language);
+        return FormatDateTime(language, new DateTimeOffset(Utc(value), TimeSpan.Zero),
+            ResolveTimeZone(presentation.TimeZone), presentation.DatePattern, presentation.TimePattern);
+    }
 
-    private string Render(IReadOnlyList<Node> nodes, RenderScope scope, CertificateRenderRequest request, string language)
+    private string Render(IReadOnlyList<Node> nodes, RenderScope scope, CertificateRenderRequest request,
+        string language, TimeZoneInfo timeZone, string datePattern, string timePattern)
     {
         var output = new StringBuilder();
         foreach (var node in nodes)
@@ -192,22 +199,24 @@ public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalo
                     output.Append(Encode(Value(scope, request, value.Path)));
                     break;
                 case HelperNode helper:
-                    output.Append(Encode(Format(helper, scope, request, language)));
+                    output.Append(Encode(Format(helper, scope, request, language, timeZone, datePattern, timePattern)));
                     break;
                 case BlockNode block:
-                    var resolved = Resolve(scope, request, block.Path);
+                    var resolved = IsRawReferencePath(block.Path) ? null : Resolve(scope, request, block.Path);
                     if (block.Name == "each")
                     {
                         if (resolved is { ValueKind: JsonValueKind.Array } array && array.GetArrayLength() > 0)
                             foreach (var item in array.EnumerateArray())
-                                output.Append(Render(block.Body, scope with { Current = item }, request, language));
-                        else output.Append(Render(block.ElseBody, scope, request, language));
+                                output.Append(Render(block.Body, scope with { Current = item }, request, language,
+                                    timeZone, datePattern, timePattern));
+                        else output.Append(Render(block.ElseBody, scope, request, language, timeZone, datePattern, timePattern));
                     }
                     else
                     {
                         var show = Truthy(resolved);
                         if (block.Name == "unless") show = !show;
-                        output.Append(Render(show ? block.Body : block.ElseBody, scope, request, language));
+                        output.Append(Render(show ? block.Body : block.ElseBody, scope, request, language, timeZone,
+                            datePattern, timePattern));
                     }
                     break;
             }
@@ -215,21 +224,70 @@ public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalo
         return output.ToString();
     }
 
-    private string Format(HelperNode helper, RenderScope scope, CertificateRenderRequest request, string language)
+    private string Format(HelperNode helper, RenderScope scope, CertificateRenderRequest request, string language,
+        TimeZoneInfo timeZone, string datePattern, string timePattern)
     {
         if (!Helpers.Contains(helper.Name) || helper.Arguments.Count == 0) return "";
         var value = Value(scope, request, helper.Arguments[0]);
         if (string.IsNullOrWhiteSpace(value)) return "";
         return helper.Name switch
         {
-            "date" when Date(value) is { } date => languages.FormatDate(language, date),
-            "datetime" when Date(value) is { } date => languages.FormatDateTime(language, date),
+            "date" when Date(value) is { } date => languages.FormatDate(language, date, datePattern),
+            "datetime" when Date(value) is { } date => FormatDateTime(language, date, timeZone, datePattern, timePattern),
             "label" => languages.Label(language, value),
             "money" when helper.Arguments.Count == 2 && decimal.TryParse(value, NumberStyles.Number,
                 CultureInfo.InvariantCulture, out var amount) => languages.FormatMoney(language, amount,
                     Value(scope, request, helper.Arguments[1]) is { Length: > 0 } currency ? currency : helper.Arguments[1]),
             _ => "",
         };
+    }
+
+    private string FormatDateTime(string language, DateTimeOffset value, TimeZoneInfo timeZone, string datePattern,
+        string timePattern)
+    {
+        var local = TimeZoneInfo.ConvertTime(value.ToUniversalTime(), timeZone);
+        return languages.FormatDateTime(language, local, datePattern, timePattern, Abbreviation(timeZone, local));
+    }
+
+    private static CertificatePresentationSnapshot Presentation(JsonElement payload, string language)
+    {
+        var fallback = CertificateDateFormatSettings.DefaultFor(language);
+        if (payload.ValueKind == JsonValueKind.Object
+            && payload.TryGetProperty("presentation", out var presentation)
+            && presentation.ValueKind == JsonValueKind.Object)
+        {
+            var timeZone = String(presentation, "time_zone") ?? "UTC";
+            var datePattern = String(presentation, "date_pattern");
+            var timePattern = String(presentation, "time_pattern");
+            return new(timeZone,
+                CertificateDatePattern.All.Contains(datePattern ?? "", StringComparer.Ordinal)
+                    ? datePattern! : fallback.DatePattern,
+                CertificateTimePattern.All.Contains(timePattern ?? "", StringComparer.Ordinal)
+                    ? timePattern! : fallback.TimePattern);
+        }
+        return new("UTC", fallback.DatePattern, fallback.TimePattern);
+    }
+
+    private static string? String(JsonElement root, string property) =>
+        root.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() : null;
+
+    private static TimeZoneInfo ResolveTimeZone(string? timeZone) =>
+        timeZone is not null && TimeZoneInfo.TryFindSystemTimeZoneById(timeZone, out var resolved)
+            ? resolved : TimeZoneInfo.Utc;
+
+    private static string Abbreviation(TimeZoneInfo timeZone, DateTimeOffset local)
+    {
+        if (timeZone.Equals(TimeZoneInfo.Utc) || timeZone.Id.Equals("UTC", StringComparison.OrdinalIgnoreCase))
+            return "UTC";
+        var name = timeZone.IsDaylightSavingTime(local) ? timeZone.DaylightName : timeZone.StandardName;
+        if (name.Contains("Coordinated Universal", StringComparison.OrdinalIgnoreCase)) return "UTC";
+        var letters = name.Split([' ', '-', '_'], StringSplitOptions.RemoveEmptyEntries)
+            .Where(word => !word.Equals("of", StringComparison.OrdinalIgnoreCase))
+            .Select(word => char.ToUpperInvariant(word[0])).ToArray();
+        if (letters.Length is > 1 and <= 5) return new string(letters);
+        var sign = local.Offset < TimeSpan.Zero ? "-" : "+";
+        return $"UTC{sign}{local.Offset.Duration():hh\\:mm}";
     }
 
     private static DateTimeOffset? Date(string value)
@@ -252,6 +310,9 @@ public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalo
 
     private static string Value(RenderScope scope, CertificateRenderRequest request, string path)
     {
+        // Opaque database references stay in the signed payload for provenance but are never printable template data.
+        // Customer layouts use the adjacent display snapshot or document number instead.
+        if (IsRawReferencePath(path)) return "";
         if (path.StartsWith("certificate.", StringComparison.Ordinal))
         {
             var metadata = request.Metadata;
@@ -259,7 +320,7 @@ public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalo
             {
                 "tracking_number" => metadata?.TrackingNumber ?? "",
                 "version" => metadata?.Version.ToString(CultureInfo.InvariantCulture) ?? "",
-                "issued_at" => metadata?.IssuedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) ?? "",
+                "issued_at" => metadata is null ? "" : Utc(metadata.IssuedAt).ToString("O", CultureInfo.InvariantCulture),
                 "supersedes_tracking_number" => metadata?.SupersedesTrackingNumber ?? "",
                 "supersede_reason" => metadata?.SupersedeReason ?? "",
                 "payload_hash" => metadata?.PayloadHash ?? "",
@@ -274,13 +335,24 @@ public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalo
             {
                 "printed_name" => signature?.PrintedName ?? "",
                 "meaning" => signature?.Meaning ?? "",
-                "signed_at" => signature?.SignedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) ?? "",
+                "signed_at" => signature is null ? "" : Utc(signature.SignedAt).ToString("O", CultureInfo.InvariantCulture),
                 "method" => signature?.Method ?? "",
                 _ => "",
             };
         }
         return Resolve(scope, request, path)?.ToString() ?? "";
     }
+
+    internal static bool IsRawReferencePath(string path)
+    {
+        var leaf = path.Split('.').LastOrDefault() ?? path;
+        return leaf.EndsWith("_id", StringComparison.Ordinal)
+            || leaf is "superseded_lineage" or "source_lots" or "lot_reference";
+    }
+
+    private static DateTime Utc(DateTime value) => value.Kind == DateTimeKind.Unspecified
+        ? DateTime.SpecifyKind(value, DateTimeKind.Utc)
+        : value.ToUniversalTime();
 
     private static JsonElement? Resolve(RenderScope scope, CertificateRenderRequest request, string path)
     {
