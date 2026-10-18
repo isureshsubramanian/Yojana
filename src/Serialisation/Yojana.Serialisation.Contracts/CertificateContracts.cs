@@ -47,6 +47,7 @@ public static class CertificateEventType
 {
     public const string Issued = "certificate.issued";
     public const string Superseded = "certificate.superseded";
+    public const string Reprinted = "certificate.reprinted";
 }
 
 public static class CertificateTemplateStatus
@@ -222,7 +223,9 @@ public sealed record CertificateListRow(Guid CertificateId, Guid UnitId, string 
 public sealed record CertificateVersionChain(IReadOnlyList<CertificateListRow> ReleaseRecords,
     IReadOnlyList<CertificateListRow> WarrantyCertificates);
 
-public sealed record CertificateRenderRequest(string Payload, Guid TemplateVersionId);
+public sealed record CertificateRenderSignature(string PrintedName, string Meaning, DateTime SignedAt);
+public sealed record CertificateRenderRequest(string Payload, Guid TemplateVersionId, bool Copy = false,
+    CertificateRenderSignature? Signature = null);
 public sealed record CertificateRenderResult(byte[] Bytes, string MediaType);
 public interface ICertificateRenderer
 {
@@ -236,6 +239,42 @@ public sealed record IssueCertificateVersion(Guid TriggeringEventId, Guid UnitId
 
 public sealed record IssueCertificateVersionResult(bool Issued, bool Replayed, Guid? CertificateId, int? Version,
     string? TrackingNumber, string? RefusalRule = null, string? RefusalDetail = null, bool Absorbed = false);
+
+public static class CertificateSelectionOutcome
+{
+    public const string IssueVersion1 = "issue_version_1";
+    public const string ReprintCopy = "reprint_copy";
+    public const string NotIssuable = "not_issuable";
+}
+
+public sealed record CertificateSelectionPreviewRequest(Guid SelectionId, string DocumentKind, string FormType,
+    Guid IssuerEntityId, string Language, bool IncludeBundle = true, int Skip = 0, int Take = 50,
+    string? Find = null, string? Outcome = null);
+
+public sealed record CertificateSelectionUnit(Guid UnitId, string? Serial, Guid? ItemId, string? ItemCode,
+    string? ItemName, string? Revision, Guid? CertificateId, int? CertificateVersion, string? TrackingNumber,
+    string Outcome, string? Reason, string? Detail, string? UnblockingStep);
+
+public sealed record CertificateSelectionKpis(int InSelection, int NewVersion1, int ReprintAsCopy,
+    int NotIssuable, int OutputDocuments, bool Bundle);
+
+public sealed record CertificateSelectionPreview(Guid SelectionId, CertificateSelectionKpis Kpis,
+    IReadOnlyList<CertificateSelectionUnit> Units, int FilteredTotal, int Skip, int Take);
+
+public sealed record CertificateOutputEntry(Guid UnitId, string Serial, Guid CertificateId, int Version,
+    string TrackingNumber, string FileName, string MediaType, bool Copy);
+
+public sealed record CertificateRunResult(Guid CommandId, bool Replayed, CertificateSelectionKpis Kpis,
+    IReadOnlyList<CertificateOutputEntry> Documents, IReadOnlyList<CertificateSelectionUnit> Skipped,
+    byte[] Archive, string ArchiveMediaType, string ArchiveFileName);
+
+/// <summary>Issues missing version-one certificates and reprints current ones for one stored selection.</summary>
+public sealed record IssueCertificate(Guid CommandId, Guid SelectionId, string DocumentKind, string FormType,
+    Guid IssuerEntityId, string Language, string ReprintReason, bool IncludeBundle, string ActorRef = "");
+
+/// <summary>Reprints current certificates only; no certificate version is created.</summary>
+public sealed record ReprintCertificate(Guid CommandId, Guid SelectionId, string DocumentKind,
+    string Reason, bool IncludeBundle, string ActorRef = "");
 
 public sealed record CertificateTriggerContext(Guid UnitId, string Schema, Guid EventId, DateTime EventTime,
     DateTime RecordedTime, long Seq, Guid LegalEntityId, string ActorRef, DocumentRef? Document);

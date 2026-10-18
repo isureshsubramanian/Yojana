@@ -313,6 +313,11 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     Str(a, "document_kind") ?? "", Int(a, "certificate_version") ?? 0,
                     Str(a, "reason") ?? "", GuidOrNull(a, "triggering_event_id") ?? Guid.Empty,
                     DateTimeValue(a, "superseded_at") ?? e.EventTime);
+            case CertificateEventType.Reprinted:
+                return new CertificateReprinted(Header(CertificateReprinted.Schema, CertificateReprinted.Version),
+                    GuidOrNull(a, "reprint_id") ?? Guid.Empty, GuidOrNull(a, "certificate_id") ?? Guid.Empty,
+                    Int(a, "certificate_version") ?? 0, Str(a, "tracking_number") ?? "",
+                    Str(a, "reason") ?? "", Bool(a, "copy"), DateTimeValue(a, "reprinted_at") ?? e.EventTime);
             // End P6 certificate block.
             // P6 labels block.
             case LabelEventType.Printed:

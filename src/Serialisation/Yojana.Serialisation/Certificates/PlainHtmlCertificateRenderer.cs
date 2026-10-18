@@ -22,7 +22,10 @@ public sealed partial class PlainHtmlCertificateRenderer(SerialisationDbContext 
         var html = Render(template.LayoutBody, payload.RootElement);
         var footer = Render(template.FooterBody, payload.RootElement);
         var logo = await LogoAsync(payload.RootElement, cancellationToken);
-        var document = $"<!doctype html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'\"></head><body>{logo}{header}{html}{footer}</body></html>";
+        var copy = request.Copy ? "<div role=\"note\" style=\"font:700 18px sans-serif;letter-spacing:.12em\">COPY</div>" : "";
+        var signature = request.Signature is null ? "" : $"<footer><hr><strong>{Encode(request.Signature.PrintedName)}</strong><br>" +
+            $"{Encode(request.Signature.Meaning)} · {request.Signature.SignedAt:O}</footer>";
+        var document = $"<!doctype html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'\"></head><body>{copy}{logo}{header}{html}{footer}{signature}</body></html>";
         return new CertificateRenderResult(Encoding.UTF8.GetBytes(document), "text/html; charset=utf-8");
     }
 
@@ -66,6 +69,7 @@ public sealed partial class PlainHtmlCertificateRenderer(SerialisationDbContext 
     }
 
     private static string Encode(JsonElement? element) => WebUtility.HtmlEncode(element?.ToString() ?? "");
+    private static string Encode(string value) => WebUtility.HtmlEncode(value);
 
     [GeneratedRegex(@"\{\{#each\s+([a-zA-Z0-9_.]+)\s*\}\}([\s\S]*?)\{\{/each\}\}", RegexOptions.CultureInvariant)]
     private static partial Regex EachPattern();

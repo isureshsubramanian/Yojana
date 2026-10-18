@@ -61,7 +61,7 @@ export function Component() {
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Certificates" }]} />
       <PageHeader title="Certificates" sub="Immutable release records and warranty certificates, with separate version chains."
-        actions={<Link className="btn" to="/templates">Template catalogue</Link>} />
+        actions={<><Link className="btn" to="/templates">Template catalogue</Link><Link className="btn primary" to="/certificates/issue">Issue certificates</Link></>} />
       <div className="stack">
         <section className="card" aria-label="Certificate filters"><div className="card-body toolbar">
           <input className="input certificate-serial-filter" aria-label="Unit serial" placeholder="Unit serial" value={serial} onChange={(event) => set({ serial: event.target.value })} />

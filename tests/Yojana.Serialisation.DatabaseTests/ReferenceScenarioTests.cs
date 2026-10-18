@@ -1,9 +1,13 @@
+using System.IO.Compression;
+using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Xunit;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Ledger;
@@ -29,6 +33,10 @@ public sealed class ReferenceScenarioTests(SerialisationHostFixture fixture)
         var tenant = await fixture.NewTenantAsync("reference-p5", "EUR");
         var customerA = Guid.NewGuid();
         var customerB = Guid.NewGuid();
+        fixture.Services.GetRequiredService<InMemoryPartyNamePort>().Register(
+            new PartyLabel(customerA, "FICTIONAL-A", "Fictional A Services", PartyType.Customer));
+        fixture.Services.GetRequiredService<InMemoryPartyNamePort>().Register(
+            new PartyLabel(customerB, "FICTIONAL-B", "Fictional B Operations", PartyType.Customer));
         var item = Guid.NewGuid();
         var policy = await ConfigurePolicyAsync(tenant, item);
         await ConfigureRefurbishmentAsync(tenant);
@@ -151,7 +159,24 @@ public sealed class ReferenceScenarioTests(SerialisationHostFixture fixture)
         Assert.Equal("statutory_extension_already_applied", repeated.Rule);
 
         // Step 8's privacy erasure contract is delivered by P7; P5 retains the episode, claim and link facts it will pseudonymise.
-        // P6 adds the two release-record versions and replacement/refurbishment certificate assertions at this point.
+        // P6: v1 remains the birth snapshot, refurbishment is v2, and B receives a Copy of B's warranty snapshot.
+        await WaitForCertificateCountAsync(tenant, s1, CertificateDocumentKind.ReleaseRecord, 2);
+        await WaitForCertificateOwnerAsync(tenant, s1, "FICTIONAL-B");
+        var selection = await InvokeAsync<ResolveSelectionSetResult>(tenant,
+            new ResolveSelectionSet(Guid.NewGuid(), SelectionSource.ByPastedList(["REF-S1"]), "quality"));
+        var copied = await InvokeAsync<CertificateRunResult>(tenant, new ReprintCertificate(Guid.NewGuid(),
+            selection.SelectionId, CertificateDocumentKind.WarrantyCertificate, "Customer B delivery pack", true, "ignored"));
+        Assert.Single(copied.Documents);
+        Assert.True(copied.Documents[0].Copy);
+        using (var archive = new ZipArchive(new MemoryStream(copied.Archive), ZipArchiveMode.Read))
+        {
+            var htmlEntry = Assert.Single(archive.Entries, entry => entry.Name.EndsWith("-copy.html", StringComparison.Ordinal));
+            using var reader = new StreamReader(htmlEntry.Open(), Encoding.UTF8);
+            var html = await reader.ReadToEndAsync();
+            Assert.Contains("Fictional B Operations", html, StringComparison.Ordinal);
+            Assert.DoesNotContain("Fictional A Services", html, StringComparison.Ordinal);
+            Assert.Contains("COPY", html, StringComparison.Ordinal);
+        }
         await AssertEndStateAsync(tenant, s1, s2, customerA, customerB, aOwnership.EpisodeId, e1, shipped, e3, workOrderId);
     }
 
@@ -252,6 +277,24 @@ public sealed class ReferenceScenarioTests(SerialisationHostFixture fixture)
         Assert.Equal(1, await db.EntitlementAmendments.CountAsync(row => row.EntitlementId == inherited.EntitlementId
             && row.ReasonCode == AmendmentReason.StatutoryExtension));
 
+        var releaseCertificates = await db.CertificateInstances.AsNoTracking().Where(row => row.UnitId == s1
+                && row.DocumentKind == CertificateDocumentKind.ReleaseRecord).OrderBy(row => row.Version).ToListAsync();
+        Assert.Equal([1, 2], releaseCertificates.Take(2).Select(row => row.Version));
+        var releaseV1 = releaseCertificates.Single(row => row.Version == 1);
+        var releaseV2 = releaseCertificates.Single(row => row.Version == 2);
+        Assert.Equal(CertificateStatus.Superseded, releaseV1.Status);
+        Assert.Equal(CanonicalJson.Hash(releaseV1.Payload), releaseV1.PayloadHash);
+        using (var v1Payload = JsonDocument.Parse(releaseV1.Payload))
+            Assert.Equal(JsonValueKind.Null, v1Payload.RootElement.GetProperty("refurbishment_cycle").ValueKind);
+        using (var v2Payload = JsonDocument.Parse(releaseV2.Payload))
+            Assert.Equal(1, v2Payload.RootElement.GetProperty("refurbishment_cycle").GetInt32());
+        var currentWarranty = await db.CertificateInstances.AsNoTracking().Where(row => row.UnitId == s1
+                && row.DocumentKind == CertificateDocumentKind.WarrantyCertificate && row.Status == CertificateStatus.Issued)
+            .SingleAsync();
+        Assert.Contains("Fictional B Operations", currentWarranty.OwnerSnapshot, StringComparison.Ordinal);
+        Assert.DoesNotContain("Fictional A Services", currentWarranty.OwnerSnapshot, StringComparison.Ordinal);
+        Assert.Single(await db.ReprintLogs.Where(row => row.CertificateId == currentWarranty.CertificateId).ToListAsync());
+
         Assert.Single(await db.Identifiers.Where(row => row.UnitId == s1 && row.Type == IdentifierType.InternalSerial).ToListAsync());
         Assert.Single(await db.Identifiers.Where(row => row.UnitId == s2 && row.Type == IdentifierType.InternalSerial).ToListAsync());
         Assert.True(await db.Entitlements.TemporalAll().CountAsync(row => row.EntitlementId == e1.EntitlementId) >= 2);
@@ -275,5 +318,34 @@ public sealed class ReferenceScenarioTests(SerialisationHostFixture fixture)
         using var scope = fixture.ScopeFor(tenant);
         return await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<T>(command,
             new DeliveryOptions { TenantId = tenant.ToString() }, CancellationToken.None);
+    }
+
+    private async Task WaitForCertificateCountAsync(TenantId tenant, Guid unitId, string kind, int count)
+    {
+        var until = DateTime.UtcNow.AddSeconds(20);
+        while (DateTime.UtcNow < until)
+        {
+            using var scope = fixture.ScopeFor(tenant);
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            if (await db.CertificateInstances.CountAsync(row => row.UnitId == unitId && row.DocumentKind == kind) >= count) return;
+            await Task.Delay(100);
+        }
+        throw new TimeoutException($"Certificate chain {kind} for {unitId} did not reach {count} versions.");
+    }
+
+    private async Task WaitForCertificateOwnerAsync(TenantId tenant, Guid unitId, string ownerCode)
+    {
+        var until = DateTime.UtcNow.AddSeconds(20);
+        while (DateTime.UtcNow < until)
+        {
+            using var scope = fixture.ScopeFor(tenant);
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            if (await db.CertificateInstances.AnyAsync(row => row.UnitId == unitId
+                    && row.DocumentKind == CertificateDocumentKind.WarrantyCertificate
+                    && row.Status == CertificateStatus.Issued && row.OwnerSnapshot != null
+                    && row.OwnerSnapshot.Contains(ownerCode))) return;
+            await Task.Delay(100);
+        }
+        throw new TimeoutException($"Warranty certificate for {unitId} did not reach owner {ownerCode}.");
     }
 }

@@ -74,6 +74,9 @@ export const router = createBrowserRouter([
           { path: "returns", lazy: () => import("./returns/Returns") },
           { path: "returns/receipt", lazy: () => import("./returns/ReturnReceipt") },
           { path: "returns/:rmaId", lazy: () => import("./returns/RmaDetail") },
+          // P6 issue worktree route block.
+          { path: "certificates/issue", lazy: () => import("./certificates/Issue") },
+          // End P6 issue worktree route block.
           { path: "replacements/new", lazy: () => import("./returns/WarrantyReplacement") },
           { path: "replacements/:id", lazy: () => import("./returns/WarrantyReplacement") },
           // P6 certificate UI worktree block. Keep sibling label routes outside this block during integration.

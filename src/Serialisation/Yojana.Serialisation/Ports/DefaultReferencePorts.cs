@@ -16,7 +16,12 @@ public sealed class InMemoryItemNamePort(IItemQueryPort items) : IItemNamePort
     public async Task<IReadOnlyDictionary<Guid, ItemLabel>> NamesAsync(IReadOnlyCollection<Guid> itemIds, CancellationToken cancellationToken)
     {
         var answer = new Dictionary<Guid, ItemLabel>();
-        foreach (var itemId in itemIds.Distinct())
+        var ids = itemIds.Distinct().ToList();
+        var missing = ids.Where(itemId => !labels.ContainsKey(itemId)).ToList();
+        var profiles = missing.Count == 0
+            ? new Dictionary<Guid, ItemSerialisationProfile?>()
+            : await items.GetManyAsync(missing, cancellationToken);
+        foreach (var itemId in ids)
         {
             if (labels.TryGetValue(itemId, out var registered))
             {
@@ -24,7 +29,7 @@ public sealed class InMemoryItemNamePort(IItemQueryPort items) : IItemNamePort
                 continue;
             }
 
-            var profile = await items.GetAsync(itemId, cancellationToken);
+            profiles.TryGetValue(itemId, out var profile);
             answer[itemId] = new ItemLabel(itemId, profile?.ItemCode ?? ReferenceFallback.ItemCode(itemId), null);
         }
 

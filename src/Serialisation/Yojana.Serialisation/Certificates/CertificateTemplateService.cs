@@ -218,17 +218,37 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
     public async Task<Guid?> ActiveVersionAsync(string documentKind, string formType, string? itemClass,
         CancellationToken cancellationToken)
     {
+        var versions = await ActiveVersionsAsync(documentKind, formType, [itemClass], cancellationToken);
+        return versions.GetValueOrDefault(itemClass ?? "");
+    }
+
+    /// <summary>Resolves exact item-class templates with the generic fallback in one catalogue query.</summary>
+    public async Task<IReadOnlyDictionary<string, Guid?>> ActiveVersionsAsync(string documentKind, string formType,
+        IReadOnlyCollection<string?> itemClasses, CancellationToken cancellationToken)
+    {
         await EnsureStartersAsync(cancellationToken);
-        return await (from template in db.CertificateTemplates.AsNoTracking()
-                      join version in db.CertificateTemplateVersions.AsNoTracking()
-                          on new { template.TenantId, template.TemplateId } equals new { version.TenantId, version.TemplateId }
-                      where template.TenantId == tenant.TenantId && template.DocumentKind == documentKind
-                          && template.FormType == formType
-                          && (template.AppliesToItemClass == null || template.AppliesToItemClass == itemClass)
-                          && version.Status == CertificateTemplateStatus.Active
-                      orderby template.AppliesToItemClass == itemClass && itemClass != null descending,
-                          template.BuiltIn, version.Version descending
-                      select (Guid?)version.TemplateVersionId).FirstOrDefaultAsync(cancellationToken);
+        var keys = itemClasses.Select(itemClass => itemClass ?? "").Distinct(StringComparer.Ordinal).ToList();
+        var namedClasses = keys.Where(key => key.Length > 0).ToList();
+        var candidates = await (from template in db.CertificateTemplates.AsNoTracking()
+                                join version in db.CertificateTemplateVersions.AsNoTracking()
+                                    on new { template.TenantId, template.TemplateId } equals new { version.TenantId, version.TemplateId }
+                                where template.TenantId == tenant.TenantId && template.DocumentKind == documentKind
+                                    && template.FormType == formType && version.Status == CertificateTemplateStatus.Active
+                                    && (template.AppliesToItemClass == null || namedClasses.Contains(template.AppliesToItemClass))
+                                select new
+                                {
+                                    template.AppliesToItemClass,
+                                    template.BuiltIn,
+                                    version.Version,
+                                    version.TemplateVersionId,
+                                }).ToListAsync(cancellationToken);
+        return keys.ToDictionary(key => key, key => candidates
+            .Where(candidate => candidate.AppliesToItemClass == null || candidate.AppliesToItemClass == key)
+            .OrderByDescending(candidate => key.Length > 0 && candidate.AppliesToItemClass == key)
+            .ThenBy(candidate => candidate.BuiltIn)
+            .ThenByDescending(candidate => candidate.Version)
+            .Select(candidate => (Guid?)candidate.TemplateVersionId)
+            .FirstOrDefault(), StringComparer.Ordinal);
     }
 
     public async Task EnsureStartersAsync(CancellationToken cancellationToken)

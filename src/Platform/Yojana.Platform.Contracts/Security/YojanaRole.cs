@@ -67,6 +67,9 @@ public static class YojanaPolicy
     /// <summary>Operational label printing across service, warehouse, shipping and production roles.</summary>
     public const string LabelPrinter = "label_printer";
 
+    /// <summary>Quality and certificate administrators may sign and reprint certificates.</summary>
+    public const string CertificateIssuer = "certificate_issuer";
+
     /// <summary>Any signed-in user with a selected tenant.</summary>
     public const string TenantMember = "tenant_member";
 }

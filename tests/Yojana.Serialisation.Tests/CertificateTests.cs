@@ -80,6 +80,7 @@ public sealed class CertificateTests
     [Theory]
     [InlineData(CertificateIssued.Schema, CertificateIssued.Version)]
     [InlineData(CertificateSuperseded.Schema, CertificateSuperseded.Version)]
+    [InlineData(CertificateReprinted.Schema, CertificateReprinted.Version)]
     public void Published_certificate_event_has_an_embedded_1_0_schema(string schema, string version)
     {
         using var document = JsonDocument.Parse(PublishedEventSchemas.Read(schema, version));

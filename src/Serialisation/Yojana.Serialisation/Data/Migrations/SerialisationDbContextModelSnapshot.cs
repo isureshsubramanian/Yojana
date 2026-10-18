@@ -874,6 +874,149 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateRun", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("request_hash")
+                        .IsFixedLength();
+
+                    b.Property<Guid>("SelectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("selection_id");
+
+                    b.HasKey("TenantId", "CommandId")
+                        .HasName("pk_certificate_run");
+
+                    b.HasIndex("TenantId", "SelectionId", "CreatedAt")
+                        .HasDatabaseName("ix_certificate_run_tenant_id_selection_id_created_at");
+
+                    b.ToTable("certificate_run", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateRunUnit", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<Guid?>("CertificateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("certificate_id");
+
+                    b.Property<int?>("CertificateVersion")
+                        .HasColumnType("int")
+                        .HasColumnName("certificate_version");
+
+                    b.Property<bool>("Copy")
+                        .HasColumnType("bit")
+                        .HasColumnName("copy");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("detail");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_code");
+
+                    b.Property<Guid?>("ItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("item_id");
+
+                    b.Property<string>("ItemName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("item_name");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("outcome");
+
+                    b.Property<DateTime>("ProcessedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("processed_at");
+
+                    b.Property<string>("Revision")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("revision");
+
+                    b.Property<string>("Rule")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("rule");
+
+                    b.Property<string>("Serial")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("serial");
+
+                    b.Property<string>("TrackingNumber")
+                        .HasMaxLength(50)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("tracking_number");
+
+                    b.Property<string>("UnblockingStep")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("unblocking_step");
+
+                    b.HasKey("TenantId", "CommandId", "UnitId")
+                        .HasName("pk_certificate_run_unit");
+
+                    b.HasIndex("TenantId", "CertificateId")
+                        .HasDatabaseName("ix_certificate_run_unit_tenant_id_certificate_id");
+
+                    b.HasIndex("TenantId", "CommandId", "Outcome")
+                        .HasDatabaseName("ix_certificate_run_unit_tenant_id_command_id_outcome");
+
+                    b.ToTable("certificate_run_unit", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_certificate_run_unit_outcome", "outcome IN ('issued', 'copied', 'skipped', 'failed')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateSignature", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -8052,6 +8195,32 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_certificate_instance_tenant_id_template_version_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateRun", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.SelectionSet", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "SelectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_certificate_run_tenant_id_selection_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateRunUnit", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.CertificateInstance", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CertificateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_certificate_run_unit_tenant_id_certificate_id");
+
+                    b.HasOne("Yojana.Serialisation.Data.Entities.CertificateRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CommandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_certificate_run_unit_tenant_id_command_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateSignature", b =>

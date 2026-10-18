@@ -141,7 +141,7 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
 
         var firstWarranty = await InvokeAsync<IssueCertificateVersionResult>(setup.Tenant,
             new IssueCertificateVersion(Guid.NewGuid(), setup.UnitId, CertificateDocumentKind.WarrantyCertificate,
-                CertificateFormType.Custom, null, At.AddHours(2), "system:certificates", Entity));
+                CertificateFormType.Custom, null, At.AddHours(2), "system:certificates", Entity, Language: "fr"));
         Assert.True(firstWarranty.Issued);
 
         var entitlementEventId = Guid.NewGuid();
@@ -167,6 +167,7 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         Assert.Equal(("NORTH-01", "Northwind Field Services", PartyType.Customer), (snapshot.Code, snapshot.Name, snapshot.Kind));
         Assert.Contains("\"name\":\"Issuing entity\"", warranty.IssuerSnapshot, StringComparison.Ordinal);
         Assert.Contains("\"profile\":\"default\"", warranty.BrandingSnapshot, StringComparison.Ordinal);
+        Assert.Equal((Entity, "fr"), (warranty.IssuerEntityId, warranty.Language));
         var current = await db.Current.AsNoTracking().SingleAsync(row => row.UnitId == setup.UnitId);
         Assert.Equal(owner, current.OwnerPartyRef);
         Assert.Equal((setup.LocationId, LocationKind.Warehouse), (current.LocationId, current.LocationKind));
@@ -529,6 +530,12 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
             YojanaPolicy.CertificateAdministrator)).Succeeded);
         Assert.False((await authorisation.AuthorizeAsync(Actor(YojanaRole.LabelAdministrator), null,
             YojanaPolicy.CertificateAdministrator)).Succeeded);
+        Assert.True((await authorisation.AuthorizeAsync(Actor(YojanaRole.CertificateAdministrator), null,
+            YojanaPolicy.CertificateIssuer)).Succeeded);
+        Assert.True((await authorisation.AuthorizeAsync(Actor(YojanaRole.Quality), null,
+            YojanaPolicy.CertificateIssuer)).Succeeded);
+        Assert.False((await authorisation.AuthorizeAsync(Actor(YojanaRole.LabelAdministrator), null,
+            YojanaPolicy.CertificateIssuer)).Succeeded);
     }
 
     private async Task CorrectWithoutPublicationAsync(Setup setup, string correctedSerial)

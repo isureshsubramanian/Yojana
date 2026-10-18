@@ -27,6 +27,20 @@ public sealed class InMemoryItemPorts : IItemQueryPort, IBomQueryPort
     public Task<ItemSerialisationProfile?> GetAsync(Guid itemId, CancellationToken cancellationToken) =>
         Task.FromResult(items.TryGetValue(itemId, out var p) ? p : UseDefaultForUnknownItems ? DefaultProfile(itemId) : null);
 
+    public Task<IReadOnlyDictionary<Guid, ItemSerialisationProfile?>> GetManyAsync(
+        IReadOnlyCollection<Guid> itemIds, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyDictionary<Guid, ItemSerialisationProfile?>>(itemIds.Distinct().ToDictionary(
+            itemId => itemId,
+            itemId => items.TryGetValue(itemId, out var profile)
+                ? profile
+                : UseDefaultForUnknownItems ? DefaultProfile(itemId) : null));
+
     public Task<IReadOnlyList<ExpectedComponent>> ExpectedSerialisedComponentsAsync(Guid itemId, DateOnly effectiveAt, CancellationToken cancellationToken) =>
         Task.FromResult(boms.TryGetValue(itemId, out var b) ? b : []);
+
+    public Task<IReadOnlyDictionary<ExpectedComponentQuery, IReadOnlyList<ExpectedComponent>>> ExpectedSerialisedComponentsAsync(
+        IReadOnlyCollection<ExpectedComponentQuery> queries, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyDictionary<ExpectedComponentQuery, IReadOnlyList<ExpectedComponent>>>(queries.Distinct().ToDictionary(
+            query => query,
+            query => boms.TryGetValue(query.ItemId, out var components) ? components : []));
 }

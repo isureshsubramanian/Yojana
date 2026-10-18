@@ -47,6 +47,10 @@ public sealed record ItemSerialisationProfile(
 public interface IItemQueryPort
 {
     Task<ItemSerialisationProfile?> GetAsync(Guid itemId, CancellationToken cancellationToken);
+
+    /// <summary>Reads item facts for a selection in one port call; implementations must not turn this into one remote call per item.</summary>
+    Task<IReadOnlyDictionary<Guid, ItemSerialisationProfile?>> GetManyAsync(
+        IReadOnlyCollection<Guid> itemIds, CancellationToken cancellationToken);
 }
 
 /// <summary>One on-hand quantity bucket as seen by Inventory; Serialisation never reads an Inventory table.</summary>
@@ -64,10 +68,16 @@ public interface IStockQuantityPort
 /// <summary>One serialised component the BOM expects inside a parent (Identity rule 12).</summary>
 public sealed record ExpectedComponent(string Slot, Guid ComponentItemId, string ComponentItemCode, int Quantity, Guid? ThroughPhantomItemId = null);
 
+public sealed record ExpectedComponentQuery(Guid ItemId, DateOnly EffectiveAt);
+
 /// <summary>Expected serialised components of an item at a date (phantoms expanded).</summary>
 public interface IBomQueryPort
 {
     Task<IReadOnlyList<ExpectedComponent>> ExpectedSerialisedComponentsAsync(Guid itemId, DateOnly effectiveAt, CancellationToken cancellationToken);
+
+    /// <summary>Reads all distinct item/date BOMs for a selection in one port call.</summary>
+    Task<IReadOnlyDictionary<ExpectedComponentQuery, IReadOnlyList<ExpectedComponent>>> ExpectedSerialisedComponentsAsync(
+        IReadOnlyCollection<ExpectedComponentQuery> queries, CancellationToken cancellationToken);
 }
 
 // TIGHT COUPLING (declared, ADR-0001 "Integration boundaries and coupling", coupling 1)
