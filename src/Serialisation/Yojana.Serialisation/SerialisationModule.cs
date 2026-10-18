@@ -88,7 +88,9 @@ public static class SerialisationModule
         builder.Services.AddScoped<LabelQueries>();
         builder.Services.AddSingleton<InMemoryLabelPrinterPort>();
         builder.Services.TryAddSingleton<ILabelPrinterPort>(sp => sp.GetRequiredService<InMemoryLabelPrinterPort>());
-        builder.Services.TryAddSingleton<IBarcodeEncoder, StubBarcodeEncoder>();
+        builder.Services.TryAddSingleton<IBarcodeEncoder, ZxingBarcodeEncoder>();
+        builder.Services.TryAddSingleton<ILabelLookupUrlBuilder>(new LabelLookupUrlBuilder(
+            builder.Configuration["Labels:LookupUrl"] ?? "/api/units/lookup"));
         // End P6 labels block.
         builder.Services.AddScoped<BulkExecutor>();
         builder.Services.AddScoped<BulkApprovalRequestQueries>();

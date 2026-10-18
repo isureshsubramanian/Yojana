@@ -1,0 +1,10 @@
+{
+  "name": "ZXing.Net",
+  "matchRepositoryUrls": ["https://github.com/micjahn/ZXing.Net/"],
+  "licenceFile": "texts/zxing-net-COPYING",
+  "sourceUrl": "https://raw.githubusercontent.com/micjahn/ZXing.Net/v0.16.11.0/COPYING",
+  "takenOn": "2026-10-18",
+  "copyrightStatement": "\"Copyright <year> ZXing authors\" (for example Source/lib/qrcode/QRCodeWriter.cs at tag v0.16.11.0: \"Copyright 2008 ZXing authors\"). ZXing.Net is a port of the ZXing project, whose authors are listed below.",
+  "authorsFile": "texts/zxing-AUTHORS",
+  "authorsSourceUrl": "https://raw.githubusercontent.com/zxing/zxing/zxing-3.5.3/AUTHORS"
+}

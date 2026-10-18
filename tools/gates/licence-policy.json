@@ -18,6 +18,10 @@
     "web/package-lock.json"
   ],
   "knownLicenceUrls": {
+    "https://licenses.nuget.org/Apache-2.0": {
+      "spdx": "Apache-2.0",
+      "readOn": "2026-10-18"
+    },
     "https://raw.githubusercontent.com/xunit/xunit/master/license.txt": {
       "spdx": "Apache-2.0",
       "readOn": "2026-10-15"
