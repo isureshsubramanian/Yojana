@@ -28,6 +28,7 @@ using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Labels;
 using Yojana.Serialisation.Jurisdictions;
 using Yojana.Serialisation.Imports;
+using Yojana.Serialisation.Reports;
 
 namespace Yojana.Serialisation;
 
@@ -78,6 +79,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<ImportService>();
         builder.Services.AddScoped<ImportComparisonService>();
         builder.Services.AddScoped<ImportQueries>();
+        builder.Services.AddScoped<BackOfficeReportQueries>();
         builder.Services.AddScoped<ImportJobSource>();
         builder.Services.TryAddScoped<IImportJobSource>(sp => sp.GetRequiredService<ImportJobSource>());
         builder.Services.TryAddScoped<IImportFileStore, DatabaseImportFileStore>();
@@ -303,6 +305,7 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<ISalesDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.TryAddSingleton<IOwnershipSourceDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.TryAddSingleton<IServiceDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
+        builder.Services.TryAddSingleton<IInternalSaleDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
         builder.Services.AddSingleton<InMemoryStockUnitEventPort>();
         builder.Services.TryAddSingleton<IStockUnitEventPort>(sp => sp.GetRequiredService<InMemoryStockUnitEventPort>());
         builder.Services.TryAddScoped<IReplacementSourceQueryPort, DefaultReplacementSourceQueryPort>();
