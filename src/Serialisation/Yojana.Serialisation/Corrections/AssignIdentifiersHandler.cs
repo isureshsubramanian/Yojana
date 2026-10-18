@@ -443,9 +443,14 @@ public sealed class AssignIdentifiersService(
     private async Task<List<CorrectionFact>> CorrectionFactsAsync(Guid correctionId, CancellationToken cancellationToken)
     {
         var marker = correctionId.ToString("D");
-        var live = await db.Events.AsNoTracking().Where(e => e.TenantId == tenant.TenantId && e.EventType == UnitEventType.IdentifierAssigned && e.Attributes != null && e.Attributes.Contains(marker))
+        var unitIds = await db.CorrectionUnits.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && row.CorrectionId == correctionId)
+            .Select(row => row.UnitId).ToListAsync(cancellationToken);
+        var live = await db.Events.AsNoTracking().Where(e => e.TenantId == tenant.TenantId && unitIds.Contains(e.UnitId)
+                && e.EventType == UnitEventType.IdentifierAssigned && e.Attributes != null && e.Attributes.Contains(marker))
             .Select(e => new { e.UnitId, e.DocumentType, e.DocumentId, e.Attributes }).ToListAsync(cancellationToken);
-        var archived = await db.ArchivedEvents.AsNoTracking().Where(e => e.TenantId == tenant.TenantId && e.EventType == UnitEventType.IdentifierAssigned && e.Attributes != null && e.Attributes.Contains(marker))
+        var archived = await db.ArchivedEvents.AsNoTracking().Where(e => e.TenantId == tenant.TenantId && unitIds.Contains(e.UnitId)
+                && e.EventType == UnitEventType.IdentifierAssigned && e.Attributes != null && e.Attributes.Contains(marker))
             .Select(e => new { e.UnitId, e.DocumentType, e.DocumentId, e.Attributes }).ToListAsync(cancellationToken);
         var result = new List<CorrectionFact>();
         foreach (var row in live.Concat(archived))

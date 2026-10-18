@@ -1,5 +1,6 @@
 using Xunit;
 using Yojana.Platform;
+using Microsoft.Data.SqlClient;
 
 namespace Yojana.Platform.Tests;
 
@@ -23,11 +24,15 @@ public sealed class ConnectionStringResolutionTests
     }
 
     [Fact]
-    public void A_complete_string_is_left_untouched()
+    public void A_complete_string_keeps_its_authentication_and_gets_the_deliberate_pool_size()
     {
         const string withPassword = "Server=localhost;Database=x;User Id=sa;Password=given;Encrypt=True";
-        Assert.Equal(withPassword, PlatformOptions.Resolve(withPassword, _ => "other"));
+        var password = new SqlConnectionStringBuilder(PlatformOptions.Resolve(withPassword, _ => "other"));
+        Assert.Equal("given", password.Password);
+        Assert.Equal(200, password.MaxPoolSize);
         const string integrated = "Server=localhost;Database=x;Integrated Security=True";
-        Assert.Equal(integrated, PlatformOptions.Resolve(integrated, _ => null));
+        var trusted = new SqlConnectionStringBuilder(PlatformOptions.Resolve(integrated, _ => null, 240));
+        Assert.True(trusted.IntegratedSecurity);
+        Assert.Equal(240, trusted.MaxPoolSize);
     }
 }

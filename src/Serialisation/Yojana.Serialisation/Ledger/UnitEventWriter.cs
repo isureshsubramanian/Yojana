@@ -62,7 +62,7 @@ public sealed class UnitEventWriter(SerialisationDbContext db, ITenantContext te
             var keys = chunk.Select(k => k.IdempotencyKey).Distinct().ToList();
             var times = chunk.Select(k => k.EventTime).Distinct().ToList();
             var existing = await db.Events.AsNoTracking()
-                .Where(e => e.TenantId == tenantId && times.Contains(e.EventTime) && keys.Contains(e.IdempotencyKey))
+                .Where(e => e.TenantId == tenantId && keys.Contains(e.IdempotencyKey) && times.Contains(e.EventTime))
                 .Select(e => new { e.IdempotencyKey, e.EventTime })
                 .ToListAsync(cancellationToken);
             existingSet.UnionWith(existing.Select(e => (e.IdempotencyKey, e.EventTime)));

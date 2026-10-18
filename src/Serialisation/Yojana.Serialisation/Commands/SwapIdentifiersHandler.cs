@@ -42,7 +42,8 @@ public static class SwapIdentifiersHandler
         var tenantId = tenant.TenantId;
         var keys = Keys(command);
         var replay = await db.Events.AsNoTracking()
-            .Where(e => e.TenantId == tenantId && e.EventTime == command.EventTime && (e.IdempotencyKey == keys.First || e.IdempotencyKey == keys.Second))
+            .Where(e => e.TenantId == tenantId && (e.IdempotencyKey == keys.First || e.IdempotencyKey == keys.Second)
+                && e.EventTime == command.EventTime)
             .ToListAsync(cancellationToken);
         if (replay.Count > 0) return Replay(command, replay);
 
@@ -203,7 +204,9 @@ public static class SwapIdentifiersHandler
         if (prior.Command != CorrectionCommand.SwapIdentifiers)
             throw new CommandRefusedException("corrected_correction_not_swap", $"Correction {priorId} is '{prior.Command}', not an identifier swap.", "select the earlier swap being reversed");
 
-        var candidates = await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && e.EventTime == prior.EventTime && e.EventType == UnitEventType.IdentifiersSwapped).ToListAsync(cancellationToken);
+        var candidates = await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId
+            && (e.UnitId == command.FirstUnitId || e.UnitId == command.SecondUnitId)
+            && e.EventTime == prior.EventTime && e.EventType == UnitEventType.IdentifiersSwapped).ToListAsync(cancellationToken);
         var priorFacts = candidates.Where(e => AttributeGuid(e.Attributes, "correction_id") == priorId).ToList();
         var sameUnits = priorFacts.Select(e => e.UnitId).ToHashSet().SetEquals([command.FirstUnitId, command.SecondUnitId]);
         var sameType = priorFacts.Count == 2 && priorFacts.All(e => AttributeString(e.Attributes, "identifier_type") == command.IdentifierType);

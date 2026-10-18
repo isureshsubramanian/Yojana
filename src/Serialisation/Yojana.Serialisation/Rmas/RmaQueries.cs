@@ -12,6 +12,8 @@ namespace Yojana.Serialisation.Rmas;
 public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySource identifierPolicies,
     IRmaFollowUpQueryPort followUps, ITenantContext tenant)
 {
+    private const string RmaDocumentType = "rma";
+
     public async Task<RmaListResult> ListAsync(RmaListFilter filter, DateTime now, int skip, int take, CancellationToken cancellationToken)
     {
         if (filter.Stage is not null && !RmaStage.All.Contains(filter.Stage)) throw new ArgumentException($"Unknown RMA stage '{filter.Stage}'.", nameof(filter));
@@ -30,32 +32,36 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
             var normalised = IdentifierNormaliser.Normalise(find, identifierPolicies.For(IdentifierType.InternalSerial)).Value;
             var rmaNumber = find.ToUpperInvariant();
             var unitIds = await db.Identifiers.AsNoTracking()
-                .Where(i => i.TenantId == tenantId && (i.NormalisedValue.Contains(normalised) || i.RawValue.Contains(find)))
-                .Select(i => i.UnitId).Distinct().ToListAsync(cancellationToken);
-            query = query.Where(r => (r.RmaNumber != null && r.RmaNumber.Contains(rmaNumber))
+                .Where(i => i.TenantId == tenantId && i.NormalisedValue.StartsWith(normalised))
+                .OrderBy(i => i.NormalisedValue).Select(i => i.UnitId).Distinct().Take(201).ToListAsync(cancellationToken);
+            query = query.Where(r => (r.RmaNumber != null && r.RmaNumber.StartsWith(rmaNumber))
                 || db.RmaLines.Any(l => l.TenantId == tenantId && l.RmaId == r.RmaId && unitIds.Contains(l.RequestedUnitId)));
         }
         var total = await query.CountAsync(cancellationToken);
+        var exceptionRmaIds = await db.RmaLines.AsNoTracking()
+            .Where(line => line.TenantId == tenantId && (line.ProvisionalUnitId != null
+                || line.ReceiptOutcome != null && line.ReceiptOutcome != ReturnOutcome.Accepted))
+            .Select(line => line.RmaId).Distinct().ToListAsync(cancellationToken);
         var raw = await query
-            .OrderByDescending(r => db.RmaLines.Any(l => l.TenantId == tenantId && l.RmaId == r.RmaId
-                && (l.ProvisionalUnitId != null || l.ReceiptOutcome != null && l.ReceiptOutcome != ReturnOutcome.Accepted)))
+            .OrderByDescending(r => exceptionRmaIds.Contains(r.RmaId))
             .ThenBy(r => r.RequestedAt).ThenBy(r => r.RmaId).Skip(skip).Take(take)
             .Select(r => new
             {
                 r.RmaId, r.RmaNumber, r.Stage, r.RequestDate, r.RequestedAt, r.ReturningPartyRef,
                 UpdatedAt = r.ClosedAt ?? r.DispositionedAt ?? r.ReceivedAt ?? r.InTransitAt ?? r.AuthorisedAt ?? r.RequestedAt,
                 r.ReceivedAt, r.RequestedBy, r.LastActorRef,
-                LineCount = db.RmaLines.Count(l => l.TenantId == tenantId && l.RmaId == r.RmaId),
-                ExceptionCount = db.RmaLines.Count(l => l.TenantId == tenantId && l.RmaId == r.RmaId
-                    && (l.ProvisionalUnitId != null || (l.ReceiptOutcome != null && l.ReceiptOutcome != ReturnOutcome.Accepted))),
             }).ToListAsync(cancellationToken);
         var pageIds = raw.Select(r => r.RmaId).ToList();
         var pageLines = await db.RmaLines.AsNoTracking().Where(l => l.TenantId == tenantId && pageIds.Contains(l.RmaId))
             .OrderBy(l => l.Sequence).Select(l => new
             {
-                l.RmaId, l.RequestedUnitId, l.ReceivedUnitId, l.ReceiptOutcome, l.ConditionGrade, l.CoverageSource,
+                l.RmaId, l.RequestedUnitId, l.ReceivedUnitId, l.ProvisionalUnitId, l.ReceiptOutcome, l.ConditionGrade, l.CoverageSource,
             }).ToListAsync(cancellationToken);
         var primaryLines = pageLines.GroupBy(l => l.RmaId).ToDictionary(g => g.Key, g => g.First());
+        var lineCounts = pageLines.GroupBy(line => line.RmaId).ToDictionary(group => group.Key, group => group.Count());
+        var exceptionCounts = pageLines.Where(line => line.ProvisionalUnitId != null
+                || line.ReceiptOutcome != null && line.ReceiptOutcome != ReturnOutcome.Accepted)
+            .GroupBy(line => line.RmaId).ToDictionary(group => group.Key, group => group.Count());
         var primaryUnitIds = primaryLines.Values.Select(l => l.ReceivedUnitId ?? l.RequestedUnitId).Distinct().ToList();
         var serials = await UnitSerials.DisplayAsync(db, tenantId, primaryUnitIds, cancellationToken);
         var itemIds = await db.Current.AsNoTracking().Where(row => row.TenantId == tenantId && primaryUnitIds.Contains(row.UnitId))
@@ -65,7 +71,8 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
             primaryLines.TryGetValue(r.RmaId, out var line);
             var unitId = line?.ReceivedUnitId ?? line?.RequestedUnitId;
             return new RmaListRow(r.RmaId, r.RmaNumber, r.Stage, r.RequestDate, r.UpdatedAt,
-                Math.Max(0, DateOnly.FromDateTime(now).DayNumber - r.RequestDate.DayNumber), r.ReturningPartyRef, r.LineCount, r.ExceptionCount,
+                Math.Max(0, DateOnly.FromDateTime(now).DayNumber - r.RequestDate.DayNumber), r.ReturningPartyRef,
+                lineCounts.GetValueOrDefault(r.RmaId), exceptionCounts.GetValueOrDefault(r.RmaId),
                 unitId, unitId is { } id ? serials.GetValueOrDefault(id) : null,
                 unitId is { } itemUnit && itemIds.TryGetValue(itemUnit, out var itemId) ? itemId : null,
                 line?.ReceiptOutcome, line?.ConditionGrade, line?.CoverageSource, r.ReceivedAt, r.RequestedBy, r.LastActorRef);
@@ -101,9 +108,9 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
         var serials = await UnitSerials.DisplayAsync(db, tenantId, unitIds, cancellationToken);
         var items = await db.Current.AsNoTracking().Where(row => row.TenantId == tenantId && unitIds.Contains(row.UnitId))
             .ToDictionaryAsync(row => row.UnitId, row => row.ItemId, cancellationToken);
-        var dispatched = await db.Events.AsNoTracking()
-            .Where(row => row.TenantId == tenantId && row.EventType == RmaEventType.Dispatched && row.DocumentId == rmaId)
-            .OrderBy(row => row.Seq)
+        var dispatched = rma.InTransitAt is not { } dispatchedAt ? null : await db.Events.AsNoTracking()
+            .Where(row => row.TenantId == tenantId && row.DocumentType == RmaDocumentType
+                && row.DocumentId == rmaId && row.EventTime == dispatchedAt && row.EventType == RmaEventType.Dispatched)
             .Select(row => new { row.EventTime, row.ActorRef, row.Attributes })
             .FirstOrDefaultAsync(cancellationToken);
         var dispatch = Dispatch(dispatched?.EventTime, dispatched?.ActorRef, dispatched?.Attributes);

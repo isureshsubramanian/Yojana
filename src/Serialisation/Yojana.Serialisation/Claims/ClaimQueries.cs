@@ -50,31 +50,46 @@ public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort c
         var total = await source.CountAsync(cancellationToken);
         take = Math.Clamp(take, 1, 200);
         skip = Math.Max(0, skip);
-        var rows = await source.OrderBy(c => Settled.Contains(c.Status)).ThenBy(c => c.SubmittedAt).ThenBy(c => c.ClaimId)
-            .Skip(skip).Take(take)
-            .Select(c => new
-            {
-                Claim = c,
-                Requested = db.ClaimLines.Where(l => l.TenantId == tenantId && l.ClaimId == c.ClaimId).Sum(l => l.RequestedAmount),
-                Approved = db.ClaimLines.Where(l => l.TenantId == tenantId && l.ClaimId == c.ClaimId).Sum(l => l.ApprovedAmount),
-                Lines = db.ClaimLines.Count(l => l.TenantId == tenantId && l.ClaimId == c.ClaimId),
-                LastEvidenceKind = db.ClaimEvidence.Where(e => e.TenantId == tenantId && e.ClaimId == c.ClaimId).OrderByDescending(e => e.RecordedAt).Select(e => e.Kind).FirstOrDefault(),
-                ItemId = db.Current.Where(u => u.TenantId == tenantId && u.UnitId == c.UnitId).Select(u => (Guid?)u.ItemId).FirstOrDefault(),
-            })
-            .ToListAsync(cancellationToken);
-        var serials = await UnitSerials.DisplayAsync(db, tenantId, rows.Select(r => r.Claim.UnitId), cancellationToken);
-        var models = new List<ClaimListRow>(rows.Count);
-        foreach (var x in rows)
+        var claims = await source.OrderBy(c => Settled.Contains(c.Status)).ThenBy(c => c.SubmittedAt).ThenBy(c => c.ClaimId)
+            .Skip(skip).Take(take).ToListAsync(cancellationToken);
+        var claimIds = claims.Select(claim => claim.ClaimId).ToList();
+        var lineTotals = claimIds.Count == 0
+            ? []
+            : await db.ClaimLines.AsNoTracking().Where(line => line.TenantId == tenantId && claimIds.Contains(line.ClaimId))
+                .GroupBy(line => line.ClaimId)
+                .Select(group => new ClaimLineTotals
+                {
+                    ClaimId = group.Key,
+                    Requested = group.Sum(line => line.RequestedAmount),
+                    Approved = group.Sum(line => line.ApprovedAmount),
+                    Lines = group.Count(),
+                }).ToListAsync(cancellationToken);
+        var totalsByClaim = lineTotals.ToDictionary(row => row.ClaimId);
+        var evidence = claimIds.Count == 0
+            ? []
+            : await db.ClaimEvidence.AsNoTracking().Where(row => row.TenantId == tenantId && claimIds.Contains(row.ClaimId))
+                .OrderBy(row => row.ClaimId).ThenByDescending(row => row.RecordedAt).ThenByDescending(row => row.EvidenceId)
+                .Select(row => new { row.ClaimId, row.Kind }).ToListAsync(cancellationToken);
+        var lastEvidenceByClaim = evidence.GroupBy(row => row.ClaimId).ToDictionary(group => group.Key, group => group.First().Kind);
+        var unitIds = claims.Select(claim => claim.UnitId).Distinct().ToList();
+        var itemIds = unitIds.Count == 0 ? [] : await db.Current.AsNoTracking()
+            .Where(row => row.TenantId == tenantId && unitIds.Contains(row.UnitId))
+            .ToDictionaryAsync(row => row.UnitId, row => row.ItemId, cancellationToken);
+        var serials = await UnitSerials.DisplayAsync(db, tenantId, unitIds, cancellationToken);
+        var models = new List<ClaimListRow>(claims.Count);
+        foreach (var claim in claims)
         {
-            var campaign = x.Claim.CampaignId is { } campaignId
-                ? await campaigns.FindAsync(campaignId, x.Claim.UnitId, x.Claim.ClaimDate, cancellationToken)
+            totalsByClaim.TryGetValue(claim.ClaimId, out var totals);
+            lastEvidenceByClaim.TryGetValue(claim.ClaimId, out var lastEvidenceKind);
+            var campaign = claim.CampaignId is { } campaignId
+                ? await campaigns.FindAsync(campaignId, claim.UnitId, claim.ClaimDate, cancellationToken)
                 : null;
-            models.Add(new ClaimListRow(x.Claim.ClaimId, x.Claim.ClaimNumber, x.Claim.UnitId, serials.GetValueOrDefault(x.Claim.UnitId), x.ItemId,
-                x.Claim.ClaimantPartyRef, x.Claim.SettlementPartyRef, x.Claim.Status, x.Claim.CoverageSource, x.Claim.Remedy, x.Claim.ServiceCountry, x.Claim.Currency,
-                x.Claim.ClaimDate, x.Claim.SubmittedAt, x.Requested, x.Approved, AgeDays(x.Claim.SubmittedAt, asOf), x.Claim.DenialReason, x.Claim.RecoveryRaised,
-                x.LastEvidenceKind == ClaimEvidenceKind.EvidenceRequested, x.Lines, Decided.Contains(x.Claim.Status) ? x.Lines : 0,
-                CampaignId: x.Claim.CampaignId, CampaignCode: campaign?.Code, CampaignName: campaign?.Name,
-                ReserveTag: x.Claim.ReserveTag, CampaignCoverReason: x.Claim.CampaignCoverReason));
+            models.Add(new ClaimListRow(claim.ClaimId, claim.ClaimNumber, claim.UnitId, serials.GetValueOrDefault(claim.UnitId), itemIds.GetValueOrDefault(claim.UnitId),
+                claim.ClaimantPartyRef, claim.SettlementPartyRef, claim.Status, claim.CoverageSource, claim.Remedy, claim.ServiceCountry, claim.Currency,
+                claim.ClaimDate, claim.SubmittedAt, totals?.Requested ?? 0, totals?.Approved ?? 0, AgeDays(claim.SubmittedAt, asOf), claim.DenialReason, claim.RecoveryRaised,
+                lastEvidenceKind == ClaimEvidenceKind.EvidenceRequested, totals?.Lines ?? 0, Decided.Contains(claim.Status) ? totals?.Lines ?? 0 : 0,
+                CampaignId: claim.CampaignId, CampaignCode: campaign?.Code, CampaignName: campaign?.Name,
+                ReserveTag: claim.ReserveTag, CampaignCoverReason: claim.CampaignCoverReason));
         }
         return new(models, total, skip, take);
     }
@@ -195,4 +210,12 @@ public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort c
 
     internal static ClaimLineDecision Decision(Data.Entities.ClaimLine line) => new(line.ClaimLineId, line.UnitId, line.CoverageFamily, line.RequestedAmount,
         line.CoveragePct, line.ApprovedAmount, line.CoverageSource, line.EntitlementId, line.DenialReason, line.ChainLength);
+
+    private sealed class ClaimLineTotals
+    {
+        public Guid ClaimId { get; init; }
+        public decimal Requested { get; init; }
+        public decimal Approved { get; init; }
+        public int Lines { get; init; }
+    }
 }

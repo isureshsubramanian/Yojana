@@ -37,6 +37,8 @@ public static class SerialisationModule
     public static IHostApplicationBuilder AddSerialisationModule(this IHostApplicationBuilder builder)
     {
         builder.AddModuleDbContext<SerialisationDbContext>(Schema);
+        var interactiveReadTimeout = builder.Configuration.GetValue<int?>("Serialisation:InteractiveReadCommandTimeoutSeconds") ?? 10;
+        builder.Services.AddSingleton(new InteractiveReadOptions(interactiveReadTimeout));
 
         // Ledger writer and inline projector (MOD-04, coupling 2, P1-T04): scoped, sharing the module's DbContext.
         builder.Services.AddScoped<UnitCurrentStateProjector>();

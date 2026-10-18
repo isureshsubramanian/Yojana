@@ -54,14 +54,18 @@ public sealed class UnitQueryTests(SerialisationHostFixture fixture)
         Assert.Equal(LookupResult.Resolutions.None, (await queries.LookupAsync($"{p}-999", null, CancellationToken.None)).Resolution);
 
         var page1 = await queries.SearchAsync(new UnitSearch($"{p}-0", Take: 5), CancellationToken.None);
-        Assert.Equal(14, page1.Identifiers); // 12 internal (one superseded, one corrected successor = 13) + 1 vendor
-        Assert.Equal(13, page1.Units);
-        Assert.Equal(2, page1.Items);
-        Assert.Equal(1, page1.Superseded);
+        Assert.Equal(5, page1.Identifiers);
+        Assert.True(page1.HasMore);
+        Assert.True(page1.TotalIsLowerBound);
+        Assert.True(page1.SummaryIsSample);
         Assert.Equal(5, page1.Page.Items.Count);
-        Assert.Equal(14, page1.Page.Total);
+        Assert.Equal(6, page1.Page.Total);
+        Assert.All(page1.Page.Items, row => Assert.NotNull(row.LastEventType));
         var page3 = await queries.SearchAsync(new UnitSearch($"{p}-0", Skip: 10, Take: 5), CancellationToken.None);
         Assert.Equal(4, page3.Page.Items.Count);
+        Assert.Equal(14, page3.Identifiers); // 12 internal (one superseded, one corrected successor = 13) + 1 vendor
+        Assert.False(page3.HasMore);
+        Assert.Equal(14, page3.Page.Total);
         var released = await queries.SearchAsync(new UnitSearch($"{p}-0", LifecycleStatus: LifecycleStatus.Released, ItemId: vx), CancellationToken.None); // the purchased unit is released too
         Assert.Single(released.Page.Items);
         var openOnly = await queries.SearchAsync(new UnitSearch($"{p}-0", IncludeSuperseded: false, ItemId: vx), CancellationToken.None);

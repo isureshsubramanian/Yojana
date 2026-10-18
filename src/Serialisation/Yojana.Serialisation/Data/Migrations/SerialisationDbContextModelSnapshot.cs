@@ -7586,11 +7586,6 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "MergedFromUnitId")
                         .HasDatabaseName("ix_unit_identifier_tenant_id_merged_from_unit_id");
 
-                    b.HasIndex("TenantId", "NormalisedValue")
-                        .HasDatabaseName("ix_unit_identifier_tenant_id_normalised_value");
-
-                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "NormalisedValue"), new[] { "UnitId", "Type", "ScopeKey", "ValidTo" });
-
                     b.HasIndex("TenantId", "SwappedWithIdentifierId")
                         .HasDatabaseName("ix_unit_identifier_tenant_id_swapped_with_identifier_id");
 
@@ -7601,6 +7596,11 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_unit_identifier_tenant_id_unit_id_type")
                         .HasFilter("[valid_to] IS NULL");
+
+                    b.HasIndex("TenantId", "NormalisedValue", "Type", "UnitId")
+                        .HasDatabaseName("ix_unit_identifier_tenant_id_normalised_value_type_unit_id");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "NormalisedValue", "Type", "UnitId"), new[] { "Scheme", "RawValue", "ScopeKey", "ValidTo", "SupersededByIdentifierId" });
 
                     b.HasIndex("TenantId", "Scheme", "ScopeKey", "NormalisedValue")
                         .IsUnique()

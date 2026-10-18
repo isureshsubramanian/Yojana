@@ -45,7 +45,7 @@ public static class PlatformSetup
     {
         var options = builder.Configuration.GetSection(PlatformOptions.SectionName).Get<PlatformOptions>()
             ?? throw new InvalidOperationException($"Configuration section '{PlatformOptions.SectionName}' with ConnectionString is required.");
-        options.ConnectionString = PlatformOptions.Resolve(options.ConnectionString, Environment.GetEnvironmentVariable);
+        options.ConnectionString = PlatformOptions.Resolve(options.ConnectionString, Environment.GetEnvironmentVariable, options.MaxPoolSize);
         builder.Services.AddSingleton(options);
 
         // Hosted services start in registration order: migrations must precede the Quartz job store
