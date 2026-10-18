@@ -100,8 +100,9 @@ export function Component() {
         {invalid && <div className="note bad">Enter a distinct item class for every override.</div>}
       </div></section>
       {dateFormats && <section className="card" aria-labelledby="certificate-date-time"><div className="card-header"><div><h2 id="certificate-date-time">Date and time</h2><span className="meta">per certificate language · snapshotted at issue</span></div><button type="button" className="btn primary sm" disabled={dateBusy} aria-busy={dateBusy} onClick={() => void saveDateFormats()}><Icon name="check" />{dateBusy ? "Saving…" : "Save date and time"}</button></div><div className="card-body stack">
-        <p className="muted">These choices apply to future versions only. Date-times use the issuing entity’s time zone and print its abbreviation; UTC is used when no zone is configured.</p>
+        <p className="muted">Active certificate layout languages appear here automatically. A saved language remains available after its last layout is retired. These choices apply to future versions only. Date-times use the issuing entity’s time zone and print its abbreviation; UTC is used when no zone is configured.</p>
         {dateSaved && <div className="note ok"><strong>Date and time settings saved.</strong>&nbsp;The next certificate snapshots these patterns.</div>}
+        {dateFormats.languages.length === 0 && <p className="muted">No active certificate layouts or saved language formats.</p>}
         {dateFormats.languages.map((row) => <div className="card" key={row.language}>
           <div className="card-header"><h3>{certificateLanguageName(row.language)}</h3><span className="meta mono">{row.language}</span></div>
           <div className="card-body cols-2">

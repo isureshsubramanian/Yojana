@@ -377,12 +377,14 @@ public static class SerialisationModule
         // that type: the factory keeps PlatformDbContext outside certificate trigger handler discovery.
         builder.Services.AddScoped(sp => new ReleaseRecordIssuePointSettings(
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped<CertificateTemplateService>();
+        builder.Services.TryAddScoped<ICertificateLayoutLanguageSource, CertificateLayoutLanguageSource>();
         // Coupled to CertificateDateFormatSettings for the same two-DbContext Wolverine constraint documented on
         // that type: the factory keeps PlatformDbContext outside certificate trigger handler discovery.
         builder.Services.AddScoped(sp => new CertificateDateFormatSettings(
-            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>(),
+            sp.GetRequiredService<ICertificateLayoutLanguageSource>()));
         builder.Services.AddScoped<ReleaseRecordIssuePolicy>();
-        builder.Services.AddScoped<CertificateTemplateService>();
         builder.Services.AddScoped<CertificateVersioningEngine>();
         builder.Services.AddScoped<CertificateQueries>();
         builder.Services.AddScoped<TenantAssetService>();
