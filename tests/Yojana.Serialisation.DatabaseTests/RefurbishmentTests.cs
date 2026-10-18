@@ -214,30 +214,47 @@ public sealed class RefurbishmentTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
-    public async Task Two_technicians_can_record_labour_concurrently_on_the_same_work_order()
+    public async Task Fifty_concurrent_labour_and_cost_appends_succeed_with_exact_totals_and_no_parent_writes()
     {
         var setup = await SetUpUnitAsync("refurb-concurrent-labour", "serviceable");
         var opened = await InvokeAsync<OpenRefurbishmentResult>(setup.Tenant,
             new OpenRefurbishment(Guid.NewGuid(), setup.UnitId, RefurbishmentKind.Refurbish,
                 At.AddHours(1), "quality", Entity, Repair));
-        var first = new RecordRefurbishmentLabour(Guid.NewGuid(), opened.WorkOrderId, null, 1.25m, 60m,
-            "EUR", At.AddHours(2), "technician-one", Entity);
-        var second = new RecordRefurbishmentLabour(Guid.NewGuid(), opened.WorkOrderId, null, 0.75m, 60m,
-            "EUR", At.AddHours(2).AddSeconds(1), "technician-two", Entity);
+        byte[] workOrderVersion;
+        byte[] unitVersion;
+        using (var before = fixture.ScopeFor(setup.Tenant))
+        {
+            var beforeDb = before.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            workOrderVersion = (await beforeDb.RefurbishmentWorkOrders.AsNoTracking().SingleAsync(w => w.WorkOrderId == opened.WorkOrderId)).RowVersion;
+            unitVersion = (await beforeDb.Current.AsNoTracking().SingleAsync(u => u.UnitId == setup.UnitId)).RowVersion;
+        }
 
-        var results = await Task.WhenAll(
-            InvokeAsync<RefurbishmentLabourResult>(setup.Tenant, first),
-            InvokeAsync<RefurbishmentLabourResult>(setup.Tenant, second));
+        var appends = Enumerable.Range(0, 50).Select(async index =>
+        {
+            if (index % 2 == 0)
+                await InvokeAsync<RefurbishmentLabourResult>(setup.Tenant, new RecordRefurbishmentLabour(Guid.NewGuid(), opened.WorkOrderId,
+                    null, 0.5m, 20m, "EUR", At.AddHours(2).AddSeconds(index), $"technician-{index}", Entity));
+            else
+                await InvokeAsync<RefurbishmentCostResult>(setup.Tenant, new RecordRefurbishmentCost(Guid.NewGuid(), opened.WorkOrderId,
+                    RefurbishmentCostKind.Other, 3m, "EUR", $"Concurrent cost {index}",
+                    At.AddHours(2).AddSeconds(index), $"finance-{index}", Entity));
+        });
+        await Task.WhenAll(appends);
 
-        Assert.All(results, result => Assert.False(result.Replayed));
         using var scope = fixture.ScopeFor(setup.Tenant);
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
-        Assert.Equal(2, await db.RefurbishmentLabour.CountAsync(l => l.WorkOrderId == opened.WorkOrderId));
-        Assert.Equal(2, await db.RefurbishmentCosts.CountAsync(c => c.WorkOrderId == opened.WorkOrderId
-            && c.Kind == RefurbishmentCostKind.Labour));
+        Assert.Equal(25, await db.RefurbishmentLabour.CountAsync(l => l.WorkOrderId == opened.WorkOrderId));
+        Assert.Equal(50, await db.RefurbishmentCosts.CountAsync(c => c.WorkOrderId == opened.WorkOrderId));
+        Assert.Equal(325m, await db.RefurbishmentCosts.Where(c => c.WorkOrderId == opened.WorkOrderId).SumAsync(c => c.Amount));
+        var detail = await scope.ServiceProvider.GetRequiredService<RefurbishmentQueries>()
+            .DetailAsync(opened.WorkOrderId, CancellationToken.None);
+        Assert.Equal(325m, detail!.TotalCost);
+        Assert.Equal(12.5m, detail.Labour.Sum(row => row.Hours));
+        Assert.Equal(workOrderVersion, (await db.RefurbishmentWorkOrders.AsNoTracking().SingleAsync(w => w.WorkOrderId == opened.WorkOrderId)).RowVersion);
+        Assert.Equal(unitVersion, (await db.Current.AsNoTracking().SingleAsync(u => u.UnitId == setup.UnitId)).RowVersion);
         await AssertOwnerAndHolderAsync(db, setup.UnitId, Entity, LocationKind.InRepair, Repair);
         await AssertNoEntitlementsAndSingleOpenSerialAsync(db, setup.UnitId);
-        Assert.Equal(2, await db.Events.CountAsync(e => e.UnitId == setup.UnitId
+        Assert.Equal(50, await db.Events.CountAsync(e => e.UnitId == setup.UnitId
             && e.EventType == RefurbishmentEventType.CostPosted));
     }
 

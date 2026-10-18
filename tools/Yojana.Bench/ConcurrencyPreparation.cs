@@ -17,7 +17,6 @@ namespace Yojana.Bench;
 public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptions options)
 {
     public const string Actor = "bench.concurrency.prepare";
-    public const int CustomerUnits = 2_000;
     public const int RefurbishmentUnits = 200;
     public const int OpenClaims = 300;
     public const int ApprovedClaims = 10;
@@ -37,6 +36,7 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
     private const string ShipmentDocumentType = "bench_concurrency";
     private const string BasePolicyCode = "BENCH-CONCURRENCY-36";
     private const string ReplacementPolicyCode = "BENCH-CARRY";
+    private int customerUnits = ConcurrencyWorkload.RequiredRmaEligibleUnits(options) + RefurbishmentUnits;
 
     private Guid Tenant => options.ConcurrencyTenantId;
     private string TenantDelivery => Tenant.ToString();
@@ -45,9 +45,13 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
     {
         await ConfigureCurrencyAsync(cancellationToken);
         var policyVersionId = await EnsurePoliciesAsync(cancellationToken);
+        var existing = await ExistingPreparedUnitsAsync(cancellationToken);
+        var requiredRmaUnits = ConcurrencyWorkload.RequiredRmaEligibleUnits(options);
+        customerUnits = Math.Max(customerUnits,
+            existing.Prepared + Math.Max(0, requiredRmaUnits - existing.RmaEligible));
         var units = await LoadCustomerUnitsAsync(cancellationToken);
-        if (units.Count < CustomerUnits)
-            throw new InvalidOperationException($"prepare-concurrency needs {CustomerUnits:N0} loaded units with current base cover and a business-time-safe history; found {units.Count:N0}.");
+        if (units.Count < customerUnits)
+            throw new InvalidOperationException($"prepare-concurrency needs {customerUnits:N0} loaded units with current base cover and a business-time-safe history; found {units.Count:N0}.");
 
         var validSourceUnits = units.Take(ApprovedClaims).ToList();
         var entitlementChanges = await EnsureCommandEntitlementsAsync(validSourceUnits, policyVersionId, cancellationToken);
@@ -59,10 +63,35 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
         var consistency = await VerifyWholeUnitConsistencyAsync(cancellationToken);
 
         Console.WriteLine($"prepared tenant {options.ConcurrencyTenantLabel} ({Tenant})");
-        Console.WriteLine($"customer shipment: {shipped:N0}/{CustomerUnits:N0} units; command-policy entitlements: {entitlementChanges:N0}/{ApprovedClaims:N0}");
+        Console.WriteLine($"customer shipment: {shipped:N0}/{customerUnits:N0} units; command-policy entitlements: {entitlementChanges:N0}/{ApprovedClaims:N0}");
+        Console.WriteLine($"RMA capacity: {customerUnits - RefurbishmentUnits:N0} eligible units for {options.Engineers} engineers × {options.Duration.TotalMinutes:0.##} min (weighted headroom with a 12,000-unit verification floor)");
         Console.WriteLine($"refurbishment stock: {refurbished:N0}/{RefurbishmentUnits:N0} open work orders; claims: {claims.Open:N0} adjudication + {claims.Editable:N0} editable + {claims.Approved:N0} approved sources");
         Console.WriteLine($"editable documents: {documents.Campaigns:N0} campaigns + {documents.PolicyDrafts:N0} policy drafts; replacement-stock tag: {stock:N0} units");
-        Console.WriteLine($"whole-unit check: owners {CustomerUnits - RefurbishmentUnits:N0} customer + {RefurbishmentUnits:N0} us; holders {consistency.CustomerSite:N0} customer-site + {consistency.Quarantine:N0} us/quarantine + {consistency.InRepair:N0} us/in-repair; live base cover and open internal serial retained on all {CustomerUnits:N0} units");
+        Console.WriteLine($"whole-unit check: owners {customerUnits - RefurbishmentUnits:N0} customer + {RefurbishmentUnits:N0} us; holders {consistency.CustomerSite:N0} customer-site + {consistency.Quarantine:N0} us/quarantine + {consistency.InRepair:N0} us/in-repair; live base cover and open internal serial retained on all {customerUnits:N0} units");
+    }
+
+    private async Task<(int Prepared, int RmaEligible)> ExistingPreparedUnitsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await Sql.OpenAsync(options.ConnectionString, Tenant);
+        var rows = await Sql.RowsAsync(connection, """
+            WITH prepared AS (
+                SELECT DISTINCT unit_id FROM serialisation.unit_event
+                WHERE tenant_id = @tenant AND document_type = @document_type AND document_id = @document_id
+                  AND event_type = 'unit.shipped'
+            ), refurbished AS (
+                SELECT DISTINCT target_unit_id FROM serialisation.refurbishment_work_order
+                WHERE tenant_id = @tenant
+            )
+            SELECT COUNT(*) AS prepared,
+                   COALESCE(SUM(CASE WHEN c.location_kind IN ('customer_site','in_transit')
+                       AND refurbished.target_unit_id IS NULL
+                       THEN 1 ELSE 0 END), 0) AS rma_eligible
+            FROM prepared
+            JOIN serialisation.unit_current c ON c.tenant_id = @tenant AND c.unit_id = prepared.unit_id
+            LEFT JOIN refurbished ON refurbished.target_unit_id = prepared.unit_id;
+            """, 0, ("@tenant", Tenant), ("@document_type", ShipmentDocumentType), ("@document_id", ShipmentDocumentId));
+        var row = rows.Single();
+        return (Convert.ToInt32(row["prepared"]), Convert.ToInt32(row["rma_eligible"]));
     }
 
     private async Task ConfigureCurrencyAsync(CancellationToken cancellationToken)
@@ -120,7 +149,8 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
                   AND e.event_type = 'unit.shipped'
             ), candidates AS (
                 SELECT c.unit_id, c.item_id, i.normalised_value, e.entitlement_id,
-                       CASE WHEN p.unit_id IS NULL THEN 1 ELSE 0 END AS fresh
+                       CASE WHEN p.unit_id IS NULL THEN 1 ELSE 0 END AS fresh,
+                       CASE WHEN r.target_unit_id IS NULL THEN 0 ELSE 1 END AS refurbishment
                 FROM serialisation.unit_current c
                 JOIN serialisation.entitlement e ON e.tenant_id = c.tenant_id AND e.unit_id = c.unit_id
                     AND e.coverage_family = 'base_warranty' AND e.direction = 'outbound' AND e.status = 'active'
@@ -133,13 +163,17 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
                     ORDER BY x.valid_from, x.identifier_id
                 ) i
                 LEFT JOIN prepared p ON p.unit_id = c.unit_id
+                LEFT JOIN (
+                    SELECT DISTINCT target_unit_id FROM serialisation.refurbishment_work_order
+                    WHERE tenant_id = @tenant AND source_document_type = 'rma'
+                ) r ON r.target_unit_id = c.unit_id
                 WHERE c.tenant_id = @tenant AND i.normalised_value IS NOT NULL
                   AND (p.unit_id IS NOT NULL OR c.last_event_time < @shipment_at)
             )
             SELECT TOP (@take) unit_id, item_id, normalised_value, entitlement_id
-            FROM candidates ORDER BY fresh, unit_id;
+            FROM candidates ORDER BY refurbishment, fresh, unit_id;
             """, 120, ("@tenant", Tenant), ("@document_type", ShipmentDocumentType), ("@document_id", ShipmentDocumentId),
-            ("@on", DateOnly.FromDateTime(ShipmentAt)), ("@shipment_at", ShipmentAt), ("@take", CustomerUnits));
+            ("@on", DateOnly.FromDateTime(ShipmentAt)), ("@shipment_at", ShipmentAt), ("@take", customerUnits));
         return rows.Select(row => new WorkingUnit((Guid)row["unit_id"]!, (Guid)row["item_id"]!,
             (string)row["normalised_value"]!, (Guid)row["entitlement_id"]!)).ToList();
     }
@@ -180,7 +214,7 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
         services.GetRequiredService<InMemoryDocumentPorts>().Add(new ShipmentDocument(document, Customer, ShipmentAt, lines,
             CustomerSite, null, IsDropShip: true, CustomerPoRef: "BENCH-CONCURRENCY"));
         var result = await InvokeAsync<ConsumedEventResult>(new SalesShipmentPosted(
-            new ThinEnvelope(Stable("shipment"), BenchOptions.LegalEntity, ShipmentAt, Actor), document), cancellationToken);
+            new ThinEnvelope(Stable("shipment", customerUnits), BenchOptions.LegalEntity, ShipmentAt, Actor), document), cancellationToken);
         if (result.Exceptions.Count > 0)
             throw new InvalidOperationException("Benchmark shipment refused units: " + string.Join("; ", result.Exceptions.Take(10)));
         return result.UnitsAffected == 0 && result.Duplicate ? units.Count : result.UnitsAffected;
@@ -380,11 +414,11 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
         var row = rows.Single();
         int Count(string name) => Convert.ToInt32(row[name]);
         var failures = new List<string>();
-        if (Count("prepared") != CustomerUnits) failures.Add($"prepared={Count("prepared")}");
-        if (Count("customer_consistent") != CustomerUnits - RefurbishmentUnits) failures.Add($"customer_consistent={Count("customer_consistent")}");
+        if (Count("prepared") != customerUnits) failures.Add($"prepared={Count("prepared")}");
+        if (Count("customer_consistent") != customerUnits - RefurbishmentUnits) failures.Add($"customer_consistent={Count("customer_consistent")}");
         if (Count("refurbishment_consistent") != RefurbishmentUnits) failures.Add($"refurbishment_consistent={Count("refurbishment_consistent")}");
-        if (Count("live_base") != CustomerUnits) failures.Add($"live_base={Count("live_base")}");
-        if (Count("open_serial") != CustomerUnits) failures.Add($"open_serial={Count("open_serial")}");
+        if (Count("live_base") != customerUnits) failures.Add($"live_base={Count("live_base")}");
+        if (Count("open_serial") != customerUnits) failures.Add($"open_serial={Count("open_serial")}");
         if (Count("entitlement_closed") != ApprovedClaims) failures.Add($"entitlement_closed={Count("entitlement_closed")}");
         if (Count("entitlement_created") != ApprovedClaims) failures.Add($"entitlement_created={Count("entitlement_created")}");
         if (Count("refurbishment_ledger") != RefurbishmentUnits) failures.Add($"refurbishment_ledger={Count("refurbishment_ledger")}");

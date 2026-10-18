@@ -134,6 +134,11 @@ public sealed class UnitCurrentStateProjector(SerialisationDbContext db)
         return doc.RootElement.TryGetProperty(StateKey, out var state) ? state.Deserialize<CurrentStateDelta>(LedgerJson.Options) : null;
     }
 
+    // TIGHT COUPLING (state-neutral ledger facts)
+    // WHAT: this marker must make the identical include/exclude decision as UnitEventWriter during live writes.
+    // WHY: state-neutral audit facts stay in history without updating the operational row or its rowversion.
+    // WHAT BREAKS IF SEPARATED: replayed unit_current diverges from live state. Keep the writer comment and marker
+    // serialisation in step with this reader.
     /// <summary>True unless the writer explicitly persisted this event as a state-neutral audit fact.</summary>
     public static bool ProjectsCurrentState(string? attributes)
     {

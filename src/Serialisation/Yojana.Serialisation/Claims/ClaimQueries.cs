@@ -50,7 +50,7 @@ public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort c
         var total = await source.CountAsync(cancellationToken);
         take = Math.Clamp(take, 1, 200);
         skip = Math.Max(0, skip);
-        var claims = await source.OrderBy(c => Settled.Contains(c.Status)).ThenBy(c => c.SubmittedAt).ThenBy(c => c.ClaimId)
+        var claims = await source.OrderBy(c => c.ListOrderBucket).ThenBy(c => c.SubmittedAt).ThenBy(c => c.ClaimId)
             .Skip(skip).Take(take).ToListAsync(cancellationToken);
         var claimIds = claims.Select(claim => claim.ClaimId).ToList();
         var lineTotals = claimIds.Count == 0

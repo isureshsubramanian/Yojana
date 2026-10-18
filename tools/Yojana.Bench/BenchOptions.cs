@@ -96,7 +96,7 @@ public sealed class BenchOptions
             }.ConnectionString;
         }
 
-        if (o.Command is "seed-users" or "prepare-concurrency" && o.TenantIndex is null)
+        if (o.Command is "seed-users" or "prepare-concurrency" or "concurrency-hotpaths" && o.TenantIndex is null)
             throw new ArgumentException($"{o.Command} needs --tenant <index>");
         if (o.Command == "seed-users" && string.IsNullOrWhiteSpace(environmentPassword))
             throw new ArgumentException("seed-users needs YOJANA_BENCH_PASSWORD");
@@ -104,14 +104,16 @@ public sealed class BenchOptions
         {
             if (string.IsNullOrWhiteSpace(o.Password)) throw new ArgumentException($"{o.Command} needs YOJANA_BENCH_PASSWORD");
         }
-        if (o.Command == "concurrency")
+        if (o.Command is "concurrency" or "prepare-concurrency")
         {
-            if (o.Url is null) throw new ArgumentException("concurrency needs --url for the running Yojana web host");
             if (o.Engineers is < 1 or > 1000) throw new ArgumentOutOfRangeException("--engineers", "Engineers must be from 1 to 1000.");
             if (o.Duration < TimeSpan.FromSeconds(1)) throw new ArgumentOutOfRangeException("--duration", "Duration must be at least one second.");
             if (o.ContentionPercent is < 0 or > 100) throw new ArgumentOutOfRangeException("--contention", "Contention must be from 0 to 100.");
             if (o.NumberingMode is not ("sequence" or "gap_free")) throw new ArgumentException("--numbering is sequence or gap_free");
+            _ = ConcurrencyWorkload.Weights(o);
         }
+        if (o.Command == "concurrency" && o.Url is null)
+            throw new ArgumentException("concurrency needs --url for the running Yojana web host");
         return o;
     }
 

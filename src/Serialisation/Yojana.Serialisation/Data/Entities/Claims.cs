@@ -45,6 +45,8 @@ public sealed class Claim : ITenantScoped
     public Guid LastEventId { get; set; }
     public string LastModifiedBy { get; set; } = "";
     public DateTime LastModifiedAt { get; set; }
+    /// <summary>Persisted sort key for list paging: active work first, settled and closed work second.</summary>
+    public int ListOrderBucket { get; private set; }
     public byte[] RowVersion { get; set; } = [];
 }
 

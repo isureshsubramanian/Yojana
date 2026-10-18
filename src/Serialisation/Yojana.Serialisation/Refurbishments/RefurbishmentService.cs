@@ -337,7 +337,8 @@ public sealed class RefurbishmentService(
             RecordedAt = command.EventTime, EventId = cost.EventId, CostId = cost.CostId,
         };
         db.RefurbishmentLabour.Add(row);
-        Touch(workOrder, command.ActorRef);
+        // Append-only labour does not edit the work-order document root. Detail and release totals come from line rows,
+        // so touching its rowversion would make independent technicians contend on state they do not change.
         return new(workOrder.WorkOrderId, row.LabourId, row.Hours, row.HourlyRate, row.Amount, row.Currency, row.CostId, row.EventId, false);
     }
 
@@ -350,7 +351,6 @@ public sealed class RefurbishmentService(
         if (command.Amount < 0) throw new CommandRefusedException("refurbishment_cost_invalid", "Refurbishment cost cannot be negative.");
         if (command.Kind == RefurbishmentCostKind.GradedReceipt && await db.RefurbishmentCosts.AnyAsync(c => c.TenantId == tenant.TenantId && c.WorkOrderId == workOrder.WorkOrderId && c.Kind == RefurbishmentCostKind.GradedReceipt, cancellationToken))
             throw new CommandRefusedException("graded_receipt_value_exists", "The work order already has its graded receipt value.");
-        Touch(workOrder, command.ActorRef);
         return CostResult(await AddCostAsync(workOrder, command.CommandId, command.Kind, command.Amount,
             Currency(command.Currency), Required(command.Description, "cost_description", 500), command.EventTime,
             command.ActorRef, command.LegalEntityId, cancellationToken), false);
@@ -375,7 +375,7 @@ public sealed class RefurbishmentService(
             eventTime, actorRef, legalEntityId, Document(workOrder), new
             {
                 work_order_id = workOrder.WorkOrderId, cost_id = row.CostId, kind, amount, currency, description,
-            })], cancellationToken);
+            }) with { ProjectCurrentState = false }], cancellationToken);
         return row;
     }
 

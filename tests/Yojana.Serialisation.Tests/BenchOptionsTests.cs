@@ -42,6 +42,22 @@ public sealed class BenchOptionsTests
     }
 
     [Fact]
+    public void Rma_working_set_scales_with_engineers_duration_and_weight()
+    {
+        var options = BenchOptions.Parse(["prepare-concurrency", "--tenant", "1", "--engineers", "120", "--duration", "10m"], Environment);
+
+        Assert.Equal(12_600, ConcurrencyWorkload.RequiredRmaEligibleUnits(options));
+    }
+
+    [Fact]
+    public void Short_concurrency_runs_keep_a_pool_large_enough_to_measure_a_fast_server()
+    {
+        var options = BenchOptions.Parse(["prepare-concurrency", "--tenant", "1", "--engineers", "40", "--duration", "3m"], Environment);
+
+        Assert.Equal(12_000, ConcurrencyWorkload.RequiredRmaEligibleUnits(options));
+    }
+
+    [Fact]
     public void Seed_users_requires_the_password_environment_variable()
     {
         Assert.Throws<ArgumentException>(() => BenchOptions.Parse(["seed-users", "--tenant", "1"],

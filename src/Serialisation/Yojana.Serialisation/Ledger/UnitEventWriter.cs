@@ -41,7 +41,7 @@ namespace Yojana.Serialisation.Ledger;
 /// </summary>
 public sealed class UnitEventWriter(SerialisationDbContext db, ITenantContext tenant, IClock clock,
     UnitCurrentStateProjector projector, PublishedEventMapper publisher,
-    IEnumerable<IUnitEventAppendObserver> observers) : IUnitEventWriter
+    UnitEventIdempotencyReader idempotency, IEnumerable<IUnitEventAppendObserver> observers) : IUnitEventWriter
 {
     public async Task<AppendResult> AppendAsync(IReadOnlyList<UnitEventDraft> drafts, CancellationToken cancellationToken)
     {
@@ -53,20 +53,10 @@ public sealed class UnitEventWriter(SerialisationDbContext db, ITenantContext te
         var tenantId = tenant.TenantId;
         var recordedTime = clock.UtcNow;
 
-        // Idempotency: a draft whose (key, business time) is already in the ledger is a no-op, reported, never re-applied.
-        // The business times go into the predicate too, so the (tenant, key, event_time) index seeks only their partitions
-        // rather than every partition of the ledger per key (P1-T24); chunked to keep the parameter lists bounded.
-        var existingSet = new HashSet<(string, DateTime)>();
-        foreach (var chunk in drafts.Select(d => (d.IdempotencyKey, d.EventTime)).Distinct().Chunk(2000))
-        {
-            var keys = chunk.Select(k => k.IdempotencyKey).Distinct().ToList();
-            var times = chunk.Select(k => k.EventTime).Distinct().ToList();
-            var existing = await db.Events.AsNoTracking()
-                .Where(e => e.TenantId == tenantId && keys.Contains(e.IdempotencyKey) && times.Contains(e.EventTime))
-                .Select(e => new { e.IdempotencyKey, e.EventTime })
-                .ToListAsync(cancellationToken);
-            existingSet.UnionWith(existing.Select(e => (e.IdempotencyKey, e.EventTime)));
-        }
+        // Idempotency is the exact (key, business-time) identity. The reader preserves that pairing all the way to SQL,
+        // so the aligned unique index seeks only the requested monthly partitions.
+        var existingSet = await idempotency.SeenAsync(tenantId,
+            drafts.Select(d => (d.IdempotencyKey, d.EventTime)).ToList(), cancellationToken);
 
         var seenInBatch = new HashSet<(string, DateTime)>();
         var duplicates = new List<UnitEventDraft>();
@@ -129,9 +119,10 @@ public sealed class UnitEventWriter(SerialisationDbContext db, ITenantContext te
         // units are read in one query first; the projector then finds them tracked instead of asking once per unit.
         // TIGHT COUPLING (state-neutral ledger facts)
         // WHAT: ProjectCurrentState=false is persisted in AttributesJson and excludes the same event here and in
-        // UnitCurrentHealer. WHY: certificate and label audit facts change no operational unit state; touching the
-        // rowversion would race unrelated ownership/custody/entitlement commands. WHAT BREAKS IF SEPARATED: live and
-        // replayed unit_current disagree, or audit traffic reintroduces false concurrency failures.
+        // UnitCurrentHealer. WHY: state-neutral audit facts (certificate, label, claim and cost postings) change no
+        // operational unit state; touching the rowversion would race ownership/custody/entitlement commands. WHAT
+        // BREAKS IF SEPARATED: live and replayed unit_current disagree, or audit traffic reintroduces false concurrency
+        // failures. Keep the matching healer comment and each module's explicit opt-out in step with this contract.
         var draftOf = fresh.ToDictionary(d => (d.IdempotencyKey, d.EventTime));
         var projected = written.Where(e => draftOf[(e.IdempotencyKey, e.EventTime)].ProjectCurrentState).ToList();
         await projector.PreloadAsync(tenantId, projected.Select(e => e.UnitId).Distinct().ToList(), cancellationToken);
