@@ -10,18 +10,21 @@ namespace Yojana.Bench;
 /// <summary>P6-T18 mixed HTTP workload. SQL is read-only: resource discovery and server diagnostics only.</summary>
 public sealed class ConcurrencyRunner(BenchOptions options)
 {
-    private static readonly Guid Tenant = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid LegalEntity = Guid.Parse("00000000-0000-0000-0000-000000000001");
-    private static readonly Guid Customer = Guid.Parse("20000000-0000-0000-0000-000000000007");
-    private static readonly Guid ServiceEntity = Guid.Parse("20000000-0000-0000-0000-000000000017");
-    private static readonly Guid Quarantine = Guid.Parse("40000000-0000-0000-0000-000000000001");
+    private static readonly Guid Customer = Guid.Parse("b0c00000-0000-4000-8000-000000000001");
+    private static readonly Guid ServiceEntity = Guid.Parse("b0c00000-0000-4000-8000-000000000002");
+    private static readonly Guid Quarantine = Guid.Parse("b0c00000-0000-4000-8000-000000000004");
     private static readonly DateTime BusinessTime = new(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly ConcurrentBag<LoadSample> samples = [];
-    private readonly ConcurrentDictionary<Guid, ConcurrentBag<SuccessfulEdit>> successfulEdits = new();
+    private readonly ConcurrentBag<SuccessfulEdit> successfulEdits = [];
+    private readonly ConcurrentBag<ReplacementSource> replacementSources = [];
+    private readonly ConcurrentQueue<(Guid Id, string Label)> rmaUnits = new();
+    private readonly ConcurrentQueue<Guid> openClaims = new();
+    private readonly ConcurrentQueue<Guid> replacementUnits = new();
     private readonly ConcurrentBag<string> notes = [];
     private readonly ConcurrentDictionary<string, int> exhausted = new(StringComparer.Ordinal);
-    private ResourcePool resources = new([], [], [], [], [], [], []);
+    private ResourcePool resources = new([], [], [], [], [], [], [], [], [], []);
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -29,16 +32,14 @@ public sealed class ConcurrencyRunner(BenchOptions options)
         try
         {
             await ConfigureNumberingAsync(clients[0], cancellationToken);
-            await EnsureCurrencyAsync(clients[0], cancellationToken);
-            await EnsureUnitsAsync(clients[0], cancellationToken);
             resources = await LoadResourcesAsync(cancellationToken);
-            await EnsureHotDocumentsAsync(clients[0], cancellationToken);
-            await EnsureClaimsAsync(clients[0], cancellationToken);
-            resources = await LoadResourcesAsync(cancellationToken);
-            await EnsureRefurbishmentsAsync(clients[0], cancellationToken);
-            resources = await LoadResourcesAsync(cancellationToken);
+            ValidatePreparedResources();
+            foreach (var unit in resources.RmaUnits) rmaUnits.Enqueue(unit);
+            foreach (var claim in resources.OpenClaims) openClaims.Enqueue(claim);
+            foreach (var source in resources.ReplacementSources) replacementSources.Add(source);
+            foreach (var unit in resources.ReplacementUnits) replacementUnits.Enqueue(unit);
             var beforeRetries = await RetryMetricAsync(clients[0], cancellationToken);
-            var monitor = new ConcurrencySqlMonitor(options.ConnectionString);
+            var monitor = new ConcurrencySqlMonitor(options.ConnectionString, options.ConcurrencyTenantId);
             await monitor.StartAsync(cancellationToken);
             var started = DateTime.UtcNow;
             var deadline = DateTime.UtcNow + options.Duration;
@@ -56,8 +57,8 @@ public sealed class ConcurrencyRunner(BenchOptions options)
             var diagnostics = new ConcurrencyDiagnostics(
                 Math.Max(0, afterRetries - beforeRetries), retriesExhausted, diagnostic.NumberSeriesWait,
                 diagnostic.LockWaitDelta, diagnostic.Deadlocks, expectedConflicts, lost);
-            notes.Add("All mutations used the authenticated HTTP API; SQL access selected existing IDs and sampled diagnostics only.");
-            notes.Add("Presence heartbeats ran every 20 seconds per simulated engineer; the development account may represent several sessions for one seeded identity.");
+            notes.Add($"All mutations used the authenticated HTTP API for tenant {options.ConcurrencyTenantLabel}; tenant-scoped SQL selected prepared IDs and sampled diagnostics only.");
+            notes.Add("Presence heartbeats ran every 20 seconds per simulated engineer; one seeded administrator identity represents several sessions.");
             notes.Add($"Workload weights: {string.Join(", ", Weights().Select(pair => $"{pair.Key}={pair.Value}"))}.");
             var paths = await ConcurrencyReportWriter.WriteAsync(options, started, watch.Elapsed, samples, diagnostics, notes.Order().ToList(), cancellationToken);
             Console.WriteLine($"report: {paths.Markdown}");
@@ -93,104 +94,106 @@ public sealed class ConcurrencyRunner(BenchOptions options)
         }
     }
 
-    private static async Task EnsureCurrencyAsync(HttpClient client, CancellationToken cancellationToken)
-    {
-        using var response = await client.PutAsJsonAsync("/api/tenant/currency", new { currency = "EUR", accepted = new[] { "EUR" } }, Json, cancellationToken);
-        response.EnsureSuccessStatusCode();
-    }
-
-    private async Task EnsureUnitsAsync(HttpClient client, CancellationToken cancellationToken)
-    {
-        await using var connection = await Sql.OpenAsync(options.ConnectionString, Tenant);
-        if (await Sql.ScalarAsync<int>(connection, "SELECT COUNT(*) FROM serialisation.unit") >= 40) return;
-        var token = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
-        var lines = Enumerable.Range(1, 40).Select(index => new
-        {
-            identifiers = new[] { new { type = "internal_serial", rawValue = $"LOAD-{token}-{index:D3}" } },
-            clientReference = index.ToString(System.Globalization.CultureInfo.InvariantCulture),
-        });
-        var result = await SendAsync(client, HttpMethod.Post, "/api/units/commission", new
-        {
-            commandId = Guid.NewGuid(), itemId = Guid.Parse("10000000-0000-0000-0000-000000000008"), origin = "purchased",
-            lines, eventTime = BusinessTime, legalEntityId = LegalEntity, locationId = Guid.Parse("40000000-0000-0000-0000-000000000004"),
-            locationKind = "warehouse", source = "load_harness",
-        }, cancellationToken);
-        using (result.Json) { if (!result.Success) notes.Add($"Unit preparation failed: {result.ErrorType}."); }
-    }
-
-    private async Task EnsureRefurbishmentsAsync(HttpClient client, CancellationToken cancellationToken)
-    {
-        if (resources.Refurbishments.Count >= 4 || resources.Units.Count == 0) return;
-        foreach (var unit in resources.Units.Take(4))
-        {
-            var result = await SendAsync(client, HttpMethod.Post, "/api/refurbishments", new
-            {
-                commandId = Guid.NewGuid(), targetUnitId = unit.Id, kind = "refurbish", openedAt = BusinessTime,
-                legalEntityId = LegalEntity, repairLocationId = Guid.Parse("40000000-0000-0000-0000-000000000006"),
-            }, cancellationToken);
-            using (result.Json) { if (!result.Success) notes.Add($"Refurbishment preparation failed: {result.ErrorType}."); }
-        }
-    }
-
-    private async Task EnsureClaimsAsync(HttpClient client, CancellationToken cancellationToken)
-    {
-        if (resources.Claims.Count >= 8 || resources.Units.Count == 0) return;
-        var random = new Random(20261018);
-        for (var i = resources.Claims.Count; i < 8; i++)
-        {
-            var result = await ClaimAsync(client, random, cancellationToken);
-            using (result.Json) { if (!result.Success) notes.Add($"Claim preparation failed: {result.ErrorType}."); }
-        }
-    }
 
     private async Task<ResourcePool> LoadResourcesAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await Sql.OpenAsync(options.ConnectionString, Tenant);
+        await using var connection = await Sql.OpenAsync(options.ConnectionString, options.ConcurrencyTenantId);
         var units = await PairsAsync(connection, """
             SELECT TOP (500) c.unit_id AS id, COALESCE(i.raw_value, CONVERT(nvarchar(36), c.unit_id)) AS label
-            FROM serialisation.unit_current c OUTER APPLY (
+            FROM serialisation.unit_current c
+            JOIN serialisation.unit_event prepared ON prepared.tenant_id = c.tenant_id AND prepared.unit_id = c.unit_id
+                AND prepared.document_type = 'bench_concurrency' AND prepared.document_id = @shipment
+                AND prepared.event_type = 'unit.shipped'
+            OUTER APPLY (
                 SELECT TOP (1) raw_value FROM serialisation.unit_identifier i
                 WHERE i.tenant_id = c.tenant_id AND i.unit_id = c.unit_id AND i.valid_to IS NULL ORDER BY i.valid_from) i
+            WHERE c.tenant_id = @tenant
             ORDER BY c.unit_id;
-            """, cancellationToken);
-        return new ResourcePool(units,
-            await IdsAsync(connection, "SELECT TOP (200) rma_id FROM serialisation.rma ORDER BY requested_at DESC", cancellationToken),
-            await IdsAsync(connection, "SELECT TOP (200) claim_id FROM serialisation.claim ORDER BY submitted_at DESC", cancellationToken),
-            await IdsAsync(connection, "SELECT TOP (100) work_order_id FROM serialisation.refurbishment_work_order WHERE status = 'open' ORDER BY opened_at DESC", cancellationToken),
-            await IdsAsync(connection, "SELECT TOP (20) campaign_id FROM serialisation.campaign WHERE status = 'draft' ORDER BY updated_at DESC", cancellationToken),
-            await IdsAsync(connection, "SELECT TOP (200) entitlement_id FROM serialisation.entitlement WHERE status IN ('active','suspended') ORDER BY created_at DESC", cancellationToken),
-            await IdsAsync(connection, "SELECT TOP (100) warranty_replacement_id FROM serialisation.warranty_replacement ORDER BY created_at DESC", cancellationToken));
+            """, cancellationToken, ("@tenant", options.ConcurrencyTenantId), ("@shipment", ConcurrencyPreparation.ShipmentDocumentId));
+        var rmaUnits = await PairsAsync(connection, """
+            SELECT TOP (1800) c.unit_id AS id, i.raw_value AS label
+            FROM serialisation.unit_current c
+            JOIN serialisation.unit_event prepared ON prepared.tenant_id = c.tenant_id AND prepared.unit_id = c.unit_id
+                AND prepared.document_type = 'bench_concurrency' AND prepared.document_id = @shipment
+                AND prepared.event_type = 'unit.shipped'
+            CROSS APPLY (SELECT TOP (1) raw_value FROM serialisation.unit_identifier i
+                WHERE i.tenant_id = c.tenant_id AND i.unit_id = c.unit_id AND i.valid_to IS NULL ORDER BY i.valid_from) i
+            WHERE c.tenant_id = @tenant
+              AND NOT EXISTS (SELECT 1 FROM serialisation.refurbishment_work_order w
+                WHERE w.tenant_id = c.tenant_id AND w.target_unit_id = c.unit_id)
+              AND c.location_kind IN ('customer_site','in_transit')
+            ORDER BY c.unit_id;
+            """, cancellationToken, ("@tenant", options.ConcurrencyTenantId), ("@shipment", ConcurrencyPreparation.ShipmentDocumentId));
+        var openClaims = await IdsAsync(connection, """
+            SELECT TOP (150) c.claim_id FROM serialisation.claim c
+            WHERE c.tenant_id = @tenant AND c.submitted_by = @actor AND c.status = 'submitted'
+              AND EXISTS (SELECT 1 FROM serialisation.claim_evidence e
+                  WHERE e.tenant_id = c.tenant_id AND e.claim_id = c.claim_id
+                    AND e.reference = @claim_pool)
+            ORDER BY c.claim_id;
+            """, cancellationToken, ("@tenant", options.ConcurrencyTenantId), ("@actor", ConcurrencyPreparation.Actor),
+            ("@claim_pool", options.NumberingMode == "sequence" ? "BENCH-CONCURRENCY-SEQUENCE" : "BENCH-CONCURRENCY-GAP-FREE"));
+        var editableClaims = await IdsAsync(connection, """
+            SELECT TOP (50) c.claim_id FROM serialisation.claim c
+            WHERE c.tenant_id = @tenant AND c.submitted_by = @actor AND c.status = 'submitted'
+              AND EXISTS (SELECT 1 FROM serialisation.claim_evidence e
+                  WHERE e.tenant_id = c.tenant_id AND e.claim_id = c.claim_id
+                    AND e.reference = 'BENCH-CONCURRENCY-DOCUMENT')
+            ORDER BY c.claim_id;
+            """, cancellationToken, ("@tenant", options.ConcurrencyTenantId), ("@actor", ConcurrencyPreparation.Actor));
+        var replacementSources = (await Sql.RowsAsync(connection, """
+            SELECT TOP (50) c.claim_id, l.entitlement_id
+            FROM serialisation.claim c
+            JOIN serialisation.claim_line l ON l.tenant_id = c.tenant_id AND l.claim_id = c.claim_id
+            JOIN serialisation.entitlement e ON e.tenant_id = l.tenant_id AND e.entitlement_id = l.entitlement_id
+            JOIN serialisation.warranty_policy_version p ON p.tenant_id = e.tenant_id AND p.policy_version_id = e.policy_version_id
+            WHERE c.tenant_id = @tenant AND c.submitted_by = @actor AND c.status = 'approved' AND l.entitlement_id IS NOT NULL
+              AND e.status = 'active'
+            ORDER BY c.claim_id;
+            """, 0, ("@tenant", options.ConcurrencyTenantId), ("@actor", ConcurrencyPreparation.Actor)))
+            .Select(row => new ReplacementSource((Guid)row["claim_id"]!, (Guid)row["entitlement_id"]!)).ToList();
+        var replacementUnits = await IdsAsync(connection, """
+            SELECT TOP (10000) sm.unit_id
+            FROM serialisation.selection_set_member sm
+            WHERE sm.tenant_id = @tenant AND sm.selection_id = @selection
+              AND NOT EXISTS (SELECT 1 FROM serialisation.replacement_link r
+                  WHERE r.tenant_id = sm.tenant_id AND r.replacement_unit_id = sm.unit_id
+                    AND r.state IN ('proposed','awaiting_return'))
+              AND NOT EXISTS (SELECT 1 FROM serialisation.unit_event e
+                  WHERE e.tenant_id = sm.tenant_id AND e.unit_id = sm.unit_id
+                    AND e.document_type = 'bench_concurrency' AND e.document_id = @shipment)
+            ORDER BY sm.unit_id;
+            """, cancellationToken, ("@tenant", options.ConcurrencyTenantId), ("@selection", ConcurrencyPreparation.StockSelectionId),
+            ("@shipment", ConcurrencyPreparation.ShipmentDocumentId));
+        return new ResourcePool(units, rmaUnits,
+            await IdsAsync(connection, "SELECT TOP (200) rma_id FROM serialisation.rma WHERE tenant_id = @tenant ORDER BY requested_at DESC", cancellationToken, ("@tenant", options.ConcurrencyTenantId)),
+            editableClaims,
+            await IdsAsync(connection, "SELECT TOP (200) work_order_id FROM serialisation.refurbishment_work_order WHERE tenant_id = @tenant AND status = 'open' ORDER BY opened_at DESC", cancellationToken, ("@tenant", options.ConcurrencyTenantId)),
+            await IdsAsync(connection, "SELECT TOP (250) campaign_id FROM serialisation.campaign WHERE tenant_id = @tenant AND status = 'draft' AND created_by = @actor ORDER BY updated_at DESC", cancellationToken, ("@tenant", options.ConcurrencyTenantId), ("@actor", ConcurrencyPreparation.Actor)),
+            await IdsAsync(connection, "SELECT TOP (250) policy_version_id FROM serialisation.warranty_policy_version WHERE tenant_id = @tenant AND status = 'draft' AND created_by = @actor ORDER BY created_at DESC", cancellationToken, ("@tenant", options.ConcurrencyTenantId), ("@actor", ConcurrencyPreparation.Actor)),
+            openClaims, replacementSources, replacementUnits);
     }
 
-    private static async Task<List<Guid>> IdsAsync(SqlConnection connection, string sql, CancellationToken cancellationToken) =>
-        (await Sql.RowsAsync(connection, sql)).Select(row => (Guid)row.Values.First(value => value is Guid)!).ToList();
+    private static async Task<List<Guid>> IdsAsync(SqlConnection connection, string sql, CancellationToken cancellationToken,
+        params (string Name, object Value)[] parameters) =>
+        (await Sql.RowsAsync(connection, sql, 0, parameters)).Select(row => (Guid)row.Values.First(value => value is Guid)!).ToList();
 
-    private static async Task<List<(Guid Id, string Label)>> PairsAsync(SqlConnection connection, string sql, CancellationToken cancellationToken) =>
-        (await Sql.RowsAsync(connection, sql)).Select(row => ((Guid)row["id"]!, (string)row["label"]!)).ToList();
+    private static async Task<List<(Guid Id, string Label)>> PairsAsync(SqlConnection connection, string sql,
+        CancellationToken cancellationToken, params (string Name, object Value)[] parameters) =>
+        (await Sql.RowsAsync(connection, sql, 0, parameters)).Select(row => ((Guid)row["id"]!, (string)row["label"]!)).ToList();
 
-    private async Task EnsureHotDocumentsAsync(HttpClient client, CancellationToken cancellationToken)
+    private void ValidatePreparedResources()
     {
-        for (var i = resources.Campaigns.Count; i < 4; i++)
-        {
-            var id = Guid.NewGuid();
-            using var response = await client.PostAsJsonAsync("/api/campaigns", new
-            {
-                commandId = id,
-                code = $"LOAD-{id:N}"[..18],
-                name = $"Load contention document {i + 1}",
-                coverageSource = "goodwill",
-                reserveTag = "LOAD-HARNESS",
-                criteria = Array.Empty<object>(),
-                eventTime = BusinessTime,
-                reasonCode = "reliability",
-                reasonNote = "Load harness document",
-                runsUntil = (DateOnly?)null,
-                partsPct = 100m,
-                labourPct = 100m,
-                travelPct = 100m,
-            }, Json, cancellationToken);
-            if (!response.IsSuccessStatusCode) notes.Add($"Could not create hot document {i + 1}: {(int)response.StatusCode}.");
-        }
+        var missing = new List<string>();
+        if (resources.RmaUnits.Count == 0) missing.Add("RMA-eligible units");
+        if (resources.Refurbishments.Count == 0) missing.Add("open refurbishment work orders");
+        if (resources.OpenClaims.Count == 0) missing.Add("open claims");
+        if (resources.ReplacementSources.Count == 0) missing.Add("approved replacement sources");
+        if (resources.ReplacementUnits.Count == 0) missing.Add("replacement-stock units");
+        if (resources.Campaigns.Count + resources.PolicyDrafts.Count == 0) missing.Add("editable documents");
+        if (missing.Count > 0)
+            throw new InvalidOperationException("Concurrency working set is incomplete (" + string.Join(", ", missing)
+                + $"). Run prepare-concurrency --tenant {options.TenantIndex} first.");
     }
 
     private async Task WorkerAsync(HttpClient client, int engineer, DateTime deadline, CancellationToken cancellationToken)
@@ -246,13 +249,12 @@ public sealed class ConcurrencyRunner(BenchOptions options)
 
     private async Task<ResponseResult> RmaAsync(HttpClient client, Random random, CancellationToken cancellationToken)
     {
-        if (resources.Units.Count == 0) return await Missing("unit");
-        var unit = Pick(resources.Units, random, Hot(random));
+        if (!rmaUnits.TryDequeue(out var unit)) return await Missing("prepared_rma_unit");
         var opened = await SendAsync(client, HttpMethod.Post, "/api/rmas/request", new
         {
             commandId = Guid.NewGuid(), requestDate = new DateOnly(2026, 9, 1), returningPartyRef = Customer,
             settlementPartyRef = Customer, serviceEntityId = ServiceEntity, obligorEntityId = LegalEntity,
-            serviceCountry = "ZZ", currency = "EUR", lines = new[] { new { unitId = unit.Id, coverageFamily = "base_warranty", requestedAmount = 25m, claimLineKind = "parts", description = "Load harness return" } },
+            serviceCountry = "AQ", currency = "EUR", lines = new[] { new { unitId = unit.Id, coverageFamily = "base_warranty", requestedAmount = 25m, claimLineKind = "parts", description = "Load harness return" } },
             eventTime = BusinessTime,
         }, cancellationToken);
         if (!opened.Success || opened.Json is null || !GuidProperty(opened.Json.RootElement, "rmaId", out var rmaId)) return opened;
@@ -263,37 +265,46 @@ public sealed class ConcurrencyRunner(BenchOptions options)
         return await SendAsync(client, HttpMethod.Post, $"/api/rmas/{rmaId}/receive", new
         {
             commandId = Guid.NewGuid(), receivingLocationId = Quarantine,
-            lines = lineIds.Select(id => new { rmaLineId = id, receivedIdentifier = (object?)null, conditionGrade = "B", valuationRule = "load", outcome = "accepted" }),
+            lines = lineIds.Select(id => new { rmaLineId = id, receivedIdentifier = new { value = unit.Label, identifierType = "internal_serial" }, conditionGrade = "used", valuationRule = "benchmark_graded_receipt", outcome = "accepted" }),
             dispatchedAt = BusinessTime.AddMinutes(2), receivedAt = BusinessTime.AddMinutes(3), eventTime = BusinessTime.AddMinutes(3),
         }, cancellationToken);
     }
 
     private async Task<ResponseResult> ClaimAsync(HttpClient client, Random random, CancellationToken cancellationToken)
     {
+        if (openClaims.TryDequeue(out var preparedClaim))
+        {
+            var preparedResult = await SendAsync(client, HttpMethod.Post, $"/api/claims/{preparedClaim}/adjudicate",
+                new { commandId = Guid.NewGuid(), eventTime = BusinessTime.AddMinutes(1) }, cancellationToken);
+            return preparedResult;
+        }
         if (resources.Units.Count == 0) return await Missing("unit");
         var opened = await SendAsync(client, HttpMethod.Post, "/api/claims", new
         {
             commandId = Guid.NewGuid(), unitId = Pick(resources.Units, random, Hot(random)).Id, identifier = (object?)null,
             claimDate = new DateOnly(2026, 9, 1), claimantPartyRef = Customer, settlementPartyRef = Customer,
-            serviceEntityId = ServiceEntity, obligorEntityId = LegalEntity, serviceCountry = "ZZ", currency = "EUR",
+            serviceEntityId = ServiceEntity, obligorEntityId = LegalEntity, serviceCountry = "AQ", currency = "EUR",
             lines = new[] { new { kind = "parts", coverageFamily = "base_warranty", requestedAmount = 10m, description = "Load harness claim" } },
             evidence = new[] { new { kind = "note", reference = "LOAD", description = "Synthetic load evidence" } },
             remedy = "repair", consumerChoiceEvidenceRef = "LOAD", eventTime = BusinessTime,
         }, cancellationToken);
         if (!opened.Success || opened.Json is null || !GuidProperty(opened.Json.RootElement, "claimId", out var claimId)) return opened;
-        return await SendAsync(client, HttpMethod.Post, $"/api/claims/{claimId}/adjudicate",
-            new { commandId = Guid.NewGuid(), eventTime = BusinessTime.AddMinutes(1), denialReason = "evidence_insufficient", denialNote = "Synthetic load adjudication" }, cancellationToken);
+        var adjudicated = await SendAsync(client, HttpMethod.Post, $"/api/claims/{claimId}/adjudicate",
+            new { commandId = Guid.NewGuid(), eventTime = BusinessTime.AddMinutes(1) }, cancellationToken);
+        return adjudicated;
     }
 
     private Task<ResponseResult> ReplacementAsync(HttpClient client, Random random, CancellationToken cancellationToken)
     {
-        if (resources.Claims.Count == 0 || resources.Entitlements.Count == 0 || resources.Units.Count < 2) return Missing("replacement_prerequisite");
+        var sources = replacementSources.ToArray();
+        if (sources.Length == 0 || !replacementUnits.TryDequeue(out var replacementUnit)) return Missing("prepared_replacement_prerequisite");
+        var source = sources[random.Next(sources.Length)];
         return SendAsync(client, HttpMethod.Post, "/api/warranty-replacements", new
         {
-            commandId = Guid.NewGuid(), sourceKind = "claim", sourceId = Pick(resources.Claims, random),
-            sourceEntitlementId = Pick(resources.Entitlements, random), replacementUnitId = Pick(resources.Units, random).Id,
+            commandId = Guid.NewGuid(), sourceKind = "claim", sourceId = source.ClaimId,
+            sourceEntitlementId = source.EntitlementId, replacementUnitId = replacementUnit,
             replacementReason = "warranty_defect", pricePolicy = "zero", differenceAmount = 0m, currency = "EUR",
-            serviceCountry = "ZZ", consumerContract = false, consentRefurbished = true, eventTime = BusinessTime, legalEntityId = LegalEntity,
+            serviceCountry = "AQ", consumerContract = false, consentRefurbished = true, eventTime = BusinessTime, legalEntityId = LegalEntity,
         }, cancellationToken);
     }
 
@@ -308,7 +319,21 @@ public sealed class ConcurrencyRunner(BenchOptions options)
 
     private async Task<ResponseResult> DocumentEditAsync(HttpClient client, Random random, int engineer, CancellationToken cancellationToken)
     {
-        if (resources.Campaigns.Count == 0) return await Missing("campaign");
+        var kinds = new List<string>();
+        if (resources.Campaigns.Count > 0) kinds.Add("campaign");
+        if (resources.PolicyDrafts.Count > 0) kinds.Add("policy");
+        if (resources.Claims.Count > 0) kinds.Add("claim");
+        if (kinds.Count == 0) return await Missing("editable_document");
+        return kinds[random.Next(kinds.Count)] switch
+        {
+            "policy" => await PolicyEditAsync(client, random, engineer, cancellationToken),
+            "claim" => await ClaimEditAsync(client, random, engineer, cancellationToken),
+            _ => await CampaignEditAsync(client, random, engineer, cancellationToken),
+        };
+    }
+
+    private async Task<ResponseResult> CampaignEditAsync(HttpClient client, Random random, int engineer, CancellationToken cancellationToken)
+    {
         var id = Pick(resources.Campaigns, random, true);
         var loaded = await SendAsync(client, HttpMethod.Get, $"/api/campaigns/{id}", null, cancellationToken);
         if (!loaded.Success || loaded.Json is null) return loaded;
@@ -325,8 +350,41 @@ public sealed class ConcurrencyRunner(BenchOptions options)
         }, cancellationToken);
         if (response.Success && response.Json is not null && response.Json.RootElement.TryGetProperty("campaign", out var campaign))
         {
-            successfulEdits.GetOrAdd(id, _ => []).Add(new SuccessfulEdit(campaign.GetProperty("updatedAt").GetDateTime(), token));
+            successfulEdits.Add(new SuccessfulEdit("campaign", id, token));
         }
+        return response;
+    }
+
+    private async Task<ResponseResult> PolicyEditAsync(HttpClient client, Random random, int engineer, CancellationToken cancellationToken)
+    {
+        var id = Pick(resources.PolicyDrafts, random, true);
+        var loaded = await SendAsync(client, HttpMethod.Get, $"/api/warranty-policies/versions/{id}", null, cancellationToken);
+        if (!loaded.Success || loaded.Json is null) return loaded;
+        var row = loaded.Json.RootElement;
+        await Task.Delay(random.Next(1, 20), cancellationToken);
+        var token = $"Benchmark edit {engineer}-{Guid.NewGuid():N}";
+        var response = await SendAsync(client, HttpMethod.Put, $"/api/warranty-policies/versions/{id}", new
+        {
+            policyVersionId = id, name = token, appliesToContractsFrom = Text(row, "appliesToContractsFrom"),
+            terms = row.GetProperty("terms"), expectedVersion = Text(row, "documentVersion"),
+        }, cancellationToken);
+        if (response.Success) successfulEdits.Add(new SuccessfulEdit("policy", id, token));
+        return response;
+    }
+
+    private async Task<ResponseResult> ClaimEditAsync(HttpClient client, Random random, int engineer, CancellationToken cancellationToken)
+    {
+        var id = Pick(resources.Claims, random, true);
+        var loaded = await SendAsync(client, HttpMethod.Get, $"/api/claims/{id}", null, cancellationToken);
+        if (!loaded.Success || loaded.Json is null) return loaded;
+        var token = $"Benchmark evidence {engineer}-{Guid.NewGuid():N}";
+        await Task.Delay(random.Next(1, 20), cancellationToken);
+        var response = await SendAsync(client, HttpMethod.Post, $"/api/claims/{id}/request-evidence", new
+        {
+            commandId = Guid.NewGuid(), note = token, eventTime = BusinessTime,
+            expectedVersion = Text(loaded.Json.RootElement, "version"),
+        }, cancellationToken);
+        if (response.Success) successfulEdits.Add(new SuccessfulEdit("claim", id, token));
         return response;
     }
 
@@ -366,16 +424,29 @@ public sealed class ConcurrencyRunner(BenchOptions options)
     private async Task<int> VerifyEditsAsync(HttpClient client, CancellationToken cancellationToken)
     {
         var lost = 0;
-        foreach (var (id, edits) in successfulEdits)
+        foreach (var group in successfulEdits.GroupBy(edit => (edit.DocumentType, edit.Id)))
         {
-            var response = await SendAsync(client, HttpMethod.Get, $"/api/campaigns/{id}", null, cancellationToken);
+            var (type, id) = group.Key;
+            var path = type switch
+            {
+                "policy" => $"/api/warranty-policies/versions/{id}",
+                "claim" => $"/api/claims/{id}",
+                _ => $"/api/campaigns/{id}",
+            };
+            var response = await SendAsync(client, HttpMethod.Get, path, null, cancellationToken);
             using (response.Json)
             {
                 if (!response.Success || response.Json is null) { lost++; continue; }
                 var final = response.Json.RootElement;
-                var maxAt = edits.Max(edit => edit.UpdatedAt);
-                var expected = edits.Where(edit => edit.UpdatedAt == maxAt).ToList();
-                if (!expected.Any(edit => edit.ReasonNote == NullableText(final, "reasonNote"))) lost++;
+                var tokens = group.Select(edit => edit.Token).ToHashSet(StringComparer.Ordinal);
+                var found = type switch
+                {
+                    "policy" => tokens.Contains(Text(final, "name")),
+                    "claim" => final.GetProperty("evidence").EnumerateArray().Select(row => NullableText(row, "description"))
+                        .Where(value => value is not null).Any(value => tokens.Contains(value!)),
+                    _ => tokens.Contains(NullableText(final, "reasonNote") ?? ""),
+                };
+                if (!found) lost++;
             }
         }
         return lost;
@@ -443,7 +514,17 @@ public sealed class ConcurrencyRunner(BenchOptions options)
     }
 
     private sealed record ResponseResult(int StatusCode, string ErrorType, bool Success, JsonDocument? Json);
-    private sealed record SuccessfulEdit(DateTime UpdatedAt, string ReasonNote);
-    private sealed record ResourcePool(List<(Guid Id, string Label)> Units, List<Guid> Rmas, List<Guid> Claims,
-        List<Guid> Refurbishments, List<Guid> Campaigns, List<Guid> Entitlements, List<Guid> Replacements);
+    private sealed record SuccessfulEdit(string DocumentType, Guid Id, string Token);
+    private sealed record ReplacementSource(Guid ClaimId, Guid EntitlementId);
+    private sealed record ResourcePool(
+        List<(Guid Id, string Label)> Units,
+        List<(Guid Id, string Label)> RmaUnits,
+        List<Guid> Rmas,
+        List<Guid> Claims,
+        List<Guid> Refurbishments,
+        List<Guid> Campaigns,
+        List<Guid> PolicyDrafts,
+        List<Guid> OpenClaims,
+        List<ReplacementSource> ReplacementSources,
+        List<Guid> ReplacementUnits);
 }

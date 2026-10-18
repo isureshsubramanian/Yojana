@@ -52,7 +52,7 @@ public static class ConcurrencyReportWriter
         var csvPath = Path.Combine(options.OutDirectory, $"concurrency-{stamp}-{options.NumberingMode}.csv");
         var markdown = new StringBuilder()
             .AppendLine($"# Concurrency load run · {options.NumberingMode}").AppendLine()
-            .AppendLine($"Started {startedAt:O}; {options.Engineers} simulated engineers for {elapsed}; HTTP target `{options.Url}`; database `{options.Database}`. Real cookie authentication, {options.ContentionPercent}% hot-set selection.").AppendLine()
+            .AppendLine($"Started {startedAt:O}; {options.Engineers} simulated engineers for {elapsed}; HTTP target `{options.Url}`; database `{options.Database}`; tenant `{options.ConcurrencyTenantLabel}` (`{options.ConcurrencyTenantId}`). Real cookie authentication, {options.ContentionPercent}% hot-set selection.").AppendLine()
             .AppendLine("## Throughput and latency").AppendLine()
             .AppendLine("| Operation | Requests | Successful | Errors | req/s | p50 | p95 | p99 |")
             .AppendLine("|---|---:|---:|---:|---:|---:|---:|---:|");

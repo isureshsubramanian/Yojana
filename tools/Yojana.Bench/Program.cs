@@ -2,7 +2,8 @@
 // real schema (migrations), with row-level security on, then measures the SLO table through the module's own
 // services and through server-side timing loops. Usage:
 //   dotnet run --project tools/Yojana.Bench -- prepare|load|measure|backfill|entitlements|warranty|all [--units N] [--events N] [--tenants N]
-//        [--small-units N] [--small-events N] [--samples N] [--out dir] [--database name] [--skip-lifecycle]
+//   dotnet run --project tools/Yojana.Bench -- seed-users|prepare-concurrency --tenant N [--documents N]
+//   dotnet run --project tools/Yojana.Bench -- concurrency [--tenant N] --url URL [--engineers N] [--duration 10m] [--numbering sequence|gap_free]
 // Connection: YOJANA_BENCH_SQL_HOST and YOJANA_BENCH_SQL_PASSWORD (sa), or YOJANA_BENCH_SQL as a full connection string.
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,12 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Yojana.Bench;
 using Yojana.Platform;
+using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Data.Platform;
+using Yojana.Platform.Seeding;
+using Yojana.Platform.Tenancy;
+using Yojana.Platform.Time;
 using Yojana.Serialisation;
 
 var options = BenchOptions.Parse(args);
@@ -45,6 +52,26 @@ if (options.Command == "ping")
 }
 Console.WriteLine($"yojana bench · {options.Command} · {options.Server} / {options.Database} · units {options.Units:N0} · events {options.Events:N0} · tenants {options.Tenants}");
 
+if (options.Command == "seed-users")
+{
+    var seedBuilder = Host.CreateApplicationBuilder();
+    seedBuilder.Logging.ClearProviders();
+    seedBuilder.Services.AddScoped<TenantContext>();
+    seedBuilder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
+    seedBuilder.Services.AddScoped<ITenantContextSetter>(sp => sp.GetRequiredService<TenantContext>());
+    seedBuilder.Services.AddSingleton<IClock, SystemClock>();
+    seedBuilder.Services.AddDbContext<PlatformDbContext>(db => db.UseSqlServer(options.ConnectionString,
+        sql => sql.MigrationsHistoryTable("__migrations", PlatformDbContext.SchemaName)));
+    using var seedHost = seedBuilder.Build();
+    var index = options.TenantIndex!.Value;
+    await DevelopmentSeeder.SeedTenantUsersAsync(seedHost.Services,
+        new TenantUserSeed(new TenantId(options.ConcurrencyTenantId), $"BENCH{index}", $"Benchmark tenant {index}",
+            $"bench{index}.yojana.local", $"Benchmark tenant {index} administrator"),
+        options.Password, CancellationToken.None);
+    Console.WriteLine($"seeded platform tenant BENCH{index} and {Yojana.Platform.Contracts.Security.YojanaRole.All.Count + 1} role accounts");
+    return;
+}
+
 var builder = Host.CreateApplicationBuilder();
 builder.Configuration["Platform:ConnectionString"] = options.ConnectionString;
 builder.Configuration["Platform:MigrateOnStartup"] = "true";
@@ -60,6 +87,13 @@ builder.AddYojanaPlatform();
 builder.AddSerialisationModule();
 using var host = builder.Build();
 await host.StartAsync();
+
+if (options.Command == "prepare-concurrency")
+{
+    try { await new ConcurrencyPreparation(host.Services, options).RunAsync(CancellationToken.None); }
+    finally { await host.StopAsync(); }
+    return;
+}
 
 var report = new BenchReport(options);
 try

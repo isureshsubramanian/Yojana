@@ -1,4 +1,5 @@
 using System.Globalization;
+using Yojana.Platform.Seeding;
 
 namespace Yojana.Bench;
 
@@ -21,19 +22,28 @@ public sealed class BenchOptions
     public int Engineers { get; private set; } = 120;
     public TimeSpan Duration { get; private set; } = TimeSpan.FromMinutes(10);
     public int ContentionPercent { get; private set; } = 15;
+    public int? TenantIndex { get; private set; }
+    public int Documents { get; private set; } = 50;
     public string NumberingMode { get; private set; } = "sequence";
     public string Email { get; private set; } = "admin@dev.yojana.local";
-    public string Password { get; private set; } = Environment.GetEnvironmentVariable("YOJANA_BENCH_PASSWORD") ?? "";
+    public string Password { get; private set; } = "";
     public string? Weights { get; private set; }
+
+    public Guid ConcurrencyTenantId => TenantIndex is { } index ? TenantId(index) : DevelopmentSeeder.DevTenantId.Value;
+    public string ConcurrencyTenantLabel => TenantIndex is { } index ? $"BENCH{index}" : DevelopmentSeeder.DevTenantCode;
 
     /// <summary>The main tenant carries the full scale; the others exist so row-level security has something to filter.</summary>
     public static Guid TenantId(int index) => Guid.ParseExact($"b0000000-0000-4000-8000-{index:D12}", "D");
 
     public static readonly Guid LegalEntity = Guid.ParseExact("00000000-0000-0000-0000-000000000001", "D");
 
-    public static BenchOptions Parse(string[] args)
+    public static BenchOptions Parse(string[] args) => Parse(args, Environment.GetEnvironmentVariable);
+
+    public static BenchOptions Parse(string[] args, Func<string, string?> environment)
     {
-        var o = new BenchOptions();
+        var environmentPassword = environment("YOJANA_BENCH_PASSWORD") ?? "";
+        var o = new BenchOptions { Password = environmentPassword };
+        var emailSpecified = false;
         if (args.Length > 0 && !args[0].StartsWith("--", StringComparison.Ordinal)) o.Command = args[0];
         for (var i = 0; i < args.Length; i++)
         {
@@ -54,14 +64,20 @@ public sealed class BenchOptions
                 case "--engineers": o.Engineers = int.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--duration": o.Duration = ParseDuration(Next()); break;
                 case "--contention": o.ContentionPercent = int.Parse(Next(), CultureInfo.InvariantCulture); break;
+                case "--tenant": o.TenantIndex = int.Parse(Next(), CultureInfo.InvariantCulture); break;
+                case "--documents": o.Documents = int.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--numbering": o.NumberingMode = Next(); break;
-                case "--email": o.Email = Next(); break;
+                case "--email": o.Email = Next(); emailSpecified = true; break;
                 case "--password": o.Password = Next(); break;
                 case "--weights": o.Weights = Next(); break;
             }
         }
 
-        var full = Environment.GetEnvironmentVariable("YOJANA_BENCH_SQL");
+        if (o.TenantIndex is <= 0) throw new ArgumentOutOfRangeException("--tenant", "Tenant index must be positive.");
+        if (o.Documents is < 1 or > 500) throw new ArgumentOutOfRangeException("--documents", "Documents must be from 1 to 500.");
+        if (o.TenantIndex is { } tenantIndex && !emailSpecified) o.Email = DevelopmentSeeder.AdministratorEmail($"bench{tenantIndex}.yojana.local");
+
+        var full = environment("YOJANA_BENCH_SQL");
         if (!string.IsNullOrEmpty(full))
         {
             o.ConnectionString = full;
@@ -71,8 +87,8 @@ public sealed class BenchOptions
         }
         else
         {
-            o.Server = Environment.GetEnvironmentVariable("YOJANA_BENCH_SQL_HOST") ?? throw new InvalidOperationException("YOJANA_BENCH_SQL_HOST (or YOJANA_BENCH_SQL) is required");
-            var password = Environment.GetEnvironmentVariable("YOJANA_BENCH_SQL_PASSWORD") ?? throw new InvalidOperationException("YOJANA_BENCH_SQL_PASSWORD is required");
+            o.Server = environment("YOJANA_BENCH_SQL_HOST") ?? throw new InvalidOperationException("YOJANA_BENCH_SQL_HOST (or YOJANA_BENCH_SQL) is required");
+            var password = environment("YOJANA_BENCH_SQL_PASSWORD") ?? throw new InvalidOperationException("YOJANA_BENCH_SQL_PASSWORD is required");
             o.ConnectionString = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder
             {
                 DataSource = o.Server, InitialCatalog = o.Database, UserID = "sa", Password = password, Encrypt = true, TrustServerCertificate = true,
@@ -80,10 +96,17 @@ public sealed class BenchOptions
             }.ConnectionString;
         }
 
+        if (o.Command is "seed-users" or "prepare-concurrency" && o.TenantIndex is null)
+            throw new ArgumentException($"{o.Command} needs --tenant <index>");
+        if (o.Command == "seed-users" && string.IsNullOrWhiteSpace(environmentPassword))
+            throw new ArgumentException("seed-users needs YOJANA_BENCH_PASSWORD");
+        if (o.Command is "concurrency" or "seed-users")
+        {
+            if (string.IsNullOrWhiteSpace(o.Password)) throw new ArgumentException($"{o.Command} needs YOJANA_BENCH_PASSWORD");
+        }
         if (o.Command == "concurrency")
         {
             if (o.Url is null) throw new ArgumentException("concurrency needs --url for the running Yojana web host");
-            if (string.IsNullOrWhiteSpace(o.Password)) throw new ArgumentException("concurrency needs --password or YOJANA_BENCH_PASSWORD");
             if (o.Engineers is < 1 or > 1000) throw new ArgumentOutOfRangeException("--engineers", "Engineers must be from 1 to 1000.");
             if (o.Duration < TimeSpan.FromSeconds(1)) throw new ArgumentOutOfRangeException("--duration", "Duration must be at least one second.");
             if (o.ContentionPercent is < 0 or > 100) throw new ArgumentOutOfRangeException("--contention", "Contention must be from 0 to 100.");
