@@ -807,6 +807,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.AdjudicatedBy).HasMaxLength(200);
             b.Property(c => c.ReviewerRole).HasMaxLength(80);
             b.Property(c => c.LastModifiedBy).HasMaxLength(200);
+            b.Property(c => c.ListOrderBucket)
+                .HasComputedColumnSql("CASE WHEN [status] IN ('settled', 'closed') THEN 1 ELSE 0 END", stored: true);
             b.Property(c => c.RowVersion).IsRowVersion();
             b.Property(c => c.ClaimNumber).HasMaxLength(20).IsUnicode(false);
             b.HasIndex(c => new { c.TenantId, c.CommandId }).IsUnique();
@@ -814,6 +816,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(c => new { c.TenantId, c.UnitId, c.Status, c.ClaimDate });
             b.HasIndex(c => new { c.TenantId, c.CampaignId });
             b.HasIndex(c => new { c.TenantId, c.Status, c.SubmittedAt });
+            b.HasIndex(c => new { c.TenantId, c.ListOrderBucket, c.SubmittedAt, c.ClaimId })
+                .HasDatabaseName("ix_claim_tenant_id_list_order_bucket_submitted_at_claim_id");
         });
 
         modelBuilder.Entity<ClaimLine>(b =>
@@ -1745,6 +1749,11 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(e => e.PostingPeriod).HasMaxLength(7).IsUnicode(false).IsFixedLength();
             b.Property(e => e.IdempotencyKey).HasMaxLength(64).IsUnicode(false);
             b.Property(e => e.RecordedTime).HasDefaultValueSql("SYSUTCDATETIME()");
+            // TIGHT COUPLING (partitioned idempotency seek)
+            // WHAT: UnitEventIdempotencyReader FORCESEEKs this convention-derived name and exact key order.
+            // WHY: exact (key, event_time) JSON pairs must drive one aligned seek per requested partition at ledger
+            // scale. WHAT BREAKS IF SEPARATED: renaming/reordering fails the hinted query, while dropping the hint can
+            // restore a scan across every monthly partition. Keep the reader-side comment in step with this one.
             b.HasIndex(e => new { e.TenantId, e.IdempotencyKey, e.EventTime }).IsUnique();
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.EventTime }).IsDescending(false, false, true)
                 .IncludeProperties(e => new { e.EventType, e.BizStep, e.Disposition, e.LocationId, e.Seq, e.RecordedTime });

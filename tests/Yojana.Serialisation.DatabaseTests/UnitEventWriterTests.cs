@@ -115,6 +115,36 @@ public sealed class UnitEventWriterTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Batched_idempotency_reads_match_exact_key_and_business_time_pairs()
+    {
+        var tenant = await fixture.NewTenantAsync("ip");
+        var firstUnit = TimeOrderedId.New();
+        var secondUnit = TimeOrderedId.New();
+        var firstAt = new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+        var secondAt = firstAt.AddMonths(1);
+        const string firstKey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        const string secondKey = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var writer = scope.ServiceProvider.GetRequiredService<IUnitEventWriter>();
+            await writer.AppendAsync(
+            [
+                Draft(firstUnit, firstAt, UnitEventType.Commissioned, Commission(Guid.NewGuid()), firstKey),
+                Draft(secondUnit, secondAt, UnitEventType.Commissioned, Commission(Guid.NewGuid()), secondKey),
+            ], CancellationToken.None);
+            await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().SaveChangesAsync();
+        }
+
+        using var check = fixture.ScopeFor(tenant);
+        var reader = check.ServiceProvider.GetRequiredService<UnitEventIdempotencyReader>();
+        Assert.Empty(await reader.SeenAsync(tenant,
+            [(firstKey, secondAt), (secondKey, firstAt)], CancellationToken.None));
+        var exact = await reader.SeenAsync(tenant,
+            [(firstKey, firstAt), (secondKey, secondAt)], CancellationToken.None);
+        Assert.Equal(2, exact.Count);
+    }
+
+    [DatabaseFact]
     public async Task The_projector_refuses_an_out_of_order_apply_and_a_change_before_creation()
     {
         var tenant = await fixture.NewTenantAsync("o");

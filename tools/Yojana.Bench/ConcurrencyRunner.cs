@@ -23,7 +23,7 @@ public sealed class ConcurrencyRunner(BenchOptions options)
     private readonly ConcurrentQueue<Guid> openClaims = new();
     private readonly ConcurrentQueue<Guid> replacementUnits = new();
     private readonly ConcurrentBag<string> notes = [];
-    private readonly ConcurrentDictionary<string, int> exhausted = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, int> capacityWarnings = new(StringComparer.Ordinal);
     private ResourcePool resources = new([], [], [], [], [], [], [], [], [], []);
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -53,13 +53,15 @@ public sealed class ConcurrencyRunner(BenchOptions options)
             var diagnostic = await monitor.FinishAsync(cancellationToken);
             var lost = await VerifyEditsAsync(clients[0], cancellationToken);
             var expectedConflicts = samples.Count(sample => sample.ExpectedConflict);
-            var retriesExhausted = exhausted.Values.Sum();
             var diagnostics = new ConcurrencyDiagnostics(
-                Math.Max(0, afterRetries - beforeRetries), retriesExhausted, diagnostic.NumberSeriesWait,
+                Math.Max(0, afterRetries.Observed - beforeRetries.Observed),
+                checked((int)Math.Max(0, afterRetries.Exhausted - beforeRetries.Exhausted)), diagnostic.NumberSeriesWait,
                 diagnostic.LockWaitDelta, diagnostic.Deadlocks, expectedConflicts, lost);
             notes.Add($"All mutations used the authenticated HTTP API for tenant {options.ConcurrencyTenantLabel}; tenant-scoped SQL selected prepared IDs and sampled diagnostics only.");
             notes.Add("Presence heartbeats ran every 20 seconds per simulated engineer; one seeded administrator identity represents several sessions.");
-            notes.Add($"Workload weights: {string.Join(", ", Weights().Select(pair => $"{pair.Key}={pair.Value}"))}.");
+            notes.Add($"Workload weights: {string.Join(", ", ConcurrencyWorkload.Weights(options).Select(pair => $"{pair.Key}={pair.Value}"))}.");
+            foreach (var warning in capacityWarnings.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+                notes.Add($"Harness-capacity warning: {warning.Key} was unavailable {warning.Value:N0} time(s); these attempts are excluded from operation errors and latency.");
             var paths = await ConcurrencyReportWriter.WriteAsync(options, started, watch.Elapsed, samples, diagnostics, notes.Order().ToList(), cancellationToken);
             Console.WriteLine($"report: {paths.Markdown}");
             Console.WriteLine($"csv: {paths.Csv}");
@@ -111,7 +113,7 @@ public sealed class ConcurrencyRunner(BenchOptions options)
             ORDER BY c.unit_id;
             """, cancellationToken, ("@tenant", options.ConcurrencyTenantId), ("@shipment", ConcurrencyPreparation.ShipmentDocumentId));
         var rmaUnits = await PairsAsync(connection, """
-            SELECT TOP (1800) c.unit_id AS id, i.raw_value AS label
+            SELECT TOP (@take) c.unit_id AS id, i.raw_value AS label
             FROM serialisation.unit_current c
             JOIN serialisation.unit_event prepared ON prepared.tenant_id = c.tenant_id AND prepared.unit_id = c.unit_id
                 AND prepared.document_type = 'bench_concurrency' AND prepared.document_id = @shipment
@@ -123,7 +125,8 @@ public sealed class ConcurrencyRunner(BenchOptions options)
                 WHERE w.tenant_id = c.tenant_id AND w.target_unit_id = c.unit_id)
               AND c.location_kind IN ('customer_site','in_transit')
             ORDER BY c.unit_id;
-            """, cancellationToken, ("@tenant", options.ConcurrencyTenantId), ("@shipment", ConcurrencyPreparation.ShipmentDocumentId));
+            """, cancellationToken, ("@tenant", options.ConcurrencyTenantId), ("@shipment", ConcurrencyPreparation.ShipmentDocumentId),
+            ("@take", ConcurrencyWorkload.RequiredRmaEligibleUnits(options)));
         var openClaims = await IdsAsync(connection, """
             SELECT TOP (150) c.claim_id FROM serialisation.claim c
             WHERE c.tenant_id = @tenant AND c.submitted_by = @actor AND c.status = 'submitted'
@@ -199,7 +202,7 @@ public sealed class ConcurrencyRunner(BenchOptions options)
     private async Task WorkerAsync(HttpClient client, int engineer, DateTime deadline, CancellationToken cancellationToken)
     {
         var random = new Random(20261018 + engineer);
-        var weighted = Expand(Weights());
+        var weighted = Expand(ConcurrencyWorkload.Weights(options));
         while (DateTime.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
         {
             var operation = weighted[random.Next(weighted.Count)];
@@ -249,7 +252,11 @@ public sealed class ConcurrencyRunner(BenchOptions options)
 
     private async Task<ResponseResult> RmaAsync(HttpClient client, Random random, CancellationToken cancellationToken)
     {
-        if (!rmaUnits.TryDequeue(out var unit)) return await Missing("prepared_rma_unit");
+        if (!rmaUnits.TryDequeue(out var unit))
+        {
+            await Task.Delay(100, cancellationToken);
+            return new(204, "", true, null, "RMA-eligible working set exhausted");
+        }
         var opened = await SendAsync(client, HttpMethod.Post, "/api/rmas/request", new
         {
             commandId = Guid.NewGuid(), requestDate = new DateOnly(2026, 9, 1), returningPartyRef = Customer,
@@ -394,8 +401,12 @@ public sealed class ConcurrencyRunner(BenchOptions options)
         try
         {
             var result = await action();
+            if (result.HarnessWarning is { } warning)
+            {
+                capacityWarnings.AddOrUpdate(warning, 1, (_, count) => count + 1);
+                return;
+            }
             var expected = result.StatusCode == 409 && result.ErrorType == "document_changed";
-            if (result.StatusCode >= 500 && result.ErrorType.Contains("concurrency", StringComparison.OrdinalIgnoreCase)) exhausted.AddOrUpdate(result.ErrorType, 1, (_, count) => count + 1);
             samples.Add(new(operation, watch.Elapsed.TotalMilliseconds, result.StatusCode, result.Success ? null : result.ErrorType, expected));
             result.Json?.Dispose();
         }
@@ -452,35 +463,21 @@ public sealed class ConcurrencyRunner(BenchOptions options)
         return lost;
     }
 
-    private static async Task<long> RetryMetricAsync(HttpClient client, CancellationToken cancellationToken)
+    private static async Task<RetryMetric> RetryMetricAsync(HttpClient client, CancellationToken cancellationToken)
     {
         var response = await SendAsync(client, HttpMethod.Get, "/api/platform/metrics/concurrency", null, cancellationToken);
         using (response.Json)
         {
-            return response.Json?.RootElement.GetProperty("concurrencyExceptionsObserved").GetInt64() ?? 0;
+            if (response.Json is null) return new(0, 0);
+            var root = response.Json.RootElement;
+            return new(root.GetProperty("concurrencyExceptionsObserved").GetInt64(),
+                root.GetProperty("retriesExhausted").GetInt64());
         }
     }
 
     private bool Hot(Random random) => random.Next(100) < options.ContentionPercent;
     private static T Pick<T>(IReadOnlyList<T> values, Random random, bool hot = false) => values[random.Next(hot ? Math.Min(4, values.Count) : values.Count)];
     private static Task<ResponseResult> Missing(string resource) => Task.FromResult(new ResponseResult(424, $"no_{resource}", false, null));
-
-    private IReadOnlyDictionary<string, int> Weights()
-    {
-        var defaults = new Dictionary<string, int>(StringComparer.Ordinal)
-        {
-            ["unit_lookup"] = 12, ["unit_search"] = 10, ["rma_list"] = 9, ["rma_detail"] = 8,
-            ["claim_list"] = 9, ["claim_detail"] = 8, ["rma_create_receive"] = 7,
-            ["claim_intake_adjudication"] = 7, ["warranty_replacement_create"] = 5,
-            ["refurbishment_append"] = 8, ["document_edit"] = 12, ["background_recheck"] = 5,
-        };
-        if (string.IsNullOrWhiteSpace(options.Weights)) return defaults;
-        var parsed = options.Weights.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(part => part.Split('=', 2, StringSplitOptions.TrimEntries))
-            .ToDictionary(part => part[0], part => int.Parse(part[1], System.Globalization.CultureInfo.InvariantCulture), StringComparer.Ordinal);
-        if (parsed.Count == 0 || parsed.Values.Any(value => value <= 0)) throw new ArgumentException("--weights uses operation=positive_integer pairs");
-        return parsed;
-    }
 
     private static List<string> Expand(IReadOnlyDictionary<string, int> weights) => weights.SelectMany(pair => Enumerable.Repeat(pair.Key, pair.Value)).ToList();
     private static string Error(JsonElement? json, HttpStatusCode status)
@@ -513,7 +510,8 @@ public sealed class ConcurrencyRunner(BenchOptions options)
         }
     }
 
-    private sealed record ResponseResult(int StatusCode, string ErrorType, bool Success, JsonDocument? Json);
+    private sealed record ResponseResult(int StatusCode, string ErrorType, bool Success, JsonDocument? Json, string? HarnessWarning = null);
+    private sealed record RetryMetric(long Observed, long Exhausted);
     private sealed record SuccessfulEdit(string DocumentType, Guid Id, string Token);
     private sealed record ReplacementSource(Guid ClaimId, Guid EntitlementId);
     private sealed record ResourcePool(

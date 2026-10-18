@@ -44,6 +44,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<UnitCurrentStateProjector>();
         builder.Services.AddScoped<PublishedEventMapper>();
         builder.Services.AddScoped<LedgerPublication>();
+        builder.Services.AddScoped<UnitEventIdempotencyReader>();
         builder.Services.AddScoped<IUnitEventWriter, UnitEventWriter>();
         builder.Services.AddScoped<IUnitEventAppendObserver, CustomerSaleCertificateObserver>();
         builder.Services.AddScoped<UnitHistoryQuery>();

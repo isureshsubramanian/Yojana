@@ -38,15 +38,17 @@ creates one account per role plus an administrator. Tenant 1's administrator is
 `admin@bench1.yojana.local`; its password is read only from `YOJANA_BENCH_PASSWORD`.
 
 `prepare-concurrency` then creates the persistent working set through application command handlers. Stable command IDs
-make reruns safe. `--documents` is the total number of editable campaigns and policy drafts, split approximately evenly.
+make reruns safe. Pass the same `--engineers`, `--duration` and optional `--weights` as the intended run: preparation
+sizes the RMA-eligible pool from those values with 50% headroom and a 12,000-unit floor for fast short verification
+runs. `--documents` is the total number of editable campaigns and policy drafts, split approximately evenly.
 
 ```sh
 dotnet run --project tools/Yojana.Bench -c Debug --no-build -- seed-users --tenant 1
-dotnet run --project tools/Yojana.Bench -c Debug --no-build -- prepare-concurrency --tenant 1 --documents 50
+dotnet run --project tools/Yojana.Bench -c Debug --no-build -- prepare-concurrency --tenant 1 --documents 50 --engineers 120 --duration 10m
 ```
 
-The prepared set contains 2,000 customer-owned shipped units with live outbound cover, 200 returned units owned and
-held by us with open refurbishment work orders, 150 submitted adjudication claims for each numbering-mode run, 50
+For the example above, the prepared set contains 12,600 RMA-eligible customer-owned shipped units with live outbound
+cover plus 200 returned units owned and held by us with open refurbishment work orders, 150 submitted adjudication claims for each numbering-mode run, 50
 separate editable claims, approved replacement sources, a 10,000-unit replacement-stock selection, and version-checked
 campaign/policy/claim documents. Preparation finishes with a whole-unit consistency check over ownership, custody,
 entitlements, identifiers and the ledger events that produced those states.

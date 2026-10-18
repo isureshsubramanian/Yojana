@@ -1491,6 +1491,12 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("last_modified_by");
 
+                    b.Property<int>("ListOrderBucket")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("int")
+                        .HasColumnName("list_order_bucket")
+                        .HasComputedColumnSql("CASE WHEN [status] IN ('settled', 'closed') THEN 1 ELSE 0 END", true);
+
                     b.Property<Guid>("ObligorEntityId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("obligor_entity_id");
@@ -1587,6 +1593,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasIndex("TenantId", "Status", "SubmittedAt")
                         .HasDatabaseName("ix_claim_tenant_id_status_submitted_at");
+
+                    b.HasIndex("TenantId", "ListOrderBucket", "SubmittedAt", "ClaimId")
+                        .HasDatabaseName("ix_claim_tenant_id_list_order_bucket_submitted_at_claim_id");
 
                     b.HasIndex("TenantId", "UnitId", "Status", "ClaimDate")
                         .HasDatabaseName("ix_claim_tenant_id_unit_id_status_claim_date");

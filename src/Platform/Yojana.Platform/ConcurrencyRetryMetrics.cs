@@ -9,12 +9,16 @@ namespace Yojana.Platform;
 public static class ConcurrencyRetryMetrics
 {
     private static long observed;
+    private static long exhausted;
 
     public static long Observed => Interlocked.Read(ref observed);
+    public static long Exhausted => Interlocked.Read(ref exhausted);
 
     public static bool Observe(DbUpdateConcurrencyException exception)
     {
         Interlocked.Increment(ref observed);
         return true;
     }
+
+    internal static void ObserveExhausted() => Interlocked.Increment(ref exhausted);
 }

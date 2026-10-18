@@ -15,7 +15,7 @@ namespace Yojana.Serialisation.Documents;
 
 /// <summary>Everything a document handler reaches for, resolved once per message scope so the handlers stay readable.</summary>
 public sealed class DocumentContext(
-    SerialisationDbContext db, IUnitEventWriter writer, BulkIngestion bulk, IdentifierService identifiers, EffectiveItemProfiles items, SerialRangeService ranges, SerialReuseSettings reuseSettings, ITenantContext tenant, IClock clock,
+    SerialisationDbContext db, IUnitEventWriter writer, UnitEventIdempotencyReader idempotency, BulkIngestion bulk, IdentifierService identifiers, EffectiveItemProfiles items, SerialRangeService ranges, SerialReuseSettings reuseSettings, ITenantContext tenant, IClock clock,
     EpisodeService episodes, UnitResolver resolver, DocumentOptions options, PostingPeriods periods, AsBuiltCompleteness completeness,
     IPurchasingDocumentQueryPort purchasing, IManufacturingDocumentQueryPort manufacturing, IInventoryDocumentQueryPort inventory, ISalesDocumentQueryPort sales, IServiceDocumentQueryPort service,
     IItemPolicyPort itemPolicies, IUnitSaleShipmentGuard saleShipmentGuard, SerialConfirmationSettings serialConfirmation, IMessageBus bus)
@@ -106,24 +106,9 @@ public sealed class DocumentContext(
     /// share one or two.
     /// </summary>
     public async Task<HashSet<(string Key, DateTime At)>> SeenManyAsync(IReadOnlyCollection<(string Key, DateTime At)> keys, CancellationToken cancellationToken)
-    {
-        var tenantId = tenant.TenantId;
-        var seen = new HashSet<(string, DateTime)>();
-        foreach (var chunk in keys.Distinct().Chunk(2000))
-        {
-            var values = chunk.Select(k => k.Key).ToList();
-            var times = chunk.Select(k => k.At).Distinct().ToList();
-            var rows = await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && values.Contains(e.IdempotencyKey) && times.Contains(e.EventTime)).Select(e => new { e.IdempotencyKey, e.EventTime }).ToListAsync(cancellationToken);
-            seen.UnionWith(rows.Select(r => (r.IdempotencyKey, r.EventTime)));
-        }
-
-        return seen;
-    }
+        => await idempotency.SeenAsync(tenant.TenantId, keys, cancellationToken);
 
     /// <summary>True when an event with this key was recorded before.</summary>
     public Task<bool> SeenAsync(string idempotencyKey, DateTime eventTime, CancellationToken cancellationToken)
-    {
-        var tenantId = tenant.TenantId;
-        return db.Events.AsNoTracking().AnyAsync(e => e.TenantId == tenantId && e.IdempotencyKey == idempotencyKey && e.EventTime == eventTime, cancellationToken);
-    }
+        => idempotency.SeenAsync(tenant.TenantId, idempotencyKey, eventTime, cancellationToken);
 }

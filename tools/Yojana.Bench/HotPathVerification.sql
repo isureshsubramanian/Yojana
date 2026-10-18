@@ -92,6 +92,10 @@ DECLARE @times nvarchar(max) = (
     SELECT TOP (25) CONVERT(varchar(30), e.event_time, 126) AS [value]
     FROM serialisation.unit_event AS e WHERE e.tenant_id = @tenant ORDER BY e.event_time DESC
     FOR JSON PATH);
+DECLARE @pairs nvarchar(max) = (
+    SELECT TOP (25) e.idempotency_key AS [key], e.event_time AS [at]
+    FROM serialisation.unit_event AS e WHERE e.tenant_id = @tenant ORDER BY e.event_time DESC
+    FOR JSON PATH);
 
 SELECT N'IDEMPOTENCY_TIME_FIRST_BEFORE' AS marker;
 SELECT e.idempotency_key, e.event_time
@@ -100,12 +104,12 @@ WHERE e.tenant_id = @tenant
   AND e.event_time IN (SELECT value FROM OPENJSON(@times) WITH (value datetime2(3) '$.value'))
   AND e.idempotency_key IN (SELECT value FROM OPENJSON(@keys) WITH (value varchar(64) '$.value'));
 
-SELECT N'IDEMPOTENCY_KEY_FIRST_AFTER' AS marker;
+SELECT N'IDEMPOTENCY_EXACT_PAIRS_AFTER' AS marker;
 SELECT e.idempotency_key, e.event_time
-FROM serialisation.unit_event AS e
-WHERE e.tenant_id = @tenant
-  AND e.idempotency_key IN (SELECT value FROM OPENJSON(@keys) WITH (value varchar(64) '$.value'))
-  AND e.event_time IN (SELECT value FROM OPENJSON(@times) WITH (value datetime2(3) '$.value'));
+FROM OPENJSON(@pairs) WITH ([key] varchar(64) '$.key', [at] datetime2(3) '$.at') AS requested
+INNER LOOP JOIN serialisation.unit_event AS e
+  WITH (FORCESEEK, INDEX(ux_unit_event_tenant_id_idempotency_key_event_time))
+  ON e.tenant_id = @tenant AND e.idempotency_key = requested.[key] AND e.event_time = requested.[at];
 
 SELECT N'RMA_LIST_CORRELATED_BEFORE' AS marker;
 SELECT r.rma_id,
@@ -143,7 +147,7 @@ OFFSET 0 ROWS FETCH NEXT 25 ROWS ONLY;
 SELECT N'CLAIM_LIST_BATCHED_AFTER' AS marker;
 SELECT c.claim_id INTO #claim_page
 FROM serialisation.claim AS c WHERE c.tenant_id = @tenant
-ORDER BY CASE WHEN c.status IN (N'settled', N'closed') THEN 1 ELSE 0 END, c.submitted_at, c.claim_id
+ORDER BY c.list_order_bucket, c.submitted_at, c.claim_id
 OFFSET 0 ROWS FETCH NEXT 25 ROWS ONLY;
 SELECT line.claim_id, SUM(line.requested_amount), SUM(line.approved_amount), COUNT(*)
 FROM serialisation.claim_line AS line JOIN #claim_page AS page ON page.claim_id = line.claim_id

@@ -29,7 +29,12 @@ public sealed class ClaimLedger(SerialisationDbContext db, IUnitEventWriter writ
         claim.Status = next;
     }
 
-    public Task<AppendResult> AppendAsync(IReadOnlyList<UnitEventDraft> drafts, CancellationToken cancellationToken) => writer.AppendAsync(drafts, cancellationToken);
+    public Task<AppendResult> AppendAsync(IReadOnlyList<UnitEventDraft> drafts, CancellationToken cancellationToken)
+    {
+        // Claim and recovery facts are audit history, not current unit state. Keeping them off unit_current means
+        // concurrent intake on one product cannot race an ownership, custody or entitlement rowversion update.
+        return writer.AppendAsync(drafts.Select(draft => draft with { ProjectCurrentState = false }).ToList(), cancellationToken);
+    }
 
     public static Guid EventId(DateTime at) => TimeOrderedId.New(at);
 }

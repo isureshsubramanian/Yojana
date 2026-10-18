@@ -30,6 +30,14 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
     public async Task Reference_claim_is_approved_for_replacement_and_publishes_the_warranty_cohort()
     {
         var setup = await SetUpAsync("c1", 1);
+        var customer = Guid.NewGuid();
+        var warehouse = Guid.NewGuid();
+        await InvokeAsync<OpenOwnershipResult>(setup.Tenant, new OpenOwnership(Guid.NewGuid(), setup.Units[0], customer,
+            PartyType.Customer, EpisodeReason.Sale, Start.AddMinutes(1), "sales", setup.Obligor));
+        await InvokeAsync<ChangeCustodyResult>(setup.Tenant, new ChangeCustody(Guid.NewGuid(), setup.Units[0],
+            LocationKind.Warehouse, EpisodeReason.Receipt, Start.AddMinutes(2), "warehouse", setup.Obligor,
+            LocationId: warehouse));
+
         var claim = await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2026, 9, 1), Start.AddMonths(20), ClaimRemedy.Replacement);
         var result = await InvokeAsync<AdjudicateClaimResult>(setup.Tenant, new AdjudicateClaim(Guid.NewGuid(), claim.ClaimId, Start.AddMonths(20).AddHours(1), "service.manager"));
 
@@ -44,6 +52,22 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var choice = await db.ClaimEvidence.SingleAsync(e => e.ClaimId == claim.ClaimId && e.Kind == ClaimEvidenceKind.ConsumerRemedyChoice);
         Assert.Equal(ClaimRemedy.Replacement, choice.Description);
+        var owner = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == setup.Units[0]
+            && row.Kind == EpisodeKind.Ownership && row.ValidTo == null);
+        var holder = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == setup.Units[0]
+            && row.Kind == EpisodeKind.Custody && row.ValidTo == null);
+        Assert.Equal((customer, PartyType.Customer), (owner.PartyRef, owner.PartyType));
+        Assert.Equal((warehouse, LocationKind.Warehouse, PartyType.Us),
+            (holder.LocationId, holder.LocationKind, holder.PartyType));
+        Assert.Equal(1, await db.Entitlements.CountAsync(row => row.UnitId == setup.Units[0]
+            && row.Status == EntitlementStatus.Active));
+        Assert.Equal(1, await db.Identifiers.CountAsync(row => row.UnitId == setup.Units[0] && row.ValidTo == null));
+        var claimFacts = await db.Events.AsNoTracking()
+            .Where(row => row.UnitId == setup.Units[0] && (row.EventType == ClaimEventType.Submitted
+                || row.EventType == ClaimEventType.Adjudicated))
+            .OrderBy(row => row.EventTime).ToListAsync();
+        Assert.Equal([ClaimEventType.Submitted, ClaimEventType.Adjudicated], claimFacts.Select(row => row.EventType));
+        Assert.All(claimFacts, fact => Assert.False(Projections.UnitCurrentStateProjector.ProjectsCurrentState(fact.Attributes)));
     }
 
     [DatabaseFact]

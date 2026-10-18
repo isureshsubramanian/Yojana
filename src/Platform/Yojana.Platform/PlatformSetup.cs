@@ -196,6 +196,8 @@ public static class PlatformSetup
 
     public static WebApplication UseYojanaPlatform(this WebApplication app)
     {
+        // Only an exception that has escaped Wolverine's complete retry schedule reaches this boundary.
+        app.UseMiddleware<ConcurrencyRetryExhaustionMiddleware>();
         app.UseAuthentication();
         app.UseMiddleware<TenantResolutionMiddleware>();
         app.UseAuthorization();

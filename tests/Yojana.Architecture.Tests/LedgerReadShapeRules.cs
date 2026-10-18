@@ -32,17 +32,20 @@ public sealed class LedgerReadShapeRules
     }
 
     [Fact]
-    public void Batched_idempotency_reads_put_the_unique_key_before_partition_time()
+    public void Batched_idempotency_reads_preserve_exact_key_and_partition_time_pairs()
     {
-        AssertKeyBeforeTime(Source("Ledger", "UnitEventWriter.cs"), "keys.Contains(e.IdempotencyKey)");
-        AssertKeyBeforeTime(Source("Documents", "DocumentContext.cs"), "values.Contains(e.IdempotencyKey)");
-    }
+        var reader = Source("Ledger", "UnitEventIdempotencyReader.cs");
+        Assert.Contains("OPENJSON(@pairs)", reader, StringComparison.Ordinal);
+        Assert.Contains("ledger.[idempotency_key] = requested.[Key]", reader, StringComparison.Ordinal);
+        Assert.Contains("ledger.[event_time] = requested.[At]", reader, StringComparison.Ordinal);
+        Assert.Contains("FORCESEEK", reader, StringComparison.Ordinal);
 
-    private static void AssertKeyBeforeTime(string source, string keyPredicate)
-    {
-        var key = source.IndexOf(keyPredicate, StringComparison.Ordinal);
-        var time = source.IndexOf("times.Contains(e.EventTime)", key, StringComparison.Ordinal);
-        Assert.True(key >= 0 && time > key, $"Expected '{keyPredicate}' before event-time filtering.");
+        var writer = Source("Ledger", "UnitEventWriter.cs");
+        var documents = Source("Documents", "DocumentContext.cs");
+        Assert.Contains("idempotency.SeenAsync", writer, StringComparison.Ordinal);
+        Assert.Contains("idempotency.SeenAsync", documents, StringComparison.Ordinal);
+        Assert.DoesNotContain("keys.Contains(e.IdempotencyKey)", writer, StringComparison.Ordinal);
+        Assert.DoesNotContain("times.Contains(e.EventTime)", documents, StringComparison.Ordinal);
     }
 
     private static string Source(string directory, string file) => File.ReadAllText(Path.Combine(Root,
