@@ -2325,6 +2325,11 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("customer_po_ref");
 
+                    b.Property<DateTime?>("EvidenceDate")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("evidence_date");
+
                     b.Property<string>("EvidenceRef")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)")
@@ -2342,6 +2347,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("normalised_identifier");
 
+                    b.Property<Guid?>("OwnershipEpisodeId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("ownership_episode_id");
+
                     b.Property<Guid>("PartyRef")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("party_ref");
@@ -2357,6 +2366,21 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("raw_identifier");
+
+                    b.Property<DateTime?>("RejectedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("rejected_at");
+
+                    b.Property<string>("RejectedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("rejected_by");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("rejection_reason");
 
                     b.Property<string>("Source")
                         .IsRequired()
@@ -2400,6 +2424,162 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("customer_assertion", "serialisation", t =>
                         {
                             t.HasCheckConstraint("ck_customer_assertion_status", "[status] IN ('pending_verification','verified','rejected')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CustomerReconciliation", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ReconciliationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reconciliation_id");
+
+                    b.Property<int>("InvalidCount")
+                        .HasColumnType("int")
+                        .HasColumnName("invalid_count");
+
+                    b.Property<int>("NotFoundCount")
+                        .HasColumnType("int")
+                        .HasColumnName("not_found_count");
+
+                    b.Property<int>("OtherOwnerCount")
+                        .HasColumnType("int")
+                        .HasColumnName("other_owner_count");
+
+                    b.Property<int>("OwnedCount")
+                        .HasColumnType("int")
+                        .HasColumnName("owned_count");
+
+                    b.Property<Guid>("PartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("party_ref");
+
+                    b.Property<DateTime>("ReconciledAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("reconciled_at");
+
+                    b.Property<string>("ReconciledBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("reconciled_by");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("source_kind");
+
+                    b.Property<Guid?>("SourceReferenceId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_reference_id");
+
+                    b.Property<int>("TotalCount")
+                        .HasColumnType("int")
+                        .HasColumnName("total_count");
+
+                    b.HasKey("TenantId", "ReconciliationId")
+                        .HasName("pk_customer_reconciliation");
+
+                    b.HasIndex("TenantId", "PartyRef", "ReconciledAt", "ReconciliationId")
+                        .HasDatabaseName("ix_customer_reconciliation_tenant_id_party_ref_reconciled_at_reconciliation_id");
+
+                    b.ToTable("customer_reconciliation", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_customer_reconciliation_source_kind", "[source_kind] IN ('pasted_list','import_job','selection_set')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CustomerReconciliationRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ReconciliationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reconciliation_id");
+
+                    b.Property<int>("Ordinal")
+                        .HasColumnType("int")
+                        .HasColumnName("ordinal");
+
+                    b.Property<Guid?>("AssertionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("assertion_id");
+
+                    b.Property<string>("CustomerItemRef")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("customer_item_ref");
+
+                    b.Property<string>("CustomerPoRef")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("customer_po_ref");
+
+                    b.Property<string>("MatchedIdentifierType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("matched_identifier_type");
+
+                    b.Property<string>("NormalisedIdentifier")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("normalised_identifier");
+
+                    b.Property<Guid?>("OtherOwnerPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("other_owner_party_ref");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("outcome");
+
+                    b.Property<string>("RawIdentifier")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("raw_identifier");
+
+                    b.Property<string>("RequestedIdentifierType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("requested_identifier_type");
+
+                    b.Property<Guid?>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<string>("ValidationReasonsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(max)")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("validation_reasons_json");
+
+                    b.HasKey("TenantId", "ReconciliationId", "Ordinal")
+                        .HasName("pk_customer_reconciliation_row");
+
+                    b.HasIndex("TenantId", "AssertionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_customer_reconciliation_row_tenant_id_assertion_id")
+                        .HasFilter("[assertion_id] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "UnitId")
+                        .HasDatabaseName("ix_customer_reconciliation_row_tenant_id_unit_id");
+
+                    b.ToTable("customer_reconciliation_row", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_customer_reconciliation_row_outcome", "[outcome] IN ('owned','owned_by_another_party','not_found','invalid')");
+
+                            t.HasCheckConstraint("ck_customer_reconciliation_row_reasons_json", "ISJSON([validation_reasons_json]) = 1");
                         });
                 });
 
@@ -9552,6 +9732,22 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_correction_record_unit_tenant_id_correction_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CustomerReconciliationRow", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.CustomerAssertion", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "AssertionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_customer_reconciliation_row_tenant_id_assertion_id");
+
+                    b.HasOne("Yojana.Serialisation.Data.Entities.CustomerReconciliation", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ReconciliationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_customer_reconciliation_row_tenant_id_reconciliation_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ImportRowResult", b =>

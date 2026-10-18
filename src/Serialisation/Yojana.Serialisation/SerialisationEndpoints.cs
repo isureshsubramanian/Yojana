@@ -1364,6 +1364,41 @@ public static class SerialisationEndpoints
                 queries.ExportRowsAsync(jobId, ct)), stream, ct), exporter.ContentType(selected), $"import-{job.JobId:N}{exporter.Extension(selected)}");
         });
 
+        // Reconciliation exposes other-party names, so every route is internal-only. Verification repeats the role
+        // check in its handler because message-bus callers do not pass through endpoint authorisation.
+        var reconciliations = app.MapGroup("/api/customer-reconciliations")
+            .RequireAuthorization(policy => policy.RequireClaim(YojanaClaim.Role,
+                YojanaRole.SerialAdministrator, YojanaRole.OrderDeskSupervisor));
+        reconciliations.MapPost("/", (ReconcileCustomerListRequest request, ClaimsPrincipal user, IMessageBus bus,
+            ITenantContext tenant, CancellationToken ct) => Invoke<CustomerListReconciliationPage>(bus, tenant,
+                new ReconcileCustomerList(request.CommandId, request.PartyRef, request.Source, request.AssertedAt,
+                    Actor(user), request.Take, request.After), ct));
+        reconciliations.MapGet("/{reconciliationId:guid}", (Guid reconciliationId, string? after, int? take,
+            CustomerListReconciliationService service, CancellationToken ct) => ReportInvoke(() =>
+                service.PageAsync(reconciliationId, after, take ?? 50, false, ct)));
+        reconciliations.MapGet("/{reconciliationId:guid}/export", (Guid reconciliationId, string? format,
+            ITabularExporter exporter, CustomerListReconciliationService service, CancellationToken ct) =>
+        {
+            var selected = ExportFormat(format);
+            if (selected is null) return Results.BadRequest(new { rule = "export_format_unknown" });
+            return Results.Stream(stream => exporter.WriteAsync(selected, new TabularExport(
+            [
+                "row", "input", "identifier_type", "normalised_identifier", "outcome", "validation_reasons",
+                "unit", "item", "other_owner", "assertion_status", "customer_po_ref", "customer_item_ref",
+            ], service.ExportAsync(reconciliationId, ct)), stream, ct), exporter.ContentType(selected),
+                $"customer-reconciliation-{reconciliationId:N}{exporter.Extension(selected)}");
+        });
+        reconciliations.MapPost("/assertions/{assertionId:guid}/verify", (Guid assertionId,
+            VerifyCustomerAssertionRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant,
+            CancellationToken ct) => Invoke<CustomerAssertionDecision>(bus, tenant,
+                new VerifyCustomerAssertion(request.CommandId, assertionId, request.EvidenceRef,
+                    request.EvidenceDate, request.LegalEntityId, Actor(user), Roles(user)), ct));
+        reconciliations.MapPost("/assertions/{assertionId:guid}/reject", (Guid assertionId,
+            RejectCustomerAssertionRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant,
+            CancellationToken ct) => Invoke<CustomerAssertionDecision>(bus, tenant,
+                new RejectCustomerAssertion(request.CommandId, assertionId, request.Reason,
+                    Actor(user), Roles(user)), ct));
+
         // P7 internal reports. Cost, internal notes and cross-customer ownership history are deliberately behind an
         // explicit back-office role policy; TenantMember alone is insufficient for this disclosure tier.
         var reports = app.MapGroup("/api/reports").RequireAuthorization(policy => policy.RequireClaim(YojanaClaim.Role,

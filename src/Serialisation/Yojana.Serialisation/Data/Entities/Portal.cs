@@ -37,4 +37,44 @@ public sealed class CustomerAssertion : ITenantScoped
     public required string AssertedBy { get; set; }
     public DateTime? VerifiedAt { get; set; }
     public string? VerifiedBy { get; set; }
+    public DateTime? EvidenceDate { get; set; }
+    public Guid? OwnershipEpisodeId { get; set; }
+    public string? RejectionReason { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectedBy { get; set; }
+}
+
+/// <summary>A durable snapshot of one reconciliation so review, paging and export never reclassify changing ownership.</summary>
+public sealed class CustomerReconciliation : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ReconciliationId { get; set; }
+    public Guid PartyRef { get; set; }
+    public required string SourceKind { get; set; }
+    public Guid? SourceReferenceId { get; set; }
+    public int TotalCount { get; set; }
+    public int OwnedCount { get; set; }
+    public int OtherOwnerCount { get; set; }
+    public int NotFoundCount { get; set; }
+    public int InvalidCount { get; set; }
+    public DateTime ReconciledAt { get; set; }
+    public required string ReconciledBy { get; set; }
+}
+
+public sealed class CustomerReconciliationRow : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ReconciliationId { get; set; }
+    public int Ordinal { get; set; }
+    public required string RawIdentifier { get; set; }
+    public string? RequestedIdentifierType { get; set; }
+    public string? MatchedIdentifierType { get; set; }
+    public string? NormalisedIdentifier { get; set; }
+    public required string Outcome { get; set; }
+    public required string ValidationReasonsJson { get; set; }
+    public Guid? UnitId { get; set; }
+    public Guid? OtherOwnerPartyRef { get; set; }
+    public Guid? AssertionId { get; set; }
+    public string? CustomerPoRef { get; set; }
+    public string? CustomerItemRef { get; set; }
 }

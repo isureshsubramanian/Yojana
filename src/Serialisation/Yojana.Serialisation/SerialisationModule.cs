@@ -82,6 +82,8 @@ public static class SerialisationModule
         builder.Services.AddScoped<BackOfficeReportQueries>();
         builder.Services.AddScoped<ImportJobSource>();
         builder.Services.TryAddScoped<IImportJobSource>(sp => sp.GetRequiredService<ImportJobSource>());
+        builder.Services.AddScoped<Portal.CustomerListSourceResolver>();
+        builder.Services.AddScoped<Portal.CustomerListReconciliationService>();
         builder.Services.TryAddScoped<IImportFileStore, DatabaseImportFileStore>();
         builder.Services.AddScoped<ISpreadsheetReader, OpenXmlSpreadsheetReader>();
         builder.Services.AddScoped<ISpreadsheetReader, LegacyXlsSpreadsheetReader>();

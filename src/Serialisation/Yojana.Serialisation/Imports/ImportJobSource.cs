@@ -20,4 +20,19 @@ public sealed class ImportJobSource(SerialisationDbContext db, ITenantContext te
                 && (job.Mode != ImportMode.Compare || (row.ReviewedAction ?? row.ProposedAction) == ImportReviewAction.Assign))
             .Select(row => new ImportJobSourceRow(row.UnitId, row.RawValue ?? "", row.NormalisedValue, target, row.Outcome, row.Rule)).ToList();
     }
+
+    public async Task<IReadOnlyList<ImportJobSourceRow>> ReadForReconciliationAsync(Guid jobId,
+        CancellationToken cancellationToken)
+    {
+        var job = await db.ImportJobs.AsNoTracking().SingleOrDefaultAsync(row =>
+            row.TenantId == tenant.TenantId && row.JobId == jobId, cancellationToken)
+            ?? throw new CommandRefusedException("import_job_unknown", $"Import job {jobId} was not found.");
+        var target = job.TargetId is { } id && job.TargetType is { } type
+            ? new DocumentRef(type, id, job.TargetLine) : null;
+        return await db.ImportRowResults.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && row.JobId == jobId && row.Outcome != ImportOutcome.Rejected)
+            .OrderBy(row => row.RowNumber).ThenBy(row => row.RowResultId)
+            .Select(row => new ImportJobSourceRow(row.UnitId, row.RawValue ?? "", row.NormalisedValue,
+                target, row.Outcome, row.Rule)).ToListAsync(cancellationToken);
+    }
 }
