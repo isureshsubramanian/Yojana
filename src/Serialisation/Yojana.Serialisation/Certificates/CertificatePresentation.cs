@@ -19,14 +19,15 @@ public interface ICertificatePresentationPort
 /// Resolves branding through an append-only tenant asset record. The certificate payload receives only the stable asset
 /// id and content hash, so the renderer and versioning engine never reach into asset-store internals.
 /// </summary>
-public sealed class TenantAssetCertificatePresentationPort(SerialisationDbContext db, ITenantContext tenant) : ICertificatePresentationPort
+public sealed class TenantAssetCertificatePresentationPort(SerialisationDbContext db, ITenantContext tenant,
+    IPartyNamePort partyNames) : ICertificatePresentationPort
 {
     public async Task<CertificatePresentation> ResolveAsync(Guid issuerEntityId, string documentKind, string formType,
         string language, Guid templateVersionId, CancellationToken cancellationToken)
     {
         var binding = await db.CertificateTemplateVersions.AsNoTracking().Where(version => version.TenantId == tenant.TenantId
                 && version.TemplateVersionId == templateVersionId)
-            .Select(version => new { version.BrandingAssetId, version.BrandingAssetRef }).FirstOrDefaultAsync(cancellationToken);
+            .Select(version => new { version.BrandingAssetId, version.BrandingAssetRef, version.StaticText }).FirstOrDefaultAsync(cancellationToken);
         // COUPLING (branding-map keys): CertificateTemplateService writes "default" or the issuer Guid string.
         // JSON has no nullable Guid object key; changing this reader without its writer makes certificates lose the
         // intended issuer logo at issue time. The certificate still snapshots only the resolved asset contract.
@@ -38,8 +39,12 @@ public sealed class TenantAssetCertificatePresentationPort(SerialisationDbContex
             .Where(logo => logo.TenantId == tenant.TenantId && logo.AssetId == selected
                 && (logo.LegalEntityId == null || logo.LegalEntityId == issuerEntityId))
             .Select(logo => new { logo.AssetId, logo.Sha256, logo.MediaType }).FirstOrDefaultAsync(cancellationToken);
+        var labels = await partyNames.NamesAsync([issuerEntityId], cancellationToken);
+        var issuer = labels.GetValueOrDefault(issuerEntityId);
+        var text = ParseText(binding?.StaticText);
         return new CertificatePresentation(
-            new CertificateIssuerSnapshot("Issuing entity", null),
+            new CertificateIssuerSnapshot(text.GetValueOrDefault("issuer_display_name") ?? issuer?.Name ?? issuer?.Code ?? "Issuing entity",
+                text.GetValueOrDefault("issuer_registration_code") ?? issuer?.Code, text.GetValueOrDefault("issuer_address")),
             asset is null
                 ? new CertificateBrandingSnapshot("default", null, null)
                 : new CertificateBrandingSnapshot("tenant_logo", null, null, asset.AssetId, asset.Sha256, asset.MediaType));
@@ -50,5 +55,12 @@ public sealed class TenantAssetCertificatePresentationPort(SerialisationDbContex
         if (string.IsNullOrWhiteSpace(value)) return new Dictionary<string, Guid>();
         try { return JsonSerializer.Deserialize<Dictionary<string, Guid>>(value) ?? []; }
         catch (JsonException) { return new Dictionary<string, Guid>(); }
+    }
+
+    private static Dictionary<string, string> ParseText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return new Dictionary<string, string>();
+        try { return JsonSerializer.Deserialize<Dictionary<string, string>>(value) ?? []; }
+        catch (JsonException) { return new Dictionary<string, string>(); }
     }
 }

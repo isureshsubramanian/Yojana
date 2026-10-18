@@ -19,7 +19,7 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
     public Task<IssueCertificateVersionResult> IssueAsync(string documentKind, CertificateTriggerContext trigger,
         string reason, CancellationToken cancellationToken) => IssueAsync(new IssueCertificateVersion(
             trigger.EventId, trigger.UnitId, documentKind,
-            documentKind == CertificateDocumentKind.ReleaseRecord ? CertificateFormType.GenericRelease : CertificateFormType.Custom,
+            documentKind == CertificateDocumentKind.ReleaseRecord ? CertificateFormType.GenericRelease : CertificateFormType.WarrantyCertificate,
             reason, trigger.EventTime, "system:certificates", trigger.LegalEntityId, TriggerSchema: trigger.Schema), cancellationToken);
 
     public async Task<IssueCertificateVersionResult> IssueAsync(IssueCertificateVersion command, CancellationToken cancellationToken)

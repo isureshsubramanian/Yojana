@@ -21,8 +21,9 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
     public const string WarrantyReplacement = "WRP";
     public const string Refurbishment = "RFB";
     public const string Certificate = "CRT";
+    public const string PrintJob = "PJ";
 
-    public static readonly IReadOnlyList<string> Series = [Rma, Claim, WarrantyReplacement, Refurbishment, Recovery, Certificate];
+    public static readonly IReadOnlyList<string> Series = [Rma, Claim, WarrantyReplacement, Refurbishment, Recovery, Certificate, PrintJob];
 
     public async Task<string> NextAsync(string series, DateTime at, CancellationToken cancellationToken)
     {

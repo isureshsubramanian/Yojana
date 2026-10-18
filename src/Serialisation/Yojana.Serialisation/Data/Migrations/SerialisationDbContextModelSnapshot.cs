@@ -852,7 +852,7 @@ namespace Yojana.Serialisation.Data.Migrations
 
                             t.HasCheckConstraint("ck_certificate_instance_evidence_json", "ISJSON(evidence) = 1");
 
-                            t.HasCheckConstraint("ck_certificate_instance_form_type", "form_type IN ('generic_release', 'coc', 'dhr_extract', 'release_8130_3_style', 'easa_form_1_style', 'battery_passport', 'custom')");
+                            t.HasCheckConstraint("ck_certificate_instance_form_type", "form_type IN ('generic_release', 'coc', 'dhr_extract', 'release_8130_3_style', 'easa_form_1_style', 'battery_passport', 'warranty_certificate', 'custom')");
 
                             t.HasCheckConstraint("ck_certificate_instance_issuer_json", "ISJSON(issuer_snapshot) = 1");
 
@@ -1155,7 +1155,7 @@ namespace Yojana.Serialisation.Data.Migrations
                         {
                             t.HasCheckConstraint("ck_certificate_template_document_kind", "document_kind IN ('release_record', 'warranty_certificate')");
 
-                            t.HasCheckConstraint("ck_certificate_template_form_type", "form_type IN ('generic_release', 'coc', 'dhr_extract', 'release_8130_3_style', 'easa_form_1_style', 'battery_passport', 'custom')");
+                            t.HasCheckConstraint("ck_certificate_template_form_type", "form_type IN ('generic_release', 'coc', 'dhr_extract', 'release_8130_3_style', 'easa_form_1_style', 'battery_passport', 'warranty_certificate', 'custom')");
                         });
                 });
 
@@ -3988,6 +3988,13 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("identifier_id");
 
+                    b.Property<string>("JobNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)")
+                        .HasColumnName("job_number");
+
                     b.Property<Guid?>("LedgerEventId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("ledger_event_id");
@@ -4074,6 +4081,10 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasIndex("TenantId", "IdentifierId")
                         .HasDatabaseName("ix_print_job_tenant_id_identifier_id");
+
+                    b.HasIndex("TenantId", "JobNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ux_print_job_tenant_id_job_number");
 
                     b.HasIndex("TenantId", "OriginalJobId")
                         .HasDatabaseName("ix_print_job_tenant_id_original_job_id");

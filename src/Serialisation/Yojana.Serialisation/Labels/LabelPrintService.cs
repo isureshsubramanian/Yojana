@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
@@ -9,7 +10,7 @@ namespace Yojana.Serialisation.Labels;
 
 /// <summary>Shared command/consumer path: resolve, render, persist exact bytes, deliver through the printer port, ledger.</summary>
 public sealed class LabelPrintService(SerialisationDbContext db, ITenantContext tenant, LabelRenderer renderer,
-    ILabelPrinterPort printer, IUnitEventWriter events, IItemQueryPort itemProfiles)
+    ILabelPrinterPort printer, IUnitEventWriter events, IItemQueryPort itemProfiles, DocumentNumbers numbers)
 {
     public async Task<LabelPrintResult> PrintAsync(PrintLabel command, CancellationToken cancellationToken)
     {
@@ -19,11 +20,12 @@ public sealed class LabelPrintService(SerialisationDbContext db, ITenantContext 
         if (replay is not null) return Result(replay, true);
         if (string.IsNullOrWhiteSpace(command.PrinterRef))
             throw new CommandRefusedException("label_printer_required", "A printer reference is required.");
+        var jobNumber = await numbers.NextAsync(DocumentNumbers.PrintJob, command.PrintAt, cancellationToken);
 
         var selected = await SelectVersionAsync(command, cancellationToken);
         if (selected is null)
         {
-            var rejected = Rejected(command, "label_template_not_found",
+            var rejected = Rejected(command, jobNumber, "label_template_not_found",
                 $"no active label template applies to unit {command.UnitId} at {command.PrintAt:O}");
             db.PrintJobs.Add(rejected);
             await db.SaveChangesAsync(cancellationToken);
@@ -33,7 +35,7 @@ public sealed class LabelPrintService(SerialisationDbContext db, ITenantContext 
         var render = await renderer.RenderAsync(template, version, command.UnitId, command.IdentifierId, command.PrintAt, cancellationToken);
         if (render.RejectionReason is not null || render.Payload is null)
         {
-            var rejected = Rejected(command,
+            var rejected = Rejected(command, jobNumber,
                 render.EmptyRequiredField is null ? "label_render_rejected" : "label_required_field_empty",
                 render.RejectionReason ?? "label rendering failed", version.TemplateVersionId, render.EmptyRequiredField);
             db.PrintJobs.Add(rejected);
@@ -45,6 +47,7 @@ public sealed class LabelPrintService(SerialisationDbContext db, ITenantContext 
         var job = new PrintJob
         {
             TenantId = tenantId, JobId = command.CommandId, CommandId = command.CommandId,
+            JobNumber = jobNumber,
             BatchCommandId = command.BatchCommandId, BatchSequence = command.BatchSequence,
             RequestedSerial = command.RequestedSerial,
             SourceEventId = command.SourceEventId, TemplateVersionId = version.TemplateVersionId, UnitId = command.UnitId,
@@ -88,11 +91,13 @@ public sealed class LabelPrintService(SerialisationDbContext db, ITenantContext 
             throw new CommandRefusedException("label_reprint_has_no_payload", "A rejected job without a rendered payload cannot be reprinted.");
         var printerRef = string.IsNullOrWhiteSpace(command.PrinterRef) ? original.PrinterRef : command.PrinterRef.Trim();
         if (string.IsNullOrWhiteSpace(printerRef)) throw new CommandRefusedException("label_printer_required", "A printer reference is required.");
+        var jobNumber = await numbers.NextAsync(DocumentNumbers.PrintJob, command.ReprintedAt, cancellationToken);
         var version = await db.LabelTemplateVersions.AsNoTracking().FirstAsync(row => row.TenantId == tenantId
             && row.TemplateVersionId == original.TemplateVersionId, cancellationToken);
         var job = new PrintJob
         {
             TenantId = tenantId, JobId = command.CommandId, CommandId = command.CommandId,
+            JobNumber = jobNumber,
             TemplateVersionId = original.TemplateVersionId, UnitId = original.UnitId, IdentifierId = original.IdentifierId,
             OriginalJobId = original.JobId, RenderedPayload = original.RenderedPayload, PayloadHash = original.PayloadHash,
             PrinterRef = printerRef, RequestedBy = command.ActorRef, RequestedAt = command.ReprintedAt,
@@ -171,10 +176,11 @@ public sealed class LabelPrintService(SerialisationDbContext db, ITenantContext 
         return match is null ? null : (match.Template, match.Version);
     }
 
-    private PrintJob Rejected(PrintLabel command, string rule, string reason, Guid? versionId = null,
+    private PrintJob Rejected(PrintLabel command, string jobNumber, string rule, string reason, Guid? versionId = null,
         string? emptyRequiredField = null) => new()
     {
         TenantId = tenant.TenantId, JobId = command.CommandId, CommandId = command.CommandId,
+        JobNumber = jobNumber,
         BatchCommandId = command.BatchCommandId, BatchSequence = command.BatchSequence,
         RequestedSerial = command.RequestedSerial,
         SourceEventId = command.SourceEventId, TemplateVersionId = versionId, UnitId = command.UnitId,
@@ -190,14 +196,14 @@ public sealed class LabelPrintService(SerialisationDbContext db, ITenantContext 
             job.UnitId!.Value, eventType, command.PrintAt),
         Attributes = JsonObjectText.Of(new
         {
-            job_id = job.JobId, original_job_id = job.OriginalJobId, template_version_id = version.TemplateVersionId,
+            job_id = job.JobId, job_number = job.JobNumber, original_job_id = job.OriginalJobId, template_version_id = version.TemplateVersionId,
             layout_kind = version.LayoutKind, symbology = version.Symbology, payload_hash = job.PayloadHash, printer_ref = job.PrinterRef,
         }),
         ProjectCurrentState = false,
     };
 
     private static LabelPrintResult Result(PrintJob job, bool replayed) =>
-        new(job.JobId, job.Status, job.RejectionReason, job.PayloadHash, replayed, job.RejectionRule,
+        new(job.JobId, job.JobNumber, job.Status, job.RejectionReason, job.PayloadHash, replayed, job.RejectionRule,
             job.EmptyRequiredField);
 }
 

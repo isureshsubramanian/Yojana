@@ -8,6 +8,7 @@ import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { Rail } from "../shell/Drawer";
 import { openDrawer } from "../shell/drawerStore";
 import { ErrorNote, Kv, Section } from "../units/common";
+import { useReferenceNames } from "../corrections/ReferenceFields";
 import { certificateApi } from "./api";
 import { fmtDateTime, formLabel, humanise, shortHash, statusTone } from "./format";
 import type { CertificateDetail, CertificateListRow, CertificateVersionChain } from "./types";
@@ -20,6 +21,7 @@ export function Component() {
   const [error, setError] = useState<unknown>(null);
   const presence = useDocumentPresence("certificate", id, false);
   const people = usePeople(certificate?.reprints.map((row) => row.requestedBy) ?? []);
+  const names = useReferenceNames({ items: [certificate?.itemId] });
   useEffect(() => {
     const controller = new AbortController(); setError(null);
     certificateApi.detail(id, controller.signal).then(async (detail) => {
@@ -30,20 +32,27 @@ export function Component() {
 
   if (!certificate) return <main className="content" id="main" tabIndex={-1}><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Certificates", to: "/certificates" }, { label: "Certificate" }]} /><ErrorNote error={error} /><div className="empty"><h2>{error ? "Certificate unavailable" : "Loading certificate…"}</h2></div></main>;
   const trigger = objectValue(certificate.payload, "trigger", "schema") ?? humanise(certificate.supersedeReason);
+  const itemName = names.itemName(certificate.itemId) ?? "Item name unavailable";
+  const ownChain = certificate.documentKind === "release_record" ? chain?.releaseRecords : chain?.warrantyCertificates;
+  const totalVersions = ownChain?.reduce((maximum, row) => Math.max(maximum, row.version), certificate.version) ?? certificate.version;
+  const predecessor = certificate.supersedesCertificateId
+    ? ownChain?.find((row) => row.certificateId === certificate.supersedesCertificateId)?.trackingNumber : null;
+  const eyebrow = `${humanise(certificate.documentKind)} · version ${certificate.version} of ${totalVersions} · issued ${fmtDateTime(certificate.issuedAt)}`
+    + (predecessor ? ` · supersedes ${predecessor} (${humanise(certificate.supersedeReason)})` : "");
   const openVersion = (row: CertificateListRow) => openDrawer({ eyebrow: `${humanise(row.documentKind)} · version ${row.version}`, title: row.trackingNumber, mono: true }, <>
-    <Section title="Version"><Kv rows={[["Status", humanise(row.status)], ["Issued", fmtDateTime(row.issuedAt)], ["Form", formLabel(row.formType)], ["Provenance", humanise(row.provenance)]]} /></Section>
+    <Section title="Version"><Kv rows={[["Status", humanise(row.status)], ["Issued", fmtDateTime(row.issuedAt)], ["Form", formLabel(row.formType, row.documentKind)], ["Provenance", humanise(row.provenance)]]} /></Section>
     <div className="act"><Link className="btn primary block" to={`/certificates/${row.certificateId}`}>Open this version</Link></div>
   </>);
 
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Certificates", to: "/certificates" }, { label: certificate.trackingNumber }]} />
-      <PageHeader title={certificate.trackingNumber} sub={`${certificate.primarySerial} · ${humanise(certificate.documentKind)} · version ${certificate.version}`}
-        actions={<><PresenceChips users={presence} /><Link className="btn" to={`/units/${certificate.unitId}`}>Open unit</Link></>} />
+      <PageHeader eyebrow={eyebrow} title={`${certificate.primarySerial} · ${itemName}`} sub={`A signed ${humanise(certificate.documentKind).toLowerCase()} whose payload and presentation snapshot never change.`}
+        actions={<><PresenceChips users={presence} />{chain?.releaseRecords.length && chain.warrantyCertificates.length ? <a className="btn" href={`/api/certificates/units/${certificate.unitId}/composite`}>Composite print</a> : null}<Link className="btn" to={`/units/${certificate.unitId}`}>Open unit</Link></>} />
       <div className="stack">
         <KpiStrip kpis={[
           { label: "Status", value: humanise(certificate.status), detail: "current state of this version" },
-          { label: "Form", value: formLabel(certificate.formType), detail: `version ${certificate.version} · ${certificate.language}` },
+          { label: "Form", value: formLabel(certificate.formType, certificate.documentKind), detail: `version ${certificate.version} · ${certificate.language}` },
           { label: "Payload hash", value: shortHash(certificate.payloadHash), detail: "SHA-256 · signatures bind to it" },
           { label: "Reprints", value: certificate.reprints.length.toLocaleString(), detail: "each is a Copy, never a version" },
         ]} />

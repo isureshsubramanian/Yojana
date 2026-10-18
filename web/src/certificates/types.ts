@@ -3,7 +3,7 @@ import type { SelectionSource } from "../api/units";
 export interface Page<T> { items: T[]; total: number; skip: number; take: number }
 
 export interface CertificateListRow {
-  certificateId: string; unitId: string; primarySerial: string; documentKind: string; formType: string;
+  certificateId: string; unitId: string; itemId: string | null; primarySerial: string; documentKind: string; formType: string;
   version: number; trackingNumber: string; status: string; issuedAt: string; provenance: string;
 }
 export interface CertificateSignature {

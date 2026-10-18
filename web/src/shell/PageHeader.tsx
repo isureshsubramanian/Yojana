@@ -14,10 +14,11 @@ export function Breadcrumbs({ crumbs }: { crumbs: Crumb[] }) {
   );
 }
 
-export function PageHeader({ title, sub, actions }: { title: React.ReactNode; sub?: React.ReactNode; actions?: React.ReactNode }) {
+export function PageHeader({ title, eyebrow, sub, actions }: { title: React.ReactNode; eyebrow?: React.ReactNode | undefined; sub?: React.ReactNode; actions?: React.ReactNode }) {
   return (
     <div className="page-header">
       <div>
+        {eyebrow && <div className="eyebrow">{eyebrow}</div>}
         <h1>{title}</h1>
         {sub && <p className="sub">{sub}</p>}
       </div>

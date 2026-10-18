@@ -7,6 +7,7 @@ import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { ErrorNote, Kv, Section } from "../units/common";
+import { useReferenceNames } from "../corrections/ReferenceFields";
 import { certificateApi } from "./api";
 import { fmtDateTime, formLabel, humanise, statusTone } from "./format";
 import type { CertificateListRow, Page } from "./types";
@@ -24,6 +25,7 @@ export function Component() {
   const kind = search.get("kind") ?? "";
   const status = search.get("status") ?? "";
   const serial = search.get("serial") ?? "";
+  const names = useReferenceNames({ items: result?.items.map((row) => row.itemId) ?? [] });
 
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError(null);
@@ -41,18 +43,18 @@ export function Component() {
   };
   const columns = useMemo<GridColumn<CertificateListRow>[]>(() => [
     { key: "tracking", label: "Certificate", width: 22, mono: true, render: (row) => <Link to={`/certificates/${row.certificateId}`}>{row.trackingNumber}</Link> },
-    { key: "unit", label: "Unit", width: 22, mono: true, render: (row) => <>{row.primarySerial}<span className="sub">{humanise(row.documentKind)}</span></> },
-    { key: "form", label: "Form", width: 19, render: (row) => <>{formLabel(row.formType)}<span className="sub">version {row.version}</span></> },
+    { key: "unit", label: "Unit", width: 22, mono: true, render: (row) => <>{row.primarySerial}<span className="sub">{names.itemName(row.itemId) ?? "Item name unavailable"}</span></> },
+    { key: "form", label: "Form", width: 19, render: (row) => <>{formLabel(row.formType, row.documentKind)}<span className="sub">version {row.version}</span></> },
     { key: "status", label: "Status", width: 14, render: (row) => <StatusBadge tone={statusTone(row.status)}>{humanise(row.status)}</StatusBadge> },
     { key: "issued", label: "Issued", width: 23, render: (row) => <>{fmtDateTime(row.issuedAt)}<span className="sub">{humanise(row.provenance)}</span></> },
-  ], []);
+  ], [names]);
   const grid: PageResult<CertificateListRow> = result ? {
     rows: result.items, total: result.total, page, pageSize: result.take, continuation: null,
   } : { rows: [], total: 0, page, pageSize: PAGE_SIZE, continuation: null };
   const open = (row: CertificateListRow) => {
     setActive(row.certificateId);
     openDrawer({ eyebrow: `${humanise(row.documentKind)} · version ${row.version}`, title: row.trackingNumber, mono: true }, <>
-      <Section title="Certificate"><Kv rows={[["Unit", row.primarySerial], ["Form", formLabel(row.formType)], ["Status", humanise(row.status)], ["Issued", fmtDateTime(row.issuedAt)], ["Provenance", humanise(row.provenance)]]} /></Section>
+      <Section title="Certificate"><Kv rows={[["Unit", `${row.primarySerial} · ${names.itemName(row.itemId) ?? "Item name unavailable"}`], ["Form", formLabel(row.formType, row.documentKind)], ["Status", humanise(row.status)], ["Issued", fmtDateTime(row.issuedAt)], ["Provenance", humanise(row.provenance)]]} /></Section>
       <div className="act"><Link className="btn primary block" to={`/certificates/${row.certificateId}`}>Open certificate</Link><Link className="btn block" to={`/units/${row.unitId}`}>Open unit</Link></div>
     </>);
   };

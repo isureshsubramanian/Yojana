@@ -78,7 +78,7 @@ public static class ReleaseCertificateSubscriptionHandler
 
     public static Task Handle(CertificateIssueRequested message, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
         Queue(bus, tenant, new IssueCertificateVersion(message.RequestId, message.UnitId, message.DocumentKind,
-            message.DocumentKind == CertificateDocumentKind.ReleaseRecord ? CertificateFormType.GenericRelease : CertificateFormType.Custom,
+            message.DocumentKind == CertificateDocumentKind.ReleaseRecord ? CertificateFormType.GenericRelease : CertificateFormType.WarrantyCertificate,
             null, message.RequestedAt, "system:certificates", message.LegalEntityId, CertificateProvenance.Reconstructed,
             ["original build facts"], message.EvidenceRefs), ct);
 
@@ -96,7 +96,7 @@ public static class ReleaseCertificateSubscriptionHandler
 
     private static IssueCertificateVersion Command(string documentKind, CertificateTriggerContext trigger, string reason) =>
         new(trigger.EventId, trigger.UnitId, documentKind,
-            documentKind == CertificateDocumentKind.ReleaseRecord ? CertificateFormType.GenericRelease : CertificateFormType.Custom,
+            documentKind == CertificateDocumentKind.ReleaseRecord ? CertificateFormType.GenericRelease : CertificateFormType.WarrantyCertificate,
             reason, trigger.EventTime, "system:certificates", trigger.LegalEntityId, TriggerSchema: trigger.Schema);
 
     internal static CertificateTriggerContext From(PublishedEventHeader header, Guid? unitId = null) => new(

@@ -403,14 +403,20 @@ public sealed class CertificateSelectionService(
             .Where(row => row.TenantId == tenant.TenantId && ids.Contains(row.CertificateId))
             .OrderBy(row => row.SignedAt).ToListAsync(cancellationToken);
         var signatureByCertificate = signatures.GroupBy(row => row.CertificateId).ToDictionary(group => group.Key, group => group.Last());
+        var predecessorIds = certificates.Select(row => row.SupersedesCertificateId).OfType<Guid>().Distinct().ToList();
+        var predecessorTracking = predecessorIds.Count == 0 ? new Dictionary<Guid, string>()
+            : await db.CertificateInstances.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                    && predecessorIds.Contains(row.CertificateId))
+                .ToDictionaryAsync(row => row.CertificateId, row => row.TrackingNumber, cancellationToken);
         var rendered = new List<RenderedDocument>();
         foreach (var row in stored.Where(row => row.CertificateId is not null).OrderBy(row => row.Serial, StringComparer.Ordinal))
         {
             var certificate = byId[row.CertificateId!.Value];
             signatureByCertificate.TryGetValue(certificate.CertificateId, out var signature);
-            var request = new CertificateRenderRequest(certificate.Payload, certificate.TemplateVersionId, row.Copy,
-                signature is null ? null : new CertificateRenderSignature(
-                    signature.PrintedName, DisplayMeaning(signature.Meaning), signature.SignedAt));
+            var ordinary = CertificateQueries.RenderRequest(certificate, signature,
+                certificate.SupersedesCertificateId is { } predecessorId
+                    ? predecessorTracking.GetValueOrDefault(predecessorId) : null);
+            var request = ordinary with { Copy = row.Copy };
             var render = await renderer.RenderAsync(request, cancellationToken);
             var extension = render.MediaType.StartsWith("application/pdf", StringComparison.OrdinalIgnoreCase) ? "pdf" : "html";
             var serial = row.Serial ?? certificate.UnitId.ToString("N");
@@ -505,7 +511,6 @@ public sealed class CertificateSelectionService(
         new(SHA256.HashData(Encoding.UTF8.GetBytes($"{commandId:N}|{unitId:N}|certificate-selection|{purpose}")).AsSpan(0, 16));
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
     private static string Safe(string value) => string.Concat(value.Select(character => char.IsLetterOrDigit(character) || character is '-' or '_' ? character : '_'));
-    private static string DisplayMeaning(string value) => value == CertificateSignatureMeaning.Release ? "released as conforming" : value;
     private CertificateRunUnit Receipt(Guid commandId, CertificateSelectionUnit row, string outcome,
         Guid? certificateId, int? version, string? trackingNumber, bool copy) => new()
     {

@@ -1,4 +1,6 @@
 .label-page-note { margin-bottom: var(--gap); }
+.label-activation { display: inline-flex; flex-direction: column; align-items: flex-end; gap: .25rem; max-width: 22rem; }
+.label-activation .hint { text-align: right; }
 .label-layout-stack { gap: 14px; }
 .label-layout-input { min-height: 220px; resize: vertical; line-height: 1.55; }
 .label-layout-mirror { min-height: 120px; max-height: 300px; margin: 0; white-space: pre-wrap; overflow: auto; }

@@ -159,6 +159,7 @@ public sealed record ReprintLabel(
 
 public sealed record LabelPrintResult(
     Guid JobId,
+    string JobNumber,
     string Status,
     string? RejectionReason,
     string? PayloadHash,
@@ -225,6 +226,9 @@ public sealed record LabelTemplateVersionRow(
     bool Regulated,
     string? ApprovedBy,
     DateTime? ApprovedAt,
+    bool PreviewCurrent,
+    bool LegalReviewCurrent,
+    bool ApprovalCurrent,
     string Status,
     DateTime RecordedAt,
     string ActorRef);
@@ -240,6 +244,7 @@ public sealed record LabelTemplateDetail(
 
 public sealed record LabelPrintJobRow(
     Guid JobId,
+    string JobNumber,
     Guid? TemplateVersionId,
     Guid? UnitId,
     Guid? IdentifierId,

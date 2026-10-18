@@ -1384,7 +1384,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             {
                 t.HasTrigger("tr_certificate_instance_immutable");
                 t.HasCheckConstraint("ck_certificate_instance_document_kind", "document_kind IN ('release_record', 'warranty_certificate')");
-                t.HasCheckConstraint("ck_certificate_instance_form_type", "form_type IN ('generic_release', 'coc', 'dhr_extract', 'release_8130_3_style', 'easa_form_1_style', 'battery_passport', 'custom')");
+                t.HasCheckConstraint("ck_certificate_instance_form_type", "form_type IN ('generic_release', 'coc', 'dhr_extract', 'release_8130_3_style', 'easa_form_1_style', 'battery_passport', 'warranty_certificate', 'custom')");
                 t.HasCheckConstraint("ck_certificate_instance_payload_json", "ISJSON(payload) = 1");
                 t.HasCheckConstraint("ck_certificate_instance_issuer_json", "ISJSON(issuer_snapshot) = 1");
                 t.HasCheckConstraint("ck_certificate_instance_owner_json", "owner_snapshot IS NULL OR ISJSON(owner_snapshot) = 1");
@@ -1499,7 +1499,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.ToTable("certificate_template", t =>
             {
                 t.HasCheckConstraint("ck_certificate_template_document_kind", "document_kind IN ('release_record', 'warranty_certificate')");
-                t.HasCheckConstraint("ck_certificate_template_form_type", "form_type IN ('generic_release', 'coc', 'dhr_extract', 'release_8130_3_style', 'easa_form_1_style', 'battery_passport', 'custom')");
+                t.HasCheckConstraint("ck_certificate_template_form_type", "form_type IN ('generic_release', 'coc', 'dhr_extract', 'release_8130_3_style', 'easa_form_1_style', 'battery_passport', 'warranty_certificate', 'custom')");
             });
             b.HasKey(row => new { row.TenantId, row.TemplateId });
             b.Property(row => row.Code).HasMaxLength(100).IsUnicode(false);
@@ -1694,6 +1694,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.ToTable("print_job", t =>
                 t.HasCheckConstraint("ck_print_job_status", "status IN ('rendered', 'sent', 'confirmed', 'rejected')"));
             b.HasKey(row => new { row.TenantId, row.JobId });
+            b.Property(row => row.JobNumber).HasMaxLength(32).IsUnicode(false);
             b.Property(row => row.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
             b.Property(row => row.PrinterRef).HasMaxLength(200);
             b.Property(row => row.RequestedSerial).HasMaxLength(100);
@@ -1705,6 +1706,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasOne<LabelTemplateVersion>().WithMany().HasForeignKey(row => new { row.TenantId, row.TemplateVersionId }).OnDelete(DeleteBehavior.Restrict);
             b.HasOne<PrintJob>().WithMany().HasForeignKey(row => new { row.TenantId, row.OriginalJobId }).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.JobNumber }).IsUnique();
             b.HasIndex(row => new { row.TenantId, row.BatchCommandId, row.BatchSequence }).IsUnique()
                 .HasFilter("[batch_command_id] IS NOT NULL");
             b.HasIndex(row => new { row.TenantId, row.SourceEventId }).IsUnique().HasFilter("[source_event_id] IS NOT NULL");

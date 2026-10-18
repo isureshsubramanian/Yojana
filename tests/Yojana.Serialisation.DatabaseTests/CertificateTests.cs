@@ -155,7 +155,7 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
 
         var firstWarranty = await InvokeAsync<IssueCertificateVersionResult>(setup.Tenant,
             new IssueCertificateVersion(Guid.NewGuid(), setup.UnitId, CertificateDocumentKind.WarrantyCertificate,
-                CertificateFormType.Custom, null, At.AddHours(2), "system:certificates", Entity, Language: "fr"));
+                CertificateFormType.WarrantyCertificate, null, At.AddHours(2), "system:certificates", Entity, Language: "fr"));
         Assert.True(firstWarranty.Issued);
 
         var entitlementEventId = Guid.NewGuid();
@@ -179,7 +179,9 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
                 && row.DocumentKind == CertificateDocumentKind.WarrantyCertificate).OrderByDescending(row => row.Version).FirstAsync();
         var snapshot = JsonSerializer.Deserialize<CertificateOwnerSnapshot>(warranty.OwnerSnapshot!, CanonicalJson.Options)!;
         Assert.Equal(("NORTH-01", "Northwind Field Services", PartyType.Customer), (snapshot.Code, snapshot.Name, snapshot.Kind));
-        Assert.Contains("\"name\":\"Issuing entity\"", warranty.IssuerSnapshot, StringComparison.Ordinal);
+        var issuer = JsonSerializer.Deserialize<CertificateIssuerSnapshot>(warranty.IssuerSnapshot, CanonicalJson.Options)!;
+        Assert.False(string.IsNullOrWhiteSpace(issuer.Name));
+        Assert.NotEqual("Issuing entity", issuer.Name);
         Assert.Contains("\"profile\":\"default\"", warranty.BrandingSnapshot, StringComparison.Ordinal);
         Assert.Equal((Entity, "fr"), (warranty.IssuerEntityId, warranty.Language));
         var current = await db.Current.AsNoTracking().SingleAsync(row => row.UnitId == setup.UnitId);
@@ -223,8 +225,21 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         Assert.Contains(starters, row => row.BuiltIn && row.FormType == CertificateFormType.GenericRelease);
         Assert.Contains(starters, row => row.BuiltIn && row.FormType == CertificateFormType.CertificateOfConformity);
         Assert.Contains(starters, row => row.BuiltIn && row.DocumentKind == CertificateDocumentKind.WarrantyCertificate);
+        Assert.Contains(starters, row => row.BuiltIn && row.FormType == CertificateFormType.DeviceHistoryExtract);
+        Assert.Contains(starters, row => row.BuiltIn && row.FormType == CertificateFormType.Release81303Style);
+        Assert.Contains(starters, row => row.BuiltIn && row.FormType == CertificateFormType.EasaForm1Style);
+        Assert.Contains(starters, row => row.BuiltIn && row.FormType == CertificateFormType.BatteryPassport);
         Assert.DoesNotContain(service.Catalogue(CertificateDocumentKind.ReleaseRecord), row =>
             row.Path.Contains("party", StringComparison.OrdinalIgnoreCase) || row.Path.Contains("owner", StringComparison.OrdinalIgnoreCase));
+        foreach (var starter in starters.Where(row => row.BuiltIn && row.DocumentKind == CertificateDocumentKind.ReleaseRecord))
+        {
+            var detail = (await service.GetAsync(starter.TemplateId, CancellationToken.None))!;
+            var version = detail.Versions.OrderByDescending(row => row.Version).First();
+            var validation = service.Validate(detail.DocumentKind, version.LayoutBody, version.HeaderBody,
+                version.FooterBody, version.Fields);
+            Assert.True(validation.Valid, $"{starter.Code}: {string.Join("; ", validation.Errors)}");
+            Assert.Empty(validation.PartyFieldViolations);
+        }
 
         var invalid = service.Validate(CertificateDocumentKind.ReleaseRecord,
             "<p>{{owner.name}} {{live.table.value}}</p>", null, null, ["owner.name", "live.table.value"]);
@@ -449,7 +464,7 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
             PartyType.Customer, EpisodeReason.Sale, At.AddHours(2), "sales", Entity));
         var initial = await InvokeAsync<IssueCertificateVersionResult>(setup.Tenant,
             new IssueCertificateVersion(Guid.NewGuid(), setup.UnitId, CertificateDocumentKind.WarrantyCertificate,
-                CertificateFormType.Custom, null, At.AddHours(2), "system:certificates", Entity));
+                CertificateFormType.WarrantyCertificate, null, At.AddHours(2), "system:certificates", Entity));
         Assert.True(initial.Issued);
         var policies = new List<Guid>();
         fixture.Services.GetRequiredService<InMemoryWarrantyPorts>().RegisterZone(setup.LocationId, "UTC");
@@ -574,11 +589,44 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         }
 
         var lists = await Task.WhenAll(LoadAsync(), LoadAsync());
-        Assert.All(lists, list => Assert.Equal(3, list.Count(row => row.BuiltIn)));
+        Assert.All(lists, list => Assert.Equal(7, list.Count(row => row.BuiltIn)));
         using var scope = fixture.ScopeFor(tenant);
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
-        Assert.Equal(3, await db.CertificateTemplates.CountAsync(row => row.BuiltIn));
-        Assert.Equal(3, await db.CertificateTemplateVersions.CountAsync());
+        Assert.Equal(7, await db.CertificateTemplates.CountAsync(row => row.BuiltIn));
+        Assert.Equal(7, await db.CertificateTemplateVersions.CountAsync());
+    }
+
+    [DatabaseFact]
+    public async Task Starter_upgrade_adds_a_new_builtin_version_without_changing_tenant_copies()
+    {
+        var tenant = await fixture.NewTenantAsync("cert-starter-upgrade");
+        var builtInId = Guid.NewGuid();
+        var copyId = Guid.NewGuid();
+        const string legacyLayout = "<article><h1>Legacy release</h1><p>{{model.code}}</p></article>";
+        using (var seed = fixture.ScopeFor(tenant))
+        {
+            var db = seed.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            db.CertificateTemplates.AddRange(
+                new Yojana.Serialisation.Data.Entities.CertificateTemplate { TenantId = tenant, TemplateId = builtInId, Code = "builtin-generic-release", Name = "Generic release record", DocumentKind = CertificateDocumentKind.ReleaseRecord, FormType = CertificateFormType.GenericRelease, BuiltIn = true, CreatedAt = At, CreatedBy = "system:certificate-starters" },
+                new Yojana.Serialisation.Data.Entities.CertificateTemplate { TenantId = tenant, TemplateId = copyId, Code = "tenant-copy", Name = "Tenant copy", DocumentKind = CertificateDocumentKind.ReleaseRecord, FormType = CertificateFormType.GenericRelease, BuiltIn = false, CreatedAt = At, CreatedBy = "template.admin" });
+            db.CertificateTemplateVersions.AddRange(
+                LegacyVersion(tenant, builtInId, legacyLayout, "system:certificate-starters"),
+                LegacyVersion(tenant, copyId, legacyLayout, "template.admin"));
+            await db.SaveChangesAsync();
+        }
+
+        using var scope = fixture.ScopeFor(tenant);
+        var service = scope.ServiceProvider.GetRequiredService<CertificateTemplateService>();
+        await service.ListAsync(CancellationToken.None);
+        var dbAfter = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var builtIn = await dbAfter.CertificateTemplateVersions.AsNoTracking().Where(row => row.TemplateId == builtInId)
+            .OrderBy(row => row.Version).ToListAsync();
+        Assert.Equal([1, 2], builtIn.Select(row => row.Version));
+        Assert.Equal(CertificateTemplateStatus.Retired, builtIn[0].Status);
+        Assert.Equal(CertificateTemplateStatus.Active, builtIn[1].Status);
+        Assert.Contains("As-built at release", builtIn[1].LayoutBody, StringComparison.Ordinal);
+        var tenantCopy = await dbAfter.CertificateTemplateVersions.AsNoTracking().SingleAsync(row => row.TemplateId == copyId);
+        Assert.Equal((1, CertificateTemplateStatus.Active, legacyLayout), (tenantCopy.Version, tenantCopy.Status, tenantCopy.LayoutBody));
     }
 
     [DatabaseFact]
@@ -713,6 +761,16 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
 
     private static PublishedEventHeader Header(string schema, string version, Guid unitId, Guid eventId, DateTime at) =>
         new(schema, version, eventId, unitId, at, at, 1, Entity, "system:test-event", null);
+
+    private static Yojana.Serialisation.Data.Entities.CertificateTemplateVersion LegacyVersion(TenantId tenant, Guid templateId, string layout, string actor) => new()
+    {
+        TenantId = tenant, TemplateVersionId = Guid.NewGuid(), TemplateId = templateId, Version = 1,
+        Language = "en", PayloadSchemaVersion = "1.0", Status = CertificateTemplateStatus.Active,
+        EffectiveFrom = At, LayoutKind = CertificateLayoutKind.Html, LayoutBody = layout, PageSize = "A4",
+        Orientation = "portrait", MarginTopMm = 15, MarginRightMm = 15, MarginBottomMm = 15, MarginLeftMm = 15,
+        Fields = "[\"model.code\"]", ApprovedBy = actor, ApprovedAt = At, CreatedAt = At, CreatedBy = actor,
+        UpdatedAt = At, UpdatedBy = actor,
+    };
 
     private sealed record Setup(TenantId Tenant, Guid UnitId, Guid ItemId, Guid LocationId, string Serial);
 }

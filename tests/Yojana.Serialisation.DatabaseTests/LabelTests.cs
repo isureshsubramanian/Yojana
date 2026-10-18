@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Xunit;
@@ -8,6 +10,7 @@ using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Data.Migrations;
 using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Labels;
 using Yojana.Serialisation.Ports;
@@ -112,6 +115,9 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
 
         Assert.Equal(LabelPrintStatus.Confirmed, printed.Status);
         Assert.Equal(LabelPrintStatus.Confirmed, reprinted.Status);
+        Assert.Matches("^PJ-2026-[0-9]{5}$", printed.JobNumber);
+        Assert.Matches("^PJ-2026-[0-9]{5}$", reprinted.JobNumber);
+        Assert.NotEqual(printed.JobNumber, reprinted.JobNumber);
         var after = await UnitConsistencyAsync(tenant, unit.UnitId);
         Assert.Equal(before.OwnerEpisodeId, after.OwnerEpisodeId);
         Assert.Equal(before.CustodyEpisodeId, after.CustodyEpisodeId);
@@ -516,6 +522,23 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
         Assert.Equal(expected.Order(), jobs.Select(job => job.SourceEventId!.Value).Order());
     }
 
+    [DatabaseFact]
+    public void Print_job_migration_backfills_in_tenant_year_order_with_the_security_policy_bounded()
+    {
+        var migration = new TestableP6Polish();
+        var builder = new MigrationBuilder("Microsoft.EntityFrameworkCore.SqlServer");
+        migration.BuildUp(builder);
+        var statements = builder.Operations.OfType<SqlOperation>().Select(operation => operation.Sql).ToList();
+
+        var off = statements.FindIndex(sql => sql.Contains("STATE = OFF", StringComparison.Ordinal));
+        var backfill = statements.FindIndex(sql => sql.Contains("ROW_NUMBER() OVER", StringComparison.Ordinal));
+        var on = statements.FindIndex(sql => sql.Contains("STATE = ON", StringComparison.Ordinal));
+        Assert.True(off >= 0 && off < backfill && backfill < on);
+        Assert.Contains("PARTITION BY tenant_id, YEAR(requested_at)", statements[backfill], StringComparison.Ordinal);
+        Assert.Contains("ORDER BY requested_at, job_id", statements[backfill], StringComparison.Ordinal);
+        Assert.Contains("MERGE [serialisation].[number_series]", statements[backfill], StringComparison.Ordinal);
+    }
+
     private async Task<(TenantId Tenant, Guid UnitId, Guid EntitlementId, IReadOnlyList<Guid> IdentifierIds)> EntitledUnitAsync(string prefix)
     {
         var tenant = await fixture.NewTenantAsync(prefix);
@@ -563,4 +586,9 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
     private sealed record UnitConsistency(Guid? OwnerEpisodeId, Guid CustodyEpisodeId, string? CustodyLocationKind,
         IReadOnlyList<Yojana.Serialisation.Data.Entities.Entitlement> Entitlements, IReadOnlyList<Guid> IdentifierIds,
         IReadOnlyList<string> LabelEvents);
+
+    private sealed class TestableP6Polish : P6Polish
+    {
+        public void BuildUp(MigrationBuilder builder) => base.Up(builder);
+    }
 }

@@ -63,6 +63,7 @@ public sealed class PrintJob : ITenantScoped
 {
     public TenantId TenantId { get; set; }
     public Guid JobId { get; set; }
+    public required string JobNumber { get; set; }
     public Guid CommandId { get; set; }
     public Guid? BatchCommandId { get; set; }
     public int? BatchSequence { get; set; }

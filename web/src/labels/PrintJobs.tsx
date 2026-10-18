@@ -75,10 +75,10 @@ export function Component() {
   const refresh = async () => { await load(); setKpis(summaryKpis(await labelsApi.summary(range.from, range.to))); };
   const showJob = (job: LabelPrintJob) => {
     setActive(job.jobId);
-    openDrawer({ eyebrow: "Print job", title: job.serial ?? "Serial unavailable", mono: true }, <JobDrawer job={job} canPrint={canPrint} onOpenUnit={() => { if (job.unitId) navigate(`/units/${job.unitId}`); }} onReprinted={refresh} />);
+    openDrawer({ eyebrow: "Print job", title: job.jobNumber, mono: true }, <JobDrawer job={job} canPrint={canPrint} onOpenUnit={() => { if (job.unitId) navigate(`/units/${job.unitId}`); }} onReprinted={refresh} />);
   };
   const columns: GridColumn<LabelPrintJob>[] = [
-    { key: "job", label: "Job", width: 13, mono: true, render: (job) => `…${job.jobId.slice(-8)}` },
+    { key: "job", label: "Job", width: 13, mono: true, render: (job) => job.jobNumber },
     { key: "serial", label: "Serial", width: 17, mono: true, render: (job) => <>{job.serial ?? "Serial unavailable"}{job.rejectionReason && <span className="sub">{job.rejectionReason}</span>}</> },
     { key: "template", label: "Template", width: 22, render: (job) => job.templateName ? `${job.templateName} v${job.templateVersion ?? "—"}` : <span className="muted">No applicable template</span> },
     { key: "why", label: "Why", width: 15, render: (job) => job.originalJobId ? "Reprint" : job.sourceEventId ? "Event request" : "Manual" },
@@ -116,7 +116,7 @@ function JobDrawer({ job, canPrint, onOpenUnit, onReprinted }: { job: LabelPrint
   };
   return <>
     {job.rejectionReason && <Section title="Rejection"><div className="note bad"><strong>Rejected · nothing sent.</strong>&nbsp;{job.rejectionReason}</div></Section>}
-    <Section title="Job"><Kv rows={[["Template", job.templateName ? `${job.templateName} v${job.templateVersion ?? "—"}` : "No applicable template"], ["Requested", `${person(job.requestedBy)} · ${fmt(job.requestedAt)}`], ["Printer", job.printerRef], ["Payload hash", job.payloadHash ? <code className="label-hash">{job.payloadHash}</code> : "none · not rendered"], ["Status", humanise(job.originalJobId ? "reprinted" : job.status)]]} /></Section>
+    <Section title="Job"><Kv rows={[["Job number", job.jobNumber], ["Serial", job.serial], ["Template", job.templateName ? `${job.templateName} v${job.templateVersion ?? "—"}` : "No applicable template"], ["Requested", `${person(job.requestedBy)} · ${fmt(job.requestedAt)}`], ["Printer", job.printerRef], ["Payload hash", job.payloadHash ? <code className="label-hash">{job.payloadHash}</code> : "none · not rendered"], ["Status", humanise(job.originalJobId ? "reprinted" : job.status)]]} /></Section>
     {job.renderedPayload && <Section title="Stored payload"><pre className="code label-drawer-payload">{job.renderedPayload}</pre></Section>}
     <Section title="Actions"><div className="act">{job.unitId && <button type="button" className="btn block" onClick={onOpenUnit}>Open unit</button>}{canPrint && <button type="button" className="btn primary block" disabled={busy || !job.renderedPayload} onClick={() => void reprint()}>{busy ? "Reprinting…" : "Reprint stored payload"}</button>}</div><ErrorNote error={error} /></Section>
   </>;

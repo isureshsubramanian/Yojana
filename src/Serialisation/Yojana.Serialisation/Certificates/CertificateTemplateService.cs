@@ -154,7 +154,21 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
         };
         // The certificate module knows only a read-only placeholder seam. Which jurisdiction text applies remains the
         // catalogue port's decision and never becomes a country rule in template code.
-        return payload.Concat(jurisdictionText.PlaceholderPaths.Select(path =>
+        var presentation = new[]
+        {
+            new CertificateFieldCatalogueEntry("certificate.tracking_number", "string", false),
+            new CertificateFieldCatalogueEntry("certificate.version", "number", false),
+            new CertificateFieldCatalogueEntry("certificate.issued_at", "string", false),
+            new CertificateFieldCatalogueEntry("certificate.supersedes_tracking_number", "string", false),
+            new CertificateFieldCatalogueEntry("certificate.supersede_reason", "string", false),
+            new CertificateFieldCatalogueEntry("certificate.payload_hash", "string", false),
+            new CertificateFieldCatalogueEntry("certificate.verify_reference", "string", false),
+            new CertificateFieldCatalogueEntry("signature.printed_name", "string", false),
+            new CertificateFieldCatalogueEntry("signature.meaning", "string", false),
+            new CertificateFieldCatalogueEntry("signature.signed_at", "string", false),
+            new CertificateFieldCatalogueEntry("signature.method", "string", false),
+        };
+        return payload.Concat(presentation).Concat(jurisdictionText.PlaceholderPaths.Select(path =>
             new CertificateFieldCatalogueEntry(path, "string", false, "Mandatory text resolved from the jurisdiction catalogue at issue time.")))
             .OrderBy(row => row.Path).ToList();
     }
@@ -220,7 +234,11 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
         var built = await payloads.BuildAsync(new IssueCertificateVersion(Guid.CreateVersion7(), sampleUnitId, template.DocumentKind,
             template.FormType, null, clock.UtcNow, actorRef, Guid.Empty), versionId, cancellationToken)
             ?? throw new CommandRefusedException("unit_unknown", $"Sample unit {sampleUnitId} does not exist.");
-        var rendered = await renderer.RenderAsync(new CertificateRenderRequest(built.CanonicalPayload, versionId), cancellationToken);
+        var previewHash = CanonicalJson.Hash(built.CanonicalPayload);
+        var rendered = await renderer.RenderAsync(new CertificateRenderRequest(built.CanonicalPayload, versionId,
+            Signature: new CertificateRenderSignature("Preview signer", "released as conforming", clock.UtcNow,
+                "authenticated preview"), Metadata: new CertificateRenderMetadata("PREVIEW", 1, clock.UtcNow,
+                null, null, previewHash, "urn:yojana:certificate:PREVIEW")), cancellationToken);
         return new CertificateTemplatePreview(rendered.Bytes, rendered.MediaType, validation);
     }
 
@@ -269,32 +287,44 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
             // The lock and tenant/code unique key form one insert-if-absent boundary. Without both, two first GETs can
             // observe an empty catalogue and race three identical starter inserts.
             await databaseLock.AcquireStartersAsync(cancellationToken);
-            var starters = Starters();
-            var existing = await db.CertificateTemplates.AsNoTracking()
-                .Where(row => row.TenantId == tenant.TenantId && row.BuiltIn)
-                .Select(row => row.Code).ToListAsync(cancellationToken);
-            var missing = starters.Where(starter => !existing.Contains(starter.Code, StringComparer.Ordinal)).ToList();
-            if (missing.Count == 0)
-            {
-                if (transaction is not null) await transaction.CommitAsync(cancellationToken);
-                return;
-            }
+            var starters = CertificateStarterLayouts.All;
+            var existing = await db.CertificateTemplates
+                .Where(row => row.TenantId == tenant.TenantId && row.BuiltIn).ToListAsync(cancellationToken);
+            var existingIds = existing.Select(row => row.TemplateId).ToList();
+            var versions = await db.CertificateTemplateVersions.Where(row => row.TenantId == tenant.TenantId
+                && existingIds.Contains(row.TemplateId)).ToListAsync(cancellationToken);
             var now = clock.UtcNow;
-            foreach (var starter in missing)
+            foreach (var starter in starters)
             {
-                var template = new CertificateTemplate
+                var template = existing.SingleOrDefault(row => row.Code == starter.Code);
+                if (template is null)
                 {
-                    TenantId = tenant.TenantId, TemplateId = TimeOrderedId.New(now), Code = starter.Code, Name = starter.Name,
-                    DocumentKind = starter.Kind, FormType = starter.Form, BuiltIn = true, CreatedAt = now, CreatedBy = BuiltInActor,
-                };
-                db.CertificateTemplates.Add(template);
+                    template = new CertificateTemplate
+                    {
+                        TenantId = tenant.TenantId, TemplateId = TimeOrderedId.New(now), Code = starter.Code, Name = starter.Name,
+                        DocumentKind = starter.Kind, FormType = starter.Form, BuiltIn = true, CreatedAt = now, CreatedBy = BuiltInActor,
+                    };
+                    db.CertificateTemplates.Add(template);
+                    existing.Add(template);
+                }
+                var own = versions.Where(row => row.TemplateId == template.TemplateId).ToList();
+                if (own.Any(row => row.Version >= starter.Version)) continue;
+                foreach (var active in own.Where(row => row.Status == CertificateTemplateStatus.Active))
+                {
+                    active.Status = CertificateTemplateStatus.Retired;
+                    active.EffectiveTo = now;
+                    active.UpdatedAt = now;
+                    active.UpdatedBy = BuiltInActor;
+                }
                 db.CertificateTemplateVersions.Add(new CertificateTemplateVersion
                 {
                     TenantId = tenant.TenantId, TemplateVersionId = TimeOrderedId.New(now), TemplateId = template.TemplateId,
-                    Version = 1, Language = "en", PayloadSchemaVersion = "1.0", Status = CertificateTemplateStatus.Active,
+                    Version = starter.Version, Language = "en", PayloadSchemaVersion = "1.0", Status = CertificateTemplateStatus.Active,
                     EffectiveFrom = now, LayoutKind = CertificateLayoutKind.Html, LayoutBody = starter.Body, PageSize = "A4",
                     Orientation = "portrait", MarginTopMm = 15, MarginRightMm = 15, MarginBottomMm = 15, MarginLeftMm = 15,
-                    StaticText = "{}", Fields = JsonSerializer.Serialize(Placeholders(starter.Body)), ApprovedBy = BuiltInActor,
+                    HeaderBody = starter.Header, FooterBody = starter.Footer, StaticText = "{}",
+                    Fields = JsonSerializer.Serialize(Placeholders(string.Join('\n', new[] { starter.Body, starter.Header, starter.Footer }
+                        .Where(value => value is not null)))), ApprovedBy = BuiltInActor,
                     ApprovedAt = now, CreatedAt = now, CreatedBy = BuiltInActor, UpdatedAt = now, UpdatedBy = BuiltInActor,
                 });
             }
@@ -388,25 +418,16 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
         return result.Order().ToList();
     }
 
-    private static bool IsPartyPath(string path) => path.Split('.').Any(part => part.Contains("party", StringComparison.OrdinalIgnoreCase)
-        || part.Contains("owner", StringComparison.OrdinalIgnoreCase) || part.Contains("customer", StringComparison.OrdinalIgnoreCase)
-        || part.Contains("address", StringComparison.OrdinalIgnoreCase));
+    private static bool IsPartyPath(string path) => !path.StartsWith("issuer.", StringComparison.Ordinal)
+        && path.Split('.').Any(part => part.Contains("party", StringComparison.OrdinalIgnoreCase)
+            || part.Contains("owner", StringComparison.OrdinalIgnoreCase) || part.Contains("customer", StringComparison.OrdinalIgnoreCase)
+            || part.Contains("address", StringComparison.OrdinalIgnoreCase));
 
     private static void ValidateIdentity(string kind, string form)
     {
         if (!CertificateDocumentKind.All.Contains(kind)) throw new CommandRefusedException("certificate_document_kind_unknown", $"Unknown document kind '{kind}'.");
         if (!CertificateFormType.All.Contains(form)) throw new CommandRefusedException("certificate_form_type_unknown", $"Unknown certificate form type '{form}'.");
     }
-
-    private static IReadOnlyList<(string Code, string Name, string Kind, string Form, string Body)> Starters() =>
-    [
-        ("builtin-generic-release", "Generic release record", CertificateDocumentKind.ReleaseRecord, CertificateFormType.GenericRelease,
-            "<article><h1>Release record</h1><p>{{model.code}} · {{condition}}</p><ul>{{#each identifiers}}<li>{{type}}: {{value}}</li>{{/each}}</ul></article>"),
-        ("builtin-coc", "Certificate of conformity", CertificateDocumentKind.ReleaseRecord, CertificateFormType.CertificateOfConformity,
-            "<article><h1>Certificate of conformity</h1><p>{{model.code}} · {{build_date}}</p><p>{{issuer.name}}</p></article>"),
-        ("builtin-warranty", "Warranty certificate", CertificateDocumentKind.WarrantyCertificate, CertificateFormType.Custom,
-            "<article><h1>Warranty certificate</h1><p>{{owner.name}}</p><ul>{{#each entitlements}}<li>{{coverage_family}}: {{start_date}} – {{end_date}}</li>{{/each}}</ul></article>"),
-    ];
 
     [GeneratedRegex(@"\{\{#each\s+([a-zA-Z0-9_.]+)\s*\}\}([\s\S]*?)\{\{/each\}\}", RegexOptions.CultureInvariant)]
     private static partial Regex EachPattern();
