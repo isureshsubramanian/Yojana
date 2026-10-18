@@ -12,6 +12,10 @@ export interface PageResult<TRow> {
   pageSize: number;
   /** Opaque cursor for the next page when the server pages by key rather than by number; null on the last page. */
   continuation: string | null;
+  /** False when total is only the rows visited plus a "more" sentinel. */
+  totalIsExact?: boolean | undefined;
+  /** Explicit next-page signal for continuation paging. */
+  hasMore?: boolean | undefined;
 }
 
 export interface Kpi {

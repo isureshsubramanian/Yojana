@@ -11,8 +11,8 @@ function query(values: Record<string, string | number | null | undefined>): stri
 }
 
 export const returnsApi = {
-  list: (filters: RmaFilters, skip: number, take: number, signal?: AbortSignal) =>
-    api<RmaListResult>(`/api/rmas/${query({ ...filters, skip, take })}`, { signal }),
+  list: (filters: RmaFilters, after: string | null, take: number, signal?: AbortSignal) =>
+    api<RmaListResult>(`/api/rmas/${query({ ...filters, after, take })}`, { signal }),
   detail: (id: string, signal?: AbortSignal) => api<RmaDetail>(`/api/rmas/${id}`, { signal }),
   authorise: (id: string) => api<unknown>(`/api/rmas/${id}/authorise`, { method: "POST", body: { commandId: newCommandId(), rmaId: id, eventTime: now() } }),
   dispatch: (id: string, body: { dispatchedAt: string; carrierName: string | null; trackingReference: string | null }) =>

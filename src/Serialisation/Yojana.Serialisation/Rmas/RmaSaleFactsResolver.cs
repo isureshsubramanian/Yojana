@@ -13,14 +13,14 @@ public sealed class RmaSaleFactsResolver(SerialisationDbContext db, ISalesDocume
     public async Task<RmaSaleFacts> ResolveAsync(Guid unitId, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
-        var ownership = await db.Episodes.AsNoTracking()
+        var ownership = await db.Episodes.TagWith("P6-T22 RMA create: current ownership").AsNoTracking()
             .Where(e => e.TenantId == tenantId && e.UnitId == unitId && e.Kind == EpisodeKind.Ownership && e.ValidTo == null)
             .Select(e => new { e.EpisodeId, e.ValidFrom, e.OpeningDocumentType, e.OpeningDocumentId, e.OpeningDocumentLine })
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new CommandRefusedException("current_ownership_required", $"Unit {unitId} has no current ownership episode.", "record the current owner before requesting its return");
 
         // Project before ordering: constructing DocumentRef inside the query does not translate on SQL Server.
-        var shipment = await db.Events.AsNoTracking()
+        var shipment = await db.Events.TagWith("P6-T22 RMA create: latest shipment").AsNoTracking()
             .Where(e => e.TenantId == tenantId && e.UnitId == unitId && e.EventType == UnitEventType.Shipped
                 && e.EventTime <= ownership.ValidFrom && e.DocumentType != null && e.DocumentId != null)
             .OrderByDescending(e => e.EventTime).ThenByDescending(e => e.Seq)
@@ -33,7 +33,7 @@ public sealed class RmaSaleFactsResolver(SerialisationDbContext db, ISalesDocume
                 ? new DocumentRef(ownership.OpeningDocumentType, openingId, ownership.OpeningDocumentLine)
                 : throw new CommandRefusedException("original_sale_not_resolved", $"Unit {unitId} has no shipment or ownership source document for its current ownership episode.");
 
-        var parent = await db.AssemblyLinks.AsNoTracking()
+        var parent = await db.AssemblyLinks.TagWith("P6-T22 RMA create: assembly parent").AsNoTracking()
             .Where(l => l.TenantId == tenantId && l.ChildUnitId == unitId && l.RemovedAt == null)
             .Select(l => (Guid?)l.ParentUnitId).FirstOrDefaultAsync(cancellationToken);
         var document = await sales.GetShipmentAsync(original, cancellationToken);

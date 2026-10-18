@@ -302,6 +302,9 @@ public sealed class P5ConditionEdgeCaseTests(SerialisationHostFixture fixture)
             });
             await db.SaveChangesAsync();
         }
+        // This scenario seeds an already-authorised aggregate directly; production requests maintain the projection.
+        await InvokeAsync<RebuildRmaStageCountersResult>(setup.Tenant,
+            new RebuildRmaStageCounters(Guid.NewGuid(), "test administrator"));
         await InvokeAsync<ReceiveReturnResult>(setup.Tenant, new ReceiveReturn(Guid.NewGuid(), rmaId, Warehouse,
             [new(lineId, new DocumentSerial(returned.Serial), ConditionGrades.Defective, "graded_value")], At.AddHours(2), At.AddHours(3), At.AddHours(3), "returns"));
         await InvokeAsync<DispositionRmaResult>(setup.Tenant, new DispositionRma(Guid.NewGuid(), rmaId,

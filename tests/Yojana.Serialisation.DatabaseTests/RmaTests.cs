@@ -80,13 +80,18 @@ public sealed class RmaTests(SerialisationHostFixture fixture)
         Assert.Equal("rma_transition_not_allowed", authoriseClosed.Rule);
 
         using var scope = fixture.ScopeFor(setup.Tenant);
-        var saved = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Rmas.AsNoTracking().SingleAsync(r => r.RmaId == requested.RmaId);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var saved = await db.Rmas.AsNoTracking().SingleAsync(r => r.RmaId == requested.RmaId);
         Assert.Equal(RmaStage.Closed, saved.Stage);
         Assert.NotNull(saved.AuthorisedAt);
         Assert.NotNull(saved.InTransitAt);
         Assert.NotNull(saved.ReceivedAt);
         Assert.NotNull(saved.DispositionedAt);
         Assert.NotNull(saved.ClosedAt);
+        var counters = await db.RmaStageCounters.AsNoTracking().GroupBy(row => row.Stage)
+            .ToDictionaryAsync(group => group.Key, group => group.Sum(row => row.DocumentCount));
+        Assert.Equal(1, counters[RmaStage.Closed]);
+        Assert.All(RmaStage.All.Where(stage => stage != RmaStage.Closed), stage => Assert.Equal(0, counters[stage]));
     }
 
     [DatabaseFact]
@@ -618,11 +623,11 @@ public sealed class RmaTests(SerialisationHostFixture fixture)
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         Assert.True(await db.Rmas.AnyAsync(row => row.RmaId == requested.RmaId));
         var queries = scope.ServiceProvider.GetRequiredService<Yojana.Serialisation.Rmas.RmaQueries>();
-        var unfiltered = await queries.ListAsync(new RmaListFilter(null, null, null, null), At.AddDays(10), 0, 25, CancellationToken.None);
+        var unfiltered = await queries.ListAsync(new RmaListFilter(null, null, null, null), At.AddDays(10), null, 25, CancellationToken.None);
         Assert.Contains(unfiltered.Rows, row => row.RmaId == requested.RmaId);
-        var aged = await queries.ListAsync(new RmaListFilter(RmaStage.Requested, 5, 15, null), At.AddDays(10), 0, 25, CancellationToken.None);
+        var aged = await queries.ListAsync(new RmaListFilter(RmaStage.Requested, 5, 15, null), At.AddDays(10), null, 25, CancellationToken.None);
         Assert.Contains(aged.Rows, row => row.RmaId == requested.RmaId);
-        var list = await queries.ListAsync(new RmaListFilter(RmaStage.Requested, 5, 15, setup.Serial[..6]), At.AddDays(10), 0, 25, CancellationToken.None);
+        var list = await queries.ListAsync(new RmaListFilter(RmaStage.Requested, 5, 15, setup.Serial[..6]), At.AddDays(10), null, 25, CancellationToken.None);
         Assert.Equal(requested.RmaId, Assert.Single(list.Rows).RmaId);
         Assert.Equal(1, list.Summary.Single(x => x.Stage == RmaStage.Requested).Count);
         var detail = (await queries.DetailAsync(requested.RmaId, CancellationToken.None))!;

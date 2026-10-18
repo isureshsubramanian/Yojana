@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { DataGrid, FindBar, KpiStrip, StatusBadge, type GridColumn } from "../components";
 import { useReferenceNames } from "../corrections/ReferenceFields";
@@ -24,9 +24,10 @@ export function Component() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [active, setActive] = useState<string | null>(null);
+  const cursors = useRef<(string | null)[]>([null]);
   const load = useCallback((signal?: AbortSignal) => {
     setLoading(true); setError(null);
-    return returnsApi.list(filters, (pageNumber - 1) * PAGE_SIZE, PAGE_SIZE, signal)
+    return returnsApi.list(filters, cursors.current[pageNumber - 1] ?? null, PAGE_SIZE, signal)
       .then(setResult).catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); })
       .finally(() => setLoading(false));
   }, [filters, pageNumber]);
@@ -34,7 +35,14 @@ export function Component() {
   const rows = result?.rows ?? [];
   const names = useReferenceNames({ items: rows.map((row) => row.primaryItemId), parties: rows.map((row) => row.returningPartyRef) });
   const people = usePeople(rows.flatMap((row) => [row.requestedBy, row.lastActorRef]));
-  const setFilter = (patch: Partial<RmaFilters>) => { setFilters((current) => ({ ...current, ...patch })); setPageNumber(1); };
+  const setFilter = (patch: Partial<RmaFilters>) => { cursors.current = [null]; setFilters((current) => ({ ...current, ...patch })); setPageNumber(1); };
+  const setPage = (next: number) => {
+    if (next > pageNumber) {
+      if (!result?.continuation) return;
+      cursors.current[next - 1] = result.continuation;
+    }
+    setPageNumber(Math.max(1, next));
+  };
   const openReturn = async (row: RmaListRow) => {
     setActive(row.rmaId);
     openDrawer({ eyebrow: "Return", title: row.rmaNumber ?? "Return request", mono: true }, <p className="muted">Loading return…</p>);
@@ -71,8 +79,8 @@ export function Component() {
           <label className="field"><span className="lbl">Minimum age</span><select className="select" value={filters.minimumAgeDays ?? ""} onChange={(event) => setFilter({ minimumAgeDays: event.target.value ? Number(event.target.value) : null })}><option value="">Any</option><option value="3">3 days</option><option value="8">8 days</option><option value="15">15 days</option><option value="30">30 days</option></select></label>
           <label className="field"><span className="lbl">Maximum age</span><select className="select" value={filters.maximumAgeDays ?? ""} onChange={(event) => setFilter({ maximumAgeDays: event.target.value ? Number(event.target.value) : null })}><option value="">Any</option><option value="2">2 days</option><option value="7">7 days</option><option value="14">14 days</option><option value="29">29 days</option></select></label>
         </div></div></section>
-        <section className="card" aria-labelledby="returns-list-heading"><div className="card-header"><h2 id="returns-list-heading">{filters.stage ? humanise(filters.stage) : "All returns"} <span className="meta">{result?.total.toLocaleString() ?? "—"} returns</span></h2><span className="meta">Exceptions first, then oldest</span></div>
-          <DataGrid columns={columns} page={{ rows, total: result?.total ?? 0, page: pageNumber, pageSize: PAGE_SIZE, continuation: null }} rowId={(row) => row.rmaId} onPage={setPageNumber} onRowClick={(row) => void openReturn(row)} activeRowId={active} loading={loading} emptyText="No returns match these filters." />
+        <section className="card" aria-labelledby="returns-list-heading"><div className="card-header"><h2 id="returns-list-heading">{filters.stage ? humanise(filters.stage) : "All returns"} <span className="meta">{rows.length.toLocaleString()} shown{result?.hasMore ? " · more" : ""}</span></h2><span className="meta">Exceptions first, then oldest</span></div>
+          <DataGrid columns={columns} page={{ rows, total: (pageNumber - 1) * PAGE_SIZE + rows.length + (result?.hasMore ? 1 : 0), page: pageNumber, pageSize: PAGE_SIZE, continuation: result?.continuation ?? null, totalIsExact: false, hasMore: result?.hasMore ?? false }} rowId={(row) => row.rmaId} onPage={setPage} onRowClick={(row) => void openReturn(row)} activeRowId={active} loading={loading} emptyText="No returns match these filters." />
         </section>
         <ErrorNote error={error} />
       </div>

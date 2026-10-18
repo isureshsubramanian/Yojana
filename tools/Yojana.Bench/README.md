@@ -84,12 +84,13 @@ runs. `--documents` is the total number of editable campaigns and policy drafts,
 
 ```sh
 dotnet run --project tools/Yojana.Bench -c Debug --no-build -- seed-users --tenant 1
-dotnet run --project tools/Yojana.Bench -c Debug --no-build -- prepare-concurrency --tenant 1 --documents 50 --engineers 120 --duration 10m
+dotnet run --project tools/Yojana.Bench -c Debug --no-build -- prepare-concurrency --tenant 1 --documents 50 --engineers 120 --duration 10m --numbering sequence
 ```
 
-For the example above, the prepared set contains 12,600 RMA-eligible customer-owned shipped units with live outbound
+For the example above, the prepared set contains at least 12,000 RMA-eligible customer-owned shipped units with live outbound
 cover plus 200 returned units owned and held by us with open refurbishment work orders, 150 submitted adjudication claims for each numbering-mode run, 50
-separate editable claims, approved replacement sources, a 10,000-unit replacement-stock selection, and version-checked
+separate editable claims, and approved replacement sources plus replacement-stock units sized from the run's engineer count,
+duration and workload weights with the same 12,000-operation safety floor as the RMA pool, as well as version-checked
 campaign/policy/claim documents. Preparation finishes with a whole-unit consistency check over ownership, custody,
 entitlements, identifiers and the ledger events that produced those states.
 
@@ -102,21 +103,30 @@ export ASPNETCORE_URLS=http://127.0.0.1:5086
 dotnet run --project src/Web/Yojana.Web -c Debug --no-build
 ```
 
-In another shell with the same benchmark variables:
+In another shell with the same benchmark variables, run the mode prepared above:
 
 ```sh
 dotnet run --project tools/Yojana.Bench -c Debug --no-build -- concurrency \
   --tenant 1 --url http://127.0.0.1:5086 --engineers 120 --duration 10m \
   --numbering sequence --out artifacts/bench-concurrency
+```
 
-dotnet run --project tools/Yojana.Bench -c Debug --no-build -- concurrency \
+Before the gap-free run, prepare a fresh round for that mode; both the approved claims and replacement-stock selection
+are consumed by a run:
+
+```sh
+YOJANA_BENCH_CLAIM_ROUND=2 dotnet run --project tools/Yojana.Bench -c Debug --no-build -- prepare-concurrency \
+  --tenant 1 --documents 50 --engineers 120 --duration 10m --numbering gap_free
+
+YOJANA_BENCH_CLAIM_ROUND=2 dotnet run --project tools/Yojana.Bench -c Debug --no-build -- concurrency \
   --tenant 1 --url http://127.0.0.1:5086 --engineers 120 --duration 10m \
   --numbering gap_free --out artifacts/bench-concurrency
 ```
 
 Each run writes a timestamped Markdown report and CSV file to `artifacts/bench-concurrency/`. The report includes
 per-operation throughput and p50/p95/p99 latency, errors by type, expected `document_changed` conflicts, platform
-concurrency retries, retries exhausted, number-series and SQL lock waits, deadlocks and lost updates.
+concurrency retries, retries exhausted, connection-acquisition time, SQL wait deltas, RMA-create Query Store timings,
+published-event queue depth, deadlocks and lost updates.
 
 Without `--tenant`, `concurrency` retains its DEV-tenant default for the small development/test case. Benchmark runs
 must always pass `--tenant <index>`.
@@ -124,5 +134,5 @@ must always pass `--tenant <index>`.
 ## Running again on the same database
 
 Each run adjudicates the open claims of its numbering pool. Before another run of the same mode, prepare a fresh round
-of claims: `YOJANA_BENCH_CLAIM_ROUND=2 dotnet run --project tools/Yojana.Bench -c Release --no-build -- prepare-concurrency --tenant 1 --documents 50 --engineers 120 --duration 10m`
+of claims: `YOJANA_BENCH_CLAIM_ROUND=3 dotnet run --project tools/Yojana.Bench -c Release --no-build -- prepare-concurrency --tenant 1 --documents 50 --engineers 120 --duration 10m --numbering sequence`
 (increase the round each time). Units and refurbishment work orders are topped up or reused automatically.

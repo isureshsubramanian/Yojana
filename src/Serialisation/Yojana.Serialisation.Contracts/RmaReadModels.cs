@@ -9,7 +9,13 @@ public sealed record RmaListRow(Guid RmaId, string? RmaNumber, string Stage, Dat
 
 public sealed record RmaStageCount(string Stage, int Count, int? OldestAgeDays, int ExceptionCount);
 
-public sealed record RmaListResult(IReadOnlyList<RmaListRow> Rows, IReadOnlyList<RmaStageCount> Summary, int Total, int Skip, int Take);
+/// <summary>Keyset-paged RMA list. Continuation is opaque and null only when no later row exists.</summary>
+public sealed record RmaListResult(
+    IReadOnlyList<RmaListRow> Rows,
+    IReadOnlyList<RmaStageCount> Summary,
+    string? Continuation,
+    bool HasMore,
+    int Take);
 
 public sealed record RmaDetail(
     Guid RmaId,

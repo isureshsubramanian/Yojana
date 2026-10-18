@@ -32,7 +32,7 @@ export function Component() {
     setDetail(next); setActiveLineId(next.lines.find((line) => !line.receiptOutcome)?.rmaLineId ?? next.lines[0]?.rmaLineId ?? null);
     setGrades(Object.fromEntries(next.lines.map((line) => [line.rmaLineId, line.conditionGrade ?? "defective"])));
   }, []);
-  const loadToday = useCallback((signal?: AbortSignal) => returnsApi.list({ stage: "received", minimumAgeDays: null, maximumAgeDays: null, q: "" }, 0, 50, signal)
+  const loadToday = useCallback((signal?: AbortSignal) => returnsApi.list({ stage: "received", minimumAgeDays: null, maximumAgeDays: null, q: "" }, null, 50, signal)
     .then((page) => setToday(page.rows.filter((row) => isToday(row.receivedAt)))), []);
   useEffect(() => {
     const controller = new AbortController(); const id = params.get("rmaId");
@@ -48,7 +48,7 @@ export function Component() {
     try {
       let current = detail;
       if (!current) {
-        const matches = await returnsApi.list({ stage: "", minimumAgeDays: null, maximumAgeDays: null, q: value }, 0, 10);
+        const matches = await returnsApi.list({ stage: "", minimumAgeDays: null, maximumAgeDays: null, q: value }, null, 10);
         const candidate = matches.rows.find((row) => ["authorised", "in_transit"].includes(row.stage)) ?? matches.rows[0];
         if (!candidate) throw new Error("No return matches this RMA or unit label.");
         current = await returnsApi.detail(candidate.rmaId); applyDetail(current);

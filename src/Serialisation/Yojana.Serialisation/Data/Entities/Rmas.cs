@@ -25,6 +25,8 @@ public sealed class Rma : ITenantScoped
     public required string RequestedBy { get; set; }
     public string? LastActorRef { get; set; }
     public Guid LastEventId { get; set; }
+    public int ExceptionCount { get; set; }
+    public bool HasException { get; set; }
     public string LastModifiedBy { get; set; } = "";
     public DateTime LastModifiedAt { get; set; }
     public byte[] RowVersion { get; set; } = [];
@@ -64,6 +66,25 @@ public sealed class RmaLine : ITenantScoped
     public Guid? ReplacementIntentId { get; set; }
     public string? EntitlementClosedReason { get; set; }
     public Guid? CoverageDecisionRef { get; set; }
+    public bool IsException { get; set; }
+}
+
+/// <summary>
+/// Tenant-local, striped read projection for the RMA pipeline KPI strip. This table is deliberately not rowversion
+/// guarded: <see cref="Rmas.RmaStateMachine"/> moves the two stage totals for an RMA's stable slot with one set-based
+/// statement, so unrelated documents add and subtract without sharing one tenant-wide hot row. Any new path that
+/// changes <c>Rma.Stage</c> or exception state must go through that state machine/counter writer or the projection drifts.
+/// </summary>
+public sealed class RmaStageCounter : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public required string Stage { get; set; }
+    public byte Slot { get; set; }
+    public int DocumentCount { get; set; }
+    public int ExceptionCount { get; set; }
+    public Guid? LastRebuildCommandId { get; set; }
+    public DateTime? LastRebuiltAt { get; set; }
+    public string? LastRebuiltBy { get; set; }
 }
 
 public sealed class ReturnReceipt : ITenantScoped

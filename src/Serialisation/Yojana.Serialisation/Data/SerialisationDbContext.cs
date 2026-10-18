@@ -133,6 +133,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<Rma> Rmas => Set<Rma>();
     public DbSet<RmaLine> RmaLines => Set<RmaLine>();
+    public DbSet<RmaStageCounter> RmaStageCounters => Set<RmaStageCounter>();
     public DbSet<ReturnReceipt> ReturnReceipts => Set<ReturnReceipt>();
     public DbSet<ReturnReason> ReturnReasons => Set<ReturnReason>();
     public DbSet<UnitConditionEvent> ConditionEvents => Set<UnitConditionEvent>();
@@ -1024,7 +1025,11 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
         modelBuilder.Entity<Rma>(b =>
         {
-            b.ToTable("rma", t => t.HasCheckConstraint("ck_rma_stage", "stage IN ('requested', 'authorised', 'in_transit', 'received', 'dispositioned', 'closed')"));
+            b.ToTable("rma", t =>
+            {
+                t.HasCheckConstraint("ck_rma_stage", "stage IN ('requested', 'authorised', 'in_transit', 'received', 'dispositioned', 'closed')");
+                t.HasCheckConstraint("ck_rma_exception_count", "exception_count >= 0 AND has_exception = CASE WHEN exception_count > 0 THEN 1 ELSE 0 END");
+            });
             b.HasKey(r => new { r.TenantId, r.RmaId });
             b.Property(r => r.RmaNumber).HasMaxLength(20).IsUnicode(false);
             b.Property(r => r.Stage).HasMaxLength(20).IsUnicode(false);
@@ -1036,7 +1041,14 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(r => r.RowVersion).IsRowVersion();
             b.HasIndex(r => new { r.TenantId, r.CommandId }).IsUnique();
             b.HasIndex(r => new { r.TenantId, r.RmaNumber }).IsUnique().HasFilter("[rma_number] IS NOT NULL");
-            b.HasIndex(r => new { r.TenantId, r.Stage, r.RequestedAt });
+            b.HasIndex(r => new { r.TenantId, r.HasException, r.RequestedAt, r.RmaId })
+                .IsDescending(false, true, false, false)
+                .IncludeProperties(r => new { r.RmaNumber, r.Stage, r.RequestDate, r.ReturningPartyRef, r.ClosedAt,
+                    r.DispositionedAt, r.ReceivedAt, r.InTransitAt, r.AuthorisedAt, r.RequestedBy, r.LastActorRef, r.ExceptionCount });
+            b.HasIndex(r => new { r.TenantId, r.Stage, r.HasException, r.RequestedAt, r.RmaId })
+                .IsDescending(false, false, true, false, false)
+                .IncludeProperties(r => new { r.RmaNumber, r.RequestDate, r.ReturningPartyRef, r.ClosedAt,
+                    r.DispositionedAt, r.ReceivedAt, r.InTransitAt, r.AuthorisedAt, r.RequestedBy, r.LastActorRef, r.ExceptionCount });
             b.HasIndex(r => new { r.TenantId, r.ReturningPartyRef, r.Stage });
         });
 
@@ -1065,10 +1077,26 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(l => l.Disposition).HasMaxLength(30);
             b.Property(l => l.EntitlementClosedReason).HasMaxLength(40);
             b.HasIndex(l => new { l.TenantId, l.RmaId, l.Sequence }).IsUnique();
+            b.HasIndex(l => new { l.TenantId, l.IsException, l.RmaId, l.Sequence })
+                .HasFilter("[is_exception] = CAST(1 AS bit)")
+                .IncludeProperties(l => new { l.ProvisionalUnitId, l.ReceiptOutcome });
             b.HasIndex(l => new { l.TenantId, l.RequestedUnitId, l.OwnershipEpisodeId });
             b.HasIndex(l => new { l.TenantId, l.AuthorisedUnitId, l.ReceiptOutcome });
             b.HasIndex(l => new { l.TenantId, l.ParentUnitId, l.ParentIncomplete });
             b.HasOne<Rma>().WithMany().HasForeignKey(l => new { l.TenantId, l.RmaId }).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RmaStageCounter>(b =>
+        {
+            b.ToTable("rma_stage_counter", t =>
+            {
+                t.HasCheckConstraint("ck_rma_stage_counter_stage", "stage IN ('requested', 'authorised', 'in_transit', 'received', 'dispositioned', 'closed')");
+                t.HasCheckConstraint("ck_rma_stage_counter_slot", "slot BETWEEN 0 AND 15");
+                t.HasCheckConstraint("ck_rma_stage_counter_counts", "document_count >= 0 AND exception_count >= 0 AND exception_count <= document_count");
+            });
+            b.HasKey(row => new { row.TenantId, row.Stage, row.Slot });
+            b.Property(row => row.Stage).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.LastRebuiltBy).HasMaxLength(200);
         });
 
         modelBuilder.Entity<ReturnReceipt>(b =>

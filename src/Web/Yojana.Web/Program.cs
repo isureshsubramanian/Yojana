@@ -9,6 +9,7 @@ using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Shell;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Data;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Messaging.Smoke;
@@ -118,6 +119,7 @@ app.MapGet("/api/platform/metrics/concurrency", () => Results.Ok(new
 {
     concurrencyExceptionsObserved = ConcurrencyRetryMetrics.Observed,
     retriesExhausted = ConcurrencyRetryMetrics.Exhausted,
+    connectionAcquisition = ConnectionAcquisitionMetrics.Snapshot(),
 }))
     .RequireAuthorization(YojanaPolicy.TenantMember);
 

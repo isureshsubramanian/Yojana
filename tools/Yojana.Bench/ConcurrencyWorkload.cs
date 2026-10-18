@@ -6,6 +6,7 @@ public static class ConcurrencyWorkload
     private const int DefaultWeightTotal = 100;
     private const double RmaHeadroom = 1.5;
     private const int MinimumRmaEligibleUnits = 12_000;
+    private const int MinimumReplacementCapacity = 12_000;
 
     public static IReadOnlyDictionary<string, int> Weights(BenchOptions options)
     {
@@ -27,13 +28,21 @@ public static class ConcurrencyWorkload
 
     public static int RequiredRmaEligibleUnits(BenchOptions options)
     {
-        var weights = Weights(options);
-        if (!weights.TryGetValue("rma_create_receive", out var rmaWeight)) return 0;
-        var normalisedWeight = rmaWeight * (double)DefaultWeightTotal / weights.Values.Sum();
-        var weightedCapacity = checked((int)Math.Ceiling(options.Engineers * options.Duration.TotalMinutes
-            * normalisedWeight * RmaHeadroom));
+        var weightedCapacity = Required(options, "rma_create_receive");
         // A faster server completes substantially more mixed-workload turns than the planning estimate. Keep a
         // bounded floor so short verification runs do not exhaust their pool before they reveal contention.
         return Math.Max(MinimumRmaEligibleUnits, weightedCapacity);
+    }
+
+    public static int RequiredReplacementCapacity(BenchOptions options) =>
+        Math.Max(MinimumReplacementCapacity, Required(options, "warranty_replacement_create"));
+
+    private static int Required(BenchOptions options, string operation)
+    {
+        var weights = Weights(options);
+        if (!weights.TryGetValue(operation, out var weight)) return 0;
+        var normalisedWeight = weight * (double)DefaultWeightTotal / weights.Values.Sum();
+        return checked((int)Math.Ceiling(options.Engineers * options.Duration.TotalMinutes
+            * normalisedWeight * RmaHeadroom));
     }
 }

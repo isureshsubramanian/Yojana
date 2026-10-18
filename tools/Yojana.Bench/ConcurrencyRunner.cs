@@ -18,7 +18,7 @@ public sealed class ConcurrencyRunner(BenchOptions options)
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly ConcurrentBag<LoadSample> samples = [];
     private readonly ConcurrentBag<SuccessfulEdit> successfulEdits = [];
-    private readonly ConcurrentBag<ReplacementSource> replacementSources = [];
+    private readonly ConcurrentQueue<ReplacementSource> replacementSources = new();
     private readonly ConcurrentQueue<(Guid Id, string Label)> rmaUnits = new();
     private readonly ConcurrentQueue<Guid> openClaims = new();
     private readonly ConcurrentQueue<Guid> replacementUnits = new();
@@ -36,7 +36,7 @@ public sealed class ConcurrencyRunner(BenchOptions options)
             ValidatePreparedResources();
             foreach (var unit in resources.RmaUnits) rmaUnits.Enqueue(unit);
             foreach (var claim in resources.OpenClaims) openClaims.Enqueue(claim);
-            foreach (var source in resources.ReplacementSources) replacementSources.Add(source);
+            foreach (var source in resources.ReplacementSources) replacementSources.Enqueue(source);
             foreach (var unit in resources.ReplacementUnits) replacementUnits.Enqueue(unit);
             var beforeRetries = await RetryMetricAsync(clients[0], cancellationToken);
             var monitor = new ConcurrencySqlMonitor(options.ConnectionString, options.ConcurrencyTenantId);
@@ -56,7 +56,13 @@ public sealed class ConcurrencyRunner(BenchOptions options)
             var diagnostics = new ConcurrencyDiagnostics(
                 Math.Max(0, afterRetries.Observed - beforeRetries.Observed),
                 checked((int)Math.Max(0, afterRetries.Exhausted - beforeRetries.Exhausted)), diagnostic.NumberSeriesWait,
-                diagnostic.LockWaitDelta, diagnostic.Deadlocks, expectedConflicts, lost);
+                diagnostic.LockWaitDelta,
+                Math.Max(0, afterRetries.ConnectionAcquisitions - beforeRetries.ConnectionAcquisitions),
+                Math.Max(0, afterRetries.ConnectionAcquisitionMilliseconds - beforeRetries.ConnectionAcquisitionMilliseconds),
+                afterRetries.ConnectionAcquisitionMaximumMilliseconds,
+                diagnostic.Deadlocks, expectedConflicts, lost, diagnostic.WaitMilliseconds,
+                diagnostic.PublishedQueueStart, diagnostic.PublishedQueueMaximum, diagnostic.PublishedQueueEnd,
+                diagnostic.RmaCreateQueries);
             notes.Add($"All mutations used the authenticated HTTP API for tenant {options.ConcurrencyTenantLabel}; tenant-scoped SQL selected prepared IDs and sampled diagnostics only.");
             notes.Add("Presence heartbeats ran every 20 seconds per simulated engineer; one seeded administrator identity represents several sessions.");
             notes.Add($"Workload weights: {string.Join(", ", ConcurrencyWorkload.Weights(options).Select(pair => $"{pair.Key}={pair.Value}"))}.");
@@ -123,10 +129,13 @@ public sealed class ConcurrencyRunner(BenchOptions options)
             WHERE c.tenant_id = @tenant
               AND NOT EXISTS (SELECT 1 FROM serialisation.refurbishment_work_order w
                 WHERE w.tenant_id = c.tenant_id AND w.target_unit_id = c.unit_id)
+              AND NOT EXISTS (SELECT 1 FROM serialisation.claim claim_source
+                WHERE claim_source.tenant_id = c.tenant_id AND claim_source.unit_id = c.unit_id
+                  AND claim_source.submitted_by = @actor AND claim_source.status = 'approved')
               AND c.location_kind IN ('customer_site','in_transit')
             ORDER BY c.unit_id;
             """, cancellationToken, ("@tenant", options.ConcurrencyTenantId), ("@shipment", ConcurrencyPreparation.ShipmentDocumentId),
-            ("@take", ConcurrencyWorkload.RequiredRmaEligibleUnits(options)));
+            ("@take", ConcurrencyWorkload.RequiredRmaEligibleUnits(options)), ("@actor", ConcurrencyPreparation.Actor));
         var openClaims = await IdsAsync(connection, """
             SELECT TOP (150) c.claim_id FROM serialisation.claim c
             WHERE c.tenant_id = @tenant AND c.submitted_by = @actor AND c.status = 'submitted'
@@ -135,7 +144,7 @@ public sealed class ConcurrencyRunner(BenchOptions options)
                     AND e.reference = @claim_pool)
             ORDER BY c.claim_id;
             """, cancellationToken, ("@tenant", options.ConcurrencyTenantId), ("@actor", ConcurrencyPreparation.Actor),
-            ("@claim_pool", options.NumberingMode == "sequence" ? "BENCH-CONCURRENCY-SEQUENCE" : "BENCH-CONCURRENCY-GAP-FREE"));
+            ("@claim_pool", ConcurrencyPreparation.ClaimPoolReference(options.NumberingMode)));
         var editableClaims = await IdsAsync(connection, """
             SELECT TOP (50) c.claim_id FROM serialisation.claim c
             WHERE c.tenant_id = @tenant AND c.submitted_by = @actor AND c.status = 'submitted'
@@ -145,18 +154,23 @@ public sealed class ConcurrencyRunner(BenchOptions options)
             ORDER BY c.claim_id;
             """, cancellationToken, ("@tenant", options.ConcurrencyTenantId), ("@actor", ConcurrencyPreparation.Actor));
         var replacementSources = (await Sql.RowsAsync(connection, """
-            SELECT TOP (50) c.claim_id, l.entitlement_id
+            SELECT TOP (@take) c.claim_id, l.entitlement_id
             FROM serialisation.claim c
             JOIN serialisation.claim_line l ON l.tenant_id = c.tenant_id AND l.claim_id = c.claim_id
             JOIN serialisation.entitlement e ON e.tenant_id = l.tenant_id AND e.entitlement_id = l.entitlement_id
             JOIN serialisation.warranty_policy_version p ON p.tenant_id = e.tenant_id AND p.policy_version_id = e.policy_version_id
             WHERE c.tenant_id = @tenant AND c.submitted_by = @actor AND c.status = 'approved' AND l.entitlement_id IS NOT NULL
               AND e.status = 'active'
+              AND EXISTS (SELECT 1 FROM serialisation.claim_evidence evidence
+                  WHERE evidence.tenant_id = c.tenant_id AND evidence.claim_id = c.claim_id
+                    AND evidence.reference = @claim_pool)
             ORDER BY c.claim_id;
-            """, 0, ("@tenant", options.ConcurrencyTenantId), ("@actor", ConcurrencyPreparation.Actor)))
+            """, 0, ("@tenant", options.ConcurrencyTenantId), ("@actor", ConcurrencyPreparation.Actor),
+            ("@claim_pool", ConcurrencyPreparation.ClaimPoolReference(options.NumberingMode)),
+            ("@take", ConcurrencyWorkload.RequiredReplacementCapacity(options))))
             .Select(row => new ReplacementSource((Guid)row["claim_id"]!, (Guid)row["entitlement_id"]!)).ToList();
         var replacementUnits = await IdsAsync(connection, """
-            SELECT TOP (10000) sm.unit_id
+            SELECT TOP (@take) sm.unit_id
             FROM serialisation.selection_set_member sm
             WHERE sm.tenant_id = @tenant AND sm.selection_id = @selection
               AND NOT EXISTS (SELECT 1 FROM serialisation.replacement_link r
@@ -167,7 +181,8 @@ public sealed class ConcurrencyRunner(BenchOptions options)
                     AND e.document_type = 'bench_concurrency' AND e.document_id = @shipment)
             ORDER BY sm.unit_id;
             """, cancellationToken, ("@tenant", options.ConcurrencyTenantId), ("@selection", ConcurrencyPreparation.StockSelectionId),
-            ("@shipment", ConcurrencyPreparation.ShipmentDocumentId));
+            ("@shipment", ConcurrencyPreparation.ShipmentDocumentId),
+            ("@take", ConcurrencyWorkload.RequiredReplacementCapacity(options)));
         return new ResourcePool(units, rmaUnits,
             await IdsAsync(connection, "SELECT TOP (200) rma_id FROM serialisation.rma WHERE tenant_id = @tenant ORDER BY requested_at DESC", cancellationToken, ("@tenant", options.ConcurrencyTenantId)),
             editableClaims,
@@ -303,9 +318,9 @@ public sealed class ConcurrencyRunner(BenchOptions options)
 
     private Task<ResponseResult> ReplacementAsync(HttpClient client, Random random, CancellationToken cancellationToken)
     {
-        var sources = replacementSources.ToArray();
-        if (sources.Length == 0 || !replacementUnits.TryDequeue(out var replacementUnit)) return Missing("prepared_replacement_prerequisite");
-        var source = sources[random.Next(sources.Length)];
+        _ = random;
+        if (!replacementSources.TryDequeue(out var source)) return Capacity("approved replacement sources exhausted");
+        if (!replacementUnits.TryDequeue(out var replacementUnit)) return Capacity("replacement-stock units exhausted");
         return SendAsync(client, HttpMethod.Post, "/api/warranty-replacements", new
         {
             commandId = Guid.NewGuid(), sourceKind = "claim", sourceId = source.ClaimId,
@@ -470,14 +485,17 @@ public sealed class ConcurrencyRunner(BenchOptions options)
         {
             if (response.Json is null) return new(0, 0);
             var root = response.Json.RootElement;
+            var acquisition = root.GetProperty("connectionAcquisition");
             return new(root.GetProperty("concurrencyExceptionsObserved").GetInt64(),
-                root.GetProperty("retriesExhausted").GetInt64());
+                root.GetProperty("retriesExhausted").GetInt64(), acquisition.GetProperty("count").GetInt64(),
+                acquisition.GetProperty("totalMilliseconds").GetDouble(), acquisition.GetProperty("maximumMilliseconds").GetDouble());
         }
     }
 
     private bool Hot(Random random) => random.Next(100) < options.ContentionPercent;
     private static T Pick<T>(IReadOnlyList<T> values, Random random, bool hot = false) => values[random.Next(hot ? Math.Min(4, values.Count) : values.Count)];
     private static Task<ResponseResult> Missing(string resource) => Task.FromResult(new ResponseResult(424, $"no_{resource}", false, null));
+    private static Task<ResponseResult> Capacity(string warning) => Task.FromResult(new ResponseResult(204, "", true, null, warning));
 
     private static List<string> Expand(IReadOnlyDictionary<string, int> weights) => weights.SelectMany(pair => Enumerable.Repeat(pair.Key, pair.Value)).ToList();
     private static string Error(JsonElement? json, HttpStatusCode status)
@@ -511,7 +529,8 @@ public sealed class ConcurrencyRunner(BenchOptions options)
     }
 
     private sealed record ResponseResult(int StatusCode, string ErrorType, bool Success, JsonDocument? Json, string? HarnessWarning = null);
-    private sealed record RetryMetric(long Observed, long Exhausted);
+    private sealed record RetryMetric(long Observed, long Exhausted, long ConnectionAcquisitions = 0,
+        double ConnectionAcquisitionMilliseconds = 0, double ConnectionAcquisitionMaximumMilliseconds = 0);
     private sealed record SuccessfulEdit(string DocumentType, Guid Id, string Token);
     private sealed record ReplacementSource(Guid ClaimId, Guid EntitlementId);
     private sealed record ResourcePool(

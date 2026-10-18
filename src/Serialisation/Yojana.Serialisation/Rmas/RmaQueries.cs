@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text;
 using System.Text.Json;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Claims;
@@ -14,43 +15,60 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
 {
     private const string RmaDocumentType = "rma";
 
-    public async Task<RmaListResult> ListAsync(RmaListFilter filter, DateTime now, int skip, int take, CancellationToken cancellationToken)
+    public async Task<RmaListResult> ListAsync(RmaListFilter filter, DateTime now, string? after, int take,
+        CancellationToken cancellationToken)
     {
         if (filter.Stage is not null && !RmaStage.All.Contains(filter.Stage)) throw new ArgumentException($"Unknown RMA stage '{filter.Stage}'.", nameof(filter));
         if (filter.MinimumAgeDays is < 0 || filter.MaximumAgeDays is < 0 || filter.MinimumAgeDays > filter.MaximumAgeDays)
             throw new ArgumentException("RMA age bounds must be non-negative and minimum cannot exceed maximum.", nameof(filter));
-        skip = Math.Max(0, skip);
         take = Math.Clamp(take, 1, 200);
         var tenantId = tenant.TenantId;
         var query = db.Rmas.AsNoTracking().Where(r => r.TenantId == tenantId);
         if (filter.Stage is not null) query = query.Where(r => r.Stage == filter.Stage);
         if (filter.MinimumAgeDays is { } minimum) { var before = now.AddDays(-minimum); query = query.Where(r => r.RequestedAt <= before); }
-        if (filter.MaximumAgeDays is { } maximum) { var after = now.AddDays(-(maximum + 1)); query = query.Where(r => r.RequestedAt > after); }
+        if (filter.MaximumAgeDays is { } maximum) { var youngerThan = now.AddDays(-(maximum + 1)); query = query.Where(r => r.RequestedAt > youngerThan); }
         if (!string.IsNullOrWhiteSpace(filter.Find))
         {
             var find = filter.Find.Trim();
             var normalised = IdentifierNormaliser.Normalise(find, identifierPolicies.For(IdentifierType.InternalSerial)).Value;
             var rmaNumber = find.ToUpperInvariant();
+            // Free text deliberately has a bounded candidate phase: both prefixes seek their own indexes and no
+            // request can turn a broad serial/RMA prefix into an unbounded RMA sort at benchmark volume.
             var unitIds = await db.Identifiers.AsNoTracking()
                 .Where(i => i.TenantId == tenantId && i.NormalisedValue.StartsWith(normalised))
                 .OrderBy(i => i.NormalisedValue).Select(i => i.UnitId).Distinct().Take(201).ToListAsync(cancellationToken);
-            query = query.Where(r => (r.RmaNumber != null && r.RmaNumber.StartsWith(rmaNumber))
-                || db.RmaLines.Any(l => l.TenantId == tenantId && l.RmaId == r.RmaId && unitIds.Contains(l.RequestedUnitId)));
+            var numberIds = await db.Rmas.AsNoTracking().Where(r => r.TenantId == tenantId && r.RmaNumber != null
+                    && r.RmaNumber.StartsWith(rmaNumber))
+                .OrderBy(r => r.RmaNumber).Select(r => r.RmaId).Take(201).ToListAsync(cancellationToken);
+            var unitRmaIds = unitIds.Count == 0 ? [] : await db.RmaLines.AsNoTracking()
+                .Where(line => line.TenantId == tenantId && unitIds.Contains(line.RequestedUnitId))
+                .OrderBy(line => line.RequestedUnitId).ThenBy(line => line.RmaId)
+                .Select(line => line.RmaId).Distinct().Take(201).ToListAsync(cancellationToken);
+            var candidateIds = numberIds.Concat(unitRmaIds).Distinct().Take(400).ToList();
+            query = query.Where(r => candidateIds.Contains(r.RmaId));
         }
-        var total = await query.CountAsync(cancellationToken);
-        var exceptionRmaIds = await db.RmaLines.AsNoTracking()
-            .Where(line => line.TenantId == tenantId && (line.ProvisionalUnitId != null
-                || line.ReceiptOutcome != null && line.ReceiptOutcome != ReturnOutcome.Accepted))
-            .Select(line => line.RmaId).Distinct().ToListAsync(cancellationToken);
-        var raw = await query
-            .OrderByDescending(r => exceptionRmaIds.Contains(r.RmaId))
-            .ThenBy(r => r.RequestedAt).ThenBy(r => r.RmaId).Skip(skip).Take(take)
+
+        if (DecodeCursor(after) is { } cursor)
+        {
+            query = cursor.HasException
+                ? query.Where(r => !r.HasException
+                    || r.HasException && (r.RequestedAt > cursor.RequestedAt
+                        || r.RequestedAt == cursor.RequestedAt && r.RmaId.CompareTo(cursor.RmaId) > 0))
+                : query.Where(r => !r.HasException && (r.RequestedAt > cursor.RequestedAt
+                    || r.RequestedAt == cursor.RequestedAt && r.RmaId.CompareTo(cursor.RmaId) > 0));
+        }
+
+        var bounded = await query
+            .OrderByDescending(r => r.HasException)
+            .ThenBy(r => r.RequestedAt).ThenBy(r => r.RmaId).Take(take + 1)
             .Select(r => new
             {
                 r.RmaId, r.RmaNumber, r.Stage, r.RequestDate, r.RequestedAt, r.ReturningPartyRef,
                 UpdatedAt = r.ClosedAt ?? r.DispositionedAt ?? r.ReceivedAt ?? r.InTransitAt ?? r.AuthorisedAt ?? r.RequestedAt,
-                r.ReceivedAt, r.RequestedBy, r.LastActorRef,
+                r.ReceivedAt, r.RequestedBy, r.LastActorRef, r.ExceptionCount, r.HasException,
             }).ToListAsync(cancellationToken);
+        var hasMore = bounded.Count > take;
+        var raw = bounded.Take(take).ToList();
         var pageIds = raw.Select(r => r.RmaId).ToList();
         var pageLines = await db.RmaLines.AsNoTracking().Where(l => l.TenantId == tenantId && pageIds.Contains(l.RmaId))
             .OrderBy(l => l.Sequence).Select(l => new
@@ -59,9 +77,6 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
             }).ToListAsync(cancellationToken);
         var primaryLines = pageLines.GroupBy(l => l.RmaId).ToDictionary(g => g.Key, g => g.First());
         var lineCounts = pageLines.GroupBy(line => line.RmaId).ToDictionary(group => group.Key, group => group.Count());
-        var exceptionCounts = pageLines.Where(line => line.ProvisionalUnitId != null
-                || line.ReceiptOutcome != null && line.ReceiptOutcome != ReturnOutcome.Accepted)
-            .GroupBy(line => line.RmaId).ToDictionary(group => group.Key, group => group.Count());
         var primaryUnitIds = primaryLines.Values.Select(l => l.ReceivedUnitId ?? l.RequestedUnitId).Distinct().ToList();
         var serials = await UnitSerials.DisplayAsync(db, tenantId, primaryUnitIds, cancellationToken);
         var itemIds = await db.Current.AsNoTracking().Where(row => row.TenantId == tenantId && primaryUnitIds.Contains(row.UnitId))
@@ -72,27 +87,97 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
             var unitId = line?.ReceivedUnitId ?? line?.RequestedUnitId;
             return new RmaListRow(r.RmaId, r.RmaNumber, r.Stage, r.RequestDate, r.UpdatedAt,
                 Math.Max(0, DateOnly.FromDateTime(now).DayNumber - r.RequestDate.DayNumber), r.ReturningPartyRef,
-                lineCounts.GetValueOrDefault(r.RmaId), exceptionCounts.GetValueOrDefault(r.RmaId),
+                lineCounts.GetValueOrDefault(r.RmaId), r.ExceptionCount,
                 unitId, unitId is { } id ? serials.GetValueOrDefault(id) : null,
                 unitId is { } itemUnit && itemIds.TryGetValue(itemUnit, out var itemId) ? itemId : null,
                 line?.ReceiptOutcome, line?.ConditionGrade, line?.CoverageSource, r.ReceivedAt, r.RequestedBy, r.LastActorRef);
         }).ToList();
-        var counts = await db.Rmas.AsNoTracking().Where(r => r.TenantId == tenantId).GroupBy(r => r.Stage)
-            .Select(g => new { Stage = g.Key, Count = g.Count(), Oldest = g.Min(r => r.RequestDate) }).ToListAsync(cancellationToken);
-        var exceptions = await (from line in db.RmaLines.AsNoTracking()
-                                join rma in db.Rmas.AsNoTracking() on new { line.TenantId, line.RmaId } equals new { rma.TenantId, rma.RmaId }
-                                where line.TenantId == tenantId && (line.ProvisionalUnitId != null || line.ReceiptOutcome != null && line.ReceiptOutcome != ReturnOutcome.Accepted)
-                                group line by rma.Stage into grouped
-                                select new { Stage = grouped.Key, Count = grouped.Select(line => line.RmaId).Distinct().Count() })
-            .ToListAsync(cancellationToken);
+        var summary = await SummaryAsync(now, cancellationToken);
+        var continuation = hasMore && raw.Count > 0
+            ? EncodeCursor(raw[^1].HasException, raw[^1].RequestedAt, raw[^1].RmaId)
+            : null;
+        return new(rows, summary, continuation, hasMore, take);
+    }
+
+    public async Task<IReadOnlyList<RmaStageCount>> SummaryAsync(DateTime now, CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId.Value;
+        var counts = await db.Database.SqlQuery<RmaStageSummaryProjection>($"""
+            SELECT counters.stage AS Stage,
+                   counters.document_count AS DocumentCount,
+                   counters.exception_count AS ExceptionCount,
+                   CASE
+                       WHEN exception_oldest.requested_at IS NULL THEN regular_oldest.request_date
+                       WHEN regular_oldest.requested_at IS NULL THEN exception_oldest.request_date
+                       WHEN exception_oldest.requested_at < regular_oldest.requested_at THEN exception_oldest.request_date
+                       WHEN exception_oldest.requested_at > regular_oldest.requested_at THEN regular_oldest.request_date
+                       WHEN exception_oldest.rma_id < regular_oldest.rma_id THEN exception_oldest.request_date
+                       ELSE regular_oldest.request_date
+                   END AS OldestRequestDate
+            FROM (
+                SELECT stage, SUM(document_count) AS document_count, SUM(exception_count) AS exception_count
+                FROM serialisation.rma_stage_counter
+                WHERE tenant_id = {tenantId}
+                GROUP BY stage
+            ) counters
+            OUTER APPLY (
+                SELECT TOP (1) r.request_date, r.requested_at, r.rma_id
+                FROM serialisation.rma r
+                WHERE r.tenant_id = {tenantId} AND r.stage = counters.stage
+                  AND r.has_exception = CAST(1 AS bit)
+                ORDER BY r.requested_at, r.rma_id
+            ) exception_oldest
+            OUTER APPLY (
+                SELECT TOP (1) r.request_date, r.requested_at, r.rma_id
+                FROM serialisation.rma r
+                WHERE r.tenant_id = {tenantId} AND r.stage = counters.stage
+                  AND r.has_exception = CAST(0 AS bit)
+                ORDER BY r.requested_at, r.rma_id
+            ) regular_oldest
+            """).ToListAsync(cancellationToken);
         var today = DateOnly.FromDateTime(now);
-        var summary = RmaStage.All.Select(stage =>
+        return RmaStage.All.Select(stage =>
         {
             var count = counts.FirstOrDefault(x => x.Stage == stage);
-            return new RmaStageCount(stage, count?.Count ?? 0, count is null ? null : Math.Max(0, today.DayNumber - count.Oldest.DayNumber),
-                exceptions.FirstOrDefault(x => x.Stage == stage)?.Count ?? 0);
+            return new RmaStageCount(stage, count?.DocumentCount ?? 0,
+                count?.OldestRequestDate is { } oldest ? Math.Max(0, today.DayNumber - oldest.DayNumber) : null,
+                count?.ExceptionCount ?? 0);
         }).ToList();
-        return new(rows, summary, total, skip, take);
+    }
+
+    private static string EncodeCursor(bool hasException, DateTime requestedAt, Guid rmaId)
+    {
+        var bytes = Encoding.UTF8.GetBytes($"{(hasException ? 1 : 0)}|{requestedAt.Ticks}|{rmaId:N}");
+        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    private static RmaCursor? DecodeCursor(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (value.Length > 128) throw new ArgumentException("The RMA continuation is invalid.", nameof(value));
+        try
+        {
+            var encoded = value.Replace('-', '+').Replace('_', '/');
+            encoded = encoded.PadRight(encoded.Length + (4 - encoded.Length % 4) % 4, '=');
+            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(encoded)).Split('|');
+            if (parts.Length != 3 || parts[0] is not ("0" or "1") || !long.TryParse(parts[1], out var ticks)
+                || !Guid.TryParseExact(parts[2], "N", out var rmaId))
+                throw new FormatException();
+            return new(parts[0] == "1", new DateTime(ticks, DateTimeKind.Utc), rmaId);
+        }
+        catch (Exception ex) when (ex is FormatException or ArgumentException)
+        {
+            throw new ArgumentException("The RMA continuation is invalid.", nameof(value));
+        }
+    }
+
+    private sealed record RmaCursor(bool HasException, DateTime RequestedAt, Guid RmaId);
+    private sealed class RmaStageSummaryProjection
+    {
+        public string Stage { get; set; } = "";
+        public int DocumentCount { get; set; }
+        public int ExceptionCount { get; set; }
+        public DateOnly? OldestRequestDate { get; set; }
     }
 
     public async Task<RmaDetail?> DetailAsync(Guid rmaId, CancellationToken cancellationToken)

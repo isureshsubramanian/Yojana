@@ -460,12 +460,16 @@ public static class SerialisationEndpoints
             Invoke<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
 
         var rmas = app.MapGroup("/api/rmas").RequireAuthorization(YojanaPolicy.TenantMember);
-        rmas.MapGet("/", async (string? stage, int? minimumAgeDays, int? maximumAgeDays, string? q, int? skip, int? take,
+        rmas.MapGet("/", async (string? stage, int? minimumAgeDays, int? maximumAgeDays, string? q, string? after, int? take,
             RmaQueries queries, IClock clock, CancellationToken ct) =>
         {
-            try { return Results.Ok(await queries.ListAsync(new RmaListFilter(stage, minimumAgeDays, maximumAgeDays, q), clock.UtcNow, skip ?? 0, take ?? 50, ct)); }
+            try { return Results.Ok(await queries.ListAsync(new RmaListFilter(stage, minimumAgeDays, maximumAgeDays, q), clock.UtcNow, after, take ?? 50, ct)); }
             catch (ArgumentException ex) { return Results.BadRequest(new { reason = "filters_invalid", detail = ex.Message }); }
         });
+        rmas.MapPost("/stage-counters/rebuild", (RebuildRmaStageCounters command, ClaimsPrincipal user,
+            IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RebuildRmaStageCountersResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         rmas.MapGet("/{rmaId:guid}", async (Guid rmaId, RmaQueries queries, CancellationToken ct) =>
             await queries.DetailAsync(rmaId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
         rmas.MapPost("/request", (RequestRma command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
