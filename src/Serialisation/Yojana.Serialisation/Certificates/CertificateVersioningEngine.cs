@@ -154,6 +154,7 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
                         document_kind = command.DocumentKind, certificate_version = previous.Version,
                         reason = command.SupersedeReason, triggering_event_id = command.TriggeringEventId, superseded_at = issuedAt,
                     }),
+                    ProjectCurrentState = false,
                 });
             }
             drafts.Add(new UnitEventDraft
@@ -168,6 +169,7 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
                     triggering_event_id = command.TriggeringEventId, supersedes_certificate_id = previous?.CertificateId,
                     provenance = certificate.Provenance, issued_at = certificate.IssuedAt,
                 }),
+                ProjectCurrentState = false,
             });
             await events.AppendAsync(drafts, cancellationToken);
             await PersistAsync();

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
+using Wolverine.Runtime;
 using Xunit;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
@@ -28,6 +29,19 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
     private static readonly DateTime At = new(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
     private static readonly Guid Entity = Guid.Parse("c0000000-0000-0000-0000-000000000009");
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
+
+    [DatabaseFact]
+    public void Published_certificate_facts_use_the_shared_durable_endpoint()
+    {
+        var runtime = fixture.Services.GetRequiredService<IWolverineRuntime>();
+        foreach (var messageType in new[] { typeof(UnitReleased), typeof(EntitlementCoverageChanged) })
+        {
+            var routing = runtime.ExplainRoutingFor(messageType).ToText();
+            Assert.Contains("local://serialisation-published-events", routing, StringComparison.Ordinal);
+        }
+        Assert.Contains("local://serialisation-certificate-triggers",
+            runtime.ExplainRoutingFor(typeof(CertificateTriggerWork)).ToText(), StringComparison.Ordinal);
+    }
 
     [DatabaseFact]
     public async Task Release_versions_are_immutable_signed_snapshots_and_preserve_the_whole_unit()
@@ -497,6 +511,56 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         var outcomes = await db.CertificateTriggers.Where(row => row.TriggeringEventId == firstId || row.TriggeringEventId == secondId)
             .Select(row => row.Outcome).OrderBy(row => row).ToListAsync();
         Assert.Equal(["absorbed", "issued"], outcomes);
+    }
+
+    [DatabaseFact]
+    public async Task Published_release_and_warranty_triggers_use_isolated_state_neutral_work()
+    {
+        var setup = await CommissionAsync("cert-publish-race");
+        await ReleaseAsync(setup);
+        await WaitForCountAsync(setup.Tenant, setup.UnitId, CertificateDocumentKind.ReleaseRecord, 1);
+        var owner = Guid.NewGuid();
+        fixture.Services.GetRequiredService<InMemoryPartyNamePort>().Register(new PartyLabel(owner,
+            "RACE-BUYER", "Fictional Parallel Systems", PartyType.Customer));
+        await InvokeAsync<OpenOwnershipResult>(setup.Tenant, new OpenOwnership(Guid.NewGuid(), setup.UnitId, owner,
+            PartyType.Customer, EpisodeReason.Sale, At.AddHours(2), "sales", Entity));
+        long projectedSeq;
+        DateTime projectedAt;
+        using (var currentScope = fixture.ScopeFor(setup.Tenant))
+        {
+            var current = await currentScope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Current.AsNoTracking()
+                .SingleAsync(row => row.UnitId == setup.UnitId);
+            (projectedSeq, projectedAt) = (current.LastEventSeq, current.LastEventTime);
+        }
+
+        var ids = Enumerable.Range(0, 24).Select(_ => Guid.NewGuid()).ToList();
+        var published = ids.Select((eventId, index) => index % 2 == 0
+            ? (object)new UnitReleased(Header(UnitReleased.Schema, UnitReleased.Version, setup.UnitId, eventId,
+                At.AddHours(3).AddMilliseconds(index)), setup.ItemId, Guid.NewGuid(), 1, new string('a', 64), [])
+            : new EntitlementCoverageChanged(Header(EntitlementCoverageChanged.Schema,
+                EntitlementCoverageChanged.Version, setup.UnitId, eventId, At.AddHours(3).AddMilliseconds(index)),
+                [], [], null, null, EntitlementEventType.Created)).ToList();
+
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+            await Task.WhenAll(published.Select(message => bus.PublishAsync(message,
+                new DeliveryOptions { TenantId = setup.Tenant.ToString() }).AsTask()));
+        }
+        await WaitForTriggerCountAsync(setup.Tenant, ids, ids.Count);
+
+        using var finalScope = fixture.ScopeFor(setup.Tenant);
+        var db = finalScope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        Assert.Equal(ids.Count, await db.CertificateTriggers.CountAsync(row => ids.Contains(row.TriggeringEventId)));
+        Assert.False(await db.CertificateTriggers.AnyAsync(row => ids.Contains(row.TriggeringEventId)
+            && row.Outcome == "refused"));
+        Assert.Equal(1, await db.CertificateInstances.CountAsync(row => row.UnitId == setup.UnitId
+            && row.DocumentKind == CertificateDocumentKind.ReleaseRecord));
+        Assert.Equal(1, await db.CertificateInstances.CountAsync(row => row.UnitId == setup.UnitId
+            && row.DocumentKind == CertificateDocumentKind.WarrantyCertificate));
+        var finalCurrent = await db.Current.AsNoTracking().SingleAsync(row => row.UnitId == setup.UnitId);
+        Assert.Equal((projectedSeq, projectedAt), (finalCurrent.LastEventSeq, finalCurrent.LastEventTime));
+        await AssertWholeUnitAsync(db, setup.UnitId, owner, setup.LocationId);
     }
 
     [DatabaseFact]

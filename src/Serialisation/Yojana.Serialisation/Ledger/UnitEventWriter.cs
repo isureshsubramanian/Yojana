@@ -116,11 +116,17 @@ public sealed class UnitEventWriter(SerialisationDbContext db, ITenantContext te
 
         // Inline projection, in seq order per unit, within this same unit of work (coupling 2). The current rows of all the
         // units are read in one query first; the projector then finds them tracked instead of asking once per unit.
-        var deltaOf = fresh.ToDictionary(d => (d.IdempotencyKey, d.EventTime), d => d.Delta);
-        await projector.PreloadAsync(tenantId, written.Select(e => e.UnitId).Distinct().ToList(), cancellationToken);
-        foreach (var group in written.GroupBy(e => e.UnitId))
+        // TIGHT COUPLING (state-neutral ledger facts)
+        // WHAT: ProjectCurrentState=false is persisted in AttributesJson and excludes the same event here and in
+        // UnitCurrentHealer. WHY: certificate and label audit facts change no operational unit state; touching the
+        // rowversion would race unrelated ownership/custody/entitlement commands. WHAT BREAKS IF SEPARATED: live and
+        // replayed unit_current disagree, or audit traffic reintroduces false concurrency failures.
+        var draftOf = fresh.ToDictionary(d => (d.IdempotencyKey, d.EventTime));
+        var projected = written.Where(e => draftOf[(e.IdempotencyKey, e.EventTime)].ProjectCurrentState).ToList();
+        await projector.PreloadAsync(tenantId, projected.Select(e => e.UnitId).Distinct().ToList(), cancellationToken);
+        foreach (var group in projected.GroupBy(e => e.UnitId))
         {
-            var deltas = group.OrderBy(e => e.Seq).Select(e => (e, deltaOf[(e.IdempotencyKey, e.EventTime)])).ToList();
+            var deltas = group.OrderBy(e => e.Seq).Select(e => (e, draftOf[(e.IdempotencyKey, e.EventTime)].Delta)).ToList();
             await projector.ApplyAsync(tenantId, group.Key, deltas, cancellationToken);
         }
 
@@ -132,7 +138,7 @@ public sealed class UnitEventWriter(SerialisationDbContext db, ITenantContext te
     /// <summary>Event attributes: the caller's JSON object plus the projection delta under <c>_state</c>, so a replay needs no event semantics.</summary>
     internal static string? AttributesJson(UnitEventDraft draft)
     {
-        if (draft.Attributes is null && draft.Delta is null)
+        if (draft.Attributes is null && draft.Delta is null && draft.ProjectCurrentState)
         {
             return null;
         }
@@ -157,6 +163,11 @@ public sealed class UnitEventWriter(SerialisationDbContext db, ITenantContext te
             {
                 writer.WritePropertyName(UnitCurrentStateProjector.StateKey);
                 JsonSerializer.Serialize(writer, draft.Delta, LedgerJson.Options);
+            }
+
+            if (!draft.ProjectCurrentState)
+            {
+                writer.WriteBoolean(UnitCurrentStateProjector.ProjectsStateKey, false);
             }
 
             writer.WriteEndObject();

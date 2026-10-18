@@ -226,6 +226,32 @@ public static class SerialisationModule
         {
             options.PublishMessage<SearchReindexRequested>().ToLocalQueue(SearchIndexOptions.ReindexQueueName);
             options.LocalQueue(SearchIndexOptions.ReindexQueueName).UseDurableInbox().MaximumParallelMessages(search.MaximumParallelReindexMessages);
+
+            // Triggering published facts use a service-name-independent durable endpoint so a short-lived producer and
+            // the web host share pending work. Their subscribers only enqueue narrow CertificateTriggerWork messages;
+            // certificate persistence then runs alone on its own endpoint and DbContext unit of work.
+            options.PublishMessage<UnitReleased>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            options.PublishMessage<UnitAsBuiltCorrected>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            options.PublishMessage<UnitIdentifierCorrected>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            options.PublishMessage<UnitIdentifiersSwapped>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            options.PublishMessage<UnitItemCorrected>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            options.PublishMessage<UnitGraded>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            options.PublishMessage<RefurbishmentReleased>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            options.PublishMessage<UnitMerged>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            options.PublishMessage<UnitIdentifiersAssigned>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            options.PublishMessage<ReplacementShipped>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            options.PublishMessage<ReplacementLinkCorrected>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            options.PublishMessage<CertificateIssueRequested>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            options.PublishMessage<EntitlementCoverageChanged>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            options.PublishMessage<DocumentSerialsCorrected>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            options.PublishMessage<OwnershipSourceDocumentCorrected>().ToLocalQueue(CertificatePublishedEventQueue.Name);
+            // TIGHT COUPLING: EntitlementCoverageChangedHandler re-adjudicates the same open claim/RMA rows that a
+            // neighbouring coverage fact may also target. SQL rowversion is the correctness guard, but parallel
+            // delivery would turn an ordinary ordered entitlement stream into noisy retries. Keep this source queue
+            // serial; certificate rendering fans back out on its separate per-unit locked queue below.
+            options.LocalQueue(CertificatePublishedEventQueue.Name).UseDurableInbox().MaximumParallelMessages(1);
+            options.PublishMessage<CertificateTriggerWork>().ToLocalQueue(CertificateTriggerQueue.Name);
+            options.LocalQueue(CertificateTriggerQueue.Name).UseDurableInbox().MaximumParallelMessages(8);
         });
 
         // Document handlers (P1-T15): thin consumed events, documents through the publisher's query ports; in-memory

@@ -14,10 +14,11 @@ namespace Yojana.Serialisation.Selection;
 
 /// <summary>
 /// Turns a <see cref="SelectionSource"/> into a stored selection set (ADR-0001 "Bulk selection sets"). A document source
-/// is every unit the document's events touched; a customer is every unit the party currently owns; an item is every unit
-/// whose current assignment is that item; a date range is every unit with an event in it; a pasted list resolves serial by
-/// serial and reports the unknown ones; a serial range expands within the scheme's block (a boundary-crossing range is
-/// rejected, never partially expanded) and reports serials that are not units yet.
+/// is every unit the document's events touched, including a recorded base document such as a sales order; a customer is
+/// every unit the party currently owns; an item is every unit whose current assignment is that item; a date range is
+/// every unit with an event in it; a pasted list resolves serial by serial and reports the unknown ones; a serial range
+/// expands within the scheme's block (a boundary-crossing range is rejected, never partially expanded) and reports
+/// serials that are not units yet.
 /// </summary>
 public sealed class SelectionSetResolver(SerialisationDbContext db, UnitResolver resolver, ISerialSchemeSource schemes, ITenantContext tenant, IClock clock)
 {
@@ -41,8 +42,19 @@ public sealed class SelectionSetResolver(SerialisationDbContext db, UnitResolver
             case SelectionSource.Kinds.Document:
             {
                 var doc = source.Document ?? throw new CommandRefusedException("source_invalid", "A document source needs a document reference.");
-                var ids = await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && e.DocumentType == doc.Type && e.DocumentId == doc.Id && (doc.Line == null || e.DocumentLine == doc.Line)).Select(e => e.UnitId).Distinct().Take(MaxUnits + 1).ToListAsync(cancellationToken);
+                var ids = await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && e.DocumentType == doc.Type && e.DocumentId == doc.Id && (doc.Line == null || e.DocumentLine == doc.Line))
+                    .Select(e => e.UnitId).Distinct().OrderBy(id => id).Take(MaxUnits + 1).ToListAsync(cancellationToken);
                 foreach (var id in ids) units[id] = null;
+                // Shipment facts retain their originating order as a narrow base_order value rather than changing the
+                // ledger event's own document. Resolve that recorded contract too, so an order can drive the same
+                // selection workflow without the sales connector writing a second synthetic event.
+                var idText = doc.Id.ToString("D");
+                var candidates = await db.Events.AsNoTracking()
+                    .Where(e => e.TenantId == tenantId && e.Attributes != null && e.Attributes.Contains(idText))
+                    .OrderBy(e => e.Seq).Select(e => new { e.UnitId, e.Attributes }).Take(MaxUnits + 1)
+                    .ToListAsync(cancellationToken);
+                foreach (var row in candidates.Where(row => ReferencesBaseDocument(row.Attributes, doc)))
+                    units[row.UnitId] = null;
                 break;
             }
 
@@ -143,5 +155,23 @@ public sealed class SelectionSetResolver(SerialisationDbContext db, UnitResolver
         db.SelectionSets.Add(selection);
         db.SelectionSetMembers.AddRange(units.Select(kv => new SelectionSetMember { TenantId = tenantId, SelectionId = selection.SelectionId, UnitId = kv.Key, Serial = kv.Value }));
         return new ResolveSelectionSetResult(selection.SelectionId, units.Count, unknown, rejected, source);
+    }
+
+    private static bool ReferencesBaseDocument(string? attributes, DocumentRef expected)
+    {
+        if (attributes is null) return false;
+        try
+        {
+            using var json = JsonDocument.Parse(attributes);
+            if (!json.RootElement.TryGetProperty("base_order", out var value)
+                || value.ValueKind != JsonValueKind.Object) return false;
+            var actual = value.Deserialize<DocumentRef>(LedgerJson.Options);
+            return actual is not null && actual.Type == expected.Type && actual.Id == expected.Id
+                && (expected.Line is null || actual.Line == expected.Line);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 }

@@ -9,6 +9,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="../../src/Platform/Yojana.Platform/Yojana.Platform.csproj" />
     <ProjectReference Include="../../src/Serialisation/Yojana.Serialisation/Yojana.Serialisation.csproj" />
+    <ProjectReference Include="../../src/Web/Yojana.Web/Yojana.Web.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Recorded canonical messages (P1-T17): replayed against the module in tests; later phases add their own files here. -->

@@ -32,6 +32,7 @@ public sealed class UnitCurrentStateProjector(SerialisationDbContext db)
 {
     /// <summary>Attributes key under which the writer stores the delta an event carried.</summary>
     public const string StateKey = "_state";
+    public const string ProjectsStateKey = "_projects_current_state";
 
     /// <summary>Reads the current rows of many units into the unit of work, so the applies that follow find them without a query each.</summary>
     public async Task PreloadAsync(TenantId tenant, IReadOnlyCollection<Guid> unitIds, CancellationToken cancellationToken)
@@ -131,6 +132,15 @@ public sealed class UnitCurrentStateProjector(SerialisationDbContext db)
 
         using var doc = JsonDocument.Parse(@event.Attributes);
         return doc.RootElement.TryGetProperty(StateKey, out var state) ? state.Deserialize<CurrentStateDelta>(LedgerJson.Options) : null;
+    }
+
+    /// <summary>True unless the writer explicitly persisted this event as a state-neutral audit fact.</summary>
+    public static bool ProjectsCurrentState(string? attributes)
+    {
+        if (attributes is null) return true;
+        using var doc = JsonDocument.Parse(attributes);
+        return !doc.RootElement.TryGetProperty(ProjectsStateKey, out var projects)
+            || projects.ValueKind != JsonValueKind.False;
     }
 
     private static string MergeAttributes(string? existing, IReadOnlyDictionary<string, JsonElement?> changes)
