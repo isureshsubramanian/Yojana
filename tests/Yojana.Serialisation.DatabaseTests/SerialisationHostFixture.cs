@@ -46,6 +46,20 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         builder.Services.AddSingleton<TestCertificateRunChunkObserver>();
         builder.Services.AddSingleton<ICertificateRunChunkObserver>(sp => sp.GetRequiredService<TestCertificateRunChunkObserver>());
         builder.AddSerialisationModule();
+        builder.Services.ConfigureWolverine(options =>
+        {
+            // TIGHT COUPLING (test sink endpoint configuration)
+            // WHAT: this names Wolverine's convention-derived endpoints for PublishedEventSinkHandler.Handle methods.
+            // WHY: the sink only appends to ConcurrentQueues and its tests filter by ids; it is not recoverable work,
+            // so persisting an inbound copy adds envelope contention without testing another contract. WHAT BREAKS IF
+            // SEPARATED: the probe queues behind certificate load and times out despite committed events. Keep the
+            // matching sink convention/comment in step with this.
+            foreach (var queueName in PublishedEventSink.ObservationQueueNames)
+            {
+                options.LocalQueue(queueName).BufferedInMemory()
+                    .MaximumParallelMessages(PublishedEventSink.MaximumParallelMessages);
+            }
+        });
         Host = builder.Build();
         await Host.StartAsync();
     }

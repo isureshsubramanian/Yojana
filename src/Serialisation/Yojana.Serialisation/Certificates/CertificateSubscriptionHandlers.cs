@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using Yojana.Platform.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Wolverine;
 using Yojana.Platform.Contracts.Tenancy;
@@ -14,6 +16,16 @@ public static class CertificateTriggerQueue
     public const string Name = "serialisation-certificate-triggers";
 }
 
+/// <summary>
+/// The durable endpoint for one coalesced ledger-append hand-off. A batch executes independent unit chains with the
+/// same total parallelism as the ordinary trigger queue without creating one durable envelope per unit.
+/// </summary>
+public static class CustomerSaleCertificateQueue
+{
+    public const string Name = "serialisation-certificate-sale-triggers";
+    public const int MaximumParallelWork = 8;
+}
+
 internal static class CertificatePublishedEventQueue
 {
     public const string Name = "serialisation-published-events";
@@ -25,6 +37,11 @@ public sealed record CertificateTriggerWork(IssueCertificateVersion Command);
 /// <summary>A correction withdrew the sale fact that originally made a release record issuable.</summary>
 public sealed record CertificateSaleReversalWork(Guid UnitId, Guid CorrectionEventId, Guid ReversedSaleEventId,
     DateTime EffectiveAt, Guid LegalEntityId, string? DocumentType, Guid? DocumentId, int? DocumentLine);
+
+/// <summary>One transactional hand-off for all customer-sale facts accepted by one ledger append.</summary>
+public sealed record CustomerSaleCertificateWork(
+    IReadOnlyList<IssueCertificateVersion> Issues,
+    IReadOnlyList<CertificateSaleReversalWork> Reversals);
 
 public static class CertificateTriggerWorkHandler
 {
@@ -38,6 +55,35 @@ public static class CertificateSaleReversalWorkHandler
     public static async Task Handle(CertificateSaleReversalWork work,
         CertificateVersioningEngine engine, CancellationToken cancellationToken) =>
         await engine.WithdrawForSaleReversalAsync(work, cancellationToken);
+}
+
+public static class CustomerSaleCertificateWorkHandler
+{
+    public static async Task Handle(CustomerSaleCertificateWork work, IServiceScopeFactory scopes,
+        ITenantContext tenant, CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        var issueCount = work.Issues.Count;
+        var total = issueCount + work.Reversals.Count;
+        await Parallel.ForEachAsync(Enumerable.Range(0, total), new ParallelOptions
+        {
+            CancellationToken = cancellationToken,
+            MaxDegreeOfParallelism = CustomerSaleCertificateQueue.MaximumParallelWork,
+        }, async (index, ct) =>
+        {
+            await using var scope = scopes.CreateAsyncScope();
+            scope.ServiceProvider.GetRequiredService<ITenantContextSetter>().Set(tenantId);
+            var engine = scope.ServiceProvider.GetRequiredService<CertificateVersioningEngine>();
+            if (index < issueCount)
+            {
+                await engine.IssueAsync(work.Issues[index], ct);
+            }
+            else
+            {
+                await engine.WithdrawForSaleReversalAsync(work.Reversals[index - issueCount], ct);
+            }
+        });
+    }
 }
 
 public static class ReleaseCertificateSubscriptionHandler
