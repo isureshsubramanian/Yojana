@@ -17,6 +17,7 @@ public sealed class NumberingSettings(SerialisationDbContext db)
         [DocumentNumbers.Refurbishment] = "Refurbishments",
         [DocumentNumbers.Recovery] = "Supplier recoveries",
         [DocumentNumbers.Certificate] = "Certificates",
+        [DocumentNumbers.PrintJob] = "Print jobs",
     };
 
     public async Task<NumberingSettingsView> GetAsync(CancellationToken cancellationToken)

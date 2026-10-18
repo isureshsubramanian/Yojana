@@ -189,6 +189,7 @@ public sealed class ClaimRulesTests
     [Theory]
     [InlineData(DocumentNumbers.Claim, 412, "CLM-2026-00412")]
     [InlineData(DocumentNumbers.Recovery, 31, "RCV-2026-0031")]
+    [InlineData(DocumentNumbers.PrintJob, 31, "PJ-2026-00031")]
     public void Document_numbers_carry_series_year_and_padded_value(string series, int value, string expected) =>
         Assert.Equal(expected, DocumentNumbers.Format(series, 2026, value));
 

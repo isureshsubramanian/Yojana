@@ -58,6 +58,15 @@ export function reviewActions(roles: readonly string[], userId: string, version:
   };
 }
 
+export function activationReasons(version: Pick<LabelTemplateVersion, "previewCurrent" | "legalReview" | "legalReviewCurrent" | "regulated" | "approvalCurrent"> | null, dirty: boolean): string[] {
+  if (dirty) return ["Save the current draft before activation."];
+  if (!version?.previewCurrent) return ["Preview the current saved draft before activation."];
+  const reasons: string[] = [];
+  if (version.legalReview && !version.legalReviewCurrent) reasons.push("Legal review is required for the current content.");
+  if (version.regulated && !version.approvalCurrent) reasons.push("Regulated-label approval is required for the current content.");
+  return reasons;
+}
+
 export function replaceFlaggedWording(layout: string, phrases: readonly string[]): string {
   let next = layout;
   let replaced = false;

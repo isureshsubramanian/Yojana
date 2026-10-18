@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { bindingTableRows, highlightLayout, reviewActions } from "../src/labels/editorModel.ts";
+import { activationReasons, bindingTableRows, highlightLayout, reviewActions } from "../src/labels/editorModel.ts";
 import { dayBounds, summaryKpis } from "../src/labels/printJobModel.ts";
 
 test("label layout mirror marks placeholders and every legal phrase hit without changing text", () => {
@@ -34,6 +34,17 @@ test("legal-review controls require the role and never let the draft author sign
   assert.equal(author.canSign, false);
   assert.equal(author.canApprove, false);
   assert.equal(author.authorConflict, true);
+});
+
+test("activation stays disabled until the saved content has current preview, review and approval", () => {
+  const ready = { previewCurrent: true, legalReview: true, legalReviewCurrent: true, regulated: true, approvalCurrent: true };
+  assert.deepEqual(activationReasons(ready, false), []);
+  assert.deepEqual(activationReasons({ ...ready, previewCurrent: false }, false), ["Preview the current saved draft before activation."]);
+  assert.deepEqual(activationReasons({ ...ready, legalReviewCurrent: false, approvalCurrent: false }, false), [
+    "Legal review is required for the current content.",
+    "Regulated-label approval is required for the current content.",
+  ]);
+  assert.deepEqual(activationReasons(ready, true), ["Save the current draft before activation."]);
 });
 
 test("print-job KPIs use the complete server aggregate", () => {

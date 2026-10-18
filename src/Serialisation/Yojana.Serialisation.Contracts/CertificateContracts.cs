@@ -10,8 +10,10 @@ public static class CertificateFormType
     public const string Release81303Style = "release_8130_3_style";
     public const string EasaForm1Style = "easa_form_1_style";
     public const string BatteryPassport = "battery_passport";
+    public const string WarrantyCertificate = "warranty_certificate";
     public const string Custom = "custom";
-    public static readonly IReadOnlyList<string> All = [GenericRelease, CertificateOfConformity, DeviceHistoryExtract, Release81303Style, EasaForm1Style, BatteryPassport, Custom];
+    public static readonly IReadOnlyList<string> All = [GenericRelease, CertificateOfConformity, DeviceHistoryExtract,
+        Release81303Style, EasaForm1Style, BatteryPassport, WarrantyCertificate, Custom];
 }
 
 public static class CertificateStatus
@@ -66,7 +68,7 @@ public static class CertificateLayoutKind
 public sealed record CertificateTriggerSnapshot(string Schema, Guid EventId, DateTime EffectiveAt,
     string? Reason = null, bool? ConditionReverificationRequired = null, string? Note = null);
 public sealed record CertificateProvenanceSnapshot(string Kind, IReadOnlyList<string> Unknowns, IReadOnlyList<string> Evidence);
-public sealed record CertificateIssuerSnapshot(string Name, string? RegistrationCode);
+public sealed record CertificateIssuerSnapshot(string Name, string? RegistrationCode, string? Address = null);
 public sealed record CertificateBrandingSnapshot(string Profile, string? DisplayName, string? Mark,
     Guid? LogoAssetId = null, string? LogoSha256 = null, string? LogoMediaType = null);
 public sealed record CertificateOwnerSnapshot(string Code, string Name, string? Kind, DateTime EffectiveFrom);
@@ -113,7 +115,7 @@ public sealed record ReleaseTestSnapshot(string Kind, string Result, JsonElement
 public sealed record ReleaseLifeEpisodeSnapshot(string Kind, DateTime StartedAt, DateTime? EndedAt, int? CycleNumber);
 
 /// <summary>
-/// The release-record schema deliberately has no bindable party, owner, customer or address member. Issuers and the
+/// The release-record schema deliberately has no bindable party, owner or customer member. The issuer address and the
 /// refurbisher are immutable display snapshots, never opaque business-partner references.
 /// </summary>
 public sealed record ReleaseRecordPayload(
@@ -177,6 +179,7 @@ public interface ICertificateUnitReadPort
     Task<CertificateUnitFact?> ReadAsync(Guid unitId, CancellationToken cancellationToken);
     Task<IReadOnlyList<Guid>> FindUnitIdsBySerialAsync(string serial, CancellationToken cancellationToken);
     Task<IReadOnlyDictionary<Guid, string>> PrimarySerialsAsync(IReadOnlyCollection<Guid> unitIds, CancellationToken cancellationToken);
+    Task<IReadOnlyDictionary<Guid, Guid>> CurrentItemIdsAsync(IReadOnlyCollection<Guid> unitIds, CancellationToken cancellationToken);
 }
 
 public sealed record CertificateConditionFact(string Grade, IReadOnlyList<ReleaseTestSnapshot> Tests,
@@ -211,21 +214,23 @@ public interface ICertificateEntitlementReadPort
 public sealed record CertificateSignatureRow(Guid SignatureId, string PrintedName, string Meaning, DateTime SignedAt,
     string HashSigned, string Method);
 public sealed record CertificateReprintRow(Guid ReprintId, int Version, string RequestedBy, DateTime At, string? Recipient);
-public sealed record CertificateDetail(Guid CertificateId, Guid UnitId, string PrimarySerial, string DocumentKind,
+public sealed record CertificateDetail(Guid CertificateId, Guid UnitId, Guid? ItemId, string PrimarySerial, string DocumentKind,
     string FormType, int Version, string TrackingNumber, Guid TemplateVersionId, Guid? AsBuiltRevisionId,
     JsonElement Payload, string PayloadHash, Guid? SupersedesCertificateId, string? SupersedeReason,
     Guid TriggeringEventId, CertificateIssuerSnapshot Issuer, CertificateOwnerSnapshot? Owner,
     CertificateBrandingSnapshot Branding, string Language, string Provenance, IReadOnlyList<string> Unknowns,
     IReadOnlyList<string> Evidence, DateTime IssuedAt, string Status,
     IReadOnlyList<CertificateSignatureRow> Signatures, IReadOnlyList<CertificateReprintRow> Reprints);
-public sealed record CertificateListRow(Guid CertificateId, Guid UnitId, string PrimarySerial, string DocumentKind,
+public sealed record CertificateListRow(Guid CertificateId, Guid UnitId, Guid? ItemId, string PrimarySerial, string DocumentKind,
     string FormType, int Version, string TrackingNumber, string Status, DateTime IssuedAt, string Provenance);
 public sealed record CertificateVersionChain(IReadOnlyList<CertificateListRow> ReleaseRecords,
     IReadOnlyList<CertificateListRow> WarrantyCertificates);
 
-public sealed record CertificateRenderSignature(string PrintedName, string Meaning, DateTime SignedAt);
+public sealed record CertificateRenderSignature(string PrintedName, string Meaning, DateTime SignedAt, string Method);
+public sealed record CertificateRenderMetadata(string TrackingNumber, int Version, DateTime IssuedAt,
+    string? SupersedesTrackingNumber, string? SupersedeReason, string PayloadHash, string VerifyReference);
 public sealed record CertificateRenderRequest(string Payload, Guid TemplateVersionId, bool Copy = false,
-    CertificateRenderSignature? Signature = null);
+    CertificateRenderSignature? Signature = null, CertificateRenderMetadata? Metadata = null);
 public sealed record CertificateRenderResult(byte[] Bytes, string MediaType);
 public interface ICertificateRenderer
 {

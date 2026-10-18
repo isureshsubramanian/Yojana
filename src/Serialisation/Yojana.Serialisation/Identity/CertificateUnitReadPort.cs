@@ -60,4 +60,9 @@ public sealed class CertificateUnitReadPort(SerialisationDbContext db, ITenantCo
             .Select(row => new { row.UnitId, row.RawValue }).ToListAsync(cancellationToken);
         return rows.GroupBy(row => row.UnitId).ToDictionary(group => group.Key, group => group.First().RawValue);
     }
+
+    public async Task<IReadOnlyDictionary<Guid, Guid>> CurrentItemIdsAsync(IReadOnlyCollection<Guid> unitIds,
+        CancellationToken cancellationToken) => await db.ItemAssignments.AsNoTracking()
+        .Where(row => row.TenantId == tenant.TenantId && unitIds.Contains(row.UnitId) && row.ValidTo == null)
+        .ToDictionaryAsync(row => row.UnitId, row => row.ItemId, cancellationToken);
 }

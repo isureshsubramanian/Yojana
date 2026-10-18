@@ -9,7 +9,7 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote } from "../units/common";
 import { labelsApi, type SaveDraftInput } from "./api";
 import {
-  bindingTableRows, highlightLayout, humanise, placeholders, replaceFlaggedWording, reviewActions,
+  activationReasons, bindingTableRows, highlightLayout, humanise, placeholders, replaceFlaggedWording, reviewActions,
   SUGGESTED_LEGAL_WORDING,
 } from "./editorModel";
 import type { LabelBindableField, LabelBinding, LabelPolicy, LabelTemplateDetail, LabelTemplatePreview, LabelTemplateVersion } from "./types";
@@ -79,6 +79,7 @@ export function Component() {
   const bindingRows = bindingTableRows(draft.bindings, fields, preview?.bindings ?? []);
   const missingBindings = placeholders(draft.layout).filter((placeholder) => !draft.bindings.some((binding) => binding.placeholder === placeholder));
   const actions = reviewActions(session.roles, session.user.id, selected);
+  const activationBlocks = activationReasons(selected, dirty);
 
   const change = (patch: Partial<DraftState>) => { setDraft((current) => ({ ...current, ...patch })); setDirty(true); setSaved(false); setPreview(null); };
   const selectVersion = (version: LabelTemplateVersion) => { setSelected(version); setNewVersion(false); setDraft(fromVersion(detail!, version)); setPreview(null); setDirty(false); setError(null); };
@@ -123,7 +124,14 @@ export function Component() {
   const renderPreview = async () => {
     if (!selected || dirty) return;
     setBusy(true); setError(null);
-    try { setPreview(await labelsApi.preview(selected.templateVersionId, draft.previewSampleUnitId)); }
+    try {
+      setPreview(await labelsApi.preview(selected.templateVersionId, draft.previewSampleUnitId));
+      if (detail) {
+        const next = await labelsApi.template(detail.templateId);
+        setDetail(next);
+        setSelected(next.versions.find((candidate) => candidate.templateVersionId === selected.templateVersionId) ?? selected);
+      }
+    }
     catch (reason) { setError(reason); } finally { setBusy(false); }
   };
 
@@ -140,7 +148,7 @@ export function Component() {
       {!isNew && !newVersion && selected?.status !== "draft" && canEdit && <button type="button" className="btn" onClick={startVersion}>New draft</button>}
       {canEdit && <button type="button" className="btn" disabled={!selected || dirty || busy || !draft.previewSampleUnitId} onClick={() => void renderPreview()}>Preview on sample</button>}
       {editable && <button type="button" className="btn" disabled={busy || !draft.name.trim() || !draft.appliesToValue.trim() || !draft.effectiveFrom || !draft.layout.trim() || missingBindings.length > 0} onClick={() => void save()}>{busy ? "Saving…" : "Save draft"}</button>}
-      {canEdit && selected?.status === "draft" && !dirty && <button type="button" className="btn primary" disabled={busy} onClick={() => void run(() => labelsApi.activate(selected.templateVersionId))}><Icon name="check" />Activate</button>}
+      {canEdit && selected?.status === "draft" && <span className="label-activation"><button type="button" className="btn primary" disabled={busy || activationBlocks.length > 0} title={activationBlocks.join(" ")} onClick={() => void run(() => labelsApi.activate(selected.templateVersionId))}><Icon name="check" />Activate</button>{activationBlocks.length > 0 && <span className="hint" role="status">{activationBlocks.join(" ")}</span>}</span>}
       {canEdit && selected?.status === "active" && <button type="button" className="btn" disabled={busy} onClick={() => void run(() => labelsApi.retire(selected.templateVersionId))}>Retire</button>}
     </div></div>
     <PresenceAdvisory users={presence} editing={editable && dirty} documentLabel="label template" />

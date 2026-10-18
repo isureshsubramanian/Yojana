@@ -1,4 +1,4 @@
-import type { RuleContext } from "./types";
+import type { JurisdictionRule, RegionGroup, RuleContext } from "./types";
 
 export function parseRuleValue(valueType: string, raw: string, language = "en", currency = ""): unknown {
   const clean = raw.trim();
@@ -17,6 +17,50 @@ export function displayRuleValue(value: unknown): string {
   if (typeof value === "string") return value;
   return JSON.stringify(value, null, 2);
 }
+
+export function formatRuleValue(valueType: string | undefined, value: unknown, unit?: string | null): string {
+  if (value === null || value === undefined) return "—";
+  if (valueType === "boolean" || typeof value === "boolean") return value ? "Yes" : "No";
+  if (valueType === "months" && typeof value === "number") return `${value} ${value === 1 ? "month" : "months"}`;
+  if (valueType === "days" && typeof value === "number") return `${value} ${value === 1 ? "day" : "days"}`;
+  if (valueType === "integer" && typeof value === "number") return unit ? `${value} ${value === 1 ? unit.replace(/s$/, "") : unit}` : value.toLocaleString();
+  if ((valueType === "phrase_list" || valueType === "string_list") && Array.isArray(value)) return value.map(String).join(", ");
+  if (valueType === "money" && isRecord(value)) return `${String(value.amount ?? "—")} ${String(value.currency ?? "")}`.trim();
+  if (valueType === "text_language" && isRecord(value)) return String(value.text ?? "—");
+  if (Array.isArray(value)) return value.map(String).join(", ");
+  if (isRecord(value)) return Object.entries(value).map(([key, part]) => structuredPart(key, part)).join(" · ");
+  return humanisePart(String(value));
+}
+
+export function effectiveLabel(value: string): string { return value === "1900-01-01" ? "always" : value; }
+
+export function pageRules<T>(rows: readonly T[], page: number, pageSize: number): T[] {
+  const safePage = Math.max(1, page);
+  return rows.slice((safePage - 1) * pageSize, safePage * pageSize);
+}
+
+export function scopeDetails(rule: JurisdictionRule, groups: readonly RegionGroup[]): { short: string; full: string } {
+  if (rule.regionGroupId) {
+    const group = groups.find((entry) => entry.regionGroupId === rule.regionGroupId);
+    return { short: group?.code ?? rule.regionGroupName ?? "Region group", full: group?.name ?? rule.regionGroupName ?? "Region group" };
+  }
+  const label = rule.subdivisionCode ?? rule.countryCode ?? "Any";
+  return { short: label, full: label };
+}
+
+function structuredPart(key: string, value: unknown): string {
+  if (typeof value === "boolean") {
+    const label = humanisePart(key.replace(/^requires_/, "").replace(/_required$/, "")).toLowerCase();
+    return value ? `${label} required` : `${label} not required`;
+  }
+  if (typeof value === "number" && key === "months") return `${value} ${value === 1 ? "month" : "months"}`;
+  if (typeof value === "number" && key === "days") return `${value} ${value === 1 ? "day" : "days"}`;
+  const rendered = Array.isArray(value) ? value.map(String).join(", ") : isRecord(value) ? formatRuleValue("json", value) : humanisePart(String(value));
+  return `${humanisePart(key)}: ${rendered}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
+function humanisePart(value: string): string { return value.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase()); }
 
 export function buildWhatAppliesRequest(kind: string, context: RuleContext) {
   return { kind: kind || null, context: { ...context, country: context.country.trim().toUpperCase(), subdivision: context.subdivision?.trim().toUpperCase() || null, itemClass: context.itemClass?.trim() || null, currency: context.currency?.trim().toUpperCase() || null } };

@@ -20,6 +20,9 @@ export interface LabelTemplateVersion {
   regulated: boolean;
   approvedBy: string | null;
   approvedAt: string | null;
+  previewCurrent: boolean;
+  legalReviewCurrent: boolean;
+  approvalCurrent: boolean;
   status: "draft" | "active" | "retired";
   recordedAt: string;
   actorRef: string;
@@ -66,6 +69,7 @@ export interface LabelPolicy { legalReviewPhrases: string[]; printExpiryDates: b
 
 export interface LabelPrintJob {
   jobId: string;
+  jobNumber: string;
   templateVersionId: string | null;
   unitId: string | null;
   identifierId: string | null;
@@ -89,7 +93,7 @@ export interface LabelPrintJob {
 
 export interface LabelPrintJobPage { rows: LabelPrintJob[]; total: number; skip: number; take: number }
 
-export interface LabelPrintResult { jobId: string; status: string; rejectionReason: string | null; payloadHash: string | null; replayed: boolean; rejectionRule: string | null; emptyRequiredField: string | null }
+export interface LabelPrintResult { jobId: string; jobNumber: string; status: string; rejectionReason: string | null; payloadHash: string | null; replayed: boolean; rejectionRule: string | null; emptyRequiredField: string | null }
 
 export interface LabelPrintJobSummary { printed: number; confirmed: number; waiting: number; rejected: number; reprints: number; fromEvents: number; from: string; to: string }
 

@@ -280,22 +280,29 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
                 starter.TemplateId), actor, cancellationToken)
             : await templates.GetAsync(existing.TemplateId, cancellationToken)
                 ?? throw new InvalidOperationException("DEMO-COC disappeared while loading the demo");
-        if (detail.Versions.Any(row => row.Status == CertificateTemplateStatus.Active)) return;
-
         var assets = scope.ServiceProvider.GetRequiredService<TenantAssetService>();
         var logo = await assets.UploadLogoAsync(DemoIds.FromName("certificate-logo:asterra"), Encoding.UTF8.GetBytes(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"36\" viewBox=\"0 0 120 36\"><rect width=\"120\" height=\"36\" rx=\"5\" fill=\"#24384f\"/><path d=\"M12 27L24 8l12 19h-7l-5-8-5 8z\" fill=\"#ffffff\"/></svg>"),
             LegalEntityId, actor, cancellationToken);
-        var draft = detail.Versions.OrderByDescending(row => row.Version).First();
+        var starterDetail = await templates.GetAsync(starter.TemplateId, cancellationToken)
+            ?? throw new InvalidOperationException("The C of C starter disappeared while loading the demo");
+        var starterVersion = starterDetail.Versions.OrderByDescending(row => row.Version).First();
+        var active = detail.Versions.FirstOrDefault(row => row.Status == CertificateTemplateStatus.Active);
+        var assignedAsset = active?.BrandingAssets.GetValueOrDefault(LegalEntityId.ToString());
+        if (active?.LayoutBody == starterVersion.LayoutBody && assignedAsset == logo.Asset.AssetId) return;
+
+        var existingDraft = detail.Versions.FirstOrDefault(row => row.Status == CertificateTemplateStatus.Draft);
         var saved = await templates.SaveDraftAsync(detail.TemplateId, new SaveCertificateTemplateDraftRequest(
-            draft.TemplateVersionId, draft.Language, draft.PayloadSchemaVersion, draft.LayoutBody,
-            draft.PageSize, draft.Orientation, draft.MarginTopMm, draft.MarginRightMm, draft.MarginBottomMm,
-            draft.MarginLeftMm, draft.HeaderBody, draft.FooterBody, null,
+            existingDraft?.TemplateVersionId, starterVersion.Language, starterVersion.PayloadSchemaVersion, starterVersion.LayoutBody,
+            starterVersion.PageSize, starterVersion.Orientation, starterVersion.MarginTopMm, starterVersion.MarginRightMm, starterVersion.MarginBottomMm,
+            starterVersion.MarginLeftMm, starterVersion.HeaderBody, starterVersion.FooterBody, null,
             new Dictionary<string, Guid> { [LegalEntityId.ToString()] = logo.Asset.AssetId },
-            new Dictionary<string, string>(draft.StaticText, StringComparer.Ordinal)
+            new Dictionary<string, string>(starterVersion.StaticText, StringComparer.Ordinal)
             {
                 ["issuer_display_name"] = "Asterra Works",
-            }, draft.Fields), actor, cancellationToken);
+                ["issuer_address"] = "14 Meridian Yard · Suryanagar",
+                ["issuer_registration_code"] = "AW-LEGAL-01",
+            }, starterVersion.Fields), actor, cancellationToken);
         if (saved.Version is null) throw new InvalidOperationException(string.Join("; ", saved.Validation.Errors));
         await templates.ActivateAsync(detail.TemplateId, saved.Version.TemplateVersionId, actor, cancellationToken);
     }

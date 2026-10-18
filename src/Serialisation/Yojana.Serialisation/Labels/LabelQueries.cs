@@ -57,7 +57,11 @@ public sealed class LabelQueries(SerialisationDbContext db, ITenantContext tenan
                 row.Version, row.EffectiveFrom, row.EffectiveTo, row.LayoutKind, row.Layout,
                 LabelTemplateRules.StaticText(row.StaticText), LabelTemplateRules.Bindings(row.Bindings), row.Symbology,
                 row.PreviewSampleUnitId, row.LegalReview, row.LegalReviewedBy, row.LegalReviewedAt, row.Regulated,
-                row.ApprovedBy, row.ApprovedAt, row.Status, row.RecordedAt, row.ActorRef)).ToList());
+                row.ApprovedBy, row.ApprovedAt,
+                row.PreviewedContentHash == row.ContentHash,
+                !row.LegalReview || row.LegalReviewContentHash == row.ContentHash,
+                !row.Regulated || row.ApprovalContentHash == row.ContentHash,
+                row.Status, row.RecordedAt, row.ActorRef)).ToList());
     }
 
     public async Task<LabelPrintJobPage> JobsAsync(string? status, Guid? templateId, string? find,
@@ -88,6 +92,7 @@ public sealed class LabelQueries(SerialisationDbContext db, ITenantContext tenan
                 select version.TemplateVersionId;
             var isJobId = Guid.TryParse(text, out var jobId);
             query = query.Where(row => row.UnitId != null && unitIds.Contains(row.UnitId.Value)
+                || row.JobNumber.Contains(text)
                 || (row.RequestedSerial != null && row.RequestedSerial.Contains(text))
                 || (row.TemplateVersionId != null && matchingVersions.Contains(row.TemplateVersionId.Value))
                 || (isJobId && row.JobId == jobId));
@@ -166,7 +171,7 @@ public sealed class LabelQueries(SerialisationDbContext db, ITenantContext tenan
                 : identifiers.FirstOrDefault(row => row.UnitId == job.UnitId && row.Type == IdentifierType.InternalSerial)?.RawValue
                     ?? identifiers.FirstOrDefault(row => row.UnitId == job.UnitId && row.Type == IdentifierType.ManufacturerSerial)?.RawValue
                     ?? identifiers.FirstOrDefault(row => row.UnitId == job.UnitId)?.RawValue);
-            return new LabelPrintJobRow(job.JobId, job.TemplateVersionId, job.UnitId, job.IdentifierId, job.OriginalJobId,
+            return new LabelPrintJobRow(job.JobId, job.JobNumber, job.TemplateVersionId, job.UnitId, job.IdentifierId, job.OriginalJobId,
                 version?.Name, version?.Version, serialValue, job.RenderedPayload, job.PayloadHash, job.PrinterRef,
                 job.RequestedBy, job.RequestedAt, job.Status, job.RejectionRule, job.RejectionReason,
                 job.EmptyRequiredField, job.SentAt, job.ConfirmedAt, job.SourceEventId);

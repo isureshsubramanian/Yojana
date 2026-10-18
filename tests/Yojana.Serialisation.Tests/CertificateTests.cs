@@ -45,9 +45,10 @@ public sealed class CertificateTests
     public void Release_record_payload_exposes_no_party_bindable_member()
     {
         var memberPaths = MemberPaths(typeof(ReleaseRecordPayload)).ToList();
-        var forbidden = new[] { "party", "owner", "customer", "address" };
+        var forbidden = new[] { "party", "owner", "customer" };
 
         Assert.DoesNotContain(memberPaths, path => forbidden.Any(word => path.Contains(word, StringComparison.OrdinalIgnoreCase)));
+        Assert.Equal(["Issuer.Address"], memberPaths.Where(path => path.Contains("address", StringComparison.OrdinalIgnoreCase)));
     }
 
     [Fact]

@@ -898,6 +898,10 @@ public static class SerialisationEndpoints
                 ? Results.File(rendered.Bytes, rendered.MediaType) : Results.NotFound());
         certificates.MapGet("/units/{unitId:guid}/versions", async (Guid unitId, CertificateQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.ChainAsync(unitId, ct)));
+        certificates.MapGet("/units/{unitId:guid}/composite", async (Guid unitId, CertificateQueries queries, CancellationToken ct) =>
+            await queries.RenderCompositeAsync(unitId, ct) is { } rendered
+                ? Results.File(rendered.Bytes, rendered.MediaType, $"certificate-composite-{unitId:N}.{(rendered.MediaType.StartsWith("application/pdf", StringComparison.OrdinalIgnoreCase) ? "pdf" : "html")}")
+                : Results.NotFound());
         // P6-T08 selection issue/reprint. Identity is always stamped from claims; one HTTP command handles the whole set.
         certificates.MapPost("/selection/preview", async (CertificateSelectionPreviewRequest request,
             CertificateSelectionService service, CancellationToken ct) => TemplateInvoke(() => service.PreviewAsync(request, ct)));

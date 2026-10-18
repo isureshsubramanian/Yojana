@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
@@ -15,7 +16,7 @@ public static class LabelBatchPrintHandler
     private const int MaximumSerials = 500;
 
     public static async Task<LabelBatchPrintResult> Handle(BatchPrintLabels command, SerialisationDbContext db,
-        LabelPrintService prints, IIdentifierPolicySource policies, ITenantContext tenant,
+        LabelPrintService prints, IIdentifierPolicySource policies, ITenantContext tenant, DocumentNumbers numbers,
         CancellationToken cancellationToken)
     {
         if (command.CommandId == Guid.Empty)
@@ -74,7 +75,8 @@ public static class LabelBatchPrintHandler
                 var reason = unitIds.Count == 0
                     ? $"Serial '{serial}' does not identify an open unit."
                     : $"Serial '{serial}' identifies more than one open unit.";
-                var rejected = Rejected(command, tenantId, sequence, serial, rule, reason);
+                var jobNumber = await numbers.NextAsync(DocumentNumbers.PrintJob, command.PrintAt, cancellationToken);
+                var rejected = Rejected(command, tenantId, sequence, serial, jobNumber, rule, reason);
                 db.PrintJobs.Add(rejected);
                 outcomes.Add(Outcome(rejected));
                 continue;
@@ -96,11 +98,12 @@ public static class LabelBatchPrintHandler
     }
 
     private static PrintJob Rejected(BatchPrintLabels command, TenantId tenantId, int sequence, string serial,
-        string rule, string reason) => new()
+        string jobNumber, string rule, string reason) => new()
     {
         TenantId = tenantId,
         JobId = ChildCommandId(command.CommandId, sequence),
         CommandId = ChildCommandId(command.CommandId, sequence),
+        JobNumber = jobNumber,
         BatchCommandId = command.CommandId,
         BatchSequence = sequence,
         RequestedSerial = serial,
