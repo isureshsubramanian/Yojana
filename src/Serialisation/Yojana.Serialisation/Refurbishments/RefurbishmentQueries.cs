@@ -73,13 +73,9 @@ public sealed class RefurbishmentQueries(SerialisationDbContext db, EffectiveIte
             new("key_function_test", "Key-function test", passingTest ? "A passing test was recorded after work opened." : "Record a passing key-function test after work opened.", passingTest, true),
             new("cycles", "Refurbishment cycles", $"Cycle {workOrder.CycleNumber} of {workOrder.MaxCycles}.", workOrder.CycleNumber <= workOrder.MaxCycles, true),
         };
-        var targetSerial = await db.Identifiers.AsNoTracking().Where(i => i.TenantId == tenant.TenantId
-            && i.UnitId == workOrder.TargetUnitId && i.ValidTo == null && i.Type == IdentifierType.InternalSerial)
-            .Select(i => i.RawValue).FirstOrDefaultAsync(cancellationToken);
+        var targetSerial = await SerialAtAsync(workOrder.TargetUnitId, workOrder.OpenedAt, cancellationToken);
         var releasedSerial = workOrder.ReleasedUnitId is not { } releasedUnitId ? null
-            : await db.Identifiers.AsNoTracking().Where(i => i.TenantId == tenant.TenantId
-                && i.UnitId == releasedUnitId && i.ValidTo == null && i.Type == IdentifierType.InternalSerial)
-                .Select(i => i.RawValue).FirstOrDefaultAsync(cancellationToken);
+            : await SerialAtAsync(releasedUnitId, workOrder.ReleasedAt!.Value, cancellationToken);
         var currentLocationId = await db.Episodes.AsNoTracking().Where(e => e.TenantId == tenant.TenantId
             && e.UnitId == workOrder.TargetUnitId && e.Kind == EpisodeKind.Custody && e.ValidTo == null)
             .Select(e => e.LocationId).SingleOrDefaultAsync(cancellationToken);
@@ -90,4 +86,13 @@ public sealed class RefurbishmentQueries(SerialisationDbContext db, EffectiveIte
             costs.Sum(c => c.Amount), costs.Select(c => c.Currency).Distinct().SingleOrDefault(), operations, parts, labour, costs,
             targetSerial, releasedSerial, currentLocationId, releaseChecks);
     }
+
+    private Task<string?> SerialAtAsync(Guid unitId, DateTime effectiveAt, CancellationToken cancellationToken) =>
+        db.Identifiers.AsNoTracking().Where(identifier => identifier.TenantId == tenant.TenantId
+                && identifier.UnitId == unitId && identifier.Type == IdentifierType.InternalSerial
+                && identifier.ValidFrom <= effectiveAt
+                && (identifier.ValidTo == null || identifier.ValidTo > effectiveAt))
+            .OrderByDescending(identifier => identifier.ValidFrom)
+            .Select(identifier => identifier.RawValue)
+            .FirstOrDefaultAsync(cancellationToken);
 }

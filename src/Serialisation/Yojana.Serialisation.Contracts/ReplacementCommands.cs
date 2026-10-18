@@ -182,8 +182,15 @@ public sealed record WarrantyReplacementDetail(
     string? CustomerAssetTag,
     string ReplacementPolicyCode,
     int ChainLength,
+    WarrantyReplacementNonReturnCharge? NonReturnCharge,
     IReadOnlyList<WarrantyReplacementCheck> Checks,
     IReadOnlyList<WarrantyReplacementTransferRow> Transfers);
+
+public sealed record WarrantyReplacementNonReturnCharge(
+    string State,
+    string PriceBasis,
+    decimal Amount,
+    DateOnly? BilledOn);
 
 public sealed record WarrantyReplacementUnitView(
     Guid UnitId,

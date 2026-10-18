@@ -128,6 +128,11 @@ public sealed class AdvanceReplacementTests(SerialisationHostFixture fixture)
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var link = await db.ReplacementLinks.SingleAsync(row => row.ReplacementLinkId == shipped.ReplacementLinkId);
         Assert.Equal((new DateOnly(2026, 9, 30), NonReturnPriceBasis.FairMarketValue, 900m), (link.ReturnDue, link.BilledPriceBasis, link.BilledAmount));
+        var detail = await scope.ServiceProvider.GetRequiredService<WarrantyReplacementQueries>()
+            .DetailAsync(link.WarrantyReplacementId, CancellationToken.None);
+        Assert.Equal(("billed", NonReturnPriceBasis.FairMarketValue, 900m, new DateOnly(2026, 9, 14)),
+            (detail!.NonReturnCharge!.State, detail.NonReturnCharge.PriceBasis,
+                detail.NonReturnCharge.Amount, detail.NonReturnCharge.BilledOn));
         Assert.NotNull(link.OverdueEventId);
         Assert.NotNull((await db.PartyReplacementHolds.SingleAsync(row => row.PartyRef == world.Customer)).LiftedAt);
         var owner = await db.Episodes.SingleAsync(row => row.UnitId == overdueCase.OriginalUnitId && row.Kind == EpisodeKind.Ownership && row.ValidTo == null);

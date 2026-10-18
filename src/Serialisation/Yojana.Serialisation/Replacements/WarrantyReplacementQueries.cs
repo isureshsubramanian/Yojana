@@ -95,12 +95,18 @@ public sealed class WarrantyReplacementQueries(SerialisationDbContext db, ITenan
             .Select(identifier => identifier.RawValue).SingleOrDefaultAsync(cancellationToken);
         var row = Row(d, l);
         var invoice = d.OriginalInvoiceType is not null && d.OriginalInvoiceId is { } invoiceId ? new DocumentRef(d.OriginalInvoiceType, invoiceId, d.OriginalInvoiceLine) : null;
+        var nonReturnCharge = l.BilledPriceBasis is not null && l.BilledAmount is { } billedAmount
+            ? new WarrantyReplacementNonReturnCharge("billed", l.BilledPriceBasis, billedAmount, l.BilledOn)
+            : l.NonReturnPriceBasis is not null && l.NonReturnAmount is { } agreedAmount
+                ? new WarrantyReplacementNonReturnCharge("agreed", l.NonReturnPriceBasis, agreedAmount, null)
+                : null;
         return new WarrantyReplacementDetail(row, l.SourceEntitlementId, l.TargetEntitlementId, l.ReplacementLinkId, l.PreviousReplacementLinkId,
             invoice, d.ReturnReasonCode, d.RestockingFeeRule, d.StockPostingReference,
             lines.Select(line => new WarrantyReplacementLineRow(line.LineId, line.Sequence, line.Kind, line.ItemId, line.Description,
                 line.Quantity, line.UnitAmount, line.LineAmount, line.Currency, line.RevenueRule)).ToList(),
             Unit(original, serials.GetValueOrDefault(original.UnitId)), Unit(replacement, serials.GetValueOrDefault(replacement.UnitId)),
-            original.OwnerPartyRef, customerAssetTag, d.ReplacementPolicyCode ?? l.PolicyApplied ?? "not_resolved", chainLength, checks, transfers);
+            original.OwnerPartyRef, customerAssetTag, d.ReplacementPolicyCode ?? l.PolicyApplied ?? "not_resolved", chainLength,
+            nonReturnCharge, checks, transfers);
     }
 
     private static WarrantyReplacementUnitView Unit(UnitCurrent unit, string? serial) =>

@@ -34,17 +34,9 @@ builder.Services.ConfigureWolverine(options =>
 });
 
 using var host = builder.Build();
-try
+return await DemoProcess.RunAsync(host, async cancellationToken =>
 {
-    await host.StartAsync();
     var catalogue = DemoCatalogue.Load(cataloguePath);
     catalogue.Register(host.Services);
-    await new DemoLoader(host.Services, catalogue, DateOnly.FromDateTime(DateTime.UtcNow)).RunAsync(CancellationToken.None);
-    await host.StopAsync();
-    return 0;
-}
-catch (Exception exception)
-{
-    Console.Error.WriteLine($"Demo data not loaded: {exception.Message}");
-    return 2;
-}
+    await new DemoLoader(host.Services, catalogue, DateOnly.FromDateTime(DateTime.UtcNow)).RunAsync(cancellationToken);
+}, Console.Error, CancellationToken.None);

@@ -6,8 +6,6 @@
 .returns-stage:hover { background: var(--surface-2); }
 .returns-stage .l, .returns-stage .s { display: block; color: var(--text-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .returns-stage .n { display: block; font-size: 20px; font-weight: 600; }
-.returns-filter-grid { display: grid; grid-template-columns: minmax(280px, 1fr) 170px 170px; gap: 10px; align-items: end; }
-.returns-filter-grid .findbar { min-width: 0; }
 .returns-pair { display: grid; grid-template-columns: minmax(0, 1fr) 32px minmax(0, 1fr); gap: 8px; align-items: stretch; }
 .returns-pair-side { min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-s); }
 .returns-pair-side.bad { border-color: var(--danger); background: var(--danger-soft); }
@@ -45,7 +43,7 @@
   .returns-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
-  .returns-stages, .returns-options, .returns-options.two, .returns-filter-grid, .returns-inline-fields { grid-template-columns: 1fr; }
+  .returns-stages, .returns-options, .returns-options.two, .returns-inline-fields { grid-template-columns: 1fr; }
   .returns-stage + .returns-stage { border-left: 0; border-top: 1px solid var(--border); }
   .returns-pair { grid-template-columns: 1fr; }
   .returns-pair-arrow { min-height: 20px; transform: rotate(90deg); }

@@ -32,5 +32,4 @@
 .claims-currency-option input { margin-top: 3px; accent-color: var(--accent); }
 .claims-currency-option span { min-width: 0; }
 .claims-currency-option .sub { display: block; }
-.toolbar > .findbar { display: contents; }
 @media (max-width: 960px) { .claims-age { grid-template-columns: 1fr; } .claims-age > div + div { border-left: 0; border-top: 1px solid var(--border); } .claims-remedy { grid-template-columns: 1fr; } }

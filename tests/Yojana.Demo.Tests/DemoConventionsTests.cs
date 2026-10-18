@@ -1,4 +1,6 @@
 using Xunit;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Ports;
 
@@ -78,9 +80,48 @@ public sealed class DemoConventionsTests
         Assert.False(Assert.IsType<DemoCatalogue.ItemSerialisation>(catalogue.Items["PF-400"].Serialisation).RequiresSanitisation);
     }
 
+    [Fact]
+    public async Task Failed_step_stops_the_host_and_returns_the_step_name_with_a_non_zero_exit_code()
+    {
+        var lifetime = new RecordingHostedService();
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSingleton<IHostedService>(lifetime);
+        using var host = builder.Build();
+        using var error = new StringWriter();
+
+        var exitCode = await DemoProcess.RunAsync(host,
+            _ => throw new InvalidOperationException("post supplier receipts: fictional failure"),
+            error, CancellationToken.None);
+
+        Assert.Equal(2, exitCode);
+        Assert.True(lifetime.Stopped);
+        Assert.Contains("post supplier receipts", error.ToString());
+    }
+
+    [Fact]
+    public async Task Successful_run_stops_the_host_and_returns_zero()
+    {
+        var lifetime = new RecordingHostedService();
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSingleton<IHostedService>(lifetime);
+        using var host = builder.Build();
+
+        var exitCode = await DemoProcess.RunAsync(host, _ => Task.CompletedTask, TextWriter.Null, CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.True(lifetime.Stopped);
+    }
+
     private sealed class NoRecordedDocuments : IRecordedDocumentReferenceQuery
     {
         public Task<IReadOnlyList<DocumentRef>> CandidatesAsync(string type, string idPrefix, int take, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<DocumentRef>>([]);
+    }
+
+    private sealed class RecordingHostedService : IHostedService
+    {
+        public bool Stopped { get; private set; }
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken cancellationToken) { Stopped = true; return Task.CompletedTask; }
     }
 }

@@ -42,12 +42,13 @@ export interface WarrantyReplacementLineRow { lineId: string; sequence: number; 
 export interface WarrantyReplacementUnitView { unitId: string; serial: string | null; itemId: string; conditionGrade: string; lifecycleStatus: string; locationKind: string | null; locationId: string | null }
 export interface WarrantyReplacementCheck { code: string; label: string; detail: string; outcome: string; passed: boolean }
 export interface WarrantyReplacementTransferRow { entitlementId: string | null; coverageFamily: string; entitlementType: string; unitId: string; unitSerial: string | null; startDate: string | null; endDate: string | null; effect: string; detail: string }
+export interface WarrantyReplacementNonReturnCharge { state: string; priceBasis: string; amount: number; billedOn: string | null }
 export interface WarrantyReplacementDetail {
   document: WarrantyReplacementRow; sourceEntitlementId: string; targetEntitlementId: string | null; replacementLinkId: string;
   previousReplacementLinkId: string | null; originalInvoice: DocumentRef | null; returnReasonCode: string | null;
   restockingFeeRule: string | null; stockPostingReference: string | null; lines: WarrantyReplacementLineRow[];
   originalUnit: WarrantyReplacementUnitView; replacementUnit: WarrantyReplacementUnitView; ownerPartyRef: string | null;
-  customerAssetTag: string | null; replacementPolicyCode: string; chainLength: number; checks: WarrantyReplacementCheck[];
+  customerAssetTag: string | null; replacementPolicyCode: string; chainLength: number; nonReturnCharge: WarrantyReplacementNonReturnCharge | null; checks: WarrantyReplacementCheck[];
   transfers: WarrantyReplacementTransferRow[];
 }
 

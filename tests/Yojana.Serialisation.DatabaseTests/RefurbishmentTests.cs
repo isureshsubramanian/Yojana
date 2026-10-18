@@ -75,6 +75,11 @@ public sealed class RefurbishmentTests(SerialisationHostFixture fixture)
         Assert.Null(identifiers[2].ValidTo);
         Assert.Equal("SERIALB3", identifiers[2].NormalisedValue);
         Assert.Equal(2, await db.Events.CountAsync(e => e.UnitId == setup.UnitId && e.EventType == RefurbishmentEventType.Released));
+        var firstDetail = await scope.ServiceProvider.GetRequiredService<RefurbishmentQueries>()
+            .DetailAsync(first.WorkOrderId, CancellationToken.None);
+        Assert.Equal(setup.Serial, firstDetail!.TargetSerial);
+        Assert.Equal(identifiers[1].RawValue, firstDetail.ReleasedSerial);
+        Assert.NotEqual(firstDetail.TargetSerial, firstDetail.ReleasedSerial);
     }
 
     [DatabaseFact]

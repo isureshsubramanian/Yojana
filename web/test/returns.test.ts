@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { ageBucket, dispositionOptionState, gradeOptionState, reasonEffect, receiptValuationRule, valuationRuleForGrade } from "../src/returns/format.ts";
 import type { RmaDetailLine } from "../src/returns/types.ts";
 
@@ -28,4 +29,14 @@ test("receipt grade helpers keep release-only grades disabled and select valuati
 test("replacement reason effects state the warranty arithmetic", () => {
   assert.match(reasonEffect("dead_on_arrival"), /start and term kept/);
   assert.match(reasonEffect("seller_error"), /not a warranty cost/);
+});
+
+test("returns search uses the shared list toolbar sizing", () => {
+  const screen = readFileSync(new URL("../src/returns/Returns.tsx", import.meta.url), "utf8");
+  const sharedStyles = readFileSync(new URL("../src/styles/base.css", import.meta.url), "utf8");
+
+  assert.match(screen, /aria-label="Return filters"[\s\S]*className="toolbar"/);
+  assert.doesNotMatch(screen, /returns-filter-grid/);
+  assert.match(sharedStyles, /\.toolbar > \.findbar \{ display: contents; \}/);
+  assert.match(sharedStyles, /\.toolbar \.scanbox \{ flex: 1 1 320px; max-width: 480px; \}/);
 });
