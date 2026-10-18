@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { activationReasons, bindingTableRows, highlightLayout, reviewActions } from "../src/labels/editorModel.ts";
-import { dayBounds, summaryKpis } from "../src/labels/printJobModel.ts";
+import { dayBounds, defaultPrintJobDays, printJobRejectionSummary, summaryKpis } from "../src/labels/printJobModel.ts";
 
 test("label layout mirror marks placeholders and every legal phrase hit without changing text", () => {
   const layout = "^FD{{serial}} Warranty void if removed. void^FS";
@@ -9,6 +9,11 @@ test("label layout mirror marks placeholders and every legal phrase hit without 
   assert.equal(segments.map((segment) => segment.text).join(""), layout);
   assert.deepEqual(segments.filter((segment) => segment.kind === "placeholder").map((segment) => segment.text), ["{{serial}}"]);
   assert.deepEqual(segments.filter((segment) => segment.kind === "phrase").map((segment) => segment.text), ["Warranty void", "void"]);
+});
+
+test("legal phrases match whole words or phrase boundaries, case-insensitively", () => {
+  assert.equal(highlightLayout("avoid devoid", ["void"]).some((segment) => segment.kind === "phrase"), false);
+  assert.deepEqual(highlightLayout("Warranty void.", ["void"]).filter((segment) => segment.kind === "phrase").map((segment) => segment.text), ["void"]);
 });
 
 test("binding table keeps required flags and annotates expiry-controlled catalogue fields", () => {
@@ -56,4 +61,14 @@ test("print-job KPIs use the complete server aggregate", () => {
 test("print-job date filters send an exclusive day boundary", () => {
   const bounds = dayBounds("2026-10-18", "2026-10-19");
   assert.equal(new Date(bounds.to).getTime() - new Date(bounds.from).getTime(), 48 * 60 * 60 * 1000);
+});
+
+test("print jobs open on an inclusive 30-day local calendar range", () => {
+  assert.deepEqual(defaultPrintJobDays(new Date(2026, 9, 19, 16, 30)), { fromDay: "2026-09-20", throughDay: "2026-10-19" });
+});
+
+test("print job lists explain missing fields without exposing the stored technical reason", () => {
+  assert.equal(printJobRejectionSummary("item.revision", "item.revision is empty for unit 0199"), "Required field Revision is empty");
+  assert.equal(printJobRejectionSummary(null, "identifier.manufacturer_serial is empty for unit 0199"), "Required field Manufacturer serial is empty");
+  assert.equal(printJobRejectionSummary(null, "printer refused raw payload"), "The label could not be rendered");
 });

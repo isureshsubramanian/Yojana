@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import { StatusBadge } from "../components";
+import { Shortcut, StatusBadge, useModEnter } from "../components";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
@@ -49,6 +49,9 @@ export function Component() {
     const approved = await workbenchApi.approve(requestId, decision || null);
     return mayCommit(approved) ? await workbenchApi.commit(requestId).catch(() => approved) : approved;
   });
+  const commitsDirectly = mayCommit(row);
+  useModEnter(() => commitsDirectly ? act(() => workbenchApi.commit(requestId)) : approveAndCommit(),
+    commitsDirectly ? busy : !mayApprove || busy);
 
   const preview = row?.preview;
   const changed = preview?.units.filter((u) => u.outcome === "change") ?? [];
@@ -64,9 +67,9 @@ export function Component() {
         </div>
         <div className="actions">
           <button type="button" className="btn" disabled={!row || row.status !== "awaiting_approval" || !decision.trim() || busy} aria-busy={busy} onClick={() => act(() => workbenchApi.reject(requestId, decision))}>Reject…</button>
-          {mayCommit(row)
-            ? <button type="button" className="btn primary" disabled={busy} aria-busy={busy} onClick={() => act(() => workbenchApi.commit(requestId))}>Commit<kbd className="key">⌘↵</kbd></button>
-            : <button type="button" className="btn primary" disabled={!mayApprove || busy} aria-busy={busy} onClick={approveAndCommit}>Approve and commit<kbd className="key">⌘↵</kbd></button>}
+          {commitsDirectly
+            ? <button type="button" className="btn primary" disabled={busy} aria-busy={busy} onClick={() => act(() => workbenchApi.commit(requestId))}>Commit<Shortcut keys="mod+enter" /></button>
+            : <button type="button" className="btn primary" disabled={!mayApprove || busy} aria-busy={busy} onClick={approveAndCommit}>Approve and commit<Shortcut keys="mod+enter" /></button>}
         </div>
       </div>
       <ErrorNote error={error} />

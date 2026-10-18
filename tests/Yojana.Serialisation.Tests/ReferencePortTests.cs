@@ -66,6 +66,17 @@ public sealed class ReferencePortTests
     }
 
     [Fact]
+    public async Task Item_family_port_returns_stable_codes_with_user_facing_names()
+    {
+        var families = new InMemoryItemFamilyNamePort();
+        families.Register(new ItemFamilyLabel("server_node", "Server node"));
+
+        var result = Assert.Single(await families.ListAsync(CancellationToken.None));
+
+        Assert.Equal(("server_node", "Server node"), (result.Code, result.Name));
+    }
+
+    [Fact]
     public async Task Recorded_reference_resolves_a_fallback_number_without_inverting_its_hex_prefix()
     {
         var reference = new DocumentRef("production_order", DocumentId);

@@ -379,7 +379,7 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
                   <text x="4" y="24">Fictional Systems</text>
                 </svg>
                 """);
-            var uploadCommand = new UploadTenantLogo(Guid.NewGuid(), Entity, hostile, "template.admin");
+            var uploadCommand = new UploadTenantLogo(Guid.NewGuid(), Entity, hostile, "template.admin", "fictional-systems-logo.svg");
             var uploadedResult = await InvokeAsync<TenantAssetUploadResult>(setup.Tenant, uploadCommand);
             var uploaded = uploadedResult.Asset;
             Assert.False(uploadedResult.Replayed);
@@ -389,6 +389,7 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
             firstAssetId = uploaded.AssetId;
             firstHash = uploaded.Sha256;
             Assert.Equal(("image/svg+xml", 120, 40), (uploaded.MediaType, uploaded.Width, uploaded.Height));
+            Assert.Equal("fictional-systems-logo.svg", uploaded.OriginalFileName);
             var stored = await assets.ContentAsync(firstAssetId, CancellationToken.None);
             var clean = Encoding.UTF8.GetString(stored!.Bytes);
             Assert.DoesNotContain("script", clean, StringComparison.OrdinalIgnoreCase);
@@ -447,6 +448,7 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
             var rendered = await scope.ServiceProvider.GetRequiredService<CertificateQueries>()
                 .RenderAsync(versions[0].CertificateId, CancellationToken.None);
             var renderedHtml = Encoding.UTF8.GetString(rendered!.Bytes);
+            Assert.Contains("<strong>Released by</strong>", renderedHtml, StringComparison.Ordinal);
             Assert.Contains(Convert.ToBase64String((await db.TenantAssets.AsNoTracking().SingleAsync(row => row.AssetId == firstAssetId)).Bytes),
                 renderedHtml, StringComparison.Ordinal);
             Assert.DoesNotContain("{{model.code}}", renderedHtml, StringComparison.Ordinal);
@@ -659,15 +661,20 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
                 CertificateFormType.WarrantyCertificate, null, At.AddHours(2), "system:certificates", Entity));
         Assert.True(initial.Issued);
         var policies = new List<Guid>();
+        var policyCodes = new List<string>();
+        var policyNames = new List<string>();
         fixture.Services.GetRequiredService<InMemoryWarrantyPorts>().RegisterZone(setup.LocationId, "UTC");
         foreach (var family in new[] { "sale_parts", "sale_service" })
         {
             await InvokeAsync<CoverageFamilyRow>(setup.Tenant,
                 new DefineCoverageFamily(family, family, false, AssuranceOrService.Service));
             var code = family.ToUpperInvariant() + "-" + Guid.NewGuid().ToString("N")[..6];
+            var name = family == "sale_parts" ? "Fictional parts protection" : "Fictional service protection";
             var draft = await InvokeAsync<PolicyDraftResult>(setup.Tenant, new CreatePolicyDraft(Guid.NewGuid(), code,
-                code, family, EntitlementType.Contract, new DateOnly(2026, 1, 1),
+                name, family, EntitlementType.Contract, new DateOnly(2026, 1, 1),
                 PolicyValidatorTestsTerms.Standard24() with { AssuranceOrService = AssuranceOrService.Service }, "policy.admin"));
+            policyCodes.Add(code);
+            policyNames.Add(name);
             policies.Add((await InvokeAsync<PolicyDraftResult>(setup.Tenant,
                 new PublishPolicyVersion(draft.PolicyVersionId, "policy.admin"))).PolicyVersionId);
         }
@@ -682,6 +689,19 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         Assert.Equal(2, await db.Entitlements.CountAsync(row => row.UnitId == setup.UnitId));
         Assert.Equal(2, await db.CertificateInstances.CountAsync(row => row.UnitId == setup.UnitId
             && row.DocumentKind == CertificateDocumentKind.WarrantyCertificate));
+        var latest = await db.CertificateInstances.AsNoTracking().Where(row => row.UnitId == setup.UnitId
+                && row.DocumentKind == CertificateDocumentKind.WarrantyCertificate)
+            .OrderByDescending(row => row.Version).FirstAsync();
+        Assert.All(policyNames, name => Assert.Contains($"\"policy_name\":\"{name}\"", latest.Payload, StringComparison.Ordinal));
+        var templates = scope.ServiceProvider.GetRequiredService<CertificateTemplateService>();
+        Assert.Contains(templates.Catalogue(CertificateDocumentKind.WarrantyCertificate), row => row.Path == "entitlements.policy_name");
+        var rendered = await scope.ServiceProvider.GetRequiredService<CertificateQueries>()
+            .RenderAsync(latest.CertificateId, CancellationToken.None);
+        var html = Encoding.UTF8.GetString(rendered!.Bytes);
+        Assert.All(policyNames, name => Assert.Contains(name, html, StringComparison.Ordinal));
+        Assert.All(policyCodes, code => Assert.DoesNotContain(code, html, StringComparison.Ordinal));
+        Assert.Contains("<strong>Issued by</strong>", html, StringComparison.Ordinal);
+        Assert.Contains("body{margin:0;padding:15mm 15mm 15mm 15mm}", html, StringComparison.Ordinal);
         var outcomes = await db.CertificateTriggers.Where(row => coverage.Select(message => message.Header.EventId)
                 .Contains(row.TriggeringEventId)).Select(row => row.Outcome).OrderBy(row => row).ToListAsync();
         Assert.Equal(["absorbed", "issued"], outcomes);
@@ -813,7 +833,7 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         var dbAfter = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var builtIn = await dbAfter.CertificateTemplateVersions.AsNoTracking().Where(row => row.TemplateId == builtInId)
             .OrderBy(row => row.Version).ToListAsync();
-        Assert.Equal([1, 3], builtIn.Select(row => row.Version));
+        Assert.Equal([1, 4], builtIn.Select(row => row.Version));
         Assert.Equal(CertificateTemplateStatus.Retired, builtIn[0].Status);
         Assert.Equal(CertificateTemplateStatus.Active, builtIn[1].Status);
         Assert.Contains("As-built at release", builtIn[1].LayoutBody, StringComparison.Ordinal);

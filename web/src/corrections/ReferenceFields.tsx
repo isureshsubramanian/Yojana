@@ -25,6 +25,8 @@ type SearchResult = {
   partyType: string | null; number: string | null; status: string | null; itemId: string | null;
 };
 
+export type ItemFamilyOption = { code: string; name: string };
+
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const stores = new Map<string, ReferenceStore>();
 
@@ -74,6 +76,36 @@ export function useReferenceNames(references: { items?: readonly (string | null 
     }, [store, version]),
     location: useCallback((id) => locationLabelText(id, id ? store.location(id) : undefined), [store, version]),
   };
+}
+
+/** Item-family names and picker options supplied through the item module's narrow name port. */
+export function useItemFamilies(): { options: ItemFamilyOption[]; name: (code: string | null | undefined) => string } {
+  const [options, setOptions] = useState<ItemFamilyOption[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    api<ItemFamilyOption[]>("/api/serialisation/item-families", { signal: controller.signal }).then(setOptions)
+      .catch((reason) => { if (!aborted(reason)) setOptions([]); });
+    return () => controller.abort();
+  }, []);
+  return {
+    options,
+    name: useCallback((code) => {
+      if (!code) return "—";
+      return options.find((option) => option.code.toLocaleLowerCase() === code.toLocaleLowerCase())?.name ?? friendlyType(code);
+    }, [options]),
+  };
+}
+
+/** An item family shown by name while retaining its stable code as the value. */
+export function ItemFamilyField({ id, label, value, onChange, optional, hint }: FieldProps<string>) {
+  const families = useItemFamilies();
+  return <label className="field" htmlFor={id}><span className="lbl">{label}{optional && <span className="hint"> · optional</span>}</span>
+    <select id={id} className="select" value={value ?? ""} onChange={(event) => onChange(event.target.value || null)}>
+      <option value="">Choose an item family…</option>
+      {value && !families.options.some((option) => option.code === value) && <option value={value}>{families.name(value)}</option>}
+      {families.options.map((option) => <option key={option.code} value={option.code}>{option.name}</option>)}
+    </select>{hint && <span className="help">{hint}</span>}
+  </label>;
 }
 
 type FieldProps<T> = { id: string; label: string; value: T | null; onChange: (value: T | null) => void; optional?: boolean | undefined; hint?: string | undefined };

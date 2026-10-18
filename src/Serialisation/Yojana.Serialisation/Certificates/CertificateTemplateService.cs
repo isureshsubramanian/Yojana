@@ -229,7 +229,7 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
         var rendered = await renderer.RenderAsync(new CertificateRenderRequest(built.CanonicalPayload, versionId,
             Signature: new CertificateRenderSignature("Preview signer", "released as conforming", clock.UtcNow,
                 "authenticated preview"), Metadata: new CertificateRenderMetadata("PREVIEW", 1, clock.UtcNow,
-                null, null, previewHash, "urn:yojana:certificate:PREVIEW")), cancellationToken);
+                null, null, previewHash, "urn:yojana:certificate:PREVIEW"), DocumentKind: template.DocumentKind), cancellationToken);
         return new CertificateTemplatePreview(rendered.Bytes, rendered.MediaType, validation);
     }
 

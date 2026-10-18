@@ -6758,6 +6758,11 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("varchar(100)")
                         .HasColumnName("media_type");
 
+                    b.Property<string>("OriginalFileName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("original_file_name");
+
                     b.Property<string>("Sha256")
                         .IsRequired()
                         .HasMaxLength(64)

@@ -18,7 +18,7 @@ public sealed class CertificateEntitlementReadPort(SerialisationDbContext db, IT
                       orderby entitlement.CoverageFamily, entitlement.StartDate, entitlement.EntitlementId
                       select new CertificateEntitlementFact(entitlement.EntitlementId, entitlement.CoverageFamily,
                           entitlement.Type, entitlement.Status, entitlement.StartBasis, entitlement.StartDate,
-                          entitlement.EndDate, policy.PolicyCode, policy.Version, entitlement.DurationValue,
+                          entitlement.EndDate, policy.PolicyCode, policy.Name, policy.Version, entitlement.DurationValue,
                           entitlement.DurationUnit, entitlement.Coverage, entitlement.SupersedesEntitlementId,
                           entitlement.RootEntitlementId, new List<Guid>())).ToListAsync(cancellationToken);
         var byId = all.ToDictionary(row => row.EntitlementId);

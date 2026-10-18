@@ -66,7 +66,12 @@ export function Component() {
   }, []);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === "n" && !(event.metaKey || event.ctrlKey || event.altKey) && !(event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable]"))) navigate("/claims/new");
+      if (event.key.toLowerCase() === "n" && !(event.metaKey || event.ctrlKey || event.altKey) && !(event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable]"))) {
+        // Claims owns N on this page. The shell reads defaultPrevented after page handlers, so this must remain the
+        // explicit arbitration contract or both /claims/new and /corrections navigation will run.
+        event.preventDefault();
+        navigate("/claims/new");
+      }
     };
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
   }, [navigate]);

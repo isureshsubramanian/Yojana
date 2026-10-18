@@ -17,3 +17,23 @@ export function dayBounds(fromDay: string, throughDay: string): { from: string; 
   through.setDate(through.getDate() + 1);
   return { from: from.toISOString(), to: through.toISOString() };
 }
+
+/** The inclusive local calendar range used on first open: today and the preceding 29 days. */
+export function defaultPrintJobDays(now = new Date()): { fromDay: string; throughDay: string } {
+  const through = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const from = new Date(through); from.setDate(from.getDate() - 29);
+  return { fromDay: localDay(from), throughDay: localDay(through) };
+}
+
+export function printJobRejectionSummary(emptyRequiredField: string | null | undefined,
+  technicalReason: string | null | undefined): string {
+  const parsedField = technicalReason?.match(/^([a-z0-9_.]+)\s+is empty(?:\s+for unit\b.*)?$/i)?.[1];
+  const field = emptyRequiredField?.trim() || parsedField;
+  if (!field) return "The label could not be rendered";
+  const name = (field.split(".").at(-1) ?? field).replaceAll("_", " ");
+  return `Required field ${name.replace(/^./, (letter) => letter.toUpperCase())} is empty`;
+}
+
+function localDay(value: Date): string {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+}

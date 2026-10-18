@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { PresenceAdvisory, PresenceChips, StatusBadge, useDocumentPresence } from "../components";
-import { UnitField } from "../corrections/ReferenceFields";
+import { ItemFamilyField, UnitField, useItemFamilies } from "../corrections/ReferenceFields";
 import { usePeople } from "../people/people";
 import { useSession } from "../session/session";
 import { Icon } from "../shell/Icons";
@@ -38,6 +38,7 @@ export function Component() {
   const session = useSession();
   const isNew = !id || id === "new";
   const canEdit = session.roles.includes("label_administrator");
+  const itemFamilies = useItemFamilies();
   const [detail, setDetail] = useState<LabelTemplateDetail | null>(null);
   const [selected, setSelected] = useState<LabelTemplateVersion | null>(null);
   const [newVersion, setNewVersion] = useState(isNew);
@@ -140,7 +141,7 @@ export function Component() {
   return <main className="content label-editor" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Labels", to: "/labels/print-jobs" }, { label: isNew ? "New template" : detail?.name ?? "Template" }]} />
     <div className="page-header"><div>
-      <div className="eyebrow">Label template · {isNew ? "new draft" : `${humanise(detail?.appliesTo ?? "")} ${detail?.appliesToValue ?? ""}`} {selected ? `· version ${selected.version} ${selected.status}` : ""}</div>
+      <div className="eyebrow">Label template · {isNew ? "new draft" : `${humanise(detail?.appliesTo ?? "")} ${detail?.appliesTo === "item_family" ? itemFamilies.name(detail.appliesToValue) : humanise(detail?.appliesToValue ?? "")}`} {selected ? `· version ${selected.version} ${selected.status}` : ""}</div>
       <h1>{draft.name || "New label template"}</h1>
       <p className="sub">Text and layout are tenant-owned; changing values come only from bindings. Active versions are immutable, so later changes start another draft.</p>
       <PresenceChips users={presence} />
@@ -161,7 +162,7 @@ export function Component() {
         {isNew && <section className="card" aria-labelledby="label-identity"><div className="card-header"><h2 id="label-identity">Template</h2></div><div className="card-body form-grid">
           <label className="field span"><span className="lbl">Name</span><input className="input" value={draft.name} onChange={(event) => change({ name: event.target.value })} /></label>
           <label className="field"><span className="lbl">Applies to</span><select className="select" value={draft.appliesTo} onChange={(event) => change({ appliesTo: event.target.value as DraftState["appliesTo"] })}><option value="item_family">Item family</option><option value="identifier_type">Identifier type</option></select></label>
-          <label className="field"><span className="lbl">Value</span><input className="input" value={draft.appliesToValue} onChange={(event) => change({ appliesToValue: event.target.value })} placeholder={draft.appliesTo === "item_family" ? "server" : "internal_serial"} /></label>
+          {draft.appliesTo === "item_family" ? <ItemFamilyField id="label-applies-to-value" label="Value" value={draft.appliesToValue || null} onChange={(value) => change({ appliesToValue: value ?? "" })} /> : <label className="field"><span className="lbl">Value</span><input className="input" value={draft.appliesToValue} onChange={(event) => change({ appliesToValue: event.target.value })} placeholder="internal_serial" /></label>}
         </div></section>}
 
         <section className="card" aria-labelledby="label-layout"><div className="card-header"><h2 id="label-layout">Layout</h2><div className="segmented plain" role="group" aria-label="Layout kind"><button type="button" aria-pressed={draft.layoutKind === "zpl"} disabled={!editable} onClick={() => change({ layoutKind: "zpl" })}>ZPL</button><button type="button" aria-pressed={draft.layoutKind === "html"} disabled={!editable} onClick={() => change({ layoutKind: "html" })}>HTML</button></div></div><div className="card-body stack label-layout-stack">
@@ -188,7 +189,7 @@ export function Component() {
         </div></section>
 
         <section className="card" aria-labelledby="label-properties"><div className="card-header"><h2 id="label-properties">Properties</h2></div><div className="card-body stack">
-          <div className="kv wide"><span className="k">Applies to</span><span className="v">{humanise(draft.appliesTo)} · {draft.appliesToValue || "not set"}</span></div>
+          <div className="kv wide"><span className="k">Applies to</span><span className="v">{humanise(draft.appliesTo)} · {draft.appliesToValue ? draft.appliesTo === "item_family" ? itemFamilies.name(draft.appliesToValue) : humanise(draft.appliesToValue) : "not set"}</span></div>
           {editable ? <UnitField id="label-sample-unit" label="Sample unit" value={draft.previewSampleUnitId} onChange={(value) => change({ previewSampleUnitId: value })} optional /> : <div className="field"><span className="label">Sample unit</span><span>{draft.previewSampleUnitId ? "Recorded on this version" : "Not set"}</span></div>}
           <label className="field"><span className="lbl">Symbology</span><select className="select" value={draft.symbology} disabled={!editable} onChange={(event) => change({ symbology: event.target.value as DraftState["symbology"] })}><option value="datamatrix">Data Matrix · recommended</option><option value="code128">Code 128 · recommended</option><option value="qr">QR</option><option value="code39">Code 39</option></select></label>
           <label className="check-setting"><input type="checkbox" checked={draft.regulated} disabled={!editable} onChange={(event) => change({ regulated: event.target.checked })} /><span><strong>Regulated label</strong><span className="help">Requires independent legal-review approval before activation.</span></span></label>

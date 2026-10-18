@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Collections;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using Xunit;
 using Yojana.Serialisation.Certificates;
@@ -9,6 +11,34 @@ namespace Yojana.Serialisation.Tests;
 public sealed class CertificateTests
 {
     private static readonly DateTime RenderedAt = new(2026, 7, 20, 14, 5, 6, DateTimeKind.Utc);
+
+    [Fact]
+    public void Certificate_starters_and_shared_composer_style_use_one_document_font_and_size_scale()
+    {
+        var starterType = typeof(CertificateHtmlComposer).Assembly.GetType(
+            "Yojana.Serialisation.Certificates.CertificateStarterLayouts", throwOnError: true)!;
+        var definitions = (IEnumerable)starterType.GetField("All", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!
+            .GetValue(null)!;
+        var starterLayouts = definitions.Cast<object>().Select(definition =>
+            (string)definition.GetType().GetProperty("Body")!.GetValue(definition)!).ToList();
+        Assert.All(starterLayouts, layout => Assert.Contains("<dl class=\"document-meta\">", layout, StringComparison.Ordinal));
+
+        var styles = starterLayouts.Append(CertificateDocumentStyle.Css);
+
+        Assert.All(styles, layout =>
+        {
+            Assert.DoesNotContain("monospace", layout, StringComparison.OrdinalIgnoreCase);
+            var families = Regex.Matches(layout, @"font-family\s*:\s*([^;}]+)", RegexOptions.IgnoreCase)
+                .Select(match => match.Groups[1].Value.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            Assert.All(families, family => Assert.True(
+                family.Equals("var(--certificate-font-family)", StringComparison.OrdinalIgnoreCase)
+                || family.Equals(CertificateDocumentStyle.FontFamily, StringComparison.OrdinalIgnoreCase),
+                $"Unexpected certificate font family: {family}"));
+            var sizes = Regex.Matches(layout, @"font-size\s*:\s*([^;}]+)", RegexOptions.IgnoreCase)
+                .Select(match => match.Groups[1].Value.Trim()).Distinct(StringComparer.Ordinal).ToList();
+            Assert.All(sizes, size => Assert.StartsWith("var(--certificate-size-", size, StringComparison.Ordinal));
+        });
+    }
 
     [Fact]
     public void Canonical_json_has_the_same_text_and_hash_for_different_property_order()
@@ -61,7 +91,7 @@ public sealed class CertificateTests
         var previous = Guid.NewGuid();
         var builder = new WarrantyCertificatePayloadBuilder(
             new WarrantyFacts([new CertificateEntitlementFact(current, "base_warranty", "manufacturer", "active",
-                "deliver", new DateOnly(2026, 9, 1), new DateOnly(2028, 9, 1), "STD-24", 3, 24, "months",
+                "deliver", new DateOnly(2026, 9, 1), new DateOnly(2028, 9, 1), "STD-24", "Standard 24-month warranty", 3, 24, "months",
                 "{\"service_mode\":\"depot\"}", previous, previous, [previous])]),
             new PartyNames(owner, new PartyLabel(owner, "OWNER-7", "Fictional Field Lab", "customer")));
         var unit = new CertificateUnitFact(Guid.NewGuid(), LifecycleStatus.Released, UnitOrigin.Manufactured,
@@ -79,6 +109,7 @@ public sealed class CertificateTests
         Assert.Equal("Fictional Field Lab", snapshot.Name);
         var term = Assert.Single(payload.Entitlements);
         Assert.Equal(("base_warranty", "deliver", "STD-24", 3), (term.CoverageFamily, term.StartBasis, term.PolicyCode, term.PolicyVersion));
+        Assert.Equal("Standard 24-month warranty", term.PolicyName);
         Assert.Equal([previous], term.SupersededLineage);
         Assert.Equal("24 months; depot", term.TermSummary);
     }

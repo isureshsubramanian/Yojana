@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildWhatAppliesRequest, effectiveLabel, formatRuleValue, pageRules, parseRuleValue } from "../src/jurisdictions/model.ts";
+import { buildWhatAppliesRequest, effectiveRangeLabel, formatRuleValue, pageRules, parseRuleValue, ruleKindLabel, starterName } from "../src/jurisdictions/model.ts";
 
 test("value editors serialise each catalogue value shape", () => {
   assert.equal(parseRuleValue("months", "12"), 12);
@@ -17,7 +17,10 @@ test("catalogue values are formatted by kind and structured values have labelled
   assert.equal(formatRuleValue("string_list", ["alpha", "beta"]), "alpha, beta");
   assert.equal(formatRuleValue("json", { months: 12, agreement_required: false }), "12 months · agreement not required");
   assert.equal(formatRuleValue("json", { months: 12, requires_agreement: false }), "12 months · agreement not required");
-  assert.equal(effectiveLabel("1900-01-01"), "always");
+  assert.equal(effectiveRangeLabel("1900-01-01", null, "en-GB"), "always in force");
+  assert.equal(effectiveRangeLabel("2026-07-31", null, "en-GB"), "from 31 Jul 2026 · no end date");
+  assert.equal(ruleKindLabel("used_goods_min_term"), "Used goods minimum term");
+  assert.deepEqual(starterName("European Union (starter — confirm with your legal adviser)"), { name: "European Union", starter: true });
 });
 
 test("jurisdiction paging uses the shared one-based page contract", () => {

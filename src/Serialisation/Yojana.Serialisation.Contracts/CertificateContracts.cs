@@ -193,6 +193,7 @@ public sealed record WarrantyEntitlementSnapshot(
     DateOnly? StartDate,
     DateOnly? EndDate,
     string PolicyCode,
+    string? PolicyName,
     int PolicyVersion,
     string TermSummary,
     IReadOnlyList<Guid> SupersededLineage);
@@ -248,7 +249,7 @@ public interface ICertificateReplacementReadPort
 }
 
 public sealed record CertificateEntitlementFact(Guid EntitlementId, string CoverageFamily, string Type, string Status,
-    string? StartBasis, DateOnly? StartDate, DateOnly? EndDate, string PolicyCode, int PolicyVersion,
+    string? StartBasis, DateOnly? StartDate, DateOnly? EndDate, string PolicyCode, string PolicyName, int PolicyVersion,
     int DurationValue, string DurationUnit, string Coverage, Guid? SupersedesEntitlementId, Guid? RootEntitlementId,
     IReadOnlyList<Guid> SupersededLineage);
 public interface ICertificateEntitlementReadPort
@@ -277,7 +278,8 @@ public sealed record CertificateRenderSignature(string PrintedName, string Meani
 public sealed record CertificateRenderMetadata(string TrackingNumber, int Version, DateTime IssuedAt,
     string? SupersedesTrackingNumber, string? SupersedeReason, string PayloadHash, string VerifyReference);
 public sealed record CertificateRenderRequest(string Payload, Guid TemplateVersionId, bool Copy = false,
-    CertificateRenderSignature? Signature = null, CertificateRenderMetadata? Metadata = null);
+    CertificateRenderSignature? Signature = null, CertificateRenderMetadata? Metadata = null,
+    string? DocumentKind = null);
 public sealed record CertificateRenderResult(byte[] Bytes, string MediaType);
 public interface ICertificateRenderer
 {
@@ -363,7 +365,8 @@ public static class TenantAssetKind
 }
 
 public sealed record TenantAssetRow(Guid AssetId, string Kind, Guid? LegalEntityId, string MediaType, string Sha256,
-    int Width, int Height, int ByteLength, string UploadedBy, DateTime UploadedAt);
+    int Width, int Height, int ByteLength, string UploadedBy, DateTime UploadedAt, string? OriginalFileName = null);
 public sealed record TenantAssetContent(Guid AssetId, string MediaType, byte[] Bytes, string Sha256, DateTime UploadedAt);
-public sealed record UploadTenantLogo(Guid CommandId, Guid? LegalEntityId, byte[] Bytes, string ActorRef = "");
+public sealed record UploadTenantLogo(Guid CommandId, Guid? LegalEntityId, byte[] Bytes, string ActorRef = "",
+    string? OriginalFileName = null);
 public sealed record TenantAssetUploadResult(TenantAssetRow Asset, bool Replayed);

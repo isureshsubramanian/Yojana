@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { ScanInput, SelectionPreview, StatusBadge, type PreviewOutcome } from "../components";
+import { ScanInput, SelectionPreview, Shortcut, StatusBadge, useModEnter, type PreviewOutcome } from "../components";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { previewPage } from "./fixtures";
@@ -11,7 +11,10 @@ export function Component() {
   const [query, setQuery] = useState("");
   const [outcome, setOutcome] = useState<PreviewOutcome | null>(null);
   const [page, setPage] = useState(1);
+  const [submitted, setSubmitted] = useState(false);
   const preview = previewPage(query, outcome, page);
+  const submit = () => setSubmitted(true);
+  useModEnter(submit, submitted);
   return (
     <>
       <main className="content" id="main" tabIndex={-1}>
@@ -25,7 +28,7 @@ export function Component() {
           <div className="actions">
             <Link className="btn ghost" to="/patterns">Discard</Link>
             <button type="button" className="btn">Save draft</button>
-            <button type="button" className="btn primary">Submit for approval<kbd className="key">⌘↵</kbd></button>
+            <button type="button" className="btn primary" disabled={submitted} onClick={submit}>{submitted ? "Submitted" : "Submit for approval"}<Shortcut keys="mod+enter" /></button>
           </div>
         </div>
         <div className="cols-2" style={{ gridTemplateColumns: "minmax(0, 2fr) minmax(0, 3fr)" }}>

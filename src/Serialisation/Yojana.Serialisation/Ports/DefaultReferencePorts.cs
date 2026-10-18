@@ -41,6 +41,19 @@ public sealed class InMemoryItemNamePort(IItemQueryPort items) : IItemNamePort
             label => label.Code, label => label.Name));
 }
 
+/// <summary>In-memory item-family labels for tests and the development catalogue.</summary>
+public sealed class InMemoryItemFamilyNamePort : IItemFamilyNamePort
+{
+    private readonly ConcurrentDictionary<string, ItemFamilyLabel> labels = new(StringComparer.OrdinalIgnoreCase);
+
+    public void Register(ItemFamilyLabel label) => labels[label.Code] = label;
+
+    public Task<IReadOnlyList<ItemFamilyLabel>> ListAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<ItemFamilyLabel>>(labels.Values
+            .OrderBy(label => label.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(label => label.Code, StringComparer.OrdinalIgnoreCase).ToList());
+}
+
 /// <summary>In-memory partner labels for tests and the recorded-message harness; a real party module replaces the port.</summary>
 public sealed class InMemoryPartyNamePort : IPartyNamePort
 {

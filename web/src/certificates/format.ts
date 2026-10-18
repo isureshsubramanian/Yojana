@@ -5,6 +5,21 @@ export function humanise(value: string | null | undefined): string {
   const words = value.replace(/_/g, " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
+const eventNames: Record<string, string> = {
+  "Unit.Released": "Unit released",
+  "Replacement.LinkCorrected": "Replacement link corrected",
+  "Entitlement.CoverageChanged": "Warranty cover changed",
+  "Certificate.Issued": "Certificate issued",
+  "Certificate.Reprinted": "Reprinted as Copy",
+};
+export function certificateEventLabel(value: string | null | undefined, version?: number): string {
+  if (!value) return "—";
+  const known = eventNames[value];
+  if (value === "Certificate.Issued" && version !== undefined) return `${known} (version ${version})`;
+  if (known) return known;
+  const words = value.replace(/[._]+/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLocaleLowerCase();
+  return words.charAt(0).toLocaleUpperCase() + words.slice(1);
+}
 export function fmtDate(value: string | null | undefined): string {
   return value ? new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—";
 }

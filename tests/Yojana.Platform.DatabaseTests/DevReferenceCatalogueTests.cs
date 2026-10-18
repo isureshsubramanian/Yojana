@@ -20,17 +20,19 @@ public sealed class DevReferenceCatalogueTests
             await File.ReadAllTextAsync(path), JsonOptions)!;
         var itemProfiles = new InMemoryItemPorts();
         var itemPort = new InMemoryItemNamePort(itemProfiles);
+        var familyPort = new InMemoryItemFamilyNamePort();
         var warranties = new InMemoryWarrantyPorts();
         var partyPort = new InMemoryPartyNamePort();
         var documents = new InMemoryDocumentNumberRegistry();
         var locations = new InMemoryLocationNameRegistry();
 
-        var counts = DevReferenceCatalogue.Load(new TestEnvironment(Environments.Development), path, itemProfiles, itemPort, warranties, partyPort, documents, locations);
+        var counts = DevReferenceCatalogue.Load(new TestEnvironment(Environments.Development), path, itemProfiles, itemPort, familyPort, warranties, partyPort, documents, locations);
 
         Assert.Equal(new DevReferenceCatalogueCounts(expected.Items.Count, expected.Parties.Count, expected.Documents.Count, expected.Locations.Count), counts);
         var itemLabels = await itemPort.NamesAsync(expected.Items.Select(row => row.Id).ToList(), CancellationToken.None);
         var partyLabels = await partyPort.NamesAsync(expected.Parties.Select(row => row.Id).ToList(), CancellationToken.None);
         Assert.All(expected.Items, row => Assert.Equal((row.Code, row.Name), (itemLabels[row.Id].Code, itemLabels[row.Id].Name)));
+        Assert.Contains(await familyPort.ListAsync(CancellationToken.None), row => row.Code == "server_node" && row.Name == "Server node");
         foreach (var row in expected.Items.Where(row => row.Serialisation is not null))
         {
             var profile = await itemProfiles.GetAsync(row.Id, CancellationToken.None);
@@ -60,18 +62,20 @@ public sealed class DevReferenceCatalogueTests
         var unknown = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
         var itemProfiles = new InMemoryItemPorts();
         var itemPort = new InMemoryItemNamePort(itemProfiles);
+        var familyPort = new InMemoryItemFamilyNamePort();
         var warranties = new InMemoryWarrantyPorts();
         var partyPort = new InMemoryPartyNamePort();
         var documents = new InMemoryDocumentNumberRegistry();
         var locations = new InMemoryLocationNameRegistry();
 
-        var counts = DevReferenceCatalogue.Load(new TestEnvironment(environmentName), "file-must-not-be-opened.json", itemProfiles, itemPort, warranties, partyPort, documents, locations);
+        var counts = DevReferenceCatalogue.Load(new TestEnvironment(environmentName), "file-must-not-be-opened.json", itemProfiles, itemPort, familyPort, warranties, partyPort, documents, locations);
 
         Assert.Equal(new DevReferenceCatalogueCounts(0, 0, 0, 0), counts);
         Assert.Null((await itemPort.NamesAsync([unknown], CancellationToken.None))[unknown].Name);
         Assert.Null((await partyPort.NamesAsync([unknown], CancellationToken.None))[unknown].Name);
         Assert.False(documents.TryGet(new DocumentKey("invoice", unknown), out _));
         Assert.False(locations.TryGet(unknown, out _));
+        Assert.Empty(await familyPort.ListAsync(CancellationToken.None));
     }
 
     private sealed class TestEnvironment(string environmentName) : IHostEnvironment

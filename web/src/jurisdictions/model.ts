@@ -32,7 +32,21 @@ export function formatRuleValue(valueType: string | undefined, value: unknown, u
   return humanisePart(String(value));
 }
 
-export function effectiveLabel(value: string): string { return value === "1900-01-01" ? "always" : value; }
+export function effectiveRangeLabel(from: string, to: string | null | undefined, locale?: string): string {
+  if (from === "1900-01-01" && !to) return "always in force";
+  const start = `from ${displayDate(from, locale)}`;
+  return to ? `${start} · until ${displayDate(to, locale)}` : `${start} · no end date`;
+}
+
+export function ruleKindLabel(value: string): string {
+  if (value === "used_goods_min_term") return "Used goods minimum term";
+  return humanisePart(value);
+}
+
+export function starterName(value: string): { name: string; starter: boolean } {
+  const suffix = /\s*\(starter\s*[—-]\s*confirm with your legal adviser\)\s*$/i;
+  return { name: value.replace(suffix, ""), starter: suffix.test(value) };
+}
 
 export function pageRules<T>(rows: readonly T[], page: number, pageSize: number): T[] {
   const safePage = Math.max(1, page);
@@ -61,6 +75,10 @@ function structuredPart(key: string, value: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function humanisePart(value: string): string { return value.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase()); }
+function displayDate(value: string, locale?: string): string {
+  return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })
+    .format(new Date(`${value}T00:00:00Z`));
+}
 
 export function buildWhatAppliesRequest(kind: string, context: RuleContext) {
   return { kind: kind || null, context: { ...context, country: context.country.trim().toUpperCase(), subdivision: context.subdivision?.trim().toUpperCase() || null, itemClass: context.itemClass?.trim() || null, currency: context.currency?.trim().toUpperCase() || null } };

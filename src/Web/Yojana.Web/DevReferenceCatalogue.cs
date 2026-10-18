@@ -18,6 +18,7 @@ public static class DevReferenceCatalogue
         string path,
         InMemoryItemPorts itemProfiles,
         InMemoryItemNamePort items,
+        InMemoryItemFamilyNamePort itemFamilies,
         InMemoryWarrantyPorts warranties,
         InMemoryPartyNamePort parties,
         InMemoryDocumentNumberRegistry documents,
@@ -39,6 +40,8 @@ public static class DevReferenceCatalogue
             items.Register(new ItemLabel(item.Id, item.Code, item.Name));
             if (item.Serialisation is { } profile)
             {
+                if (!string.IsNullOrWhiteSpace(profile.ItemClass))
+                    itemFamilies.Register(new ItemFamilyLabel(profile.ItemClass, FamilyName(profile.ItemClass)));
                 itemProfiles.Register(new ItemSerialisationProfile(item.Id, item.Code, profile.TrackingMode,
                     profile.SerialisationPoint, profile.RetentionClass, profile.SerialReusePolicy,
                     profile.AsBuiltCompleteness, profile.SerialScheme, profile.ExpiryRequired, profile.ItemClass,
@@ -87,6 +90,12 @@ public static class DevReferenceCatalogue
     private static void Require(string value, string field)
     {
         if (string.IsNullOrWhiteSpace(value)) throw new InvalidDataException($"Development reference catalogue has a blank {field}.");
+    }
+
+    private static string FamilyName(string code)
+    {
+        var text = code.Replace('_', ' ').Trim();
+        return text.Length == 0 ? code : char.ToUpperInvariant(text[0]) + text[1..];
     }
 
     // Shared JSON contract: tools/Yojana.Demo/DemoCatalogue.cs reads the same development-only file so the loader and

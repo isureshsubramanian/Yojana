@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router";
 import { Icon, type IconName } from "../../shell/Icons";
+import { Shortcut } from "../Shortcut";
 import type { SearchResponse, SearchResult } from "../types";
 import { HoverCard } from "./HoverCard";
 import { flatten, splitHighlights, step } from "./highlight";
@@ -11,7 +12,7 @@ const DEBOUNCE_MS = 150;
 const typeIcon: Record<string, IconName> = { unit: "units", document: "claim", entitlement: "ent", claim: "claim", rma: "rma", certificate: "cert", party: "int" };
 
 /**
- * ⌘K global search (ADR-0001 "Global search and find-within"): one entry for units and identifiers,
+ * Mod+K global search: one entry for units and identifiers,
  * documents, entitlements, claims, RMAs, certificates and parties. Results arrive ranked with an explicit
  * reason; the hover card shows the tenant's metadata profile for the selected result. The palette renders
  * what the server returns and ranks nothing itself.
@@ -33,6 +34,7 @@ function PaletteDialog({ initialQuery }: { initialQuery: string }) {
   const list = useRef<HTMLOListElement>(null);
 
   useEffect(() => { input.current?.focus(); input.current?.select(); }, []);
+  useEffect(() => setQuery(initialQuery), [initialQuery]);
 
   useEffect(() => {
     const q = query.trim();
@@ -111,7 +113,7 @@ function PaletteDialog({ initialQuery }: { initialQuery: string }) {
           )}
           <div className="foot">
             <span className="keys"><kbd className="key">↑</kbd><kbd className="key">↓</kbd></span>move
-            <span className="keys"><kbd className="key">↵</kbd></span>open
+            <span className="keys"><Shortcut keys="enter" /></span>open
             <span className="keys"><kbd className="key">⇥</kbd></span>scope
             <span className="grow" />
             {response && <>{results.length.toLocaleString()} results in {response.tookMs} ms · ranked by match quality, type weight and recency</>}

@@ -77,6 +77,7 @@ public sealed class DemoConventionsTests
         services.AddSingleton<InMemoryItemPorts>();
         services.AddSingleton<IItemQueryPort>(provider => provider.GetRequiredService<InMemoryItemPorts>());
         services.AddSingleton<InMemoryItemNamePort>();
+        services.AddSingleton<InMemoryItemFamilyNamePort>();
         services.AddSingleton<InMemoryWarrantyPorts>();
         services.AddSingleton<InMemoryPartyNamePort>();
         services.AddSingleton<InMemoryDocumentNumberRegistry>();

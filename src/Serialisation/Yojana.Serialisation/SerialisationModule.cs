@@ -300,6 +300,8 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<IBomQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());
         builder.Services.AddSingleton<InMemoryItemNamePort>();
         builder.Services.TryAddSingleton<IItemNamePort>(sp => sp.GetRequiredService<InMemoryItemNamePort>());
+        builder.Services.AddSingleton<InMemoryItemFamilyNamePort>();
+        builder.Services.TryAddSingleton<IItemFamilyNamePort>(sp => sp.GetRequiredService<InMemoryItemFamilyNamePort>());
         builder.Services.AddSingleton<InMemoryPartyNamePort>();
         builder.Services.TryAddSingleton<IPartyNamePort>(sp => sp.GetRequiredService<InMemoryPartyNamePort>());
         builder.Services.AddSingleton<InMemoryLocationNameRegistry>();

@@ -4,6 +4,7 @@ import { useSession } from "../session/session";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote } from "../units/common";
+import { ItemFamilyField } from "../corrections/ReferenceFields";
 import {
   certificateSettingsApi,
   type CertificateDateFormatSettings,
@@ -96,7 +97,7 @@ export function Component() {
         <p className="muted">An override wins over the tenant default for units in that item class.</p>
         {settings.itemClassOverrides.length === 0 && <p className="muted">No overrides. Every item class uses the tenant default.</p>}
         {settings.itemClassOverrides.map((row, index) => <div className="cluster" key={index}>
-          <label className="field"><span className="lbl">Item class</span><input className="input" value={row.itemClass} maxLength={100} onChange={(event) => setSettings({ ...settings, itemClassOverrides: settings.itemClassOverrides.map((value, rowIndex) => rowIndex === index ? { ...value, itemClass: event.target.value } : value) })} /></label>
+          <ItemFamilyField id={`certificate-item-class-${index}`} label="Item class" value={row.itemClass || null} onChange={(itemClass) => setSettings({ ...settings, itemClassOverrides: settings.itemClassOverrides.map((value, rowIndex) => rowIndex === index ? { ...value, itemClass: itemClass ?? "" } : value) })} />
           <label className="field"><span className="lbl">Issue point</span><select className="select" value={row.issuePoint} onChange={(event) => setSettings({ ...settings, itemClassOverrides: settings.itemClassOverrides.map((value, rowIndex) => rowIndex === index ? { ...value, issuePoint: event.target.value as ReleaseRecordIssuePoint } : value) })}>{options.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
           <button type="button" className="btn ghost" disabled={busy} onClick={() => setSettings({ ...settings, itemClassOverrides: settings.itemClassOverrides.filter((_, rowIndex) => rowIndex !== index) })}>Remove</button>
         </div>)}

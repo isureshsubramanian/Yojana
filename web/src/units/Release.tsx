@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { selections, DEFAULT_LEGAL_ENTITY, RELEASE_OPERATION, now, type BulkExecutionResult, type BulkOperationArguments, type BulkPreviewResult, type ResolveSelectionSetResult, type SelectionSource, type UnitOutcome } from "../api/units";
-import { SelectionPreview, StatusBadge, type PreviewOutcome, type PreviewResult } from "../components";
+import { SelectionPreview, Shortcut, StatusBadge, useModEnter, type PreviewOutcome, type PreviewResult } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
@@ -93,6 +93,7 @@ export function Component() {
     setBusy(true); setError(null);
     try { setExecuted(await selections.execute(resolved.selectionId, RELEASE_OPERATION, args, approver || null)); setPage(1); setFind(""); setOutcome(null); } catch (e) { setError(e); } finally { setBusy(false); }
   };
+  useModEnter(execute, !preview || !args || preview.change === 0 || busy || !!executed);
 
   const rowClick = (o: UnitOutcome) => openDrawer({ eyebrow: `Selected unit · ${o.outcome}`, title: o.serial ?? shortId(o.unitId), mono: true }, (
     <>
@@ -118,7 +119,7 @@ export function Component() {
           <div className="actions">
             <Link className="btn ghost" to="/units">Discard</Link>
             <button type="button" className="btn" disabled={!sourceReady || busy} aria-busy={busy} onClick={resolve}>Resolve selection</button>
-            <button type="button" className="btn primary" disabled={!preview || !args || preview.change === 0 || busy || !!executed} aria-busy={busy} onClick={execute}>Execute · {preview?.change ?? 0} units<kbd className="key">⌘↵</kbd></button>
+            <button type="button" className="btn primary" disabled={!preview || !args || preview.change === 0 || busy || !!executed} aria-busy={busy} onClick={execute}>Execute · {preview?.change ?? 0} units<Shortcut keys="mod+enter" /></button>
           </div>
         </div>
 

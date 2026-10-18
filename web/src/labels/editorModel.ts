@@ -13,11 +13,10 @@ export function highlightLayout(layout: string, phrases: readonly string[]): Lay
   while (cursor < layout.length) {
     placeholder.lastIndex = cursor;
     const nextPlaceholder = placeholder.exec(layout);
-    const lower = layout.toLowerCase();
     let phraseIndex = -1;
     let phrase = "";
     for (const candidate of needles) {
-      const index = lower.indexOf(candidate.toLowerCase(), cursor);
+      const index = phraseBoundaryIndex(layout, candidate, cursor);
       if (index >= 0 && (phraseIndex < 0 || index < phraseIndex || (index === phraseIndex && candidate.length > phrase.length))) {
         phraseIndex = index; phrase = layout.slice(index, index + candidate.length);
       }
@@ -72,7 +71,7 @@ export function replaceFlaggedWording(layout: string, phrases: readonly string[]
   let replaced = false;
   for (const phrase of [...phrases].sort((a, b) => b.length - a.length)) {
     if (!phrase.trim()) continue;
-    const index = next.toLowerCase().indexOf(phrase.toLowerCase());
+    const index = phraseBoundaryIndex(next, phrase, 0);
     if (index >= 0) {
       next = next.slice(0, index) + SUGGESTED_LEGAL_WORDING + next.slice(index + phrase.length);
       replaced = true;
@@ -80,6 +79,14 @@ export function replaceFlaggedWording(layout: string, phrases: readonly string[]
   }
   return replaced ? next : `${next.replace(/\s+$/, "")}\n${SUGGESTED_LEGAL_WORDING}`;
 }
+
+function phraseBoundaryIndex(text: string, phrase: string, from: number): number {
+  const matcher = new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(phrase.trim())}(?![\\p{L}\\p{N}_])`, "giu");
+  matcher.lastIndex = from;
+  return matcher.exec(text)?.index ?? -1;
+}
+
+function escapeRegExp(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
 export function placeholders(layout: string): string[] {
   return [...layout.matchAll(/\{\{([a-z][a-z0-9_]*)\}\}/g)].map((match) => match[1]!).filter((value, index, all) => all.indexOf(value) === index);

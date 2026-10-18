@@ -65,9 +65,10 @@ public sealed class JurisdictionCatalogueService(SerialisationDbContext db, ITen
         await EnsureStarterPacksAsync(cancellationToken);
         var packs = await db.RulePacks.AsNoTracking().Where(row => row.TenantId == tenant.TenantId)
             .OrderBy(row => row.Name).ToListAsync(cancellationToken);
-        var counts = await db.RulePackRules.AsNoTracking().Where(row => row.TenantId == tenant.TenantId)
-            .GroupBy(row => row.RulePackId).Select(group => new { RulePackId = group.Key, Count = group.Count() })
-            .ToDictionaryAsync(row => row.RulePackId, row => row.Count, cancellationToken);
+        var packEntries = await db.RulePackRules.AsNoTracking().Where(row => row.TenantId == tenant.TenantId)
+            .Select(row => new { row.RulePackId, row.Template }).ToListAsync(cancellationToken);
+        var counts = packEntries.Where(entry => IsRuleTemplate(entry.Template)).GroupBy(entry => entry.RulePackId)
+            .ToDictionary(group => group.Key, group => group.Count());
         return packs.Select(pack => new RulePackRow(pack.RulePackId, pack.Code, pack.Name, pack.Warning,
             counts.GetValueOrDefault(pack.RulePackId), pack.ImportedAt is not null, pack.ImportedAt, pack.ImportedBy)).ToList();
     }
@@ -366,6 +367,12 @@ public sealed class JurisdictionCatalogueService(SerialisationDbContext db, ITen
                 Sequence = sequence, Template = entry.GetRawText(),
             });
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static bool IsRuleTemplate(string template)
+    {
+        using var document = JsonDocument.Parse(template);
+        return document.RootElement.TryGetProperty("type", out var type) && type.GetString() == "rule";
     }
 
     private async Task<CleanRule> ValidateAsync(SaveJurisdictionRule command, CancellationToken cancellationToken,

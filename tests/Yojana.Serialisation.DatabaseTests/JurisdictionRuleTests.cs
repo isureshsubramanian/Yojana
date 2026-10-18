@@ -112,11 +112,19 @@ public sealed class JurisdictionRuleTests(SerialisationHostFixture fixture)
             var service = scope.ServiceProvider.GetRequiredService<JurisdictionCatalogueService>();
             var pack = Assert.Single((await service.CatalogueAsync(null, null, CancellationToken.None)).RulePacks);
             Assert.Contains("confirm with your legal adviser", pack.Name, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(4, pack.RuleCount);
             packId = pack.RulePackId;
         }
         var imported = await InvokeAsync<RulePackImported>(configured, new ImportRulePack(Guid.NewGuid(), packId,
             "tenant.admin"));
         Assert.Equal((4, 4), (imported.RegionGroupsAdded, imported.RulesAdded));
+        using (var scope = fixture.ScopeFor(configured))
+        {
+            var catalogue = await scope.ServiceProvider.GetRequiredService<JurisdictionCatalogueService>()
+                .CatalogueAsync(null, null, CancellationToken.None);
+            Assert.Equal(4, Assert.Single(catalogue.RulePacks).RuleCount);
+            Assert.Equal(4, catalogue.Rules.Count);
+        }
         var context = Context("DE", null, JurisdictionBuyerClass.Consumer, null, null, null, September);
         Assert.Equal(12, Assert.Single(await ResolveAsync(configured,
             JurisdictionRuleKind.RepairExtensionMonths, context)).Value.GetInt32());

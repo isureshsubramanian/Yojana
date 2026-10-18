@@ -19,6 +19,7 @@ public sealed class TenantAssetService(SerialisationDbContext db, ITenantContext
     public const int MaximumDimension = 4096;
 
     public async Task<TenantAssetUploadResult> UploadLogoAsync(Guid commandId, byte[] input, Guid? legalEntityId, string actorRef,
+        string? originalFileName,
         CancellationToken cancellationToken)
     {
         var existing = await db.TenantAssets.AsNoTracking().FirstOrDefaultAsync(row => row.TenantId == tenant.TenantId
@@ -37,6 +38,7 @@ public sealed class TenantAssetService(SerialisationDbContext db, ITenantContext
             Kind = TenantAssetKind.Logo,
             LegalEntityId = legalEntityId,
             MediaType = inspected.MediaType,
+            OriginalFileName = FileName(originalFileName),
             Bytes = inspected.Bytes,
             Sha256 = Convert.ToHexStringLower(SHA256.HashData(inspected.Bytes)),
             Width = inspected.Width,
@@ -221,7 +223,13 @@ public sealed class TenantAssetService(SerialisationDbContext db, ITenantContext
     }
 
     private static TenantAssetRow Row(TenantAsset row) => new(row.AssetId, row.Kind, row.LegalEntityId, row.MediaType,
-        row.Sha256, row.Width, row.Height, row.Bytes.Length, row.UploadedBy, row.UploadedAt);
+        row.Sha256, row.Width, row.Height, row.Bytes.Length, row.UploadedBy, row.UploadedAt, row.OriginalFileName);
+    private static string? FileName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var name = Path.GetFileName(value.Trim());
+        return name.Length <= 255 ? name : name[..255];
+    }
     private static CommandRefusedException Refused(string rule, string message) => new(rule, message);
 
     private const string SvgNamespace = "http://www.w3.org/2000/svg";
@@ -248,5 +256,5 @@ public static class TenantAssetUploadHandler
 {
     public static Task<TenantAssetUploadResult> Handle(UploadTenantLogo command, TenantAssetService service,
         CancellationToken cancellationToken) => service.UploadLogoAsync(command.CommandId, command.Bytes,
-        command.LegalEntityId, command.ActorRef, cancellationToken);
+        command.LegalEntityId, command.ActorRef, command.OriginalFileName, cancellationToken);
 }

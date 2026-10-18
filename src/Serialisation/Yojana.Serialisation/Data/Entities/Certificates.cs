@@ -164,6 +164,7 @@ public sealed class TenantAsset : ITenantScoped
     public required string Kind { get; set; }
     public Guid? LegalEntityId { get; set; }
     public required string MediaType { get; set; }
+    public string? OriginalFileName { get; set; }
     public required byte[] Bytes { get; set; }
     public required string Sha256 { get; set; }
     public int Width { get; set; }

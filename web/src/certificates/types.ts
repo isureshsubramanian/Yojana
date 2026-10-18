@@ -50,7 +50,7 @@ export interface TemplateValidation {
 }
 export interface TenantAsset {
   assetId: string; kind: string; legalEntityId: string | null; mediaType: string; sha256: string;
-  width: number; height: number; byteLength: number; uploadedBy: string; uploadedAt: string;
+  width: number; height: number; byteLength: number; uploadedBy: string; uploadedAt: string; originalFileName: string | null;
 }
 export interface LabelTemplateSummary {
   templateId: string; name: string; appliesTo: string; appliesToValue: string; versionCount: number; activeVersion: number | null;

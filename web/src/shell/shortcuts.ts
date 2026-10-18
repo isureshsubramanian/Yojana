@@ -1,5 +1,6 @@
 import type { NavigateFunction } from "react-router";
 import { openSearch } from "../components/search/searchStore";
+import { runAfterPageShortcuts } from "../components/shortcutKeys";
 
 const CHORD_MS = 800;
 
@@ -10,7 +11,7 @@ function inEditable(target: EventTarget | null): boolean {
 }
 
 /**
- * Keyboard-first chrome (MOCKUP-PROCESS criterion 8): ⌘K / Ctrl+K opens search from anywhere, "/" focuses the
+ * Keyboard-first chrome (MOCKUP-PROCESS criterion 8): Mod+K opens search from anywhere, "/" focuses the
  * page's scan field, "g u" goes to units, "n" starts a correction. Single keys are ignored while typing.
  */
 export function installShortcuts(navigate: NavigateFunction): () => void {
@@ -30,7 +31,9 @@ export function installShortcuts(navigate: NavigateFunction): () => void {
     }
     if (e.key === "g") { pendingG = now; return; }
     if (e.key === "u" && now - pendingG < CHORD_MS) { pendingG = 0; navigate("/units"); return; }
-    if (e.key === "n") { navigate("/corrections"); }
+    // Page handlers claim a single key with preventDefault. Deferring the shell fallback avoids coupling behaviour
+    // to React effect registration order; removing that contract would make N fire twice on the Claims list.
+    if (e.key.toLowerCase() === "n") runAfterPageShortcuts(e, () => navigate("/corrections"));
   };
   window.addEventListener("keydown", onKey);
   return () => window.removeEventListener("keydown", onKey);

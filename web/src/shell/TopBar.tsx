@@ -6,6 +6,7 @@ import { ROOT_ROUTE_ID, initials, roleLabel } from "../session/session";
 import { ModeMenuItems } from "../theme/ModeMenuItems";
 import { setMode, useEffectiveMode } from "../theme/mode";
 import { openSearch } from "../components/search/searchStore";
+import { Shortcut } from "../components/Shortcut";
 import { Icon } from "./Icons";
 import { toggleDrawer, useDrawer } from "./drawerStore";
 
@@ -24,10 +25,15 @@ export function TopBar({ bare = false }: { bare?: boolean }) {
           <HealthPill />
         </>
       )}
-      <span className="grow" />
       {!bare && (
         <>
-          <button type="button" className="pill quiet" onClick={() => openSearch()} aria-label="Search everything" aria-haspopup="dialog"><Icon name="search" />Search<kbd className="key">⌘K</kbd></button>
+          <button type="button" className="topbar-search" onClick={() => openSearch()} onFocus={() => openSearch()}
+            onKeyDown={(event) => {
+              if (event.metaKey || event.ctrlKey || event.altKey || event.key.length !== 1 || !event.key.trim()) return;
+              event.preventDefault(); openSearch(event.key);
+            }} aria-label="Search units, identifiers, documents, entitlements, claims, RMAs, certificates and parties" aria-haspopup="dialog">
+            <Icon name="search" /><span className="topbar-search-placeholder">Search units, documents, claims, RMAs…</span><Shortcut keys="mod+k" />
+          </button>
           <Link className="icon-btn" to="/corrections" aria-label="Approvals"><Icon name="bell" /></Link>
           <ModeToggle />
           <button type="button" className="icon-btn" onClick={toggleDrawer} aria-label="Details panel" aria-pressed={drawer.open} title="Details panel"><Icon name="panel" /></button>

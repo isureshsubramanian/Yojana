@@ -146,7 +146,8 @@ public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext
         signature is null ? null : new CertificateRenderSignature(signature.PrintedName,
             DisplayMeaning(signature.Meaning), signature.SignedAt, signature.SignatureMethod),
         new CertificateRenderMetadata(row.TrackingNumber, row.Version, row.IssuedAt, supersedesTrackingNumber,
-            row.SupersedeReason, row.PayloadHash, $"urn:yojana:certificate:{row.TrackingNumber}"));
+            row.SupersedeReason, row.PayloadHash, $"urn:yojana:certificate:{row.TrackingNumber}"),
+        row.DocumentKind);
 
     private static string DisplayMeaning(string value) => value == CertificateSignatureMeaning.Release
         ? "released as conforming" : value;

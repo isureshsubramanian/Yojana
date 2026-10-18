@@ -1,4 +1,5 @@
 using System.Net;
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
@@ -12,15 +13,18 @@ public sealed record CertificateHtmlDocument(string BodyHtml, PdfPageSpec Page)
     public string AsStandaloneHtml(bool pageChrome) =>
         "<!doctype html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" " +
         "content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:\">" +
-        "<style>html{font-family:Arial,Helvetica,sans-serif;color:#172033}*{box-sizing:border-box}body{margin:0}" +
+        "<style>" + CertificateDocumentStyle.Css + "*{box-sizing:border-box}body{margin:0" +
+        (pageChrome ? $";padding:{Mm(Page.MarginTopMm)} {Mm(Page.MarginRightMm)} {Mm(Page.MarginBottomMm)} {Mm(Page.MarginLeftMm)}" : "") + "}" +
         "table{width:100%;border-collapse:collapse}thead{display:table-header-group}tr{break-inside:avoid}" +
         ".certificate-copy{position:fixed;right:4mm;top:2mm;z-index:2;border:2px solid #991b1b;color:#991b1b;" +
-        "padding:2mm 4mm;font-weight:800;font-size:18px;letter-spacing:.12em;transform:rotate(-4deg)}" +
-        ".certificate-signature{break-inside:avoid}.certificate-logo{position:absolute;left:0;top:0}" +
-        ".certificate-footer{font-size:7.5pt;line-height:1.25;color:#64748b}" +
+        "padding:2mm 4mm;font-weight:700;font-size:var(--certificate-size-title);letter-spacing:.12em;transform:rotate(-4deg)}" +
+        ".certificate-signature{break-inside:avoid}.certificate-logo{position:absolute;left:" +
+        (pageChrome ? Mm(Page.MarginLeftMm) : "0") + ";top:" + (pageChrome ? Mm(Page.MarginTopMm) : "0") + "}" +
         ".certificate-logo img{max-width:48mm;max-height:20mm}</style></head><body>" +
         (pageChrome ? $"<header>{Page.HeaderHtml}</header>" : "") + BodyHtml +
         (pageChrome ? $"<footer>{Page.FooterHtml}</footer>" : "") + "</body></html>";
+
+    private static string Mm(decimal value) => Math.Max(0, value).ToString("0.##", CultureInfo.InvariantCulture) + "mm";
 }
 
 /// <summary>Creates inert HTML from an immutable payload and template; browser transport is deliberately outside this class.</summary>
@@ -39,8 +43,11 @@ public sealed class CertificateHtmlComposer(SerialisationDbContext db, ITenantCo
         var footer = engine.Render(template.FooterBody, root, request, template.Language);
         var logo = await LogoAsync(root, cancellationToken);
         var copy = request.Copy ? "<div class=\"certificate-copy\" role=\"note\">COPY</div>" : "";
+        var signatureHeading = request.DocumentKind == CertificateDocumentKind.ReleaseRecord
+            ? "Released by"
+            : "Issued by";
         var signature = request.Signature is null ? "" :
-            $"<section class=\"certificate-signature\"><hr><div><strong>Released by</strong><br>" +
+            $"<section class=\"certificate-signature\"><hr><div><strong>{signatureHeading}</strong><br>" +
             $"{Encode(request.Signature.PrintedName)} · {Encode(request.Signature.Meaning)}</div>" +
             $"<div><strong>Signed</strong><br>{Encode(engine.FormatDateTime(template.Language, request.Signature.SignedAt, root))} · " +
             $"{Encode(request.Signature.Method.Replace('_', ' '))}</div></section>";
