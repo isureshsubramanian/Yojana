@@ -49,6 +49,7 @@ public static class CertificateEventType
 {
     public const string Issued = "certificate.issued";
     public const string Superseded = "certificate.superseded";
+    public const string Withdrawn = "certificate.withdrawn";
     public const string Reprinted = "certificate.reprinted";
 }
 

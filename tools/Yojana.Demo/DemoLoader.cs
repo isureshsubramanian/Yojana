@@ -33,6 +33,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
     private int claimsCreated;
     private int recoveriesApproved;
     private int p5ClaimsCreated;
+    private CertificateDrainCounts lastCertificateDrain;
     private DemoUnit? recoveryDimm;
     private DemoUnit? recoveryNvme;
     private DemoUnit? expiredPsu;
@@ -78,11 +79,11 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         await StepAsync("record PSU and BMC firmware history", RecordFirmwareAsync, cancellationToken);
         await StepAsync("post shipments, deliveries and invoices", PostSalesAsync, cancellationToken);
         await StepAsync("create outbound entitlements", CreateOutboundEntitlementsAsync, cancellationToken);
-        await StepAsync("drain entitlement certificate notifications", WaitForAutomaticCertificatesAsync, cancellationToken);
+        await StepAsync("drain entitlement certificate notifications", WaitForAutomaticCertificatesAndReportAsync, cancellationToken);
         await StepAsync("create recall and goodwill campaigns", CreateCampaignsAsync, cancellationToken);
         await StepAsync("submit and progress 27 claims", CreateClaimsAsync, cancellationToken);
         await StepAsync("load RMA, replacement and refurbishment stories", CreatePhaseFiveScenariosAsync, cancellationToken);
-        await StepAsync("finish automatic release and warranty certificates", WaitForAutomaticCertificatesAsync, cancellationToken);
+        await StepAsync("finish automatic release and warranty certificates", WaitForAutomaticCertificatesAndReportAsync, cancellationToken);
         await StepAsync("load certificate and label stories", CreatePhaseSixScenariosAsync, cancellationToken);
         await PrintSummaryAsync(cancellationToken);
     }
@@ -167,12 +168,28 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
                         && coverageEvents.Contains(row.TriggeringEventId))
                     .Select(row => row.TriggeringEventId).Distinct().CountAsync(cancellationToken);
             if (releaseActual >= releaseExpected && warrantyActual >= warrantyExpected
-                && coverageReceipts >= coverageEvents.Count) return;
+                && coverageReceipts >= coverageEvents.Count)
+            {
+                lastCertificateDrain = new(releaseActual, releaseExpected, warrantyActual, warrantyExpected,
+                    coverageReceipts, coverageEvents.Count);
+                return;
+            }
             if (DateTime.UtcNow >= deadline)
                 throw new InvalidOperationException($"certificate drain timed out: release {releaseActual}/{releaseExpected}, warranty {warrantyActual}/{warrantyExpected}, coverage notifications {coverageReceipts}/{coverageEvents.Count}");
             await Task.Delay(200, cancellationToken);
         }
     }
+
+    private async Task WaitForAutomaticCertificatesAndReportAsync(CancellationToken cancellationToken)
+    {
+        await WaitForAutomaticCertificatesAsync(cancellationToken);
+        Console.Write($"release {lastCertificateDrain.ReleaseActual}/{lastCertificateDrain.ReleaseExpected}, "
+            + $"warranty {lastCertificateDrain.WarrantyActual}/{lastCertificateDrain.WarrantyExpected}, "
+            + $"coverage notifications {lastCertificateDrain.CoverageActual}/{lastCertificateDrain.CoverageExpected}; ");
+    }
+
+    private readonly record struct CertificateDrainCounts(int ReleaseActual, int ReleaseExpected,
+        int WarrantyActual, int WarrantyExpected, int CoverageActual, int CoverageExpected);
 
     private static bool IsCoverageChangedSource(string attributes)
     {
@@ -198,8 +215,8 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             DemoIds.FromName("certificate-issue:order:hpc"), selection.SelectionId,
             CertificateDocumentKind.ReleaseRecord, CertificateFormType.CertificateOfConformity,
             LegalEntityId, "en", "Copy requested for the demo sales order", true, actor), cancellationToken);
-        if (issued.Kpis.ReprintAsCopy == 0 || issued.Kpis.NotIssuable == 0)
-            throw new InvalidOperationException($"sales-order certificate story needs both Copy and not-issuable units; got Copy {issued.Kpis.ReprintAsCopy}, not issuable {issued.Kpis.NotIssuable}");
+        if (issued.Kpis.ReprintAsCopy != selection.Resolved || issued.Kpis.NotIssuable != 0)
+            throw new InvalidOperationException($"every shipped sales-order unit needs a Copy; got Copy {issued.Kpis.ReprintAsCopy}/{selection.Resolved}, not issuable {issued.Kpis.NotIssuable}");
     }
 
     private async Task<Dictionary<string, Guid>> CreateLabelTemplatesAsync(CancellationToken cancellationToken)

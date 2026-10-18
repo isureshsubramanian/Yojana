@@ -18,6 +18,15 @@ public interface IUnitEventWriter
     Task<AppendResult> AppendAsync(IReadOnlyList<UnitEventDraft> drafts, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// A narrow participant in the ledger append boundary. Implementations may enqueue transactional follow-on work from
+/// facts that were actually written; they must not mutate the facts or assume that the caller has committed yet.
+/// </summary>
+public interface IUnitEventAppendObserver
+{
+    Task AppendedAsync(IReadOnlyList<UnitEvent> written, CancellationToken cancellationToken);
+}
+
 public sealed record AppendResult(IReadOnlyList<UnitEvent> Written, IReadOnlyList<UnitEventDraft> Duplicates)
 {
     public long? LastSeq => Written.Count == 0 ? null : Written.Max(e => e.Seq);

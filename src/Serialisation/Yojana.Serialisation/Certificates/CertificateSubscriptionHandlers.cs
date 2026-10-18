@@ -19,17 +19,25 @@ internal static class CertificatePublishedEventQueue
     public const string Name = "serialisation-published-events";
 }
 
-// TIGHT COUPLING (customer-sale command hand-off): ChangeCustodyHandler and OpenOwnershipHandler publish this work
-// directly because Wolverine routing is message-type-wide and cannot durably subscribe only to sale facts. Replacing
-// this message or queue without changing those command handlers silently loses first-shipment certificate issuance.
 /// <summary>The narrow, tenant-scoped hand-off from published-event subscribers to certificate persistence.</summary>
 public sealed record CertificateTriggerWork(IssueCertificateVersion Command);
+
+/// <summary>A correction withdrew the sale fact that originally made a release record issuable.</summary>
+public sealed record CertificateSaleReversalWork(Guid UnitId, Guid CorrectionEventId, Guid ReversedSaleEventId,
+    DateTime EffectiveAt, Guid LegalEntityId, string? DocumentType, Guid? DocumentId, int? DocumentLine);
 
 public static class CertificateTriggerWorkHandler
 {
     public static async Task Handle(CertificateTriggerWork work,
         CertificateVersioningEngine engine, CancellationToken cancellationToken) =>
         await engine.IssueAsync(work.Command, cancellationToken);
+}
+
+public static class CertificateSaleReversalWorkHandler
+{
+    public static async Task Handle(CertificateSaleReversalWork work,
+        CertificateVersioningEngine engine, CancellationToken cancellationToken) =>
+        await engine.WithdrawForSaleReversalAsync(work, cancellationToken);
 }
 
 public static class ReleaseCertificateSubscriptionHandler

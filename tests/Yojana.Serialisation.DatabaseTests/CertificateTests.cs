@@ -28,7 +28,9 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
 {
     private static readonly DateTime At = new(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
     private static readonly Guid Entity = Guid.Parse("c0000000-0000-0000-0000-000000000009");
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
+    // Sale-shaped ledger facts now add legitimate certificate work to the shared durable queue. Keep the assertion
+    // window above the observed full-suite queue tail while retaining a bounded failure signal.
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(120);
 
     [DatabaseFact]
     public void Published_certificate_facts_use_the_shared_durable_endpoint()

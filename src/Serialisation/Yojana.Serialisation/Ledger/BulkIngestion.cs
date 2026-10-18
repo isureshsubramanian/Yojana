@@ -28,7 +28,8 @@ namespace Yojana.Serialisation.Ledger;
 /// is merged once with the seq guard of coupling 2. One transaction: the caller's when one is open, otherwise its own.
 /// Row-level security applies throughout: the session carries the tenant, temp tables carry no policy.
 /// </summary>
-public sealed class BulkIngestion(SerialisationDbContext db, ITenantContext tenant, IClock clock, IMessageBus bus)
+public sealed class BulkIngestion(SerialisationDbContext db, ITenantContext tenant, IClock clock, IMessageBus bus,
+    IEnumerable<IUnitEventAppendObserver> observers)
 {
     private const string S = SerialisationDbContext.SchemaName;
 
@@ -193,6 +194,14 @@ public sealed class BulkIngestion(SerialisationDbContext db, ITenantContext tena
         {
             // The documents go in their own message: every unit chunk would otherwise rebuild the same document entry and wait on its lock.
             await bus.PublishAsync(new SearchReindexRequested([], documents), new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
+        }
+
+        // Direct bulk ingestion bypasses UnitEventWriter, so it completes the same narrow append-observer contract.
+        // FlushTrackedAsync does not repeat it: those facts already crossed UnitEventWriter's logical append boundary.
+        var written = events.Where(e => insertedIds.Contains(e.Row.EventId)).Select(e => e.Row).ToList();
+        foreach (var observer in observers)
+        {
+            await observer.AppendedAsync(written, cancellationToken);
         }
 
         await session.CommitAsync(cancellationToken);

@@ -25,12 +25,23 @@ namespace Yojana.Serialisation.Ledger;
 //        may lag. Change the seq contract and this comment together, on both sides.
 // Engine: SQL Server / Azure SQL; the pairing relies on a single local transaction, never on a distributed one.
 
+// TIGHT COUPLING (sale-fact transactional hand-off)
+// WHAT:  after the ledger and inline projection accept fresh facts, UnitEventWriter invokes every
+//        IUnitEventAppendObserver before the caller's transaction commits. CustomerSaleCertificateObserver is the
+//        certificate-side participant; the writer knows only this narrow ledger contract.
+// WHY:   the certificate trigger must enter Wolverine's outbox in the same transaction as the customer-sale fact.
+//        A later subscriber cannot distinguish a committed sale from a rolled-back posting without another inbox.
+// WHAT BREAKS IF SEPARATED: a committed shipment, drop shipment or shipment correction can have no durable release-
+//        record trigger, or a rolled-back sale can issue one. Keep this comment and the observer-side comment together.
+
 /// <summary>
 /// Appends events and projects them inline (see the coupling comment above and in <see cref="UnitCurrentStateProjector"/>).
 /// Sequence numbers come from <c>seq_unit_event</c> through <c>sp_sequence_get_range</c>, one range per append, on the
 /// context's own connection so they are taken inside the caller's transaction when one is open.
 /// </summary>
-public sealed class UnitEventWriter(SerialisationDbContext db, ITenantContext tenant, IClock clock, UnitCurrentStateProjector projector, PublishedEventMapper publisher) : IUnitEventWriter
+public sealed class UnitEventWriter(SerialisationDbContext db, ITenantContext tenant, IClock clock,
+    UnitCurrentStateProjector projector, PublishedEventMapper publisher,
+    IEnumerable<IUnitEventAppendObserver> observers) : IUnitEventWriter
 {
     public async Task<AppendResult> AppendAsync(IReadOnlyList<UnitEventDraft> drafts, CancellationToken cancellationToken)
     {
@@ -132,6 +143,10 @@ public sealed class UnitEventWriter(SerialisationDbContext db, ITenantContext te
 
         // Published events (P1-T16) leave through the outbox when this unit of work commits.
         await publisher.PublishAsync(written, cancellationToken);
+        foreach (var observer in observers)
+        {
+            await observer.AppendedAsync(written, cancellationToken);
+        }
         return new AppendResult(written, duplicates);
     }
 
