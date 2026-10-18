@@ -154,9 +154,11 @@ public static class CreateEntitlementHandler
         : new(e.DurationValue, e.RefurbishedFloorApplied, e.RefurbishedFloorMonths, e.RefurbishedFloorSource, e.RefurbisherPartyRef, e.RefurbishedStatementKind,
             JsonSerializer.Deserialize<RefurbishedTerm>(e.RefurbishedMatchedRow, LedgerJson.Options)!);
 
-    /// <summary>The reference zone by the policy's rule, falling back to the obligor's zone and then UTC, so a start is never read in an unknown calendar.</summary>
+    /// <summary>The reference zone for a new entitlement: policy-selected site, obligor, tenant, then UTC.</summary>
     internal static async Task<string> ZoneAsync(string rule, Guid? site, Guid obligor, ITimeZonePort zones, CancellationToken cancellationToken)
     {
+        // Coupled to TenantTimeZonePort: calendar location is direct-or-null, while legal-entity lookup owns the
+        // entity override/direct and tenant/UTC fallbacks. Collapsing or reversing these calls skips the obligor zone.
         var candidates = new List<string?>();
         if (rule == PolicyTerms.TimeZoneCustomerSite && site is { } location)
             candidates.Add(await zones.ForLocationAsync(location, TimeZonePurpose.EntitlementCalendar, cancellationToken));

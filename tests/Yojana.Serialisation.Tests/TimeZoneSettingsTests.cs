@@ -1,6 +1,7 @@
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.TimeZones;
 using Xunit;
 
@@ -13,7 +14,7 @@ public sealed class TimeZoneSettingsTests
     private static readonly Guid UkEntity = Guid.Parse("10000000-0000-0000-0000-000000000002");
 
     [Fact]
-    public async Task Presentation_resolves_entity_then_tenant_then_utc_while_entitlement_has_no_tenant_fallback()
+    public async Task Presentation_and_calendar_put_entity_override_before_direct_zone_then_tenant_and_utc()
     {
         var store = new MemorySettings();
         var parties = new PartyPort(
@@ -26,19 +27,23 @@ public sealed class TimeZoneSettingsTests
         var location = Guid.NewGuid();
         source.Locations[location] = "Europe/Berlin";
         source.Entities[UkEntity] = "America/New_York";
+        source.Entities[IndiaEntity] = "Asia/Tokyo";
         var port = new TenantTimeZonePort(settings, source);
 
         Assert.Equal("Europe/London", await port.ForLegalEntityAsync(UkEntity,
             TimeZonePurpose.DocumentPresentation, default));
-        Assert.Equal("Asia/Kolkata", await port.ForLegalEntityAsync(IndiaEntity,
+        Assert.Equal("Asia/Tokyo", await port.ForLegalEntityAsync(IndiaEntity,
             TimeZonePurpose.DocumentPresentation, default));
         Assert.Equal("Europe/Berlin", await port.ForLocationAsync(location,
             TimeZonePurpose.DocumentPresentation, default));
         Assert.Equal("Asia/Kolkata", await port.ForLocationAsync(Guid.NewGuid(),
             TimeZonePurpose.DocumentPresentation, default));
-        Assert.Equal("America/New_York", await port.ForLegalEntityAsync(UkEntity,
+        Assert.Equal("Europe/London", await port.ForLegalEntityAsync(UkEntity,
             TimeZonePurpose.EntitlementCalendar, default));
-        Assert.Null(await port.ForLegalEntityAsync(IndiaEntity, TimeZonePurpose.EntitlementCalendar, default));
+        Assert.Equal("Asia/Tokyo", await port.ForLegalEntityAsync(IndiaEntity,
+            TimeZonePurpose.EntitlementCalendar, default));
+        Assert.Equal("Asia/Kolkata", await port.ForLegalEntityAsync(Guid.NewGuid(),
+            TimeZonePurpose.EntitlementCalendar, default));
         Assert.Null(await port.ForLocationAsync(Guid.NewGuid(), TimeZonePurpose.EntitlementCalendar, default));
         Assert.Equal("administrator", saved.UpdatedBy);
         Assert.Equal(Now, saved.UpdatedAt);
@@ -47,8 +52,43 @@ public sealed class TimeZoneSettingsTests
         var withoutDefault = await settings.SetAsync(new UpdateTenantTimeZoneSettings(null, [], saved.Version),
             "administrator", default);
         Assert.Null(withoutDefault.TenantTimeZone);
-        Assert.Equal("UTC", await port.ForLegalEntityAsync(IndiaEntity,
+        Assert.Equal("UTC", await port.ForLegalEntityAsync(Guid.NewGuid(),
             TimeZonePurpose.DocumentPresentation, default));
+    }
+
+    [Fact]
+    public async Task New_entitlement_resolution_is_site_then_entity_override_then_entity_then_tenant_then_utc()
+    {
+        var store = new MemorySettings();
+        var settings = new TenantTimeZoneSettings(store,
+            new PartyPort(
+                new PartyLabel(IndiaEntity, "LE-IN", "Fictional India Works", PartyType.LegalEntity),
+                new PartyLabel(UkEntity, "LE-UK", "Fictional Britain Works", PartyType.LegalEntity)),
+            new Clock());
+        var saved = await settings.SetAsync(new UpdateTenantTimeZoneSettings("Asia/Kolkata",
+            [new(UkEntity, "Europe/London")], ITenantSettings.MissingVersion), "administrator", default);
+        var site = Guid.NewGuid();
+        var source = new ZoneSource();
+        source.Locations[site] = "Europe/Berlin";
+        source.Entities[UkEntity] = "America/New_York";
+        source.Entities[IndiaEntity] = "Asia/Tokyo";
+        var port = new TenantTimeZonePort(settings, source);
+
+        Assert.Equal("Europe/Berlin", await CreateEntitlementHandler.ZoneAsync(
+            PolicyTerms.TimeZoneCustomerSite, site, UkEntity, port, default));
+        Assert.Equal("Europe/London", await CreateEntitlementHandler.ZoneAsync(
+            PolicyTerms.TimeZoneCustomerSite, Guid.NewGuid(), UkEntity, port, default));
+        Assert.Equal("Asia/Tokyo", await CreateEntitlementHandler.ZoneAsync(
+            PolicyTerms.TimeZoneCustomerSite, null, IndiaEntity, port, default));
+        Assert.Equal("Asia/Kolkata", await CreateEntitlementHandler.ZoneAsync(
+            PolicyTerms.TimeZoneCustomerSite, null, Guid.NewGuid(), port, default));
+        Assert.Equal("UTC", await CreateEntitlementHandler.ZoneAsync(
+            PolicyTerms.TimeZoneUtc, site, UkEntity, port, default));
+
+        await settings.SetAsync(new UpdateTenantTimeZoneSettings(null, [], saved.Version),
+            "administrator", default);
+        Assert.Equal("UTC", await CreateEntitlementHandler.ZoneAsync(
+            PolicyTerms.TimeZoneCustomerSite, null, Guid.NewGuid(), port, default));
     }
 
     [Fact]

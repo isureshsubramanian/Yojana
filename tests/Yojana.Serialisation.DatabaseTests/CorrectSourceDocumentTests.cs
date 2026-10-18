@@ -7,7 +7,9 @@ using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ports;
+using Yojana.Serialisation.TimeZones;
 
 namespace Yojana.Serialisation.DatabaseTests;
 
@@ -154,6 +156,63 @@ public sealed class CorrectSourceDocumentTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Tenant_zone_change_does_not_move_dates_when_source_correction_recomputes_existing_cover()
+    {
+        var tenant = await fixture.NewTenantAsync("csz");
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var settings = scope.ServiceProvider.GetRequiredService<TenantTimeZoneSettings>();
+            var view = await settings.GetAsync(CancellationToken.None);
+            await settings.SetAsync(new UpdateTenantTimeZoneSettings("Asia/Kolkata", [], view.Version),
+                "tenant-administrator", CancellationToken.None);
+        }
+        var setup = await ArrangeAsync(tenant, 1, ownerChanges: false, createWrongCover: true,
+            correctPolicyMonths: 24, correctInvoiceOffsetDays: 1);
+        Entitlement original;
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            original = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Entitlements.AsNoTracking()
+                .SingleAsync(row => row.UnitId == setup.Units[0] && row.Status != EntitlementStatus.Closed);
+            Assert.Equal("Asia/Kolkata", original.StartTimeZone);
+            var settings = scope.ServiceProvider.GetRequiredService<TenantTimeZoneSettings>();
+            var view = await settings.GetAsync(CancellationToken.None);
+            await settings.SetAsync(new UpdateTenantTimeZoneSettings("Pacific/Honolulu", [], view.Version),
+                "tenant-administrator", CancellationToken.None);
+        }
+
+        var selection = await SelectAsync(tenant, setup.Serials);
+        await InvokeAsync<CorrectSourceDocumentResult>(tenant, new CorrectSourceDocument(Guid.NewGuid(), selection,
+            setup.WrongDelivery, setup.CorrectOrder, CorrectSourceDocumentReason.ReleasedUnderWrongOrder,
+            ShippedAt.AddDays(5), OrderDesk.UserRef, Entity,
+            Correction: new(Guid.NewGuid(), CorrectSourceDocumentReason.ReleasedUnderWrongOrder,
+                InitiatingRole: CorrectionInitiatingRole.CustomerService), CommittedBy: OrderDesk));
+
+        using var assertionScope = fixture.ScopeFor(tenant);
+        var db = assertionScope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var rows = await db.Entitlements.AsNoTracking().Where(row => row.UnitId == setup.Units[0]).ToListAsync();
+        var closed = Assert.Single(rows, row => row.EntitlementId == original.EntitlementId);
+        var successor = Assert.Single(rows, row => row.Status != EntitlementStatus.Closed);
+        Assert.Equal(EntitlementClosedReason.SourceDocumentCorrected, closed.ClosedReason);
+        Assert.Equal((original.StartDate, original.EndDate, original.StartTimeZone),
+            (successor.StartDate, successor.EndDate, successor.StartTimeZone));
+        Assert.Equal(setup.CorrectPolicy, successor.PolicyVersionId);
+
+        var current = await db.Current.AsNoTracking().SingleAsync(row => row.UnitId == setup.Units[0]);
+        Assert.Equal(((Guid?)setup.Customer, LocationKind.CustomerSite), (current.OwnerPartyRef, current.LocationKind));
+        var openEpisodes = await db.Episodes.AsNoTracking().Where(row => row.UnitId == setup.Units[0]
+            && row.ValidTo == null).ToListAsync();
+        Assert.Equal(setup.Customer, Assert.Single(openEpisodes, row => row.Kind == EpisodeKind.Ownership).PartyRef);
+        Assert.Equal(LocationKind.CustomerSite, Assert.Single(openEpisodes, row => row.Kind == EpisodeKind.Custody).LocationKind);
+        Assert.Single(await db.Identifiers.AsNoTracking().Where(row => row.UnitId == setup.Units[0]
+            && row.Type == IdentifierType.InternalSerial && row.ValidTo == null).ToListAsync());
+        var events = await db.Events.AsNoTracking().Where(row => row.UnitId == setup.Units[0])
+            .Select(row => row.EventType).ToListAsync();
+        Assert.Contains(UnitEventType.OwnershipSourceDocumentCorrected, events);
+        Assert.Contains(EntitlementEventType.Superseded, events);
+        Assert.Contains(EntitlementEventType.Created, events);
+    }
+
+    [DatabaseFact]
     public async Task Five_hundred_units_use_a_bounded_number_of_database_statements()
     {
         const int count = 500;
@@ -172,7 +231,8 @@ public sealed class CorrectSourceDocumentTests(SerialisationHostFixture fixture)
         Assert.True(statements < 250, $"500-unit source correction took {statements} statements");
     }
 
-    private async Task<Setup> ArrangeAsync(TenantId tenant, int count, bool ownerChanges, bool createWrongCover)
+    private async Task<Setup> ArrangeAsync(TenantId tenant, int count, bool ownerChanges, bool createWrongCover,
+        int correctPolicyMonths = 12, int correctInvoiceOffsetDays = 2)
     {
         var item = Guid.NewGuid();
         var warehouse = Guid.NewGuid();
@@ -184,7 +244,7 @@ public sealed class CorrectSourceDocumentTests(SerialisationHostFixture fixture)
         await InvokeAsync<CoverageFamilyRow>(tenant, new DefineCoverageFamily(CoverageFamilyCode.Base,
             "Base warranty", false, AssuranceOrService.Assurance));
         var oldPolicy = await PolicyAsync(tenant, "OLD", 24);
-        var correctPolicy = await PolicyAsync(tenant, "NEW", 12);
+        var correctPolicy = await PolicyAsync(tenant, "NEW", correctPolicyMonths);
 
         await InvokeAsync<CommissionUnitsResult>(tenant, new CommissionUnits(Guid.NewGuid(), item, UnitOrigin.Purchased,
             serials.Select(s => new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, s)])).ToList(),
@@ -205,7 +265,7 @@ public sealed class CorrectSourceDocumentTests(SerialisationHostFixture fixture)
             ShippedAt.AddDays(1), [new InvoiceLine(7, Guid.NewGuid(), count, count * 10m, "GBP", "warranty_service",
                 PolicyVersionId: oldPolicy, Target: new(WarrantyTargetRule.SameOrder))], "PO-WRONG", "GB");
         var correctInvoice = new InvoiceDocument(new("invoice", Guid.NewGuid()), correctOrder, correctedCustomer, Entity,
-            ShippedAt.AddDays(2), [new InvoiceLine(8, Guid.NewGuid(), count, count * 10m, "GBP", "warranty_service",
+            ShippedAt.AddDays(correctInvoiceOffsetDays), [new InvoiceLine(8, Guid.NewGuid(), count, count * 10m, "GBP", "warranty_service",
                 PolicyVersionId: correctPolicy, Target: new(WarrantyTargetRule.SameOrder))], "PO-CORRECT", "GB");
         Documents.Add(wrongInvoice);
         Documents.Add(correctInvoice);

@@ -136,12 +136,15 @@ public static class DocumentTimeZoneFormatter
 }
 
 /// <summary>
-/// Production adapter: direct owner-module zones remain authoritative; persisted entity overrides follow them, and
-/// only document presentation may inherit the tenant zone. Entitlement calendar maths therefore retains its prior
-/// direct-zone-or-UTC behaviour.
+/// Production adapter: a legal-entity override outranks the entity's direct owner-module zone for presentation and
+/// entitlement calendars alike. Both purposes then inherit the tenant zone and finally UTC. Entitlement location
+/// lookup remains direct-or-null so the entitlement handler can try the obligor before those shared fallbacks.
 /// </summary>
 public sealed class TenantTimeZonePort(TenantTimeZoneSettings settings, ITimeZoneSourcePort source) : ITimeZonePort
 {
+    // Coupled to CreateEntitlementHandler.ZoneAsync: calendar location lookup must return direct-or-null so that method
+    // can try the obligor before this adapter applies tenant/UTC fallback through legal-entity lookup. Applying the
+    // fallback here would silently skip a configured obligor zone.
     public async Task<string?> ForLocationAsync(Guid locationId, string purpose,
         CancellationToken cancellationToken)
     {
@@ -155,12 +158,13 @@ public sealed class TenantTimeZonePort(TenantTimeZoneSettings settings, ITimeZon
     public async Task<string?> ForLegalEntityAsync(Guid legalEntityId, string purpose,
         CancellationToken cancellationToken)
     {
-        var direct = await KnownAsync(source.ForLegalEntityAsync(legalEntityId, cancellationToken));
-        if (purpose != TimeZonePurpose.DocumentPresentation) return direct;
+        if (purpose is not (TimeZonePurpose.DocumentPresentation or TimeZonePurpose.EntitlementCalendar))
+            return await KnownAsync(source.ForLegalEntityAsync(legalEntityId, cancellationToken));
         var policy = await settings.PolicyAsync(cancellationToken);
         var configured = policy?.LegalEntityOverrides.FirstOrDefault(row => row.LegalEntityId == legalEntityId)?.TimeZone;
-        var presentationZone = Known(configured) ?? direct;
-        if (presentationZone is not null) return presentationZone;
+        var entityZone = Known(configured)
+            ?? await KnownAsync(source.ForLegalEntityAsync(legalEntityId, cancellationToken));
+        if (entityZone is not null) return entityZone;
         return Known(policy?.TenantTimeZone) ?? "UTC";
     }
 

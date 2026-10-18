@@ -37,9 +37,8 @@ public static class TimeZonePurpose
 }
 
 /// <summary>
-/// IANA zone of a customer site or legal entity. Document presentation may fall back to the tenant zone; entitlement
-/// calendar maths deliberately requests only a directly assigned location or entity zone so its established dates do
-/// not change when an administrator configures the tenant's printing zone.
+/// IANA zone of a customer site or legal entity. Presentation and new entitlement calendars may inherit tenant
+/// settings; callers recalculating an existing entitlement must use its stored start zone instead of resolving again.
 /// </summary>
 public interface ITimeZonePort
 {

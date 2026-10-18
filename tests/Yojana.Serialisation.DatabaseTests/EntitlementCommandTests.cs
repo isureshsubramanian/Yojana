@@ -8,6 +8,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Ports;
+using Yojana.Serialisation.TimeZones;
 
 namespace Yojana.Serialisation.DatabaseTests;
 
@@ -90,6 +91,48 @@ public sealed class EntitlementCommandTests(SerialisationHostFixture fixture)
         var types = await db.Events.Where(e => e.UnitId == unit && e.EventType.StartsWith("entitlement.")).OrderBy(e => e.Seq).Select(e => e.EventType).ToListAsync();
         Assert.Equal([EntitlementEventType.Created, EntitlementEventType.Rebased, EntitlementEventType.Rebased], types);
         Assert.Equal(0, await db.EntitlementUsageLimits.CountAsync(u => u.EntitlementId == created.EntitlementId));
+    }
+
+    [DatabaseFact]
+    public async Task New_warranty_uses_the_tenant_calendar_when_site_and_obligor_have_no_zone()
+    {
+        var (tenant, _, units) = await SetUpAsync("etz", 1);
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var settings = scope.ServiceProvider.GetRequiredService<TenantTimeZoneSettings>();
+            var view = await settings.GetAsync(CancellationToken.None);
+            await settings.SetAsync(new UpdateTenantTimeZoneSettings("Asia/Kolkata", [], view.Version),
+                "tenant-administrator", CancellationToken.None);
+        }
+
+        var evidenceAt = new DateTime(2026, 9, 1, 20, 0, 0, DateTimeKind.Utc);
+        var command = Create(units[0], new Dictionary<string, DateTime> { [StartTrigger.Invoice] = evidenceAt }) with
+        {
+            ContractDate = new DateOnly(2026, 9, 1),
+            EventTime = evidenceAt,
+            SiteLocationId = null,
+        };
+        var created = await InvokeAsync<CreateEntitlementResult>(tenant, command);
+        Assert.Equal(((DateOnly?)new DateOnly(2026, 9, 16), (DateOnly?)new DateOnly(2028, 9, 15), "Asia/Kolkata"),
+            (created.StartDate, created.EndDate, created.TimeZone));
+
+        using var assertionScope = fixture.ScopeFor(tenant);
+        var db = assertionScope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var current = await db.Current.AsNoTracking().SingleAsync(row => row.UnitId == units[0]);
+        Assert.Null(current.OwnerPartyRef);
+        Assert.Null(current.OpenOwnershipEpisodeId);
+        var custody = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == units[0]
+            && row.Kind == EpisodeKind.Custody && row.ValidTo == null);
+        Assert.Equal((PartyType.Us, LocationKind.Warehouse), (custody.PartyType, custody.LocationKind));
+        var entitlement = await db.Entitlements.AsNoTracking().SingleAsync(row => row.UnitId == units[0]);
+        Assert.Equal((created.EntitlementId, (DateOnly?)new DateOnly(2026, 9, 16), "Asia/Kolkata"),
+            (entitlement.EntitlementId, entitlement.StartDate, entitlement.StartTimeZone));
+        Assert.Single(await db.Identifiers.AsNoTracking().Where(row => row.UnitId == units[0]
+            && row.Type == IdentifierType.InternalSerial && row.ValidTo == null).ToListAsync());
+        var events = await db.Events.AsNoTracking().Where(row => row.UnitId == units[0])
+            .Select(row => row.EventType).ToListAsync();
+        Assert.Contains(UnitEventType.Commissioned, events);
+        Assert.Contains(EntitlementEventType.Created, events);
     }
 
     /// <summary>P2-T18: the Finance-facing entitlement events leave through the outbox after commit, with the coverage change beside each fact that moved it.</summary>
