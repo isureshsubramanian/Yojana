@@ -21,7 +21,8 @@ public static class ServicePartInstalledHandler
     public static async Task Handle(UnitPartInstalled message, SerialisationDbContext db, EntitlementLedger entitlementLedger,
         EpisodeService episodes, IUnitEventWriter writer, ServicePartEntitlementSettings settings,
         AmendmentApprovalSettings amendmentApprovals, IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates,
-        ITenantCurrency currency, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITenantCurrency currency, IJurisdictionRuleResolver jurisdictionRules, IJurisdictionRegionPort regions,
+        ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         if (message.Header.Document is not { } document) return;
         var context = await RepairContextAsync(db, tenant.TenantId, message.ParentUnitId, document, cancellationToken);
@@ -43,7 +44,7 @@ public static class ServicePartInstalledHandler
         foreach (var statutory in parentEntitlements.Where(e => e.Type == EntitlementType.Statutory).ToList())
         {
             await ApplyStatutoryExtensionAsync(message, context, owner, statutory, db, entitlementLedger,
-                amendmentApprovals, claims, certificates, currency, tenant, cancellationToken);
+                amendmentApprovals, claims, certificates, currency, jurisdictionRules, regions, tenant, cancellationToken);
         }
 
         await AlignEpisodesAsync(message, document, owner, db, episodes, writer, tenantId, cancellationToken);
@@ -104,7 +105,8 @@ public static class ServicePartInstalledHandler
 
     private static async Task ApplyStatutoryExtensionAsync(UnitPartInstalled message, RepairContext context, CustodyEpisode owner,
         Entitlement entitlement, SerialisationDbContext db, EntitlementLedger ledger, AmendmentApprovalSettings approvals,
-        IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates, ITenantCurrency currency, ITenantContext tenant,
+        IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates, ITenantCurrency currency,
+        IJurisdictionRuleResolver jurisdictionRules, IJurisdictionRegionPort regions, ITenantContext tenant,
         CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -113,16 +115,18 @@ public static class ServicePartInstalledHandler
         var policy = await db.ReplacementPolicies.AsNoTracking().SingleOrDefaultAsync(p => p.TenantId == tenantId && p.ReplacementPolicyId == policyId, cancellationToken);
         if (policy?.Rule != ReplacementRule.StatutoryExtensionOnce) return;
         var eligibility = await StatutoryExtensionGuard.EvaluateAsync(db, tenantId, entitlement, context.ContractDate,
-            context.Country, consumerContract: owner.PartyType == PartyType.Customer, ClaimRemedy.Repair, cancellationToken);
+            context.Country, consumerContract: owner.PartyType == PartyType.Customer, ClaimRemedy.Repair,
+            jurisdictionRules, regions, cancellationToken);
         if (!eligibility.Eligible || eligibility.AlreadyApplied) return;
 
         var newEnd = ReplacementArithmetic.EndDate(entitlement.EndDate!.Value, DateOnly.FromDateTime(message.Header.EventTime),
             new DurationRule(entitlement.DurationValue, entitlement.DurationUnit, entitlement.EndOfMonthRule, entitlement.EndInclusive),
-            policy.Rule, policy.MinDays, policy.ExtensionMonths);
+            policy.Rule, policy.MinDays, eligibility.ExtensionMonths);
         entitlement.StatutoryExtensionApplied = true;
         await AmendEntitlementHandler.AmendAsync(new AmendEntitlement(message.Header.EventId, entitlement.EntitlementId,
             AmendmentReason.StatutoryExtension, message.Header.EventTime, message.Header.ActorRef, NewEnd: newEnd,
-            SourceDocument: message.Header.Document, CommittedBy: AmendmentCommitter.System), db, ledger, approvals, claims,
+            SourceDocument: message.Header.Document, CommittedBy: AmendmentCommitter.System,
+            StatutoryExtensionMaximum: eligibility.MaximumApplications), db, ledger, approvals, claims,
             certificates, currency, tenant, corrections: null, recordCorrection: false, cancellationToken);
     }
 

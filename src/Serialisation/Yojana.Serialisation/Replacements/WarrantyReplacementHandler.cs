@@ -22,13 +22,14 @@ public static class CreateWarrantyReplacementHandler
         IReturnReasonQueryPort returnReasons,
         PolicyResolver policies,
         DocumentNumbers numbers,
+        IJurisdictionRuleResolver jurisdictionRules,
         ITenantContext tenant,
         IClock clock,
         CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         if (await db.WarrantyReplacements.AsNoTracking().FirstOrDefaultAsync(row => row.TenantId == tenantId && row.CommandId == command.CommandId, cancellationToken) is { } replay)
-            return new(await WarrantyReplacementQueries.DetailAsync(db, tenantId, replay.WarrantyReplacementId, cancellationToken), true);
+            return new(await WarrantyReplacementQueries.DetailAsync(db, tenantId, replay.WarrantyReplacementId, jurisdictionRules, cancellationToken), true);
 
         Validate(command);
         var source = await sources.ResolveAsync(command.SourceKind, command.SourceId, command.SourceEntitlementId, cancellationToken)
@@ -112,7 +113,7 @@ public static class CreateWarrantyReplacementHandler
             });
         }
         await db.SaveChangesAsync(cancellationToken);
-        return new(await WarrantyReplacementQueries.DetailAsync(db, tenantId, documentId, cancellationToken), false);
+        return new(await WarrantyReplacementQueries.DetailAsync(db, tenantId, documentId, jurisdictionRules, cancellationToken), false);
     }
 
     internal static async Task<ReplacementPolicy> ResolveReplacementPolicyAsync(CreateWarrantyReplacement command, Entitlement entitlement,
@@ -166,6 +167,8 @@ public sealed class ShipWarrantyReplacementHandler
         EpisodeService episodes,
         EntitlementLedger entitlementLedger,
         CorrectionLedger corrections,
+        IJurisdictionRuleResolver jurisdictionRules,
+        IJurisdictionRegionPort regions,
         ITenantContext tenant,
         IClock clock,
         CancellationToken cancellationToken)
@@ -180,9 +183,12 @@ public sealed class ShipWarrantyReplacementHandler
         if (command.ReplacementDate > DateOnly.FromDateTime(command.EventTime)) throw new CommandRefusedException("replacement_date_in_future", "The replacement date cannot be after its business event time.");
 
         var grade = await conditions.LatestGradeAsync(link.ReplacementUnitId, cancellationToken);
-        WarrantyReplacementRules.ValidateCondition(link.ReplacementReason, link.ReplacementConditionAllowed, grade,
-            document.ServiceCountry, document.ConsumerContract, link.ConsentRefurbished);
         var source = await db.Entitlements.AsNoTracking().SingleAsync(row => row.TenantId == tenantId && row.EntitlementId == link.SourceEntitlementId, cancellationToken);
+        WarrantyReplacementRules.ValidateCondition(link.ReplacementReason, link.ReplacementConditionAllowed, grade);
+        if (document.ConsumerContract && ConditionGrades.IsRefurbished(grade) && !link.ConsentRefurbished
+            && await WarrantyReplacementRules.RequiresConsentAsync(jurisdictionRules, document.ServiceCountry,
+                source.StartDate ?? DateOnly.FromDateTime(document.CreatedAt), cancellationToken))
+            throw new CommandRefusedException("refurbished_consent_required", "The applicable jurisdiction rule requires recorded consent before refurbished stock can ship.");
         if (source.Status != EntitlementStatus.Active) throw new CommandRefusedException("source_entitlement_not_active", $"Source entitlement {source.EntitlementId} is {source.Status}.");
         await ValidateAssetTagAsync(db, tenantId, link, command.EventTime, cancellationToken);
         var originalOwner = await episodes.OpenAsync(link.OriginalUnitId, EpisodeKind.Ownership, cancellationToken);
@@ -210,7 +216,7 @@ public sealed class ShipWarrantyReplacementHandler
         var transfer = await TransferEntitlementHandler.Handle(new TransferEntitlement(command.CommandId, link.SourceEntitlementId,
             link.ReplacementUnitId, link.ReplacementLinkId, command.ReplacementDate, command.EventTime, command.ActorRef,
             document.ReplacementPolicyCode, Country: document.ServiceCountry, ConsumerContract: document.ConsumerContract),
-            db, entitlementLedger, tenant, clock, corrections, cancellationToken);
+            db, entitlementLedger, tenant, clock, corrections, jurisdictionRules, regions, cancellationToken);
         var stockResult = await stock.IssueWarrantyReplacementAsync(new WarrantyReplacementStockIssue(command.CommandId,
             document.WarrantyReplacementId, document.ReplacementNumber, link.ReplacementLinkId, link.ReplacementUnitId,
             link.ReplacementItemId, command.EventTime, command.ActorRef, document.LegalEntityId), cancellationToken);
@@ -337,7 +343,7 @@ public sealed class ShipWarrantyReplacementHandler
 
 public static class WarrantyReplacementRules
 {
-    public static void ValidateCondition(string reason, string allowed, string actual, string country, bool consumerContract, bool consentRefurbished)
+    public static void ValidateCondition(string reason, string allowed, string actual)
     {
         var refurbished = ConditionGrades.IsRefurbished(actual);
         if (reason == ReplacementReason.DeadOnArrival && actual != ConditionGrades.New)
@@ -346,8 +352,22 @@ public static class WarrantyReplacementRules
             throw new CommandRefusedException("replacement_condition_not_allowed", $"Condition '{actual}' is not allowed; this replacement requires new stock.");
         if (allowed == ReplacementConditionAllowed.NewOrRefurbished && actual != ConditionGrades.New && !refurbished)
             throw new CommandRefusedException("replacement_condition_not_allowed", $"Condition '{actual}' is not new or refurbished.");
-        if (consumerContract && Regions.Contains("EU", country) && refurbished && !consentRefurbished)
-            throw new CommandRefusedException("refurbished_consent_required", "An EU consumer replacement needs recorded consent before refurbished stock can ship.");
+    }
+
+    public static async Task<bool> RequiresConsentAsync(IJurisdictionRuleResolver rules, string country, DateOnly contractDate,
+        CancellationToken cancellationToken)
+    {
+        var context = new JurisdictionRuleContext(country, null, JurisdictionBuyerClass.Consumer, null, null, null,
+            contractDate, contractDate, null, contractDate);
+        var resolved = await rules.ResolveAsync(JurisdictionRuleKind.RefurbishedReplacementRequiresConsent, context, cancellationToken);
+        var rule = resolved.Count == 0 ? null : resolved[0];
+        if (rule is null) return false;
+        return rule.Value.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.True => true,
+            System.Text.Json.JsonValueKind.String => rule.Value.GetString() is not null and not "not_regulated",
+            _ => false,
+        };
     }
 }
 

@@ -14,7 +14,8 @@ namespace Yojana.Serialisation.Entitlements;
 /// chosen by <b>contract date</b> (case 114). The first match wins; ties inside level 3 go to the administrator's
 /// priority, then the later start. Levels 1 and 2 cannot tie: one live entitlement per family per unit is a database rule.
 /// </summary>
-public sealed class PolicyResolver(SerialisationDbContext db, ITenantContext tenant, IItemPolicyPort itemPolicies, ICustomerContractPort contracts)
+public sealed class PolicyResolver(SerialisationDbContext db, ITenantContext tenant, IItemPolicyPort itemPolicies,
+    ICustomerContractPort contracts, IJurisdictionRegionPort regions)
 {
     private const int MaxParentDepth = 5;
 
@@ -120,7 +121,8 @@ public sealed class PolicyResolver(SerialisationDbContext db, ITenantContext ten
     {
         var tenantId = tenant.TenantId;
         var version = await db.PolicyVersions.AsNoTracking().FirstOrDefaultAsync(v => v.TenantId == tenantId && v.PolicyVersionId == entitlement.PolicyVersionId, cancellationToken);
-        var outOfRegion = question.Country is { } country && !Regions.InScope(System.Text.Json.JsonSerializer.Deserialize<List<string>>(entitlement.RegionScope) ?? [], country);
+        var outOfRegion = question.Country is { } country && !await InScopeAsync(
+            System.Text.Json.JsonSerializer.Deserialize<List<string>>(entitlement.RegionScope) ?? [], country, cancellationToken);
         if (outOfRegion) trail.Add($"region: {question.Country} is outside the entitlement's scope");
         var coverage = JsonSerializer.Deserialize<CoverageTerms>(entitlement.Coverage, LedgerJson.Options);
         return new PolicyResolution(level, entitlement.EntitlementId, entitlement.PolicyVersionId, version?.PolicyCode, version?.Version, null, outOfRegion, trail,
@@ -128,14 +130,20 @@ public sealed class PolicyResolver(SerialisationDbContext db, ITenantContext ten
             entitlement.ObligorEntityId, entitlement.PayerPartyRef, entitlement.StartDate, entitlement.EndDate, await ChainLengthAsync(entitlement, cancellationToken));
     }
 
-    private Task<PolicyResolution> FromVersionAsync(string level, WarrantyPolicyVersion version, string? contractRef, PolicyQuestion question, List<string> trail, CancellationToken cancellationToken)
+    private async Task<PolicyResolution> FromVersionAsync(string level, WarrantyPolicyVersion version, string? contractRef, PolicyQuestion question, List<string> trail, CancellationToken cancellationToken)
     {
         var scope = System.Text.Json.JsonSerializer.Deserialize<List<string>>(version.RegionScope) ?? [];
-        var outOfRegion = question.Country is { } country && !Regions.InScope(scope, country);
+        var outOfRegion = question.Country is { } country && !await InScopeAsync(scope, country, cancellationToken);
         if (outOfRegion) trail.Add($"region: {question.Country} is outside {version.PolicyCode} v{version.Version} ({string.Join(", ", scope)})");
         var coverage = JsonSerializer.Deserialize<CoverageTerms>(version.Coverage, LedgerJson.Options);
-        return Task.FromResult(new PolicyResolution(level, null, version.PolicyVersionId, version.PolicyCode, version.Version, contractRef, outOfRegion, trail,
-            version.EntitlementType, EntitlementStatus.Active, EntitlementDirection.Outbound, coverage, version.SettlementFormula));
+        return new PolicyResolution(level, null, version.PolicyVersionId, version.PolicyCode, version.Version, contractRef, outOfRegion, trail,
+            version.EntitlementType, EntitlementStatus.Active, EntitlementDirection.Outbound, coverage, version.SettlementFormula);
+    }
+
+    private async Task<bool> InScopeAsync(IReadOnlyList<string> scope, string country, CancellationToken cancellationToken)
+    {
+        var applicable = await regions.ApplicableScopesAsync(country, null, cancellationToken);
+        return scope.Any(applicable.Contains);
     }
 
     private async Task<int> ChainLengthAsync(Entitlement entitlement, CancellationToken cancellationToken)

@@ -155,25 +155,23 @@ public sealed class TermArithmeticTests
                 new RefurbishedTerm(null, "B", "direct", "UK", 9, null),
             ],
         };
-        Assert.Equal((24, false), Pick(TermArithmetic.ForCondition(terms, item, "new", "direct", "DE")));
-        Assert.Equal((12, true), Pick(TermArithmetic.ForCondition(terms, Guid.NewGuid(), "C", "portal_consumer", "FR")));
-        Assert.Equal((12, true), Pick(TermArithmetic.ForCondition(terms, Guid.NewGuid(), "C", "portal_consumer", "DE")));
-        Assert.Equal("DE", TermArithmetic.ForCondition(terms, Guid.NewGuid(), "C", "portal_consumer", "DE").Row!.Region);
-        Assert.Equal((18, false), Pick(TermArithmetic.ForCondition(terms, item, "C", "portal_consumer", "DE")));
-        Assert.Equal((9, false), Pick(TermArithmetic.ForCondition(terms, item, "B", "direct", "GB")));
-        Assert.Equal((24, false), Pick(TermArithmetic.ForCondition(terms, item, "B", "direct", "US")));
+        Assert.Equal((24, false), Pick(TermArithmetic.ForCondition(terms, item, "new", "direct", Scopes("DE", "EU", "WORLD"), "DE")));
+        Assert.Equal((12, true), Pick(TermArithmetic.ForCondition(terms, Guid.NewGuid(), "C", "portal_consumer", Scopes("FR", "EU", "WORLD"), "FR")));
+        Assert.Equal((12, true), Pick(TermArithmetic.ForCondition(terms, Guid.NewGuid(), "C", "portal_consumer", Scopes("DE", "EU", "WORLD"), "DE")));
+        Assert.Equal("DE", TermArithmetic.ForCondition(terms, Guid.NewGuid(), "C", "portal_consumer", Scopes("DE", "EU", "WORLD"), "DE").Row!.Region);
+        Assert.Equal((18, false), Pick(TermArithmetic.ForCondition(terms, item, "C", "portal_consumer", Scopes("DE", "EU", "WORLD"), "DE")));
+        Assert.Equal((9, false), Pick(TermArithmetic.ForCondition(terms, item, "B", "direct", Scopes("GB", "UK", "WORLD"), "GB")));
+        Assert.Equal((24, false), Pick(TermArithmetic.ForCondition(terms, item, "B", "direct", Scopes("US", "WORLD"), "US")));
 
         static (int, bool) Pick(EffectiveDuration e) => (e.Duration.Value, e.FloorApplied);
+        static IReadOnlySet<string> Scopes(params string[] values) => values.ToHashSet(StringComparer.Ordinal);
     }
 
-    [Theory]
-    [InlineData("EU", "DE", true)]
-    [InlineData("EU", "CH", false)]
-    [InlineData("EFTA", "CH", true)]
-    [InlineData("EEA", "NO", true)]
-    [InlineData("EEA", "CH", false)]
-    [InlineData("UK", "GB", true)]
-    [InlineData("WORLD", "BR", true)]
-    [InlineData("FR", "FR", true)]
-    public void Region_groups_contain_their_member_countries(string region, string country, bool expected) => Assert.Equal(expected, Regions.Contains(region, country));
+    [Fact]
+    public void Region_matching_uses_only_the_scopes_supplied_by_the_catalogue()
+    {
+        var terms = PolicyValidatorTests.Standard24() with { Refurbished = [new(null, "B", "direct", "TENANT_GROUP", 9, null)] };
+        Assert.Equal(9, TermArithmetic.ForCondition(terms, Guid.NewGuid(), "B", "direct", new HashSet<string> { "DE", "TENANT_GROUP" }).Duration.Value);
+        Assert.Equal(24, TermArithmetic.ForCondition(terms, Guid.NewGuid(), "B", "direct", new HashSet<string> { "DE" }).Duration.Value);
+    }
 }

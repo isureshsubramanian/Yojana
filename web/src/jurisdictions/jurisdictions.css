@@ -1,0 +1,11 @@
+.jurisdiction-toolbar { display: grid; grid-template-columns: minmax(160px, .7fr) minmax(220px, 1.3fr) auto; gap: 10px; align-items: end; }
+.jurisdiction-sections { display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); gap: var(--gap); align-items: start; }
+.jurisdiction-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.jurisdiction-form .wide { grid-column: 1 / -1; }
+.jurisdiction-form .span-2 { grid-column: span 2; }
+.jurisdiction-value { min-height: 84px; resize: vertical; }
+.jurisdiction-result { padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.jurisdiction-result:last-child { border-bottom: 0; }
+.jurisdiction-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+@media (max-width: 900px) { .jurisdiction-sections, .jurisdiction-toolbar, .jurisdiction-form { grid-template-columns: 1fr; } .jurisdiction-form .span-2 { grid-column: auto; } }
+

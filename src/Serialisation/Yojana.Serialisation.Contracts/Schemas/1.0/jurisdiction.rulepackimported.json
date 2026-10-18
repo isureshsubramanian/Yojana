@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/jurisdiction.rulepackimported.json",
+  "title": "Jurisdiction.RulePackImported",
+  "type": "object",
+  "required": ["header", "rule_pack_id", "region_groups_added", "rules_added"],
+  "properties": {
+    "header": { "type": "object", "required": ["schema", "version", "event_id", "event_time", "recorded_time", "legal_entity_id", "actor_ref"], "properties": { "schema": { "const": "Jurisdiction.RulePackImported" }, "version": { "const": "1.0" } } },
+    "rule_pack_id": { "type": "string", "format": "uuid" }, "region_groups_added": { "type": "integer", "minimum": 0 }, "rules_added": { "type": "integer", "minimum": 0 }
+  }
+}

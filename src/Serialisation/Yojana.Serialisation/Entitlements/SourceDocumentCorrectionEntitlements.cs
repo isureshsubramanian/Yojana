@@ -22,13 +22,15 @@ public sealed class SourceDocumentCorrectionEntitlements(
     SerialisationDbContext db,
     PolicyStore store,
     ITimeZonePort zones,
-    RefurbishedGoodsSettings refurbishedSettings,
+    IJurisdictionRegionPort regions,
+    IJurisdictionRuleResolver jurisdictionRules,
+    IItemQueryPort items,
     WarrantyReferenceSettings warrantyReference,
     ITenantContext tenant,
     IClock clock)
 {
-    // Coupled to the factory registration in SerialisationModule: RefurbishedGoodsSettings and WarrantyReferenceSettings
-    // own ITenantSettings. A constructor registration exposes PlatformDbContext to Wolverine beside this module context.
+    // Coupled to the factory registration in SerialisationModule: WarrantyReferenceSettings owns ITenantSettings. A
+    // constructor registration exposes PlatformDbContext to Wolverine beside this module context.
     private sealed record UnitInput(Guid UnitId, Guid ItemId, Guid? LocationId, string? ConditionGrade);
     private sealed record LinePlan(InvoiceDocument Invoice, InvoiceLine Line, WarrantyPolicyVersion Version, PolicyTerms Terms, CoverageFamily Family);
     private sealed record Created(Entitlement Entitlement, LinePlan Line, IReadOnlyList<EntitlementRevenueSchedulePeriod>? RevenueSchedule, Guid? BaseEntitlementId,
@@ -106,7 +108,6 @@ public sealed class SourceDocumentCorrectionEntitlements(
         // both saves remain inside the command's transaction and roll back together on any later refusal.
         await db.SaveChangesAsync(cancellationToken);
 
-        var settings = await refurbishedSettings.GetAsync(cancellationToken);
         var cohorts = await CohortsAsync(units.Values, lines, cancellationToken);
         var created = new List<Created>(ids.Count * lines.Count);
         foreach (var unit in units.Values.OrderBy(u => u.UnitId))
@@ -120,7 +121,7 @@ public sealed class SourceDocumentCorrectionEntitlements(
                 var predecessor = wrong.SingleOrDefault(e => e.UnitId == unit.UnitId && e.CoverageFamily == line.Version.CoverageFamily);
                 var next = line.Terms.AssuranceOrService == AssuranceOrService.Service
                     ? await CreateServiceAsync(unit, line, corrected, predecessor, byFamily, cancellationToken)
-                    : await CreateAssuranceAsync(unit, line, corrected, predecessor, settings, cohorts, cancellationToken);
+                    : await CreateAssuranceAsync(unit, line, corrected, predecessor, cohorts, cancellationToken);
                 byFamily[next.Entitlement.CoverageFamily] = next.Entitlement;
                 created.Add(next);
                 db.Entitlements.Add(next.Entitlement);
@@ -249,7 +250,7 @@ public sealed class SourceDocumentCorrectionEntitlements(
     }
 
     private async Task<Created> CreateAssuranceAsync(UnitInput unit, LinePlan line, OwnershipSourceDocument source,
-        Entitlement? predecessor, RefurbishedGoodsPolicy settings,
+        Entitlement? predecessor,
         Dictionary<(Guid Obligor, Guid Item, string Period), AccrualCohort> cohorts, CancellationToken cancellationToken)
     {
         var grade = unit.ConditionGrade ?? ConditionGrades.New;
@@ -261,8 +262,13 @@ public sealed class SourceDocumentCorrectionEntitlements(
             if (line.Invoice.Channel is null || line.Invoice.Country is null)
                 throw new CommandRefusedException("refurbished_sale_context_missing", "A non-new sale needs its channel and country.",
                     "supply the sale channel and ISO country on the corrected invoice view");
+            var scopes = await regions.ApplicableScopesAsync(line.Invoice.Country, null, cancellationToken);
+            var itemClass = (await items.GetAsync(unit.ItemId, cancellationToken))?.ItemClass;
+            var floor = await JurisdictionEntitlementRules.UsedGoodsFloorMonthsAsync(jurisdictionRules,
+                line.Invoice.Country, RefurbishedBuyerKind.Consumer, DateOnly.FromDateTime(line.Invoice.PostedAt), itemClass,
+                new Dictionary<string, DateTime> { [StartTrigger.Invoice] = line.Invoice.PostedAt }, cancellationToken);
             disclosure = RefurbishedGoodsPolicyEngine.Decide(unit.ItemId, grade, line.Invoice.Channel, line.Invoice.Country,
-                RefurbishedBuyerKind.Consumer, line.Terms.Refurbished, settings, null);
+                RefurbishedBuyerKind.Consumer, line.Terms.Refurbished, scopes, floor, null);
             duration = new(line.Terms.Duration with { Value = disclosure.TermMonths, Unit = DurationRule.Months }, disclosure.FloorApplied, disclosure.MatchedRow);
         }
         var zone = await CreateEntitlementHandler.ZoneAsync(line.Terms.ReferenceTimeZoneRule,

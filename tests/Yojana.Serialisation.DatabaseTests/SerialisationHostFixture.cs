@@ -9,6 +9,9 @@ using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Tenancy;
 using Yojana.Serialisation;
 using Yojana.Serialisation.Certificates;
+using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Jurisdictions;
+using Wolverine;
 
 namespace Yojana.Serialisation.DatabaseTests;
 
@@ -70,15 +73,20 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         return scope;
     }
 
-    public async Task<TenantId> NewTenantAsync(string prefix)
+    public async Task<TenantId> NewTenantAsync(string prefix, bool importJurisdictionStarter = true)
     {
-        using var scope = ScopeFor(null);
-        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var id = new TenantId(Guid.NewGuid());
-        // Keep at least eight random characters: a prefix that filled the 20-character code alone repeated across runs.
-        var stem = prefix.Length > 12 ? prefix[..12] : prefix;
-        db.Tenants.Add(new Tenant { Id = id, Code = stem + Guid.NewGuid().ToString("N")[..(20 - stem.Length)], Name = "test " + prefix, CreatedAt = DateTime.UtcNow });
-        await db.SaveChangesAsync();
+        using (var scope = ScopeFor(null))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            // Keep at least eight random characters: a prefix that filled the 20-character code alone repeated across runs.
+            var stem = prefix.Length > 12 ? prefix[..12] : prefix;
+            db.Tenants.Add(new Tenant { Id = id, Code = stem + Guid.NewGuid().ToString("N")[..(20 - stem.Length)], Name = "test " + prefix, CreatedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+        }
+        // Existing scenarios use EU-scoped policies and therefore opt into the starter through their common tenant
+        // arrangement. Jurisdiction catalogue tests pass false when they need to prove a genuinely neutral tenant.
+        if (importJurisdictionStarter) await ImportEuStarterAsync(id);
         return id;
     }
 
@@ -91,6 +99,18 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         await currencies.SetAsync(currency, CancellationToken.None);
         await currencies.SetAcceptedAsync(accepted, CancellationToken.None);
         return id;
+    }
+
+    /// <summary>Opt-in to the P6 baseline pack for arrangements that intentionally exercise the former EU behaviour.</summary>
+    public async Task ImportEuStarterAsync(TenantId tenant)
+    {
+        using var scope = ScopeFor(tenant);
+        var catalogue = scope.ServiceProvider.GetRequiredService<JurisdictionCatalogueService>();
+        var pack = (await catalogue.CatalogueAsync(null, null, CancellationToken.None)).RulePacks
+            .Single(row => row.Code == "eu-starter");
+        await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<RulePackImported>(
+            new ImportRulePack(Guid.NewGuid(), pack.RulePackId, "test:legal-admin"),
+            new DeliveryOptions { TenantId = tenant.ToString() }, CancellationToken.None);
     }
 }
 

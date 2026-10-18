@@ -25,6 +25,7 @@ using Yojana.Serialisation.Condition;
 using Yojana.Serialisation.Refurbishments;
 using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Labels;
+using Yojana.Serialisation.Jurisdictions;
 
 namespace Yojana.Serialisation;
 
@@ -92,6 +93,15 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<ILabelLookupUrlBuilder>(new LabelLookupUrlBuilder(
             builder.Configuration["Labels:LookupUrl"] ?? "/api/units/lookup"));
         // End P6 labels block.
+        // P6 jurisdiction-rules block. Feature modules see only these read ports; command/query endpoints use the
+        // concrete service as the catalogue boundary.
+        builder.Services.AddScoped<JurisdictionCatalogueService>();
+        builder.Services.AddScoped<JurisdictionPublishedEventMapper>();
+        builder.Services.TryAddScoped<IJurisdictionRuleResolver>(sp => sp.GetRequiredService<JurisdictionCatalogueService>());
+        builder.Services.TryAddScoped<IJurisdictionRegionPort>(sp => sp.GetRequiredService<JurisdictionCatalogueService>());
+        builder.Services.TryAddScoped<IJurisdictionLabelRulesPort>(sp => sp.GetRequiredService<JurisdictionCatalogueService>());
+        builder.Services.TryAddScoped<IJurisdictionCertificateTextPort>(sp => sp.GetRequiredService<JurisdictionCatalogueService>());
+        // End P6 jurisdiction-rules block.
         builder.Services.AddScoped<BulkExecutor>();
         builder.Services.AddScoped<BulkApprovalRequestQueries>();
         builder.Services.AddScoped<CorrectionLedger>();
@@ -135,7 +145,9 @@ public static class SerialisationModule
         builder.Services.AddScoped(sp => new Entitlements.AmendmentApprovalSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>(), sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantCurrency>()));
         // Coupled to CreateEntitlementHandler and BackfillEntitlementsHandler for the same reason as the factory above:
         // ITenantSettings brings PlatformDbContext; exposing it to Wolverine would break their SerialisationDbContext transaction graph.
-        builder.Services.AddScoped(sp => new Entitlements.RefurbishedGoodsSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped(sp => new Entitlements.RefurbishedGoodsSettings(
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>(),
+            sp.GetRequiredService<IJurisdictionRegionPort>()));
         // Coupled to WarrantyReferenceSettings: as with amendment settings, this factory keeps PlatformDbContext out of
         // Wolverine's handler graph; replacing it with a plain registration makes transaction discovery ambiguous.
         builder.Services.AddScoped(sp => new Entitlements.WarrantyReferenceSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
@@ -185,7 +197,9 @@ public static class SerialisationModule
             sp.GetRequiredService<SerialisationDbContext>(),
             sp.GetRequiredService<Entitlements.PolicyStore>(),
             sp.GetRequiredService<ITimeZonePort>(),
-            sp.GetRequiredService<Entitlements.RefurbishedGoodsSettings>(),
+            sp.GetRequiredService<IJurisdictionRegionPort>(),
+            sp.GetRequiredService<IJurisdictionRuleResolver>(),
+            sp.GetRequiredService<IItemQueryPort>(),
             sp.GetRequiredService<Entitlements.WarrantyReferenceSettings>(),
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>(),
             sp.GetRequiredService<Yojana.Platform.Contracts.Time.IClock>()));

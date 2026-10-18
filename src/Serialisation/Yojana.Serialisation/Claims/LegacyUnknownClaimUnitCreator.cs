@@ -30,6 +30,9 @@ public sealed class LegacyUnknownClaimUnitCreator(
     PolicyStore policyStore,
     ITimeZonePort zones,
     RefurbishedGoodsSettings refurbishedSettings,
+    IJurisdictionRegionPort regions,
+    IJurisdictionRuleResolver jurisdictionRules,
+    IItemQueryPort itemQueries,
     ITenantContext tenant,
     IClock clock,
     IMessageBus bus)
@@ -86,7 +89,7 @@ public sealed class LegacyUnknownClaimUnitCreator(
                 OwnerPartyRef: command.ClaimantPartyRef, OwnerPartyType: PartyType.Customer,
                 Country: command.ServiceCountry, StartEvidenceRef: command.ProofOfPurchaseRef,
                 Provenance: EntitlementProvenance.Reconstructed, Confidence: Confidence.Low),
-            db, entitlementLedger, policies, policyStore, zones, refurbishedSettings, tenant, clock,
+            db, entitlementLedger, policies, policyStore, zones, refurbishedSettings, regions, jurisdictionRules, tenant, clock, itemQueries,
             null, [command.ProofOfPurchaseRef], false, null, null, null, cancellationToken);
 
         await bus.PublishAsync(new CertificateIssueRequested(

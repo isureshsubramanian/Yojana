@@ -38,7 +38,8 @@ public static class LabelTemplateHandler
     }
 
     public static async Task<LabelTemplateVersionSaved> Handle(SaveLabelTemplateDraft command, SerialisationDbContext db,
-        LabelSettings settings, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        LabelSettings settings, IJurisdictionLabelRulesPort jurisdictionRules, ITenantContext tenant, IClock clock,
+        CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var template = await db.LabelTemplates.FirstOrDefaultAsync(row => row.TenantId == tenantId && row.TemplateId == command.TemplateId, cancellationToken)
@@ -50,8 +51,10 @@ public static class LabelTemplateHandler
         var errors = LabelTemplateRules.Validate(command);
         if (errors.Count > 0) throw new CommandRefusedException("label_template_draft_invalid", string.Join("; ", errors));
         var policy = await settings.GetAsync(cancellationToken);
+        var phrases = policy.LegalReviewPhrases.Concat(await jurisdictionRules.ForbiddenPhrasesAsync(cancellationToken))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var staticText = command.StaticText.Select(value => value.Trim()).ToList();
-        var legalReview = LabelTemplateRules.NeedsLegalReview(staticText, policy.LegalReviewPhrases, command.Layout);
+        var legalReview = LabelTemplateRules.NeedsLegalReview(staticText, phrases, command.Layout);
         var hash = LabelTemplateRules.ContentHash(command with { StaticText = staticText });
         var now = clock.UtcNow;
 

@@ -16,6 +16,8 @@ namespace Yojana.Serialisation.Entitlements;
 public sealed class ReplacementLinkCorrectionEntitlements(
     SerialisationDbContext db,
     EntitlementLedger ledger,
+    IJurisdictionRuleResolver jurisdictionRules,
+    IJurisdictionRegionPort regions,
     ITenantContext tenant,
     IClock clock)
 {
@@ -92,7 +94,7 @@ public sealed class ReplacementLinkCorrectionEntitlements(
         var transfer = await TransferEntitlementHandler.TransferAsync(new TransferEntitlement(
                 commandId, restored.EntitlementId, actualReplacementUnitId, correctedLinkId, replacementDate,
                 eventTime, actorRef, previousLink.PolicyApplied, Correction: metadata),
-            db, ledger, tenant, clock, null, false, cancellationToken);
+            db, ledger, tenant, clock, null, false, jurisdictionRules, regions, cancellationToken);
         return new(wrong.EntitlementId, restored.EntitlementId, transfer, reversalEventId);
     }
 

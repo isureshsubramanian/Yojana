@@ -12,7 +12,8 @@ using Yojana.Serialisation.Data.Entities;
 namespace Yojana.Serialisation.Certificates;
 
 public sealed partial class CertificateTemplateService(SerialisationDbContext db, ITenantContext tenant, IClock clock,
-    CertificatePayloadBuilder payloads, ICertificateRenderer renderer, CertificateDatabaseLock databaseLock)
+    CertificatePayloadBuilder payloads, ICertificateRenderer renderer, CertificateDatabaseLock databaseLock,
+    IJurisdictionCertificateTextPort jurisdictionText)
 {
     private const string BuiltInActor = "system:certificate-starters";
 
@@ -143,12 +144,20 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
         return new CertificateTemplateValidation(errors.Count == 0, unknown, party, unused, errors);
     }
 
-    public IReadOnlyList<CertificateFieldCatalogueEntry> Catalogue(string documentKind) => documentKind switch
+    public IReadOnlyList<CertificateFieldCatalogueEntry> Catalogue(string documentKind)
     {
-        CertificateDocumentKind.ReleaseRecord => FieldCatalogue.For<ReleaseRecordPayload>(),
-        CertificateDocumentKind.WarrantyCertificate => FieldCatalogue.For<WarrantyCertificatePayload>(),
-        _ => throw new ArgumentException($"Unknown document kind '{documentKind}'.", nameof(documentKind)),
-    };
+        var payload = documentKind switch
+        {
+            CertificateDocumentKind.ReleaseRecord => FieldCatalogue.For<ReleaseRecordPayload>(),
+            CertificateDocumentKind.WarrantyCertificate => FieldCatalogue.For<WarrantyCertificatePayload>(),
+            _ => throw new ArgumentException($"Unknown document kind '{documentKind}'.", nameof(documentKind)),
+        };
+        // The certificate module knows only a read-only placeholder seam. Which jurisdiction text applies remains the
+        // catalogue port's decision and never becomes a country rule in template code.
+        return payload.Concat(jurisdictionText.PlaceholderPaths.Select(path =>
+            new CertificateFieldCatalogueEntry(path, "string", false, "Mandatory text resolved from the jurisdiction catalogue at issue time.")))
+            .OrderBy(row => row.Path).ToList();
+    }
 
     public async Task<CertificateTemplateVersionRow> ActivateAsync(Guid templateId, Guid versionId, string actorRef, CancellationToken cancellationToken)
     {

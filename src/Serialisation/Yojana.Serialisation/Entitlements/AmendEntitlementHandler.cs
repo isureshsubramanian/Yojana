@@ -102,10 +102,13 @@ public static class AmendEntitlementHandler
         if (command.ReasonCode == AmendmentReason.StatutoryExtension)
         {
             var rootId = entitlement.RootEntitlementId ?? entitlement.EntitlementId;
-            var alreadyApplied = await db.Entitlements.AnyAsync(e => e.TenantId == tenantId
-                && (e.EntitlementId == rootId || e.RootEntitlementId == rootId)
-                && e.StatutoryExtensionApplied, cancellationToken);
-            if (alreadyApplied)
+            var maximum = command.StatutoryExtensionMaximum ?? 1;
+            var chainIds = await db.Entitlements.AsNoTracking().Where(e => e.TenantId == tenantId
+                && (e.EntitlementId == rootId || e.RootEntitlementId == rootId)).Select(e => e.EntitlementId).ToListAsync(cancellationToken);
+            var applications = await db.EntitlementAmendments.AsNoTracking().Where(a => a.TenantId == tenantId
+                && chainIds.Contains(a.EntitlementId) && a.ReasonCode == AmendmentReason.StatutoryExtension)
+                .Select(a => a.EventId).Distinct().CountAsync(cancellationToken);
+            if (applications >= maximum)
                 throw new CommandRefusedException("statutory_extension_already_applied", "The statutory repair extension was already applied on this entitlement chain.");
         }
 

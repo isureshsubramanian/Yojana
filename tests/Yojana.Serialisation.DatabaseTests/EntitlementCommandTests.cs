@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
@@ -202,10 +203,11 @@ public sealed class EntitlementCommandTests(SerialisationHostFixture fixture)
             Assert.Equal(created.Disclosure, disclosure);
         }
 
-        using (var scope = fixture.ScopeFor(tenant))
-        {
-            await scope.ServiceProvider.GetRequiredService<RefurbishedGoodsSettings>().SetAsync(new([new("EU", RefurbishedBuyerKind.Consumer, 18)]), CancellationToken.None);
-        }
+        await InvokeAsync<JurisdictionRuleSaved>(tenant, new SaveJurisdictionRule(Guid.NewGuid(), null,
+            JurisdictionRuleKind.UsedGoodsMinTerm, JurisdictionScope.Country, "DE", null, null,
+            JurisdictionBuyerClass.Consumer, null, null, null, null, JurisdictionDateTested.Contract,
+            new DateOnly(2026, 9, 1), null, JsonDocument.Parse("""{"months":18,"requires_agreement":false}""").RootElement.Clone(),
+            "test legal source", "test-specific higher floor", true, new DateOnly(2026, 8, 1), ActorRef: "legal.admin"));
         await InvokeAsync<EntitlementChangeResult>(tenant, new CloseEntitlement(Guid.NewGuid(), created.EntitlementId, EntitlementClosedReason.ReturnedToStock, new DateOnly(2027, 1, 1), Invoice.AddDays(120), "returns"));
         var later = await InvokeAsync<CreateEntitlementResult>(tenant, sold with { CommandId = Guid.NewGuid(), EventTime = Invoice.AddDays(121) });
         Assert.Equal(18, later.Disclosure!.TermMonths);

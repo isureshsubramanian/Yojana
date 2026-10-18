@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/jurisdiction.regiongroupsaved.json",
+  "title": "Jurisdiction.RegionGroupSaved",
+  "type": "object",
+  "required": ["header", "region_group_id", "code", "members"],
+  "properties": {
+    "header": { "type": "object", "required": ["schema", "version", "event_id", "event_time", "recorded_time", "legal_entity_id", "actor_ref"], "properties": { "schema": { "const": "Jurisdiction.RegionGroupSaved" }, "version": { "const": "1.0" } } },
+    "region_group_id": { "type": "string", "format": "uuid" },
+    "code": { "type": "string", "minLength": 1 },
+    "members": { "type": "array", "items": { "type": "string", "minLength": 2 } }
+  }
+}

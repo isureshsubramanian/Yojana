@@ -9,6 +9,7 @@ using Yojana.Platform.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Jurisdictions;
 using Yojana.Serialisation.Ports;
 using Yojana.Serialisation.Queries;
 using Yojana.Serialisation.Refurbishments;
@@ -64,6 +65,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         await StepAsync("verify the DEV tenant and configure currencies", SetUpTenantAsync, cancellationToken);
+        await StepAsync("import starter jurisdiction data", ImportJurisdictionStarterAsync, cancellationToken);
         await StepAsync("define and publish warranty policies", SetUpPoliciesAsync, cancellationToken);
         await StepAsync("configure return and refurbishment policies", SetUpReturnPoliciesAsync, cancellationToken);
         await StepAsync("post supplier receipts and create inbound cover", PostReceiptsAsync, cancellationToken);
@@ -77,6 +79,23 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         await StepAsync("submit and progress 27 claims", CreateClaimsAsync, cancellationToken);
         await StepAsync("load RMA, replacement and refurbishment stories", CreatePhaseFiveScenariosAsync, cancellationToken);
         await PrintSummaryAsync(cancellationToken);
+    }
+
+    private async Task ImportJurisdictionStarterAsync(CancellationToken cancellationToken)
+    {
+        Guid packId;
+        using (var scope = TenantScope())
+        {
+            var catalogue = await scope.ServiceProvider.GetRequiredService<JurisdictionCatalogueService>()
+                .CatalogueAsync(null, null, cancellationToken);
+            var pack = catalogue.RulePacks.Single(row => row.Code == "eu-starter");
+            if (pack.Imported) return;
+            packId = pack.RulePackId;
+        }
+
+        // The demo deliberately opts into starter data so its EU behaviour remains visible and reproducible.
+        await InvokeAsync<RulePackImported>(new ImportRulePack(DemoIds.FromName("jurisdiction-pack:eu-starter"),
+            packId, actor), cancellationToken);
     }
 
     private async Task SetUpTenantAsync(CancellationToken cancellationToken)

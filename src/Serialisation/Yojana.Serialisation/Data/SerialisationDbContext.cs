@@ -158,6 +158,12 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<LabelTemplateVersion> LabelTemplateVersions => Set<LabelTemplateVersion>();
     public DbSet<PrintJob> PrintJobs => Set<PrintJob>();
     // End P6 labels block.
+    // P6 jurisdiction-rules block. These tables are tenant-owned configuration; application code consumes only ports.
+    public DbSet<RegionGroup> RegionGroups => Set<RegionGroup>();
+    public DbSet<JurisdictionRule> JurisdictionRules => Set<JurisdictionRule>();
+    public DbSet<RulePack> RulePacks => Set<RulePack>();
+    public DbSet<RulePackRule> RulePackRules => Set<RulePackRule>();
+    // End P6 jurisdiction-rules block.
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -1595,6 +1601,82 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(row => new { row.TenantId, row.TemplateId, row.Status, row.EffectiveFrom });
             b.HasIndex(row => new { row.TenantId, row.PreviewSampleUnitId });
         });
+
+        // P6 jurisdiction-rules block. Effective-to is exclusive throughout the resolver, which permits one version
+        // to close on the exact day its successor starts without an overlap.
+        modelBuilder.Entity<RegionGroup>(b =>
+        {
+            b.ToTable("region_group", table => table.HasCheckConstraint("ck_region_group_members_json", "ISJSON(members) = 1"));
+            b.HasKey(row => new { row.TenantId, row.RegionGroupId });
+            b.Property(row => row.Code).HasMaxLength(40).IsUnicode(false);
+            b.Property(row => row.Name).HasMaxLength(200);
+            b.Property(row => row.CreatedBy).HasMaxLength(200);
+            b.Property(row => row.LastModifiedBy).HasMaxLength(200);
+            b.Property(row => row.RowVersion).IsRowVersion();
+            b.HasIndex(row => new { row.TenantId, row.Code }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.LastCommandId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.Name });
+        });
+
+        modelBuilder.Entity<JurisdictionRule>(b =>
+        {
+            b.ToTable("jurisdiction_rule", table =>
+            {
+                table.HasCheckConstraint("ck_jurisdiction_rule_scope", "scope IN ('any', 'country', 'subdivision', 'region_group')");
+                table.HasCheckConstraint("ck_jurisdiction_rule_buyer", "buyer_class IN ('any', 'consumer', 'business')");
+                table.HasCheckConstraint("ck_jurisdiction_rule_date_tested", "date_tested IN ('contract', 'purchase', 'delivery', 'first_sale')");
+                table.HasCheckConstraint("ck_jurisdiction_rule_value_json", "ISJSON(value, VALUE) = 1");
+                table.HasCheckConstraint("ck_jurisdiction_rule_effective", "effective_to IS NULL OR effective_to > effective_from");
+                table.HasCheckConstraint("ck_jurisdiction_rule_price", "price_min IS NULL OR price_max IS NULL OR price_max >= price_min");
+                table.HasCheckConstraint("ck_jurisdiction_rule_currency", "(price_min IS NULL AND price_max IS NULL) OR currency IS NOT NULL");
+                table.HasCheckConstraint("ck_jurisdiction_rule_scope_fields", "(scope = 'any' AND country_code IS NULL AND subdivision_code IS NULL AND region_group_id IS NULL) OR (scope = 'country' AND country_code IS NOT NULL AND subdivision_code IS NULL AND region_group_id IS NULL) OR (scope = 'subdivision' AND country_code IS NULL AND subdivision_code IS NOT NULL AND region_group_id IS NULL) OR (scope = 'region_group' AND country_code IS NULL AND subdivision_code IS NULL AND region_group_id IS NOT NULL)");
+            });
+            b.HasKey(row => new { row.TenantId, row.RuleId });
+            b.Property(row => row.Kind).HasMaxLength(80).IsUnicode(false);
+            b.Property(row => row.Scope).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.CountryCode).HasMaxLength(2).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.SubdivisionCode).HasMaxLength(7).IsUnicode(false);
+            b.Property(row => row.BuyerClass).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.ItemClass).HasMaxLength(100);
+            b.Property(row => row.PriceMin).HasPrecision(19, 4);
+            b.Property(row => row.PriceMax).HasPrecision(19, 4);
+            b.Property(row => row.Currency).HasMaxLength(3).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.DateTested).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.SourceCitation).HasMaxLength(1000);
+            b.Property(row => row.SourceNote).HasMaxLength(2000);
+            b.Property(row => row.CreatedBy).HasMaxLength(200);
+            b.Property(row => row.ApprovedBy).HasMaxLength(200);
+            b.Property(row => row.ClosedBy).HasMaxLength(200);
+            b.Property(row => row.RowVersion).IsRowVersion();
+            b.HasOne<RegionGroup>().WithMany().HasForeignKey(row => new { row.TenantId, row.RegionGroupId })
+                .OnDelete(DeleteBehavior.Restrict).IsRequired(false);
+            b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.ClosedCommandId }).IsUnique().HasFilter("[closed_command_id] IS NOT NULL");
+            b.HasIndex(row => new { row.TenantId, row.RootRuleId, row.Version }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.Kind, row.Scope, row.CountryCode, row.SubdivisionCode, row.RegionGroupId, row.EffectiveFrom });
+            b.HasIndex(row => new { row.TenantId, row.RegionGroupId });
+        });
+
+        modelBuilder.Entity<RulePack>(b =>
+        {
+            b.ToTable("rule_pack");
+            b.HasKey(row => new { row.TenantId, row.RulePackId });
+            b.Property(row => row.Code).HasMaxLength(80).IsUnicode(false);
+            b.Property(row => row.Name).HasMaxLength(200);
+            b.Property(row => row.Warning).HasMaxLength(500);
+            b.Property(row => row.ImportedBy).HasMaxLength(200);
+            b.HasIndex(row => new { row.TenantId, row.Code }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.ImportCommandId }).IsUnique().HasFilter("[import_command_id] IS NOT NULL");
+        });
+
+        modelBuilder.Entity<RulePackRule>(b =>
+        {
+            b.ToTable("rule_pack_rule", table => table.HasCheckConstraint("ck_rule_pack_rule_template_json", "ISJSON(template) = 1"));
+            b.HasKey(row => new { row.TenantId, row.RulePackRuleId });
+            b.HasOne<RulePack>().WithMany().HasForeignKey(row => new { row.TenantId, row.RulePackId }).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(row => new { row.TenantId, row.RulePackId, row.Sequence }).IsUnique();
+        });
+        // End P6 jurisdiction-rules block.
 
         modelBuilder.Entity<PrintJob>(b =>
         {

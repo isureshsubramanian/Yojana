@@ -8,7 +8,7 @@ using Yojana.Serialisation.Data.Entities;
 
 namespace Yojana.Serialisation.Replacements;
 
-public sealed class WarrantyReplacementQueries(SerialisationDbContext db, ITenantContext tenant)
+public sealed class WarrantyReplacementQueries(SerialisationDbContext db, ITenantContext tenant, IJurisdictionRuleResolver jurisdictionRules)
 {
     public async Task<WarrantyReplacementPage> ListAsync(string? status, int skip, int take, CancellationToken cancellationToken)
     {
@@ -29,12 +29,14 @@ public sealed class WarrantyReplacementQueries(SerialisationDbContext db, ITenan
         return new(rows, total, skip, take);
     }
 
-    public Task<WarrantyReplacementDetail?> DetailAsync(Guid id, CancellationToken cancellationToken) => DetailOrNullAsync(db, tenant.TenantId, id, cancellationToken);
+    public Task<WarrantyReplacementDetail?> DetailAsync(Guid id, CancellationToken cancellationToken) => DetailOrNullAsync(db, tenant.TenantId, id, jurisdictionRules, cancellationToken);
 
-    internal static async Task<WarrantyReplacementDetail> DetailAsync(SerialisationDbContext db, TenantId tenantId, Guid id, CancellationToken cancellationToken) =>
-        await DetailOrNullAsync(db, tenantId, id, cancellationToken) ?? throw new InvalidOperationException($"Warranty replacement {id} disappeared.");
+    internal static async Task<WarrantyReplacementDetail> DetailAsync(SerialisationDbContext db, TenantId tenantId, Guid id,
+        IJurisdictionRuleResolver rules, CancellationToken cancellationToken) =>
+        await DetailOrNullAsync(db, tenantId, id, rules, cancellationToken) ?? throw new InvalidOperationException($"Warranty replacement {id} disappeared.");
 
-    private static async Task<WarrantyReplacementDetail?> DetailOrNullAsync(SerialisationDbContext db, TenantId tenantId, Guid id, CancellationToken cancellationToken)
+    private static async Task<WarrantyReplacementDetail?> DetailOrNullAsync(SerialisationDbContext db, TenantId tenantId, Guid id,
+        IJurisdictionRuleResolver rules, CancellationToken cancellationToken)
     {
         var data = await (from document in db.WarrantyReplacements.AsNoTracking()
                           join link in db.ReplacementLinks.AsNoTracking() on new { document.TenantId, document.WarrantyReplacementId } equals new { link.TenantId, link.WarrantyReplacementId }
@@ -64,14 +66,16 @@ public sealed class WarrantyReplacementQueries(SerialisationDbContext db, ITenan
             && (row.EntitlementId == rootId || row.RootEntitlementId == rootId), cancellationToken) - 1);
         var replacementGrade = replacement.ConditionGrade ?? ConditionGrades.New;
         var conditionPassed = ConditionAllowed(l.ReplacementReason, l.ReplacementConditionAllowed, replacementGrade);
-        var consentRequired = ConsentRequired(l.ReplacementReason, l.ReplacementConditionAllowed, replacementGrade, d.ServiceCountry, d.ConsumerContract);
+        var consentRequired = d.ConsumerContract && ConditionGrades.IsRefurbished(replacementGrade)
+            && await WarrantyReplacementRules.RequiresConsentAsync(rules, d.ServiceCountry,
+                sourceEntitlement.StartDate ?? DateOnly.FromDateTime(d.CreatedAt), cancellationToken);
         var available = replacement.LifecycleStatus == LifecycleStatus.Released;
         var checks = new List<WarrantyReplacementCheck>
         {
             new("condition", "Condition allowed for this reason",
                 $"{l.ReplacementConditionAllowed} · actual grade {replacementGrade}", conditionPassed ? "allowed" : "blocked", conditionPassed),
             new("consent", "Consumer consent for a refurbished unit",
-                consentRequired ? "EU consumer contract · recorded consent required" : "not required for this unit and contract",
+                consentRequired ? "applicable jurisdiction rule · recorded consent required" : "not required for this unit and contract",
                 consentRequired ? l.ConsentRefurbished ? "recorded" : "missing" : "not_required", !consentRequired || l.ConsentRefurbished),
             new("availability", "Replacement unit free to ship",
                 $"lifecycle {replacement.LifecycleStatus} · custody {replacement.LocationKind ?? "not recorded"}", available ? "available" : "blocked", available),
@@ -122,15 +126,7 @@ public sealed class WarrantyReplacementQueries(SerialisationDbContext db, ITenan
 
     private static bool ConditionAllowed(string reason, string allowed, string actual)
     {
-        try { WarrantyReplacementRules.ValidateCondition(reason, allowed, actual, "US", false, false); return true; }
-        catch (CommandRefusedException) { return false; }
-    }
-
-    private static bool ConsentRequired(string reason, string allowed, string actual, string country, bool consumerContract)
-    {
-        if (!consumerContract || !ConditionGrades.IsRefurbished(actual)) return false;
-        try { WarrantyReplacementRules.ValidateCondition(reason, allowed, actual, country, true, false); return false; }
-        catch (CommandRefusedException exception) when (exception.Rule == "refurbished_consent_required") { return true; }
+        try { WarrantyReplacementRules.ValidateCondition(reason, allowed, actual); return true; }
         catch (CommandRefusedException) { return false; }
     }
 }
