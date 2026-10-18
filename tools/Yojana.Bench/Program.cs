@@ -14,6 +14,11 @@ using Yojana.Platform;
 using Yojana.Serialisation;
 
 var options = BenchOptions.Parse(args);
+if (options.Command == "concurrency")
+{
+    await new ConcurrencyRunner(options).RunAsync(CancellationToken.None);
+    return;
+}
 if (options.Command == "ping")
 {
     // Connectivity probe without the host: which encryption settings reach the server from this client.

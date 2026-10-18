@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Platform.Contracts.Presence;
 using Yojana.Platform.Contracts.Security;
@@ -27,7 +28,7 @@ public static class PresenceEndpoints
                     statusCode: StatusCodes.Status400BadRequest);
             }
         });
-        presence.MapDelete("/", async (LeavePresenceRequest request, ClaimsPrincipal user,
+        presence.MapDelete("/", async ([FromBody] LeavePresenceRequest request, ClaimsPrincipal user,
             IPresenceService service, CancellationToken cancellationToken) =>
         {
             try

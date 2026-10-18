@@ -94,6 +94,9 @@ app.MapGet("/health", async (PlatformDbContext db, CancellationToken ct) =>
     return canConnect ? Results.Ok(new { status = "ok", database = "reachable" }) : Results.Problem("database unreachable", statusCode: 503);
 });
 
+app.MapGet("/api/platform/metrics/concurrency", () => Results.Ok(new { concurrencyExceptionsObserved = ConcurrencyRetryMetrics.Observed }))
+    .RequireAuthorization(YojanaPolicy.TenantMember);
+
 // Third-party notices ship inside the artefact and are reachable from the running application (MOD-01).
 app.MapGet("/notices", () =>
 {

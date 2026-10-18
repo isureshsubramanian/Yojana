@@ -3546,6 +3546,51 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.NumberSeriesSetting", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Series")
+                        .HasMaxLength(10)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(10)")
+                        .HasColumnName("series");
+
+                    b.Property<Guid>("LastCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("last_command_id");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .HasColumnName("mode");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("TenantId", "Series")
+                        .HasName("pk_number_series_setting");
+
+                    b.HasIndex("TenantId", "Mode", "Series")
+                        .HasDatabaseName("ix_number_series_setting_tenant_id_mode_series");
+
+                    b.ToTable("number_series_setting", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_number_series_setting_mode", "mode IN ('sequence', 'gap_free')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PartyReplacementHold", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -3831,6 +3876,11 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "OriginalJobId")
                         .HasDatabaseName("ix_print_job_tenant_id_original_job_id");
 
+                    b.HasIndex("TenantId", "RequestedAt")
+                        .HasDatabaseName("ix_print_job_tenant_id_requested_at");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "RequestedAt"), new[] { "Status", "PrinterRef", "OriginalJobId", "SourceEventId" });
+
                     b.HasIndex("TenantId", "SourceEventId")
                         .IsUnique()
                         .HasDatabaseName("ux_print_job_tenant_id_source_event_id")
@@ -3840,11 +3890,6 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_print_job_tenant_id_batch_command_id_batch_sequence")
                         .HasFilter("[batch_command_id] IS NOT NULL");
-
-                    b.HasIndex("TenantId", "RequestedAt")
-                        .HasDatabaseName("ix_print_job_tenant_id_requested_at");
-
-                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "RequestedAt"), new[] { "Status", "PrinterRef", "OriginalJobId", "SourceEventId" });
 
                     b.HasIndex("TenantId", "Status", "RequestedAt")
                         .HasDatabaseName("ix_print_job_tenant_id_status_requested_at");

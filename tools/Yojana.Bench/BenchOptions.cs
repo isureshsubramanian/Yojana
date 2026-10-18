@@ -17,6 +17,14 @@ public sealed class BenchOptions
     public int Partitions { get; private set; } = 180;
     public bool SkipLifecycle { get; private set; }
     public string OutDirectory { get; private set; } = "docs/plan/benchmarks";
+    public Uri? Url { get; private set; }
+    public int Engineers { get; private set; } = 120;
+    public TimeSpan Duration { get; private set; } = TimeSpan.FromMinutes(10);
+    public int ContentionPercent { get; private set; } = 15;
+    public string NumberingMode { get; private set; } = "sequence";
+    public string Email { get; private set; } = "admin@dev.yojana.local";
+    public string Password { get; private set; } = Environment.GetEnvironmentVariable("YOJANA_BENCH_PASSWORD") ?? "";
+    public string? Weights { get; private set; }
 
     /// <summary>The main tenant carries the full scale; the others exist so row-level security has something to filter.</summary>
     public static Guid TenantId(int index) => Guid.ParseExact($"b0000000-0000-4000-8000-{index:D12}", "D");
@@ -42,6 +50,14 @@ public sealed class BenchOptions
                 case "--database": o.Database = Next(); break;
                 case "--out": o.OutDirectory = Next(); break;
                 case "--skip-lifecycle": o.SkipLifecycle = true; break;
+                case "--url": o.Url = new Uri(Next(), UriKind.Absolute); break;
+                case "--engineers": o.Engineers = int.Parse(Next(), CultureInfo.InvariantCulture); break;
+                case "--duration": o.Duration = ParseDuration(Next()); break;
+                case "--contention": o.ContentionPercent = int.Parse(Next(), CultureInfo.InvariantCulture); break;
+                case "--numbering": o.NumberingMode = Next(); break;
+                case "--email": o.Email = Next(); break;
+                case "--password": o.Password = Next(); break;
+                case "--weights": o.Weights = Next(); break;
             }
         }
 
@@ -49,7 +65,9 @@ public sealed class BenchOptions
         if (!string.IsNullOrEmpty(full))
         {
             o.ConnectionString = full;
-            o.Server = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(full).DataSource;
+            var connection = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(full);
+            o.Server = connection.DataSource;
+            o.Database = connection.InitialCatalog;
         }
         else
         {
@@ -62,6 +80,23 @@ public sealed class BenchOptions
             }.ConnectionString;
         }
 
+        if (o.Command == "concurrency")
+        {
+            if (o.Url is null) throw new ArgumentException("concurrency needs --url for the running Yojana web host");
+            if (string.IsNullOrWhiteSpace(o.Password)) throw new ArgumentException("concurrency needs --password or YOJANA_BENCH_PASSWORD");
+            if (o.Engineers is < 1 or > 1000) throw new ArgumentOutOfRangeException("--engineers", "Engineers must be from 1 to 1000.");
+            if (o.Duration < TimeSpan.FromSeconds(1)) throw new ArgumentOutOfRangeException("--duration", "Duration must be at least one second.");
+            if (o.ContentionPercent is < 0 or > 100) throw new ArgumentOutOfRangeException("--contention", "Contention must be from 0 to 100.");
+            if (o.NumberingMode is not ("sequence" or "gap_free")) throw new ArgumentException("--numbering is sequence or gap_free");
+        }
         return o;
+    }
+
+    private static TimeSpan ParseDuration(string value)
+    {
+        if (TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out var parsed)) return parsed;
+        if (value.Length > 1 && double.TryParse(value[..^1], NumberStyles.Float, CultureInfo.InvariantCulture, out var count))
+            return value[^1] switch { 's' => TimeSpan.FromSeconds(count), 'm' => TimeSpan.FromMinutes(count), 'h' => TimeSpan.FromHours(count), _ => throw new FormatException("Duration suffix is s, m or h.") };
+        throw new FormatException("Duration is a TimeSpan or a value such as 60s or 10m.");
     }
 }
