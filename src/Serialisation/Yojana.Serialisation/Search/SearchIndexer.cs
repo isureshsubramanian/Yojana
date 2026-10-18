@@ -31,9 +31,11 @@ public sealed class SearchIndexer(SerialisationDbContext db, ITenantContext tena
         // transaction: the handler's own under the bus middleware, or one opened here for a direct caller.
         var ownTransaction = db.Database.CurrentTransaction is null;
         if (ownTransaction) await db.Database.BeginTransactionAsync(cancellationToken);
-        // SearchBackfill takes this tenant gate exclusively for each replacement batch. Incremental writers hold it
-        // shared through their transaction, so neither path can replace rows while the other writes them.
-        await SearchBackfill.LockTenantAsync(db, tenantId, "Shared", cancellationToken);
+        // TIGHT COUPLING with SearchBackfill.LockTenantAsync: every search writer uses this tenant resource.
+        // Incremental writers take Update (one writer, readers unaffected), while backfill takes Exclusive. Distinct
+        // entity locks cannot prevent deadlocks on shared search/full-text index pages; changing either resource or
+        // mode independently re-opens that cross-entry lock cycle and lets projection messages reach the error queue.
+        await SearchBackfill.LockTenantAsync(db, tenantId, "Update", cancellationToken);
         // 100 entries per statement keeps every delete and insert far below the 5,000-lock escalation threshold, so parallel handlers never escalate to a table lock and deadlock.
         foreach (var chunk in entries.Chunk(100))
         {
@@ -118,6 +120,18 @@ public sealed class SearchIndexer(SerialisationDbContext db, ITenantContext tena
         await UpsertAsync(drafts, cancellationToken);
     }
 
+    internal async Task<bool> IsUnitCurrentAsync(Guid unitId, long eventSeq, CancellationToken cancellationToken)
+    {
+        var metadata = await db.SearchEntries.AsNoTracking()
+            .Where(entry => entry.TenantId == tenant.TenantId && entry.EntityType == SearchEntityType.Unit && entry.EntityId == unitId)
+            .Select(entry => entry.Metadata)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (metadata is null) return false;
+        using var json = JsonDocument.Parse(metadata);
+        return json.RootElement.TryGetProperty("last_event_seq", out var value)
+            && value.TryGetInt64(out var indexedSeq) && indexedSeq >= eventSeq;
+    }
+
     // Shared draft construction keeps the bulk and incremental representations identical.
     internal async Task<List<SearchEntryDraft>> BuildUnitDraftsAsync(IReadOnlyCollection<Guid> unitIds, int chunkSize, CancellationToken cancellationToken)
     {
@@ -199,7 +213,7 @@ public sealed class SearchIndexer(SerialisationDbContext db, ITenantContext tena
             return;
         }
         var events = await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && e.DocumentType == documentType && e.DocumentId == documentId)
-            .Select(e => new { e.UnitId, e.DocumentLine, e.EventTime, e.EventType }).ToListAsync(cancellationToken);
+            .Select(e => new { e.UnitId, e.DocumentLine, e.EventTime, e.EventType, e.Seq }).ToListAsync(cancellationToken);
         if (events.Count == 0)
         {
             await RemoveAsync(SearchEntityType.Document, documentId, cancellationToken);
@@ -231,7 +245,7 @@ public sealed class SearchIndexer(SerialisationDbContext db, ITenantContext tena
         {
             ["document_type"] = Humanise(documentType), ["document_id"] = documentId, ["serials"] = unitIds.Count, ["lines"] = lines,
             ["first_event"] = first.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture), ["last_event"] = last.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
-            ["event_types"] = string.Join(", ", events.Select(e => e.EventType).Distinct().Order()),
+            ["last_event_seq"] = events.Max(e => e.Seq), ["event_types"] = string.Join(", ", events.Select(e => e.EventType).Distinct().Order()),
         };
         await UpsertAsync([new SearchEntryDraft(SearchEntityType.Document, documentId, title, false, subtitle, terms, DocumentWeight, JsonSerializer.Serialize(metadata), $"/units?document={documentType}:{documentId:N}")], cancellationToken);
     }

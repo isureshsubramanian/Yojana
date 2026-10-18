@@ -4,6 +4,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Replacements;
+using Yojana.Serialisation.Search;
 
 namespace Yojana.Serialisation.Ledger;
 
@@ -21,12 +22,33 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
         // of its own, whose bus is not the transactional outbox, and rolls the transaction back; publishing there would
         // announce facts that never happened. Change their suppression calls and this guard together.
         if (publication.Suppressed) return;
+        var searchRequests = new List<SearchProjectionRequested>();
         foreach (var @event in written)
         {
-            foreach (var message in new[] { Map(@event), CoverageChanged(@event) }.OfType<IPublishedUnitEvent>())
+            var message = Map(@event);
+            if (message is not null)
             {
                 await bus.PublishAsync(message, new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
+                // TIGHT COUPLING with SearchProjectionRequestMapper: this second outbox message moves search work off
+                // the public event's subscriber chain while preserving commit atomicity. Removing it makes indexing
+                // depend on the nightly healer; subscribing search to the public fact restores queue head-of-line stalls.
+                if (SearchProjectionRequestMapper.Map(message) is { } projection)
+                {
+                    searchRequests.Add(projection);
+                }
             }
+
+            if (CoverageChanged(@event) is { } coverageChanged)
+            {
+                await bus.PublishAsync(coverageChanged, new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
+            }
+        }
+
+        // One append can contain thousands of unit facts. Coalescing them here prevents the search safety net from
+        // multiplying the transactional outbox and delaying delivery of the public facts it accompanies.
+        if (SearchProjectionRequestMapper.Combine(searchRequests) is { } searchRequest)
+        {
+            await bus.PublishAsync(searchRequest, new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
         }
     }
 

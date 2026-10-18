@@ -48,8 +48,10 @@ public sealed class SearchBackfill(SerialisationDbContext db, ITenantContext ten
         {
             var ownTransaction = db.Database.CurrentTransaction is null;
             await using var transactionScope = ownTransaction ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
-            // SearchIndexer holds the same tenant gate in Shared mode while writing. Exclusive here covers the
-            // source read, delete and insert, so a live handler cannot write stale rows into this batch.
+            // TIGHT COUPLING with SearchIndexer.UpsertAsync: every writer uses this tenant resource. Exclusive here
+            // covers the source read, delete and insert; incremental writers use Update so they also serialize with
+            // each other across shared search/full-text index pages. Changing either resource or mode independently
+            // permits stale replacement races and cross-entry deadlocks.
             await LockTenantAsync(db, tenant.TenantId, "Exclusive", cancellationToken);
             var drafts = await indexer.BuildUnitDraftsAsync(ids, ids.Length, cancellationToken);
             var connection = (SqlConnection)db.Database.GetDbConnection();
