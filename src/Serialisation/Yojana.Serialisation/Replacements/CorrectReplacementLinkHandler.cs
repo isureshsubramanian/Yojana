@@ -16,12 +16,12 @@ public static class PreviewCorrectReplacementLinkHandler
 {
     public static async Task<CorrectionPreview> Handle(PreviewCorrectReplacementLink command,
         SerialisationDbContext db, IUnitConditionQueryPort conditions, CorrectionApprovalSettings approvals,
-        ITenantContext tenant, CancellationToken cancellationToken)
+        IJurisdictionRuleResolver jurisdictionRules, ITenantContext tenant, CancellationToken cancellationToken)
     {
         try
         {
             var plan = await ReplacementLinkCorrectionPlan.LoadAsync(command.RecordedReplacementUnitId,
-                command.ActualReplacementUnitId, command.Reason, db, conditions, approvals, tenant, cancellationToken);
+                command.ActualReplacementUnitId, command.Reason, db, conditions, approvals, jurisdictionRules, tenant, cancellationToken);
             var metadata = command.Correction ?? new CorrectionMetadata(Guid.Empty, command.Reason, command.Note,
                 InitiatingRole: CorrectionInitiatingRole.CustomerService);
             var refusal = ReplacementLinkCorrectionPlan.ApprovalRefusal(plan, command.CommittedBy, metadata);
@@ -45,6 +45,7 @@ public static class CorrectReplacementLinkHandler
         EpisodeService episodes,
         IUnitEventWriter writer,
         IStockUnitEventPort stock,
+        IJurisdictionRuleResolver jurisdictionRules,
         ITenantContext tenant,
         IClock clock,
         CancellationToken cancellationToken)
@@ -57,7 +58,7 @@ public static class CorrectReplacementLinkHandler
         var supplied = command.Correction ?? new CorrectionMetadata(command.CommandId, command.Reason, command.Note,
             InitiatingRole: CorrectionInitiatingRole.CustomerService);
         var plan = await ReplacementLinkCorrectionPlan.LoadAsync(command.RecordedReplacementUnitId,
-            command.ActualReplacementUnitId, command.Reason, db, conditions, approvals, tenant, cancellationToken);
+            command.ActualReplacementUnitId, command.Reason, db, conditions, approvals, jurisdictionRules, tenant, cancellationToken);
         if (ReplacementLinkCorrectionPlan.ApprovalRefusal(plan, command.CommittedBy, supplied) is { } approvalRefusal)
             throw new CommandRefusedException(approvalRefusal.Rule, approvalRefusal.Message, approvalRefusal.UnblockingStep);
         var metadata = await corrections.PrepareAsync(CorrectionCommand.CorrectReplacementLink, supplied,
@@ -375,7 +376,7 @@ internal static class ReplacementLinkCorrectionPlan
 
     internal static async Task<Plan> LoadAsync(Guid recordedUnitId, Guid actualUnitId, string reason,
         SerialisationDbContext db, IUnitConditionQueryPort conditions, CorrectionApprovalSettings approvals,
-        ITenantContext tenant, CancellationToken cancellationToken)
+        IJurisdictionRuleResolver jurisdictionRules, ITenantContext tenant, CancellationToken cancellationToken)
     {
         CorrectionRules.ValidateReason(CorrectionCommand.CorrectReplacementLink, reason);
         if (recordedUnitId == actualUnitId)
@@ -461,13 +462,15 @@ internal static class ReplacementLinkCorrectionPlan
 
         var shipment = await db.Events.AsNoTracking().SingleAsync(row => row.TenantId == tenantId
             && row.EventId == previous.ShippedEventId!.Value, cancellationToken);
-        var replacementDate = (await db.Entitlements.AsNoTracking().SingleAsync(row => row.TenantId == tenantId
-            && row.EntitlementId == previous.SourceEntitlementId, cancellationToken)).ClosedEffective
-            ?? DateOnly.FromDateTime(shipment.EventTime);
+        var sourceEntitlement = await db.Entitlements.AsNoTracking().SingleAsync(row => row.TenantId == tenantId
+            && row.EntitlementId == previous.SourceEntitlementId, cancellationToken);
+        var replacementDate = sourceEntitlement.ClosedEffective ?? DateOnly.FromDateTime(shipment.EventTime);
         var condition = await conditions.LatestGradeAsync(actualUnitId, cancellationToken);
-        WarrantyReplacementRules.ValidateCondition(previous.ReplacementReason,
-            previous.ReplacementConditionAllowed, condition, document.ServiceCountry,
-            document.ConsumerContract, previous.ConsentRefurbished);
+        WarrantyReplacementRules.ValidateCondition(previous.ReplacementReason, previous.ReplacementConditionAllowed, condition);
+        if (document.ConsumerContract && ConditionGrades.IsRefurbished(condition) && !previous.ConsentRefurbished
+            && await WarrantyReplacementRules.RequiresConsentAsync(jurisdictionRules, document.ServiceCountry,
+                sourceEntitlement.StartDate ?? replacementDate, cancellationToken))
+            throw new CommandRefusedException("refurbished_consent_required", "The applicable jurisdiction rule requires recorded consent before refurbished stock can ship.");
         var hasAssetTag = await db.Identifiers.AsNoTracking().AnyAsync(row => row.TenantId == tenantId
             && row.UnitId == recordedUnitId && row.Type == IdentifierType.CustomerAssetTag && row.ValidTo == null,
             cancellationToken);

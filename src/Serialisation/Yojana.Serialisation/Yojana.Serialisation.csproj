@@ -7,4 +7,8 @@
     <!-- Minimal-API endpoints of the module's read models (the host maps them). -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Jurisdictions/StarterPacks/*.json" />
+  </ItemGroup>
 </Project>

@@ -20,10 +20,17 @@ public static class CreateEntitlementHandler
 {
     // Coupled to the factory registration of RefurbishedGoodsSettings in SerialisationModule: Wolverine must not see the
     // PlatformDbContext behind ITenantSettings in this handler graph, or its SerialisationDbContext transaction is refused.
-    public static async Task<CreateEntitlementResult> Handle(CreateEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
-        => await CreateAsync(command, db, ledger, resolver, store, zones, refurbishedSettings, tenant, clock, null, [], false, null, null, null, cancellationToken);
+    public static async Task<CreateEntitlementResult> Handle(CreateEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings,
+        IJurisdictionRegionPort regions, IJurisdictionRuleResolver jurisdictionRules, ITenantContext tenant, IClock clock,
+        IItemQueryPort items,
+        CancellationToken cancellationToken)
+        => await CreateAsync(command, db, ledger, resolver, store, zones, refurbishedSettings,
+            regions, jurisdictionRules, tenant, clock, items,
+            null, [], false, null, null, null, cancellationToken);
 
-    internal static async Task<CreateEntitlementResult> CreateAsync(CreateEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings, ITenantContext tenant, IClock clock,
+    internal static async Task<CreateEntitlementResult> CreateAsync(CreateEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings,
+        IJurisdictionRegionPort regions, IJurisdictionRuleResolver jurisdictionRules, ITenantContext tenant, IClock clock,
+        IItemQueryPort items,
         string? startBasisOverride, IReadOnlyList<string> evidenceRefs, bool financeReviewRequired, string? reasonCode, string? financeReviewRef, CorrectionMetadata? correction, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -79,7 +86,12 @@ public static class CreateEntitlementHandler
         if (grade != ConditionGrades.New)
         {
             if (command.Channel is null || command.Country is null) throw new CommandRefusedException("refurbished_sale_context_missing", "A non-new sale needs its channel and country.", "supply the sale channel and ISO country");
-            disclosure = RefurbishedGoodsPolicyEngine.Decide(unit.ItemId, grade, command.Channel, command.Country, command.BuyerKind, terms.Refurbished, await refurbishedSettings.GetAsync(cancellationToken), command.RefurbisherPartyRef);
+            var scopes = await regions.ApplicableScopesAsync(command.Country, null, cancellationToken);
+            var itemClass = (await items.GetAsync(unit.ItemId, cancellationToken))?.ItemClass;
+            var jurisdictionFloor = await JurisdictionEntitlementRules.UsedGoodsFloorMonthsAsync(jurisdictionRules,
+                command.Country, command.BuyerKind, command.ContractDate, itemClass, command.Evidence, cancellationToken);
+            disclosure = RefurbishedGoodsPolicyEngine.Decide(unit.ItemId, grade, command.Channel, command.Country,
+                command.BuyerKind, terms.Refurbished, scopes, jurisdictionFloor, command.RefurbisherPartyRef);
             duration = new EffectiveDuration(terms.Duration with { Value = disclosure.TermMonths, Unit = DurationRule.Months }, disclosure.FloorApplied, disclosure.MatchedRow);
         }
         else duration = new EffectiveDuration(terms.Duration, false, null);
@@ -248,13 +260,15 @@ public static class ResumeEntitlementHandler
 
 public static class TransferEntitlementHandler
 {
-    public static Task<TransferEntitlementResult> Handle(TransferEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken) =>
-        TransferAsync(command, db, ledger, tenant, clock, corrections, true, cancellationToken);
+    public static Task<TransferEntitlementResult> Handle(TransferEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, ITenantContext tenant, IClock clock, CorrectionLedger corrections,
+        IJurisdictionRuleResolver jurisdictionRules, IJurisdictionRegionPort regions, CancellationToken cancellationToken) =>
+        TransferAsync(command, db, ledger, tenant, clock, corrections, true, jurisdictionRules, regions, cancellationToken);
 
     /// <summary>Vendor replacement uses the same immutable transfer chain for supplier cover; it is not exposed by the public transfer endpoint.</summary>
     public static Task<TransferEntitlementResult> HandleInboundAsync(TransferEntitlement command, SerialisationDbContext db, EntitlementLedger ledger,
-        ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken) =>
-        TransferAsync(command, db, ledger, tenant, clock, corrections, true, cancellationToken, EntitlementDirection.Inbound);
+        ITenantContext tenant, IClock clock, CorrectionLedger corrections, IJurisdictionRuleResolver jurisdictionRules,
+        IJurisdictionRegionPort regions, CancellationToken cancellationToken) =>
+        TransferAsync(command, db, ledger, tenant, clock, corrections, true, jurisdictionRules, regions, cancellationToken, EntitlementDirection.Inbound);
 
     /// <summary>
     /// Reusable transfer seam for a correction that owns one correction_record across its compensating entitlement
@@ -262,7 +276,8 @@ public static class TransferEntitlementHandler
     /// </summary>
     internal static async Task<TransferEntitlementResult> TransferAsync(TransferEntitlement command, SerialisationDbContext db,
         EntitlementLedger ledger, ITenantContext tenant, IClock clock, CorrectionLedger? corrections, bool recordCorrection,
-        CancellationToken cancellationToken, string requiredDirection = EntitlementDirection.Outbound)
+        IJurisdictionRuleResolver jurisdictionRules, IJurisdictionRegionPort regions, CancellationToken cancellationToken,
+        string requiredDirection = EntitlementDirection.Outbound)
     {
         var tenantId = tenant.TenantId;
         var source = await ledger.LoadAsync(command.SourceEntitlementId, cancellationToken);
@@ -304,18 +319,20 @@ public static class TransferEntitlementHandler
                 "An orchestrated entitlement transfer needs its parent correction metadata.");
 
         var rootId = source.RootEntitlementId ?? source.EntitlementId;
+        StatutoryExtensionEligibility? statutory = null;
         if (policy.Rule == ReplacementRule.StatutoryExtensionOnce)
         {
-            var eligibility = await StatutoryExtensionGuard.EvaluateAsync(db, tenantId, source, command.ContractDate,
-                command.Country, command.ConsumerContract, command.Remedy, cancellationToken);
-            if (!eligibility.Eligible)
-                throw new CommandRefusedException("statutory_extension_not_applicable", "The one-time statutory extension requires a live statutory entitlement and a repair remedy for an EU consumer contract dated on or after 2026-07-31 within its region scope.");
-            if (eligibility.AlreadyApplied)
+            statutory = await StatutoryExtensionGuard.EvaluateAsync(db, tenantId, source, command.ContractDate,
+                command.Country, command.ConsumerContract, command.Remedy, jurisdictionRules, regions, cancellationToken);
+            if (!statutory.Eligible)
+                throw new CommandRefusedException("statutory_extension_not_applicable", "No applicable repair-extension rule covers this statutory entitlement and repair context.");
+            if (statutory.AlreadyApplied)
                 throw new CommandRefusedException("statutory_extension_already_applied", $"Entitlement chain {rootId} has already received its statutory extension.");
         }
 
         var duration = new DurationRule(source.DurationValue, source.DurationUnit, source.EndOfMonthRule, source.EndInclusive);
-        var computedEnd = ReplacementArithmetic.EndDate(sourceEnd, command.ReplacementDate, duration, policy.Rule, policy.MinDays, policy.ExtensionMonths);
+        var computedEnd = ReplacementArithmetic.EndDate(sourceEnd, command.ReplacementDate, duration, policy.Rule,
+            policy.MinDays, statutory?.ExtensionMonths ?? policy.ExtensionMonths);
         var eventId = TimeOrderedId.New(command.EventTime);
         var target = new Entitlement
         {

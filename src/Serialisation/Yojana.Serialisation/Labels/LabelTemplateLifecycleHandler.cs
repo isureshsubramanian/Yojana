@@ -30,13 +30,16 @@ public static class LabelTemplateLifecycleHandler
     }
 
     public static async Task<LabelTemplateVersionChanged> Handle(RequestLabelLegalReview command, SerialisationDbContext db,
-        LabelSettings settings, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        LabelSettings settings, IJurisdictionLabelRulesPort jurisdictionRules, ITenantContext tenant, IClock clock,
+        CancellationToken cancellationToken)
     {
         var (_, version) = await FindAsync(command.TemplateVersionId, db, tenant, cancellationToken);
         if (Replay(version, command.CommandId)) return Changed(version, true);
         Draft(version);
         var policy = await settings.GetAsync(cancellationToken);
-        version.LegalReview = LabelTemplateRules.NeedsLegalReview(LabelTemplateRules.StaticText(version.StaticText), policy.LegalReviewPhrases, version.Layout);
+        var phrases = policy.LegalReviewPhrases.Concat(await jurisdictionRules.ForbiddenPhrasesAsync(cancellationToken))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        version.LegalReview = LabelTemplateRules.NeedsLegalReview(LabelTemplateRules.StaticText(version.StaticText), phrases, version.Layout);
         if (!version.LegalReview) throw new CommandRefusedException("label_legal_review_not_required", "The configured phrase list does not flag this label version.");
         version.LegalReviewRequestedAt = clock.UtcNow;
         version.LegalReviewRequestedBy = command.ActorRef;
@@ -79,13 +82,16 @@ public static class LabelTemplateLifecycleHandler
     }
 
     public static async Task<LabelTemplateVersionChanged> Handle(ActivateLabelTemplateVersion command, SerialisationDbContext db,
-        LabelSettings settings, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        LabelSettings settings, IJurisdictionLabelRulesPort jurisdictionRules, ITenantContext tenant, IClock clock,
+        CancellationToken cancellationToken)
     {
         var (template, version) = await FindAsync(command.TemplateVersionId, db, tenant, cancellationToken);
         if (Replay(version, command.CommandId)) return Changed(version, true);
         Draft(version);
         var policy = await settings.GetAsync(cancellationToken);
-        version.LegalReview = LabelTemplateRules.NeedsLegalReview(LabelTemplateRules.StaticText(version.StaticText), policy.LegalReviewPhrases, version.Layout);
+        var phrases = policy.LegalReviewPhrases.Concat(await jurisdictionRules.ForbiddenPhrasesAsync(cancellationToken))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        version.LegalReview = LabelTemplateRules.NeedsLegalReview(LabelTemplateRules.StaticText(version.StaticText), phrases, version.Layout);
         if (version.PreviewedContentHash != version.ContentHash)
             throw new CommandRefusedException("label_preview_required", "Render a successful preview of this draft before activation.");
         if (version.LegalReview && version.LegalReviewContentHash != version.ContentHash)

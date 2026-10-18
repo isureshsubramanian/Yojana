@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/jurisdiction.ruleclosed.json",
+  "title": "Jurisdiction.RuleClosed",
+  "type": "object",
+  "required": ["header", "rule_id", "effective_to"],
+  "properties": {
+    "header": { "type": "object", "required": ["schema", "version", "event_id", "event_time", "recorded_time", "legal_entity_id", "actor_ref"], "properties": { "schema": { "const": "Jurisdiction.RuleClosed" }, "version": { "const": "1.0" } } },
+    "rule_id": { "type": "string", "format": "uuid" }, "effective_to": { "type": "string", "format": "date" }
+  }
+}

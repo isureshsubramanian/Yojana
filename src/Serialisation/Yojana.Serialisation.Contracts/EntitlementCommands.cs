@@ -172,7 +172,8 @@ public sealed record AmendEntitlement(
     string? Note = null,
     AmendmentCommitter? CommittedBy = null,
     decimal? EnteredValue = null,
-    CorrectionMetadata? Correction = null);
+    CorrectionMetadata? Correction = null,
+    int? StatutoryExtensionMaximum = null);
 
 /// <summary>A new term length; the entitlement keeps its end-of-month rule and whether the term counts its start day.</summary>
 public sealed record AmendedTerm(int Value, string Unit);

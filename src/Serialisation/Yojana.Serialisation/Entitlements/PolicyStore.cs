@@ -9,7 +9,8 @@ using Yojana.Serialisation.Ledger;
 namespace Yojana.Serialisation.Entitlements;
 
 /// <summary>Maps <see cref="PolicyTerms"/> to and from the version row's columns and reads what the validator needs.</summary>
-public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant, ITenantCurrency currency)
+public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant, ITenantCurrency currency,
+    IJurisdictionRegionPort regions)
 {
     /// <summary>
     /// The version of the duration arithmetic (P2-T04). An entitlement records the policy version and this number as
@@ -21,6 +22,16 @@ public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant
 
     public async Task WriteTermsAsync(WarrantyPolicyVersion row, PolicyTerms terms, CancellationToken cancellationToken)
     {
+        // Policy region tokens are coupled to tenant region-group codes through this explicit port. Saving an unknown
+        // token would otherwise look valid here and silently match no country in PolicyResolver.
+        foreach (var scopeCode in terms.RegionScope.Concat(terms.Refurbished.Select(item => item.Region))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!await regions.IsKnownScopeAsync(scopeCode, cancellationToken))
+                throw new CommandRefusedException("policy_region_unknown",
+                    $"Region code '{scopeCode}' is neither WORLD, an ISO 3166-1 country nor a tenant region group.",
+                    $"define '{scopeCode}' in Settings → Jurisdictions, or use an ISO 3166-1 alpha-2 country code");
+        }
         var tenantId = tenant.TenantId;
         row.DurationValue = terms.Duration.Value;
         row.DurationUnit = terms.Duration.Unit;

@@ -21,6 +21,7 @@ public static class SalesInvoicePostedHandler
 
     public static async Task<ConsumedEventResult> Handle(SalesInvoicePosted message, ISalesDocumentQueryPort sales, SerialisationDbContext db,
         SelectionSetResolver selections, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbished,
+        IJurisdictionRegionPort regions, IJurisdictionRuleResolver jurisdictionRules, IItemQueryPort items,
         WarrantyReferenceSettings reference, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates,
         ITenantCurrency currency, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
@@ -32,7 +33,7 @@ public static class SalesInvoicePostedHandler
         {
             try
             {
-                affected += await ApplyLineAsync(invoice, line, null, message.Envelope, db, selections, ledger, resolver, store, zones, refurbished, reference, approvals, claims, certificates, currency, tenant, clock, corrections, cancellationToken);
+                affected += await ApplyLineAsync(invoice, line, null, message.Envelope, db, selections, ledger, resolver, store, zones, refurbished, regions, jurisdictionRules, items, reference, approvals, claims, certificates, currency, tenant, clock, corrections, cancellationToken);
             }
             catch (CommandRefusedException ex)
             {
@@ -46,6 +47,7 @@ public static class SalesInvoicePostedHandler
 
     internal static async Task<int> ApplyLineAsync(InvoiceDocument invoice, InvoiceLine line, IReadOnlyList<string>? suppliedSerials, ThinEnvelope envelope,
         SerialisationDbContext db, SelectionSetResolver selections, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbished,
+        IJurisdictionRegionPort regions, IJurisdictionRuleResolver jurisdictionRules, IItemQueryPort items,
         WarrantyReferenceSettings reference, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates,
         ITenantCurrency currency, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
@@ -98,7 +100,7 @@ public static class SalesInvoicePostedHandler
                     invoice.CustomerPartyRef, PartyType.Customer, invoice.CustomerPartyRef, PartyType.Customer, Country: invoice.Country, SiteLocationId: invoice.SiteLocationId,
                     StartEvidenceRef: $"{invoice.Document.Type}:{invoice.Document.Id:N}", SourceDocument: sourceDocument, CustomerPoRef: invoice.CustomerPoRef,
                     Channel: invoice.Channel),
-                    db, ledger, resolver, store, zones, refurbished, tenant, clock, null, [], false, null, null, null, cancellationToken);
+                    db, ledger, resolver, store, zones, refurbished, regions, jurisdictionRules, tenant, clock, items, null, [], false, null, null, null, cancellationToken);
             }
             else
             {
@@ -183,6 +185,7 @@ public static class ResolveWarrantyLineExceptionHandler
 {
     public static async Task<WarrantyLineExceptionRow> Handle(ResolveWarrantyLineException command, ISalesDocumentQueryPort sales, SerialisationDbContext db,
         SelectionSetResolver selections, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbished,
+        IJurisdictionRegionPort regions, IJurisdictionRuleResolver jurisdictionRules, IItemQueryPort items,
         WarrantyReferenceSettings reference, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates,
         ITenantCurrency currency, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
@@ -194,7 +197,7 @@ public static class ResolveWarrantyLineExceptionHandler
         var line = invoice.Lines.SingleOrDefault(l => l.LineNo == row.DocumentLine) ?? throw new CommandRefusedException("line_unknown", "The warranty line is no longer present on the invoice.");
         var envelope = new ThinEnvelope(command.ExceptionId, invoice.ObligorEntityId, row.TriggerAt, command.ActorRef);
         await SalesInvoicePostedHandler.ApplyLineAsync(invoice with { PostedAt = row.TriggerAt }, line, command.Serials.Count == 0 ? null : command.Serials, envelope,
-            db, selections, ledger, resolver, store, zones, refurbished, reference, approvals, claims, certificates, currency, tenant, clock, corrections, cancellationToken);
+            db, selections, ledger, resolver, store, zones, refurbished, regions, jurisdictionRules, items, reference, approvals, claims, certificates, currency, tenant, clock, corrections, cancellationToken);
         row.Status = WarrantyLineExceptionStatus.Resolved;
         row.ResolvedAt = clock.UtcNow;
         row.ResolvedBy = command.ActorRef;

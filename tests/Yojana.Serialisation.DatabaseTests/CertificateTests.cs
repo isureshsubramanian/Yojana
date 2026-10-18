@@ -510,6 +510,7 @@ public static class CreateSaleEntitlementsHandler
 {
     public static async Task Handle(CreateSaleEntitlements message, SerialisationDbContext db, EntitlementLedger ledger,
         PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings,
+        IJurisdictionRegionPort regions, IJurisdictionRuleResolver jurisdictionRules, IItemQueryPort items,
         ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         for (var index = 0; index < message.PolicyVersionIds.Count; index++)
@@ -520,7 +521,7 @@ public static class CreateSaleEntitlementsHandler
                 new Dictionary<string, DateTime> { [StartTrigger.Invoice] = message.EventTime },
                 PolicyVersionId: message.PolicyVersionIds[index], OwnerPartyRef: message.OwnerId,
                 OwnerPartyType: PartyType.Customer, SourceDocument: new DocumentRef("invoice", Guid.NewGuid(), index + 1)),
-                db, ledger, resolver, store, zones, refurbishedSettings, tenant, clock, cancellationToken);
+                db, ledger, resolver, store, zones, refurbishedSettings, regions, jurisdictionRules, tenant, clock, items, cancellationToken);
         }
     }
 }

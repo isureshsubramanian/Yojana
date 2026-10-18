@@ -81,33 +81,16 @@ public static class TermArithmetic
     /// unit takes the most specific refurbished row (its item before any item, an exact country before a region group),
     /// and never less than that row's statutory floor; with no row it takes the policy's duration.
     /// </summary>
-    public static EffectiveDuration ForCondition(PolicyTerms terms, Guid itemId, string? grade, string? channel, string? country)
+    public static EffectiveDuration ForCondition(PolicyTerms terms, Guid itemId, string? grade, string? channel,
+        IReadOnlySet<string>? applicableScopes, string? country = null)
     {
         if (grade is null or ConditionGrades.New) return new EffectiveDuration(terms.Duration, false, null);
         var row = terms.Refurbished
-            .Where(r => r.Grade == grade && r.Channel == channel && (r.ItemId is null || r.ItemId == itemId) && country is not null && Regions.Contains(r.Region, country))
+            .Where(r => r.Grade == grade && r.Channel == channel && (r.ItemId is null || r.ItemId == itemId)
+                && applicableScopes is not null && applicableScopes.Contains(r.Region))
             .OrderBy(r => r.ItemId is null ? 1 : 0).ThenBy(r => r.Region == country ? 0 : 1).FirstOrDefault();
         if (row is null) return new EffectiveDuration(terms.Duration, false, null);
         var months = Math.Max(row.DurationMonths, row.StatutoryFloorMonths ?? 0);
         return new EffectiveDuration(terms.Duration with { Value = months, Unit = DurationRule.Months }, months > row.DurationMonths, row);
     }
-}
-
-/// <summary>Region groups the policies use, as ISO 3166 alpha-2 members. "UK" is the policies' name for GB.</summary>
-public static class Regions
-{
-    private static readonly HashSet<string> Eu = ["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"];
-    private static readonly HashSet<string> Efta = ["IS", "LI", "NO", "CH"];
-
-    public static bool Contains(string region, string country) => region switch
-    {
-        "WORLD" => true,
-        "EU" => Eu.Contains(country),
-        "EEA" => Eu.Contains(country) || country is "IS" or "LI" or "NO",
-        "EFTA" => Efta.Contains(country),
-        "UK" => country == "GB",
-        _ => region == country,
-    };
-
-    public static bool InScope(IEnumerable<string> scope, string country) => scope.Any(r => Contains(r, country));
 }

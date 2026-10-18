@@ -33,6 +33,8 @@ public sealed class RefurbishmentService(
     IEnumerable<IReleaseGuard> releaseGuards,
     EntitlementLedger entitlementLedger,
     CorrectionLedger corrections,
+    IJurisdictionRuleResolver jurisdictionRules,
+    IJurisdictionRegionPort regions,
     DocumentNumbers numbers,
     ITenantContext tenant,
     IClock clock)
@@ -585,7 +587,7 @@ public sealed class RefurbishmentService(
             var transferId = DerivedGuid(command.CommandId, entitlement.EntitlementId.ToString("N"));
             await TransferEntitlementHandler.Handle(new TransferEntitlement(transferId, entitlement.EntitlementId,
                 unitId, null, DateOnly.FromDateTime(command.ReleasedAt), command.ReleasedAt, command.ActorRef,
-                workOrder.ReplacementPolicyCode), db, entitlementLedger, tenant, clock, corrections, cancellationToken);
+                workOrder.ReplacementPolicyCode), db, entitlementLedger, tenant, clock, corrections, jurisdictionRules, regions, cancellationToken);
         }
         return unitId;
     }

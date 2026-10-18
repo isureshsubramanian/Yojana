@@ -1,0 +1,79 @@
+{
+  "code": "eu-starter",
+  "name": "EU (starter — confirm with your legal adviser)",
+  "warning": "Starter data only. Confirm every rule with your legal adviser before relying on it.",
+  "entries": [
+    {
+      "type": "region_group",
+      "code": "EU",
+      "name": "European Union (starter — confirm with your legal adviser)",
+      "members": ["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"]
+    },
+    {
+      "type": "region_group",
+      "code": "EEA",
+      "name": "European Economic Area (starter — confirm with your legal adviser)",
+      "members": ["AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "ES", "FI", "FR", "GR", "HR", "HU", "IE", "IS", "IT", "LI", "LT", "LU", "LV", "MT", "NL", "NO", "PL", "PT", "RO", "SE", "SI", "SK"]
+    },
+    {
+      "type": "region_group",
+      "code": "EFTA",
+      "name": "European Free Trade Association (starter — confirm with your legal adviser)",
+      "members": ["CH", "IS", "LI", "NO"]
+    },
+    {
+      "type": "region_group",
+      "code": "UK",
+      "name": "United Kingdom (starter — confirm with your legal adviser)",
+      "members": ["GB"]
+    },
+    {
+      "type": "rule",
+      "kind": "used_goods_min_term",
+      "scope": "region_group",
+      "region_group_code": "EU",
+      "buyer_class": "consumer",
+      "date_tested": "contract",
+      "effective_from": "1900-01-01",
+      "value": { "months": 12, "requires_agreement": false },
+      "source_citation": "Tenant starter preserving the previously configured one-year second-hand floor.",
+      "source_note": "Confirm the applicable national implementation and whether agreement is required."
+    },
+    {
+      "type": "rule",
+      "kind": "repair_extension_months",
+      "scope": "region_group",
+      "region_group_code": "EU",
+      "buyer_class": "consumer",
+      "date_tested": "contract",
+      "effective_from": "2026-07-31",
+      "value": 12,
+      "source_citation": "Directive (EU) 2024/1799, Article 16 and Article 21.",
+      "source_note": "Confirm transposition and commencement in each sales country."
+    },
+    {
+      "type": "rule",
+      "kind": "repair_extension_count",
+      "scope": "region_group",
+      "region_group_code": "EU",
+      "buyer_class": "consumer",
+      "date_tested": "contract",
+      "effective_from": "2026-07-31",
+      "value": 1,
+      "source_citation": "Directive (EU) 2024/1799, Article 16 and Article 21.",
+      "source_note": "Confirm what extended once means under each national transposition."
+    },
+    {
+      "type": "rule",
+      "kind": "refurbished_replacement_requires_consent",
+      "scope": "region_group",
+      "region_group_code": "EU",
+      "buyer_class": "consumer",
+      "date_tested": "contract",
+      "effective_from": "2026-07-31",
+      "value": "explicit_consumer_request",
+      "source_citation": "Directive (EU) 2024/1799, Article 16 and Article 21.",
+      "source_note": "Confirm transposition and commencement in each sales country."
+    }
+  ]
+}

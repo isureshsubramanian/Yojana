@@ -2964,6 +2964,208 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.JurisdictionRule", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RuleId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("rule_id");
+
+                    b.Property<string>("ApprovedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("approved_by");
+
+                    b.Property<string>("BuyerClass")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("buyer_class");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("closed_at");
+
+                    b.Property<string>("ClosedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("closed_by");
+
+                    b.Property<Guid?>("ClosedCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("closed_command_id");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<bool>("ConfirmedByCounsel")
+                        .HasColumnType("bit")
+                        .HasColumnName("confirmed_by_counsel");
+
+                    b.Property<DateOnly?>("CounselConfirmedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("counsel_confirmed_on");
+
+                    b.Property<string>("CountryCode")
+                        .HasMaxLength(2)
+                        .IsUnicode(false)
+                        .HasColumnType("char(2)")
+                        .HasColumnName("country_code")
+                        .IsFixedLength();
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency")
+                        .IsFixedLength();
+
+                    b.Property<string>("DateTested")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("date_tested");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("effective_from");
+
+                    b.Property<DateOnly?>("EffectiveTo")
+                        .HasColumnType("date")
+                        .HasColumnName("effective_to");
+
+                    b.Property<string>("ItemClass")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_class");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(80)")
+                        .HasColumnName("kind");
+
+                    b.Property<decimal?>("PriceMax")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("price_max");
+
+                    b.Property<decimal?>("PriceMin")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("price_min");
+
+                    b.Property<Guid?>("RegionGroupId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("region_group_id");
+
+                    b.Property<Guid>("RootRuleId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("root_rule_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("scope");
+
+                    b.Property<string>("SourceCitation")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_citation");
+
+                    b.Property<string>("SourceNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("source_note");
+
+                    b.Property<string>("SubdivisionCode")
+                        .HasMaxLength(7)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(7)")
+                        .HasColumnName("subdivision_code");
+
+                    b.Property<Guid?>("SupersedesRuleId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("supersedes_rule_id");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("value");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int")
+                        .HasColumnName("version");
+
+                    b.HasKey("TenantId", "RuleId")
+                        .HasName("pk_jurisdiction_rule");
+
+                    b.HasIndex("TenantId", "ClosedCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_jurisdiction_rule_tenant_id_closed_command_id")
+                        .HasFilter("[closed_command_id] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_jurisdiction_rule_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "RegionGroupId")
+                        .HasDatabaseName("ix_jurisdiction_rule_tenant_id_region_group_id");
+
+                    b.HasIndex("TenantId", "RootRuleId", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("ux_jurisdiction_rule_tenant_id_root_rule_id_version");
+
+                    b.HasIndex("TenantId", "Kind", "Scope", "CountryCode", "SubdivisionCode", "RegionGroupId", "EffectiveFrom")
+                        .HasDatabaseName("ix_jurisdiction_rule_tenant_id_kind_scope_country_code_subdivision_code_region_group_id_effective_from");
+
+                    b.ToTable("jurisdiction_rule", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_jurisdiction_rule_buyer", "buyer_class IN ('any', 'consumer', 'business')");
+
+                            t.HasCheckConstraint("ck_jurisdiction_rule_currency", "(price_min IS NULL AND price_max IS NULL) OR currency IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_jurisdiction_rule_date_tested", "date_tested IN ('contract', 'purchase', 'delivery', 'first_sale')");
+
+                            t.HasCheckConstraint("ck_jurisdiction_rule_effective", "effective_to IS NULL OR effective_to > effective_from");
+
+                            t.HasCheckConstraint("ck_jurisdiction_rule_price", "price_min IS NULL OR price_max IS NULL OR price_max >= price_min");
+
+                            t.HasCheckConstraint("ck_jurisdiction_rule_scope", "scope IN ('any', 'country', 'subdivision', 'region_group')");
+
+                            t.HasCheckConstraint("ck_jurisdiction_rule_scope_fields", "(scope = 'any' AND country_code IS NULL AND subdivision_code IS NULL AND region_group_id IS NULL) OR (scope = 'country' AND country_code IS NOT NULL AND subdivision_code IS NULL AND region_group_id IS NULL) OR (scope = 'subdivision' AND country_code IS NULL AND subdivision_code IS NOT NULL AND region_group_id IS NULL) OR (scope = 'region_group' AND country_code IS NULL AND subdivision_code IS NULL AND region_group_id IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_jurisdiction_rule_value_json", "ISJSON(value, VALUE) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.LabelTemplate", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -4387,6 +4589,85 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RegionGroup", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RegionGroupId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("region_group_id");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("LastCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("last_command_id");
+
+                    b.Property<DateTime>("LastModifiedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_modified_at");
+
+                    b.Property<string>("LastModifiedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_modified_by");
+
+                    b.Property<string>("Members")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("members");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("name");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.HasKey("TenantId", "RegionGroupId")
+                        .HasName("pk_region_group");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("ux_region_group_tenant_id_code");
+
+                    b.HasIndex("TenantId", "LastCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_region_group_tenant_id_last_command_id");
+
+                    b.HasIndex("TenantId", "Name")
+                        .HasDatabaseName("ix_region_group_tenant_id_name");
+
+                    b.ToTable("region_group", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_region_group_members_json", "ISJSON(members) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReplacementLink", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -5270,6 +5551,103 @@ namespace Yojana.Serialisation.Data.Migrations
                             t.HasCheckConstraint("ck_rma_line_disposition", "disposition IS NULL OR disposition IN ('return_to_stock', 'refurbish', 'repair_and_return', 'scrap', 'return_to_vendor', 'credit', 'refund', 'replace', 'reject', 'restock_as_new')");
 
                             t.HasCheckConstraint("ck_rma_line_outcome", "receipt_outcome IS NULL OR receipt_outcome IN ('accepted', 'mismatch', 'unauthorised', 'counterfeit')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RulePack", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RulePackId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("rule_pack_id");
+
+                    b.Property<bool>("BuiltIn")
+                        .HasColumnType("bit")
+                        .HasColumnName("built_in");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(80)")
+                        .HasColumnName("code");
+
+                    b.Property<Guid?>("ImportCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("import_command_id");
+
+                    b.Property<DateTime?>("ImportedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("imported_at");
+
+                    b.Property<string>("ImportedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("imported_by");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Warning")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("warning");
+
+                    b.HasKey("TenantId", "RulePackId")
+                        .HasName("pk_rule_pack");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("ux_rule_pack_tenant_id_code");
+
+                    b.HasIndex("TenantId", "ImportCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_rule_pack_tenant_id_import_command_id")
+                        .HasFilter("[import_command_id] IS NOT NULL");
+
+                    b.ToTable("rule_pack", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RulePackRule", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RulePackRuleId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("rule_pack_rule_id");
+
+                    b.Property<Guid>("RulePackId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("rule_pack_id");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("int")
+                        .HasColumnName("sequence");
+
+                    b.Property<string>("Template")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("template");
+
+                    b.HasKey("TenantId", "RulePackRuleId")
+                        .HasName("pk_rule_pack_rule");
+
+                    b.HasIndex("TenantId", "RulePackId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_rule_pack_rule_tenant_id_rule_pack_id_sequence");
+
+                    b.ToTable("rule_pack_rule", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_rule_pack_rule_template_json", "ISJSON(template) = 1");
                         });
                 });
 
@@ -8031,6 +8409,15 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasConstraintName("fk_correction_record_unit_tenant_id_correction_id");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.JurisdictionRule", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.RegionGroup", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RegionGroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_jurisdiction_rule_tenant_id_region_group_id");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.LabelTemplateVersion", b =>
                 {
                     b.HasOne("Yojana.Serialisation.Data.Entities.LabelTemplate", null)
@@ -8157,6 +8544,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_rma_line_tenant_id_rma_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RulePackRule", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.RulePack", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RulePackId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_rule_pack_rule_tenant_id_rule_pack_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.WarrantyReplacementLine", b =>

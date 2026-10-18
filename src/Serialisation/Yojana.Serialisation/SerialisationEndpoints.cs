@@ -24,6 +24,7 @@ using Yojana.Serialisation.Condition;
 using Yojana.Serialisation.Refurbishments;
 using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Labels;
+using Yojana.Serialisation.Jurisdictions;
 
 namespace Yojana.Serialisation;
 
@@ -600,6 +601,44 @@ public static class SerialisationEndpoints
                     request.LegalEntityId, Actor(user)), ct)).RequireAuthorization(YojanaPolicy.LabelPrinter);
         // End P6 labels block.
 
+        // P6 jurisdiction catalogue block. Configuration is tenant data; application code consumes only the narrow
+        // resolver ports. Actors are stamped here and edits require the version observed by the administrator.
+        var jurisdictions = app.MapGroup("/api/settings/jurisdictions").RequireAuthorization(YojanaPolicy.TenantMember);
+        jurisdictions.MapGet("/", (string? country, string? kind, JurisdictionCatalogueService service, CancellationToken ct) =>
+            WorkbenchInvoke(() => service.CatalogueAsync(country, kind, ct)));
+        jurisdictions.MapGet("/packs/{rulePackId:guid}/preview", async (Guid rulePackId,
+            JurisdictionCatalogueService service, CancellationToken ct) =>
+            await service.PreviewPackAsync(rulePackId, ct) is { } preview ? Results.Ok(preview) : Results.NotFound());
+        jurisdictions.MapPost("/region-groups", (SaveRegionGroup command, ClaimsPrincipal user, IMessageBus bus,
+            ITenantContext tenant, CancellationToken ct) => command.RegionGroupId is null
+                ? Invoke<RegionGroupSaved>(bus, tenant, command with { ActorRef = Actor(user) }, ct)
+                : InvokeEdit<RegionGroupSaved>(bus, tenant, command with { ActorRef = Actor(user) }, ct))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        jurisdictions.MapPost("/rules", (SaveJurisdictionRule command, ClaimsPrincipal user, IMessageBus bus,
+            ITenantContext tenant, CancellationToken ct) => command.RuleId is null
+                ? Invoke<JurisdictionRuleSaved>(bus, tenant, command with { ActorRef = Actor(user) }, ct)
+                : InvokeEdit<JurisdictionRuleSaved>(bus, tenant, command with { ActorRef = Actor(user) }, ct))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        jurisdictions.MapPost("/rules/{ruleId:guid}/close", (Guid ruleId, CloseJurisdictionRule command,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            InvokeEdit<JurisdictionRuleClosed>(bus, tenant, command with { RuleId = ruleId, ActorRef = Actor(user) }, ct))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        jurisdictions.MapPost("/packs/{rulePackId:guid}/import", (Guid rulePackId, ImportRulePack command,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RulePackImported>(bus, tenant, command with { RulePackId = rulePackId, ActorRef = Actor(user) }, ct))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        jurisdictions.MapPost("/what-applies", (JurisdictionWhatAppliesRequest request,
+            JurisdictionCatalogueService service, CancellationToken ct) => WorkbenchInvoke(async () =>
+        {
+            var kinds = string.IsNullOrWhiteSpace(request.Kind)
+                ? (await service.CatalogueAsync(null, null, ct)).Kinds.Select(row => row.Kind)
+                : [request.Kind];
+            var rules = new List<JurisdictionRuleResolution>();
+            foreach (var kind in kinds) rules.AddRange(await service.ResolveAsync(kind, request.Context, ct));
+            return new JurisdictionWhatAppliesResult(rules);
+        }));
+        // End P6 jurisdiction catalogue block.
+
         var replacements = app.MapGroup("/api/warranty-replacements").RequireAuthorization(YojanaPolicy.TenantMember);
         replacements.MapGet("/", async (string? status, int? skip, int? take, Replacements.WarrantyReplacementQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.ListAsync(status, skip ?? 0, take ?? 50, ct)));
@@ -745,7 +784,8 @@ public static class SerialisationEndpoints
             }
             catch (CommandRefusedException ex)
             {
-                return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest, extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+                return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
             }
         }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         reference.MapGet("/refurbished-goods", async (RefurbishedGoodsSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
@@ -758,7 +798,8 @@ public static class SerialisationEndpoints
             }
             catch (CommandRefusedException ex)
             {
-                return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest, extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+                return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
             }
         }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         reference.MapGet("/service-contract-rules", async (WarrantyReferenceSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));

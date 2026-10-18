@@ -40,6 +40,9 @@ export const navigation: NavEntry[] = [
   { path: "/settings/recovery", label: "Supplier recovery", icon: "sliders", section: "Data", roles: ["tenant_administrator"] },
   { path: "/settings/refurbishment", label: "Refurbishment policy", icon: "cycle", section: "Data", roles: ["tenant_administrator"] },
   { path: "/settings/workbench-choices", label: "Workbench choices", icon: "list", section: "Data", roles: ["tenant_administrator"] },
+  // P6 jurisdiction rules navigation block.
+  { path: "/settings/jurisdictions", label: "Jurisdiction rules", icon: "globe", section: "Data", roles: ["tenant_administrator"] },
+  // End P6 jurisdiction rules navigation block.
 ];
 
 if (process.env.NODE_ENV !== "production") {

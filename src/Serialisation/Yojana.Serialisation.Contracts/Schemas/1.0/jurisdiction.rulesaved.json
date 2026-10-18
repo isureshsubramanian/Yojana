@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/jurisdiction.rulesaved.json",
+  "title": "Jurisdiction.RuleSaved",
+  "type": "object",
+  "required": ["header", "rule_id", "root_rule_id", "rule_version", "kind", "scope", "buyer_class", "date_tested", "effective_from"],
+  "properties": {
+    "header": { "type": "object", "required": ["schema", "version", "event_id", "event_time", "recorded_time", "legal_entity_id", "actor_ref"], "properties": { "schema": { "const": "Jurisdiction.RuleSaved" }, "version": { "const": "1.0" } } },
+    "rule_id": { "type": "string", "format": "uuid" }, "root_rule_id": { "type": "string", "format": "uuid" },
+    "rule_version": { "type": "integer", "minimum": 1 }, "kind": { "type": "string" }, "scope": { "type": "string" },
+    "buyer_class": { "type": "string" }, "date_tested": { "type": "string" }, "effective_from": { "type": "string", "format": "date" },
+    "effective_to": { "type": ["string", "null"], "format": "date" }
+  }
+}

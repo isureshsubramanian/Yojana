@@ -18,6 +18,7 @@ public static class ConvertLoanToReplacementHandler
     public static async Task<ConvertLoanToReplacementResult> Handle(ConvertLoanToReplacement command, SerialisationDbContext db,
         IServiceDocumentQueryPort serviceDocuments, UnitResolver units, IUnitConditionQueryPort conditions, EpisodeService episodes,
         EntitlementLedger entitlementLedger, CorrectionLedger corrections, DocumentNumbers numbers, IUnitEventWriter writer,
+        IJurisdictionRuleResolver jurisdictionRules, IJurisdictionRegionPort regions,
         ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -54,8 +55,11 @@ public static class ConvertLoanToReplacementHandler
         var original = current.SingleOrDefault(row => row.UnitId == command.OriginalUnitId) ?? throw new CommandRefusedException("original_unit_unknown", "The original unit does not exist.");
         var loaner = current.SingleOrDefault(row => row.UnitId == command.LoanerUnitId) ?? throw new CommandRefusedException("loaner_unit_unknown", "The loaner unit does not exist.");
         var grade = await conditions.LatestGradeAsync(command.LoanerUnitId, cancellationToken);
-        WarrantyReplacementRules.ValidateCondition(command.ReplacementReason, command.ReplacementConditionAllowed, grade,
-            command.ServiceCountry, command.ConsumerContract, command.ConsentRefurbished);
+        WarrantyReplacementRules.ValidateCondition(command.ReplacementReason, command.ReplacementConditionAllowed, grade);
+        if (command.ConsumerContract && ConditionGrades.IsRefurbished(grade) && !command.ConsentRefurbished
+            && await WarrantyReplacementRules.RequiresConsentAsync(jurisdictionRules, command.ServiceCountry,
+                source.StartDate ?? command.ReplacementDate, cancellationToken))
+            throw new CommandRefusedException("refurbished_consent_required", "The applicable jurisdiction rule requires recorded consent before refurbished stock can ship.");
         var createShape = new CreateWarrantyReplacement(command.CommandId, ReplacementSourceKind.Loan, command.LoanerIssue.Id,
             source.EntitlementId, command.LoanerUnitId, command.ReplacementReason, ReplacementPricePolicy.Zero, 0m, "XXX",
             command.ServiceCountry, command.ConsumerContract, command.ConsentRefurbished, command.EventTime, command.LegalEntityId,
@@ -93,7 +97,7 @@ public static class ConvertLoanToReplacementHandler
             command.LegalEntityId, docRef, new Dictionary<string, object?> { ["replacement_link_id"] = linkId }, null, true, cancellationToken);
         var transfer = await TransferEntitlementHandler.Handle(new TransferEntitlement(command.CommandId, source.EntitlementId,
             command.LoanerUnitId, linkId, command.ReplacementDate, command.EventTime, command.ActorRef, policy.Code,
-            Country: command.ServiceCountry, ConsumerContract: command.ConsumerContract), db, entitlementLedger, tenant, clock, corrections, cancellationToken);
+            Country: command.ServiceCountry, ConsumerContract: command.ConsumerContract), db, entitlementLedger, tenant, clock, corrections, jurisdictionRules, regions, cancellationToken);
 
         var eventId = TimeOrderedId.New(command.EventTime);
         var drafts = new List<UnitEventDraft>();
@@ -235,7 +239,8 @@ public static class ReceiveVendorReplacementHandler
 {
     public static async Task<ReceiveVendorReplacementResult> Handle(ReceiveVendorReplacement command, SerialisationDbContext db,
         IUnitConditionQueryPort conditions, EpisodeService episodes, EntitlementLedger entitlementLedger, CorrectionLedger corrections,
-        DocumentNumbers numbers, IUnitEventWriter writer, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        DocumentNumbers numbers, IUnitEventWriter writer, IJurisdictionRuleResolver jurisdictionRules,
+        IJurisdictionRegionPort regions, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         if (await db.WarrantyReplacements.AsNoTracking().SingleOrDefaultAsync(row => row.TenantId == tenantId && row.CommandId == command.CommandId, cancellationToken) is { } replay)
@@ -264,7 +269,7 @@ public static class ReceiveVendorReplacementHandler
         var replacement = current.SingleOrDefault(row => row.UnitId == command.ReplacementUnitId) ?? throw new CommandRefusedException("replacement_unit_unknown", "The vendor replacement unit does not exist.");
         if (originalUnitId == command.ReplacementUnitId) throw new CommandRefusedException("replacement_is_original", "A replacement must be a different unit.");
         var grade = await conditions.LatestGradeAsync(command.ReplacementUnitId, cancellationToken);
-        WarrantyReplacementRules.ValidateCondition(command.ReplacementReason, command.ReplacementConditionAllowed, grade, "XX", false, false);
+        WarrantyReplacementRules.ValidateCondition(command.ReplacementReason, command.ReplacementConditionAllowed, grade);
         var createShape = new CreateWarrantyReplacement(command.CommandId, ReplacementSourceKind.Rma, data.rma.RmaId, source.EntitlementId,
             command.ReplacementUnitId, command.ReplacementReason, ReplacementPricePolicy.Zero, 0m, data.rma.Currency, data.rma.ServiceCountry,
             false, false, command.ReceivedAt, command.LegalEntityId, command.ActorRef, command.ReplacementConditionAllowed, command.ReplacementPolicyCode);
@@ -293,7 +298,7 @@ public static class ReceiveVendorReplacementHandler
             command.ActorRef, command.LegalEntityId, docRef, EpisodeReason.Replacement, cancellationToken);
         var transfer = await TransferEntitlementHandler.HandleInboundAsync(new TransferEntitlement(command.CommandId, source.EntitlementId,
             command.ReplacementUnitId, linkId, command.ReplacementDate, command.ReceivedAt, command.ActorRef, policy.Code),
-            db, entitlementLedger, tenant, clock, corrections, cancellationToken);
+            db, entitlementLedger, tenant, clock, corrections, jurisdictionRules, regions, cancellationToken);
         var eventId = TimeOrderedId.New(command.ReceivedAt);
         var drafts = new List<UnitEventDraft> { custody.Draft };
         if (ownership.CloseDraft is not null) drafts.Add(ownership.CloseDraft);

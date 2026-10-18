@@ -3,7 +3,7 @@ export type IconName =
   | "units" | "ent" | "corr" | "claim" | "rma" | "cert" | "import" | "int" | "set" | "scan" | "chev" | "bell"
   | "home" | "plus" | "filter" | "print" | "x" | "down" | "search" | "range" | "tree" | "check" | "panel"
   | "campaign" | "recover" | "policy" | "layers" | "upload" | "coins" | "sliders" | "list" | "grid" | "returns"
-  | "swap" | "refurb" | "cycle" | "sun" | "moon";
+  | "swap" | "refurb" | "cycle" | "sun" | "moon" | "globe";
 
 export function IconSprite() {
   return (
@@ -20,6 +20,9 @@ export function IconSprite() {
       <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 7h13l-3-3" /><path d="M20 17H7l3 3" /><path d="M17 4l3 3-3 3M7 14l-3 3 3 3" /></symbol>
       <symbol id="i-refurb" viewBox="0 0 24 24"><path d="M14.5 5.5a4 4 0 0 0-5 5L4 16l4 4 5.5-5.5a4 4 0 0 0 5-5L16 12l-3.5-.5L12 8z" /><path d="M5.5 17.5l1 1" /></symbol>
       <symbol id="i-cycle" viewBox="0 0 24 24"><path d="M5 8a8 8 0 0 1 13-2l2 2" /><path d="M20 3v5h-5" /><path d="M19 16a8 8 0 0 1-13 2l-2-2" /><path d="M4 21v-5h5" /><circle cx="12" cy="12" r="2" /></symbol>
+      {/* P6 jurisdiction rules icon block. */}
+      <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" /></symbol>
+      {/* End P6 jurisdiction rules icon block. */}
       <symbol id="i-policy" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2z" /><path d="M5 20a2 2 0 0 0 2 1h12v-3" /><path d="M9 8h6M9 11h4" /></symbol>
       <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 4.5-9 4.5-9-4.5z" /><path d="M3 12l9 4.5 9-4.5" /><path d="M3 16.5l9 4.5 9-4.5" /></symbol>
       <symbol id="i-upload" viewBox="0 0 24 24"><path d="M6 3h9l5 5v13H6z" /><path d="M15 3v5h5" /><path d="M12 18v-7" /><path d="M9 14l3-3 3 3" /></symbol>

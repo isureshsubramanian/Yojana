@@ -24,8 +24,6 @@ public static partial class PolicyValidator
     // Triggers whose evidence can arrive long after the sale: a start from them needs a cap (ADR-0001 Terms, start_cap).
     private static readonly string[] LateTriggers = [StartTrigger.Install, StartTrigger.Register, StartTrigger.Deliver, StartTrigger.FirstExternalSale, StartTrigger.ConsumptionFromConsignment];
 
-    private static readonly string[] RegionGroups = ["EU", "EEA", "EFTA", "UK", "WORLD"];
-
     public static PolicyValidation Validate(PolicyTerms terms, PolicyValidationContext context)
     {
         var issues = new List<PolicyIssue>();
@@ -94,7 +92,7 @@ public static partial class PolicyValidator
         if (c.ResponseHours is <= 0) Error("response_hours_not_positive", "coverage.response_hours", "A response time must be at least one hour.");
 
         if (terms.RegionScope.Count == 0) Error("region_scope_empty", "region_scope", "Name at least one country or region group.");
-        foreach (var region in terms.RegionScope.Where(r => !IsRegion(r))) Error("region_unknown", "region_scope", $"'{region}' is neither an ISO 3166 alpha-2 code nor one of {string.Join(", ", RegionGroups)}.");
+        foreach (var region in terms.RegionScope.Where(r => !IsRegion(r))) Error("region_unknown", "region_scope", $"'{region}' is neither an ISO 3166 alpha-2 code nor a valid tenant region-group code.");
 
         if (terms.Transferable is not (Transferability.Yes or Transferability.No or Transferability.Fee or Transferability.RegistrationRequired)) Error("transferable_unknown", "transferable", $"'{terms.Transferable}' is not a transferability value.");
         if (!SettlementFormula().IsMatch(terms.SettlementFormula)) Error("settlement_formula_unknown", "settlement_formula", $"'{terms.SettlementFormula}' is not full or pro_rata(measure).");
@@ -134,7 +132,8 @@ public static partial class PolicyValidator
         return new PolicyValidation(issues);
     }
 
-    private static bool IsRegion(string value) => RegionGroups.Contains(value) || (value.Length == 2 && value.All(char.IsAsciiLetterUpper));
+    private static bool IsRegion(string value) => value is "WORLD" || value.Length == 2 && value.All(char.IsAsciiLetterUpper)
+        || value.Length is >= 1 and <= 40 && value.All(character => char.IsAsciiLetterUpper(character) || char.IsAsciiDigit(character) || character is '-' or '_');
 
     private static string Day(DateOnly d) => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
