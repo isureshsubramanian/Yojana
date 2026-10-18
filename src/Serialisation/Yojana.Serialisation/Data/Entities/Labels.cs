@@ -64,9 +64,12 @@ public sealed class PrintJob : ITenantScoped
     public TenantId TenantId { get; set; }
     public Guid JobId { get; set; }
     public Guid CommandId { get; set; }
+    public Guid? BatchCommandId { get; set; }
+    public int? BatchSequence { get; set; }
+    public string? RequestedSerial { get; set; }
     public Guid? SourceEventId { get; set; }
     public Guid? TemplateVersionId { get; set; }
-    public Guid UnitId { get; set; }
+    public Guid? UnitId { get; set; }
     public Guid? IdentifierId { get; set; }
     public Guid? OriginalJobId { get; set; }
     public string? RenderedPayload { get; set; }
@@ -75,7 +78,9 @@ public sealed class PrintJob : ITenantScoped
     public required string RequestedBy { get; set; }
     public DateTime RequestedAt { get; set; }
     public required string Status { get; set; }
+    public string? RejectionRule { get; set; }
     public string? RejectionReason { get; set; }
+    public string? EmptyRequiredField { get; set; }
     public DateTime? RenderedAt { get; set; }
     public DateTime? SentAt { get; set; }
     public DateTime? ConfirmedAt { get; set; }

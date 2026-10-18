@@ -3566,6 +3566,14 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("job_id");
 
+                    b.Property<Guid?>("BatchCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_command_id");
+
+                    b.Property<int?>("BatchSequence")
+                        .HasColumnType("int")
+                        .HasColumnName("batch_sequence");
+
                     b.Property<Guid>("CommandId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("command_id");
@@ -3573,6 +3581,12 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<DateTime?>("ConfirmedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("confirmed_at");
+
+                    b.Property<string>("EmptyRequiredField")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("empty_required_field");
 
                     b.Property<Guid?>("IdentifierId")
                         .HasColumnType("uniqueidentifier")
@@ -3603,6 +3617,12 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("rejection_reason");
 
+                    b.Property<string>("RejectionRule")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("rejection_rule");
+
                     b.Property<DateTime?>("RenderedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("rendered_at");
@@ -3620,6 +3640,11 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("requested_by");
+
+                    b.Property<string>("RequestedSerial")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("requested_serial");
 
                     b.Property<DateTime?>("SentAt")
                         .HasColumnType("datetime2(3)")
@@ -3640,7 +3665,7 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("template_version_id");
 
-                    b.Property<Guid>("UnitId")
+                    b.Property<Guid?>("UnitId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("unit_id");
 
@@ -3661,6 +3686,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_print_job_tenant_id_source_event_id")
                         .HasFilter("[source_event_id] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "BatchCommandId", "BatchSequence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_print_job_tenant_id_batch_command_id_batch_sequence")
+                        .HasFilter("[batch_command_id] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "RequestedAt")
+                        .HasDatabaseName("ix_print_job_tenant_id_requested_at");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "RequestedAt"), new[] { "Status", "PrinterRef", "OriginalJobId", "SourceEventId" });
 
                     b.HasIndex("TenantId", "Status", "RequestedAt")
                         .HasDatabaseName("ix_print_job_tenant_id_status_requested_at");
