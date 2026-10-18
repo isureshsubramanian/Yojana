@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { Health, Session } from "../api/types";
 import { ROOT_ROUTE_ID, initials, roleLabel } from "../session/session";
 import { ModeMenuItems } from "../theme/ModeMenuItems";
+import { setMode, useEffectiveMode } from "../theme/mode";
 import { openSearch } from "../components/search/searchStore";
 import { Icon } from "./Icons";
 import { toggleDrawer, useDrawer } from "./drawerStore";
@@ -28,11 +29,24 @@ export function TopBar({ bare = false }: { bare?: boolean }) {
         <>
           <button type="button" className="pill quiet" onClick={() => openSearch()} aria-label="Search everything" aria-haspopup="dialog"><Icon name="search" />Search<kbd className="key">⌘K</kbd></button>
           <Link className="icon-btn" to="/corrections" aria-label="Approvals"><Icon name="bell" /></Link>
+          <ModeToggle />
           <button type="button" className="icon-btn" onClick={toggleDrawer} aria-label="Details panel" aria-pressed={drawer.open} title="Details panel"><Icon name="panel" /></button>
         </>
       )}
       {session && <UserMenu session={session} />}
     </header>
+  );
+}
+
+/** One-click light/dark flip from what is on screen now; "Match system" stays in the user menu. */
+function ModeToggle() {
+  const effective = useEffectiveMode();
+  const next = effective === "dark" ? "light" : "dark";
+  const label = next === "dark" ? "Switch to dark mode" : "Switch to light mode";
+  return (
+    <button type="button" className="icon-btn" onClick={() => setMode(next)} aria-label={label} title={label}>
+      <Icon name={next === "dark" ? "moon" : "sun"} />
+    </button>
   );
 }
 

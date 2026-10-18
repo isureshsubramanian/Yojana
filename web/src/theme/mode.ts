@@ -39,3 +39,20 @@ export function useMode(): Mode {
     () => "system",
   );
 }
+
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+
+/** The mode actually on screen: the explicit choice, or the OS preference when the choice is "system". */
+export function useEffectiveMode(): "light" | "dark" {
+  const mode = useMode();
+  const systemDark = useSyncExternalStore(
+    (listener) => {
+      const query = window.matchMedia(DARK_QUERY);
+      query.addEventListener("change", listener);
+      return () => query.removeEventListener("change", listener);
+    },
+    () => window.matchMedia(DARK_QUERY).matches,
+    () => false,
+  );
+  return mode === "system" ? (systemDark ? "dark" : "light") : mode;
+}
