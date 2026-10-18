@@ -31,11 +31,30 @@ public sealed class LicencePolicy
     [JsonPropertyName("knownLicenceFiles")]
     public Dictionary<string, KnownLicenceFile> KnownLicenceFiles { get; set; } = [];
 
+    /// <summary>Exact add-time readings for dependency graphs whose package and transitive versions are intentionally pinned.</summary>
+    [JsonPropertyName("reviewedPackages")]
+    public Dictionary<string, ReviewedPackageLicence> ReviewedPackages { get; set; } = [];
+
     public static LicencePolicy Load(string root)
     {
         var path = Path.Combine(root, "tools", "gates", "licence-policy.json");
         return JsonSerializer.Deserialize<LicencePolicy>(File.ReadAllText(path)) ?? throw new GateException("Cannot read " + path);
     }
+}
+
+public sealed class ReviewedPackageLicence
+{
+    [JsonPropertyName("spdx")]
+    public string Spdx { get; set; } = "";
+
+    [JsonPropertyName("readOn")]
+    public string ReadOn { get; set; } = "";
+
+    [JsonPropertyName("bundledLicenceFiles")]
+    public List<string> BundledLicenceFiles { get; set; } = [];
+
+    [JsonPropertyName("bundledNoticeFiles")]
+    public List<string> BundledNoticeFiles { get; set; } = [];
 }
 
 public sealed class KnownLicenceUrl
@@ -188,6 +207,33 @@ public static class LicenceGate
             {
                 failures++;
                 details.Add($"FAIL     {package.Key}: {expression} (not allowed: {string.Join(", ", disallowed)})");
+            }
+        }
+
+        foreach (var (key, review) in policy.ReviewedPackages)
+        {
+            if (!packages.TryGetValue(key, out var package))
+            {
+                failures++;
+                details.Add($"FAIL     {key}: add-time licence review is pinned but that exact package is no longer restored; review and update the dependency graph");
+                continue;
+            }
+            if (!string.Equals(package.LicenseExpression, review.Spdx, StringComparison.OrdinalIgnoreCase))
+            {
+                failures++;
+                details.Add($"FAIL     {key}: manifest licence '{package.LicenseExpression ?? "(none)"}' differs from add-time review '{review.Spdx}' read on {review.ReadOn}");
+            }
+            if (!package.BundledLicenceFiles.Order(StringComparer.OrdinalIgnoreCase)
+                    .SequenceEqual(review.BundledLicenceFiles.Order(StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase))
+            {
+                failures++;
+                details.Add($"FAIL     {key}: bundled licence files changed since the add-time review on {review.ReadOn}");
+            }
+            if (!package.BundledNoticeFiles.Order(StringComparer.OrdinalIgnoreCase)
+                    .SequenceEqual(review.BundledNoticeFiles.Order(StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase))
+            {
+                failures++;
+                details.Add($"FAIL     {key}: bundled NOTICE files changed since the add-time review on {review.ReadOn}");
             }
         }
 

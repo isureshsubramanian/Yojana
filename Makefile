@@ -8,8 +8,10 @@ WEB := src/Web/Yojana.Web
 CLIENT := web
 GATES := dotnet run --project tools/Yojana.Gates --
 CONFIG ?= Debug
+DOTNET_BUILD_FLAGS := -nodeReuse:false -p:UseSharedCompilation=false -p:NuGetAudit=false
+RENDER_WORKER := src/Workers/Yojana.RenderWorker
 
-.PHONY: help env hooks build test test-db gate bench licences notices names budget self-test db-up db-down db-wait migrate seed demo run restore clean db-reset web-install web-check web-test web web-dev web-lcp
+.PHONY: help env hooks build test test-db gate bench licences notices names budget self-test db-up db-down db-wait migrate seed demo run restore clean db-reset web-install web-check web-test web web-dev web-lcp render-worker browser
 
 help:
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -23,7 +25,7 @@ restore: ## Restore packages and local tools
 	dotnet restore $(SLN) && dotnet tool restore
 
 build: ## Build the solution with warnings as errors (copies web/dist into the host's wwwroot when present)
-	dotnet build $(SLN) -c $(CONFIG) --no-restore
+	MSBUILDDISABLENODEREUSE=1 dotnet build $(SLN) -c $(CONFIG) --no-restore $(DOTNET_BUILD_FLAGS)
 
 web-install: ## Install the web client's packages exactly as locked (web/package-lock.json)
 	cd $(CLIENT) && npm ci --no-fund --no-audit
@@ -44,14 +46,15 @@ web-lcp: ## Measure largest contentful paint of the shell against a running host
 	node tools/web-perf/lcp.mjs --base "$${YOJANA_LCP_BASE:-http://localhost:5080}" --budget-ms 2000 $(LCP_ARGS)
 
 test: build ## Unit and architecture tests (no database)
-	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Demo.Tests -c $(CONFIG) --no-build -nodeReuse:false -p:UseSharedCompilation=false -p:NuGetAudit=false
-	dotnet test tests/Yojana.Architecture.Tests -c $(CONFIG) --no-build
-	dotnet test tests/Yojana.Platform.Tests -c $(CONFIG) --no-build
-	dotnet test tests/Yojana.Serialisation.Tests -c $(CONFIG) --no-build
+	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Demo.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
+	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Architecture.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
+	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Platform.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
+	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Serialisation.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
+	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.RenderWorker.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 
 test-db: build ## Database tests; need YOJANA_TEST_SQL (a SQL Server connection string to a disposable database)
-	dotnet test tests/Yojana.Platform.DatabaseTests -c $(CONFIG) --no-build
-	dotnet test tests/Yojana.Serialisation.DatabaseTests -c $(CONFIG) --no-build
+	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Platform.DatabaseTests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
+	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Serialisation.DatabaseTests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 
 licences: ## Gate 1: every package carries an allow-listed licence or an approved exception
 	$(GATES) licences
@@ -100,6 +103,14 @@ bench: build ## P1-T21 storage benchmark against YOJANA_BENCH_SQL_HOST / YOJANA_
 
 run: build ## Run the web host on http://localhost:5080
 	ASPNETCORE_ENVIRONMENT=Development dotnet run --project $(WEB) -c $(CONFIG) --no-build
+
+render-worker: ## Run the loopback PDF render worker (install the pinned browser first)
+	MSBUILDDISABLENODEREUSE=1 dotnet build $(RENDER_WORKER) -c $(CONFIG) $(DOTNET_BUILD_FLAGS)
+	cd $(RENDER_WORKER) && dotnet run -c $(CONFIG) --no-build
+
+browser: ## Download, verify and install the pinned headless-shell build for this host
+	MSBUILDDISABLENODEREUSE=1 dotnet build $(RENDER_WORKER) -c $(CONFIG) $(DOTNET_BUILD_FLAGS)
+	cd $(RENDER_WORKER) && dotnet run -c $(CONFIG) --no-build -- --install-browser
 
 clean:
 	dotnet clean $(SLN) >/dev/null; find . -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} +

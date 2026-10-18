@@ -72,6 +72,33 @@ public sealed class ComponentInput
 
     [JsonPropertyName("why")]
     public string? Why { get; set; }
+
+    [JsonPropertyName("version")]
+    public string? Version { get; set; }
+
+    [JsonPropertyName("sha256")]
+    public string? Sha256 { get; set; }
+
+    [JsonPropertyName("configFile")]
+    public string? ConfigFile { get; set; }
+
+    [JsonPropertyName("archives")]
+    public Dictionary<string, ComponentArchiveInput> Archives { get; set; } = [];
+}
+
+public sealed class ComponentArchiveInput
+{
+    [JsonPropertyName("archiveUrl")]
+    public string ArchiveUrl { get; set; } = "";
+
+    [JsonPropertyName("sha256")]
+    public string Sha256 { get; set; } = "";
+
+    [JsonPropertyName("licenceFile")]
+    public string LicenceFile { get; set; } = "";
+
+    [JsonPropertyName("licenceSha256")]
+    public string LicenceSha256 { get; set; } = "";
 }
 
 /// <summary>
@@ -86,9 +113,11 @@ public static class NoticesGate
 
     public static GateResult Run(string root, string? depsPath, bool check)
     {
-        depsPath ??= FindDeps(root);
+        var depsPaths = depsPath is null ? FindDeps(root) : [Path.GetFullPath(depsPath)];
         var inputs = Path.Combine(root, InputRelativePath);
-        var packages = Packages.FromDepsFile(depsPath);
+        var packages = new SortedDictionary<string, PackageInfo>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in depsPaths)
+            foreach (var (key, package) in Packages.FromDepsFile(path)) packages[key] = package;
         var policy = LicencePolicy.Load(root);
         foreach (var lockFile in policy.NpmLockFiles)
         {
@@ -99,7 +128,10 @@ public static class NoticesGate
             }
         }
 
-        var (text, problems) = Generate(packages, inputs, Repo.Relative(root, depsPath) + (policy.NpmLockFiles.Count > 0 ? " and " + string.Join(", ", policy.NpmLockFiles) : ""));
+        var depsLabel = string.Join(", ", depsPaths.Select(path => Repo.Relative(root, path)));
+        if (policy.NpmLockFiles.Count > 0) depsLabel += " and " + string.Join(", ", policy.NpmLockFiles);
+        var (text, problems) = Generate(packages, inputs, depsLabel);
+        problems.AddRange(ValidatePinnedComponents(root, inputs));
         if (problems.Count > 0)
         {
             return new GateResult("notices", false, $"{problems.Count} component(s) without a usable notice source", problems);
@@ -112,7 +144,7 @@ public static class NoticesGate
             if (current != text)
             {
                 return new GateResult("notices", false, "committed notices file differs from the generated one; run `make notices` and commit the result",
-                    [Repo.Relative(root, output), $"{packages.Count} packages in {Repo.Relative(root, depsPath)}"]);
+                    [Repo.Relative(root, output), $"{packages.Count} packages in {depsLabel}"]);
             }
 
             return new GateResult("notices", true, $"{packages.Count} packages, notices file up to date", []);
@@ -123,13 +155,24 @@ public static class NoticesGate
         return new GateResult("notices", true, $"wrote {Repo.Relative(root, output)} for {packages.Count} packages", []);
     }
 
-    public static string FindDeps(string root)
+    public static IReadOnlyList<string> FindDeps(string root)
     {
-        var candidates = Directory.Exists(Path.Combine(root, "src", "Web", "Yojana.Web", "bin"))
-            ? Directory.EnumerateFiles(Path.Combine(root, "src", "Web", "Yojana.Web", "bin"), "Yojana.Web.deps.json", SearchOption.AllDirectories)
-                .OrderByDescending(File.GetLastWriteTimeUtc).ToList()
-            : [];
-        return candidates.FirstOrDefault() ?? throw new GateException("No Yojana.Web.deps.json under src/Web/Yojana.Web/bin; build the host first or pass --deps.");
+        var artefacts = new[]
+        {
+            (Folder: Path.Combine(root, "src", "Web", "Yojana.Web", "bin"), File: "Yojana.Web.deps.json"),
+            (Folder: Path.Combine(root, "src", "Workers", "Yojana.RenderWorker", "bin"), File: "Yojana.RenderWorker.deps.json"),
+        };
+        var result = new List<string>();
+        foreach (var artefact in artefacts)
+        {
+            var candidate = Directory.Exists(artefact.Folder)
+                ? Directory.EnumerateFiles(artefact.Folder, artefact.File, SearchOption.AllDirectories)
+                    .OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault()
+                : null;
+            if (candidate is null) throw new GateException($"No {artefact.File} under {Repo.Relative(root, artefact.Folder)}; build the solution first or pass --deps.");
+            result.Add(candidate);
+        }
+        return result;
     }
 
     public static (string Text, List<string> Problems) Generate(IReadOnlyDictionary<string, PackageInfo> packages, string inputsFolder, string depsLabel)
@@ -158,9 +201,22 @@ public static class NoticesGate
                 body.AppendLine("Included because: " + component.Why);
             }
 
+            if (component.Version is not null) body.AppendLine("Pinned version: " + component.Version);
+            if (component.Sha256 is not null) body.AppendLine("Pinned archive SHA-256: " + component.Sha256);
+            foreach (var (platform, archive) in component.Archives.OrderBy(item => item.Key, StringComparer.Ordinal))
+                body.AppendLine($"Pinned archive ({platform}): {archive.ArchiveUrl} (SHA-256 {archive.Sha256})");
+
             body.AppendLine($"Licence text taken from {component.SourceUrl} on {component.TakenOn}.");
             body.AppendLine();
             body.Append(ReadInput(inputsFolder, component.LicenceFile, problems, component.Name));
+            foreach (var archive in component.Archives.OrderBy(item => item.Key, StringComparer.Ordinal)
+                         .Where(item => !string.Equals(item.Value.LicenceFile, component.LicenceFile, StringComparison.Ordinal)))
+            {
+                body.AppendLine();
+                body.AppendLine($"LICENSE.headless_shell as shipped in the pinned {archive.Key} archive:");
+                body.AppendLine();
+                body.Append(ReadInput(inputsFolder, archive.Value.LicenceFile, problems, component.Name + " " + archive.Key));
+            }
             if (component.NoticeFile is not null)
             {
                 body.AppendLine();
@@ -258,7 +314,7 @@ public static class NoticesGate
         text.AppendLine();
         text.AppendLine("This file is generated by tools/Yojana.Gates (`make notices`). Do not edit it by hand: anything that");
         text.AppendLine("cannot come from a package is a generator input under tools/notices-input with its source and date.");
-        text.AppendLine("It lists every third-party component shipped with the Yojana web host and its browser client (from");
+        text.AppendLine("It lists every third-party component shipped with the Yojana web host, render worker and browser client (from");
         text.AppendLine(depsLabel + ")");
         text.AppendLine("plus the shared frameworks and vendored files it runs on, with each component's licence, the");
         text.AppendLine("copyright line its authors declared, and any NOTICE file its authors ship (Apache-2.0 section 4(d)).");
@@ -324,4 +380,51 @@ public static class NoticesGate
             ? Directory.EnumerateFiles(folder, "*.json").OrderBy(f => f, StringComparer.Ordinal)
                 .Select(f => JsonSerializer.Deserialize<T>(File.ReadAllText(f)) ?? throw new GateException("Cannot read " + f)).ToList()
             : [];
+
+    private static List<string> ValidatePinnedComponents(string root, string inputsFolder)
+    {
+        var problems = new List<string>();
+        foreach (var component in LoadAll<ComponentInput>(Path.Combine(inputsFolder, "components"))
+                     .Where(item => item.ConfigFile is not null))
+        {
+            var configPath = Path.Combine(root, component.ConfigFile!);
+            if (!File.Exists(configPath))
+            {
+                problems.Add($"{component.Name}: pinned-component configuration is missing: {component.ConfigFile}");
+                continue;
+            }
+            using var config = JsonDocument.Parse(File.ReadAllText(configPath));
+            var browser = config.RootElement.GetProperty("RenderWorker").GetProperty("Browser");
+            var version = browser.GetProperty("Version").GetString();
+            if (!string.Equals(version, component.Version, StringComparison.Ordinal))
+                problems.Add($"{component.Name}: configured version {version} differs from notices input {component.Version}");
+            var platforms = browser.GetProperty("Platforms");
+            foreach (var platform in platforms.EnumerateObject())
+            {
+                if (!component.Archives.TryGetValue(platform.Name, out var notice))
+                {
+                    problems.Add($"{component.Name}: configured platform {platform.Name} is absent from notices input");
+                    continue;
+                }
+                var url = platform.Value.GetProperty("ArchiveUrl").GetString();
+                var hash = platform.Value.GetProperty("Sha256").GetString();
+                if (!string.Equals(url, notice.ArchiveUrl, StringComparison.Ordinal)
+                    || !string.Equals(hash, notice.Sha256, StringComparison.OrdinalIgnoreCase))
+                    problems.Add($"{component.Name}: configured URL/hash for {platform.Name} differs from notices input");
+                var licencePath = Path.Combine(inputsFolder, notice.LicenceFile);
+                if (!File.Exists(licencePath))
+                {
+                    problems.Add($"{component.Name}: {platform.Name} licence input is missing: {notice.LicenceFile}");
+                    continue;
+                }
+                var licenceHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(licencePath)));
+                if (!licenceHash.Equals(notice.LicenceSha256, StringComparison.OrdinalIgnoreCase))
+                    problems.Add($"{component.Name}: {platform.Name} licence input hash differs from the recorded archive text");
+            }
+            foreach (var noticePlatform in component.Archives.Keys)
+                if (!platforms.TryGetProperty(noticePlatform, out _))
+                    problems.Add($"{component.Name}: notices platform {noticePlatform} is absent from configuration");
+        }
+        return problems;
+    }
 }

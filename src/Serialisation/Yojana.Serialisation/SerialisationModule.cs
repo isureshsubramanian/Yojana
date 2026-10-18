@@ -271,11 +271,38 @@ public static class SerialisationModule
         builder.Services.TryAddScoped<ICertificateReplacementReadPort, Replacements.CertificateReplacementReadPort>();
         builder.Services.TryAddScoped<ICertificateEntitlementReadPort, Entitlements.CertificateEntitlementReadPort>();
         builder.Services.TryAddScoped<ICertificatePresentationPort, TenantAssetCertificatePresentationPort>();
-        builder.Services.TryAddScoped<ICertificateRenderer, PlainHtmlCertificateRenderer>();
         var certificateRuns = builder.Configuration.GetSection(CertificateRunOptions.SectionName).Get<CertificateRunOptions>()
             ?? new CertificateRunOptions();
         if (certificateRuns.MaximumSynchronousUnits < 1)
             throw new InvalidOperationException($"{CertificateRunOptions.SectionName}:MaximumSynchronousUnits must be at least 1.");
+        if (certificateRuns.PdfRequestTimeoutSeconds < 1)
+            throw new InvalidOperationException($"{CertificateRunOptions.SectionName}:PdfRequestTimeoutSeconds must be at least 1.");
+        builder.Services.AddScoped<CertificateHtmlComposer>();
+        builder.Services.AddScoped<PlainHtmlCertificateRenderer>();
+        if (certificateRuns.Renderer.Equals("pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!Uri.TryCreate(certificateRuns.PdfWorkerBaseUrl, UriKind.Absolute, out var workerUri)
+                || !workerUri.IsLoopback || workerUri.Scheme != Uri.UriSchemeHttp)
+                throw new InvalidOperationException($"{CertificateRunOptions.SectionName}:PdfWorkerBaseUrl must be an absolute loopback HTTP URL when Renderer is pdf.");
+            builder.Services.AddHttpClient<HttpPdfRenderer>(client =>
+            {
+                client.BaseAddress = workerUri;
+                client.Timeout = TimeSpan.FromSeconds(certificateRuns.PdfRequestTimeoutSeconds);
+            });
+            builder.Services.TryAddScoped<IPdfRenderer>(services => services.GetRequiredService<HttpPdfRenderer>());
+            builder.Services.AddScoped<PdfCertificateRenderer>();
+            builder.Services.TryAddScoped<ICertificateRenderer>(services => services.GetRequiredService<PdfCertificateRenderer>());
+            builder.Services.TryAddScoped<ICertificateBundleRenderer>(services => services.GetRequiredService<PdfCertificateRenderer>());
+        }
+        else if (certificateRuns.Renderer.Equals("html", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.Services.TryAddScoped<ICertificateRenderer>(services => services.GetRequiredService<PlainHtmlCertificateRenderer>());
+            builder.Services.TryAddScoped<ICertificateBundleRenderer>(services => services.GetRequiredService<PlainHtmlCertificateRenderer>());
+        }
+        else
+        {
+            throw new InvalidOperationException($"{CertificateRunOptions.SectionName}:Renderer must be html or pdf.");
+        }
         builder.Services.AddSingleton(certificateRuns);
         builder.Services.TryAddSingleton<ICertificateRunChunkObserver, NullCertificateRunChunkObserver>();
         builder.Services.AddScoped<CertificateSelectionService>();
