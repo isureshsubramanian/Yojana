@@ -61,6 +61,7 @@ public sealed class CorrectDocumentSerialsTests(SerialisationHostFixture fixture
         await InvokeAsync<ConsumedEventResult>(tenant, new SalesShipmentPosted(Envelope(ShippedAt), shipment.Document));
 
         var units = await UnitIdsAsync(tenant, serials);
+        var identifierIds = await IdentifierIdsAsync(tenant, units);
         foreach (var unit in units.Take(2))
         {
             await InvokeAsync<CreateEntitlementResult>(tenant, new CreateEntitlement(Guid.NewGuid(), unit, CoverageFamilyCode.Base,
@@ -92,8 +93,28 @@ public sealed class CorrectDocumentSerialsTests(SerialisationHostFixture fixture
         {
             var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
             var state = await db.Current.Where(c => units.Contains(c.UnitId)).ToDictionaryAsync(c => c.UnitId);
+            Assert.All(units.Take(2), id => Assert.Null(state[id].OwnerPartyRef));
+            Assert.All(units.Skip(2), id => Assert.Equal(customer, state[id].OwnerPartyRef));
             Assert.All(units.Take(2), id => Assert.Equal(warehouse, state[id].LocationId));
             Assert.All(units.Skip(2), id => Assert.Equal(site, state[id].LocationId));
+            Assert.All(units.Take(2), id => Assert.Equal(LocationKind.Warehouse, state[id].LocationKind));
+            Assert.All(units.Skip(2), id => Assert.Equal(LocationKind.CustomerSite, state[id].LocationKind));
+            Assert.All(units.Take(2), id => Assert.Equal("[]", state[id].LiveEntitlementIds));
+            Assert.All(units.Skip(2), id => Assert.NotEqual("[]", state[id].LiveEntitlementIds));
+            var openEpisodes = await db.Episodes.Where(row => units.Contains(row.UnitId) && row.ValidTo == null).ToListAsync();
+            Assert.All(units.Take(2), id =>
+            {
+                Assert.DoesNotContain(openEpisodes, row => row.UnitId == id && row.Kind == EpisodeKind.Ownership);
+                var custody = Assert.Single(openEpisodes, row => row.UnitId == id && row.Kind == EpisodeKind.Custody);
+                Assert.Equal((warehouse, LocationKind.Warehouse), (custody.LocationId, custody.LocationKind));
+            });
+            Assert.All(units.Skip(2), id =>
+            {
+                var ownership = Assert.Single(openEpisodes, row => row.UnitId == id && row.Kind == EpisodeKind.Ownership);
+                Assert.Equal((customer, PartyType.Customer), (ownership.PartyRef, ownership.PartyType));
+                var custody = Assert.Single(openEpisodes, row => row.UnitId == id && row.Kind == EpisodeKind.Custody);
+                Assert.Equal((site, LocationKind.CustomerSite), (custody.LocationId, custody.LocationKind));
+            });
             var correctionFacts = await db.Events.Where(e => units.Contains(e.UnitId)
                 && (e.EventType == UnitEventType.ShipmentReversed || e.EventType == UnitEventType.Shipped)
                 && e.DocumentId == shipment.Document.Id).OrderBy(e => e.Seq).ToListAsync();
@@ -105,6 +126,8 @@ public sealed class CorrectDocumentSerialsTests(SerialisationHostFixture fixture
             var cover = await db.Entitlements.Where(e => units.Contains(e.UnitId)).ToListAsync();
             Assert.All(cover.Where(e => units.Take(2).Contains(e.UnitId)), e => Assert.Equal(EntitlementClosedReason.VoidedDocumentCorrection, e.ClosedReason));
             Assert.All(cover.Where(e => units.Skip(2).Contains(e.UnitId)), e => Assert.Equal(shipment.Document.Id, e.SourceDocumentId));
+            Assert.Equal(identifierIds, await db.Identifiers.Where(row => units.Contains(row.UnitId) && row.ValidTo == null)
+                .OrderBy(row => row.IdentifierId).Select(row => row.IdentifierId).ToListAsync());
         }
 
         Assert.Contains(Stock.Corrections, c => c.CorrectionId == correctionId && c.QuantityDelta == 0 && c.RecordedUnitIds.Count == 2);
@@ -125,8 +148,39 @@ public sealed class CorrectDocumentSerialsTests(SerialisationHostFixture fixture
             var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
             Assert.Equal(correctionId, (await db.Corrections.SingleAsync(c => c.CorrectionId == reversalId)).CorrectsCorrectionId);
             var state = await db.Current.Where(c => units.Contains(c.UnitId)).ToDictionaryAsync(c => c.UnitId);
+            Assert.All(units.Take(2), id =>
+            {
+                Assert.Equal(customer, state[id].OwnerPartyRef);
+                Assert.NotEqual("[]", state[id].LiveEntitlementIds);
+            });
+            Assert.All(units.Skip(2), id =>
+            {
+                Assert.Null(state[id].OwnerPartyRef);
+                Assert.Equal("[]", state[id].LiveEntitlementIds);
+            });
             Assert.All(units.Take(2), id => Assert.Equal(site, state[id].LocationId));
             Assert.All(units.Skip(2), id => Assert.Equal(warehouse, state[id].LocationId));
+            Assert.All(units.Take(2), id => Assert.Equal(LocationKind.CustomerSite, state[id].LocationKind));
+            Assert.All(units.Skip(2), id => Assert.Equal(LocationKind.Warehouse, state[id].LocationKind));
+            var openEpisodes = await db.Episodes.Where(row => units.Contains(row.UnitId) && row.ValidTo == null).ToListAsync();
+            Assert.All(units.Take(2), id =>
+            {
+                var ownership = Assert.Single(openEpisodes, row => row.UnitId == id && row.Kind == EpisodeKind.Ownership);
+                Assert.Equal((customer, PartyType.Customer), (ownership.PartyRef, ownership.PartyType));
+                var custody = Assert.Single(openEpisodes, row => row.UnitId == id && row.Kind == EpisodeKind.Custody);
+                Assert.Equal((site, LocationKind.CustomerSite), (custody.LocationId, custody.LocationKind));
+            });
+            Assert.All(units.Skip(2), id =>
+            {
+                Assert.DoesNotContain(openEpisodes, row => row.UnitId == id && row.Kind == EpisodeKind.Ownership);
+                var custody = Assert.Single(openEpisodes, row => row.UnitId == id && row.Kind == EpisodeKind.Custody);
+                Assert.Equal((warehouse, LocationKind.Warehouse), (custody.LocationId, custody.LocationKind));
+            });
+            Assert.Equal(identifierIds, await db.Identifiers.Where(row => units.Contains(row.UnitId) && row.ValidTo == null)
+                .OrderBy(row => row.IdentifierId).Select(row => row.IdentifierId).ToListAsync());
+            Assert.Equal(10, await db.Events.CountAsync(row => units.Contains(row.UnitId)
+                && (row.EventType == UnitEventType.Shipped || row.EventType == UnitEventType.ShipmentReversed)
+                && row.DocumentId == shipment.Document.Id));
         }
     }
 
@@ -225,6 +279,14 @@ public sealed class CorrectDocumentSerialsTests(SerialisationHostFixture fixture
         var normalised = serials.Select(s => s.Replace("-", "", StringComparison.Ordinal)).ToList();
         return await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Identifiers.AsNoTracking()
             .Where(i => normalised.Contains(i.NormalisedValue)).OrderBy(i => i.NormalisedValue).Select(i => i.UnitId).ToListAsync();
+    }
+
+    private async Task<List<Guid>> IdentifierIdsAsync(TenantId tenant, IReadOnlyList<Guid> units)
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        return await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Identifiers.AsNoTracking()
+            .Where(row => units.Contains(row.UnitId) && row.ValidTo == null).OrderBy(row => row.IdentifierId)
+            .Select(row => row.IdentifierId).ToListAsync();
     }
 
     private async Task<(Guid Item, string Serial)> CommissionAsync(TenantId tenant, Guid item, Guid warehouse, string serial)

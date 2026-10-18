@@ -43,6 +43,8 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         }
         Assert.Contains("local://serialisation-certificate-triggers",
             runtime.ExplainRoutingFor(typeof(CertificateTriggerWork)).ToText(), StringComparison.Ordinal);
+        Assert.Contains("local://serialisation-certificate-sale-triggers",
+            runtime.ExplainRoutingFor(typeof(CustomerSaleCertificateWork)).ToText(), StringComparison.Ordinal);
     }
 
     [DatabaseFact]

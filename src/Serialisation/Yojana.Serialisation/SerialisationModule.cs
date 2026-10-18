@@ -259,6 +259,10 @@ public static class SerialisationModule
             options.PublishMessage<CertificateTriggerWork>().ToLocalQueue(CertificateTriggerQueue.Name);
             options.PublishMessage<CertificateSaleReversalWork>().ToLocalQueue(CertificateTriggerQueue.Name);
             options.LocalQueue(CertificateTriggerQueue.Name).UseDurableInbox().MaximumParallelMessages(8);
+            options.PublishMessage<CustomerSaleCertificateWork>().ToLocalQueue(CustomerSaleCertificateQueue.Name);
+            // One envelope represents one ledger append. The handler fans independent unit chains out with the same
+            // bounded parallelism as the ordinary trigger queue, so no ordering exists between unrelated units.
+            options.LocalQueue(CustomerSaleCertificateQueue.Name).UseDurableInbox().MaximumParallelMessages(1);
         });
 
         // Document handlers (P1-T15): thin consumed events, documents through the publisher's query ports; in-memory

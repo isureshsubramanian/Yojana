@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Reflection;
 using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Serialisation.DatabaseTests;
@@ -6,6 +7,21 @@ namespace Yojana.Serialisation.DatabaseTests;
 /// <summary>Test-side consumer of the module's published events: proves they leave through the outbox after commit.</summary>
 public static class PublishedEventSink
 {
+    // TIGHT COUPLING (test sink endpoint configuration)
+    // WHAT: SerialisationHostFixture configures Wolverine's convention-derived local queues for every Handle method
+    // below. WHY: this sink is an observation probe, not recoverable application work; persisting its inbound copies
+    // doubles envelope-table traffic and creates a minute-long suite backlog while certificate work is active.
+    // WHAT BREAKS IF SEPARATED: a Wolverine endpoint-naming change silently restores durable single-message delivery
+    // and makes publication timing tests load-order dependent. Keep the fixture comment with it.
+    public static IReadOnlyList<string> ObservationQueueNames { get; } = typeof(PublishedEventSinkHandler)
+        .GetMethods(BindingFlags.Public | BindingFlags.Static)
+        .Where(method => method.Name == nameof(PublishedEventSinkHandler.Handle)
+            && method.GetParameters() is [{ ParameterType.FullName: not null }])
+        .Select(method => method.GetParameters()[0].ParameterType.FullName!.ToLowerInvariant())
+        .Distinct(StringComparer.Ordinal)
+        .ToList();
+    public const int MaximumParallelMessages = 8;
+
     public static readonly ConcurrentQueue<IPublishedUnitEvent> Received = new();
     public static readonly ConcurrentQueue<IPublishedSummaryEvent> Summaries = new();
     public static readonly ConcurrentQueue<AssetTagPrintJobRequested> PrintJobRequests = new();
@@ -59,6 +75,8 @@ public static class PublishedEventSinkHandler
     public static void Handle(UnitIdentifierCorrected e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(OwnershipOpened e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(OwnershipClosed e) => PublishedEventSink.Received.Enqueue(e);
+    // Arrival order is deliberately not a contract: assertions select by event/document id and use Header.Seq when
+    // order matters. This permits the fixture's buffered, bounded endpoints without weakening event ordering contracts.
     public static void Handle(CustodyChanged e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitPartInstalled e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(EntitlementCreated e) => PublishedEventSink.Received.Enqueue(e);

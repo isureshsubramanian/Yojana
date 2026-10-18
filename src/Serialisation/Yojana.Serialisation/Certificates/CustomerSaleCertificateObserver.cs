@@ -55,24 +55,22 @@ public sealed class CustomerSaleCertificateObserver(
             ownership.RemoveAll(fact => storedPostings.Contains(PostingKey.For(fact)));
         }
 
-        foreach (var fact in saleFacts.Concat(ownership).DistinctBy(fact => fact.EventId))
-        {
-            var schema = fact.EventType is UnitEventType.OwnershipOpened or UnitEventType.OwnershipTransferred
-                ? OwnershipOpened.Schema
-                : CustodyChanged.Schema;
-            var command = new IssueCertificateVersion(fact.EventId, fact.UnitId,
+        var issues = saleFacts.Concat(ownership).DistinctBy(fact => fact.EventId)
+            .Select(fact => new IssueCertificateVersion(fact.EventId, fact.UnitId,
                 CertificateDocumentKind.ReleaseRecord, CertificateFormType.GenericRelease,
                 CertificateSupersedeReason.Reassembly, fact.EventTime, "system:certificates",
-                fact.LegalEntityId, TriggerSchema: schema);
-            await bus.PublishAsync(new CertificateTriggerWork(command),
-                new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
-        }
-
-        foreach (var fact in written.Where(IsCorrectiveShipmentReversal))
+                fact.LegalEntityId, TriggerSchema: fact.EventType is UnitEventType.OwnershipOpened or UnitEventType.OwnershipTransferred
+                    ? OwnershipOpened.Schema
+                    : CustodyChanged.Schema))
+            .ToList();
+        var reversals = written.Where(IsCorrectiveShipmentReversal)
+            .Select(fact => new CertificateSaleReversalWork(fact.UnitId, fact.EventId,
+                fact.ReversesEventId!.Value, fact.EventTime, fact.LegalEntityId,
+                fact.DocumentType, fact.DocumentId, fact.DocumentLine))
+            .ToList();
+        if (issues.Count > 0 || reversals.Count > 0)
         {
-            await bus.PublishAsync(new CertificateSaleReversalWork(fact.UnitId, fact.EventId,
-                    fact.ReversesEventId!.Value, fact.EventTime, fact.LegalEntityId,
-                    fact.DocumentType, fact.DocumentId, fact.DocumentLine),
+            await bus.PublishAsync(new CustomerSaleCertificateWork(issues, reversals),
                 new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
         }
     }
