@@ -230,6 +230,11 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
         var authorised = await InvokeAsync<AuthoriseRmaResult>(new AuthoriseRma(Stable("refurb-authorise"),
             requested.RmaId, ReturnAt.AddMinutes(1), Actor), cancellationToken);
         var lineByUnit = authorised.Lines.ToDictionary(line => line.AuthorisedUnitId);
+        // The refurbishment return uses a fixed command id, so on a database prepared before it replays the earlier
+        // return, whose lines may name a different unit set (the working set is sized per run). That return's work
+        // orders stay open across runs (the harness only appends labour and cost), so keep them as they are.
+        if (units.Any(unit => !lineByUnit.ContainsKey(unit.UnitId)))
+            return await OpenRefurbishmentWorkOrdersAsync(requested.RmaId);
         await InvokeAsync<ReceiveReturnResult>(new ReceiveReturn(Stable("refurb-receive"), requested.RmaId, Quarantine,
             units.Select(unit => new ReturnReceiptLineInput(lineByUnit[unit.UnitId].RmaLineId,
                 new DocumentSerial(unit.Serial, IdentifierType: IdentifierType.InternalSerial), ConditionGrades.Used,
@@ -237,12 +242,16 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
         await InvokeAsync<DispositionRmaResult>(new DispositionRma(Stable("refurb-disposition"), requested.RmaId,
             authorised.Lines.Select(line => new RmaDispositionLineInput(line.RmaLineId, RmaDisposition.Refurbish)).ToList(),
             new DateOnly(2026, 9, 3), ReturnAt.AddMinutes(4), Actor), cancellationToken);
+        return await OpenRefurbishmentWorkOrdersAsync(requested.RmaId);
+    }
 
+    private async Task<int> OpenRefurbishmentWorkOrdersAsync(Guid rmaId)
+    {
         await using var connection = await Sql.OpenAsync(options.ConnectionString, Tenant);
         return await Sql.ScalarAsync<int>(connection, """
             SELECT COUNT(*) FROM serialisation.refurbishment_work_order
             WHERE tenant_id = @tenant AND source_document_type = 'rma' AND source_document_id = @rma AND status = 'open';
-            """, 0, ("@tenant", Tenant), ("@rma", requested.RmaId));
+            """, 0, ("@tenant", Tenant), ("@rma", rmaId));
     }
 
     private async Task<(int Open, int Approved, int Editable)> EnsureClaimsAsync(IReadOnlyList<WorkingUnit> units,
@@ -414,11 +423,16 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
         var row = rows.Single();
         int Count(string name) => Convert.ToInt32(row[name]);
         var failures = new List<string>();
-        if (Count("prepared") != customerUnits) failures.Add($"prepared={Count("prepared")}");
-        if (Count("customer_consistent") != customerUnits - RefurbishmentUnits) failures.Add($"customer_consistent={Count("customer_consistent")}");
+        // Every prepared unit must be consistent. The prepared count itself is compared with what the run needs, not
+        // with this run's target: topping up a database prepared earlier (with a different working-set size) reuses the
+        // earlier refurbishment set, so the target arithmetic and the tagged set legitimately differ.
+        var prepared = Count("prepared");
+        var requiredForRun = ConcurrencyWorkload.RequiredRmaEligibleUnits(options) + RefurbishmentUnits;
+        if (prepared < requiredForRun) failures.Add($"prepared={prepared} < required {requiredForRun}");
+        if (Count("customer_consistent") != prepared - RefurbishmentUnits) failures.Add($"customer_consistent={Count("customer_consistent")}");
         if (Count("refurbishment_consistent") != RefurbishmentUnits) failures.Add($"refurbishment_consistent={Count("refurbishment_consistent")}");
-        if (Count("live_base") != customerUnits) failures.Add($"live_base={Count("live_base")}");
-        if (Count("open_serial") != customerUnits) failures.Add($"open_serial={Count("open_serial")}");
+        if (Count("live_base") != prepared) failures.Add($"live_base={Count("live_base")}");
+        if (Count("open_serial") != prepared) failures.Add($"open_serial={Count("open_serial")}");
         if (Count("entitlement_closed") != ApprovedClaims) failures.Add($"entitlement_closed={Count("entitlement_closed")}");
         if (Count("entitlement_created") != ApprovedClaims) failures.Add($"entitlement_created={Count("entitlement_created")}");
         if (Count("refurbishment_ledger") != RefurbishmentUnits) failures.Add($"refurbishment_ledger={Count("refurbishment_ledger")}");
