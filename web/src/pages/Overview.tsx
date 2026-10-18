@@ -3,7 +3,7 @@ import { api } from "../api/client";
 import type { Overview, OverviewCell, OverviewPanel, RailSection } from "../api/types";
 import { useSession } from "../session/session";
 import { Icon } from "../shell/Icons";
-import { KpiStrip, ScanInput, openSearch } from "../components";
+import { KpiStrip, ScanInput, Shortcut, openSearch } from "../components";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { Rail } from "../shell/Drawer";
 
@@ -49,7 +49,7 @@ export function Component() {
         <div className="section">
           <h3>Shortcuts</h3>
           <div className="shortcut"><span>Focus scan field</span><span className="keys"><kbd className="key">/</kbd></span></div>
-          <div className="shortcut"><span>Search everything</span><span className="keys"><kbd className="key">⌘K</kbd></span></div>
+          <div className="shortcut"><span>Search everything</span><span className="keys"><Shortcut keys="mod+k" /></span></div>
           <div className="shortcut"><span>New correction</span><span className="keys"><kbd className="key">N</kbd></span></div>
           <div className="shortcut"><span>Go to units</span><span className="keys"><kbd className="key">G</kbd><kbd className="key">U</kbd></span></div>
         </div>
@@ -130,7 +130,7 @@ function FindUnit() {
     <section className="card" aria-labelledby="h-scan">
       <div className="card-header"><h2 id="h-scan">Find a unit</h2><span className="meta">Serial, IMEI, SGTIN, asset tag or customer serial</span></div>
       <div className="card-body">
-        <ScanInput size="lg" primary ariaLabel="Scan or type an identifier" placeholder="Scan a label or type an identifier" hint={<kbd className="key">↵</kbd>} onSubmit={(scan) => openSearch(scan.value)} />
+        <ScanInput size="lg" primary ariaLabel="Scan or type an identifier" placeholder="Scan a label or type an identifier" hint={<Shortcut keys="enter" />} onSubmit={(scan) => openSearch(scan.value)} />
         <p className="hint" style={{ marginTop: 10 }}>Keyboard-wedge scanners type and send Enter; FNC1 separators in GS1 strings are recovered. Exact lookups are index seeks.</p>
       </div>
     </section>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../shell/Icons";
 import { ScanInput } from "./ScanInput";
+import { Shortcut } from "./Shortcut";
 import type { FindFacet } from "./types";
 
 export interface FindBarProps {
@@ -25,7 +26,7 @@ const DEBOUNCE_MS = 250;
 /**
  * Find within a bounded set (ADR-0001 "Global search and find-within"): a document's serials, a selection-set
  * preview, a list. The find runs server-side over that set only; this bar collects the query (serial, prefix,
- * range, pasted list), the facet chips, and shows the running total. ⌘F focuses it while it is on the page.
+ * range, pasted list), the facet chips, and shows the running total. Mod+F focuses it while it is on the page.
  */
 export function FindBar({ query, onQuery, facets, activeFacet, onFacet, status, compact, placeholder = "Find a serial, prefix, range or pasted list", ariaLabel, onUseMatches, matchCount }: FindBarProps) {
   const [text, setText] = useState(query);
@@ -57,7 +58,7 @@ export function FindBar({ query, onQuery, facets, activeFacet, onFacet, status, 
         onSubmit={(s) => { window.clearTimeout(timer.current); onQuery(s.value); }}
         ariaLabel={ariaLabel}
         placeholder={placeholder}
-        hint={<kbd className="key">⌘F</kbd>}
+        hint={<Shortcut keys="mod+f" />}
       />
       {facets.map((f) => {
         const on = activeFacet === f.id;

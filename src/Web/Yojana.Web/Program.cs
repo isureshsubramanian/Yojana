@@ -65,6 +65,7 @@ var referenceCounts = DevReferenceCatalogue.Load(
     Path.Combine(AppContext.BaseDirectory, "DevData", "reference-labels.json"),
     app.Services.GetRequiredService<InMemoryItemPorts>(),
     app.Services.GetRequiredService<InMemoryItemNamePort>(),
+    app.Services.GetRequiredService<InMemoryItemFamilyNamePort>(),
     app.Services.GetRequiredService<InMemoryWarrantyPorts>(),
     app.Services.GetRequiredService<InMemoryPartyNamePort>(),
     app.Services.GetRequiredService<InMemoryDocumentNumberRegistry>(),

@@ -8,6 +8,7 @@ export { Pager } from "./Pager";
 export { PresenceAdvisory, PresenceChips, useDocumentPresence } from "./Presence";
 export type { PresenceMode, PresenceUser } from "./Presence";
 export { ScanInput } from "./ScanInput";
+export { Shortcut, useModEnter } from "./Shortcut";
 export { SelectionPreview } from "./SelectionPreview";
 export { StatusBadge } from "./StatusBadge";
 export { TimelineRail } from "./TimelineRail";

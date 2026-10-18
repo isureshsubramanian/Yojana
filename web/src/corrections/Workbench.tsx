@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { DEFAULT_LEGAL_ENTITY, newCommandId, now, type DocumentRef, type HistoryRow } from "../api/units";
-import { StatusBadge } from "../components";
+import { Shortcut, StatusBadge, useModEnter } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
@@ -196,6 +196,8 @@ export function Component() {
   const blocked = !!preview && (preview.preview.block > 0 || !!preview.preview.refusal);
   const ready = choice?.fallback ? !!unitId && description.trim().length > 0 : !!preview && !blocked && !previewing;
   const choiceCount = choices.length;
+  const commitReady = request?.status === "approved";
+  useModEnter(commitReady ? commit : submit, commitReady ? busy : !ready || busy || !!request);
 
   const showEvent = (event: HistoryRow) => {
     let attributes = event.attributes;
@@ -220,9 +222,9 @@ export function Component() {
         </div>
         <div className="actions">
           <button type="button" className="btn ghost" onClick={() => { reset(); setDescription(""); setNote(""); setEvidence([]); }}>Discard</button>
-          {request?.status === "approved"
-            ? <button type="button" className="btn primary" disabled={busy} aria-busy={busy} onClick={commit}>Commit<kbd className="key">⌘↵</kbd></button>
-            : <button type="button" className="btn primary" disabled={!ready || busy || !!request} aria-busy={busy} onClick={submit}>{choice?.fallback ? "File request" : "Submit for approval"}<kbd className="key">⌘↵</kbd></button>}
+          {commitReady
+            ? <button type="button" className="btn primary" disabled={busy} aria-busy={busy} onClick={commit}>Commit<Shortcut keys="mod+enter" /></button>
+            : <button type="button" className="btn primary" disabled={!ready || busy || !!request} aria-busy={busy} onClick={submit}>{choice?.fallback ? "File request" : "Submit for approval"}<Shortcut keys="mod+enter" /></button>}
         </div>
       </div>
 
@@ -231,8 +233,8 @@ export function Component() {
           {entryKind === "document_line" && <input className="input" style={{ width: 140 }} aria-label="Document type" value={documentType} onChange={(event) => setDocumentType(event.target.value)} />}
           <form className="scanbox lg" style={{ flex: "1 1 320px", maxWidth: 460, margin: 0 }} onSubmit={(event) => { event.preventDefault(); void resolve(); }}>
             <Icon name="scan" />
-            <input className="input" aria-label="Serial, tag, document or selection" placeholder={entryKind === "identifier" ? "Scan or type a serial, asset tag or licence id" : entryKind === "document_line" ? "Document id" : "Selection set id"} value={entryValue} onChange={(event) => setEntryValue(event.target.value)} />
-            <span className="scan-hint"><kbd className="key">F2</kbd></span>
+            <input className="input" data-scan-focus aria-label="Serial, tag, document or selection" placeholder={entryKind === "identifier" ? "Scan or type a serial, asset tag or licence id" : entryKind === "document_line" ? "Document id" : "Selection set id"} value={entryValue} onChange={(event) => setEntryValue(event.target.value)} />
+            <span className="scan-hint"><Shortcut keys="/" /></span>
           </form>
           <div className="segmented plain" role="group" aria-label="Entry">{ENTRY_KINDS.map(([id, label]) => <button key={id} type="button" aria-pressed={entryKind === id} onClick={() => setEntryKind(id)}>{label}</button>)}</div>
           <span className="hint" style={{ marginLeft: "auto" }}>Accepts superseded serials, asset tags and licence ids.{primary ? ` Resolved: ${humanise(primary.type)}, current.` : ""}</span>

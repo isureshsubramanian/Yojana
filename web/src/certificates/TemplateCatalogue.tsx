@@ -8,6 +8,7 @@ import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { Rail } from "../shell/Drawer";
 import { openDrawer, updateDrawer } from "../shell/drawerStore";
 import { ErrorNote, Kv, Section } from "../units/common";
+import { useItemFamilies } from "../corrections/ReferenceFields";
 import { certificateApi } from "./api";
 import { fmtDate, fmtDateTime, formLabel, humanise, statusTone } from "./format";
 import type { CertificateTemplateSummary, LabelTemplateSummary } from "./types";
@@ -22,6 +23,7 @@ export function Component() {
   const people = usePeople([
     ...certificates.map((row) => row.approvedBy), ...labels.map((row) => row.legalReviewedBy), ...labels.map((row) => row.createdBy),
   ]);
+  const itemFamilies = useItemFamilies();
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([certificateApi.templates(controller.signal), certificateApi.labels(controller.signal)])
@@ -39,13 +41,13 @@ export function Component() {
     { key: "issued", label: "Issued with it", width: 10, numeric: true, render: (row) => row.issuedCount.toLocaleString() },
   ], []);
   const labelColumns = useMemo<GridColumn<LabelTemplateSummary>[]>(() => [
-    { key: "name", label: "Template", width: 30, render: (row) => <>{row.name}<span className="sub">{humanise(row.appliesTo)} · {row.appliesToValue}</span></> },
-    { key: "layout", label: "Applies to", width: 18, render: (row) => humanise(row.appliesToValue) },
+    { key: "name", label: "Template", width: 30, render: (row) => <>{row.name}<span className="sub">{humanise(row.appliesTo)} · {row.appliesTo === "item_family" ? itemFamilies.name(row.appliesToValue) : humanise(row.appliesToValue)}</span></> },
+    { key: "layout", label: "Applies to", width: 18, render: (row) => row.appliesTo === "item_family" ? itemFamilies.name(row.appliesToValue) : humanise(row.appliesToValue) },
     { key: "version", label: "Version", width: 10, render: (row) => row.latestVersion ? `v${row.latestVersion}` : "—" },
     { key: "effective", label: "Effective", width: 18, render: (row) => row.effectiveFrom ? <>since {fmtDate(row.effectiveFrom)}{row.effectiveTo && <span className="sub">to {fmtDate(row.effectiveTo)}</span>}</> : <span className="muted">not active</span> },
     { key: "review", label: "Legal review", width: 14, render: (row) => <StatusBadge tone={row.legalReview && !row.legalReviewedBy ? "warn" : statusTone(row.latestStatus)}>{row.legalReview ? row.legalReviewedBy ? "Signed" : "Needed" : "Not needed"}</StatusBadge> },
     { key: "printed", label: "Printed with it", width: 10, numeric: true, render: (row) => row.printedCount.toLocaleString() },
-  ], []);
+  ], [itemFamilies]);
   const certPage: PageResult<CertificateTemplateSummary> = { rows: certificates, total: certificates.length, page: 1, pageSize: Math.max(1, certificates.length), continuation: null };
   const labelPage: PageResult<LabelTemplateSummary> = { rows: labels, total: labels.length, page: 1, pageSize: Math.max(1, labels.length), continuation: null };
 
@@ -65,7 +67,7 @@ export function Component() {
     openDrawer(head, <div className="muted">Loading versions…</div>);
     certificateApi.label(row.templateId).then((detail) => updateDrawer(head, <>
       <Section title="Versions"><div className="certificate-version-list">{detail.versions.map((version) => <div className="job" key={version.templateVersionId}><span><span className="t">v{version.version} · {humanise(version.status)}</span><span className="s">{fmtDate(version.effectiveFrom)}{version.legalReviewedBy ? ` · legal ${people(version.legalReviewedBy)}` : ""}</span></span><StatusBadge tone={statusTone(version.status)}>{humanise(version.status)}</StatusBadge></div>)}</div></Section>
-      <Section title="Catalogue"><Kv rows={[["Applies to", `${humanise(row.appliesTo)} · ${row.appliesToValue}`], ["Printed", row.printedCount.toLocaleString()], ["Created", fmtDateTime(row.createdAt)]]} /></Section>
+      <Section title="Catalogue"><Kv rows={[["Applies to", `${humanise(row.appliesTo)} · ${row.appliesTo === "item_family" ? itemFamilies.name(row.appliesToValue) : humanise(row.appliesToValue)}`], ["Printed", row.printedCount.toLocaleString()], ["Created", fmtDateTime(row.createdAt)]]} /></Section>
       <div className="act"><Link className="btn primary block" to={`/labels/templates/${row.templateId}`}>Open label editor</Link></div>
     </>)).catch(setError);
   };

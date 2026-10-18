@@ -10,7 +10,7 @@ import { openDrawer } from "../shell/drawerStore";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 import { certificateApi } from "./api";
-import { fmtDateTime, formLabel, humanise, shortHash, statusTone } from "./format";
+import { certificateEventLabel, fmtDateTime, formLabel, humanise, shortHash, statusTone } from "./format";
 import type { CertificateDetail, CertificateListRow, CertificateVersionChain } from "./types";
 import "./certificates.css";
 
@@ -31,7 +31,8 @@ export function Component() {
   }, [id]);
 
   if (!certificate) return <main className="content" id="main" tabIndex={-1}><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Certificates", to: "/certificates" }, { label: "Certificate" }]} /><ErrorNote error={error} /><div className="empty"><h2>{error ? "Certificate unavailable" : "Loading certificate…"}</h2></div></main>;
-  const trigger = objectValue(certificate.payload, "trigger", "schema") ?? humanise(certificate.supersedeReason);
+  const triggerSchema = objectValue(certificate.payload, "trigger", "schema");
+  const trigger = triggerSchema ? certificateEventLabel(String(triggerSchema)) : humanise(certificate.supersedeReason);
   const itemName = names.itemName(certificate.itemId) ?? "Item name unavailable";
   const ownChain = certificate.documentKind === "release_record" ? chain?.releaseRecords : chain?.warrantyCertificates;
   const totalVersions = ownChain?.reduce((maximum, row) => Math.max(maximum, row.version), certificate.version) ?? certificate.version;

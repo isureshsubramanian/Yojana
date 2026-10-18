@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { units, type CompletenessResult, type CompletenessRow } from "../api/units";
-import { DataGrid, KpiStrip, ScanInput, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, KpiStrip, ScanInput, Shortcut, StatusBadge, type GridColumn } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
@@ -117,7 +117,7 @@ export function Component() {
           <section className="card" aria-labelledby="h-matrix">
             <div className="card-header">
               <div className="toolbar" style={{ flex: 1 }}>
-                <ScanInput primary value={text} onChange={setText} ariaLabel="Serial, pasted list, selection id or document" placeholder="Serial, pasted list, selection id or document type:id" hint={<kbd className="key">↵</kbd>} onSubmit={(s) => run(s.value)} />
+                <ScanInput primary value={text} onChange={setText} ariaLabel="Serial, pasted list, selection id or document" placeholder="Serial, pasted list, selection id or document type:id" hint={<Shortcut keys="enter" />} onSubmit={(s) => run(s.value)} />
                 {result && ([["all", `All ${result.units}`], ["complete", `Complete ${result.complete}`], ["missing", `Missing ${result.missingUnits}`], ["unexpected", `Unexpected ${result.unexpectedUnits}`]] as const).map(([id, label]) => (
                   <button type="button" key={id} className={`chip${facet === id ? " on" : ""}`} aria-pressed={facet === id} onClick={() => { setFacet(id); setPage(1); }}>{label}</button>
                 ))}

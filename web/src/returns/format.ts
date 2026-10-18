@@ -21,6 +21,11 @@ export function dispositionOptionState(disposition: string, line: RmaDetailLine,
   if (disposition === "restock_as_new" && !["new", "open_box"].includes(line.conditionGrade ?? "")) return { enabled: false, reason: "Only unused inspected stock can return as new" };
   return { enabled: true, reason: null };
 }
+export function initialDisposition(line: RmaDetailLine, stage: string): string | null {
+  if (line.disposition) return line.disposition;
+  const proposed = line.conditionGrade === "defective" ? "refurbish" : "return_to_stock";
+  return dispositionOptionState(proposed, line, stage).enabled ? proposed : null;
+}
 
 export function gradeOptionState(grade: string): OptionState {
   if (["refurbished_a", "refurbished_b", "refurbished_c", "remanufactured"].includes(grade)) return { enabled: false, reason: "Set by a refurbishment release" };

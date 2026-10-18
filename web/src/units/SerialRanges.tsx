@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { ranges, toPage, DEFAULT_LEGAL_ENTITY, newCommandId, now, type AllocateSerialRangeResult, type SerialRangeList, type SerialRangeRow, type SerialSchemeRow } from "../api/units";
-import { DataGrid, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
@@ -63,6 +63,7 @@ export function Component() {
       setVersion((v) => v + 1);
     } catch (e) { setError(e); } finally { setBusy(false); }
   };
+  useModEnter(allocate, !ready);
 
   const columns: GridColumn<SerialRangeRow>[] = [
     { key: "range", label: "Range", width: 23, mono: true, render: (r) => r.randomised ? <>{shortId(r.rangeId)}<span className="sub">randomised list</span></> : <>{r.startValue}<span className="sub serial">→ {r.endValue}</span></> },
@@ -93,7 +94,7 @@ export function Component() {
           </div>
           <div className="actions">
             <Link className="btn ghost" to="/units">Cancel</Link>
-            <button type="button" className="btn primary" disabled={!ready} aria-busy={busy} onClick={allocate}>Allocate {quantity.toLocaleString()} serials<kbd className="key">⌘↵</kbd></button>
+            <button type="button" className="btn primary" disabled={!ready} aria-busy={busy} onClick={allocate}>Allocate {quantity.toLocaleString()} serials<Shortcut keys="mod+enter" /></button>
           </div>
         </div>
 

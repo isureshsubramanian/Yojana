@@ -10,7 +10,7 @@ import { openDrawer } from "../shell/drawerStore";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { labelsApi } from "./api";
 import { humanise } from "./editorModel";
-import { dayBounds, summaryKpis } from "./printJobModel";
+import { dayBounds, defaultPrintJobDays, printJobRejectionSummary, summaryKpis } from "./printJobModel";
 import type { LabelBatchPrintOutcome, LabelPolicy, LabelPrintJob, LabelTemplateCatalogueRow } from "./types";
 import "./labels.css";
 
@@ -29,8 +29,8 @@ export function Component() {
   const [status, setStatus] = useState<"all" | "rejected" | "waiting" | "reprints">("all");
   const [printer, setPrinter] = useState("");
   const [printers, setPrinters] = useState<string[]>([]);
-  const [fromDay, setFromDay] = useState(today());
-  const [throughDay, setThroughDay] = useState(today());
+  const [fromDay, setFromDay] = useState(() => defaultPrintJobDays().fromDay);
+  const [throughDay, setThroughDay] = useState(() => defaultPrintJobDays().throughDay);
   const [active, setActive] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -79,7 +79,7 @@ export function Component() {
   };
   const columns: GridColumn<LabelPrintJob>[] = [
     { key: "job", label: "Job", width: 13, mono: true, render: (job) => job.jobNumber },
-    { key: "serial", label: "Serial", width: 17, mono: true, render: (job) => <>{job.serial ?? "Serial unavailable"}{job.rejectionReason && <span className="sub">{job.rejectionReason}</span>}</> },
+    { key: "serial", label: "Serial", width: 17, render: (job) => <><span className="serial">{job.serial ?? "Serial unavailable"}</span>{(job.rejectionReason || job.emptyRequiredField) && <span className="sub">{printJobRejectionSummary(job.emptyRequiredField, job.rejectionReason)}</span>}</> },
     { key: "template", label: "Template", width: 22, render: (job) => job.templateName ? `${job.templateName} v${job.templateVersion ?? "—"}` : <span className="muted">No applicable template</span> },
     { key: "why", label: "Why", width: 15, render: (job) => job.originalJobId ? "Reprint" : job.sourceEventId ? "Event request" : "Manual" },
     { key: "printer", label: "Printer", width: 13, render: (job) => job.printerRef ?? "—" },
@@ -95,7 +95,7 @@ export function Component() {
       {canPrint && <button type="button" className="btn primary" onClick={() => setDialog(true)}><Icon name="print" />Print labels…</button>}
     </div></div>
     <ErrorNote error={error} />
-    <div className="stack"><KpiStrip kpis={kpis} label="Label print activity today" />
+    <div className="stack"><KpiStrip kpis={kpis} label="Label print activity in the selected range" />
       <section className="card" aria-label="Print job filters"><FindBar query={find} onQuery={(value) => { setFind(value); setPage(1); }} facets={[]} activeFacet={null} onFacet={() => {}} compact ariaLabel="Find a print job" placeholder="Serial, job or template" />
         <div className="label-job-filters"><div className="segmented plain" role="group" aria-label="Status"><button type="button" aria-pressed={status === "all"} onClick={() => { setStatus("all"); setPage(1); }}>All</button><button type="button" aria-pressed={status === "rejected"} onClick={() => { setStatus("rejected"); setPage(1); }}>Rejected</button><button type="button" aria-pressed={status === "waiting"} onClick={() => { setStatus("waiting"); setPage(1); }}>Waiting</button><button type="button" aria-pressed={status === "reprints"} onClick={() => { setStatus("reprints"); setPage(1); }}>Reprints</button></div><label className="field label-printer-filter"><span className="lbl">Printer</span><select className="select" value={printer} onChange={(event) => { setPrinter(event.target.value); setPage(1); }}><option value="">All printers</option>{printers.map((value) => <option key={value}>{value}</option>)}</select></label><label className="field"><span className="lbl">From</span><input className="input" type="date" value={fromDay} onChange={(event) => { const value = event.target.value; setFromDay(value); if (throughDay < value) setThroughDay(value); setPage(1); }} /></label><label className="field"><span className="lbl">Through</span><input className="input" type="date" min={fromDay} value={throughDay} onChange={(event) => { setThroughDay(event.target.value); setPage(1); }} /></label></div>
       </section>
@@ -147,11 +147,9 @@ function PrintDialog({ policy, templates, onCancel, onPrinted }: { policy: Label
 
 function BatchOutcomes({ outcomes }: { outcomes: LabelBatchPrintOutcome[] }) {
   const rejected = outcomes.filter((outcome) => outcome.status === "rejected").length;
-  return <div className="stack"><div className={rejected ? "note warn" : "note ok"}><strong>Print run complete.</strong>&nbsp;{outcomes.length - rejected} submitted · {rejected} rejected.</div><div className="table-wrap"><table className="table"><thead><tr><th>Serial</th><th>Outcome</th><th>Detail</th></tr></thead><tbody>{outcomes.map((outcome, index) => <tr key={`${outcome.serial}-${index}`}><td className="mono">{outcome.serial}</td><td><StatusBadge tone={statusTone(outcome.status)}>{humanise(outcome.status)}</StatusBadge></td><td>{outcome.rejectionReason ?? (outcome.jobId ? `Job …${outcome.jobId.slice(-8)}` : "Submitted")}</td></tr>)}</tbody></table></div></div>;
+  return <div className="stack"><div className={rejected ? "note warn" : "note ok"}><strong>Print run complete.</strong>&nbsp;{outcomes.length - rejected} submitted · {rejected} rejected.</div><div className="table-wrap"><table className="table"><thead><tr><th>Serial</th><th>Outcome</th><th>Detail</th></tr></thead><tbody>{outcomes.map((outcome, index) => <tr key={`${outcome.serial}-${index}`}><td className="mono">{outcome.serial}</td><td><StatusBadge tone={statusTone(outcome.status)}>{humanise(outcome.status)}</StatusBadge></td><td>{outcome.status === "rejected" ? printJobRejectionSummary(outcome.emptyRequiredField, outcome.rejectionReason) : outcome.jobId ? `Job …${outcome.jobId.slice(-8)}` : "Submitted"}</td></tr>)}</tbody></table></div></div>;
 }
 
-function today(): string { return localDate(new Date()); }
-function localDate(value: Date): string { return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`; }
 function initialKpis(): Kpi[] { return ["Printed", "Waiting", "Rejected", "Reprints", "From events"].map((label) => ({ label, value: "…", detail: "Loading" })); }
 function statusTone(status: string): Tone { return status === "confirmed" ? "ok" : status === "rejected" ? "bad" : status === "sent" || status === "rendered" ? "warn" : "info"; }
 function fmt(value: string): string { return new Date(value).toLocaleString(); }

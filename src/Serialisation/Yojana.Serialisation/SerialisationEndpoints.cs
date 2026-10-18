@@ -251,6 +251,8 @@ public static class SerialisationEndpoints
                 locationLabels.ToDictionary(row => row.Key,
                     row => new LocationReferenceView(row.Value.Code, row.Value.Name, row.Value.Kind))));
         });
+        serialisationReferences.MapGet("/item-families", async (IItemFamilyNamePort itemFamilies, CancellationToken ct) =>
+            Results.Ok(await itemFamilies.ListAsync(ct)));
         serialisationReferences.MapGet("/reference-search", async (string kind, string? type, string? locationKind, string? q, int? take,
             IItemNamePort items, IPartyNamePort parties, ILocationNamePort locations, IDocumentNumberPort documents,
             UnitQueries unitQueries, CancellationToken ct) =>
@@ -1078,7 +1080,7 @@ public static class SerialisationEndpoints
                 await using var buffer = new MemoryStream((int)file.Length);
                 await file.CopyToAsync(buffer, ct);
                 var result = await bus.InvokeAsync<TenantAssetUploadResult>(
-                    new UploadTenantLogo(commandId, legalEntityId, buffer.ToArray(), Actor(user)),
+                    new UploadTenantLogo(commandId, legalEntityId, buffer.ToArray(), Actor(user), file.FileName),
                     new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, ct);
                 return result.Replayed ? Results.Ok(result.Asset)
                     : Results.Created($"/api/tenant-assets/{result.Asset.AssetId}/content", result.Asset);

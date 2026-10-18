@@ -236,7 +236,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         {
             var created = await InvokeAsync<LabelTemplateCreated>(new CreateLabelTemplate(
                 DemoIds.FromName($"label-template:{itemClass}"),
-                itemClass == "server" ? "Server asset label" : $"{itemClass.Replace('_', ' ')} asset label",
+                $"{ItemFamilyName(itemClass)} asset label",
                 LabelTemplateAppliesTo.ItemFamily, itemClass, actor), cancellationToken);
             templateIds[itemClass] = created.TemplateId;
             var previewUnit = itemClass is "network" or "component" ? samples["server"].UnitId : sample.UnitId;
@@ -263,6 +263,12 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         await InvokeAsync<LabelTemplateVersionChanged>(new RequestLabelLegalReview(
             DemoIds.FromName("label-legal-review:server:v3"), draft.TemplateVersionId, actor), cancellationToken);
         return templateIds;
+    }
+
+    private static string ItemFamilyName(string code)
+    {
+        var text = code.Replace('_', ' ');
+        return char.ToUpperInvariant(text[0]) + text[1..];
     }
 
     private Task<LabelTemplateVersionSaved> SaveLabelVersionAsync(Guid templateId, string itemClass, int version,
@@ -317,7 +323,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         var assets = scope.ServiceProvider.GetRequiredService<TenantAssetService>();
         var logo = await assets.UploadLogoAsync(DemoIds.FromName("certificate-logo:asterra"), Encoding.UTF8.GetBytes(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"36\" viewBox=\"0 0 120 36\"><rect width=\"120\" height=\"36\" rx=\"5\" fill=\"#24384f\"/><path d=\"M12 27L24 8l12 19h-7l-5-8-5 8z\" fill=\"#ffffff\"/></svg>"),
-            LegalEntityId, actor, cancellationToken);
+            LegalEntityId, actor, "asterra-works-logo.svg", cancellationToken);
         var starterDetail = await templates.GetAsync(starter.TemplateId, cancellationToken)
             ?? throw new InvalidOperationException("The C of C starter disappeared while loading the demo");
         var starterVersion = starterDetail.Versions.OrderByDescending(row => row.Version).First();

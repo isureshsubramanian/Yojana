@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { units, DEFAULT_LEGAL_ENTITY, newCommandId, now, type IdentifierRow, type UnitDetail } from "../api/units";
-import { DataGrid, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { usePeople } from "../people/people";
 import { Rail } from "../shell/Drawer";
 import { openDrawer } from "../shell/drawerStore";
@@ -17,6 +17,7 @@ import type { MergeUnits, MergeUnitsPreviewResult, MergeUnitsResult } from "./ty
 interface IdentifierView extends IdentifierRow { record: "A" | "B"; unitId: string; after: string }
 
 export function Component() {
+  const navigate = useNavigate();
   const [params] = useSearchParams();
   // The workbench hands over ?unit=<id>; a person types or scans a serial, asset tag or unit id for either record.
   const [firstId, setFirstId] = useState(params.get("first") ?? params.get("unit") ?? "");
@@ -66,11 +67,14 @@ export function Component() {
   ];
   const approval = preview?.approval;
   const needsApproval = approval?.status === "needs_approval";
+  const approvalPath = `/corrections?first=${encodeURIComponent(firstId)}&second=${encodeURIComponent(secondId)}&choice=duplicate_unit`;
+  const commitDisabled = !command || !preview || approval?.status !== "allowed" || preview.preview.block > 0 || busy;
+  useModEnter(() => needsApproval ? navigate(approvalPath) : commit(), needsApproval ? false : commitDisabled);
 
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Corrections", to: "/corrections" }, { label: "Merge units" }]} />
-      <div className="page-header"><div><div className="eyebrow">MergeUnits · two records are the same physical unit · nothing is deleted</div><h1>Merge units</h1><p className="sub">Choose the survivor. Every event, identifier, episode, entitlement and link of the other record moves to it with merged_from provenance; the absorbed record stays readable as an alias so outside references still resolve.</p></div><div className="actions"><Link className="btn ghost" to="/corrections">Back to workbench</Link><button type="button" className="btn" disabled={!records || busy} onClick={() => void runPreview()}>Preview merge</button>{needsApproval ? <Link className="btn primary" to={`/corrections?first=${encodeURIComponent(firstId)}&second=${encodeURIComponent(secondId)}&choice=duplicate_unit`}>Submit for approval<kbd className="key">⌘↵</kbd></Link> : <button type="button" className="btn primary" disabled={!command || !preview || approval?.status !== "allowed" || preview.preview.block > 0 || busy} onClick={() => void commit()}>Commit merge<kbd className="key">⌘↵</kbd></button>}</div></div>
+      <div className="page-header"><div><div className="eyebrow">MergeUnits · two records are the same physical unit · nothing is deleted</div><h1>Merge units</h1><p className="sub">Choose the survivor. Every event, identifier, episode, entitlement and link of the other record moves to it with merged_from provenance; the absorbed record stays readable as an alias so outside references still resolve.</p></div><div className="actions"><Link className="btn ghost" to="/corrections">Back to workbench</Link><button type="button" className="btn" disabled={!records || busy} onClick={() => void runPreview()}>Preview merge</button>{needsApproval ? <Link className="btn primary" to={approvalPath}>Submit for approval<Shortcut keys="mod+enter" /></Link> : <button type="button" className="btn primary" disabled={commitDisabled} onClick={() => void commit()}>Commit merge<Shortcut keys="mod+enter" /></button>}</div></div>
       <ErrorNote error={error} />
       <div className="stack">
         <section className="card" aria-labelledby="merge-records"><div className="card-header"><h2 id="merge-records">Records to compare</h2><span className="meta">serial, asset tag or unit id · identifiers stay as aliases</span></div><div className="card-body"><div className="correction-source-fields"><div className="field"><label htmlFor="merge-first">Record A · serial or unit</label><input id="merge-first" className="input serial" value={firstId} onChange={(event) => { setFirstId(event.target.value); setRecords(null); setPreview(null); }} placeholder="Scan or type a serial" /></div><div className="field"><label htmlFor="merge-second">Record B · serial or unit</label><input id="merge-second" className="input serial" value={secondId} onChange={(event) => { setSecondId(event.target.value); setRecords(null); setPreview(null); }} placeholder="Scan or type a serial" /></div></div><button type="button" className="btn" disabled={!firstId.trim() || !secondId.trim() || firstId.trim() === secondId.trim() || busy} onClick={() => void load()}>Load both records</button></div></section>

@@ -34,8 +34,10 @@ public static class CertificatePdfRequestMapper
                 .Append(document.BodyHtml).Append("<footer>").Append(document.Page.FooterHtml).Append("</footer></section>");
         }
         var html = "<!doctype html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" " +
-            "content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:\"><style>" + rules +
-            ".certificate-bundle-page{break-inside:avoid}</style></head><body>" + sections + "</body></html>";
+            "content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:\"><style>" +
+            CertificateDocumentStyle.Css + rules +
+            ".certificate-bundle-page{position:relative;break-inside:avoid}.certificate-logo{position:absolute;left:0;top:0}.certificate-logo img{max-width:48mm;max-height:20mm}</style></head><body>" +
+            sections + "</body></html>";
         var first = documents[0].Page;
         return new PdfRenderRequest(html, first with
         {
@@ -45,7 +47,7 @@ public static class CertificatePdfRequestMapper
     }
 
     private static string? ChromeHeader(string? html) => string.IsNullOrWhiteSpace(html) ? null :
-        $"<div style=\"font-size:9px;width:100%;padding:0 8mm\">{html}</div>";
+        $"{CertificateDocumentStyle.StyleTag}<div class=\"certificate-page-chrome\" style=\"width:100%;padding:0 8mm\">{html}</div>";
 
     private static string? ChromeFooter(string? html, bool showPageNumbers)
     {
@@ -53,7 +55,7 @@ public static class CertificatePdfRequestMapper
         var pages = showPageNumbers
             ? "<span style=\"margin-left:auto\">Page <span class=\"pageNumber\"></span> of <span class=\"totalPages\"></span></span>"
             : "";
-        return $"<div style=\"font-size:9px;width:100%;padding:0 8mm;display:flex\">{html}{pages}</div>";
+        return $"{CertificateDocumentStyle.StyleTag}<div class=\"certificate-page-chrome\" style=\"width:100%;padding:0 8mm;display:flex\">{html}{pages}</div>";
     }
 
     private static string CssPageSize(string value) => WebUtility.HtmlEncode(value.Trim().ToUpperInvariant() switch

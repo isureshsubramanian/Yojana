@@ -35,12 +35,15 @@ public sealed class DemoCatalogue
     {
         var profiles = services.GetRequiredService<InMemoryItemPorts>();
         var itemNames = services.GetRequiredService<InMemoryItemNamePort>();
+        var itemFamilies = services.GetRequiredService<InMemoryItemFamilyNamePort>();
         var warranties = services.GetRequiredService<InMemoryWarrantyPorts>();
         foreach (var item in Items.Values)
         {
             itemNames.Register(new ItemLabel(item.Id, item.Code, item.Name));
             if (item.Serialisation is { } profile)
             {
+                if (!string.IsNullOrWhiteSpace(profile.ItemClass))
+                    itemFamilies.Register(new ItemFamilyLabel(profile.ItemClass, FamilyName(profile.ItemClass)));
                 profiles.Register(new ItemSerialisationProfile(item.Id, item.Code, profile.TrackingMode,
                     profile.SerialisationPoint, profile.RetentionClass, profile.SerialReusePolicy,
                     profile.AsBuiltCompleteness, profile.SerialScheme, profile.ExpiryRequired, profile.ItemClass,
@@ -62,6 +65,12 @@ public sealed class DemoCatalogue
         var locations = services.GetRequiredService<InMemoryLocationNameRegistry>();
         foreach (var location in Locations.Values)
             locations.Register(new LocationLabel(location.Id, location.Code, location.Name, location.Kind));
+    }
+
+    private static string FamilyName(string code)
+    {
+        var text = code.Replace('_', ' ').Trim();
+        return text.Length == 0 ? code : char.ToUpperInvariant(text[0]) + text[1..];
     }
 
     // Shared JSON contract: the web host's DevReferenceCatalogue reads this same development-only source. Keeping the

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { DataGrid, PresenceAdvisory, PresenceChips, StatusBadge, useDocumentPresence, type GridColumn } from "../components";
+import { DataGrid, PresenceAdvisory, PresenceChips, Shortcut, StatusBadge, useDocumentPresence, useModEnter, type GridColumn } from "../components";
 import { ItemField, LotField, UnitField, useReferenceNames } from "../corrections/ReferenceFields";
 import { usePeople } from "../people/people";
 import { Rail } from "../shell/Drawer";
@@ -82,10 +82,8 @@ export function Component() {
     try { await campaignApi.update(campaignId, draft, campaign!.version); const result = await campaignApi.select(campaignId); await load(campaignId); navigate(`/claims/campaigns/${campaignId}/units`, { state: { selected: result } }); }
     catch (reason) { setError(reason); } finally { setBusy(false); }
   }, [campaign, campaignId, draft, load, navigate, selectionEnded, valid]);
-  useEffect(() => {
-    const key = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && campaignId && preview?.page.total) { event.preventDefault(); void select(); } };
-    window.addEventListener("keydown", key); return () => window.removeEventListener("keydown", key);
-  }, [campaignId, preview?.page.total, select]);
+  const selectDisabled = !campaignId || !preview?.page.total || busy || selectionEnded || draft.status === "active" || draft.status === "closed";
+  useModEnter(select, selectDisabled);
 
   const openMatch = (row: CampaignMatchRow) => {
     setActive(row.unitId);
@@ -107,7 +105,7 @@ export function Component() {
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Campaigns", to: "/claims/campaigns" }, { label: isNew ? "New" : campaign?.code ?? "Campaign" }]} />
-      <div className="page-header"><div><div className="eyebrow">{isNew ? "New campaign" : `Campaign ${campaign?.code ?? "…"} · ${draft.coverageSource} · ${draft.status} · created ${fmtDate(campaign?.createdAt)} by ${people(campaign?.createdBy)}`}</div><h1>{draft.name || "Name this campaign"}</h1><p className="sub">Units are chosen by criteria, never by hand · the preview is the selection · repairs post to this campaign’s reserve</p><PresenceChips users={presence} /></div><div className="actions"><button type="button" className="btn" disabled={!valid || busy} onClick={() => void save()}>Save draft</button><button type="button" className="btn primary" disabled={!campaignId || !preview?.page.total || busy || selectionEnded || draft.status === "active" || draft.status === "closed"} onClick={() => void select()}><Icon name="check" />{selectionEnded ? "Selection ended" : `Select ${(preview?.page.total ?? 0).toLocaleString()} units`}<kbd className="key">⌘↵</kbd></button></div></div>
+      <div className="page-header"><div><div className="eyebrow">{isNew ? "New campaign" : `Campaign ${campaign?.code ?? "…"} · ${draft.coverageSource} · ${draft.status} · created ${fmtDate(campaign?.createdAt)} by ${people(campaign?.createdBy)}`}</div><h1>{draft.name || "Name this campaign"}</h1><p className="sub">Units are chosen by criteria, never by hand · the preview is the selection · repairs post to this campaign’s reserve</p><PresenceChips users={presence} /></div><div className="actions"><button type="button" className="btn" disabled={!valid || busy} onClick={() => void save()}>Save draft</button><button type="button" className="btn primary" disabled={selectDisabled} onClick={() => void select()}><Icon name="check" />{selectionEnded ? "Selection ended" : `Select ${(preview?.page.total ?? 0).toLocaleString()} units`}<Shortcut keys="mod+enter" /></button></div></div>
       <PresenceAdvisory users={presence} editing={campaignDirty} documentLabel="campaign" />
       <div className="cols-3-2 top">
         <div className="stack">

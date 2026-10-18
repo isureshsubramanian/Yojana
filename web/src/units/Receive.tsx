@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { units, DEFAULT_LEGAL_ENTITY, newCommandId, now, type CommissionLineResult, type CommissionUnitsResult, type ScanResult } from "../api/units";
-import { DataGrid, ScanInput, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, ScanInput, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
@@ -90,6 +90,7 @@ export function Component() {
       setRows((current) => current.map((row) => ({ ...row, result: r.lines.find((l) => l.clientReference === String(row.n)) })));
     } catch (e) { setError(e); } finally { setBusy(false); }
   };
+  useModEnter(commit, !ready);
 
   const columns: GridColumn<Captured>[] = [
     { key: "n", label: "#", width: 8, numeric: true, muted: true, render: (r) => r.n },
@@ -126,7 +127,7 @@ export function Component() {
           </div>
           <div className="actions">
             <Link className="btn ghost" to="/units">Discard session</Link>
-            <button type="button" className="btn primary" disabled={!ready} aria-busy={busy} onClick={commit}>Commission {valid.length + pending} units<kbd className="key">⌘↵</kbd></button>
+            <button type="button" className="btn primary" disabled={!ready} aria-busy={busy} onClick={commit}>Commission {valid.length + pending} units<Shortcut keys="mod+enter" /></button>
           </div>
         </div>
 
@@ -147,7 +148,7 @@ export function Component() {
                 {mode === "scan" ? (
                   <div className="field">
                     <label htmlFor="r-scan">Scan the next label <span className="hint">· focus stays here · scanner or keyboard</span></label>
-                    <ScanInput id="r-scan" size="lg" primary autoFocus ariaLabel="Scan the next label" placeholder={expected ? `Waiting for scan ${rows.length + 1} of ${expected}` : "Waiting for a scan"} hint={<kbd className="key">↵</kbd>} describedBy="r-scan-help" onSubmit={(s) => add(s.value, s.source)} />
+                    <ScanInput id="r-scan" size="lg" primary autoFocus ariaLabel="Scan the next label" placeholder={expected ? `Waiting for scan ${rows.length + 1} of ${expected}` : "Waiting for a scan"} hint={<Shortcut keys="enter" />} describedBy="r-scan-help" onSubmit={(s) => add(s.value, s.source)} />
                     <span className="help" id="r-scan-help">GS1 element strings and MH10.8.2 data identifiers are parsed on the server; the wedge's Ctrl+] is restored to a group separator before parsing.</span>
                   </div>
                 ) : (
@@ -160,6 +161,7 @@ export function Component() {
                 {last && (
                   <div>
                     <div className="eyebrow" style={{ marginBottom: 8 }}>Last {last.source} · {last.at.slice(11, 19)} · #{last.n}</div>
+                    {/* Group-separator marker inside scan data; this is not a keyboard shortcut label. */}
                     <div className="raw">{last.raw.split("\u001d").map((part, i) => <span key={i}>{i > 0 && <span className="gs">⏎</span>}{part}</span>)}</div>
                     {last.scan && last.scan.fields.length > 0 && <div className="parsed" style={{ marginTop: 8 }}>{last.scan.fields.map((f, i) => <span className={`tok${f.errors.length ? " bad" : ""}`} key={i}><b>{f.key}{f.description ? ` ${f.description}` : ""}</b><code>{f.value}</code></span>)}{last.scan.separatorsRecovered > 0 && <span className="tok"><b>FNC1</b>recovered ×{last.scan.separatorsRecovered}</span>}</div>}
                   </div>

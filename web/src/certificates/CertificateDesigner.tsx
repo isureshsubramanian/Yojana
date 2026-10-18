@@ -135,7 +135,9 @@ function ExistingCertificateTemplate({ id }: { id: string }) {
 
   if (!template || !draft || !current) return <main className="content" id="main" tabIndex={-1}><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Templates", to: "/templates" }, { label: "Certificate designer" }]} /><ErrorNote error={error} /><div className="empty"><h2>{error ? "Template unavailable" : "Loading designer…"}</h2></div></main>;
   const readOnly = template.builtIn || !canWrite || draft.templateVersionId !== null && current.status !== "draft";
-  const previewDocument = sampleHtml ?? designPreviewHtml(draft.headerBody + draft.layoutBody + draft.footerBody);
+  const previewDocument = sampleHtml ?? designPreviewHtml(draft.headerBody + draft.layoutBody + draft.footerBody, {
+    top: draft.marginTopMm, right: draft.marginRightMm, bottom: draft.marginBottomMm, left: draft.marginLeftMm,
+  });
   const checks = validation ? validation.valid ? `Checks pass. ${draft.fields.length} declared fields; all placeholders are in the certificate payload catalogue.`
     : validation.errors.join(" ") : "Run validation before activation. Unknown placeholders and party fields on a release record are refused.";
 
@@ -156,7 +158,7 @@ function ExistingCertificateTemplate({ id }: { id: string }) {
         <div className="certificate-designer-grid">
           <div className="stack">
             <section className="card" aria-labelledby="branding-heading"><div className="card-header"><h2 id="branding-heading">Logo and branding</h2></div><div className="card-body stack certificate-branding-panel">
-              <div className="logo-drop">{assetPreviewSource(selectedAsset) ? <img src={assetPreviewSource(selectedAsset) ?? undefined} alt="Current certificate logo" /> : <span className="logo-empty">No logo</span>}<span>{selectedAsset ? <><strong>{humanise(selectedAsset.mediaType.replace("image/", ""))} logo</strong><span className="hint">{formatBytes(selectedAsset.byteLength)} · {selectedAsset.width ?? "?"} × {selectedAsset.height ?? "?"}<br />SHA-256 recorded at issue</span></> : <span className="hint">Tenant default branding</span>}</span></div>
+              <div className="logo-drop">{assetPreviewSource(selectedAsset) ? <img src={assetPreviewSource(selectedAsset) ?? undefined} alt="Current certificate logo" /> : <span className="logo-empty">No logo</span>}<span>{selectedAsset ? <><strong>{selectedAsset.originalFileName ?? `Logo · ${assetFormat(selectedAsset.mediaType)}`}</strong><span className="hint">{formatBytes(selectedAsset.byteLength)} · {selectedAsset.width ?? "?"} × {selectedAsset.height ?? "?"}<br />SHA-256 recorded at issue</span></> : <span className="hint">Tenant default branding</span>}</span></div>
               <PartyField id="certificate-issuer" label="Logo for issuing legal entity" value={issuerEntityId} onChange={setIssuerEntityId} optional hint="Leave empty for a tenant-wide logo" />
               {issuerAssignments.length > 0 && <div className="certificate-issuer-assignments"><span className="lbl">Per-issuer assignments</span>{issuerAssignments.map(([legalEntityId, assetId]) => <button type="button" className="field-insert" key={legalEntityId} onClick={() => setIssuerEntityId(legalEntityId)}><span><span className="t">{issuerNames.party(legalEntityId)}</span><span className="p">{assets.find((asset) => asset.assetId === assetId)?.mediaType ?? "Logo asset"}</span></span><StatusBadge tone={issuerEntityId === legalEntityId ? "ok" : "neutral"}>{issuerEntityId === legalEntityId ? "Selected" : "View"}</StatusBadge></button>)}</div>}
               <label className="field"><span className="lbl">Upload replacement</span><input type="file" accept="image/png,image/jpeg,image/svg+xml" disabled={readOnly || busy} onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); }} /><span className="help">PNG, JPEG or SVG · maximum 1 MB and 4096 × 4096</span></label>
@@ -230,4 +232,5 @@ function groups(fields: FieldCatalogueEntry[]): [string, FieldCatalogueEntry[]][
 }
 function decodeBase64(value: string): string { const binary = atob(value); const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0)); return new TextDecoder().decode(bytes); }
 function formatBytes(value: number): string { return value < 1024 ? `${value} B` : `${Math.ceil(value / 1024)} KB`; }
+function assetFormat(mediaType: string): string { return mediaType === "image/svg+xml" ? "SVG" : mediaType === "image/jpeg" ? "JPEG" : mediaType === "image/png" ? "PNG" : "image"; }
 function slug(value: string): string { return value.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80); }

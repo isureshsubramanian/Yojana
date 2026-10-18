@@ -121,8 +121,8 @@ public sealed class WarrantyCertificatePayloadBuilder(
             unit.Ownership.HolderKind, unit.Ownership.EffectiveFrom);
         var live = await entitlements.LiveAsync(unit.UnitId, cancellationToken);
         var rows = live.Select(row => new WarrantyEntitlementSnapshot(row.EntitlementId, row.CoverageFamily,
-            row.Type, row.StartBasis ?? "unknown", row.StartDate, row.EndDate, row.PolicyCode, row.PolicyVersion,
-            Term(row), row.SupersededLineage)).OrderBy(row => row.CoverageFamily).ToList();
+            row.Type, row.StartBasis ?? "unknown", row.StartDate, row.EndDate, row.PolicyCode, row.PolicyName,
+            row.PolicyVersion, Term(row), row.SupersededLineage)).OrderBy(row => row.CoverageFamily).ToList();
         return (new WarrantyCertificatePayload("1.0", trigger, rows, owner, presentation.Issuer,
             presentation.Branding, presentation.Snapshot, provenance), owner);
     }

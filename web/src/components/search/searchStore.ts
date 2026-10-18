@@ -1,4 +1,4 @@
-// Open/close state of the global search palette, shared by the header pill, ⌘K, the scan field and the
+// Open/close state of the global search palette, shared by the header field, Mod+K, the scan field and the
 // /search route. A tiny external store so none of them need a context provider above the router.
 import { useSyncExternalStore } from "react";
 

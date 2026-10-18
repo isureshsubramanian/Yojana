@@ -50,7 +50,9 @@ internal static partial class LabelTemplateRules
     public static bool NeedsLegalReview(IEnumerable<string> staticText, IEnumerable<string> phrases, string? layout = null)
     {
         var text = string.Join('\n', staticText.Append(layout ?? string.Empty));
-        return phrases.Any(phrase => text.Contains(phrase, StringComparison.OrdinalIgnoreCase));
+        return phrases.Select(phrase => phrase.Trim()).Where(phrase => phrase.Length > 0).Any(phrase =>
+            Regex.IsMatch(text, $@"(?<![\p{{L}}\p{{N}}_]){Regex.Escape(phrase)}(?![\p{{L}}\p{{N}}_])",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)));
     }
 
     public static string ContentHash(SaveLabelTemplateDraft command) => Hash(JsonSerializer.Serialize(new

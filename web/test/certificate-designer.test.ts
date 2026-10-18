@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assetPreviewSource, designPreviewHtml, insertPlaceholder } from "../src/certificates/designerCore.ts";
-import { formLabel } from "../src/certificates/format.ts";
+import { certificateEventLabel, formLabel } from "../src/certificates/format.ts";
 
 test("field insertion replaces the selected HTML range and returns the next caret", () => {
   const result = insertPlaceholder("<p>old value</p>", "model.code", 3, 12);
@@ -14,6 +14,14 @@ test("certificate form names are readable and warranty never falls back to custo
   assert.equal(formLabel("coc", "release_record"), "Certificate of conformity");
   assert.equal(formLabel("custom", "warranty_certificate"), "Warranty certificate");
   assert.equal(formLabel("release_8130_3_style", "release_record"), "8130-3-style release block");
+});
+
+test("certificate event names are readable and unknown dotted names degrade cleanly", () => {
+  assert.equal(certificateEventLabel("Unit.Released"), "Unit released");
+  assert.equal(certificateEventLabel("Entitlement.CoverageChanged"), "Warranty cover changed");
+  assert.equal(certificateEventLabel("Certificate.Issued", 1), "Certificate issued (version 1)");
+  assert.equal(certificateEventLabel("Certificate.Reprinted"), "Reprinted as Copy");
+  assert.equal(certificateEventLabel("Future.NewEvent"), "Future new event");
 });
 
 test("design preview highlights placeholders without granting script or network access", () => {

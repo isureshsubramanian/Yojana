@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ageBucket, dispositionOptionState, gradeOptionState, reasonEffect, receiptValuationRule, valuationRuleForGrade } from "../src/returns/format.ts";
+import { ageBucket, dispositionOptionState, gradeOptionState, initialDisposition, reasonEffect, receiptValuationRule, valuationRuleForGrade } from "../src/returns/format.ts";
 import type { RmaDetailLine } from "../src/returns/types.ts";
 
 const line = { receivedUnitId: "unit", receiptOutcome: "accepted", conditionGrade: "defective", replacementIntentId: null } as RmaDetailLine;
@@ -14,6 +14,11 @@ test("disposition options explain why an exception blocks the command", () => {
   assert.deepEqual(dispositionOptionState("refurbish", { ...line, receiptOutcome: "mismatch" }, "received"), { enabled: false, reason: "Resolve the mismatch exception first" });
   assert.equal(dispositionOptionState("refurbish", line, "received").enabled, true);
   assert.equal(dispositionOptionState("restock_as_new", line, "received").enabled, false);
+});
+
+test("an RMA line with only disabled dispositions has no highlighted initial choice", () => {
+  assert.equal(initialDisposition({ ...line, receiptOutcome: "mismatch" }, "received"), null);
+  assert.equal(initialDisposition(line, "received"), "refurbish");
 });
 
 test("receipt grade helpers keep release-only grades disabled and select valuation rules", () => {
@@ -38,5 +43,5 @@ test("returns search uses the shared list toolbar sizing", () => {
   assert.match(screen, /aria-label="Return filters"[\s\S]*className="toolbar"/);
   assert.doesNotMatch(screen, /returns-filter-grid/);
   assert.match(sharedStyles, /\.toolbar > \.findbar \{ display: contents; \}/);
-  assert.match(sharedStyles, /\.toolbar \.scanbox \{ flex: 1 1 320px; max-width: 480px; \}/);
+  assert.match(sharedStyles, /\.findbar\.compact \.scanbox \{ flex: 1 1 360px; min-width: min\(100%, 280px\); max-width: 640px; \}/);
 });

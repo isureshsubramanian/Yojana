@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
-import { DataGrid, KpiStrip, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, KpiStrip, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { Rail } from "../shell/Drawer";
 import { openDrawer } from "../shell/drawerStore";
 import { Breadcrumbs } from "../shell/PageHeader";
@@ -45,6 +45,7 @@ export function Component() {
   const visible = filtered.slice((page - 1) * PAGE, page * PAGE);
   const rejected = sourceRows.filter((row) => row.outcome === "rejected").length;
   const assigning = sourceRows.filter((row) => row.outcome === "assign" || row.outcome === "assigned").length;
+  useModEnter(commit, !command || !preview || !!preview?.preview.refusal || assigning === 0 || busy);
 
   const openLine = (row: IdentifierAssignmentLineResult) => { const id = String(row.index); setActive(id); const provisional = report?.units.find((unit) => unit.unitId === row.unitId)?.provisionalIdentifier; openDrawer({ eyebrow: `${row.outcome === "rejected" ? "Refused" : "Assignment"} · ${productionOrderLabel}`, title: provisional ?? row.normalisedValue ?? row.rawValue, mono: true }, <><Kv rows={[["Vendor serial", row.normalisedValue ?? row.rawValue], ["Outcome", humanise(row.outcome)], ["Rule", row.reason ? <span className="serial">{row.reason}</span> : "all checks passed"], ["Unit", row.unitId ? shortId(row.unitId, 12) : "not matched"], ["Conflicting unit", row.conflictingUnitId ? shortId(row.conflictingUnitId, 12) : "—"], ["Warnings", row.warnings?.join(" · ") ?? "none"]]} />{row.conflictingUnitId && <div className="act"><UnitLink className="btn block" unitId={row.conflictingUnitId}>Open conflicting unit</UnitLink><Link className="btn block" to={`/corrections/merge?first=${encodeURIComponent(row.unitId ?? "")}&second=${encodeURIComponent(row.conflictingUnitId)}`}>Compare in Merge units</Link></div>}</>); };
   const columns: GridColumn<IdentifierAssignmentLineResult>[] = [
@@ -56,7 +57,7 @@ export function Component() {
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Corrections", to: "/corrections" }, { label: "Assign vendor serials" }]} />
-      <div className="page-header"><div><div className="eyebrow">AssignIdentifiers · vendor serial list for a production order · partial lists allowed</div><h1>Assign vendor serials</h1><p className="sub">Production order <span className="serial">{productionOrderLabel}</span> · units carry only a provisional identifier until the vendor’s list arrives</p></div><div className="actions"><Link className="btn ghost" to="/corrections">Back to workbench</Link><button type="button" className="btn" disabled={!command || busy} onClick={() => void runPreview()}>Preview list</button><button type="button" className="btn primary" disabled={!command || !preview || !!preview.preview.refusal || assigning === 0 || busy} onClick={() => void commit()}>Assign {assigning || parsed.lines.length} serials<kbd className="key">⌘↵</kbd></button></div></div>
+      <div className="page-header"><div><div className="eyebrow">AssignIdentifiers · vendor serial list for a production order · partial lists allowed</div><h1>Assign vendor serials</h1><p className="sub">Production order <span className="serial">{productionOrderLabel}</span> · units carry only a provisional identifier until the vendor’s list arrives</p></div><div className="actions"><Link className="btn ghost" to="/corrections">Back to workbench</Link><button type="button" className="btn" disabled={!command || busy} onClick={() => void runPreview()}>Preview list</button><button type="button" className="btn primary" disabled={!command || !preview || !!preview.preview.refusal || assigning === 0 || busy} onClick={() => void commit()}>Assign {assigning || parsed.lines.length} serials<Shortcut keys="mod+enter" /></button></div></div>
       <ErrorNote error={error} />
       {parsed.errors.length > 0 && <div className="form-error" role="alert">{parsed.errors.join(" ")}</div>}
       <div className="stack">

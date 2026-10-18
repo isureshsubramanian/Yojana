@@ -43,7 +43,7 @@ export function Component() {
   };
   const columns = useMemo<GridColumn<CertificateListRow>[]>(() => [
     { key: "tracking", label: "Certificate", width: 22, mono: true, render: (row) => <Link to={`/certificates/${row.certificateId}`}>{row.trackingNumber}</Link> },
-    { key: "unit", label: "Unit", width: 22, mono: true, render: (row) => <>{row.primarySerial}<span className="sub">{names.itemName(row.itemId) ?? "Item name unavailable"}</span></> },
+    { key: "unit", label: "Unit", width: 22, render: (row) => <><span className="mono">{row.primarySerial}</span><span className="sub">{names.itemName(row.itemId) ?? "Item name unavailable"}</span></> },
     { key: "form", label: "Form", width: 19, render: (row) => <>{formLabel(row.formType, row.documentKind)}<span className="sub">version {row.version}</span></> },
     { key: "status", label: "Status", width: 14, render: (row) => <StatusBadge tone={statusTone(row.status)}>{humanise(row.status)}</StatusBadge> },
     { key: "issued", label: "Issued", width: 23, render: (row) => <>{fmtDateTime(row.issuedAt)}<span className="sub">{humanise(row.provenance)}</span></> },

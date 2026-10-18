@@ -7,12 +7,29 @@ export function insertPlaceholder(text: string, field: string, start: number, en
   return { text: before + token + after, caret: before.length + token.length };
 }
 
-export function designPreviewHtml(layout: string): string {
+export interface CertificatePreviewMargins { top: number; right: number; bottom: number; left: number }
+
+const DEFAULT_MARGINS: CertificatePreviewMargins = { top: 15, right: 15, bottom: 15, left: 15 };
+
+// COUPLING (certificate document typography): CertificateDocumentStyle.cs owns the issued HTML/PDF tokens mirrored
+// here because an unsaved Design view has no server rendering. If either scale changes alone the design and issued
+// views diverge; these are deliberately the same Arial/Helvetica family and four documented sizes.
+const DOCUMENT_PREVIEW_CSS = `
+  :root{--certificate-font-family:Arial,Helvetica,sans-serif;--certificate-size-title:18pt;--certificate-size-section:9pt;--certificate-size-body:9pt;--certificate-size-caption:7.5pt}
+  html,body,.certificate-sheet{font-family:var(--certificate-font-family);font-size:var(--certificate-size-body)}
+  body{margin:0;color:#172033;background:#fff}
+`;
+
+export function designPreviewHtml(layout: string, margins: CertificatePreviewMargins = DEFAULT_MARGINS): string {
   const safeAttributes = layout.replace(/<[^>]*>/g, (tag) => tag.replace(/\{\{[^{}]+\}\}/g, "preview-value"));
   const highlighted = renderDesignFragment(safeAttributes, 0).html;
   return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-    <style>body{font-family:system-ui,sans-serif;margin:24px;color:CanvasText;background:Canvas}.placeholder{background:Highlight;color:HighlightText;border-radius:3px;padding:1px 3px}.template-block-label{display:block;width:max-content;max-width:100%;margin:5px 0 3px;padding:3px 7px;border:1px dashed color-mix(in srgb,Highlight 55%,CanvasText);border-radius:4px;background:color-mix(in srgb,Highlight 12%,Canvas);color:CanvasText;font:600 11px/1.3 system-ui,sans-serif}.template-block-else{opacity:.75}</style>
+    <style>${DOCUMENT_PREVIEW_CSS}body{padding:${mm(margins.top)} ${mm(margins.right)} ${mm(margins.bottom)} ${mm(margins.left)}}.placeholder{background:Highlight;color:HighlightText;border-radius:3px;padding:1px 3px}.template-block-label{display:block;width:max-content;max-width:100%;margin:5px 0 3px;padding:3px 7px;border:1px dashed color-mix(in srgb,Highlight 55%,CanvasText);border-radius:4px;background:color-mix(in srgb,Highlight 12%,Canvas);color:CanvasText;font-family:var(--certificate-font-family);font-weight:600;font-size:var(--certificate-size-caption);line-height:1.3}.template-block-else{opacity:.75}</style>
     </head><body>${highlighted}</body></html>`;
+}
+
+function mm(value: number): string {
+  return `${Math.max(0, Number.isFinite(value) ? value : 0)}mm`;
 }
 
 interface DesignFragment { html: string; index: number; stop: "else" | "close" | null }

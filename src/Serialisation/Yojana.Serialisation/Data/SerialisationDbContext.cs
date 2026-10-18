@@ -1597,6 +1597,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasKey(row => new { row.TenantId, row.AssetId });
             b.Property(row => row.Kind).HasMaxLength(30).IsUnicode(false);
             b.Property(row => row.MediaType).HasMaxLength(100).IsUnicode(false);
+            b.Property(row => row.OriginalFileName).HasMaxLength(255);
             b.Property(row => row.Sha256).HasMaxLength(64).IsUnicode(false).IsFixedLength();
             b.Property(row => row.UploadedBy).HasMaxLength(200);
             b.HasIndex(row => new { row.TenantId, row.Kind, row.LegalEntityId, row.UploadedAt });

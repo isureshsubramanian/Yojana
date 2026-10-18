@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { DEFAULT_LEGAL_ENTITY, units, type AsBuiltRow, type LookupHit, type UnitDetail } from "../api/units";
-import { ScanInput } from "../components";
+import { ScanInput, Shortcut, useModEnter } from "../components";
 import { ItemField, PartyField, useReferenceNames } from "../corrections/ReferenceFields";
 import { entitlementApi } from "../entitlements/api";
 import type { UnitEntitlementDetail } from "../entitlements/types";
@@ -90,13 +90,6 @@ export function Component() {
     setSelectedCampaignId((current) => covering.some((option) => option.campaignId === current) ? current : covering.length === 1 ? covering[0]!.campaignId : "");
   }, [askedSource, campaignOptions, campaignsLoading]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); void submit(); }
-    };
-    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
-  });
-
   const names = useReferenceNames({ items: [unit?.itemId, itemId, ...(unit?.asBuilt ?? []).map((child) => child.childItemId)], parties: [unit?.ownerPartyRef, unit?.custodyPartyRef, claimant, settlement, DEFAULT_LEGAL_ENTITY] });
   const resolve = async (value: string) => {
     setIdentifier(value); setLookupBusy(true); setError(null); setHit(null); setUnit(null); setEntitlements(null);
@@ -147,13 +140,14 @@ export function Component() {
     };
     try { const result = await claimsApi.submit(body); navigate(`/claims/${result.claimId}`); } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
+  useModEnter(submit, !canSubmit || busy);
 
   return <><main className="content" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Claims", to: "/claims" }, { label: "New claim" }]} />
-    <div className="page-header"><div><h1>New claim</h1><p className="sub">Find the unit by any identifier or by proof of purchase · the claimant may differ from the party that settles · nothing is decided here; adjudication runs next</p></div><div className="actions"><Link className="btn" to="/claims">Cancel</Link><button type="button" className="btn primary" disabled={!canSubmit || busy} aria-busy={busy} onClick={() => void submit()}><Icon name="check" />Submit and adjudicate<kbd className="key">⌘↵</kbd></button></div></div>
+    <div className="page-header"><div><h1>New claim</h1><p className="sub">Find the unit by any identifier or by proof of purchase · the claimant may differ from the party that settles · nothing is decided here; adjudication runs next</p></div><div className="actions"><Link className="btn" to="/claims">Cancel</Link><button type="button" className="btn primary" disabled={!canSubmit || busy} aria-busy={busy} onClick={() => void submit()}><Icon name="check" />Submit and adjudicate<Shortcut keys="mod+enter" /></button></div></div>
     <div className="stack">
       <section className="card" aria-labelledby="claim-find"><div className="card-body"><div className="toolbar">
-        <ScanInput size="lg" primary value={identifier} onChange={(value) => { setIdentifier(value); if (unit) { setUnit(null); setHit(null); setEntitlements(null); } }} onSubmit={(scan) => { if (mode === "unit") void resolve(scan.value); }} ariaLabel="Scan or enter a serial, asset tag or licence id" placeholder={mode === "unit" ? "Scan or enter any unit identifier" : "Identifier on the product or proof"} hint={lookupBusy ? <span>…</span> : <kbd className="key">F2</kbd>} />
+        <ScanInput size="lg" primary value={identifier} onChange={(value) => { setIdentifier(value); if (unit) { setUnit(null); setHit(null); setEntitlements(null); } }} onSubmit={(scan) => { if (mode === "unit") void resolve(scan.value); }} ariaLabel="Scan or enter a serial, asset tag or licence id" placeholder={mode === "unit" ? "Scan or enter any unit identifier" : "Identifier on the product or proof"} hint={lookupBusy ? <span>…</span> : <Shortcut keys="/" />} />
         <div className="segmented plain" role="group" aria-label="Find by">{([['unit', 'Unit identifier'], ['proof', 'Proof of purchase'], ['no_record', 'No record']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={mode === value} onClick={() => switchMode(value)}>{label}</button>)}</div>
         <span className="grow" /><span className="hint" id="claim-find">{mode === "unit" ? "Superseded serials and asset tags resolve to the same unit." : "A low-confidence unit and entitlement are reconstructed from the proof supplied."}</span>
       </div>{mode === "unit" && identifier && !unit && <div style={{ marginTop: 10 }}><button type="button" className="btn sm" disabled={lookupBusy} onClick={() => void resolve(identifier)}>Resolve unit</button></div>}

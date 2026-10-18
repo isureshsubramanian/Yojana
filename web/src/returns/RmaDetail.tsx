@@ -9,7 +9,7 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDate, fmtDateTime } from "../units/format";
 import { returnsApi } from "./api";
-import { dispositionOptionState, humanise, receiptTone, stageNumber, stageTone } from "./format";
+import { dispositionOptionState, humanise, initialDisposition, receiptTone, stageNumber, stageTone } from "./format";
 import type { RmaDetail, RmaDetailLine } from "./types";
 import "./returns.css";
 
@@ -34,7 +34,7 @@ export function Component() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const load = useCallback((signal?: AbortSignal) => returnsApi.detail(rmaId, signal).then((next) => {
-    setDetail(next); setChoices(Object.fromEntries(next.lines.map((line) => [line.rmaLineId, line.disposition ?? defaultDisposition(line)]))); setVendors({});
+    setDetail(next); setChoices(Object.fromEntries(next.lines.flatMap((line) => { const choice = initialDisposition(line, next.stage); return choice ? [[line.rmaLineId, choice]] : []; }))); setVendors({});
   }), [rmaId]);
   useEffect(() => { const controller = new AbortController(); setError(null); void load(controller.signal).catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); }); return () => controller.abort(); }, [load]);
   const authorise = async () => { setBusy(true); setError(null); try { await returnsApi.authorise(rmaId); await load(); } catch (reason) { setError(reason); } finally { setBusy(false); } };
@@ -50,7 +50,7 @@ export function Component() {
     if (!detail) return;
     setBusy(true); setError(null);
     try {
-      await returnsApi.disposition(rmaId, detail.lines.map((line) => ({ rmaLineId: line.rmaLineId, disposition: choices[line.rmaLineId] ?? defaultDisposition(line), vendorPartyRef: choices[line.rmaLineId] === "return_to_vendor" ? vendors[line.rmaLineId] ?? null : null })));
+      await returnsApi.disposition(rmaId, detail.lines.map((line) => ({ rmaLineId: line.rmaLineId, disposition: choices[line.rmaLineId]!, vendorPartyRef: choices[line.rmaLineId] === "return_to_vendor" ? vendors[line.rmaLineId] ?? null : null })));
       await load();
     } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
@@ -70,11 +70,11 @@ export function Component() {
   });
   const people = usePeople(detail ? [detail.requestedBy, detail.lastActorRef, detail.dispatch?.dispatchedBy, ...detail.lines.map((line) => line.receivedBy)] : []);
   const canDisposition = useMemo(() => !!detail && detail.lines.every((line) => {
-    const choice = choices[line.rmaLineId] ?? defaultDisposition(line);
-    return dispositionOptionState(choice, line, detail.stage).enabled && (choice !== "return_to_vendor" || !!vendors[line.rmaLineId]);
+    const choice = choices[line.rmaLineId];
+    return !!choice && dispositionOptionState(choice, line, detail.stage).enabled && (choice !== "return_to_vendor" || !!vendors[line.rmaLineId]);
   }), [choices, detail, vendors]);
   const rmaEditing = dialog !== null || (!!detail && detail.lines.some((line) =>
-    (choices[line.rmaLineId] ?? defaultDisposition(line)) !== (line.disposition ?? defaultDisposition(line))))
+    (choices[line.rmaLineId] ?? null) !== (line.disposition ?? initialDisposition(line, detail.stage))))
     || Object.values(vendors).some((vendor) => vendor !== null);
   const presence = useDocumentPresence("rma", rmaId, rmaEditing);
   if (!detail) return <main className="content" id="main" tabIndex={-1}><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Returns", to: "/returns" }, { label: "Return" }]} /><p className="muted">Loading return…</p><ErrorNote error={error} /></main>;
@@ -114,8 +114,6 @@ export function Component() {
     {dialog === "close" && <ActionDialog title="Close RMA" onCancel={() => setDialog(null)} actions={<button type="button" className="btn primary" disabled={busy} onClick={() => void close()}>{busy ? "Checking…" : "Close RMA"}</button>}>{closeFollowUps.length ? <><p>The RMA cannot close until every follow-up is complete.</p><ol className="returns-checks">{closeFollowUps.map((followUp) => <li key={followUp.rmaLineId}><span>Line {followUp.sequence} · {humanise(followUp.disposition)}<span className="s">{followUp.detail}</span></span><StatusBadge tone="warn">Open</StatusBadge></li>)}</ol></> : <p>Every recorded follow-up appears complete. The server will verify the current replacement, refurbishment, entitlement and ownership facts before closing.</p>}<ErrorNote error={error} /></ActionDialog>}
   </>;
 }
-
-function defaultDisposition(line: RmaDetailLine): string { return line.conditionGrade === "defective" ? "refurbish" : "return_to_stock"; }
 
 function MismatchPanel({ line, names }: { line: RmaDetailLine; names: ReturnType<typeof useReferenceNames> }) {
   return <section className="card" aria-labelledby={`mismatch-${line.rmaLineId}`}><div className="card-header"><h2 id={`mismatch-${line.rmaLineId}`}>Line {line.sequence} · received unit is not the authorised unit</h2><StatusBadge tone="bad">Held in quarantine</StatusBadge></div><div className="card-body"><div className="returns-pair"><div className="returns-pair-side"><div className="returns-pair-label">Authorised</div><div className="serial">{line.authorisedSerial ?? "No serial recorded"}</div><div className="sub muted">{names.item(line.requestedItemId)}</div></div><div className="returns-pair-arrow" aria-hidden="true">≠</div><div className="returns-pair-side bad"><div className="returns-pair-label">Received · {fmtDateTime(line.receiptBusinessTime)}</div><div className="serial">{line.receivedSerial ?? "Provisional identity"}</div><div className="sub muted">{names.item(line.receivedItemId)}{line.exceptionNote ? ` · ${line.exceptionNote}` : ""}</div></div></div><div className="returns-options" style={{ marginTop: 12 }} aria-label="Mismatch resolution choices">{[["Amend to the received unit", "confirm ownership and cover before binding"], ["Reject and return", "ship it back and request the authorised unit"], ["Treat as unauthorised", "no claim attaches · separate receipt"]].map(([label, reason]) => <div className="returns-option off" key={label}><span><span className="returns-option-title">{label}</span><span className="s">{reason} · use the correction workbench</span></span></div>)}</div></div></section>;

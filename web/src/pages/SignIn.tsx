@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { api, ApiError } from "../api/client";
 import type { Session } from "../api/types";
+import { Shortcut } from "../components/Shortcut";
 import { BareFrame } from "../shell/Frame";
 import { Icon } from "../shell/Icons";
 
@@ -45,7 +46,7 @@ export function Component() {
                 <input id="s-pass" className="input" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
               </div>
               {error && <div className="form-error" role="alert">{error}</div>}
-              <button type="submit" className="btn primary block" aria-busy={busy}>Sign in<kbd className="key">↵</kbd></button>
+              <button type="submit" className="btn primary block" aria-busy={busy}>Sign in<Shortcut keys="enter" /></button>
               <div className="divider">or</div>
               <button type="button" className="btn block" disabled title="Single sign-on is configured per tenant">Continue with single sign-on</button>
               <div className="scanbox">

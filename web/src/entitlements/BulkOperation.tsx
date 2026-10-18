@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import type { BulkExecutionResult, BulkOperationArguments, BulkPreviewResult, SelectionSource, UnitOutcome } from "../api/units";
 import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
-import { DataGrid, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
@@ -165,6 +165,11 @@ export function Component() {
     setBusy(true); setError(null);
     try { setRequest(await entitlementApi.rejectRequest(request.requestId, decisionNote)); } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
+  useModEnter(request ? approve : approvalBlocked ? raise : execute, request
+    ? !pending || !preview || preview.block > 0 || busy
+    : approvalBlocked
+      ? !args || busy || !!raised
+      : !preview || !args || preview.change === 0 || preview.block > 0 || busy || !!executed);
 
   const openOutcome = (row: UnitOutcome) => {
     const detail = previewDetail(row.detail);
@@ -184,11 +189,11 @@ export function Component() {
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Entitlements", to: "/entitlements/gaps" }, { label: "Bulk operation" }]} />
       <div className="page-header"><div><div className="eyebrow">Bulk command · {operation} · preview, then execute</div><h1>{OPERATIONS.find(([id]) => id === operation)?.[1] ?? "Bulk entitlement operation"}</h1><p className="sub">{selectionId ? `Selection ${shortId(selectionId)} · ${resolvedCount} units` : "Address a selection set"} · one transaction, one source document, one approval</p></div><div className="actions"><Link className="btn ghost" to="/entitlements/gaps">Discard</Link>{request ? <>
         <button className="btn" type="button" disabled={!pending || !decisionNote.trim() || busy} aria-busy={busy} onClick={reject}>Reject</button>
-        <button className="btn primary" type="button" disabled={!pending || !preview || preview.block > 0 || busy} aria-busy={busy} onClick={approve}>Approve and execute · {preview?.change ?? 0}<kbd className="key">⌘↵</kbd></button>
+        <button className="btn primary" type="button" disabled={!pending || !preview || preview.block > 0 || busy} aria-busy={busy} onClick={approve}>Approve and execute · {preview?.change ?? 0}<Shortcut keys="mod+enter" /></button>
       </> : <>
         <button className="btn" type="button" disabled={!sourceReady || busy} aria-busy={busy} onClick={resolve}>Resolve selection</button>
-        {approvalBlocked ? <button className="btn primary" type="button" disabled={!args || busy || !!raised} aria-busy={busy} onClick={raise}>Request approval · {preview?.block ?? 0}</button>
-          : <button className="btn primary" type="button" disabled={!preview || !args || preview.change === 0 || preview.block > 0 || busy || !!executed} aria-busy={busy} onClick={execute}>Execute · {preview?.change ?? 0}<kbd className="key">⌘↵</kbd></button>}
+        {approvalBlocked ? <button className="btn primary" type="button" disabled={!args || busy || !!raised} aria-busy={busy} onClick={raise}>Request approval · {preview?.block ?? 0}<Shortcut keys="mod+enter" /></button>
+          : <button className="btn primary" type="button" disabled={!preview || !args || preview.change === 0 || preview.block > 0 || busy || !!executed} aria-busy={busy} onClick={execute}>Execute · {preview?.change ?? 0}<Shortcut keys="mod+enter" /></button>}
       </>}</div></div>
 
       <section className="card" style={{ marginBottom: "var(--gap)" }}><div className="card-body" style={{ paddingTop: 10, paddingBottom: 10 }}><div className="segmented plain" role="group" aria-label="Operation" style={{ flexWrap: "wrap" }}>{OPERATIONS.map(([id, label]) => <button type="button" key={id} aria-pressed={operation === id} disabled={!!request} onClick={() => { setOperation(id); setPreview(null); }}>{label}</button>)}</div></div></section>

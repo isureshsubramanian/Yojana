@@ -1,6 +1,7 @@
 import { useState, type KeyboardEvent } from "react";
 import { useNavigate, useRevalidator } from "react-router";
 import { api } from "../api/client";
+import { Shortcut } from "../components/Shortcut";
 import { initials, roleLabel, useSession } from "../session/session";
 import { BareFrame } from "../shell/Frame";
 
@@ -58,7 +59,7 @@ export function Component() {
           )}
           {error && <div className="card-body" style={{ paddingTop: 0 }}><div className="form-error" role="alert">{error}</div></div>}
           <div className="card-footer">
-            <span><kbd className="key">↑</kbd> <kbd className="key">↓</kbd> move · <kbd className="key">↵</kbd> open</span>
+            <span><kbd className="key">↑</kbd> <kbd className="key">↓</kbd> move · <Shortcut keys="enter" /> open</span>
             {current && <button type="button" className="btn primary sm" aria-busy={busy} onClick={() => open(current.code)}>Open {current.name}</button>}
           </div>
         </section>

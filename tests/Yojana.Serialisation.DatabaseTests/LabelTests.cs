@@ -268,6 +268,28 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Legal_review_phrases_use_whole_word_and_phrase_boundaries()
+    {
+        var tenant = await fixture.NewTenantAsync("labels-phrase-boundary");
+        var unit = await UnitAsync(tenant, "BOUNDARY", "BOUNDARY-MFG");
+        using (var scope = fixture.ScopeFor(tenant))
+            await scope.ServiceProvider.GetRequiredService<LabelSettings>()
+                .SetAsync(new LabelPolicy(["void"], false, "default"), CancellationToken.None);
+        var created = await InvokeAsync<LabelTemplateCreated>(tenant, new CreateLabelTemplate(Guid.NewGuid(),
+            "Phrase boundary label", LabelTemplateAppliesTo.IdentifierType, IdentifierType.ManufacturerSerial, "label.admin"));
+
+        var avoid = await InvokeAsync<LabelTemplateVersionSaved>(tenant, new SaveLabelTemplateDraft(Guid.NewGuid(),
+            created.TemplateId, null, At, null, LabelLayoutKind.Html, "<p>{{serial}} avoid devoid</p>", ["avoid devoid"],
+            [new("serial", LabelBindableField.ManufacturerSerial, true)], LabelSymbology.DataMatrix, unit.UnitId, false, "label.admin"));
+        var hit = await InvokeAsync<LabelTemplateVersionSaved>(tenant, new SaveLabelTemplateDraft(Guid.NewGuid(),
+            created.TemplateId, null, At, null, LabelLayoutKind.Html, "<p>{{serial}} warranty void.</p>", ["warranty void."],
+            [new("serial", LabelBindableField.ManufacturerSerial, true)], LabelSymbology.DataMatrix, unit.UnitId, false, "label.admin"));
+
+        Assert.False(avoid.LegalReview);
+        Assert.True(hit.LegalReview);
+    }
+
+    [DatabaseFact]
     public async Task Preview_returns_a_real_QR_image_for_the_serial_lookup_url()
     {
         var tenant = await fixture.NewTenantAsync("labels-qr");

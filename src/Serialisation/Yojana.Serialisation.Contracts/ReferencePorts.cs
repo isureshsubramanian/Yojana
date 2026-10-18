@@ -14,6 +14,18 @@ public interface IItemNamePort
     Task<IReadOnlyList<ItemLabel>> SearchAsync(string text, int take, CancellationToken cancellationToken);
 }
 
+/// <summary>An item-family label supplied by the item-owning module or a connector.</summary>
+public sealed record ItemFamilyLabel(string Code, string Name);
+
+/// <summary>
+/// Serialisation's read contract for item-family names. Item-family codes remain the stable values stored on
+/// templates and policies; this port keeps their user-facing names outside those documents.
+/// </summary>
+public interface IItemFamilyNamePort
+{
+    Task<IReadOnlyList<ItemFamilyLabel>> ListAsync(CancellationToken cancellationToken);
+}
+
 /// <summary>A business-partner label supplied by the party-owning module or a connector.</summary>
 public sealed record PartyLabel(Guid PartyRef, string Code, string? Name, string? PartyType);
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { DataGrid, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
 import { Rail } from "../shell/Drawer";
 import { openDrawer } from "../shell/drawerStore";
@@ -58,11 +58,12 @@ export function Component() {
   ];
   const blocked = preview?.preview.block ?? rows.filter((row) => row.outcome === "blocked").length;
   const moving = preview?.preview.change ?? rows.filter((row) => row.outcome !== "blocked").length;
+  useModEnter(commit, !command || !preview || blocked > 0 || !!preview?.preview.refusal || busy);
 
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Corrections", to: "/corrections" }, { label: "Reassign allocation" }]} />
-      <div className="page-header"><div><div className="eyebrow">ReassignAllocation · serials allocated to the wrong work order · before commissioning only</div><h1>Reassign allocation</h1><p className="sub">Serial-range reservations move between work orders as a pairwise exchange; a serial already commissioned cannot move here (use the workbench: crossed pair or void).</p></div><div className="actions"><Link className="btn ghost" to="/corrections">Back to workbench</Link><button type="button" className="btn" onClick={() => void runPreview()} disabled={!command || busy}>Preview exchange</button><button type="button" className="btn primary" onClick={() => void commit()} disabled={!command || !preview || blocked > 0 || !!preview.preview.refusal || busy}>Commit exchange<kbd className="key">⌘↵</kbd></button></div></div>
+      <div className="page-header"><div><div className="eyebrow">ReassignAllocation · serials allocated to the wrong work order · before commissioning only</div><h1>Reassign allocation</h1><p className="sub">Serial-range reservations move between work orders as a pairwise exchange; a serial already commissioned cannot move here (use the workbench: crossed pair or void).</p></div><div className="actions"><Link className="btn ghost" to="/corrections">Back to workbench</Link><button type="button" className="btn" onClick={() => void runPreview()} disabled={!command || busy}>Preview exchange</button><button type="button" className="btn primary" onClick={() => void commit()} disabled={!command || !preview || blocked > 0 || !!preview.preview.refusal || busy}>Commit exchange<Shortcut keys="mod+enter" /></button></div></div>
       <ErrorNote error={error} />
       <div className="cols-2-3">
         <section className="card" aria-labelledby="allocation-orders"><div className="card-header"><h2 id="allocation-orders">Work orders</h2><span className="meta">scheme {scheme || "required"}</span></div><div className="card-body">

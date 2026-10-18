@@ -7,5 +7,6 @@
 .jurisdiction-result { padding: 10px 0; border-bottom: 1px solid var(--rule); }
 .jurisdiction-result:last-child { border-bottom: 0; }
 .jurisdiction-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.jurisdiction-starter-tag { display: inline-flex; margin-left: 8px; padding: 2px 7px; border: 1px solid var(--rule); border-radius: 999px; color: var(--text-3); font-size: var(--fs-0); }
 @media (max-width: 900px) { .jurisdiction-sections, .jurisdiction-toolbar, .jurisdiction-form { grid-template-columns: 1fr; } .jurisdiction-form .span-2 { grid-column: auto; } }
 
