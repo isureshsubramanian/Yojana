@@ -62,12 +62,13 @@ public static class LabelBindableField
     public const string AsBuiltRevision = "as_built.revision";
     public const string AsBuiltBuildDate = "as_built.build_date";
     public const string BaseEntitlementEndDate = "entitlement.base.end_date";
+    public const string LookupUrl = "lookup.url";
 
     public static readonly IReadOnlyList<string> All =
     [
         UnitLifecycleStatus, UnitExpiryDate, ItemCode, ItemName, ItemRevision, IdentifierValue,
         ManufacturerSerial, InternalSerial, VendorSerial, CustomerAssetTag, AsBuiltRevision,
-        AsBuiltBuildDate, BaseEntitlementEndDate,
+        AsBuiltBuildDate, BaseEntitlementEndDate, LookupUrl,
     ];
 }
 
@@ -110,7 +111,8 @@ public sealed record LabelTemplatePreview(
     string? RenderedPayload,
     IReadOnlyList<LabelResolvedBinding> Bindings,
     string? EmptyRequiredField,
-    string? RejectionReason);
+    string? RejectionReason,
+    BarcodeEncoding? Barcode);
 
 public sealed record RequestLabelLegalReview(Guid CommandId, Guid TemplateVersionId, string ActorRef);
 

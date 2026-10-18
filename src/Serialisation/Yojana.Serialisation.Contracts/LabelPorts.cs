@@ -10,10 +10,23 @@ public interface ILabelPrinterPort
     Task<LabelPrinterReceipt> SendAsync(LabelPrinterRequest request, CancellationToken cancellationToken);
 }
 
-public sealed record BarcodeEncoding(string MediaType, string Data);
+public sealed record BarcodeEncoding(
+    string Symbology,
+    string MediaType,
+    string DataUrl,
+    int Width,
+    int Height,
+    int QuietZone,
+    string Content);
 
-/// <summary>Deferred P6-T11 barcode/QR implementation boundary; the current stub returns no image.</summary>
+/// <summary>Barcode generation boundary. Implementations return self-contained preview data and never own label layout.</summary>
 public interface IBarcodeEncoder
 {
-    Task<BarcodeEncoding?> EncodeAsync(string symbology, string value, CancellationToken cancellationToken);
+    Task<BarcodeEncoding> EncodeAsync(string symbology, string value, CancellationToken cancellationToken);
+}
+
+/// <summary>Deployment-owned route from a serial value to the lookup entry point encoded by QR labels.</summary>
+public interface ILabelLookupUrlBuilder
+{
+    string ForSerial(string serial);
 }

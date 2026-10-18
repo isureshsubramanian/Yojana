@@ -27,6 +27,17 @@ public sealed class RepositoryInput
 
     [JsonPropertyName("takenOn")]
     public string TakenOn { get; set; } = "";
+
+    /// <summary>Copyright statement quoted exactly as the project's source files carry it, when the licence text has none.</summary>
+    [JsonPropertyName("copyrightStatement")]
+    public string? CopyrightStatement { get; set; }
+
+    /// <summary>A file the copyright statement points to (for example "the X authors" listed in AUTHORS); part of the notice.</summary>
+    [JsonPropertyName("authorsFile")]
+    public string? AuthorsFile { get; set; }
+
+    [JsonPropertyName("authorsSourceUrl")]
+    public string? AuthorsSourceUrl { get; set; }
 }
 
 /// <summary>A component that is not a NuGet package (shared frameworks, vendored files) and must still be credited.</summary>
@@ -191,11 +202,25 @@ public static class NoticesGate
                     body.Append(Repo.Normalise(File.ReadAllText(Path.Combine(package.Folder, file))));
                 }
             }
-            else if (repositories.FirstOrDefault(r => Matches(r, package.RepositoryUrl)) is { } repo)
+            // Older packages sometimes put their repository only in projectUrl. It is still an explicit manifest
+            // source, so allow the same audited repository input to match either field.
+            else if (repositories.FirstOrDefault(r => Matches(r, package.RepositoryUrl) || Matches(r, package.ProjectUrl)) is { } repo)
             {
+                if (repo.CopyrightStatement is not null)
+                {
+                    body.AppendLine("Copyright (as stated in the project's source files): " + repo.CopyrightStatement);
+                    body.AppendLine();
+                }
                 body.AppendLine($"The package carries only a licence identifier. Licence text taken from {repo.SourceUrl} on {repo.TakenOn}:");
                 body.AppendLine();
                 body.Append(ReadInput(inputsFolder, repo.LicenceFile, problems, package.Key));
+                if (repo.AuthorsFile is not null)
+                {
+                    body.AppendLine();
+                    body.AppendLine($"Authors list the copyright statement refers to, taken from {repo.AuthorsSourceUrl} on {repo.TakenOn}:");
+                    body.AppendLine();
+                    body.Append(ReadInput(inputsFolder, repo.AuthorsFile, problems, package.Key));
+                }
                 if (repo.NoticeFile is not null)
                 {
                     body.AppendLine();
@@ -213,7 +238,7 @@ public static class NoticesGate
             }
             else
             {
-                problems.Add($"{package.Key}: no bundled licence file, no repository input matching '{package.RepositoryUrl ?? "(no repository url)"}', and no SPDX template for '{package.LicenseExpression ?? package.LicenseFile ?? "?"}' in {InputRelativePath}");
+                problems.Add($"{package.Key}: no bundled licence file, no repository input matching repository '{package.RepositoryUrl ?? "(none)"}' or project '{package.ProjectUrl ?? "(none)"}', and no SPDX template for '{package.LicenseExpression ?? package.LicenseFile ?? "?"}' in {InputRelativePath}");
                 continue;
             }
 

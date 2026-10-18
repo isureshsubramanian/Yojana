@@ -262,6 +262,28 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Preview_returns_a_real_QR_image_for_the_serial_lookup_url()
+    {
+        var tenant = await fixture.NewTenantAsync("labels-qr");
+        var unit = await UnitAsync(tenant, "QR", "QR 2610/0012");
+        var created = await InvokeAsync<LabelTemplateCreated>(tenant, new CreateLabelTemplate(Guid.NewGuid(),
+            "QR lookup label", LabelTemplateAppliesTo.IdentifierType, IdentifierType.ManufacturerSerial, "label.admin"));
+        var saved = await InvokeAsync<LabelTemplateVersionSaved>(tenant, new SaveLabelTemplateDraft(Guid.NewGuid(),
+            created.TemplateId, null, At, null, LabelLayoutKind.Zpl, "^XA^FO20,20^BQN,2,6^FDLA,{{lookup}}^FS^XZ", [],
+            [new("lookup", LabelBindableField.LookupUrl, true)], LabelSymbology.Qr, unit.UnitId, false, "label.admin"));
+
+        var preview = await InvokeAsync<LabelTemplatePreview>(tenant, new PreviewLabelTemplate(saved.TemplateVersionId,
+            unit.UnitId, "label.admin"));
+
+        Assert.Null(preview.RejectionReason);
+        Assert.Contains("/api/units/lookup?q=QR%202610%2F0012", preview.RenderedPayload);
+        Assert.NotNull(preview.Barcode);
+        Assert.Equal(LabelSymbology.Qr, preview.Barcode.Symbology);
+        Assert.Equal("/api/units/lookup?q=QR%202610%2F0012", preview.Barcode.Content);
+        Assert.StartsWith("data:image/png;base64,", preview.Barcode.DataUrl, StringComparison.Ordinal);
+    }
+
+    [DatabaseFact]
     public async Task Ticket_T6_required_empty_and_Code39_asterisk_are_rejected_before_any_printer_send()
     {
         var tenant = await fixture.NewTenantAsync("labels-blank");

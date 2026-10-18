@@ -11,13 +11,16 @@ public sealed record LabelRenderOutcome(
     string? Payload,
     IReadOnlyList<LabelResolvedBinding> Bindings,
     string? EmptyRequiredField,
-    string? RejectionReason);
+    string? RejectionReason,
+    BarcodeEncoding? Barcode = null);
 
 /// <summary>Small, non-executable {{name}} substitution engine over the fixed field catalogue.</summary>
-public sealed class LabelRenderer(SerialisationDbContext db, ITenantContext tenant, IItemNamePort itemNames, LabelSettings settings)
+public sealed class LabelRenderer(SerialisationDbContext db, ITenantContext tenant, IItemNamePort itemNames,
+    LabelSettings settings, IBarcodeEncoder barcodes, ILabelLookupUrlBuilder lookupUrls)
 {
     public async Task<LabelRenderOutcome> RenderAsync(LabelTemplate template, LabelTemplateVersion version, Guid unitId,
-        Guid? identifierId, DateTime at, CancellationToken cancellationToken, bool enforceExpirySetting = true)
+        Guid? identifierId, DateTime at, CancellationToken cancellationToken, bool enforceExpirySetting = true,
+        bool includeBarcodePreview = false)
     {
         var tenantId = tenant.TenantId;
         var unit = await db.Units.AsNoTracking().FirstOrDefaultAsync(row => row.TenantId == tenantId && row.UnitId == unitId, cancellationToken);
@@ -47,6 +50,7 @@ public sealed class LabelRenderer(SerialisationDbContext db, ITenantContext tena
                 && row.Direction == EntitlementDirection.Outbound && row.Status != EntitlementStatus.Closed)
             .Select(row => row.EndDate).FirstOrDefaultAsync(cancellationToken);
         var policy = await settings.GetAsync(cancellationToken);
+        var lookupUrl = selectedIdentifier is null ? null : lookupUrls.ForSerial(selectedIdentifier.RawValue);
 
         string? Identifier(string type) => identifiers.FirstOrDefault(row => row.Type == type)?.RawValue;
         var values = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -64,6 +68,7 @@ public sealed class LabelRenderer(SerialisationDbContext db, ITenantContext tena
             [LabelBindableField.AsBuiltRevision] = build?.Revision,
             [LabelBindableField.AsBuiltBuildDate] = build is null ? null : build.ReleasedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             [LabelBindableField.BaseEntitlementEndDate] = !enforceExpirySetting || policy.PrintExpiryDates ? Date(baseEnd) : null,
+            [LabelBindableField.LookupUrl] = lookupUrl,
         };
 
         var resolved = LabelTemplateRules.Bindings(version.Bindings)
@@ -79,7 +84,17 @@ public sealed class LabelRenderer(SerialisationDbContext db, ITenantContext tena
         var payload = version.Layout;
         foreach (var binding in resolved)
             payload = payload.Replace("{{" + binding.Placeholder + "}}", binding.Value ?? string.Empty, StringComparison.Ordinal);
-        return new(payload, resolved, null, null);
+
+        BarcodeEncoding? barcode = null;
+        if (includeBarcodePreview)
+        {
+            var barcodeValue = version.Symbology == LabelSymbology.Qr ? lookupUrl : selectedIdentifier?.RawValue;
+            if (string.IsNullOrWhiteSpace(barcodeValue))
+                return new(null, resolved, LabelBindableField.IdentifierValue,
+                    $"{LabelBindableField.IdentifierValue} is empty for unit {unitId}");
+            barcode = await barcodes.EncodeAsync(version.Symbology, barcodeValue, cancellationToken);
+        }
+        return new(payload, resolved, null, null, barcode);
     }
 
     private static string? Date(DateOnly? value) => value?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);

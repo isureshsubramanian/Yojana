@@ -21,6 +21,8 @@
          ("Copyright 2018-2025 Solidsoft Reply Ltd."); its dependency Solidsoft.Reply.Parsers.Common 1.0.3 is Apache-2.0 too
          ("Copyright 2018-2024 Solidsoft Reply Ltd."). Neither ships a NOTICE file. Recorded in tools/gates/licence-policy.json knownLicenceFiles. -->
     <PackageVersion Include="Solidsoft.Reply.Parsers.Gs1Ai" Version="2.0.0" />
+    <!-- Barcode generation (Apache-2.0; tagged licence recorded by the P6-T11 notices inputs; package and tag contain no NOTICE). -->
+    <PackageVersion Include="ZXing.Net" Version="0.16.11" />
     <!-- Scheduling: Apache-2.0 (quartznet/quartznet) -->
     <PackageVersion Include="Quartz" Version="4.5.0" />
     <!-- Tests only (not shipped): Apache-2.0 (xunit), MIT (Microsoft test platform) -->

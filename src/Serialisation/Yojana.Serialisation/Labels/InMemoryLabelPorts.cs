@@ -16,10 +16,3 @@ public sealed class InMemoryLabelPrinterPort : ILabelPrinterPort
         return Task.FromResult(new LabelPrinterReceipt(true, $"memory:{request.JobId:N}"));
     }
 }
-
-/// <summary>P6-T11 is licence-blocked; layouts may still contain native ZPL barcode commands as ordinary text.</summary>
-public sealed class StubBarcodeEncoder : IBarcodeEncoder
-{
-    public Task<BarcodeEncoding?> EncodeAsync(string symbology, string value, CancellationToken cancellationToken) =>
-        Task.FromResult<BarcodeEncoding?>(null);
-}

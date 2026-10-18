@@ -17,7 +17,7 @@ public static class LabelTemplateLifecycleHandler
             ?? throw new CommandRefusedException("label_preview_sample_required", "Choose a sample unit before previewing the label.");
         // Preview can inspect an expiry binding while OD-11 is off; actual printing still enforces the tenant switch.
         var result = await renderer.RenderAsync(template, version, unitId, null, clock.UtcNow, cancellationToken,
-            enforceExpirySetting: false);
+            enforceExpirySetting: false, includeBarcodePreview: true);
         if (version.Status == LabelTemplateStatus.Draft && result.RejectionReason is null)
         {
             version.PreviewedAt = clock.UtcNow;
@@ -26,7 +26,7 @@ public static class LabelTemplateLifecycleHandler
             await db.SaveChangesAsync(cancellationToken);
         }
         return new(version.TemplateVersionId, unitId, version.LayoutKind, result.Payload, result.Bindings,
-            result.EmptyRequiredField, result.RejectionReason);
+            result.EmptyRequiredField, result.RejectionReason, result.Barcode);
     }
 
     public static async Task<LabelTemplateVersionChanged> Handle(RequestLabelLegalReview command, SerialisationDbContext db,
