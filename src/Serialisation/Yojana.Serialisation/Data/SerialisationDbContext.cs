@@ -1603,18 +1603,25 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasKey(row => new { row.TenantId, row.JobId });
             b.Property(row => row.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
             b.Property(row => row.PrinterRef).HasMaxLength(200);
+            b.Property(row => row.RequestedSerial).HasMaxLength(100);
             b.Property(row => row.RequestedBy).HasMaxLength(200);
             b.Property(row => row.Status).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.RejectionRule).HasMaxLength(100).IsUnicode(false);
             b.Property(row => row.RejectionReason).HasMaxLength(500);
+            b.Property(row => row.EmptyRequiredField).HasMaxLength(100).IsUnicode(false);
             b.HasOne<LabelTemplateVersion>().WithMany().HasForeignKey(row => new { row.TenantId, row.TemplateVersionId }).OnDelete(DeleteBehavior.Restrict);
             b.HasOne<PrintJob>().WithMany().HasForeignKey(row => new { row.TenantId, row.OriginalJobId }).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.BatchCommandId, row.BatchSequence }).IsUnique()
+                .HasFilter("[batch_command_id] IS NOT NULL");
             b.HasIndex(row => new { row.TenantId, row.SourceEventId }).IsUnique().HasFilter("[source_event_id] IS NOT NULL");
             b.HasIndex(row => new { row.TenantId, row.Status, row.RequestedAt });
             b.HasIndex(row => new { row.TenantId, row.TemplateVersionId, row.RequestedAt });
             b.HasIndex(row => new { row.TenantId, row.UnitId, row.RequestedAt });
             b.HasIndex(row => new { row.TenantId, row.IdentifierId });
             b.HasIndex(row => new { row.TenantId, row.OriginalJobId });
+            b.HasIndex(row => new { row.TenantId, row.RequestedAt })
+                .IncludeProperties(row => new { row.Status, row.PrinterRef, row.OriginalJobId, row.SourceEventId });
         });
         // End P6 labels block.
 

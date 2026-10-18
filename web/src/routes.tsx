@@ -65,6 +65,11 @@ export const router = createBrowserRouter([
           { path: "replacements/awaiting", lazy: () => import("./replacements/AwaitingReturns") },
           { path: "refurbishments", lazy: () => import("./refurbishments/RefurbishmentList") },
           { path: "refurbishments/:id", lazy: () => import("./refurbishments/Refurbishment") },
+          // P6 label screens. Certificate routes remain supplied by the sibling certificate UI change.
+          { path: "labels/print-jobs", lazy: () => import("./labels/PrintJobs") },
+          { path: "labels/templates/new", lazy: () => import("./labels/LabelTemplateEditor") },
+          { path: "labels/templates/:id", lazy: () => import("./labels/LabelTemplateEditor") },
+          { path: "settings/labels", lazy: () => import("./settings/LabelSettings") },
           { path: "claims/campaigns", lazy: () => import("./campaigns/Campaigns") },
           { path: "claims/campaigns/new", lazy: () => import("./campaigns/CampaignEditor") },
           { path: "claims/campaigns/:campaignId", lazy: () => import("./campaigns/CampaignEditor") },

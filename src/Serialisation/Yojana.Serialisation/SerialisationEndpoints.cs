@@ -584,15 +584,26 @@ public static class SerialisationEndpoints
             try { return Results.Ok(await settings.SetAsync(policy, ct)); }
             catch (CommandRefusedException ex) { return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest); }
         }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
-        labels.MapGet("/print-jobs", async (string? status, Guid? template, string? serial, DateTime? requestedFrom,
+        labels.MapGet("/print-jobs", async (string? status, Guid? template, string? find, string? serial,
+            string? printer, string? kind, DateTime? from, DateTime? to, DateTime? requestedFrom,
             DateTime? requestedTo, int? skip, int? take, LabelQueries queries, CancellationToken ct) =>
-            Results.Ok(await queries.JobsAsync(status, template, serial, requestedFrom, requestedTo, skip ?? 0, take ?? 50, ct)));
+            Results.Ok(await queries.JobsAsync(status, template, find ?? serial, printer, kind,
+                from ?? requestedFrom, to ?? requestedTo, skip ?? 0, take ?? 50, ct)));
+        labels.MapGet("/print-jobs/summary", async (DateTime from, DateTime to, LabelQueries queries,
+            CancellationToken ct) => Results.Ok(await queries.SummaryAsync(from, to, ct)));
+        labels.MapGet("/print-jobs/printers", async (DateTime? from, DateTime? to, LabelQueries queries,
+            CancellationToken ct) => Results.Ok(await queries.PrintersAsync(from, to, ct)));
         labels.MapGet("/print-jobs/{jobId:guid}", async (Guid jobId, LabelQueries queries, CancellationToken ct) =>
             await queries.JobAsync(jobId, ct) is { } job ? Results.Ok(job) : Results.NotFound());
         labels.MapPost("/print-jobs", (PrintLabelRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant,
             CancellationToken ct) => Invoke<LabelPrintResult>(bus, tenant, new PrintLabel(request.CommandId,
                 request.UnitId, request.TemplateId, request.IdentifierId, request.PrinterRef, request.PrintAt,
                 request.LegalEntityId, Actor(user)), ct))
+            .RequireAuthorization(YojanaPolicy.LabelPrinter);
+        labels.MapPost("/print-jobs/batch", (BatchPrintLabelRequest request, ClaimsPrincipal user, IMessageBus bus,
+            ITenantContext tenant, IClock clock, CancellationToken ct) => Invoke<LabelBatchPrintResult>(bus, tenant,
+                new BatchPrintLabels(request.CommandId, request.TemplateVersionId, request.PrinterRef,
+                    request.Serials, clock.UtcNow, Actor(user)), ct))
             .RequireAuthorization(YojanaPolicy.LabelPrinter);
         labels.MapPost("/print-jobs/{jobId:guid}/reprint", (Guid jobId, ReprintLabelRequest request, ClaimsPrincipal user,
             IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<LabelPrintResult>(bus, tenant,
@@ -1311,6 +1322,12 @@ public static class SerialisationEndpoints
         string? PrinterRef,
         DateTime ReprintedAt,
         Guid LegalEntityId);
+
+    public sealed record BatchPrintLabelRequest(
+        Guid CommandId,
+        Guid? TemplateVersionId,
+        string PrinterRef,
+        IReadOnlyList<string> Serials);
 
     public sealed record ScanRequest(string Raw);
 }

@@ -309,6 +309,93 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Print_job_filters_and_summary_run_over_the_complete_tenant_range()
+    {
+        var tenant = await fixture.NewTenantAsync("labels-monitor");
+        var complete = await UnitAsync(tenant, "MONITOR-A", "MONITOR-MFG-A");
+        var incomplete = await UnitAsync(tenant, "MONITOR-B", itemId: complete.ItemId);
+        var template = await ActiveTemplateAsync(tenant, complete.UnitId, "Monitor label",
+            LabelTemplateAppliesTo.ItemFamily, "systems", "SER={{serial}}",
+            [new("serial", LabelBindableField.ManufacturerSerial, true)]);
+        var first = await InvokeAsync<LabelPrintResult>(tenant, new PrintLabel(Guid.NewGuid(), complete.UnitId,
+            template.TemplateId, null, "pack-1", At.AddMinutes(2), Entity, "label.printer"));
+        await InvokeAsync<LabelPrintResult>(tenant, new PrintLabel(Guid.NewGuid(), incomplete.UnitId,
+            template.TemplateId, null, "pack-2", At.AddMinutes(3), Entity, "label.printer"));
+        await InvokeAsync<LabelPrintResult>(tenant, new ReprintLabel(Guid.NewGuid(), first.JobId,
+            "pack-2", At.AddMinutes(4), Entity, "label.printer"));
+        await InvokeAsync<LabelPrintResult>(tenant, new PrintLabel(Guid.NewGuid(), complete.UnitId,
+            template.TemplateId, null, "pack-1", At.AddMinutes(5), Entity, "system", Guid.NewGuid()));
+
+        using var scope = fixture.ScopeFor(tenant);
+        var queries = scope.ServiceProvider.GetRequiredService<LabelQueries>();
+        var printer = await queries.JobsAsync(null, null, null, "pack-2", null, At, At.AddHours(1),
+            0, 50, CancellationToken.None);
+        Assert.Equal(2, printer.Total);
+        Assert.All(printer.Rows, row => Assert.Equal("pack-2", row.PrinterRef));
+        var reprints = await queries.JobsAsync(null, null, null, null, LabelPrintJobKind.Reprint, At,
+            At.AddHours(1), 0, 50, CancellationToken.None);
+        Assert.Single(reprints.Rows);
+        Assert.NotNull(reprints.Rows[0].OriginalJobId);
+        var events = await queries.JobsAsync(null, null, null, null, LabelPrintJobKind.Event, At,
+            At.AddHours(1), 0, 50, CancellationToken.None);
+        Assert.Single(events.Rows);
+        Assert.NotNull(events.Rows[0].SourceEventId);
+        var between = await queries.JobsAsync(null, null, null, null, null, At.AddMinutes(3.5),
+            At.AddMinutes(4.5), 0, 50, CancellationToken.None);
+        Assert.Single(between.Rows);
+        Assert.NotNull(between.Rows[0].OriginalJobId);
+
+        var summary = await queries.SummaryAsync(At, At.AddHours(1), CancellationToken.None);
+        Assert.Equal((4, 3, 0, 1, 1, 1), (summary.Printed, summary.Confirmed, summary.Waiting,
+            summary.Rejected, summary.Reprints, summary.FromEvents));
+    }
+
+    [DatabaseFact]
+    public async Task Batch_print_is_set_based_replay_safe_and_reports_unknown_and_empty_required_fields()
+    {
+        var tenant = await fixture.NewTenantAsync("labels-batch");
+        var complete = await UnitAsync(tenant, "BATCH-A", "BATCH-MFG-A");
+        var incomplete = await UnitAsync(tenant, "BATCH-B", itemId: complete.ItemId);
+        var template = await ActiveTemplateAsync(tenant, complete.UnitId, "Batch label",
+            LabelTemplateAppliesTo.ItemFamily, "systems", "SER={{serial}}",
+            [new("serial", LabelBindableField.ManufacturerSerial, true)]);
+        var beforeComplete = await UnitConsistencyAsync(tenant, complete.UnitId);
+        var beforeIncomplete = await UnitConsistencyAsync(tenant, incomplete.UnitId);
+        var commandId = Guid.NewGuid();
+        var command = new BatchPrintLabels(commandId, template.VersionId, "batch-printer",
+            ["BATCH-A-INT", "BATCH-B-INT", "UNKNOWN-999"], At.AddMinutes(2), "label.printer");
+
+        var result = await InvokeAsync<LabelBatchPrintResult>(tenant, command);
+        Assert.False(result.Replayed);
+        Assert.Equal(3, result.Outcomes.Count);
+        Assert.Equal(LabelPrintStatus.Confirmed, result.Outcomes[0].Status);
+        Assert.Equal("label_required_field_empty", result.Outcomes[1].RejectionRule);
+        Assert.Equal(LabelBindableField.ManufacturerSerial, result.Outcomes[1].EmptyRequiredField);
+        Assert.Contains(LabelBindableField.ManufacturerSerial, result.Outcomes[1].RejectionReason);
+        Assert.Equal("label_batch_unknown_serial", result.Outcomes[2].RejectionRule);
+        Assert.Null(result.Outcomes[2].JobId);
+
+        var replay = await InvokeAsync<LabelBatchPrintResult>(tenant, command with { Serials = ["changed"] });
+        Assert.True(replay.Replayed);
+        Assert.Equal(result.Outcomes, replay.Outcomes);
+
+        var afterComplete = await UnitConsistencyAsync(tenant, complete.UnitId);
+        Assert.Equal(beforeComplete.OwnerEpisodeId, afterComplete.OwnerEpisodeId);
+        Assert.Equal(beforeComplete.CustodyEpisodeId, afterComplete.CustodyEpisodeId);
+        Assert.Equal(beforeComplete.CustodyLocationKind, afterComplete.CustodyLocationKind);
+        Assert.Equal(beforeComplete.Entitlements, afterComplete.Entitlements);
+        Assert.Equal(beforeComplete.IdentifierIds.Order(), afterComplete.IdentifierIds.Order());
+        Assert.Equal([LabelEventType.Printed], afterComplete.LabelEvents);
+        var afterIncomplete = await UnitConsistencyAsync(tenant, incomplete.UnitId);
+        Assert.Equal(beforeIncomplete.OwnerEpisodeId, afterIncomplete.OwnerEpisodeId);
+        Assert.Equal(beforeIncomplete.CustodyEpisodeId, afterIncomplete.CustodyEpisodeId);
+        Assert.Equal(beforeIncomplete.CustodyLocationKind, afterIncomplete.CustodyLocationKind);
+        Assert.Equal(beforeIncomplete.Entitlements, afterIncomplete.Entitlements);
+        Assert.Equal(beforeIncomplete.IdentifierIds.Order(), afterIncomplete.IdentifierIds.Order());
+        Assert.Empty(afterIncomplete.LabelEvents);
+    }
+
+    [DatabaseFact]
     public async Task Tickets_T44_and_T50_keep_the_printed_expiry_and_reprint_the_stored_payload_after_template_and_entitlement_changes()
     {
         var setup = await EntitledUnitAsync("labels-expiry");

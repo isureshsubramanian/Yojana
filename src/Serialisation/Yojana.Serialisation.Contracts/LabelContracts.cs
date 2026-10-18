@@ -40,6 +40,14 @@ public static class LabelPrintStatus
     public static readonly IReadOnlyList<string> All = [Rendered, Sent, Confirmed, Rejected];
 }
 
+public static class LabelPrintJobKind
+{
+    public const string Manual = "manual";
+    public const string Reprint = "reprint";
+    public const string Event = "event";
+    public static readonly IReadOnlyList<string> All = [Manual, Reprint, Event];
+}
+
 public static class LabelEventType
 {
     public const string Printed = "label.printed";
@@ -135,7 +143,11 @@ public sealed record PrintLabel(
     DateTime PrintAt,
     Guid LegalEntityId,
     string ActorRef,
-    Guid? SourceEventId = null);
+    Guid? SourceEventId = null,
+    Guid? TemplateVersionId = null,
+    Guid? BatchCommandId = null,
+    int? BatchSequence = null,
+    string? RequestedSerial = null);
 
 public sealed record ReprintLabel(
     Guid CommandId,
@@ -145,7 +157,36 @@ public sealed record ReprintLabel(
     Guid LegalEntityId,
     string ActorRef);
 
-public sealed record LabelPrintResult(Guid JobId, string Status, string? RejectionReason, string? PayloadHash, bool Replayed);
+public sealed record LabelPrintResult(
+    Guid JobId,
+    string Status,
+    string? RejectionReason,
+    string? PayloadHash,
+    bool Replayed,
+    string? RejectionRule = null,
+    string? EmptyRequiredField = null);
+
+public sealed record BatchPrintLabels(
+    Guid CommandId,
+    Guid? TemplateVersionId,
+    string PrinterRef,
+    IReadOnlyList<string> Serials,
+    DateTime PrintAt,
+    string ActorRef);
+
+public sealed record LabelBatchPrintOutcome(
+    string Serial,
+    Guid? UnitId,
+    Guid? JobId,
+    string Status,
+    string? RejectionRule,
+    string? RejectionReason,
+    string? EmptyRequiredField);
+
+public sealed record LabelBatchPrintResult(
+    Guid CommandId,
+    IReadOnlyList<LabelBatchPrintOutcome> Outcomes,
+    bool Replayed);
 
 public sealed record LabelTemplateCatalogueRow(
     Guid TemplateId,
@@ -154,6 +195,7 @@ public sealed record LabelTemplateCatalogueRow(
     string AppliesToValue,
     int VersionCount,
     int? ActiveVersion,
+    Guid? ActiveTemplateVersionId,
     DateTime CreatedAt,
     string CreatedBy,
     int? LatestVersion,
@@ -199,7 +241,7 @@ public sealed record LabelTemplateDetail(
 public sealed record LabelPrintJobRow(
     Guid JobId,
     Guid? TemplateVersionId,
-    Guid UnitId,
+    Guid? UnitId,
     Guid? IdentifierId,
     Guid? OriginalJobId,
     string? TemplateName,
@@ -211,12 +253,24 @@ public sealed record LabelPrintJobRow(
     string RequestedBy,
     DateTime RequestedAt,
     string Status,
+    string? RejectionRule,
     string? RejectionReason,
+    string? EmptyRequiredField,
     DateTime? SentAt,
     DateTime? ConfirmedAt,
     Guid? SourceEventId);
 
 public sealed record LabelPrintJobPage(IReadOnlyList<LabelPrintJobRow> Rows, int Total, int Skip, int Take);
+
+public sealed record LabelPrintJobSummary(
+    int Printed,
+    int Confirmed,
+    int Waiting,
+    int Rejected,
+    int Reprints,
+    int FromEvents,
+    DateTime From,
+    DateTime To);
 
 public sealed record LabelPolicy(IReadOnlyList<string> LegalReviewPhrases, bool PrintExpiryDates = false, string DefaultPrinterRef = "default");
 
