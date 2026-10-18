@@ -268,7 +268,7 @@ public static class SerialisationModule
         builder.Services.TryAddScoped<ICertificateRefurbishmentReadPort, CertificateRefurbishmentReadPort>();
         builder.Services.TryAddScoped<ICertificateReplacementReadPort, Replacements.CertificateReplacementReadPort>();
         builder.Services.TryAddScoped<ICertificateEntitlementReadPort, Entitlements.CertificateEntitlementReadPort>();
-        builder.Services.TryAddScoped<ICertificatePresentationPort, NeutralCertificatePresentationPort>();
+        builder.Services.TryAddScoped<ICertificatePresentationPort, TenantAssetCertificatePresentationPort>();
         builder.Services.TryAddScoped<ICertificateRenderer, PlainHtmlCertificateRenderer>();
         builder.Services.AddScoped<ReleaseRecordPayloadBuilder>();
         builder.Services.AddScoped<WarrantyCertificatePayloadBuilder>();
@@ -277,6 +277,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<CertificateTemplateService>();
         builder.Services.AddScoped<CertificateVersioningEngine>();
         builder.Services.AddScoped<CertificateQueries>();
+        builder.Services.AddScoped<TenantAssetService>();
         // End P6 certificate block.
 
         // Replay-and-diff healer (P1-T05): per tenant, nightly, through the platform's recurring tenant jobs.

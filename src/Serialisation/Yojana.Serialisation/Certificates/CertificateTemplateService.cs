@@ -23,11 +23,18 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
             .OrderBy(row => row.DocumentKind).ThenBy(row => row.Name).ToListAsync(cancellationToken);
         var versions = await db.CertificateTemplateVersions.AsNoTracking().Where(row => row.TenantId == tenant.TenantId)
             .ToListAsync(cancellationToken);
+        var versionIds = versions.Select(version => version.TemplateVersionId).ToList();
+        var issuedByVersion = await db.CertificateInstances.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && versionIds.Contains(row.TemplateVersionId))
+            .GroupBy(row => row.TemplateVersionId).Select(group => new { VersionId = group.Key, Count = group.Count() })
+            .ToDictionaryAsync(row => row.VersionId, row => row.Count, cancellationToken);
         return rows.Select(row =>
         {
-            var latest = versions.Where(version => version.TemplateId == row.TemplateId).OrderByDescending(version => version.Version).First();
+            var own = versions.Where(version => version.TemplateId == row.TemplateId).ToList();
+            var latest = own.OrderByDescending(version => version.Version).First();
             return new CertificateTemplateSummary(row.TemplateId, row.Code, row.Name, row.DocumentKind, row.FormType,
-                row.AppliesToItemClass, row.BuiltIn, latest.Version, latest.Status);
+                row.AppliesToItemClass, row.BuiltIn, latest.Version, latest.Status, latest.EffectiveFrom, latest.EffectiveTo,
+                latest.ApprovedBy, latest.ApprovedAt, own.Sum(version => issuedByVersion.GetValueOrDefault(version.TemplateVersionId)));
         }).ToList();
     }
 
@@ -75,6 +82,21 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
         var template = await EditableAsync(templateId, cancellationToken);
         var validation = Validate(template.DocumentKind, request.LayoutBody, request.HeaderBody, request.FooterBody, request.Fields);
         if (!validation.Valid) return new CertificateTemplateSaveResult(null, validation);
+        var referencedAssets = request.BrandingAssets.Values.Append(request.BrandingAssetId ?? Guid.Empty)
+            .Where(assetId => assetId != Guid.Empty).Distinct().ToList();
+        var assets = await db.TenantAssets.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && referencedAssets.Contains(row.AssetId) && row.Kind == TenantAssetKind.Logo)
+            .ToDictionaryAsync(row => row.AssetId, cancellationToken);
+        if (assets.Count != referencedAssets.Count)
+            throw new CommandRefusedException("certificate_logo_unknown", "One or more logo assets do not exist for this tenant.");
+        foreach (var binding in request.BrandingAssets)
+        {
+            Guid? expectedEntity = binding.Key == "default" ? null
+                : Guid.TryParse(binding.Key, out var entityId) ? entityId
+                : throw new CommandRefusedException("certificate_logo_issuer_invalid", $"Logo issuer key '{binding.Key}' is invalid.");
+            if (assets[binding.Value].LegalEntityId != expectedEntity)
+                throw new CommandRefusedException("certificate_logo_issuer_mismatch", "The logo was not uploaded for the issuer it is bound to.");
+        }
         var now = clock.UtcNow;
         CertificateTemplateVersion version;
         if (request.TemplateVersionId is { } versionId)
@@ -187,7 +209,7 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
         var validation = Validate(template.DocumentKind, version.LayoutBody, version.HeaderBody, version.FooterBody, fields);
         if (!validation.Valid) return new CertificateTemplatePreview([], "text/html; charset=utf-8", validation);
         var built = await payloads.BuildAsync(new IssueCertificateVersion(Guid.CreateVersion7(), sampleUnitId, template.DocumentKind,
-            template.FormType, null, clock.UtcNow, actorRef, Guid.Empty), cancellationToken)
+            template.FormType, null, clock.UtcNow, actorRef, Guid.Empty), versionId, cancellationToken)
             ?? throw new CommandRefusedException("unit_unknown", $"Sample unit {sampleUnitId} does not exist.");
         var rendered = await renderer.RenderAsync(new CertificateRenderRequest(built.CanonicalPayload, versionId), cancellationToken);
         return new CertificateTemplatePreview(rendered.Bytes, rendered.MediaType, validation);
@@ -279,7 +301,11 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
         version.MarginLeftMm = request.MarginLeftMm;
         version.HeaderBody = request.HeaderBody;
         version.FooterBody = request.FooterBody;
-        version.BrandingAssetRef = request.BrandingAssetRef;
+        version.BrandingAssetId = request.BrandingAssetId;
+        // COUPLING (branding-map keys): TenantAssetCertificatePresentationPort reads "default" or the issuer Guid
+        // string written here. A typed JSON object cannot use a nullable Guid key; changing either format alone makes
+        // an issuer silently fall back to neutral branding, so keep the key contract in step on both sides.
+        version.BrandingAssetRef = JsonSerializer.Serialize(request.BrandingAssets);
         version.StaticText = JsonSerializer.Serialize(request.StaticText);
         version.Fields = JsonSerializer.Serialize(request.Fields.Distinct(StringComparer.Ordinal).Order().ToList());
         version.UpdatedAt = now;
@@ -295,7 +321,8 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
         Orientation = source?.Orientation ?? "portrait", MarginTopMm = source?.MarginTopMm ?? 15,
         MarginRightMm = source?.MarginRightMm ?? 15, MarginBottomMm = source?.MarginBottomMm ?? 15,
         MarginLeftMm = source?.MarginLeftMm ?? 15, HeaderBody = source?.HeaderBody, FooterBody = source?.FooterBody,
-        BrandingAssetRef = source?.BrandingAssetRef, StaticText = source?.StaticText ?? "{}", Fields = source?.Fields ?? "[]",
+        BrandingAssetId = source?.BrandingAssetId, StaticText = source?.StaticText ?? "{}", Fields = source?.Fields ?? "[]",
+        BrandingAssetRef = source?.BrandingAssetRef,
         CreatedAt = now, CreatedBy = actorRef, UpdatedAt = now, UpdatedBy = actorRef,
     };
 
@@ -306,9 +333,17 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
     private static CertificateTemplateVersionRow Version(CertificateTemplateVersion row) => new(row.TemplateVersionId,
         row.Version, row.Status, row.Language, row.PayloadSchemaVersion, row.EffectiveFrom, row.EffectiveTo, row.LayoutKind,
         row.LayoutBody, row.PageSize, row.Orientation, row.MarginTopMm, row.MarginRightMm, row.MarginBottomMm, row.MarginLeftMm,
-        row.HeaderBody, row.FooterBody, row.BrandingAssetRef,
+        row.HeaderBody, row.FooterBody, row.BrandingAssetId,
+        BrandingAssets(row.BrandingAssetRef),
         JsonSerializer.Deserialize<Dictionary<string, string>>(row.StaticText) ?? [], JsonSerializer.Deserialize<List<string>>(row.Fields) ?? [],
         row.ApprovedBy, row.ApprovedAt, row.CreatedAt, row.CreatedBy, row.UpdatedAt, row.UpdatedBy);
+
+    private static Dictionary<string, Guid> BrandingAssets(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new Dictionary<string, Guid>();
+        try { return JsonSerializer.Deserialize<Dictionary<string, Guid>>(json) ?? []; }
+        catch (JsonException) { return new Dictionary<string, Guid>(); }
+    }
 
     private static List<string> Placeholders(string text)
     {

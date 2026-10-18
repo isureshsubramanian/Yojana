@@ -831,6 +831,9 @@ public static class SerialisationEndpoints
                 skip ?? 0, take ?? 50, ct)));
         certificates.MapGet("/{certificateId:guid}", async (Guid certificateId, CertificateQueries queries, CancellationToken ct) =>
             await queries.DetailAsync(certificateId, ct) is { } certificate ? Results.Ok(certificate) : Results.NotFound());
+        certificates.MapGet("/{certificateId:guid}/rendered", async (Guid certificateId, CertificateQueries queries, CancellationToken ct) =>
+            await queries.RenderAsync(certificateId, ct) is { } rendered
+                ? Results.File(rendered.Bytes, rendered.MediaType) : Results.NotFound());
         certificates.MapGet("/units/{unitId:guid}/versions", async (Guid unitId, CertificateQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.ChainAsync(unitId, ct)));
         // End P6 certificate read surface.
@@ -881,6 +884,64 @@ public static class SerialisationEndpoints
             TemplateInvoke(() => service.PreviewAsync(templateId, versionId, request.SampleUnitId, Actor(user), ct)))
             .RequireAuthorization(templateEditor);
         // End P6 certificate-template surface.
+
+        // P6 tenant image assets. Uploads are append-only; template versions hold the id and issued certificates also
+        // hold the content hash, so replacing a tenant logo cannot change a prior rendering.
+        var tenantAssets = app.MapGroup("/api/tenant-assets").RequireAuthorization(YojanaPolicy.TenantMember);
+        tenantAssets.MapGet("/", (Guid? legalEntityId, TenantAssetService service, CancellationToken ct) =>
+            service.ListLogosAsync(legalEntityId, ct));
+        tenantAssets.MapGet("/{assetId:guid}/content", async (Guid assetId, HttpContext http,
+            TenantAssetService service, CancellationToken ct) =>
+        {
+            var asset = await service.ContentAsync(assetId, ct);
+            if (asset is null) return Results.NotFound();
+            http.Response.Headers.CacheControl = "private, max-age=31536000, immutable";
+            http.Response.Headers.ETag = $"\"{asset.Sha256}\"";
+            return Results.File(asset.Bytes, asset.MediaType, lastModified: asset.UploadedAt);
+        });
+        tenantAssets.MapPost("/", async (HttpRequest request, ClaimsPrincipal user, IMessageBus bus,
+            ITenantContext tenant, CancellationToken ct) =>
+        {
+            if (!request.HasFormContentType)
+                return Results.Problem(title: "tenant_asset_multipart_required", detail: "Upload the logo as multipart form data.",
+                    statusCode: StatusCodes.Status415UnsupportedMediaType);
+            var form = await request.ReadFormAsync(ct);
+            var file = form.Files.GetFile("file");
+            if (file is null)
+                return Results.Problem(title: "tenant_asset_file_required", detail: "The multipart field 'file' is required.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            if (!form.TryGetValue("commandId", out var commandValue) || !Guid.TryParse(commandValue, out var commandId))
+                return Results.Problem(title: "tenant_asset_command_id_required", detail: "A valid upload command id is required.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            Guid? legalEntityId = null;
+            if (form.TryGetValue("legalEntityId", out var value) && !string.IsNullOrWhiteSpace(value))
+            {
+                if (!Guid.TryParse(value, out var parsed))
+                    return Results.Problem(title: "tenant_asset_legal_entity_invalid", detail: "The legal entity is not a valid identifier.",
+                        statusCode: StatusCodes.Status400BadRequest);
+                legalEntityId = parsed;
+            }
+            try
+            {
+                if (file.Length > TenantAssetService.MaximumBytes)
+                    throw new CommandRefusedException("tenant_asset_too_large", "Logos may be at most 1 MB.");
+                await using var buffer = new MemoryStream((int)file.Length);
+                await file.CopyToAsync(buffer, ct);
+                var result = await bus.InvokeAsync<TenantAssetUploadResult>(
+                    new UploadTenantLogo(commandId, legalEntityId, buffer.ToArray(), Actor(user)),
+                    new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, ct);
+                return result.Replayed ? Results.Ok(result.Asset)
+                    : Results.Created($"/api/tenant-assets/{result.Asset.AssetId}/content", result.Asset);
+            }
+            catch (CommandRefusedException ex)
+            {
+                var status = ex.Rule == "tenant_asset_too_large" ? StatusCodes.Status413PayloadTooLarge
+                    : StatusCodes.Status422UnprocessableEntity;
+                return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: status,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+            }
+        }).RequireAuthorization(templateEditor);
+        // End P6 tenant image assets.
 
         var selections = app.MapGroup("/api/selections").RequireAuthorization(YojanaPolicy.TenantMember);
         selections.MapPost("/", (ResolveSelectionSet command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ResolveSelectionSetResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));

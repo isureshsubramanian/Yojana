@@ -153,7 +153,15 @@ public sealed record LabelTemplateCatalogueRow(
     int VersionCount,
     int? ActiveVersion,
     DateTime CreatedAt,
-    string CreatedBy);
+    string CreatedBy,
+    int? LatestVersion,
+    string? LatestStatus,
+    DateTime? EffectiveFrom,
+    DateTime? EffectiveTo,
+    bool LegalReview,
+    string? LegalReviewedBy,
+    DateTime? ApprovedAt,
+    int PrintedCount);
 
 public sealed record LabelTemplateVersionRow(
     Guid TemplateVersionId,

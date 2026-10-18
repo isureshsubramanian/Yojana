@@ -76,6 +76,12 @@ export const router = createBrowserRouter([
           { path: "returns/:rmaId", lazy: () => import("./returns/RmaDetail") },
           { path: "replacements/new", lazy: () => import("./returns/WarrantyReplacement") },
           { path: "replacements/:id", lazy: () => import("./returns/WarrantyReplacement") },
+          // P6 certificate UI worktree block. Keep sibling label routes outside this block during integration.
+          { path: "certificates", lazy: () => import("./certificates/Certificates") },
+          { path: "certificates/:id", lazy: () => import("./certificates/CertificateViewer") },
+          { path: "templates", lazy: () => import("./certificates/TemplateCatalogue") },
+          { path: "templates/certificates/:id", lazy: () => import("./certificates/CertificateDesigner") },
+          // End P6 certificate UI worktree block.
           ...patterns,
           ...placeholders,
           { path: "*", lazy: () => import("./pages/Placeholder") },

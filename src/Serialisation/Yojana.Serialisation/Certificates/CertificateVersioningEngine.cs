@@ -80,10 +80,15 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
             if (unit is null) return await RefuseAsync("unit_unknown", $"Unit {command.UnitId} does not exist.");
             if (unit.LifecycleStatus != LifecycleStatus.Released)
                 return await RefuseAsync("certificate_unit_not_released", $"Unit {command.UnitId} is '{unit.LifecycleStatus}'; certificates can be issued only for released units.");
+            var itemClass = await payloads.ItemClassAsync(unit, cancellationToken);
+            var templateVersionId = await templates.ActiveVersionAsync(command.DocumentKind, command.FormType,
+                itemClass, cancellationToken);
+            if (templateVersionId is null)
+                return await RefuseAsync("certificate_template_unavailable", $"No active {command.FormType} template exists for {command.DocumentKind}.");
             PayloadBuildResult? built;
             try
             {
-                built = await payloads.BuildAsync(command, unit, cancellationToken);
+                built = await payloads.BuildAsync(command, unit, templateVersionId.Value, cancellationToken);
             }
             catch (CertificatePayloadRefusedException exception)
             {
@@ -92,10 +97,6 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
             if (built is null) return await RefuseAsync("certificate_payload_unavailable", $"Certificate facts for unit {command.UnitId} are unavailable.");
             if (command.DocumentKind == CertificateDocumentKind.ReleaseRecord && built.AsBuiltRevisionId is null)
                 return await RefuseAsync("certificate_build_record_missing", $"Released unit {command.UnitId} has no BuildRecord.");
-            var templateVersionId = await templates.ActiveVersionAsync(command.DocumentKind, command.FormType,
-                built.ItemClass, cancellationToken);
-            if (templateVersionId is null)
-                return await RefuseAsync("certificate_template_unavailable", $"No active {command.FormType} template exists for {command.DocumentKind}.");
             var previous = await db.CertificateInstances.Where(row => row.TenantId == tenantId && row.UnitId == command.UnitId
                     && row.DocumentKind == command.DocumentKind && row.Status == CertificateStatus.Issued)
                 .OrderByDescending(row => row.Version).FirstOrDefaultAsync(cancellationToken);

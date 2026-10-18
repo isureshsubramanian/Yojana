@@ -7,8 +7,17 @@ using Yojana.Serialisation.Data;
 namespace Yojana.Serialisation.Certificates;
 
 public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext tenant, ICertificateUnitReadPort units,
-    IPartyNamePort partyNames)
+    IPartyNamePort partyNames, ICertificateRenderer renderer)
 {
+    public async Task<CertificateRenderResult?> RenderAsync(Guid certificateId, CancellationToken cancellationToken)
+    {
+        var row = await db.CertificateInstances.AsNoTracking().Where(item => item.TenantId == tenant.TenantId
+                && item.CertificateId == certificateId)
+            .Select(item => new { item.Payload, item.TemplateVersionId }).FirstOrDefaultAsync(cancellationToken);
+        return row is null ? null : await renderer.RenderAsync(new CertificateRenderRequest(row.Payload,
+            row.TemplateVersionId), cancellationToken);
+    }
+
     public async Task<CertificateDetail?> DetailAsync(Guid certificateId, CancellationToken cancellationToken)
     {
         var row = await db.CertificateInstances.AsNoTracking().FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId

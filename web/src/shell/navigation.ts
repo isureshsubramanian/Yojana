@@ -32,7 +32,10 @@ export const navigation: NavEntry[] = [
   { path: "/returns", label: "Returns", icon: "returns", section: "Work" },
   { path: "/replacements/awaiting", label: "Replacements", icon: "swap", section: "Work" },
   { path: "/refurbishments", label: "Refurbishment", icon: "refurb", section: "Work" },
-  { path: "/certificates", label: "Certificates", icon: "cert", section: "Work", placeholder: "Certificates and labels" },
+  // P6 certificate UI worktree block. Label screens are registered by their sibling worktree.
+  { path: "/certificates", label: "Certificates", icon: "cert", section: "Work" },
+  { path: "/templates", label: "Templates", icon: "templates", section: "Data" },
+  // End P6 certificate UI worktree block.
   { path: "/imports", label: "Imports", icon: "upload", section: "Data", placeholder: "Imports and 3PL capture" },
   { path: "/integration", label: "Integration", icon: "int", section: "Data", placeholder: "Connections and the integration gateway" },
   { path: "/settings", label: "Settings", icon: "set", section: "Data", roles: ["tenant_administrator"], placeholder: "Tenant settings" },
