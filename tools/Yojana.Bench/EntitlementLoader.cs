@@ -89,7 +89,7 @@ public sealed class EntitlementLoader(BenchOptions options, BenchReport report)
             provenance, created_event_id, created_at)
         SELECT @t, e.entitlement_id, e.unit_id, N'unit', e.type, e.family, N'outbound', @obligor, e.policy,
             N'deliver', N'deliver', e.start_date, N'UTC', e.end_date, N'v1', N'time', N'months', e.months,
-            N'{"parts_pct":100,"labour_pct":100,"service_mode":"on_site"}', N'["EU","UK"]', N'yes', e.assurance, e.status, e.closed_reason,
+            N'{"parts_pct":100,"labour_pct":100,"service_mode":"on_site"}', N'["WORLD"]', N'yes', e.assurance, e.status, e.closed_reason,
             CASE WHEN e.status = N'closed' THEN e.end_date END, CASE WHEN e.status = N'closed' THEN @now END, N'high', 0,
             N'backfilled', NEWID(), e.created_at
         FROM #e AS e;

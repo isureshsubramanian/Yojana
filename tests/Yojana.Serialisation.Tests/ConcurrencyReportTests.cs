@@ -40,4 +40,22 @@ public sealed class ConcurrencyReportTests
         Assert.Equal(1, errors["service_unavailable"]);
         Assert.DoesNotContain("document_changed", errors.Keys);
     }
+
+    [Fact]
+    public void Summary_keeps_expected_document_conflicts_in_throughput_without_counting_them_as_failures()
+    {
+        LoadSample[] samples =
+        [
+            new("document_edit", 10, 200, null, false),
+            new("document_edit", 20, 409, "document_changed", true),
+        ];
+
+        var result = Assert.Single(ConcurrencyReportMath.Summarise(samples, TimeSpan.FromSeconds(4)));
+
+        Assert.Equal(2, result.Requests);
+        Assert.Equal(2, result.Successful);
+        Assert.Equal(0, result.Errors);
+        Assert.Equal(0.5, result.Throughput);
+        Assert.Empty(ConcurrencyReportMath.Errors(samples));
+    }
 }
