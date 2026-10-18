@@ -214,6 +214,34 @@ public sealed class RefurbishmentTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Two_technicians_can_record_labour_concurrently_on_the_same_work_order()
+    {
+        var setup = await SetUpUnitAsync("refurb-concurrent-labour", "serviceable");
+        var opened = await InvokeAsync<OpenRefurbishmentResult>(setup.Tenant,
+            new OpenRefurbishment(Guid.NewGuid(), setup.UnitId, RefurbishmentKind.Refurbish,
+                At.AddHours(1), "quality", Entity, Repair));
+        var first = new RecordRefurbishmentLabour(Guid.NewGuid(), opened.WorkOrderId, null, 1.25m, 60m,
+            "EUR", At.AddHours(2), "technician-one", Entity);
+        var second = new RecordRefurbishmentLabour(Guid.NewGuid(), opened.WorkOrderId, null, 0.75m, 60m,
+            "EUR", At.AddHours(2).AddSeconds(1), "technician-two", Entity);
+
+        var results = await Task.WhenAll(
+            InvokeAsync<RefurbishmentLabourResult>(setup.Tenant, first),
+            InvokeAsync<RefurbishmentLabourResult>(setup.Tenant, second));
+
+        Assert.All(results, result => Assert.False(result.Replayed));
+        using var scope = fixture.ScopeFor(setup.Tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        Assert.Equal(2, await db.RefurbishmentLabour.CountAsync(l => l.WorkOrderId == opened.WorkOrderId));
+        Assert.Equal(2, await db.RefurbishmentCosts.CountAsync(c => c.WorkOrderId == opened.WorkOrderId
+            && c.Kind == RefurbishmentCostKind.Labour));
+        await AssertOwnerAndHolderAsync(db, setup.UnitId, Entity, LocationKind.InRepair, Repair);
+        await AssertNoEntitlementsAndSingleOpenSerialAsync(db, setup.UnitId);
+        Assert.Equal(2, await db.Events.CountAsync(e => e.UnitId == setup.UnitId
+            && e.EventType == RefurbishmentEventType.CostPosted));
+    }
+
+    [DatabaseFact]
     public async Task Rework_keeps_identity_never_voids_and_requests_release_record_reissue_only_after_as_built_change()
     {
         var setup = await SetUpUnitAsync("refurb-rework", "production");

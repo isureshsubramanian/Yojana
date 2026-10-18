@@ -478,9 +478,9 @@ public static class SerialisationEndpoints
                 request.RepairLocationId, request.SourceDocument), ct)).RequireAuthorization(YojanaPolicy.ProductionSupervisor);
         refurbishments.MapPost("/{workOrderId:guid}/operations", (Guid workOrderId, AddRefurbishmentOperationRequest request,
             ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            InvokeEdit<RefurbishmentOperationResult>(bus, tenant, new AddRefurbishmentOperation(request.CommandId,
+            Invoke<RefurbishmentOperationResult>(bus, tenant, new AddRefurbishmentOperation(request.CommandId,
                 workOrderId, request.Sequence, request.Description, request.TechnicianRef, request.PlannedHours,
-                request.EventTime, Actor(user), request.LegalEntityId, request.ExpectedVersion), ct)).RequireAuthorization(YojanaPolicy.Technician);
+                request.EventTime, Actor(user), request.LegalEntityId), ct)).RequireAuthorization(YojanaPolicy.Technician);
         refurbishments.MapPost("/{workOrderId:guid}/operations/{operationId:guid}/complete", (Guid workOrderId,
             Guid operationId, CompleteRefurbishmentOperationRequest request, ClaimsPrincipal user, IMessageBus bus,
             ITenantContext tenant, CancellationToken ct) => Invoke<RefurbishmentOperationResult>(bus, tenant,
@@ -488,24 +488,24 @@ public static class SerialisationEndpoints
                     request.CompletedAt, Actor(user), request.LegalEntityId), ct)).RequireAuthorization(YojanaPolicy.Technician);
         refurbishments.MapPost("/{workOrderId:guid}/parts/remove", (Guid workOrderId, RemoveRefurbishmentPartRequest request,
             ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            InvokeEdit<RefurbishmentPartResult>(bus, tenant, new RemoveRefurbishmentPart(request.CommandId, workOrderId,
+            Invoke<RefurbishmentPartResult>(bus, tenant, new RemoveRefurbishmentPart(request.CommandId, workOrderId,
                 request.AssemblyLinkId, request.Destination, request.EventTime, Actor(user), request.LegalEntityId,
-                request.DestinationLocationId, request.VendorPartyRef, request.ExpectedVersion), ct)).RequireAuthorization(YojanaPolicy.Technician);
+                request.DestinationLocationId, request.VendorPartyRef), ct)).RequireAuthorization(YojanaPolicy.Technician);
         refurbishments.MapPost("/{workOrderId:guid}/parts/install", (Guid workOrderId, InstallRefurbishmentPartRequest request,
             ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            InvokeEdit<RefurbishmentPartResult>(bus, tenant, new InstallRefurbishmentPart(request.CommandId, workOrderId,
+            Invoke<RefurbishmentPartResult>(bus, tenant, new InstallRefurbishmentPart(request.CommandId, workOrderId,
                 request.Part, request.UnitCost, request.Currency, request.EventTime, Actor(user), request.LegalEntityId,
-                request.RepairLocationId, request.ExpectedVersion), ct)).RequireAuthorization(YojanaPolicy.Technician);
+                request.RepairLocationId), ct)).RequireAuthorization(YojanaPolicy.Technician);
         refurbishments.MapPost("/{workOrderId:guid}/labour", (Guid workOrderId, RecordRefurbishmentLabourRequest request,
             ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            InvokeEdit<RefurbishmentLabourResult>(bus, tenant, new RecordRefurbishmentLabour(request.CommandId, workOrderId,
+            Invoke<RefurbishmentLabourResult>(bus, tenant, new RecordRefurbishmentLabour(request.CommandId, workOrderId,
                 request.OperationId, request.Hours, request.HourlyRate, request.Currency, request.EventTime,
-                Actor(user), request.LegalEntityId, request.ExpectedVersion), ct)).RequireAuthorization(YojanaPolicy.Technician);
+                Actor(user), request.LegalEntityId), ct)).RequireAuthorization(YojanaPolicy.Technician);
         refurbishments.MapPost("/{workOrderId:guid}/costs", (Guid workOrderId, RecordRefurbishmentCostRequest request,
             ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            InvokeEdit<RefurbishmentCostResult>(bus, tenant, new RecordRefurbishmentCost(request.CommandId, workOrderId,
+            Invoke<RefurbishmentCostResult>(bus, tenant, new RecordRefurbishmentCost(request.CommandId, workOrderId,
                 request.Kind, request.Amount, request.Currency, request.Description, request.EventTime,
-                Actor(user), request.LegalEntityId, request.ExpectedVersion), ct)).RequireAuthorization(YojanaPolicy.InventoryController);
+                Actor(user), request.LegalEntityId), ct)).RequireAuthorization(YojanaPolicy.InventoryController);
         refurbishments.MapPost("/{workOrderId:guid}/release", (Guid workOrderId, ReleaseRefurbishmentRequest request,
             ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<ReleaseRefurbishmentResult>(bus, tenant, new ReleaseRefurbishment(request.CommandId, workOrderId,

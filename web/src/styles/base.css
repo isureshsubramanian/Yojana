@@ -91,6 +91,11 @@ svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-wid
 .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
 .page-header .sub { margin-top: 6px; font-size: 14px; color: var(--text-2); }
 .page-header .actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.presence { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.presence-who { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 10px 0 4px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 12px; }
+.presence-who.editing { background: var(--warning-soft); color: var(--warning); }
+.presence-avatar { width: 20px; height: 20px; display: inline-grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 10px; font-weight: 650; }
+.presence-warning { margin-bottom: var(--gap); }
 .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); margin-bottom: 6px; }
 
 /* Buttons */

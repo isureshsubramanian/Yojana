@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ApiError } from "../api/client";
-import { ActionDialog, StatusBadge } from "../components";
+import { ActionDialog, PresenceAdvisory, PresenceChips, StatusBadge, useDocumentPresence } from "../components";
 import { ItemField, LocationField, PartyField, UnitField, useReferenceNames } from "../corrections/ReferenceFields";
 import { usePeople } from "../people/people";
 import { Rail } from "../shell/Drawer";
@@ -79,6 +79,8 @@ function RefurbishmentScreen({ row, unit, sanitisation, tests, usage, attributes
   completing: RefurbishmentOperationRow | null; setCompleting: (value: RefurbishmentOperationRow | null) => void;
   busy: boolean; setBusy: (value: boolean) => void; error: unknown; setError: (value: unknown) => void; reload: () => Promise<void>;
 }) {
+  const editing = dialog !== null || completing !== null;
+  const presence = useDocumentPresence("refurbishment_work_order", row.workOrderId, editing);
   const currentParts = unit?.asBuilt.filter((part) => part.removedAt === null) ?? [];
   const itemIds = [row.itemId, ...row.parts.map((part) => part.childItemId), ...currentParts.map((part) => part.childItemId)];
   const partyIds = row.parts.map((part) => part.vendorPartyRef);
@@ -93,7 +95,8 @@ function RefurbishmentScreen({ row, unit, sanitisation, tests, usage, attributes
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Refurbishment", to: "/refurbishments" }, { label: row.workOrderNumber }]} />
-      <div className="page-header"><div><div className="eyebrow">Refurbishment work order {row.workOrderNumber} · {humanise(row.kind)} · {humanise(row.status)} · opened {fmtDateTime(row.openedAt)} by {people(row.openedBy)} · cycle {row.cycleNumber} of {row.maxCycles}</div><h1>{row.targetSerial ?? "Serial unavailable"} · {names.item(row.itemId)}</h1><p className="sub">A work order against the existing unit, never a production order · parts and labour roll into this unit’s cost · release applies {identityTitle(row.identityPolicy).toLowerCase()}</p></div>{row.status === "open" && <div className="actions"><button type="button" className="btn" onClick={() => setDialog("labour")}>Record labour</button><button type="button" className="btn" onClick={() => setDialog("cost")}>Record cost</button><button type="button" className="btn" onClick={() => setDialog("cancel")}>Cancel…</button><button type="button" className="btn primary" disabled={releaseBlocked(row.releaseChecks)} title={releaseBlocked(row.releaseChecks) ? "Complete the server release checks first" : undefined} onClick={() => setDialog("release")}><Icon name="check" />Release<kbd className="key">⌘↵</kbd></button></div>}</div>
+      <div className="page-header"><div><div className="eyebrow">Refurbishment work order {row.workOrderNumber} · {humanise(row.kind)} · {humanise(row.status)} · opened {fmtDateTime(row.openedAt)} by {people(row.openedBy)} · cycle {row.cycleNumber} of {row.maxCycles}</div><h1>{row.targetSerial ?? "Serial unavailable"} · {names.item(row.itemId)}</h1><p className="sub">A work order against the existing unit, never a production order · parts and labour roll into this unit’s cost · release applies {identityTitle(row.identityPolicy).toLowerCase()}</p><PresenceChips users={presence} /></div>{row.status === "open" && <div className="actions"><button type="button" className="btn" onClick={() => setDialog("labour")}>Record labour</button><button type="button" className="btn" onClick={() => setDialog("cost")}>Record cost</button><button type="button" className="btn" onClick={() => setDialog("cancel")}>Cancel…</button><button type="button" className="btn primary" disabled={releaseBlocked(row.releaseChecks)} title={releaseBlocked(row.releaseChecks) ? "Complete the server release checks first" : undefined} onClick={() => setDialog("release")}><Icon name="check" />Release<kbd className="key">⌘↵</kbd></button></div>}</div>
+      <PresenceAdvisory users={presence} editing={editing} documentLabel="refurbishment work order" />
       <ErrorNote error={error} onReload={() => { setDialog(null); setCompleting(null); void reload(); }} />
       <div className="stack">
         <div className="refurb-summary" aria-label="Work order figures"><span><span className="k">Operations</span><span className="v">{completedOperations(row)} of {row.operations.length}</span></span><span><span className="k">Parts</span><span className="v">{row.parts.length}</span></span><span><span className="k">Labour</span><span className="v">{hours(totalHours)}</span><span className="sub">{money(labourCost, row.currency)}</span></span><span><span className="k">Release checks</span><span className={`v${openChecks ? " warn-text" : " ok-text"}`}>{openChecks ? `${openChecks} open` : "Ready"}</span></span></div>
@@ -155,11 +158,11 @@ function RefurbishmentActionDialog({ kind, row, unit, grade, names, busy, onCanc
   const submit = async () => {
     if (!valid) return; setBusy(true); setError(null);
     try {
-      if (kind === "add_operation") await refurbishmentsApi.addOperation(row.workOrderId, Number(sequence), description.trim(), Number(plannedHours), row.version);
-      else if (kind === "remove_part") await refurbishmentsApi.removePart(row.workOrderId, assemblyLinkId, destination, row.currentLocationId, vendor, row.version);
-      else if (kind === "install_part") await refurbishmentsApi.installPart(row.workOrderId, { childUnitId: installMode === "unit" ? childUnitId : null, childItemId: installMode === "item" ? childItemId : null, quantity: installMode === "item" ? Number(quantity) : 1, relation: "component", slot: slot.trim() || null }, Number(unitCost), currency.toUpperCase(), row.currentLocationId, row.version);
-      else if (kind === "labour") await refurbishmentsApi.labour(row.workOrderId, operationId, Number(labourHours), Number(rate), currency.toUpperCase(), row.version);
-      else if (kind === "cost") await refurbishmentsApi.cost(row.workOrderId, costKind, Number(costAmount), currency.toUpperCase(), costDescription.trim(), row.version);
+      if (kind === "add_operation") await refurbishmentsApi.addOperation(row.workOrderId, Number(sequence), description.trim(), Number(plannedHours));
+      else if (kind === "remove_part") await refurbishmentsApi.removePart(row.workOrderId, assemblyLinkId, destination, row.currentLocationId, vendor);
+      else if (kind === "install_part") await refurbishmentsApi.installPart(row.workOrderId, { childUnitId: installMode === "unit" ? childUnitId : null, childItemId: installMode === "item" ? childItemId : null, quantity: installMode === "item" ? Number(quantity) : 1, relation: "component", slot: slot.trim() || null }, Number(unitCost), currency.toUpperCase(), row.currentLocationId);
+      else if (kind === "labour") await refurbishmentsApi.labour(row.workOrderId, operationId, Number(labourHours), Number(rate), currency.toUpperCase());
+      else if (kind === "cost") await refurbishmentsApi.cost(row.workOrderId, costKind, Number(costAmount), currency.toUpperCase(), costDescription.trim());
       else if (kind === "release") await refurbishmentsApi.release(row.workOrderId, grade, valuationRule.trim(), warehouseId!);
       else await refurbishmentsApi.cancel(row.workOrderId, reason.trim(), warehouseId!);
       await onDone();

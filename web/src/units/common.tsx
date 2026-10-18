@@ -42,7 +42,7 @@ export function ErrorNote({ error, onReload }: { error: unknown; onReload?: (() 
   const step = error instanceof ApiError ? error.unblockingStep : null;
   if (rule === "document_changed") {
     const when = error instanceof ApiError && error.changedAt ? new Date(error.changedAt).toLocaleString() : "an unknown time";
-    return <div className="form-error" role="alert">Changed by {people(changedBy)} at {when}. {step ?? "Reload to see their change"}.{onReload && <> <button type="button" className="btn sm" onClick={onReload}>Reload</button></>}</div>;
+    return <div className="form-error" role="alert">Changed by {people(changedBy)} at {when}. Your unsaved changes are kept until you choose Reload. {step ?? "Reload to see their change"}.{onReload && <> <button type="button" className="btn sm" onClick={onReload}>Reload</button></>}</div>;
   }
   return <div className="form-error" role="alert">{status === 409 ? `Refused${rule ? ` · ${rule.replace(/_/g, " ")}` : ""} · ` : ""}{message}{step ? ` To unblock: ${step}.` : ""}</div>;
 }
