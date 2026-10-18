@@ -1777,6 +1777,64 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ColumnMapping", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("MappingId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("mapping_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_default");
+
+                    b.Property<string>("MappingJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("mapping_json");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("name");
+
+                    b.Property<DateTime>("RecordedTime")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("recorded_time");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("source");
+
+                    b.HasKey("TenantId", "MappingId")
+                        .HasName("pk_column_mapping");
+
+                    b.HasIndex("TenantId", "Source", "IsDefault")
+                        .HasDatabaseName("ix_column_mapping_tenant_id_source_is_default");
+
+                    b.HasIndex("TenantId", "Source", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ux_column_mapping_tenant_id_source_name");
+
+                    b.ToTable("column_mapping", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_column_mapping_json", "ISJSON(mapping_json) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CorrectionRecord", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -3039,6 +3097,273 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasName("pk_finance_period");
 
                     b.ToTable("finance_period", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ImportJob", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("job_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<int>("AppliedCount")
+                        .HasColumnType("int")
+                        .HasColumnName("applied_count");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<DateTime?>("CompletedTime")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("completed_time");
+
+                    b.Property<string>("ConvertedArchiveReference")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("converted_archive_reference");
+
+                    b.Property<byte[]>("ConvertedContent")
+                        .HasColumnType("varbinary(max)")
+                        .HasColumnName("converted_content");
+
+                    b.Property<string>("ConvertedHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("converted_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)")
+                        .HasColumnName("file_name");
+
+                    b.Property<string>("Format")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(10)")
+                        .HasColumnName("format");
+
+                    b.Property<string>("InboxReference")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("inbox_reference");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(10)")
+                        .HasColumnName("mode");
+
+                    b.Property<string>("OriginalArchiveReference")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("original_archive_reference");
+
+                    b.Property<byte[]>("OriginalContent")
+                        .HasColumnType("varbinary(max)")
+                        .HasColumnName("original_content");
+
+                    b.Property<string>("OriginalHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("original_hash")
+                        .IsFixedLength();
+
+                    b.Property<Guid?>("ParentJobId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parent_job_id");
+
+                    b.Property<DateTime>("RecordedTime")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("recorded_time");
+
+                    b.Property<int>("RejectedCount")
+                        .HasColumnType("int")
+                        .HasColumnName("rejected_count");
+
+                    b.Property<int>("SkippedCount")
+                        .HasColumnType("int")
+                        .HasColumnName("skipped_count");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid?>("TargetId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("target_id");
+
+                    b.Property<int?>("TargetLine")
+                        .HasColumnType("int")
+                        .HasColumnName("target_line");
+
+                    b.Property<string>("TargetType")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("target_type");
+
+                    b.HasKey("TenantId", "JobId")
+                        .HasName("pk_import_job");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_import_job_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "Source", "OriginalHash")
+                        .HasDatabaseName("ix_import_job_tenant_id_source_original_hash");
+
+                    b.HasIndex("TenantId", "Status", "RecordedTime")
+                        .HasDatabaseName("ix_import_job_tenant_id_status_recorded_time");
+
+                    b.HasIndex("TenantId", "TargetType", "TargetId", "TargetLine")
+                        .HasDatabaseName("ix_import_job_tenant_id_target_type_target_id_target_line");
+
+                    b.ToTable("import_job", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_import_job_mode", "mode IN ('apply', 'compare')");
+
+                            t.HasCheckConstraint("ck_import_job_status", "status IN ('intake', 'applied', 'partial', 'rejected', 'compared')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ImportRowResult", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RowResultId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("row_result_id");
+
+                    b.Property<Guid?>("CollisionOwnerPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("collision_owner_party_ref");
+
+                    b.Property<Guid?>("CollisionUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("collision_unit_id");
+
+                    b.Property<string>("ComparisonPartition")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("comparison_partition");
+
+                    b.Property<string>("CustomerAssetTag")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("customer_asset_tag");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("job_id");
+
+                    b.Property<string>("Lot")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("lot");
+
+                    b.Property<string>("NormalisedValue")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("normalised_value");
+
+                    b.Property<string>("OrderNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("order_number");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("outcome");
+
+                    b.Property<string>("ProposedAction")
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("proposed_action");
+
+                    b.Property<string>("RawValue")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("raw_value");
+
+                    b.Property<DateTime>("RecordedTime")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("recorded_time");
+
+                    b.Property<string>("ReviewedAction")
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("reviewed_action");
+
+                    b.Property<int>("RowNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("row_number");
+
+                    b.Property<string>("Rule")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("rule");
+
+                    b.Property<string>("Sheet")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasColumnName("sheet");
+
+                    b.Property<Guid?>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("TenantId", "RowResultId")
+                        .HasName("pk_import_row_result");
+
+                    b.HasIndex("TenantId", "NormalisedValue", "JobId")
+                        .HasDatabaseName("ix_import_row_result_tenant_id_normalised_value_job_id");
+
+                    b.HasIndex("TenantId", "UnitId", "JobId")
+                        .HasDatabaseName("ix_import_row_result_tenant_id_unit_id_job_id");
+
+                    b.HasIndex("TenantId", "JobId", "RowNumber", "RowResultId")
+                        .HasDatabaseName("ix_import_row_result_tenant_id_job_id_row_number_row_result_id");
+
+                    b.ToTable("import_row_result", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_import_row_result_outcome", "outcome IN ('applied', 'skipped', 'rejected')");
+                        });
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ItemTrackingModeChange", b =>
@@ -6955,6 +7280,102 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ThreePlFeedMessage", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("FeedMessageId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("feed_message_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<int>("AssetTagCount")
+                        .HasColumnType("int")
+                        .HasColumnName("asset_tag_count");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("document_id");
+
+                    b.Property<int>("DocumentLine")
+                        .HasColumnType("int")
+                        .HasColumnName("document_line");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("document_type");
+
+                    b.Property<Guid>("ImportJobId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("import_job_id");
+
+                    b.Property<string>("MessageReference")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("message_reference");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("payload_hash")
+                        .IsFixedLength();
+
+                    b.Property<DateTime>("RecordedTime")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("recorded_time");
+
+                    b.Property<int>("RejectedCount")
+                        .HasColumnType("int")
+                        .HasColumnName("rejected_count");
+
+                    b.Property<int>("ShippedCount")
+                        .HasColumnType("int")
+                        .HasColumnName("shipped_count");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("TenantId", "FeedMessageId")
+                        .HasName("pk_three_pl_feed_message");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_three_pl_feed_message_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "ImportJobId")
+                        .HasDatabaseName("ix_three_pl_feed_message_tenant_id_import_job_id");
+
+                    b.HasIndex("TenantId", "MessageReference")
+                        .IsUnique()
+                        .HasDatabaseName("ux_three_pl_feed_message_tenant_id_message_reference");
+
+                    b.HasIndex("TenantId", "DocumentType", "DocumentId", "DocumentLine")
+                        .HasDatabaseName("ix_three_pl_feed_message_tenant_id_document_type_document_id_document_line");
+
+                    b.ToTable("three_pl_feed_message", "serialisation");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.Unit", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -8976,6 +9397,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasConstraintName("fk_correction_record_unit_tenant_id_correction_id");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ImportRowResult", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.ImportJob", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "JobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_import_row_result_tenant_id_job_id");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.JurisdictionRule", b =>
                 {
                     b.HasOne("Yojana.Serialisation.Data.Entities.RegionGroup", null)
@@ -9121,6 +9552,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_rule_pack_rule_tenant_id_rule_pack_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ThreePlFeedMessage", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.ImportJob", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ImportJobId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_three_pl_feed_message_tenant_id_import_job_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.WarrantyReplacementLine", b =>

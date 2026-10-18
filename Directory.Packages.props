@@ -23,6 +23,9 @@
     <PackageVersion Include="Solidsoft.Reply.Parsers.Gs1Ai" Version="2.0.0" />
     <!-- Barcode generation (Apache-2.0; tagged licence recorded by the P6-T11 notices inputs; package and tag contain no NOTICE). -->
     <PackageVersion Include="ZXing.Net" Version="0.16.11" />
+    <!-- Spreadsheet intake/export (MOD-12, OD-30): MIT. Open XML SDK also brings its MIT Framework and System.IO.Packaging dependencies. -->
+    <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
+    <PackageVersion Include="ExcelDataReader" Version="3.9.0" />
     <!-- PDF render worker only: MIT; 25.12.0 was published 2026-09-24 (older than two weeks at adoption). -->
     <PackageVersion Include="PuppeteerSharp" Version="25.12.0" />
     <!-- Scheduling: Apache-2.0 (quartznet/quartznet) -->

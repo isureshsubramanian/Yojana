@@ -21,7 +21,8 @@ namespace Yojana.Serialisation.Selection;
 /// expands within the scheme's block (a boundary-crossing range is rejected, never partially expanded) and reports
 /// serials that are not units yet.
 /// </summary>
-public sealed class SelectionSetResolver(SerialisationDbContext db, UnitResolver resolver, ISerialSchemeSource schemes, ITenantContext tenant, IClock clock)
+public sealed class SelectionSetResolver(SerialisationDbContext db, UnitResolver resolver, ISerialSchemeSource schemes,
+    IImportJobSource imports, ITenantContext tenant, IClock clock)
 {
     public const int MaxUnits = 100_000;
 
@@ -145,6 +146,17 @@ public sealed class SelectionSetResolver(SerialisationDbContext db, UnitResolver
                     if (found.TryGetValue(v, out var id)) units[id] = v; else unknown.Add(v);
                 }
 
+                break;
+            }
+
+            case SelectionSource.Kinds.ImportJob:
+            {
+                var jobId = source.ImportJobId ?? throw new CommandRefusedException("source_invalid", "An import-job source needs a job id.");
+                foreach (var row in await imports.ReadAsync(jobId, cancellationToken))
+                {
+                    if (row.UnitId is { } unitId) units[unitId] = row.NormalisedValue;
+                    else if (!string.IsNullOrWhiteSpace(row.NormalisedValue)) unknown.Add(row.NormalisedValue);
+                }
                 break;
             }
 

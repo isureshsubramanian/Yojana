@@ -9,10 +9,11 @@ using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation.Commands;
 
-/// <summary><see cref="AssignIdentifier"/>: the pending-identifier path (case 6) and additional identifier types on an existing unit.</summary>
-public static class AssignIdentifierHandler
+/// <summary>Narrow application seam for the pending-identifier path and additional identifiers on an existing unit.</summary>
+public sealed class IdentifierAssignmentService(SerialisationDbContext db, IUnitEventWriter writer, IdentifierService identifiers,
+    ITenantContext tenant, IClock clock)
 {
-    public static async Task<AssignIdentifierResult> Handle(AssignIdentifier command, SerialisationDbContext db, IUnitEventWriter writer, IdentifierService identifiers, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+    public async Task<AssignIdentifierResult> ExecuteAsync(AssignIdentifier command, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var unit = await db.Units.FirstOrDefaultAsync(u => u.TenantId == tenantId && u.UnitId == command.UnitId, cancellationToken)
@@ -63,4 +64,11 @@ public static class AssignIdentifierHandler
         unit.LifecycleStatus = next;
         return new AssignIdentifierResult(unit.UnitId, row.IdentifierId, row.NormalisedValue, next);
     }
+}
+
+/// <summary><see cref="AssignIdentifier"/>: the pending-identifier path (case 6) and additional identifier types on an existing unit.</summary>
+public static class AssignIdentifierHandler
+{
+    public static Task<AssignIdentifierResult> Handle(AssignIdentifier command, IdentifierAssignmentService service,
+        CancellationToken cancellationToken) => service.ExecuteAsync(command, cancellationToken);
 }

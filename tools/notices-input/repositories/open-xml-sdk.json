@@ -1,0 +1,7 @@
+{
+  "name": "Open XML SDK",
+  "matchRepositoryUrls": ["https://github.com/dotnet/Open-XML-SDK"],
+  "licenceFile": "texts/open-xml-sdk-LICENSE",
+  "sourceUrl": "https://github.com/dotnet/Open-XML-SDK/blob/main/LICENSE",
+  "takenOn": "2026-10-19"
+}

@@ -10,4 +10,8 @@
     <ProjectReference Include="../../src/Serialisation/Yojana.Serialisation/Yojana.Serialisation.csproj" />
     <ProjectReference Include="../../tools/Yojana.Bench/Yojana.Bench.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Created for this repository with LibreOffice from a three-line CSV; no third-party sample data. -->
+    <None Include="Fixtures/legacy-sample.xls" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
