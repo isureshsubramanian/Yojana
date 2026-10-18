@@ -31,7 +31,7 @@ public sealed class TimeZoneSettingsDatabaseTests(SerialisationHostFixture fixtu
                 TimeZonePurpose.DocumentPresentation, CancellationToken.None));
             Assert.Equal("Asia/Kolkata", await adapter.ForLegalEntityAsync(Guid.NewGuid(),
                 TimeZonePurpose.DocumentPresentation, CancellationToken.None));
-            Assert.Null(await adapter.ForLegalEntityAsync(Guid.NewGuid(),
+            Assert.Equal("Asia/Kolkata", await adapter.ForLegalEntityAsync(Guid.NewGuid(),
                 TimeZonePurpose.EntitlementCalendar, CancellationToken.None));
             await settings.SetAsync(new UpdateTenantTimeZoneSettings("Europe/Paris",
                 first.LegalEntityOverrides, first.Version), "administrator-two", CancellationToken.None);

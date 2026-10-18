@@ -271,7 +271,7 @@ public sealed class SourceDocumentCorrectionEntitlements(
                 RefurbishedBuyerKind.Consumer, line.Terms.Refurbished, scopes, floor, null);
             duration = new(line.Terms.Duration with { Value = disclosure.TermMonths, Unit = DurationRule.Months }, disclosure.FloorApplied, disclosure.MatchedRow);
         }
-        var zone = await CreateEntitlementHandler.ZoneAsync(line.Terms.ReferenceTimeZoneRule,
+        var zone = predecessor?.StartTimeZone ?? await CreateEntitlementHandler.ZoneAsync(line.Terms.ReferenceTimeZoneRule,
             line.Invoice.SiteLocationId ?? unit.LocationId, line.Invoice.ObligorEntityId, zones, cancellationToken);
         var evidence = new Dictionary<string, DateTime>
         {
@@ -316,7 +316,7 @@ public sealed class SourceDocumentCorrectionEntitlements(
     private async Task<Created> CreateServiceAsync(UnitInput unit, LinePlan line, OwnershipSourceDocument source,
         Entitlement? predecessor, Dictionary<string, Entitlement> byFamily, CancellationToken cancellationToken)
     {
-        var zone = await CreateEntitlementHandler.ZoneAsync(line.Terms.ReferenceTimeZoneRule,
+        var zone = predecessor?.StartTimeZone ?? await CreateEntitlementHandler.ZoneAsync(line.Terms.ReferenceTimeZoneRule,
             line.Invoice.SiteLocationId ?? unit.LocationId, line.Invoice.ObligorEntityId, zones, cancellationToken);
         var purchaseDay = TermArithmetic.LocalDay(line.Invoice.PostedAt, zone);
         BaseCoverage? baseCoverage = null;
