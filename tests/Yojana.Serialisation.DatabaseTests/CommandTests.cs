@@ -47,10 +47,26 @@ public sealed class CommandTests(SerialisationHostFixture fixture)
             var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
             var units = await db.Units.Where(u => result.Lines.Select(l => l.UnitId!.Value).Contains(u.UnitId)).ToListAsync();
             Assert.Equal(2, units.Count);
-            Assert.All(units, u => Assert.Equal(LifecycleStatus.PreRelease, u.LifecycleStatus));
+            Assert.All(units, u =>
+            {
+                Assert.Equal(LifecycleStatus.PreRelease, u.LifecycleStatus);
+                Assert.Equal(command.EventTime, u.CreatedEventTime);
+            });
             Assert.Equal(3, await db.Identifiers.CountAsync(i => units.Select(u => u.UnitId).Contains(i.UnitId)));
             Assert.Equal(2, await db.ItemAssignments.CountAsync(a => units.Select(u => u.UnitId).Contains(a.UnitId) && a.ItemId == item));
-            Assert.Equal(2, await db.Episodes.CountAsync(e => units.Select(u => u.UnitId).Contains(e.UnitId) && e.Kind == EpisodeKind.Custody && e.ValidTo == null));
+            var custody = await db.Episodes.Where(e => units.Select(u => u.UnitId).Contains(e.UnitId)
+                && e.Kind == EpisodeKind.Custody && e.ValidTo == null).ToListAsync();
+            Assert.Equal(2, custody.Count);
+            Assert.All(custody, episode =>
+            {
+                Assert.Equal(PartyType.Us, episode.PartyType);
+                Assert.Equal(LocationKind.Warehouse, episode.LocationKind);
+            });
+            Assert.Empty(await db.Episodes.Where(e => units.Select(u => u.UnitId).Contains(e.UnitId)
+                && e.Kind == EpisodeKind.Ownership && e.ValidTo == null).ToListAsync());
+            Assert.Empty(await db.Entitlements.Where(e => units.Select(u => u.UnitId).Contains(e.UnitId)).ToListAsync());
+            Assert.Equal(2, await db.Events.CountAsync(e => units.Select(u => u.UnitId).Contains(e.UnitId)
+                && e.EventType == UnitEventType.Commissioned && e.EventTime == command.EventTime));
             var current = await db.Current.Where(c => units.Select(u => u.UnitId).Contains(c.UnitId)).ToListAsync();
             Assert.Equal(2, current.Count);
             Assert.All(current, c => { Assert.Equal(LifecycleStatus.PreRelease, c.LifecycleStatus); Assert.Equal(LocationKind.Warehouse, c.LocationKind); Assert.NotNull(c.OpenCustodyEpisodeId); });

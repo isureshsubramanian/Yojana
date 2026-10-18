@@ -265,7 +265,8 @@ public static class CommissionUnitsHandler
             {
                 TenantId = tenantId, UnitId = unitId, LifecycleStatus = status, Origin = command.Origin, LotId = line.LotId, ExpiryDate = line.ExpiryDate, BrandIsOurs = command.BrandIsOurs ?? command.Origin != UnitOrigin.TradeIn,
                 DerivedFromUnitId = reuseFrom.TryGetValue(index, out var r) ? r.SourceUnit : null,
-                SerialisationPoint = profile.SerialisationPoint, RetentionClass = profile.RetentionClass, HistoryDepth = command.HistoryDepth, CreatedAt = now, CreatedEventId = eventId,
+                SerialisationPoint = profile.SerialisationPoint, RetentionClass = profile.RetentionClass, HistoryDepth = command.HistoryDepth,
+                CreatedAt = now, CreatedEventId = eventId, CreatedEventTime = command.EventTime,
             });
             identifierRows.AddRange(ids.Select(id => id.ToRow(tenantId, unitId, command.EventTime, command.ActorRef, now, eventId)));
             assignments.Add(new UnitItemAssignment { TenantId = tenantId, AssignmentId = TimeOrderedId.New(command.EventTime), UnitId = unitId, ItemId = command.ItemId, ModelVersionId = command.ModelVersionId, ValidFrom = command.EventTime, Reason = ItemAssignmentReason.Initial, EventId = eventId });

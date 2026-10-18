@@ -26,6 +26,7 @@ using Yojana.Serialisation.Refurbishments;
 using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Labels;
 using Yojana.Serialisation.Jurisdictions;
+using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation;
 
@@ -38,6 +39,10 @@ public static class SerialisationEndpoints
 {
     public static IEndpointRouteBuilder MapSerialisationEndpoints(this IEndpointRouteBuilder app)
     {
+        app.MapGet("/api/admin/ledger-base-order-backfill", async (LedgerBaseOrderBackfill backfill, CancellationToken ct) =>
+            Results.Ok(await backfill.GetProgressAsync(ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+
         var units = app.MapGroup("/api/units").RequireAuthorization(YojanaPolicy.TenantMember);
         units.MapGet("/lookup", async (string q, string? type, UnitQueries queries, CancellationToken ct) =>
             string.IsNullOrWhiteSpace(q) ? Results.BadRequest(new { error = "q is required" }) : Results.Ok(await queries.LookupAsync(q.Trim(), type, ct)));

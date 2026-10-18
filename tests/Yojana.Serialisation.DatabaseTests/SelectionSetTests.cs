@@ -69,6 +69,36 @@ public sealed class SelectionSetTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task A_shipment_base_order_resolves_through_the_indexed_document_projection()
+    {
+        var tenant = await fixture.NewTenantAsync("sbase");
+        var ports = fixture.Services.GetRequiredService<InMemoryDocumentPorts>();
+        var prefix = "SB" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
+        var item = Guid.NewGuid();
+        var receipt = new ReceiptDocument(new DocumentRef("receipt", Guid.NewGuid()), Guid.NewGuid(), At,
+            [new DocumentLine(1, item, 2, [new DocumentSerial($"{prefix}-1"), new DocumentSerial($"{prefix}-2")],
+                Guid.NewGuid(), LocationKind.Warehouse)]);
+        ports.Add(receipt);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new PurchasingReceiptPosted(new ThinEnvelope(Guid.NewGuid(), Entity, At, "selection-test"), receipt.Document));
+
+        var order = new DocumentRef("sales_order", Guid.NewGuid(), 7);
+        var shipment = new ShipmentDocument(new DocumentRef("delivery", Guid.NewGuid()), Guid.NewGuid(), At.AddDays(1),
+            [new DocumentLine(1, item, 2, [new DocumentSerial($"{prefix}-1"), new DocumentSerial($"{prefix}-2")])],
+            BaseOrder: order);
+        ports.Add(shipment);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new SalesShipmentPosted(new ThinEnvelope(Guid.NewGuid(), Entity, At.AddDays(1), "selection-test"), shipment.Document));
+
+        var byOrder = await InvokeAsync<ResolveSelectionSetResult>(tenant,
+            new ResolveSelectionSet(Guid.NewGuid(), SelectionSource.ByDocument(order), "selection-test"));
+        Assert.Equal(2, byOrder.Resolved);
+        var otherLine = await InvokeAsync<ResolveSelectionSetResult>(tenant,
+            new ResolveSelectionSet(Guid.NewGuid(), SelectionSource.ByDocument(order with { Line = 8 }), "selection-test"));
+        Assert.Equal(0, otherLine.Resolved);
+    }
+
+    [DatabaseFact]
     public async Task Preview_is_the_commands_judgement_execution_is_one_transaction_and_a_replay_returns_the_same_report()
     {
         var tenant = await fixture.NewTenantAsync("sx");

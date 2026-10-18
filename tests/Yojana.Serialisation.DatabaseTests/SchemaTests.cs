@@ -1,5 +1,7 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using Yojana.Platform.Contracts.Identifiers;
@@ -27,7 +29,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
         using var scope = fixture.ScopeFor(null);
         var db = Db(scope);
         var expected = db.Model.GetEntityTypes().Where(e => typeof(ITenantScoped).IsAssignableFrom(e.ClrType)).Select(e => e.GetTableName()!).ToHashSet();
-        Assert.Equal(84, expected.Count);
+        Assert.Equal(86, expected.Count);
         var covered = await db.Database.SqlQueryRaw<string>($"""
             SELECT OBJECT_NAME(p.target_object_id) AS [Value]
             FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
@@ -44,6 +46,8 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
             "label_template", "label_template_version", "print_job",
             "region_group", "jurisdiction_rule", "rule_pack", "rule_pack_rule",
             "number_series_setting",
+            "ledger_base_order_ref",
+            "ledger_base_order_backfill_checkpoint",
         });
         var blocks = await db.Database.SqlQueryRaw<int>($"SELECT COUNT(*) AS [Value] FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id WHERE s.name = 'tenant_policy_{S}' AND p.predicate_type_desc = 'BLOCK'").SingleAsync();
         Assert.Equal(expected.Count * 2, blocks);
@@ -65,7 +69,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
         Assert.True(rangeRight);
         foreach (var table in new[] { "unit_event", "unit_event_archive", "unit_event_archive_stage" })
         {
-            // Every index (clustered PK, unique idempotency, covering unit index) must live on the partition scheme.
+            // Every index must live on the partition scheme so a cold month remains switch-compatible.
             var indexes = await db.Database.SqlQueryRaw<string>($"""
                 SELECT CONCAT(i.name, '|', ISNULL(ps.name, 'NOT PARTITIONED'), '|', ISNULL(c.name, '')) AS [Value]
                 FROM sys.indexes i
@@ -74,7 +78,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
                 LEFT JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
                 WHERE i.object_id = OBJECT_ID('{S}.{table}') AND i.index_id > 0
                 """).ToListAsync();
-            Assert.Equal(5, indexes.Count); // clustered key, idempotency, unit, document (P1-T21), merged-from (P3-T09)
+            Assert.Equal(5, indexes.Count); // plus document (P1-T21) and merged-from (P3-T09)
             Assert.All(indexes, x => Assert.EndsWith($"|{SerialisationDbContext.PartitionScheme}|event_time", x));
             Assert.Contains(indexes, x => x.StartsWith($"pk_{table}|", StringComparison.Ordinal));
             Assert.Contains(indexes, x => x.StartsWith($"ux_{table}_tenant_id_idempotency_key_event_time|", StringComparison.Ordinal));
@@ -83,6 +87,35 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
 
         var seqCache = await db.Database.SqlQueryRaw<int>($"SELECT CAST(cache_size AS int) AS [Value] FROM sys.sequences WHERE name = '{SerialisationDbContext.EventSequence}' AND schema_id = SCHEMA_ID('{S}')").SingleAsync();
         Assert.Equal(1000, seqCache);
+    }
+
+    [DatabaseFact]
+    public async Task Base_order_lookup_is_sparse_and_its_migration_never_alters_the_ledger_tables()
+    {
+        using var scope = fixture.ScopeFor(null);
+        var db = Db(scope);
+        var columns = await db.Database.SqlQueryRaw<string>($"""
+            SELECT CONCAT(OBJECT_NAME(object_id), '.', name) AS [Value]
+            FROM sys.columns
+            WHERE object_id IN (OBJECT_ID('{S}.unit_event'), OBJECT_ID('{S}.unit_event_archive'),
+                                OBJECT_ID('{S}.unit_event_archive_stage'))
+              AND name LIKE 'base_document%'
+            """).ToListAsync();
+        Assert.Empty(columns);
+
+        var lookupIndex = await db.Database.SqlQueryRaw<string>($"""
+            SELECT name AS [Value] FROM sys.indexes
+            WHERE object_id = OBJECT_ID('{S}.ledger_base_order_ref') AND name LIKE 'ix_ledger_base_order_ref%'
+            """).SingleAsync();
+        Assert.Equal("ix_ledger_base_order_ref_tenant_id_base_document_type_base_document_id_base_document_line", lookupIndex);
+
+        var script = db.GetService<IMigrator>().GenerateScript(
+            "20261018145354_P6PerformanceReadPaths", "20261018164330_P6PerfLedgerReadShapes");
+        Assert.DoesNotContain("ALTER TABLE [serialisation].[unit_event]", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE TABLE [serialisation].[ledger_base_order_ref]", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE TABLE [serialisation].[ledger_base_order_backfill_checkpoint]", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("JSON_VALUE", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("INSERT INTO [serialisation].[ledger_base_order_ref]", script, StringComparison.OrdinalIgnoreCase);
     }
 
     [DatabaseFact]
@@ -217,6 +250,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
         RetentionClass = "standard_10y",
         CreatedAt = DateTime.UtcNow,
         CreatedEventId = TimeOrderedId.New(),
+        CreatedEventTime = DateTime.UtcNow,
     };
 
     private static UnitIdentifier NewIdentifier(TenantId tenant, Guid unit, string type, string scope, string raw) => new()

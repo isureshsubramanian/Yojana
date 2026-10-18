@@ -1,7 +1,10 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Xunit;
+using Xunit.Abstractions;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Contracts;
@@ -11,7 +14,7 @@ namespace Yojana.Serialisation.DatabaseTests;
 
 /// <summary>OD-26: each series chooses parallel sequence allocation or transactional gap-free allocation.</summary>
 [Collection("serialisation host")]
-public sealed class NumberingTests(SerialisationHostFixture fixture)
+public sealed class NumberingTests(SerialisationHostFixture fixture, ITestOutputHelper output)
 {
     private static readonly DateTime At = new(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
 
@@ -56,6 +59,38 @@ public sealed class NumberingTests(SerialisationHostFixture fixture)
         var numbers = await Task.WhenAll(Enumerable.Range(0, 30).Select(_ => AllocateAsync(tenant, DocumentNumbers.Recovery)));
 
         Assert.Equal(Enumerable.Range(1, 30).Select(n => DocumentNumbers.Format(DocumentNumbers.Recovery, 2026, n)), numbers.OrderBy(x => x, StringComparer.Ordinal));
+    }
+
+    [DatabaseFact]
+    public async Task Gap_free_creators_queue_without_failure_at_peak_concurrency()
+    {
+        var passes = int.TryParse(Environment.GetEnvironmentVariable("YOJANA_NUMBERING_STRESS_PASSES"), out var configured)
+            ? Math.Max(1, configured) : 1;
+        var concurrency = int.TryParse(Environment.GetEnvironmentVariable("YOJANA_NUMBERING_STRESS_CONCURRENCY"), out configured)
+            ? Math.Clamp(configured, 1, 120) : 120;
+        var waits = new ConcurrentBag<TimeSpan>();
+
+        for (var pass = 0; pass < passes; pass++)
+        {
+            // A fresh tenant exercises the empty counter-key range, where every first creator races to insert value 1.
+            var tenant = await fixture.NewTenantAsync("numpeak", importJurisdictionStarter: false);
+            await SetModeAsync(tenant, DocumentNumbers.Recovery, NumberingMode.GapFree);
+            var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var allocations = Enumerable.Range(0, concurrency).Select(async _ =>
+            {
+                await start.Task;
+                var timer = Stopwatch.StartNew();
+                try { return await AllocateAsync(tenant, DocumentNumbers.Recovery); }
+                finally { waits.Add(timer.Elapsed); }
+            }).ToArray();
+            start.SetResult();
+            var numbers = await Task.WhenAll(allocations);
+            Assert.Equal(Enumerable.Range(1, concurrency).Select(n => DocumentNumbers.Format(DocumentNumbers.Recovery, 2026, n)),
+                numbers.OrderBy(x => x, StringComparer.Ordinal));
+        }
+
+        output.WriteLine("{0} passes at concurrency {1}; worst allocation wait {2:N0} ms", passes, concurrency,
+            waits.Max().TotalMilliseconds);
     }
 
     [DatabaseFact]

@@ -124,12 +124,15 @@ public sealed class ReleaseRecordIssuePolicy(
                 && row.Reason == EpisodeReason.Sale && row.PartyType == PartyType.Customer
                 && (row.Kind == EpisodeKind.Ownership
                     || row.Kind == EpisodeKind.Custody && row.LocationKind == LocationKind.CustomerSite))
-            .Select(row => new { row.UnitId, row.ValidFrom, row.ClosingEventId })
+            .Select(row => new { row.UnitId, row.ValidFrom, row.ValidTo, row.ClosingEventId })
             .ToListAsync(cancellationToken);
         var closingIds = rows.Select(row => row.ClosingEventId).OfType<Guid>().Distinct().ToList();
+        var closingTimes = rows.Where(row => row.ClosingEventId != null && row.ValidTo != null)
+            .Select(row => row.ValidTo!.Value).Distinct().ToList();
         var closingFacts = closingIds.Count == 0
             ? []
-            : await db.Events.AsNoTracking().Where(row => closingIds.Contains(row.EventId))
+            : await db.Events.AsNoTracking().Where(row => closingTimes.Contains(row.EventTime)
+                    && closingIds.Contains(row.EventId))
                 .Select(row => new { row.EventId, row.EventType, row.Attributes }).ToListAsync(cancellationToken);
         var corrected = closingFacts.Where(row => row.EventType == UnitEventType.ShipmentReversed
                 || HasCorrection(row.Attributes))

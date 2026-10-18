@@ -35,9 +35,21 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
         {
             await AcquireLockAsync(ModeLock(tenant.TenantId.Value, series), "Shared", cancellationToken);
             var mode = await ModeAsync(series, cancellationToken);
-            var value = mode == NumberingMode.GapFree
-                ? await NextGapFreeAsync(series, at.Year, cancellationToken)
-                : await NextSequenceAsync(series, at.Year, cancellationToken);
+            int value;
+            if (mode == NumberingMode.GapFree)
+            {
+                // TIGHT COUPLING (document-number lock order)
+                // WHAT: allocation takes the shared mode lock before this exclusive counter lock; the settings handler
+                // takes only the exclusive mode lock. WHY: a missing counter row has no stable SQL key to lock, while
+                // MERGE range locks deadlock when first creators race. WHAT BREAKS IF SEPARATED: reversing or omitting
+                // this order can deadlock first allocation or let a mode switch overtake an in-flight document number.
+                await AcquireLockAsync(CounterLock(tenant.TenantId.Value, series, at.Year), "Exclusive", cancellationToken);
+                value = await NextGapFreeAsync(series, at.Year, cancellationToken);
+            }
+            else
+            {
+                value = await NextSequenceAsync(series, at.Year, cancellationToken);
+            }
             if (transaction is not null) await transaction.CommitAsync(cancellationToken);
             return Format(series, at.Year, value);
         }
@@ -156,10 +168,11 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
         await using var connection = new SqlConnection(db.Database.GetConnectionString());
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
+        command.CommandTimeout = 0;
         command.CommandText = $"""
             DECLARE @result int;
             EXEC @result = sys.sp_getapplock @Resource = @resource, @LockMode = 'Exclusive',
-                @LockOwner = 'Session', @LockTimeout = 30000, @DbPrincipal = 'public';
+                @LockOwner = 'Session', @LockTimeout = -1, @DbPrincipal = 'public';
             IF @result < 0 THROW 51000, 'Could not initialise the document-number sequence.', 1;
             IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE schema_id = SCHEMA_ID(N'serialisation') AND name = @name)
                 EXEC(N'CREATE SEQUENCE [serialisation].[{name}] AS int START WITH {start} INCREMENT BY 1 NO CYCLE CACHE 50;');
@@ -175,9 +188,10 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
         await using var command = Command("""
             DECLARE @result int;
             EXEC @result = sys.sp_getapplock @Resource = @resource, @LockMode = @mode,
-                @LockOwner = 'Transaction', @LockTimeout = 30000, @DbPrincipal = 'public';
+                @LockOwner = 'Transaction', @LockTimeout = -1, @DbPrincipal = 'public';
             IF @result < 0 THROW 51000, 'Could not acquire the document-numbering lock.', 1;
             """);
+        command.CommandTimeout = 0;
         Add(command, "@resource", resource);
         Add(command, "@mode", mode);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -209,6 +223,7 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
     internal static string SequenceName(Guid tenantId, string series, int year) => $"number_{tenantId:N}_{series}_{year}";
     private static string SequencePrefix(Guid tenantId, string series) => $"number_{tenantId:N}_{series}_";
     private static string ModeLock(Guid tenantId, string series) => $"numbering-mode:{tenantId:N}:{series}";
+    private static string CounterLock(Guid tenantId, string series, int year) => $"numbering-counter:{tenantId:N}:{series}:{year}";
 
     public static void ValidateSeries(string series)
     {

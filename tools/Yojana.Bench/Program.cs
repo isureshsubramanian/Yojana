@@ -2,6 +2,7 @@
 // real schema (migrations), with row-level security on, then measures the SLO table through the module's own
 // services and through server-side timing loops. Usage:
 //   dotnet run --project tools/Yojana.Bench -- prepare|load|measure|backfill|entitlements|warranty|all [--units N] [--events N] [--tenants N]
+//   dotnet run --project tools/Yojana.Bench -- ledger-base-order-backfill|read-shapes
 //   dotnet run --project tools/Yojana.Bench -- seed-users|prepare-concurrency --tenant N [--documents N]
 //   dotnet run --project tools/Yojana.Bench -- concurrency [--tenant N] --url URL [--engineers N] [--duration 10m] [--numbering sequence|gap_free]
 // Connection: YOJANA_BENCH_SQL_HOST and YOJANA_BENCH_SQL_PASSWORD (sa), or YOJANA_BENCH_SQL as a full connection string.
@@ -151,6 +152,16 @@ try
     if (options.Command == "writes")
     {
         await new Measurer(host.Services, options, report).WritesOnlyAsync();
+    }
+
+    if (options.Command == "read-shapes")
+    {
+        await new ReadShapeMeasurer(options, host.Services).RunAsync(CancellationToken.None);
+    }
+
+    if (options.Command == "ledger-base-order-backfill")
+    {
+        await new ReadShapeMeasurer(options, host.Services).BackfillAsync(CancellationToken.None);
     }
 
     if (options.Command == "seek")

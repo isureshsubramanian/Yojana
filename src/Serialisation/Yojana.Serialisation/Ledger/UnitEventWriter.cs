@@ -25,14 +25,14 @@ namespace Yojana.Serialisation.Ledger;
 //        may lag. Change the seq contract and this comment together, on both sides.
 // Engine: SQL Server / Azure SQL; the pairing relies on a single local transaction, never on a distributed one.
 
-// TIGHT COUPLING (sale-fact transactional hand-off)
+// TIGHT COUPLING (append-time transactional participants)
 // WHAT:  after the ledger and inline projection accept fresh facts, UnitEventWriter invokes every
-//        IUnitEventAppendObserver before the caller's transaction commits. CustomerSaleCertificateObserver is the
-//        certificate-side participant; the writer knows only this narrow ledger contract.
-// WHY:   the certificate trigger must enter Wolverine's outbox in the same transaction as the customer-sale fact.
-//        A later subscriber cannot distinguish a committed sale from a rolled-back posting without another inbox.
-// WHAT BREAKS IF SEPARATED: a committed shipment, drop shipment or shipment correction can have no durable release-
-//        record trigger, or a rolled-back sale can issue one. Keep this comment and the observer-side comment together.
+//        IUnitEventAppendObserver before the caller's transaction commits. Certificate triggers and the sparse
+//        base-order reference are participants; the writer knows only this narrow ledger contract.
+// WHY:   both derived records must commit or roll back with the ledger fact. A later subscriber cannot distinguish a
+//        committed append from a rolled-back one without another inbox and cannot repair an interactive read atomically.
+// WHAT BREAKS IF SEPARATED: a committed shipment can lack its release-record trigger or originating-order lookup, or a
+//        rolled-back shipment can leave either behind. Keep this comment and both observer-side comments together.
 
 /// <summary>
 /// Appends events and projects them inline (see the coupling comment above and in <see cref="UnitCurrentStateProjector"/>).

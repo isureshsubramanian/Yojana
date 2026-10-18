@@ -46,8 +46,13 @@ public static class SerialisationModule
         builder.Services.AddScoped<LedgerPublication>();
         builder.Services.AddScoped<IUnitEventWriter, UnitEventWriter>();
         builder.Services.AddScoped<IUnitEventAppendObserver, CustomerSaleCertificateObserver>();
+        builder.Services.AddScoped<IUnitEventAppendObserver, LedgerBaseOrderReferenceObserver>();
         builder.Services.AddScoped<UnitHistoryQuery>();
         builder.Services.AddScoped<BulkIngestion>();
+        var baseOrderBackfill = builder.Configuration.GetSection(LedgerBaseOrderBackfillOptions.SectionName)
+            .Get<LedgerBaseOrderBackfillOptions>() ?? new LedgerBaseOrderBackfillOptions();
+        builder.Services.AddSingleton(baseOrderBackfill);
+        builder.Services.AddScoped<LedgerBaseOrderBackfill>();
 
         // Identity rules and commands (P1-T07, P1-T09). Item and BOM facts come through ports; until a connector or an
         // in-house module registers them, the in-memory ports answer with defaults (development and tests only).
@@ -386,6 +391,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<UnitCurrentHealer>();
         builder.Services.AddSingleton(RecurringTenantJob.For<UnitCurrentHealerJob>(UnitCurrentHealerJob.JobName, UnitCurrentHealerJob.Cron));
         builder.Services.AddSingleton(RecurringTenantJob.For<SearchIndexHealerJob>(SearchIndexHealerJob.JobName, SearchIndexHealerJob.Cron));
+        builder.Services.AddSingleton(RecurringTenantJob.For<LedgerBaseOrderBackfillJob>(LedgerBaseOrderBackfillJob.JobName, baseOrderBackfill.Cron));
         builder.Services.AddSingleton(RecurringTenantJob.For<Entitlements.EntitlementRequirementJob>(Entitlements.EntitlementRequirementJob.JobName, Entitlements.EntitlementRequirementJob.Cron));
         // P5 advance-replacement block: one tenant-local nightly sweep, with publication through Wolverine's outbox.
         builder.Services.AddSingleton(RecurringTenantJob.For<Replacements.ReplacementOverdueJob>(Replacements.ReplacementOverdueJob.JobName, Replacements.ReplacementOverdueJob.Cron));

@@ -76,6 +76,7 @@ public sealed class ReferencePortDatabaseTests(SerialisationHostFixture fixture)
                 RetentionClass = "standard_10y",
                 CreatedAt = At,
                 CreatedEventId = Guid.NewGuid(),
+                CreatedEventTime = At,
             });
             await db.SaveChangesAsync();
 

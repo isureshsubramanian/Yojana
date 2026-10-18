@@ -3602,6 +3602,127 @@ namespace Yojana.Serialisation.Data.Migrations
                             }));
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.LedgerBaseOrderBackfillCheckpoint", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTime?>("CheckpointMonth")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("checkpoint_month");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("completed_at");
+
+                    b.Property<Guid?>("CursorEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("cursor_event_id");
+
+                    b.Property<DateTime?>("CursorEventTime")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("cursor_event_time");
+
+                    b.Property<long?>("EstimatedRows")
+                        .HasColumnType("bigint")
+                        .HasColumnName("estimated_rows");
+
+                    b.Property<int>("MonthsCompleted")
+                        .HasColumnType("int")
+                        .HasColumnName("months_completed");
+
+                    b.Property<int>("MonthsTotal")
+                        .HasColumnType("int")
+                        .HasColumnName("months_total");
+
+                    b.Property<DateTime?>("NewestMonth")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("newest_month");
+
+                    b.Property<DateTime?>("OldestMonth")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("oldest_month");
+
+                    b.Property<long>("RowsScanned")
+                        .HasColumnType("bigint")
+                        .HasColumnName("rows_scanned");
+
+                    b.Property<long>("RowsWritten")
+                        .HasColumnType("bigint")
+                        .HasColumnName("rows_written");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("TenantId")
+                        .HasName("pk_ledger_base_order_backfill_checkpoint");
+
+                    b.ToTable("ledger_base_order_backfill_checkpoint", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.LedgerBaseOrderReference", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTime>("EventTime")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("event_time");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<Guid>("BaseDocumentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("base_document_id");
+
+                    b.Property<int?>("BaseDocumentLine")
+                        .HasColumnType("int")
+                        .HasColumnName("base_document_line");
+
+                    b.Property<string>("BaseDocumentType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("base_document_type");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("TenantId", "EventTime", "EventId")
+                        .HasName("pk_ledger_base_order_ref");
+
+                    b.HasIndex("TenantId", "BaseDocumentType", "BaseDocumentId", "BaseDocumentLine")
+                        .HasDatabaseName("ix_ledger_base_order_ref_tenant_id_base_document_type_base_document_id_base_document_line");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "BaseDocumentType", "BaseDocumentId", "BaseDocumentLine"), new[] { "UnitId" });
+
+                    b.ToTable("ledger_base_order_ref", "serialisation");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.LifeEpisode", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -6766,6 +6887,11 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<Guid>("CreatedEventId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("created_event_id");
+
+                    b.Property<DateTime>("CreatedEventTime")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_event_time");
 
                     b.Property<Guid?>("DerivedFromUnitId")
                         .HasColumnType("uniqueidentifier")

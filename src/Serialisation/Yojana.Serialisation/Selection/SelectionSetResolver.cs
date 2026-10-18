@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
@@ -24,6 +25,11 @@ public sealed class SelectionSetResolver(SerialisationDbContext db, UnitResolver
 {
     public const int MaxUnits = 100_000;
 
+    private sealed class LegacyBaseOrderUnit
+    {
+        public Guid UnitId { get; set; }
+    }
+
     public async Task<ResolveSelectionSetResult> ResolveAsync(ResolveSelectionSet command, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -45,16 +51,30 @@ public sealed class SelectionSetResolver(SerialisationDbContext db, UnitResolver
                 var ids = await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && e.DocumentType == doc.Type && e.DocumentId == doc.Id && (doc.Line == null || e.DocumentLine == doc.Line))
                     .Select(e => e.UnitId).Distinct().OrderBy(id => id).Take(MaxUnits + 1).ToListAsync(cancellationToken);
                 foreach (var id in ids) units[id] = null;
-                // Shipment facts retain their originating order as a narrow base_order value rather than changing the
-                // ledger event's own document. Resolve that recorded contract too, so an order can drive the same
-                // selection workflow without the sales connector writing a second synthetic event.
-                var idText = doc.Id.ToString("D");
-                var candidates = await db.Events.AsNoTracking()
-                    .Where(e => e.TenantId == tenantId && e.Attributes != null && e.Attributes.Contains(idText))
-                    .OrderBy(e => e.Seq).Select(e => new { e.UnitId, e.Attributes }).Take(MaxUnits + 1)
+                // HIDDEN COUPLING (base-order ledger projection): shipment facts retain their originating order in
+                // immutable JSON, while the append boundary writes the sparse lookup queried here in the same
+                // transaction. Reading the JSON ledger directly would turn this interactive selection into a scan;
+                // changing the base_order attribute or append projection requires changing this reader with it.
+                var linkedIds = await db.LedgerBaseOrderReferences.AsNoTracking()
+                    .Where(reference => reference.TenantId == tenantId
+                        && reference.BaseDocumentType == doc.Type && reference.BaseDocumentId == doc.Id
+                        && (doc.Line == null || reference.BaseDocumentLine == doc.Line))
+                    .Select(reference => reference.UnitId).Distinct().OrderBy(id => id).Take(MaxUnits + 1)
                     .ToListAsync(cancellationToken);
-                foreach (var row in candidates.Where(row => ReferencesBaseDocument(row.Attributes, doc)))
-                    units[row.UnitId] = null;
+                foreach (var id in linkedIds) units[id] = null;
+
+                var checkpoint = await db.LedgerBaseOrderBackfillCheckpoints.AsNoTracking()
+                    .SingleOrDefaultAsync(row => row.TenantId == tenantId, cancellationToken);
+                if (checkpoint?.Status != LedgerBaseOrderBackfillStatus.Complete)
+                {
+                    // HIDDEN COUPLING (temporary historical fallback): the backfill completes newer months first, so
+                    // its checkpoint month is the exclusive upper bound of history that may still lack a sparse row.
+                    // Removing this fallback before the checkpoint reaches complete makes pre-upgrade orders disappear;
+                    // removing the bound restores the full-ledger scan that the sparse projection exists to retire.
+                    var before = checkpoint?.CheckpointMonth?.AddMonths(1);
+                    var legacyIds = await ResolveLegacyBaseOrdersAsync(tenantId, doc, before, cancellationToken);
+                    foreach (var id in legacyIds) units[id] = null;
+                }
                 break;
             }
 
@@ -157,21 +177,45 @@ public sealed class SelectionSetResolver(SerialisationDbContext db, UnitResolver
         return new ResolveSelectionSetResult(selection.SelectionId, units.Count, unknown, rejected, source);
     }
 
-    private static bool ReferencesBaseDocument(string? attributes, DocumentRef expected)
+    private async Task<IReadOnlyList<Guid>> ResolveLegacyBaseOrdersAsync(
+        TenantId tenantId,
+        DocumentRef document,
+        DateTime? before,
+        CancellationToken cancellationToken)
     {
-        if (attributes is null) return false;
-        try
-        {
-            using var json = JsonDocument.Parse(attributes);
-            if (!json.RootElement.TryGetProperty("base_order", out var value)
-                || value.ValueKind != JsonValueKind.Object) return false;
-            var actual = value.Deserialize<DocumentRef>(LedgerJson.Options);
-            return actual is not null && actual.Type == expected.Type && actual.Id == expected.Id
-                && (expected.Line is null || actual.Line == expected.Line);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
+        const string source = """
+            SELECT TOP (@take) candidate.unit_id AS UnitId
+            FROM
+            (
+                SELECT event.unit_id
+                FROM serialisation.unit_event AS event
+                WHERE event.tenant_id = @tenant
+                  AND event.event_time < @before
+                  AND JSON_VALUE(event.attributes, '$.base_order.type') = @document_type
+                  AND TRY_CONVERT(uniqueidentifier, JSON_VALUE(event.attributes, '$.base_order.id')) = @document_id
+                  AND (@document_line IS NULL
+                       OR TRY_CONVERT(int, JSON_VALUE(event.attributes, '$.base_order.line')) = @document_line)
+                UNION
+                SELECT event.unit_id
+                FROM serialisation.unit_event_archive AS event
+                WHERE event.tenant_id = @tenant
+                  AND event.event_time < @before
+                  AND JSON_VALUE(event.attributes, '$.base_order.type') = @document_type
+                  AND TRY_CONVERT(uniqueidentifier, JSON_VALUE(event.attributes, '$.base_order.id')) = @document_id
+                  AND (@document_line IS NULL
+                       OR TRY_CONVERT(int, JSON_VALUE(event.attributes, '$.base_order.line')) = @document_line)
+            ) AS candidate
+            ORDER BY candidate.unit_id
+            """;
+        return await db.Database.SqlQueryRaw<LegacyBaseOrderUnit>(source,
+                new SqlParameter("@take", MaxUnits + 1),
+                new SqlParameter("@tenant", tenantId.Value),
+                new SqlParameter("@before", before ?? DateTime.MaxValue),
+                new SqlParameter("@document_type", document.Type),
+                new SqlParameter("@document_id", document.Id),
+                new SqlParameter("@document_line", (object?)document.Line ?? DBNull.Value))
+            .Select(row => row.UnitId)
+            .ToListAsync(cancellationToken);
     }
+
 }

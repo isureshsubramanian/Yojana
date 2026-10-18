@@ -53,6 +53,11 @@ public sealed class SetNumberingModeHandler(
             throw new CommandRefusedException("command_id_required", "CommandId is required.");
 
         await db.Database.OpenConnectionAsync(cancellationToken);
+        // TIGHT COUPLING (document-number lock order)
+        // WHAT: mode changes take the exclusive mode lock before reading or synchronising counters/sequences; allocation
+        // takes the shared form of this lock before its per-year counter or sequence-initialisation lock. WHY: the mode
+        // and its backing allocator must change as one invariant. WHAT BREAKS IF SEPARATED: an allocation can use the old
+        // allocator after synchronisation, duplicate a number, or reverse the order and deadlock a concurrent switch.
         await numbers.AcquireModeChangeLockAsync(command.Series, cancellationToken);
         var tenantId = tenant.TenantId;
         var row = await db.NumberSeriesSettings.SingleOrDefaultAsync(s => s.TenantId == tenantId && s.Series == command.Series, cancellationToken);

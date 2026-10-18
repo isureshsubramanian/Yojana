@@ -39,7 +39,7 @@ public sealed class SearchBackfillTests(SerialisationHostFixture fixture)
         db.Units.Add(new Unit
         {
             TenantId = tenant, UnitId = noItem, LifecycleStatus = LifecycleStatus.PendingIdentifier, Origin = UnitOrigin.Purchased,
-            SerialisationPoint = SerialisationPoint.Receipt, RetentionClass = "standard_10y", CreatedAt = DateTime.UtcNow, CreatedEventId = Guid.NewGuid(),
+            SerialisationPoint = SerialisationPoint.Receipt, RetentionClass = "standard_10y", CreatedAt = DateTime.UtcNow, CreatedEventId = Guid.NewGuid(), CreatedEventTime = DateTime.UtcNow,
         });
         await db.SaveChangesAsync();
         ids.Add(noItem);
