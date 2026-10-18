@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Wolverine;
@@ -389,6 +390,15 @@ public static class SerialisationEndpoints
 
         // Claims and supplier recovery (MOD-07, P4). Identity and reviewer roles come from the session; the endpoint
         // overwrites both values so a request body cannot forge the low-confidence review evidence.
+        // P6 OD-26 numbering settings. Allocation stays behind DocumentNumbers; the API only changes its per-series contract.
+        var numbering = app.MapGroup("/api/numbering").RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        numbering.MapGet("/settings", async (NumberingSettings settings, CancellationToken ct) =>
+            Results.Ok(await settings.GetAsync(ct)));
+        numbering.MapPut("/settings/{series}", (string series, SetNumberingModeRequest request, ClaimsPrincipal user,
+            IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<SetNumberingModeResult>(bus, tenant,
+                new SetNumberingMode(request.CommandId, series.ToUpperInvariant(), request.Mode, Actor(user)), ct));
+        // End P6 OD-26 numbering settings.
+
         var claims = app.MapGroup("/api/claims").RequireAuthorization(YojanaPolicy.TenantMember);
         claims.MapGet("/", async (string? status, string? coverageSource, string? serviceCountry, string? recovery, string? q, Guid? campaignId, int? skip, int? take,
             ClaimQueries queries, UnitQueries units, IClock clock, CancellationToken ct) =>
@@ -927,7 +937,7 @@ public static class SerialisationEndpoints
             }
         }).RequireAuthorization(templateEditor);
         certificateTemplates.MapPost("/{templateId:guid}/validate", (Guid templateId,
-            SaveCertificateTemplateDraftRequest request, CertificateTemplateService service) =>
+            SaveCertificateTemplateDraftRequest request, [FromServices] CertificateTemplateService service) =>
             TemplateInvoke(async () =>
             {
                 var template = await service.GetAsync(templateId, CancellationToken.None)

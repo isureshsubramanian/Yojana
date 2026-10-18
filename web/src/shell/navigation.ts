@@ -39,7 +39,9 @@ export const navigation: NavEntry[] = [
   // End P6 certificates and labels.
   { path: "/imports", label: "Imports", icon: "upload", section: "Data", placeholder: "Imports and 3PL capture" },
   { path: "/integration", label: "Integration", icon: "int", section: "Data", placeholder: "Connections and the integration gateway" },
-  { path: "/settings", label: "Settings", icon: "set", section: "Data", roles: ["tenant_administrator"], placeholder: "Tenant settings" },
+  // P6 OD-26 numbering settings navigation block.
+  { path: "/settings", label: "Settings", icon: "set", section: "Data", roles: ["tenant_administrator"] },
+  // End P6 OD-26 numbering settings navigation block.
   { path: "/settings/currencies", label: "Currencies", icon: "coins", section: "Data", roles: ["tenant_administrator"] },
   { path: "/settings/recovery", label: "Supplier recovery", icon: "sliders", section: "Data", roles: ["tenant_administrator"] },
   { path: "/settings/refurbishment", label: "Refurbishment policy", icon: "cycle", section: "Data", roles: ["tenant_administrator"] },

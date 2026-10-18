@@ -58,6 +58,9 @@ export const router = createBrowserRouter([
           // too; the order documents the boundary so "campaigns" or "recovery" is never treated as a claim id.
           { path: "claims/new", lazy: () => import("./claims/ClaimIntake") },
           { path: "claims/recovery", lazy: () => import("./recovery/RecoveryClaims") },
+          // P6 OD-26 numbering settings route block.
+          { path: "settings", lazy: () => import("./settings/Settings") },
+          // End P6 OD-26 numbering settings route block.
           { path: "settings/currencies", lazy: () => import("./settings/Currencies") },
           { path: "settings/recovery", lazy: () => import("./settings/SupplierRecovery") },
           { path: "settings/refurbishment", lazy: () => import("./settings/RefurbishmentPolicy") },

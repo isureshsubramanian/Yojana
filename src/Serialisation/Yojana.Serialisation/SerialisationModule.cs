@@ -164,6 +164,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<Entitlements.ReplacementLinkCorrectionEntitlements>();
         builder.Services.AddScoped<ClaimLedger>();
         builder.Services.AddScoped<DocumentNumbers>();
+        builder.Services.AddScoped<NumberingSettings>();
         builder.Services.AddScoped<ClaimLineDecider>();
         builder.Services.AddScoped<ClaimAdjudicationPreviewQuery>();
         builder.Services.AddScoped<ClaimUnitFacts>();

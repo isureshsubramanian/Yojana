@@ -111,6 +111,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<RecoveryClaim> RecoveryClaims => Set<RecoveryClaim>();
     public DbSet<NumberSeries> NumberSeries => Set<NumberSeries>();
+    public DbSet<NumberSeriesSetting> NumberSeriesSettings => Set<NumberSeriesSetting>();
 
     public DbSet<ReplacementLink> ReplacementLinks => Set<ReplacementLink>();
 
@@ -900,6 +901,16 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.ToTable("number_series", t => t.HasCheckConstraint("ck_number_series_last_value", "last_value >= 0"));
             b.HasKey(n => new { n.TenantId, n.Series, n.Year });
             b.Property(n => n.Series).HasMaxLength(10).IsUnicode(false);
+        });
+
+        modelBuilder.Entity<NumberSeriesSetting>(b =>
+        {
+            b.ToTable("number_series_setting", t => t.HasCheckConstraint("ck_number_series_setting_mode", "mode IN ('sequence', 'gap_free')"));
+            b.HasKey(n => new { n.TenantId, n.Series });
+            b.Property(n => n.Series).HasMaxLength(10).IsUnicode(false);
+            b.Property(n => n.Mode).HasMaxLength(16).IsUnicode(false);
+            b.Property(n => n.UpdatedBy).HasMaxLength(200);
+            b.HasIndex(n => new { n.TenantId, n.Mode, n.Series });
         });
 
         // MOD-07 campaign half (P4-T02/P4-T07). Selected recipients are snapshots, not navigation-backed live values:

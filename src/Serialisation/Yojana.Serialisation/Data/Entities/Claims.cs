@@ -122,3 +122,14 @@ public sealed class NumberSeries : ITenantScoped
     public int Year { get; set; }
     public int LastValue { get; set; }
 }
+
+/// <summary>The allocation mode selected for one tenant document series. A missing row means <c>sequence</c>.</summary>
+public sealed class NumberSeriesSetting : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public required string Series { get; set; }
+    public required string Mode { get; set; }
+    public Guid LastCommandId { get; set; }
+    public required string UpdatedBy { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}

@@ -8,5 +8,6 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="../../src/Serialisation/Yojana.Serialisation/Yojana.Serialisation.csproj" />
+    <ProjectReference Include="../../tools/Yojana.Bench/Yojana.Bench.csproj" />
   </ItemGroup>
 </Project>
