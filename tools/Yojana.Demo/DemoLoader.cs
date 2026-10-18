@@ -799,7 +799,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             DemoDates.At(today.AddDays(-1), 23)), cancellationToken);
         await InvokeAsync<BillNonReturnResult>(new BillNonReturn(DemoIds.FromName("p5:advance-billed"),
             links[0].ReplacementLinkId, NonReturnPriceBasis.FairMarketValue, 900m, today.AddDays(-1),
-            DemoDates.At(today.AddDays(-1), 23, 30), actor), cancellationToken);
+            DemoDates.At(today.AddDays(-1), 23, 30), actor, "Original unit not returned after the overdue reminder"), cancellationToken);
     }
 
     private async Task CreateLoanConversionAsync(CancellationToken cancellationToken)
