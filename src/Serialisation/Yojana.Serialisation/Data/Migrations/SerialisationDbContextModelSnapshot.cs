@@ -680,6 +680,575 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("campaign_unit", "serialisation");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateInstance", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CertificateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("certificate_id");
+
+                    b.Property<Guid?>("AsBuiltRevisionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("as_built_revision_id");
+
+                    b.Property<string>("BrandingSnapshot")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("branding_snapshot");
+
+                    b.Property<string>("DocumentKind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("document_kind");
+
+                    b.Property<string>("Evidence")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("evidence");
+
+                    b.Property<string>("FactsHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("facts_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("FormType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("form_type");
+
+                    b.Property<DateTime>("IssuedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("issued_at");
+
+                    b.Property<Guid>("IssuerEntityId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("issuer_entity_id");
+
+                    b.Property<string>("IssuerSnapshot")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("issuer_snapshot");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("language");
+
+                    b.Property<string>("OwnerSnapshot")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("owner_snapshot");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("payload");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("payload_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("provenance");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("SupersedeReason")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("supersede_reason");
+
+                    b.Property<Guid?>("SupersedesCertificateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("supersedes_certificate_id");
+
+                    b.Property<Guid>("TemplateVersionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_version_id");
+
+                    b.Property<string>("TrackingNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("tracking_number");
+
+                    b.Property<Guid>("TriggeringEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("triggering_event_id");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<string>("Unknowns")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("unknowns");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int")
+                        .HasColumnName("version");
+
+                    b.HasKey("TenantId", "CertificateId")
+                        .HasName("pk_certificate_instance");
+
+                    b.HasIndex("TenantId", "SupersedesCertificateId")
+                        .HasDatabaseName("ix_certificate_instance_tenant_id_supersedes_certificate_id");
+
+                    b.HasIndex("TenantId", "TemplateVersionId")
+                        .HasDatabaseName("ix_certificate_instance_tenant_id_template_version_id");
+
+                    b.HasIndex("TenantId", "TrackingNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ux_certificate_instance_tenant_id_tracking_number");
+
+                    b.HasIndex("TenantId", "UnitId", "DocumentKind", "IssuedAt")
+                        .HasDatabaseName("ix_certificate_instance_tenant_id_unit_id_document_kind_issued_at");
+
+                    b.HasIndex("TenantId", "UnitId", "DocumentKind", "TriggeringEventId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_certificate_instance_tenant_id_unit_id_document_kind_triggering_event_id");
+
+                    b.HasIndex("TenantId", "UnitId", "DocumentKind", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("ux_certificate_instance_tenant_id_unit_id_document_kind_version");
+
+                    b.HasIndex("TenantId", "DocumentKind", "FormType", "Status", "IssuedAt")
+                        .HasDatabaseName("ix_certificate_instance_tenant_id_document_kind_form_type_status_issued_at");
+
+                    b.ToTable("certificate_instance", "serialisation", t =>
+                        {
+                            t.HasTrigger("tr_certificate_instance_immutable");
+
+                            t.HasCheckConstraint("ck_certificate_instance_branding_json", "ISJSON(branding_snapshot) = 1");
+
+                            t.HasCheckConstraint("ck_certificate_instance_document_kind", "document_kind IN ('release_record', 'warranty_certificate')");
+
+                            t.HasCheckConstraint("ck_certificate_instance_evidence_json", "ISJSON(evidence) = 1");
+
+                            t.HasCheckConstraint("ck_certificate_instance_form_type", "form_type IN ('generic_release', 'coc', 'dhr_extract', 'release_8130_3_style', 'easa_form_1_style', 'battery_passport', 'custom')");
+
+                            t.HasCheckConstraint("ck_certificate_instance_issuer_json", "ISJSON(issuer_snapshot) = 1");
+
+                            t.HasCheckConstraint("ck_certificate_instance_owner_json", "owner_snapshot IS NULL OR ISJSON(owner_snapshot) = 1");
+
+                            t.HasCheckConstraint("ck_certificate_instance_owner_kind", "(document_kind = 'release_record' AND owner_snapshot IS NULL) OR document_kind = 'warranty_certificate'");
+
+                            t.HasCheckConstraint("ck_certificate_instance_payload_json", "ISJSON(payload) = 1");
+
+                            t.HasCheckConstraint("ck_certificate_instance_provenance", "provenance IN ('system_generated', 'migrated', 'reconstructed')");
+
+                            t.HasCheckConstraint("ck_certificate_instance_reconstruction", "provenance = 'system_generated' OR (JSON_QUERY(unknowns) <> '[]' AND JSON_QUERY(evidence) <> '[]')");
+
+                            t.HasCheckConstraint("ck_certificate_instance_status", "status IN ('draft', 'issued', 'superseded')");
+
+                            t.HasCheckConstraint("ck_certificate_instance_unknowns_json", "ISJSON(unknowns) = 1");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateSignature", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("SignatureId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("signature_id");
+
+                    b.Property<Guid>("CertificateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("certificate_id");
+
+                    b.Property<string>("HashSigned")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("hash_signed")
+                        .IsFixedLength();
+
+                    b.Property<string>("Meaning")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("meaning");
+
+                    b.Property<string>("PrintedName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("printed_name");
+
+                    b.Property<string>("SignatureMethod")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("signature_method");
+
+                    b.Property<DateTime>("SignedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("signed_at");
+
+                    b.Property<string>("SignerIdentity")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("signer_identity");
+
+                    b.HasKey("TenantId", "SignatureId")
+                        .HasName("pk_certificate_signature");
+
+                    b.HasIndex("TenantId", "CertificateId", "SignedAt")
+                        .HasDatabaseName("ix_certificate_signature_tenant_id_certificate_id_signed_at");
+
+                    b.ToTable("certificate_signature", "serialisation", t =>
+                        {
+                            t.HasTrigger("tr_certificate_signature_immutable");
+
+                            t.HasCheckConstraint("ck_certificate_signature_meaning", "meaning IN ('release', 'review', 'approval', 'authorship')");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateTemplate", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_id");
+
+                    b.Property<string>("AppliesToItemClass")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("applies_to_item_class");
+
+                    b.Property<bool>("BuiltIn")
+                        .HasColumnType("bit")
+                        .HasColumnName("built_in");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("DocumentKind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("document_kind");
+
+                    b.Property<string>("FormType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("form_type");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("name");
+
+                    b.HasKey("TenantId", "TemplateId")
+                        .HasName("pk_certificate_template");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("ux_certificate_template_tenant_id_code");
+
+                    b.HasIndex("TenantId", "DocumentKind", "FormType", "AppliesToItemClass")
+                        .HasDatabaseName("ix_certificate_template_tenant_id_document_kind_form_type_applies_to_item_class");
+
+                    b.ToTable("certificate_template", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_certificate_template_document_kind", "document_kind IN ('release_record', 'warranty_certificate')");
+
+                            t.HasCheckConstraint("ck_certificate_template_form_type", "form_type IN ('generic_release', 'coc', 'dhr_extract', 'release_8130_3_style', 'easa_form_1_style', 'battery_passport', 'custom')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateTemplateVersion", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TemplateVersionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_version_id");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("approved_at");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("approved_by");
+
+                    b.Property<string>("BrandingAssetRef")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)")
+                        .HasColumnName("branding_asset_ref");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime?>("EffectiveFrom")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("effective_from");
+
+                    b.Property<DateTime?>("EffectiveTo")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("effective_to");
+
+                    b.Property<string>("Fields")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("fields");
+
+                    b.Property<string>("FooterBody")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("footer_body");
+
+                    b.Property<string>("HeaderBody")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("header_body");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("language");
+
+                    b.Property<string>("LayoutBody")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("layout_body");
+
+                    b.Property<string>("LayoutKind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("layout_kind");
+
+                    b.Property<decimal>("MarginBottomMm")
+                        .HasPrecision(7, 2)
+                        .HasColumnType("decimal(7,2)")
+                        .HasColumnName("margin_bottom_mm");
+
+                    b.Property<decimal>("MarginLeftMm")
+                        .HasPrecision(7, 2)
+                        .HasColumnType("decimal(7,2)")
+                        .HasColumnName("margin_left_mm");
+
+                    b.Property<decimal>("MarginRightMm")
+                        .HasPrecision(7, 2)
+                        .HasColumnType("decimal(7,2)")
+                        .HasColumnName("margin_right_mm");
+
+                    b.Property<decimal>("MarginTopMm")
+                        .HasPrecision(7, 2)
+                        .HasColumnType("decimal(7,2)")
+                        .HasColumnName("margin_top_mm");
+
+                    b.Property<string>("Orientation")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("orientation");
+
+                    b.Property<string>("PageSize")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("page_size");
+
+                    b.Property<string>("PayloadSchemaVersion")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("payload_schema_version");
+
+                    b.Property<string>("StaticText")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("static_text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_id");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("updated_by");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int")
+                        .HasColumnName("version");
+
+                    b.HasKey("TenantId", "TemplateVersionId")
+                        .HasName("pk_certificate_template_version");
+
+                    b.HasIndex("TenantId", "TemplateId", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("ux_certificate_template_version_tenant_id_template_id_version");
+
+                    b.HasIndex("TenantId", "TemplateId", "Status", "EffectiveFrom")
+                        .HasDatabaseName("ix_certificate_template_version_tenant_id_template_id_status_effective_from");
+
+                    b.ToTable("certificate_template_version", "serialisation", t =>
+                        {
+                            t.HasTrigger("tr_certificate_template_version_immutable");
+
+                            t.HasCheckConstraint("ck_certificate_template_version_dates", "effective_to IS NULL OR (effective_from IS NOT NULL AND effective_to > effective_from)");
+
+                            t.HasCheckConstraint("ck_certificate_template_version_fields_json", "ISJSON(fields) = 1");
+
+                            t.HasCheckConstraint("ck_certificate_template_version_layout", "layout_kind = 'html'");
+
+                            t.HasCheckConstraint("ck_certificate_template_version_static_text_json", "ISJSON(static_text) = 1");
+
+                            t.HasCheckConstraint("ck_certificate_template_version_status", "status IN ('draft', 'active', 'retired')");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateTrigger", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<string>("DocumentKind")
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("document_kind");
+
+                    b.Property<Guid>("TriggeringEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("triggering_event_id");
+
+                    b.Property<Guid?>("CertificateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("certificate_id");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("outcome");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("recorded_at");
+
+                    b.Property<string>("RefusalDetail")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("refusal_detail");
+
+                    b.Property<string>("RefusalRule")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("refusal_rule");
+
+                    b.HasKey("TenantId", "UnitId", "DocumentKind", "TriggeringEventId")
+                        .HasName("pk_certificate_trigger");
+
+                    b.HasIndex("TenantId", "CertificateId")
+                        .HasDatabaseName("ix_certificate_trigger_tenant_id_certificate_id");
+
+                    b.ToTable("certificate_trigger", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_certificate_trigger_document_kind", "document_kind IN ('release_record', 'warranty_certificate')");
+
+                            t.HasCheckConstraint("ck_certificate_trigger_outcome", "outcome IN ('issued', 'absorbed', 'refused')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.Claim", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -3754,6 +4323,47 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ux_replacement_policy_tenant_id_code");
 
                     b.ToTable("replacement_policy", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReprintLog", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ReprintId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reprint_id");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("at");
+
+                    b.Property<Guid>("CertificateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("certificate_id");
+
+                    b.Property<Guid?>("RecipientPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("recipient_party_ref");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("requested_by");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int")
+                        .HasColumnName("version");
+
+                    b.HasKey("TenantId", "ReprintId")
+                        .HasName("pk_reprint_log");
+
+                    b.HasIndex("TenantId", "CertificateId", "At")
+                        .HasDatabaseName("ix_reprint_log_tenant_id_certificate_id_at");
+
+                    b.ToTable("reprint_log", "serialisation");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReturnReason", b =>
@@ -6938,6 +7548,51 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasConstraintName("fk_campaign_unit_tenant_id_campaign_id");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateInstance", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.CertificateInstance", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "SupersedesCertificateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_certificate_instance_tenant_id_supersedes_certificate_id");
+
+                    b.HasOne("Yojana.Serialisation.Data.Entities.CertificateTemplateVersion", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TemplateVersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_certificate_instance_tenant_id_template_version_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateSignature", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.CertificateInstance", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CertificateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_certificate_signature_tenant_id_certificate_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateTemplateVersion", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.CertificateTemplate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TemplateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_certificate_template_version_tenant_id_template_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateTrigger", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.CertificateInstance", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CertificateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_certificate_trigger_tenant_id_certificate_id");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ClaimEvidence", b =>
                 {
                     b.HasOne("Yojana.Serialisation.Data.Entities.Claim", null)
@@ -7032,6 +7687,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_replacement_link_tenant_id_warranty_replacement_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReprintLog", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.CertificateInstance", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CertificateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_reprint_log_tenant_id_certificate_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ReturnReceipt", b =>

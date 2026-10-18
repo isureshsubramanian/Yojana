@@ -1,0 +1,262 @@
+using System.Text.Json;
+
+namespace Yojana.Serialisation.Contracts;
+
+public static class CertificateFormType
+{
+    public const string GenericRelease = "generic_release";
+    public const string CertificateOfConformity = "coc";
+    public const string DeviceHistoryExtract = "dhr_extract";
+    public const string Release81303Style = "release_8130_3_style";
+    public const string EasaForm1Style = "easa_form_1_style";
+    public const string BatteryPassport = "battery_passport";
+    public const string Custom = "custom";
+    public static readonly IReadOnlyList<string> All = [GenericRelease, CertificateOfConformity, DeviceHistoryExtract, Release81303Style, EasaForm1Style, BatteryPassport, Custom];
+}
+
+public static class CertificateStatus
+{
+    public const string Draft = "draft";
+    public const string Issued = "issued";
+    public const string Superseded = "superseded";
+    public static readonly IReadOnlyList<string> All = [Draft, Issued, Superseded];
+}
+
+public static class CertificateSupersedeReason
+{
+    public const string Repair = "repair";
+    public const string Refurbishment = "refurbishment";
+    public const string ComponentReplacement = "component_replacement";
+    public const string Correction = "correction";
+    public const string Reassembly = "reassembly";
+    public const string IdentifierChange = "identifier_change";
+    public const string EntitlementChange = "entitlement_change";
+    public static readonly IReadOnlyList<string> All = [Repair, Refurbishment, ComponentReplacement, Correction, Reassembly, IdentifierChange, EntitlementChange];
+}
+
+public static class CertificateSignatureMeaning
+{
+    public const string Release = "release";
+    public const string Review = "review";
+    public const string Approval = "approval";
+    public const string Authorship = "authorship";
+    public static readonly IReadOnlyList<string> All = [Release, Review, Approval, Authorship];
+}
+
+public static class CertificateEventType
+{
+    public const string Issued = "certificate.issued";
+    public const string Superseded = "certificate.superseded";
+}
+
+public static class CertificateTemplateStatus
+{
+    public const string Draft = "draft";
+    public const string Active = "active";
+    public const string Retired = "retired";
+    public static readonly IReadOnlyList<string> All = [Draft, Active, Retired];
+}
+
+public static class CertificateLayoutKind
+{
+    public const string Html = "html";
+}
+
+public sealed record CertificateTriggerSnapshot(string Schema, Guid EventId, DateTime EffectiveAt,
+    string? Reason = null, bool? ConditionReverificationRequired = null, string? Note = null);
+public sealed record CertificateProvenanceSnapshot(string Kind, IReadOnlyList<string> Unknowns, IReadOnlyList<string> Evidence);
+public sealed record CertificateIssuerSnapshot(string Name, string? RegistrationCode);
+public sealed record CertificateBrandingSnapshot(string Profile, string? DisplayName, string? Mark);
+public sealed record CertificateOwnerSnapshot(string Code, string Name, string? Kind, DateTime EffectiveFrom);
+
+public sealed record ReleaseIdentifierSnapshot(
+    string Type,
+    string Scheme,
+    string Value,
+    string? Issuer,
+    DateTime ValidFrom,
+    DateTime? ValidTo,
+    string? Replaces,
+    string? ReplacedBy);
+
+public sealed record ReleaseModelSnapshot(string Code, string? Name, string? Revision);
+
+public sealed record ReleaseComponentSnapshot(
+    string? Slot,
+    string Relation,
+    string? Serial,
+    string? ItemCode,
+    string? ItemName,
+    string? LotReference,
+    decimal? Quantity,
+    string? ReleaseStatus,
+    string? ReleaseDocument,
+    DateTime InstalledAt,
+    DateTime? RemovedAt);
+
+public sealed record RequiredSerializedComponentSnapshot(
+    string Slot,
+    string ItemCode,
+    string? ItemName,
+    int ExpectedQuantity,
+    string Status,
+    IReadOnlyList<string> CapturedSerials)
+{
+    public const string Captured = "CAPTURED";
+    public const string Missing = "MISSING";
+    public const string UnexpectedItem = "UNEXPECTED_ITEM";
+}
+
+public sealed record ReleaseTestSnapshot(string Kind, string Result, JsonElement Measurements, string Equipment, DateTime TestedAt);
+public sealed record ReleaseLifeEpisodeSnapshot(string Kind, DateTime StartedAt, DateTime? EndedAt, int? CycleNumber);
+
+/// <summary>
+/// The release-record schema deliberately has no bindable party, owner, customer or address member. Issuers and the
+/// refurbisher are immutable display snapshots, never opaque business-partner references.
+/// </summary>
+public sealed record ReleaseRecordPayload(
+    string SchemaVersion,
+    string FormType,
+    CertificateTriggerSnapshot Trigger,
+    IReadOnlyList<ReleaseIdentifierSnapshot> Identifiers,
+    ReleaseModelSnapshot Model,
+    DateTime? BuildDate,
+    string? Facility,
+    IReadOnlyList<string> SourceLots,
+    IReadOnlyList<ReleaseComponentSnapshot> AsMaintained,
+    IReadOnlyList<RequiredSerializedComponentSnapshot> RequiredSerializedComponents,
+    IReadOnlyList<ReleaseTestSnapshot> Tests,
+    string Condition,
+    int? RefurbishmentCycle,
+    string? SanitisationReference,
+    string? Firmware,
+    string? WorkReference,
+    string? Refurbisher,
+    ReleaseLifeEpisodeSnapshot? LifeEpisode,
+    CertificateIssuerSnapshot Issuer,
+    CertificateBrandingSnapshot Branding,
+    CertificateProvenanceSnapshot Provenance);
+
+public sealed record WarrantyEntitlementSnapshot(
+    Guid EntitlementId,
+    string CoverageFamily,
+    string Type,
+    string StartBasis,
+    DateOnly? StartDate,
+    DateOnly? EndDate,
+    string PolicyCode,
+    int PolicyVersion,
+    string TermSummary,
+    IReadOnlyList<Guid> SupersededLineage);
+
+public sealed record WarrantyCertificatePayload(
+    string SchemaVersion,
+    CertificateTriggerSnapshot Trigger,
+    IReadOnlyList<WarrantyEntitlementSnapshot> Entitlements,
+    CertificateOwnerSnapshot Owner,
+    CertificateIssuerSnapshot Issuer,
+    CertificateBrandingSnapshot Branding,
+    CertificateProvenanceSnapshot Provenance);
+
+public sealed record CertificateUnitIdentifierFact(Guid IdentifierId, string Type, string Scheme, string Value, Guid? IssuerRef,
+    DateTime ValidFrom, DateTime? ValidTo, Guid? SupersedesIdentifierId, Guid? SupersededByIdentifierId);
+public sealed record CertificateAssemblyFact(Guid LinkId, string? Slot, string Relation, Guid? ChildUnitId, Guid? ChildItemId,
+    Guid? ChildLotId, decimal? Quantity, string? ReleaseStatus, string? ReleaseDocument, DateTime InstalledAt, DateTime? RemovedAt,
+    string? ChildSerial = null);
+public sealed record CertificateBuildFact(Guid BuildRecordId, int Version, DateTime ReleasedAt, Guid ItemId, Guid? ModelVersionId,
+    string? Revision, Guid? FacilityId, string Payload, string PayloadHash, string? ReleaseSignatureRef);
+public sealed record CertificateOwnershipFact(Guid EpisodeId, Guid? HolderRef, string? HolderKind, DateTime EffectiveFrom);
+public sealed record CertificateUnitFact(Guid UnitId, string LifecycleStatus, string Origin, string HistoryDepth, Guid ItemId,
+    Guid? LotId, CertificateBuildFact? Build, CertificateOwnershipFact? Ownership,
+    IReadOnlyList<CertificateUnitIdentifierFact> Identifiers, IReadOnlyList<CertificateAssemblyFact> Assembly);
+
+public interface ICertificateUnitReadPort
+{
+    Task<CertificateUnitFact?> ReadAsync(Guid unitId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<Guid>> FindUnitIdsBySerialAsync(string serial, CancellationToken cancellationToken);
+    Task<IReadOnlyDictionary<Guid, string>> PrimarySerialsAsync(IReadOnlyCollection<Guid> unitIds, CancellationToken cancellationToken);
+}
+
+public sealed record CertificateConditionFact(string Grade, IReadOnlyList<ReleaseTestSnapshot> Tests,
+    string? SanitisationReference, string? Firmware);
+public interface ICertificateConditionReadPort
+{
+    Task<CertificateConditionFact> ReadAsync(Guid unitId, CancellationToken cancellationToken);
+}
+
+public sealed record CertificateRefurbishmentFact(int? CycleNumber, string? WorkReference, Guid? RefurbisherRef,
+    ReleaseLifeEpisodeSnapshot? LifeEpisode);
+public interface ICertificateRefurbishmentReadPort
+{
+    Task<CertificateRefurbishmentFact> ReadAsync(Guid unitId, CancellationToken cancellationToken);
+}
+
+public sealed record CertificateReplacementFact(IReadOnlyDictionary<Guid, string> Replaces, IReadOnlyDictionary<Guid, string> ReplacedBy);
+public interface ICertificateReplacementReadPort
+{
+    Task<CertificateReplacementFact> ReadAsync(Guid unitId, CancellationToken cancellationToken);
+}
+
+public sealed record CertificateEntitlementFact(Guid EntitlementId, string CoverageFamily, string Type, string Status,
+    string? StartBasis, DateOnly? StartDate, DateOnly? EndDate, string PolicyCode, int PolicyVersion,
+    int DurationValue, string DurationUnit, string Coverage, Guid? SupersedesEntitlementId, Guid? RootEntitlementId,
+    IReadOnlyList<Guid> SupersededLineage);
+public interface ICertificateEntitlementReadPort
+{
+    Task<IReadOnlyList<CertificateEntitlementFact>> LiveAsync(Guid unitId, CancellationToken cancellationToken);
+}
+
+public sealed record CertificateSignatureRow(Guid SignatureId, string PrintedName, string Meaning, DateTime SignedAt,
+    string HashSigned, string Method);
+public sealed record CertificateReprintRow(Guid ReprintId, int Version, string RequestedBy, DateTime At, string? Recipient);
+public sealed record CertificateDetail(Guid CertificateId, Guid UnitId, string PrimarySerial, string DocumentKind,
+    string FormType, int Version, string TrackingNumber, Guid TemplateVersionId, Guid? AsBuiltRevisionId,
+    JsonElement Payload, string PayloadHash, Guid? SupersedesCertificateId, string? SupersedeReason,
+    Guid TriggeringEventId, CertificateIssuerSnapshot Issuer, CertificateOwnerSnapshot? Owner,
+    CertificateBrandingSnapshot Branding, string Language, string Provenance, IReadOnlyList<string> Unknowns,
+    IReadOnlyList<string> Evidence, DateTime IssuedAt, string Status,
+    IReadOnlyList<CertificateSignatureRow> Signatures, IReadOnlyList<CertificateReprintRow> Reprints);
+public sealed record CertificateListRow(Guid CertificateId, Guid UnitId, string PrimarySerial, string DocumentKind,
+    string FormType, int Version, string TrackingNumber, string Status, DateTime IssuedAt, string Provenance);
+public sealed record CertificateVersionChain(IReadOnlyList<CertificateListRow> ReleaseRecords,
+    IReadOnlyList<CertificateListRow> WarrantyCertificates);
+
+public sealed record CertificateRenderRequest(string Payload, Guid TemplateVersionId);
+public sealed record CertificateRenderResult(byte[] Bytes, string MediaType);
+public interface ICertificateRenderer
+{
+    Task<CertificateRenderResult> RenderAsync(CertificateRenderRequest request, CancellationToken cancellationToken);
+}
+
+public sealed record IssueCertificateVersion(Guid TriggeringEventId, Guid UnitId, string DocumentKind, string FormType,
+    string? SupersedeReason, DateTime EffectiveAt, string ActorRef, Guid IssuerEntityId,
+    string Provenance = CertificateProvenance.SystemGenerated, IReadOnlyList<string>? Unknowns = null,
+    IReadOnlyList<string>? Evidence = null, string Language = "en", string? TriggerSchema = null);
+
+public sealed record IssueCertificateVersionResult(bool Issued, bool Replayed, Guid? CertificateId, int? Version,
+    string? TrackingNumber, string? RefusalRule = null, string? RefusalDetail = null, bool Absorbed = false);
+
+public sealed record CertificateTriggerContext(Guid UnitId, string Schema, Guid EventId, DateTime EventTime,
+    DateTime RecordedTime, long Seq, Guid LegalEntityId, string ActorRef, DocumentRef? Document);
+
+public sealed record CertificateFieldCatalogueEntry(string Path, string Type, bool Repeating, string? Description = null);
+public sealed record CertificateTemplateSummary(Guid TemplateId, string Code, string Name, string DocumentKind,
+    string FormType, string? AppliesToItemClass, bool BuiltIn, int LatestVersion, string LatestStatus);
+public sealed record CertificateTemplateVersionRow(Guid TemplateVersionId, int Version, string Status, string Language,
+    string PayloadSchemaVersion, DateTime? EffectiveFrom, DateTime? EffectiveTo, string LayoutKind, string LayoutBody,
+    string PageSize, string Orientation, decimal MarginTopMm, decimal MarginRightMm, decimal MarginBottomMm,
+    decimal MarginLeftMm, string? HeaderBody, string? FooterBody, string? BrandingAssetRef,
+    IReadOnlyDictionary<string, string> StaticText, IReadOnlyList<string> Fields, string? ApprovedBy,
+    DateTime? ApprovedAt, DateTime CreatedAt, string CreatedBy, DateTime UpdatedAt, string UpdatedBy);
+public sealed record CertificateTemplateDetail(Guid TemplateId, string Code, string Name, string DocumentKind,
+    string FormType, string? AppliesToItemClass, bool BuiltIn, IReadOnlyList<CertificateTemplateVersionRow> Versions);
+public sealed record CreateCertificateTemplateRequest(string Code, string Name, string DocumentKind, string FormType,
+    string? AppliesToItemClass, Guid? CopyFromTemplateId = null);
+public sealed record SaveCertificateTemplateDraftRequest(Guid? TemplateVersionId, string Language,
+    string PayloadSchemaVersion, string LayoutBody, string PageSize, string Orientation, decimal MarginTopMm,
+    decimal MarginRightMm, decimal MarginBottomMm, decimal MarginLeftMm, string? HeaderBody, string? FooterBody,
+    string? BrandingAssetRef, IReadOnlyDictionary<string, string> StaticText, IReadOnlyList<string> Fields);
+public sealed record CertificateTemplateValidation(bool Valid, IReadOnlyList<string> UnknownPlaceholders,
+    IReadOnlyList<string> PartyFieldViolations, IReadOnlyList<string> DeclaredButUnusedFields, IReadOnlyList<string> Errors);
+public sealed record CertificateTemplatePreviewRequest(Guid SampleUnitId);
+public sealed record CertificateTemplatePreview(byte[] Bytes, string MediaType, CertificateTemplateValidation Validation);

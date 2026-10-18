@@ -5,7 +5,7 @@ using Yojana.Serialisation.Data;
 namespace Yojana.Serialisation.Claims;
 
 /// <summary>
-/// Issues human document numbers (CLM-2026-00412, RCV-2026-0031) from the tenant's <c>number_series</c> row for the
+/// Issues human document numbers (CLM-2026-00412, RCV-2026-0031, CRT-2026-000001) from the tenant's <c>number_series</c> row for the
 /// series and year. The increment runs inside the caller's transaction, so a refused command gives its number back and
 /// numbers stay gap-free per committed document; concurrent callers queue on the series row's update lock.
 /// </summary>
@@ -16,6 +16,7 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
     public const string Rma = "RMA";
     public const string WarrantyReplacement = "WRP";
     public const string Refurbishment = "RFB";
+    public const string Certificate = "CRT";
 
     public async Task<string> NextAsync(string series, DateTime at, CancellationToken cancellationToken)
     {
@@ -40,6 +41,7 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
         Recovery => $"{Recovery}-{year}-{value:D4}",
         WarrantyReplacement => $"{WarrantyReplacement}-{year}-{value:D5}",
         Refurbishment => $"{Refurbishment}-{year}-{value:D5}",
+        Certificate => $"{Certificate}-{year}-{value:D6}",
         _ => $"{series}-{year}-{value:D5}",
     };
 }

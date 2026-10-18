@@ -80,10 +80,15 @@ public sealed record CertificateIssueRequested(
 public static class CertificateDocumentKind
 {
     public const string ReleaseRecord = "release_record";
+    public const string WarrantyCertificate = "warranty_certificate";
+    public static readonly IReadOnlyList<string> All = [ReleaseRecord, WarrantyCertificate];
 }
 
 public static class CertificateProvenance
 {
+    public const string SystemGenerated = "system_generated";
+    public const string Migrated = "migrated";
     public const string Reconstructed = "reconstructed";
+    public static readonly IReadOnlyList<string> All = [SystemGenerated, Migrated, Reconstructed];
 }
 

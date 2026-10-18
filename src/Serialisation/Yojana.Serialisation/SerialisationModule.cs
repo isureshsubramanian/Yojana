@@ -23,6 +23,7 @@ using Yojana.Serialisation.Campaigns;
 using Yojana.Serialisation.Rmas;
 using Yojana.Serialisation.Condition;
 using Yojana.Serialisation.Refurbishments;
+using Yojana.Serialisation.Certificates;
 
 namespace Yojana.Serialisation;
 
@@ -67,6 +68,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<CampaignQueries>();
         builder.Services.AddScoped<ConditionQueries>();
         builder.Services.TryAddScoped<IUnitConditionQueryPort>(sp => sp.GetRequiredService<ConditionQueries>());
+        builder.Services.TryAddScoped<ICertificateConditionReadPort, CertificateConditionReadPort>();
         builder.Services.TryAddScoped<IUnitSaleShipmentGuard, ConditionShipmentGuard>();
         builder.Services.TryAddScoped<ILifeEpisodeWriter, LifeEpisodeWriter>();
         // P5 refurbishment block. RefurbishmentPolicySettings is factory-registered so its ITenantSettings-backed
@@ -75,6 +77,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<RefurbishmentService>();
         builder.Services.AddScoped<RefurbishmentQueries>();
         builder.Services.TryAddScoped<IRefurbishmentOpener, DefaultRefurbishmentOpener>();
+        builder.Services.TryAddScoped<ICertificateRefurbishmentReadPort, CertificateRefurbishmentReadPort>();
         // End P5 refurbishment block.
         builder.Services.AddScoped<BulkExecutor>();
         builder.Services.AddScoped<BulkApprovalRequestQueries>();
@@ -125,6 +128,7 @@ public static class SerialisationModule
         builder.Services.AddScoped(sp => new Entitlements.WarrantyReferenceSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped<Entitlements.EntitlementLedger>();
         builder.Services.AddScoped<Entitlements.EntitlementQueries>();
+        builder.Services.TryAddScoped<ICertificateEntitlementReadPort, Entitlements.CertificateEntitlementReadPort>();
         builder.Services.AddScoped<Entitlements.EntitlementRequirementWriter>();
         builder.Services.AddScoped<Entitlements.EntitlementRequirementQueries>();
         builder.Services.AddScoped<Entitlements.EntitlementRequirementSweep>();
@@ -144,6 +148,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<RecoveryQueries>();
         builder.Services.AddScoped<Replacements.WarrantyReplacementQueries>();
         builder.Services.AddScoped<Replacements.ReplacementLinkQueries>();
+        builder.Services.TryAddScoped<ICertificateReplacementReadPort, Replacements.CertificateReplacementReadPort>();
         builder.Services.AddScoped<LegacyUnknownClaimUnitCreator>();
         builder.Services.AddScoped<RmaSaleFactsResolver>();
         builder.Services.AddScoped<RmaQueries>();
@@ -244,6 +249,24 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<ITimeZonePort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
         builder.Services.TryAddSingleton<IWarrantyClaimsPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
         builder.Services.TryAddSingleton<IWarrantyCertificatePort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
+
+        // P6 certificate block. Owner modules expose snapshots through the narrow ports above; the engine owns only
+        // immutable certificate rows and state-neutral certificate ledger events.
+        builder.Services.TryAddScoped<ICertificateUnitReadPort, CertificateUnitReadPort>();
+        builder.Services.TryAddScoped<ICertificateConditionReadPort, CertificateConditionReadPort>();
+        builder.Services.TryAddScoped<ICertificateRefurbishmentReadPort, CertificateRefurbishmentReadPort>();
+        builder.Services.TryAddScoped<ICertificateReplacementReadPort, Replacements.CertificateReplacementReadPort>();
+        builder.Services.TryAddScoped<ICertificateEntitlementReadPort, Entitlements.CertificateEntitlementReadPort>();
+        builder.Services.TryAddScoped<ICertificatePresentationPort, NeutralCertificatePresentationPort>();
+        builder.Services.TryAddScoped<ICertificateRenderer, PlainHtmlCertificateRenderer>();
+        builder.Services.AddScoped<ReleaseRecordPayloadBuilder>();
+        builder.Services.AddScoped<WarrantyCertificatePayloadBuilder>();
+        builder.Services.AddScoped<CertificatePayloadBuilder>();
+        builder.Services.AddScoped<CertificateDatabaseLock>();
+        builder.Services.AddScoped<CertificateTemplateService>();
+        builder.Services.AddScoped<CertificateVersioningEngine>();
+        builder.Services.AddScoped<CertificateQueries>();
+        // End P6 certificate block.
 
         // Replay-and-diff healer (P1-T05): per tenant, nightly, through the platform's recurring tenant jobs.
         builder.Services.AddScoped<UnitCurrentHealer>();
