@@ -169,6 +169,7 @@ public sealed class CertificateTests
     [InlineData("en", CertificateDatePattern.DayMonthNameYear, CertificateTimePattern.TwentyFourHour)]
     [InlineData("en-US", CertificateDatePattern.MonthDayYear, CertificateTimePattern.TwelveHour)]
     [InlineData("fr", CertificateDatePattern.DayMonthYear, CertificateTimePattern.TwentyFourHour)]
+    [InlineData("tenant-custom", CertificateDatePattern.MonthDayYear, CertificateTimePattern.TwentyFourHour)]
     public void Certificate_date_format_defaults_follow_the_language_culture(string language,
         string expectedDatePattern, string expectedTimePattern)
     {

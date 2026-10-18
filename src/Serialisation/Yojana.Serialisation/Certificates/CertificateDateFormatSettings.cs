@@ -6,21 +6,26 @@ using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation.Certificates;
 
+/// <summary>The languages which currently have an active tenant certificate layout.</summary>
+public interface ICertificateLayoutLanguageSource
+{
+    Task<IReadOnlyList<string>> ActiveLanguagesAsync(CancellationToken cancellationToken);
+}
+
 /// <summary>Tenant-owned certificate date presentation, resolved to exact patterns before a certificate is signed.</summary>
-public sealed class CertificateDateFormatSettings(ITenantSettings settings)
+public sealed class CertificateDateFormatSettings(
+    ITenantSettings settings,
+    ICertificateLayoutLanguageSource layoutLanguages)
 {
     public const string Key = "certificates.date_format";
-    public static readonly IReadOnlyList<string> IssuedLanguages = ["en", "de", "fr"];
 
     // Coupled to the factory registration in SerialisationModule for the same two-DbContext Wolverine constraint as
     // ReleaseRecordIssuePointSettings. A direct registration exposes PlatformDbContext to certificate handlers.
     public async Task<CertificateDateFormatSettingsView> GetAsync(CancellationToken cancellationToken)
     {
-        var stored = await settings.GetVersionedAsync(Key, cancellationToken);
-        var policy = stored is null
-            ? new CertificateDateFormatPolicy([])
-            : Deserialise(stored.Value);
-        return new(WithDefaults(policy.Languages), stored?.Version ?? ITenantSettings.MissingVersion);
+        var (policy, version) = await StoredAsync(cancellationToken);
+        var active = await layoutLanguages.ActiveLanguagesAsync(cancellationToken);
+        return new(WithDefaults(policy.Languages, active), version);
     }
 
     public async Task<CertificateDateFormatSettingsView> SetAsync(UpdateCertificateDateFormatSettings update,
@@ -29,14 +34,15 @@ public sealed class CertificateDateFormatSettings(ITenantSettings settings)
         var policy = Normalise(new CertificateDateFormatPolicy(update.Languages));
         var stored = await settings.SetAsync(Key, JsonSerializer.Serialize(policy, LedgerJson.Options),
             update.ExpectedVersion, cancellationToken);
-        return new(WithDefaults(policy.Languages), stored.Version);
+        var active = await layoutLanguages.ActiveLanguagesAsync(cancellationToken);
+        return new(WithDefaults(policy.Languages, active), stored.Version);
     }
 
     public async Task<CertificateDateFormatChoice> ResolveAsync(string language,
         CancellationToken cancellationToken)
     {
-        var view = await GetAsync(cancellationToken);
-        return view.Languages.FirstOrDefault(row => row.Language.Equals(language, StringComparison.OrdinalIgnoreCase))
+        var (policy, _) = await StoredAsync(cancellationToken);
+        return policy.Languages.FirstOrDefault(row => row.Language.Equals(language, StringComparison.OrdinalIgnoreCase))
             ?? DefaultFor(language);
     }
 
@@ -76,6 +82,14 @@ public sealed class CertificateDateFormatSettings(ITenantSettings settings)
         Normalise(JsonSerializer.Deserialize<CertificateDateFormatPolicy>(text, LedgerJson.Options)
             ?? new CertificateDateFormatPolicy([]));
 
+    private async Task<(CertificateDateFormatPolicy Policy, string Version)> StoredAsync(
+        CancellationToken cancellationToken)
+    {
+        var stored = await settings.GetVersionedAsync(Key, cancellationToken);
+        return (stored is null ? new CertificateDateFormatPolicy([]) : Deserialise(stored.Value),
+            stored?.Version ?? ITenantSettings.MissingVersion);
+    }
+
     private static CertificateDateFormatPolicy Normalise(CertificateDateFormatPolicy policy)
     {
         var rows = policy.Languages.Select(row => new CertificateDateFormatChoice(
@@ -87,12 +101,6 @@ public sealed class CertificateDateFormatSettings(ITenantSettings settings)
                 "Each certificate language can have only one date and time format.");
         foreach (var row in rows)
         {
-            try { _ = CultureInfo.GetCultureInfo(row.Language); }
-            catch (CultureNotFoundException)
-            {
-                throw new CommandRefusedException("certificate_date_format_language_unknown",
-                    $"Unknown certificate language '{row.Language}'.");
-            }
             if (!CertificateDatePattern.All.Contains(row.DatePattern, StringComparer.Ordinal))
                 throw new CommandRefusedException("certificate_date_pattern_unknown",
                     $"Unknown certificate date pattern '{row.DatePattern}'.");
@@ -104,22 +112,14 @@ public sealed class CertificateDateFormatSettings(ITenantSettings settings)
     }
 
     private static List<CertificateDateFormatChoice> WithDefaults(
-        IReadOnlyList<CertificateDateFormatChoice> configured)
+        IReadOnlyList<CertificateDateFormatChoice> configured,
+        IReadOnlyList<string> activeLanguages)
     {
         var rows = configured.ToDictionary(row => row.Language, StringComparer.OrdinalIgnoreCase);
-        foreach (var language in IssuedLanguages)
+        foreach (var language in activeLanguages.Select(NormaliseLanguage).Where(language => language.Length > 0))
             rows.TryAdd(language, DefaultFor(language));
-        return rows.Values.OrderBy(row => LanguageOrder(row.Language))
-            .ThenBy(row => row.Language, StringComparer.OrdinalIgnoreCase).ToList();
+        return rows.Values.OrderBy(row => row.Language, StringComparer.OrdinalIgnoreCase).ToList();
     }
-
-    private static int LanguageOrder(string language) => language switch
-    {
-        "en" => 0,
-        "de" => 1,
-        "fr" => 2,
-        _ => int.MaxValue,
-    };
 
     private static string NormaliseLanguage(string language) => language.Trim().Replace('_', '-').ToLowerInvariant();
 

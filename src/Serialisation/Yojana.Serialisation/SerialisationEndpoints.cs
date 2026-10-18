@@ -964,10 +964,15 @@ public static class SerialisationEndpoints
             }
         }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
         certificates.MapGet("/settings/date-format", async (
-            CertificateDateFormatSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)))
+            CertificateDateFormatSettings settings, CertificateTemplateService templates, CancellationToken ct) =>
+        {
+            await templates.EnsureStartersAsync(ct);
+            return Results.Ok(await settings.GetAsync(ct));
+        })
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         certificates.MapPut("/settings/date-format", async (
             UpdateCertificateDateFormatSettings update, CertificateDateFormatSettings settings,
+            CertificateTemplateService templates,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(update.ExpectedVersion))
@@ -976,6 +981,7 @@ public static class SerialisationEndpoints
                     statusCode: StatusCodes.Status400BadRequest);
             try
             {
+                await templates.EnsureStartersAsync(ct);
                 return Results.Ok(await settings.SetAsync(update, ct));
             }
             catch (TenantSettingVersionConflictException ex)

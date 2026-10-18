@@ -290,6 +290,76 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Date_format_settings_offer_active_layout_languages_and_keep_saved_retired_languages()
+    {
+        var tenant = await fixture.NewTenantAsync("cert-date-languages", importJurisdictionStarter: false);
+        (Guid TemplateId, CertificateTemplateVersionRow Version) spanish;
+        (Guid TemplateId, CertificateTemplateVersionRow Version) italian;
+        using (var templateScope = fixture.ScopeFor(tenant))
+        {
+            var templates = templateScope.ServiceProvider.GetRequiredService<CertificateTemplateService>();
+            var starter = (await templates.ListAsync(CancellationToken.None))
+                .Single(row => row.Code == "builtin-generic-release");
+            spanish = await ActiveCopyAsync("tenant-release-es", "Tenant release ES", "es-MX");
+            italian = await ActiveCopyAsync("tenant-release-it", "Tenant release IT", "it");
+
+            async Task<(Guid TemplateId, CertificateTemplateVersionRow Version)> ActiveCopyAsync(
+                string code, string name, string language)
+            {
+                var copy = await templates.CreateAsync(new CreateCertificateTemplateRequest(code, name,
+                    CertificateDocumentKind.ReleaseRecord, CertificateFormType.GenericRelease, null, starter.TemplateId),
+                    "template.admin", CancellationToken.None);
+                var draft = Assert.Single(copy.Versions);
+                var savedDraft = await templates.SaveDraftAsync(copy.TemplateId,
+                    new SaveCertificateTemplateDraftRequest(draft.TemplateVersionId, language,
+                        draft.PayloadSchemaVersion, draft.LayoutBody, draft.PageSize, draft.Orientation,
+                        draft.MarginTopMm, draft.MarginRightMm, draft.MarginBottomMm, draft.MarginLeftMm,
+                        draft.HeaderBody, draft.FooterBody, draft.BrandingAssetId, draft.BrandingAssets,
+                        draft.StaticText, draft.Fields), "template.admin", CancellationToken.None);
+                var active = await templates.ActivateAsync(copy.TemplateId,
+                    savedDraft.Version!.TemplateVersionId, "template.admin", CancellationToken.None);
+                return (copy.TemplateId, active);
+            }
+        }
+
+        using (var settingsScope = fixture.ScopeFor(tenant))
+        {
+            var settings = settingsScope.ServiceProvider.GetRequiredService<CertificateDateFormatSettings>();
+            var initial = await settings.GetAsync(CancellationToken.None);
+            Assert.Equal(["en", "es-mx", "it"], initial.Languages.Select(row => row.Language));
+            Assert.Equal(CertificateDateFormatSettings.DefaultFor("es-MX"),
+                initial.Languages.Single(row => row.Language == "es-mx"));
+
+            var saved = await settings.SetAsync(new UpdateCertificateDateFormatSettings(
+                [
+                    new("es-MX", CertificateDatePattern.YearMonthDay, CertificateTimePattern.TwentyFourHour),
+                    new("fr", CertificateDatePattern.DayMonthYear, CertificateTimePattern.TwentyFourHour),
+                ], initial.Version), CancellationToken.None);
+            Assert.Equal(["en", "es-mx", "fr", "it"], saved.Languages.Select(row => row.Language));
+        }
+
+        using (var retirementScope = fixture.ScopeFor(tenant))
+        {
+            var templates = retirementScope.ServiceProvider.GetRequiredService<CertificateTemplateService>();
+            await templates.RetireAsync(spanish.TemplateId, spanish.Version.TemplateVersionId,
+                "template.admin", CancellationToken.None);
+            await templates.RetireAsync(italian.TemplateId, italian.Version.TemplateVersionId,
+                "template.admin", CancellationToken.None);
+        }
+
+        using (var assertionScope = fixture.ScopeFor(tenant))
+        {
+            var settings = assertionScope.ServiceProvider.GetRequiredService<CertificateDateFormatSettings>();
+            var afterRetirement = await settings.GetAsync(CancellationToken.None);
+            Assert.Equal(["en", "es-mx", "fr"], afterRetirement.Languages.Select(row => row.Language));
+            Assert.Equal(CertificateDatePattern.YearMonthDay,
+                afterRetirement.Languages.Single(row => row.Language == "es-mx").DatePattern);
+            Assert.Equal(CertificateDateFormatSettings.DefaultFor("it"),
+                await settings.ResolveAsync("it", CancellationToken.None));
+        }
+    }
+
+    [DatabaseFact]
     public async Task Logo_assets_are_tenant_private_sanitised_and_snapshotted_by_certificate_version()
     {
         var setup = await CommissionAsync("cert-logo");
