@@ -31,6 +31,7 @@ public sealed class CertificateSelectionService(
     CertificateTemplateService templates,
     CertificateVersioningEngine versions,
     ReleaseRecordIssuePointSettings issuePoints,
+    ReleaseRecordIssuePolicy issuePolicy,
     ICertificateRenderer renderer,
     ICertificateBundleRenderer bundleRenderer,
     IUnitEventWriter events,
@@ -190,14 +191,7 @@ public sealed class CertificateSelectionService(
             .GroupBy(row => row.UnitId)
             .Select(group => new { UnitId = group.Key, ReleasedAt = group.Max(row => row.ReleasedAt) })
             .ToDictionaryAsync(row => row.UnitId, row => row.ReleasedAt, cancellationToken);
-        var saleTimes = await db.Episodes.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
-                && unitIds.Contains(row.UnitId) && row.Reason == EpisodeReason.Sale
-                && row.PartyType == PartyType.Customer
-                && (row.Kind == EpisodeKind.Ownership
-                    || row.Kind == EpisodeKind.Custody && row.LocationKind == LocationKind.CustomerSite))
-            .GroupBy(row => row.UnitId)
-            .Select(group => new { UnitId = group.Key, At = group.Min(row => row.ValidFrom) })
-            .ToDictionaryAsync(row => row.UnitId, row => row.At, cancellationToken);
+        var saleTimes = await issuePolicy.CustomerSaleTimesAsync(unitIds, cancellationToken);
         var createdEvents = await db.Units.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
                 && unitIds.Contains(row.UnitId))
             .Select(row => new { row.UnitId, row.CreatedEventId }).ToListAsync(cancellationToken);
@@ -348,12 +342,7 @@ public sealed class CertificateSelectionService(
         var issueSettings = documentKind == CertificateDocumentKind.ReleaseRecord
             ? await issuePoints.GetAsync(cancellationToken) : null;
         var customerSaleUnits = documentKind == CertificateDocumentKind.ReleaseRecord
-            ? (await db.Episodes.AsNoTracking().Where(row => row.TenantId == tenantId
-                    && unitIds.Contains(row.UnitId) && row.Reason == EpisodeReason.Sale
-                    && row.PartyType == PartyType.Customer
-                    && (row.Kind == EpisodeKind.Ownership
-                        || row.Kind == EpisodeKind.Custody && row.LocationKind == LocationKind.CustomerSite))
-                .Select(row => row.UnitId).Distinct().ToListAsync(cancellationToken)).ToHashSet()
+            ? (await issuePolicy.CustomerSaleTimesAsync(unitIds, cancellationToken)).Keys.ToHashSet()
             : [];
         var createdEventIds = units.Values.Select(row => row.CreatedEventId).ToList();
         var commissionedRows = documentKind == CertificateDocumentKind.ReleaseRecord

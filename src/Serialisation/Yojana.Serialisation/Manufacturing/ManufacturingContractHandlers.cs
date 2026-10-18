@@ -135,7 +135,7 @@ public sealed class ManufacturingContractService(
                         message.Envelope.LegalEntityId,
                         message.WarehouseLocationId,
                         Source: EpisodeSource.Manufacturing,
-                        Document: message.ProductionOrder), db, writer, episodes, tenant, bus, cancellationToken);
+                        Document: message.ProductionOrder), db, writer, episodes, tenant, cancellationToken);
                     returned.Add(childUnitId);
                 }
             }

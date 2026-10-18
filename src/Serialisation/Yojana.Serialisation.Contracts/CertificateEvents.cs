@@ -31,6 +31,20 @@ public sealed record CertificateSuperseded(
     public const string Version = "1.0";
 }
 
+public sealed record CertificateWithdrawn(
+    PublishedEventHeader Header,
+    Guid CertificateId,
+    string DocumentKind,
+    int CertificateVersion,
+    string Reason,
+    Guid TriggeringCorrectionEventId,
+    Guid ReversedSaleEventId,
+    DateTime WithdrawnAt) : IPublishedUnitEvent
+{
+    public const string Schema = "Certificate.Withdrawn";
+    public const string Version = "1.0";
+}
+
 public sealed record CertificateReprinted(
     PublishedEventHeader Header,
     Guid ReprintId,

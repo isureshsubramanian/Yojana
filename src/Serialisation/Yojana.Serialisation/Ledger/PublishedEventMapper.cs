@@ -313,6 +313,13 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     Str(a, "document_kind") ?? "", Int(a, "certificate_version") ?? 0,
                     Str(a, "reason") ?? "", GuidOrNull(a, "triggering_event_id") ?? Guid.Empty,
                     DateTimeValue(a, "superseded_at") ?? e.EventTime);
+            case CertificateEventType.Withdrawn:
+                return new CertificateWithdrawn(Header(CertificateWithdrawn.Schema, CertificateWithdrawn.Version),
+                    GuidOrNull(a, "certificate_id") ?? Guid.Empty, Str(a, "document_kind") ?? "",
+                    Int(a, "certificate_version") ?? 0, Str(a, "reason") ?? "",
+                    GuidOrNull(a, "triggering_correction_event_id") ?? Guid.Empty,
+                    GuidOrNull(a, "reversed_sale_event_id") ?? Guid.Empty,
+                    DateTimeValue(a, "withdrawn_at") ?? e.EventTime);
             case CertificateEventType.Reprinted:
                 return new CertificateReprinted(Header(CertificateReprinted.Schema, CertificateReprinted.Version),
                     GuidOrNull(a, "reprint_id") ?? Guid.Empty, GuidOrNull(a, "certificate_id") ?? Guid.Empty,

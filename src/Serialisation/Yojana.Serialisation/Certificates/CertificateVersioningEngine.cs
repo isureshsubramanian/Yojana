@@ -82,12 +82,25 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
             if (unit.LifecycleStatus != LifecycleStatus.Released)
                 return await RefuseAsync("certificate_unit_not_released", $"Unit {command.UnitId} is '{unit.LifecycleStatus}'; certificates can be issued only for released units.");
             var itemClass = await payloads.ItemClassAsync(unit, cancellationToken);
-            var previous = await db.CertificateInstances.Where(row => row.TenantId == tenantId && row.UnitId == command.UnitId
-                    && row.DocumentKind == command.DocumentKind && row.Status == CertificateStatus.Issued)
+            var latest = await db.CertificateInstances.Where(row => row.TenantId == tenantId && row.UnitId == command.UnitId
+                    && row.DocumentKind == command.DocumentKind)
                 .OrderByDescending(row => row.Version).FirstOrDefaultAsync(cancellationToken);
+            var previous = latest?.Status == CertificateStatus.Issued ? latest : null;
             if (command.DocumentKind == CertificateDocumentKind.ReleaseRecord)
             {
                 var triggerSchema = command.TriggerSchema ?? "Unit.ReleaseFact";
+                if (triggerSchema is CustodyChanged.Schema or OwnershipOpened.Schema
+                    && await issuePolicy.SaleFactWasCorrectedAsync(command.UnitId, command.TriggeringEventId,
+                        cancellationToken))
+                {
+                    db.CertificateTriggers.Add(Trigger(CertificateTriggerOutcome.Absorbed, null,
+                        "release_record_sale_fact_reversed",
+                        "The customer-sale fact that reached the issue point was withdrawn by a document correction."));
+                    await PersistAsync();
+                    return new(false, false, null, null, null, "release_record_sale_fact_reversed",
+                        "The customer-sale fact that reached the issue point was withdrawn by a document correction.",
+                        Absorbed: true);
+                }
                 var decision = await issuePolicy.DecideAsync(unit, itemClass, triggerSchema, previous is not null,
                     cancellationToken);
                 if (!decision.Issue)
@@ -121,7 +134,7 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
                 await PersistAsync();
                 return new(false, false, null, null, null, reason, detail, Absorbed: true);
             }
-            var version = (previous?.Version ?? 0) + 1;
+            var version = (latest?.Version ?? 0) + 1;
             if (version > 1 && string.IsNullOrWhiteSpace(command.SupersedeReason))
                 return await RefuseAsync("certificate_supersede_reason_required", "A later certificate version requires a supersede reason.");
             var issuedAt = clock.UtcNow;
@@ -135,8 +148,8 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
                 DocumentKind = command.DocumentKind, FormType = command.FormType, Version = version, TrackingNumber = tracking,
                 TemplateVersionId = templateVersionId.Value, AsBuiltRevisionId = built.AsBuiltRevisionId,
                 Payload = built.CanonicalPayload, PayloadHash = hash, FactsHash = factsHash,
-                SupersedesCertificateId = previous?.CertificateId,
-                SupersedeReason = previous is null ? null : command.SupersedeReason, TriggeringEventId = command.TriggeringEventId,
+                SupersedesCertificateId = latest?.CertificateId,
+                SupersedeReason = latest is null ? null : command.SupersedeReason, TriggeringEventId = command.TriggeringEventId,
                 IssuerEntityId = command.IssuerEntityId, IssuerSnapshot = CanonicalJson.Serialise(issuer),
                 OwnerSnapshot = built.Owner is null ? null : CanonicalJson.Serialise(built.Owner),
                 BrandingSnapshot = CanonicalJson.Serialise(branding), Language = command.Language, Provenance = command.Provenance,
@@ -202,6 +215,80 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
             if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Retains every immutable version but removes the active release record when its original sale was corrected away.
+    /// No replacement version is invented because CorrectDocumentSerials changes no release-record payload fact.
+    /// </summary>
+    public async Task<bool> WithdrawForSaleReversalAsync(CertificateSaleReversalWork work,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        await using var transaction = ownsTransaction ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
+        try
+        {
+            await databaseLock.AcquireChainAsync(work.UnitId, CertificateDocumentKind.ReleaseRecord,
+                cancellationToken);
+            var chain = await db.CertificateInstances
+                .Where(row => row.TenantId == tenantId && row.UnitId == work.UnitId
+                    && row.DocumentKind == CertificateDocumentKind.ReleaseRecord)
+                .OrderBy(row => row.Version).ToListAsync(cancellationToken);
+            var root = chain.FirstOrDefault();
+            var current = chain.LastOrDefault(row => row.Status == CertificateStatus.Issued);
+            if (root is null || current is null
+                || !await RootWasIssuedForReversedSaleAsync(root, work, cancellationToken))
+            {
+                if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+                return false;
+            }
+
+            current.Status = CertificateStatus.Superseded;
+            var withdrawnAt = clock.UtcNow;
+            await events.AppendAsync([new UnitEventDraft
+            {
+                UnitId = work.UnitId,
+                EventTime = work.EffectiveAt,
+                EventType = CertificateEventType.Withdrawn,
+                LegalEntityId = work.LegalEntityId,
+                ActorRef = "system:certificates",
+                DocumentType = work.DocumentType,
+                DocumentId = work.DocumentId,
+                DocumentLine = work.DocumentLine,
+                IdempotencyKey = $"cert:withdraw:rr:{work.CorrectionEventId:N}",
+                Attributes = JsonObjectText.Of(new
+                {
+                    certificate_id = current.CertificateId,
+                    document_kind = current.DocumentKind,
+                    certificate_version = current.Version,
+                    reason = CertificateSupersedeReason.Correction,
+                    triggering_correction_event_id = work.CorrectionEventId,
+                    reversed_sale_event_id = work.ReversedSaleEventId,
+                    withdrawn_at = withdrawnAt,
+                }),
+                ProjectCurrentState = false,
+            }], cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+            return true;
+        }
+        catch
+        {
+            if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    private async Task<bool> RootWasIssuedForReversedSaleAsync(CertificateInstance root,
+        CertificateSaleReversalWork work, CancellationToken cancellationToken)
+    {
+        if (root.TriggeringEventId == work.ReversedSaleEventId) return true;
+        if (work.DocumentType is null || work.DocumentId is null) return false;
+        return await db.Events.AsNoTracking().AnyAsync(row => row.TenantId == tenant.TenantId
+            && row.UnitId == work.UnitId && row.EventId == root.TriggeringEventId
+            && row.DocumentType == work.DocumentType && row.DocumentId == work.DocumentId
+            && (work.DocumentLine == null || row.DocumentLine == work.DocumentLine), cancellationToken);
     }
 
     private static CertificateIssuerSnapshot ResolveIssuerSnapshot(string payload)

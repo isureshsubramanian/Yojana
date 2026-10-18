@@ -43,6 +43,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<PublishedEventMapper>();
         builder.Services.AddScoped<LedgerPublication>();
         builder.Services.AddScoped<IUnitEventWriter, UnitEventWriter>();
+        builder.Services.AddScoped<IUnitEventAppendObserver, CustomerSaleCertificateObserver>();
         builder.Services.AddScoped<UnitHistoryQuery>();
         builder.Services.AddScoped<BulkIngestion>();
 
@@ -251,6 +252,7 @@ public static class SerialisationModule
             // serial; certificate rendering fans back out on its separate per-unit locked queue below.
             options.LocalQueue(CertificatePublishedEventQueue.Name).UseDurableInbox().MaximumParallelMessages(1);
             options.PublishMessage<CertificateTriggerWork>().ToLocalQueue(CertificateTriggerQueue.Name);
+            options.PublishMessage<CertificateSaleReversalWork>().ToLocalQueue(CertificateTriggerQueue.Name);
             options.LocalQueue(CertificateTriggerQueue.Name).UseDurableInbox().MaximumParallelMessages(8);
         });
 

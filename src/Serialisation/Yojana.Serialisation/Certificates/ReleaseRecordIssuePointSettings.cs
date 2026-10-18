@@ -110,10 +110,46 @@ public sealed class ReleaseRecordIssuePolicy(
     }
 
     public async Task<bool> HasCustomerSaleAsync(Guid unitId, CancellationToken cancellationToken) =>
-        await db.Episodes.AsNoTracking().AnyAsync(row => row.UnitId == unitId && row.Reason == EpisodeReason.Sale
-            && row.PartyType == PartyType.Customer
-            && (row.Kind == EpisodeKind.Ownership
-                || row.Kind == EpisodeKind.Custody && row.LocationKind == LocationKind.CustomerSite), cancellationToken);
+        (await CustomerSaleTimesAsync([unitId], cancellationToken)).ContainsKey(unitId);
+
+    public async Task<IReadOnlyDictionary<Guid, DateTime>> CustomerSaleTimesAsync(
+        IReadOnlyCollection<Guid> unitIds, CancellationToken cancellationToken)
+    {
+        if (unitIds.Count == 0) return new Dictionary<Guid, DateTime>();
+        var rows = await db.Episodes.AsNoTracking().Where(row => unitIds.Contains(row.UnitId)
+                && row.Reason == EpisodeReason.Sale && row.PartyType == PartyType.Customer
+                && (row.Kind == EpisodeKind.Ownership
+                    || row.Kind == EpisodeKind.Custody && row.LocationKind == LocationKind.CustomerSite))
+            .Select(row => new { row.UnitId, row.ValidFrom, row.ClosingEventId })
+            .ToListAsync(cancellationToken);
+        var closingIds = rows.Select(row => row.ClosingEventId).OfType<Guid>().Distinct().ToList();
+        var closingFacts = closingIds.Count == 0
+            ? []
+            : await db.Events.AsNoTracking().Where(row => closingIds.Contains(row.EventId))
+                .Select(row => new { row.EventId, row.EventType, row.Attributes }).ToListAsync(cancellationToken);
+        var corrected = closingFacts.Where(row => row.EventType == UnitEventType.ShipmentReversed
+                || HasCorrection(row.Attributes))
+            .Select(row => row.EventId).ToHashSet();
+        return rows.Where(row => row.ClosingEventId is null || !corrected.Contains(row.ClosingEventId.Value))
+            .GroupBy(row => row.UnitId)
+            .ToDictionary(group => group.Key, group => group.Min(row => row.ValidFrom));
+    }
+
+    public async Task<bool> SaleFactWasCorrectedAsync(Guid unitId, Guid triggeringEventId,
+        CancellationToken cancellationToken)
+    {
+        var original = await db.Events.AsNoTracking().Where(row => row.UnitId == unitId
+                && row.EventId == triggeringEventId)
+            .Select(row => new { row.DocumentType, row.DocumentId, row.DocumentLine })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (original is null) return false;
+        return await db.Events.AsNoTracking().AnyAsync(row => row.UnitId == unitId
+            && row.EventType == UnitEventType.ShipmentReversed
+            && (row.ReversesEventId == triggeringEventId
+                || original.DocumentType != null && original.DocumentId != null
+                && row.DocumentType == original.DocumentType && row.DocumentId == original.DocumentId
+                && (original.DocumentLine == null || row.DocumentLine == original.DocumentLine)), cancellationToken);
+    }
 
     private static ReleaseRecordIssueDecision NotReached(string issuePoint) => issuePoint switch
     {
@@ -124,6 +160,13 @@ public sealed class ReleaseRecordIssuePolicy(
         _ => new(false, "release_record_issue_point_not_reached",
             "The configured build-release issue point was not reached by this trigger."),
     };
+
+    private static bool HasCorrection(string? attributes)
+    {
+        if (attributes is null) return false;
+        using var document = JsonDocument.Parse(attributes);
+        return document.RootElement.TryGetProperty("correction_id", out _);
+    }
 }
 
 public sealed record ReleaseRecordIssueDecision(bool Issue, string? Reason, string? Detail)
