@@ -55,8 +55,11 @@ public static class PlatformSetup
         builder.Services.AddScoped<TenantContext>();
         builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
         builder.Services.AddScoped<ITenantContextSetter>(sp => sp.GetRequiredService<TenantContext>());
+        builder.Services.AddScoped<IPortalPartyContext>(sp => sp.GetRequiredService<TenantContext>());
+        builder.Services.AddScoped<IPortalPartyContextSetter>(sp => sp.GetRequiredService<TenantContext>());
         builder.Services.AddSingleton<IClock, SystemClock>();
         builder.Services.AddScoped<ITenantSettings, TenantSettings>();
+        builder.Services.AddScoped<IPortalTenantResolver, PortalTenantResolver>();
         // A factory on purpose: Wolverine does not look inside one, so a module handler that takes ITenantCurrency does not
         // get PlatformDbContext (behind ITenantSettings) in its generated graph, which makes the host refuse to start
         // ("multiple DbContext types detected"). Coupled to the module handlers that read the currency (Serialisation
@@ -93,6 +96,8 @@ public static class PlatformSetup
         builder.Services.AddAuthorization(auth =>
         {
             auth.AddPolicy(YojanaPolicy.TenantMember, p => p.RequireAuthenticatedUser().RequireClaim(YojanaClaim.TenantId));
+            auth.AddPolicy(YojanaPolicy.CustomerPortal, p => p.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId).RequireClaim(YojanaClaim.CustomerPartyRef));
             foreach (var role in YojanaRole.All)
             {
                 auth.AddPolicy(YojanaPolicy.ForRole(role), p => p.RequireAuthenticatedUser().RequireClaim(YojanaClaim.TenantId).RequireClaim(YojanaClaim.Role, role));

@@ -8,6 +8,8 @@ namespace Yojana.Platform.Tenancy;
 /// <summary>
 /// Sets SQL Server <c>SESSION_CONTEXT('tenant_id')</c> read-only once per opened connection, so the
 /// row-level-security predicate (<c>sec.fn_tenant_predicate</c>) sees the tenant of the current scope.
+/// Customer-portal request scopes also set read-only <c>SESSION_CONTEXT('portal_party_ref')</c>; every other
+/// scope leaves it NULL, which preserves the tenant-only predicate branch.
 /// The connection pool clears session context when a connection is returned (sp_reset_connection), so
 /// the next scope sets its own tenant on the same physical connection; verified in P0-T08.
 /// When the scope has no tenant nothing is set and the predicate filters every tenant row out.
@@ -20,12 +22,13 @@ namespace Yojana.Platform.Tenancy;
 public sealed class TenantSessionContextInterceptor(ITenantContext tenant) : DbConnectionInterceptor
 {
     public const string SessionKey = "tenant_id";
+    public const string PortalPartySessionKey = "portal_party_ref";
 
     public override void ConnectionOpened(DbConnection connection, ConnectionEndEventData eventData)
     {
         if (tenant.HasTenant)
         {
-            using var command = Build(connection, tenant.TenantId);
+            using var command = Build(connection, tenant.TenantId, PortalParty());
             command.ExecuteNonQuery();
         }
     }
@@ -34,20 +37,35 @@ public sealed class TenantSessionContextInterceptor(ITenantContext tenant) : DbC
     {
         if (tenant.HasTenant)
         {
-            await using var command = Build(connection, tenant.TenantId);
+            await using var command = Build(connection, tenant.TenantId, PortalParty());
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
     }
 
-    private static DbCommand Build(DbConnection connection, TenantId tenantId)
+    private Guid? PortalParty() => tenant is IPortalPartyContext { HasPortalParty: true } portal
+        ? portal.PortalPartyRef
+        : null;
+
+    private static DbCommand Build(DbConnection connection, TenantId tenantId, Guid? portalPartyRef)
     {
         var command = connection.CreateCommand();
-        command.CommandText = "EXEC sp_set_session_context @key = N'" + SessionKey + "', @value = @tenant, @read_only = 1;";
+        command.CommandText = "EXEC sp_set_session_context @key = N'" + SessionKey
+            + "', @value = @tenant, @read_only = 1;"
+            + (portalPartyRef is null ? "" : " EXEC sp_set_session_context @key = N'" + PortalPartySessionKey
+                + "', @value = @portal_party, @read_only = 1;");
         var parameter = command.CreateParameter();
         parameter.ParameterName = "@tenant";
         parameter.DbType = DbType.Guid;
         parameter.Value = tenantId.Value;
         command.Parameters.Add(parameter);
+        if (portalPartyRef is { } partyRef)
+        {
+            var portalParameter = command.CreateParameter();
+            portalParameter.ParameterName = "@portal_party";
+            portalParameter.DbType = DbType.Guid;
+            portalParameter.Value = partyRef;
+            command.Parameters.Add(portalParameter);
+        }
         return command;
     }
 }

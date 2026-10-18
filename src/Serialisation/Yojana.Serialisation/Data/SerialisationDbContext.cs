@@ -176,6 +176,10 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<RulePack> RulePacks => Set<RulePack>();
     public DbSet<RulePackRule> RulePackRules => Set<RulePackRule>();
     // End P6 jurisdiction-rules block.
+    // P7 portal block. Customer assertions are intake evidence only; PortalQueries always authorises through ownership episodes.
+    public DbSet<DisclosurePolicy> DisclosurePolicies => Set<DisclosurePolicy>();
+    public DbSet<CustomerAssertion> CustomerAssertions => Set<CustomerAssertion>();
+    // End P7 portal block.
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -304,6 +308,41 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(m => m.Value).HasMaxLength(100);
             b.HasIndex(m => new { m.TenantId, m.CommissionedUnitId });
             b.HasIndex(m => new { m.TenantId, m.MergedFromUnitId });
+        });
+
+        modelBuilder.Entity<DisclosurePolicy>(b =>
+        {
+            b.ToTable("disclosure_policy", t => t.HasCheckConstraint("ck_disclosure_policy_tier",
+                "[tier] IN ('public','owner','internal')"));
+            b.HasKey(row => new { row.TenantId, row.Field });
+            b.Property(row => row.Field).HasMaxLength(100);
+            b.Property(row => row.Tier).HasMaxLength(20);
+            b.Property(row => row.UpdatedAt).HasPrecision(3);
+            b.Property(row => row.UpdatedBy).HasMaxLength(200);
+            b.HasIndex(row => new { row.TenantId, row.Tier, row.Enabled });
+        });
+
+        modelBuilder.Entity<CustomerAssertion>(b =>
+        {
+            b.ToTable("customer_assertion", t => t.HasCheckConstraint("ck_customer_assertion_status",
+                "[status] IN ('pending_verification','verified','rejected')"));
+            b.HasKey(row => new { row.TenantId, row.AssertionId });
+            b.Property(row => row.Status).HasMaxLength(20);
+            b.Property(row => row.IdentifierType).HasMaxLength(40);
+            b.Property(row => row.RawIdentifier).HasMaxLength(100);
+            b.Property(row => row.NormalisedIdentifier).HasMaxLength(100);
+            b.Property(row => row.CustomerPoRef).HasMaxLength(100);
+            b.Property(row => row.CustomerItemRef).HasMaxLength(100);
+            b.Property(row => row.Source).HasMaxLength(30);
+            b.Property(row => row.Provenance).HasMaxLength(30);
+            b.Property(row => row.EvidenceRef).HasMaxLength(500);
+            b.Property(row => row.AssertedBy).HasMaxLength(200);
+            b.Property(row => row.VerifiedBy).HasMaxLength(200);
+            b.Property(row => row.AssertedAt).HasPrecision(3);
+            b.Property(row => row.VerifiedAt).HasPrecision(3);
+            b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.PartyRef, row.AssertedAt, row.AssertionId });
+            b.HasIndex(row => new { row.TenantId, row.NormalisedIdentifier, row.IdentifierType });
         });
 
         modelBuilder.Entity<CustodyEpisode>(b =>

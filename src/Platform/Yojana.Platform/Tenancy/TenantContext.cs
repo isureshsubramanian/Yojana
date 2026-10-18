@@ -11,14 +11,26 @@ public interface ITenantContextSetter
     void Set(TenantId tenantId);
 }
 
+/// <summary>Platform adapter seam for adding the authenticated portal party to the current request scope.</summary>
+public interface IPortalPartyContextSetter
+{
+    void SetPortalParty(Guid partyRef);
+}
+
 /// <summary>Scoped holder of the current tenant. One scope serves exactly one tenant.</summary>
-public sealed class TenantContext : ITenantContext, ITenantContextSetter
+public sealed class TenantContext : ITenantContext, ITenantContextSetter, IPortalPartyContext, IPortalPartyContextSetter
 {
     private TenantId? tenantId;
+    private Guid? portalPartyRef;
 
     public bool HasTenant => tenantId is { IsEmpty: false };
 
     public TenantId TenantId => tenantId is { IsEmpty: false } id ? id : throw new NoTenantException();
+
+    public bool HasPortalParty => portalPartyRef is not null;
+
+    public Guid PortalPartyRef => portalPartyRef
+        ?? throw new InvalidOperationException("No customer portal party is set for the current scope.");
 
     public void Set(TenantId tenantId)
     {
@@ -34,6 +46,22 @@ public sealed class TenantContext : ITenantContext, ITenantContextSetter
         }
 
         this.tenantId = tenantId;
+    }
+
+    public void SetPortalParty(Guid partyRef)
+    {
+        if (partyRef == Guid.Empty)
+        {
+            throw new ArgumentException("Portal party reference must not be empty.", nameof(partyRef));
+        }
+
+        if (portalPartyRef is { } existing && existing != partyRef)
+        {
+            throw new InvalidOperationException(
+                $"The scope already serves portal party {existing}; it cannot be switched to {partyRef}.");
+        }
+
+        portalPartyRef = partyRef;
     }
 }
 

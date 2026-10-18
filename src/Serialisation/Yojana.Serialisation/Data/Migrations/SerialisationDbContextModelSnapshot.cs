@@ -2290,6 +2290,163 @@ namespace Yojana.Serialisation.Data.Migrations
                             }));
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CustomerAssertion", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("AssertionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("assertion_id");
+
+                    b.Property<DateTime>("AssertedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("asserted_at");
+
+                    b.Property<string>("AssertedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("asserted_by");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<string>("CustomerItemRef")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("customer_item_ref");
+
+                    b.Property<string>("CustomerPoRef")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("customer_po_ref");
+
+                    b.Property<string>("EvidenceRef")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("evidence_ref");
+
+                    b.Property<string>("IdentifierType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("identifier_type");
+
+                    b.Property<string>("NormalisedIdentifier")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("normalised_identifier");
+
+                    b.Property<Guid>("PartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("party_ref");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("provenance");
+
+                    b.Property<string>("RawIdentifier")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("raw_identifier");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid?>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<DateTime?>("VerifiedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("verified_at");
+
+                    b.Property<string>("VerifiedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("verified_by");
+
+                    b.HasKey("TenantId", "AssertionId")
+                        .HasName("pk_customer_assertion");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_customer_assertion_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "NormalisedIdentifier", "IdentifierType")
+                        .HasDatabaseName("ix_customer_assertion_tenant_id_normalised_identifier_identifier_type");
+
+                    b.HasIndex("TenantId", "PartyRef", "AssertedAt", "AssertionId")
+                        .HasDatabaseName("ix_customer_assertion_tenant_id_party_ref_asserted_at_assertion_id");
+
+                    b.ToTable("customer_assertion", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_customer_assertion_status", "[status] IN ('pending_verification','verified','rejected')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.DisclosurePolicy", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Field")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("field");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("bit")
+                        .HasColumnName("enabled");
+
+                    b.Property<string>("Tier")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("tier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("TenantId", "Field")
+                        .HasName("pk_disclosure_policy");
+
+                    b.HasIndex("TenantId", "Tier", "Enabled")
+                        .HasDatabaseName("ix_disclosure_policy_tenant_id_tier_enabled");
+
+                    b.ToTable("disclosure_policy", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_disclosure_policy_tier", "[tier] IN ('public','owner','internal')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.Entitlement", b =>
                 {
                     b.Property<Guid>("TenantId")

@@ -8,6 +8,7 @@ using Wolverine;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Corrections;
@@ -29,6 +30,7 @@ using Yojana.Serialisation.Labels;
 using Yojana.Serialisation.Jurisdictions;
 using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Imports;
+using Yojana.Serialisation.Portal;
 using Yojana.Serialisation.Reports;
 
 namespace Yojana.Serialisation;
@@ -42,6 +44,118 @@ public static class SerialisationEndpoints
 {
     public static IEndpointRouteBuilder MapSerialisationEndpoints(this IEndpointRouteBuilder app)
     {
+        app.MapGet("/api/public/portal/{tenantCode}/resolve", async (string tenantCode, string identifier,
+            string? type, IPortalTenantResolver tenants, ITenantContextSetter tenantSetter,
+            PublicPortalResolver resolver, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(identifier))
+                return Results.Problem(title: "identifier_required", detail: "An identifier is required.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            var tenantId = await tenants.ResolveCodeAsync(tenantCode, ct);
+            if (tenantId is null) return Results.NotFound();
+            tenantSetter.Set(tenantId.Value);
+            return Results.Ok(await resolver.ResolveAsync(tenantCode, identifier, type, ct));
+        }).AllowAnonymous();
+
+        var portalAdmin = app.MapGroup("/api/admin/portal").RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        portalAdmin.MapGet("/disclosure-policy", async (DisclosurePolicyService policy, CancellationToken ct) =>
+            Results.Ok(await policy.GetAsync(ct)));
+        portalAdmin.MapPut("/disclosure-policy/fields", async (UpdateDisclosureFields update, ClaimsPrincipal user,
+            DisclosurePolicyService policy, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await policy.SetFieldsAsync(update, Actor(user), ct)); }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message,
+                    statusCode: StatusCodes.Status422UnprocessableEntity,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+            }
+        });
+        portalAdmin.MapPut("/disclosure-policy/public-enabled", async (UpdatePublicPortalSetting update,
+            DisclosurePolicyService policy, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(update.ExpectedVersion))
+                return Results.Problem(title: "document_version_required",
+                    detail: "ExpectedVersion is required for a public-portal setting edit.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            try { return Results.Ok(await policy.SetPublicEnabledAsync(update, ct)); }
+            catch (TenantSettingVersionConflictException ex)
+            {
+                return Results.Problem(title: "document_changed",
+                    detail: "The public-portal setting changed after this view was loaded; reload and try again.",
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["rule"] = "document_changed", ["expectedVersion"] = ex.ExpectedVersion,
+                        ["currentVersion"] = ex.CurrentVersion,
+                    });
+            }
+        });
+
+        // COUPLING (SQL portal RLS): TenantResolutionMiddleware recognises this policy metadata and sets the
+        // read-only portal_party_ref session key before a DbContext opens. Changing this policy marker without
+        // changing that middleware leaves these routes protected only by PortalOwnershipScope.
+        var portal = app.MapGroup("/api/portal").RequireAuthorization(YojanaPolicy.CustomerPortal);
+        portal.MapGet("/lookup", async (string q, string? type, ClaimsPrincipal user, ITenantContext currentTenant,
+            PortalQueries queries, CancellationToken ct) =>
+            string.IsNullOrWhiteSpace(q)
+                ? Results.Problem(title: "identifier_required", detail: "q is required.", statusCode: StatusCodes.Status400BadRequest)
+                : Results.Ok(await queries.LookupAsync(PortalActor(user, currentTenant), q, type, ct)));
+        portal.MapGet("/installed-base", async (bool? includeComponents, int? take, DateTime? afterDeliveryDate,
+            Guid? afterUnitId, ClaimsPrincipal user, ITenantContext currentTenant, PortalQueries queries,
+            CancellationToken ct) => Results.Ok(await queries.InstalledBaseAsync(PortalActor(user, currentTenant),
+                includeComponents ?? false, take ?? 50, afterDeliveryDate, afterUnitId, ct)));
+        portal.MapGet("/installed-base/export", async (string? format, bool? includeComponents, ClaimsPrincipal user,
+            ITenantContext currentTenant, PortalQueries queries, CancellationToken ct) =>
+        {
+            var requested = string.IsNullOrWhiteSpace(format) ? PortalExportFormat.Csv : format.ToLowerInvariant();
+            if (requested == PortalExportFormat.Xlsx)
+                return Results.Problem(title: PortalExportFormat.SpreadsheetUnavailableReason,
+                    detail: "Excel export is unavailable until the approved spreadsheet reader/writer is added with its notices.",
+                    statusCode: StatusCodes.Status422UnprocessableEntity,
+                    extensions: new Dictionary<string, object?> { ["reason"] = PortalExportFormat.SpreadsheetUnavailableReason });
+            if (requested != PortalExportFormat.Csv)
+                return Results.Problem(title: "export_format_unsupported", detail: $"Unsupported export format '{requested}'.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            var principal = PortalActor(user, currentTenant);
+            return Results.Stream(async stream =>
+            {
+                await using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false), leaveOpen: true);
+                await writer.WriteLineAsync("serial,item_code,item_name,customer_po_ref,customer_item_ref,delivery_date,is_component,coverage");
+                await foreach (var row in queries.ExportInstalledBaseAsync(principal, includeComponents ?? false, ct))
+                {
+                    var coverage = string.Join(';', row.Coverage.Select(item =>
+                        $"{item.CoverageFamily}:{item.Status}:{item.Expiry?.ToString("yyyy-MM-dd") ?? ""}"));
+                    await writer.WriteLineAsync(string.Join(',', Csv(row.Serial), Csv(row.ItemCode), Csv(row.ItemName),
+                        Csv(row.CustomerPoRef), Csv(row.CustomerItemRef), row.DeliveryDate.ToString("O"),
+                        row.IsComponent ? "true" : "false", Csv(coverage)));
+                }
+                await writer.FlushAsync(ct);
+            }, "text/csv; charset=utf-8", "installed-base.csv");
+        });
+        portal.MapGet("/units/{unitId:guid}/service-history", async (Guid unitId, int? take, DateTime? beforeAt,
+            long? beforeSequence, ClaimsPrincipal user, ITenantContext currentTenant, PortalQueries queries,
+            CancellationToken ct) => await queries.ServiceHistoryAsync(PortalActor(user, currentTenant), unitId,
+                take ?? 50, beforeAt, beforeSequence, ct) is { } page ? Results.Ok(page) : Results.NotFound());
+        portal.MapPost("/serial-list", async (PortalSerialListRequest request, ClaimsPrincipal user,
+            ITenantContext currentTenant, PortalQueries queries, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await queries.PastedSerialsAsync(PortalActor(user, currentTenant), request, ct)); }
+            catch (ArgumentException ex)
+            {
+                return Results.Problem(title: "serial_list_too_large", detail: ex.Message,
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+        });
+        portal.MapPost("/where-used", async (PortalSerialInput input, ClaimsPrincipal user,
+            ITenantContext currentTenant, PortalQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.WhereUsedAsync(PortalActor(user, currentTenant), input, ct)));
+        portal.MapGet("/units/{unitId:guid}/certificates", async (Guid unitId, int? take,
+            DateTime? beforeIssuedAt, Guid? beforeCertificateId, ClaimsPrincipal user,
+            ITenantContext currentTenant, PortalQueries queries, CancellationToken ct) =>
+            await queries.CertificatesAsync(PortalActor(user, currentTenant), unitId, take ?? 50,
+                beforeIssuedAt, beforeCertificateId, ct) is { } page ? Results.Ok(page) : Results.NotFound());
+
         app.MapGet("/api/admin/ledger-base-order-backfill", async (LedgerBaseOrderBackfill backfill, CancellationToken ct) =>
             Results.Ok(await backfill.GetProgressAsync(ct)))
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
@@ -1393,6 +1507,20 @@ public static class SerialisationEndpoints
             return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict,
                 extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
         }
+    }
+
+    private static PortalPrincipal PortalActor(ClaimsPrincipal user, ITenantContext tenant)
+    {
+        var value = user.FindFirst(YojanaClaim.CustomerPartyRef)?.Value;
+        if (!Guid.TryParse(value, out var partyRef) || partyRef == Guid.Empty)
+            throw new UnauthorizedAccessException("The customer portal identity has no valid party reference.");
+        return new PortalPrincipal(tenant.TenantId, partyRef);
+    }
+
+    private static string Csv(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        return value.IndexOfAny([',', '"', '\r', '\n']) < 0 ? value : $"\"{value.Replace("\"", "\"\"")}\"";
     }
 
     private static async Task<IResult> TemplateInvoke<TResult>(Func<Task<TResult>> action)
