@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
@@ -241,6 +242,148 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         var entity = await db.CertificateTemplateVersions.SingleAsync(row => row.TemplateVersionId == activated.TemplateVersionId);
         entity.LayoutBody = "<p>changed after approval</p>";
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [DatabaseFact]
+    public async Task Logo_assets_are_tenant_private_sanitised_and_snapshotted_by_certificate_version()
+    {
+        var setup = await CommissionAsync("cert-logo");
+        Guid firstAssetId;
+        string firstHash;
+        Guid templateId;
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var assets = scope.ServiceProvider.GetRequiredService<TenantAssetService>();
+            var hostile = Encoding.UTF8.GetBytes("""
+                <svg xmlns="http://www.w3.org/2000/svg" width="120" height="40" onload="alert(1)">
+                  <script>alert(2)</script><foreignObject><div>unsafe</div></foreignObject>
+                  <image href="https://outside.invalid/logo.png" width="10" height="10"/>
+                  <image href="data:text/html;base64,PHNjcmlwdD4=" width="10" height="10"/>
+                  <rect width="120" height="40" fill="url(https://outside.invalid/paint)"/>
+                  <rect width="120" height="40" stroke="url(#safe) url(https://outside.invalid/bypass)"/>
+                  <text x="4" y="24">Fictional Systems</text>
+                </svg>
+                """);
+            var uploadCommand = new UploadTenantLogo(Guid.NewGuid(), Entity, hostile, "template.admin");
+            var uploadedResult = await InvokeAsync<TenantAssetUploadResult>(setup.Tenant, uploadCommand);
+            var uploaded = uploadedResult.Asset;
+            Assert.False(uploadedResult.Replayed);
+            var replayed = await InvokeAsync<TenantAssetUploadResult>(setup.Tenant, uploadCommand);
+            Assert.True(replayed.Replayed);
+            Assert.Equal(uploaded.AssetId, replayed.Asset.AssetId);
+            firstAssetId = uploaded.AssetId;
+            firstHash = uploaded.Sha256;
+            Assert.Equal(("image/svg+xml", 120, 40), (uploaded.MediaType, uploaded.Width, uploaded.Height));
+            var stored = await assets.ContentAsync(firstAssetId, CancellationToken.None);
+            var clean = Encoding.UTF8.GetString(stored!.Bytes);
+            Assert.DoesNotContain("script", clean, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("foreignObject", clean, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("onload", clean, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("outside.invalid", clean, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("data:text", clean, StringComparison.OrdinalIgnoreCase);
+
+            var templates = scope.ServiceProvider.GetRequiredService<CertificateTemplateService>();
+            var starter = (await templates.ListAsync(CancellationToken.None)).Single(row => row.Code == "builtin-generic-release");
+            var created = await templates.CreateAsync(new CreateCertificateTemplateRequest("logo-release", "Logo release",
+                CertificateDocumentKind.ReleaseRecord, CertificateFormType.GenericRelease, null, starter.TemplateId),
+                "template.admin", CancellationToken.None);
+            templateId = created.TemplateId;
+            var draft = Assert.Single(created.Versions);
+            var saved = await templates.SaveDraftAsync(templateId,
+                Request(draft, firstAssetId) with { HeaderBody = "<header>{{model.code}}</header>" },
+                "template.admin", CancellationToken.None);
+            await templates.ActivateAsync(templateId, saved.Version!.TemplateVersionId, "template.admin", CancellationToken.None);
+        }
+
+        await ReleaseAsync(setup);
+        await WaitForCountAsync(setup.Tenant, setup.UnitId, CertificateDocumentKind.ReleaseRecord, 1);
+
+        Guid secondAssetId;
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var replacement = (await InvokeAsync<TenantAssetUploadResult>(setup.Tenant,
+                new UploadTenantLogo(Guid.NewGuid(), Entity, Encoding.UTF8.GetBytes("""
+                <svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><text x="4" y="24">New mark</text></svg>
+                """), "template.admin"))).Asset;
+            secondAssetId = replacement.AssetId;
+            var templates = scope.ServiceProvider.GetRequiredService<CertificateTemplateService>();
+            var detail = (await templates.GetAsync(templateId, CancellationToken.None))!;
+            var active = detail.Versions.Single(row => row.Status == CertificateTemplateStatus.Active);
+            var next = await templates.SaveDraftAsync(templateId, Request(active, secondAssetId) with { TemplateVersionId = null },
+                "template.admin", CancellationToken.None);
+            await templates.ActivateAsync(templateId, next.Version!.TemplateVersionId, "template.admin", CancellationToken.None);
+        }
+
+        await InvokeAsync<CorrectIdentifierResult>(setup.Tenant, new CorrectIdentifier(Guid.NewGuid(), setup.UnitId,
+            IdentifierType.InternalSerial, setup.Serial + "-BRAND", IdentifierCorrectionReason.Typo, At.AddHours(3),
+            "quality.user", Entity));
+        await WaitForCountAsync(setup.Tenant, setup.UnitId, CertificateDocumentKind.ReleaseRecord, 2);
+
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var versions = await db.CertificateInstances.AsNoTracking().Where(row => row.UnitId == setup.UnitId
+                    && row.DocumentKind == CertificateDocumentKind.ReleaseRecord).OrderBy(row => row.Version).ToListAsync();
+            var firstBranding = JsonSerializer.Deserialize<CertificateBrandingSnapshot>(versions[0].BrandingSnapshot, CanonicalJson.Options)!;
+            var secondBranding = JsonSerializer.Deserialize<CertificateBrandingSnapshot>(versions[1].BrandingSnapshot, CanonicalJson.Options)!;
+            Assert.Equal((firstAssetId, firstHash), (firstBranding.LogoAssetId, firstBranding.LogoSha256));
+            Assert.Equal(secondAssetId, secondBranding.LogoAssetId);
+            Assert.NotEqual(firstBranding.LogoSha256, secondBranding.LogoSha256);
+            var rendered = await scope.ServiceProvider.GetRequiredService<CertificateQueries>()
+                .RenderAsync(versions[0].CertificateId, CancellationToken.None);
+            var renderedHtml = Encoding.UTF8.GetString(rendered!.Bytes);
+            Assert.Contains(Convert.ToBase64String((await db.TenantAssets.AsNoTracking().SingleAsync(row => row.AssetId == firstAssetId)).Bytes),
+                renderedHtml, StringComparison.Ordinal);
+            Assert.DoesNotContain("{{model.code}}", renderedHtml, StringComparison.Ordinal);
+            var current = await db.Current.AsNoTracking().SingleAsync(row => row.UnitId == setup.UnitId);
+            Assert.Null(current.OwnerPartyRef);
+            Assert.Equal((setup.LocationId, LocationKind.Warehouse, "[]"),
+                (current.LocationId, current.LocationKind, current.LiveEntitlementIds));
+            var openEpisodes = await db.Episodes.AsNoTracking().Where(row => row.UnitId == setup.UnitId && row.ValidTo == null).ToListAsync();
+            Assert.DoesNotContain(openEpisodes, row => row.Kind == EpisodeKind.Ownership);
+            var custody = Assert.Single(openEpisodes, row => row.Kind == EpisodeKind.Custody);
+            Assert.Equal((setup.LocationId, LocationKind.Warehouse), (custody.LocationId, custody.LocationKind));
+            Assert.Empty(await db.Entitlements.AsNoTracking().Where(row => row.UnitId == setup.UnitId).ToListAsync());
+            var identifier = Assert.Single(await db.Identifiers.AsNoTracking()
+                .Where(row => row.UnitId == setup.UnitId && row.ValidTo == null).ToListAsync());
+            Assert.Equal(setup.Serial + "-BRAND", identifier.RawValue);
+            Assert.Equal(1, await db.Events.CountAsync(row => row.UnitId == setup.UnitId && row.EventType == UnitEventType.IdentifierCorrected));
+            Assert.Equal(2, await db.Events.CountAsync(row => row.UnitId == setup.UnitId && row.EventType == CertificateEventType.Issued));
+            Assert.Equal(1, await db.Events.CountAsync(row => row.UnitId == setup.UnitId && row.EventType == CertificateEventType.Superseded));
+        }
+
+        var otherTenant = await fixture.NewTenantAsync("cert-logo-other");
+        using var otherScope = fixture.ScopeFor(otherTenant);
+        Assert.Null(await otherScope.ServiceProvider.GetRequiredService<TenantAssetService>()
+            .ContentAsync(firstAssetId, CancellationToken.None));
+
+        static SaveCertificateTemplateDraftRequest Request(CertificateTemplateVersionRow row, Guid assetId) => new(
+            row.TemplateVersionId, row.Language, row.PayloadSchemaVersion, row.LayoutBody, row.PageSize, row.Orientation,
+            row.MarginTopMm, row.MarginRightMm, row.MarginBottomMm, row.MarginLeftMm, row.HeaderBody, row.FooterBody,
+            null, new Dictionary<string, Guid> { [Entity.ToString()] = assetId }, row.StaticText, row.Fields);
+    }
+
+    [DatabaseFact]
+    public async Task Logo_upload_reads_raster_dimensions_from_magic_bytes_and_refuses_unknown_or_oversized_content()
+    {
+        var tenant = await fixture.NewTenantAsync("cert-logo-raster");
+        byte[] png = [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
+            0, 0, 1, 64, 0, 0, 0, 48];
+        byte[] jpeg = [0xff, 0xd8, 0xff, 0xc0, 0, 17, 8, 0, 64, 1, 32, 3, 1, 17, 0, 2, 17, 0, 3, 17, 0];
+
+        var pngResult = await InvokeAsync<TenantAssetUploadResult>(tenant,
+            new UploadTenantLogo(Guid.NewGuid(), null, png, "template.admin"));
+        var jpegResult = await InvokeAsync<TenantAssetUploadResult>(tenant,
+            new UploadTenantLogo(Guid.NewGuid(), null, jpeg, "template.admin"));
+
+        Assert.Equal(("image/png", 320, 48), (pngResult.Asset.MediaType, pngResult.Asset.Width, pngResult.Asset.Height));
+        Assert.Equal(("image/jpeg", 288, 64), (jpegResult.Asset.MediaType, jpegResult.Asset.Width, jpegResult.Asset.Height));
+        var unknown = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<TenantAssetUploadResult>(tenant,
+            new UploadTenantLogo(Guid.NewGuid(), null, "not an image"u8.ToArray(), "template.admin")));
+        Assert.Equal("tenant_asset_media_type_unknown", unknown.Rule);
+        var oversized = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<TenantAssetUploadResult>(tenant,
+            new UploadTenantLogo(Guid.NewGuid(), null, new byte[TenantAssetService.MaximumBytes + 1], "template.admin")));
+        Assert.Equal("tenant_asset_too_large", oversized.Rule);
     }
 
     [DatabaseFact]

@@ -18,10 +18,34 @@ public sealed partial class PlainHtmlCertificateRenderer(SerialisationDbContext 
             row.TenantId == tenant.TenantId && row.TemplateVersionId == request.TemplateVersionId, cancellationToken)
             ?? throw new InvalidOperationException($"Certificate template version {request.TemplateVersionId} does not exist.");
         using var payload = JsonDocument.Parse(request.Payload);
-        var html = EachPattern().Replace(template.LayoutBody, match => RenderEach(match, payload.RootElement));
-        html = ValuePattern().Replace(html, match => Encode(Read(payload.RootElement, match.Groups[1].Value)));
-        var document = $"<!doctype html><html><body>{template.HeaderBody}{html}{template.FooterBody}</body></html>";
+        var header = Render(template.HeaderBody, payload.RootElement);
+        var html = Render(template.LayoutBody, payload.RootElement);
+        var footer = Render(template.FooterBody, payload.RootElement);
+        var logo = await LogoAsync(payload.RootElement, cancellationToken);
+        var document = $"<!doctype html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'\"></head><body>{logo}{header}{html}{footer}</body></html>";
         return new CertificateRenderResult(Encoding.UTF8.GetBytes(document), "text/html; charset=utf-8");
+    }
+
+    private static string Render(string? template, JsonElement payload)
+    {
+        var html = EachPattern().Replace(template ?? "", match => RenderEach(match, payload));
+        return ValuePattern().Replace(html, match => Encode(Read(payload, match.Groups[1].Value)));
+    }
+
+    private async Task<string> LogoAsync(JsonElement payload, CancellationToken cancellationToken)
+    {
+        var branding = Read(payload, "branding");
+        if (branding is not { ValueKind: JsonValueKind.Object } value
+            || !value.TryGetProperty("logo_asset_id", out var idElement)
+            || !Guid.TryParse(idElement.GetString(), out var assetId)
+            || !value.TryGetProperty("logo_sha256", out var hashElement)) return "";
+        var expectedHash = hashElement.GetString();
+        var asset = await db.TenantAssets.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && row.AssetId == assetId && row.Sha256 == expectedHash)
+            .Select(row => new { row.MediaType, row.Bytes }).FirstOrDefaultAsync(cancellationToken);
+        if (asset is null) return "";
+        var source = $"data:{asset.MediaType};base64,{Convert.ToBase64String(asset.Bytes)}";
+        return $"<div class=\"certificate-logo\"><img alt=\"\" src=\"{source}\"></div>";
     }
 
     private static string RenderEach(Match match, JsonElement root)

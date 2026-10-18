@@ -25,12 +25,21 @@ public sealed class LabelQueries(SerialisationDbContext db, ITenantContext tenan
             var matched = versions.Select(row => row.TemplateId).ToHashSet();
             rows = rows.Where(row => matched.Contains(row.TemplateId)).ToList();
         }
+        var versionIds = versions.Select(version => version.TemplateVersionId).ToList();
+        var printedByVersion = await db.PrintJobs.AsNoTracking().Where(row => row.TenantId == tenantId
+                && row.TemplateVersionId != null && versionIds.Contains(row.TemplateVersionId.Value)
+                && row.Status != LabelPrintStatus.Rejected)
+            .GroupBy(row => row.TemplateVersionId!.Value).Select(group => new { VersionId = group.Key, Count = group.Count() })
+            .ToDictionaryAsync(row => row.VersionId, row => row.Count, cancellationToken);
         return rows.Select(row =>
         {
             var own = versions.Where(version => version.TemplateId == row.TemplateId).ToList();
+            var latest = own.OrderByDescending(version => version.Version).FirstOrDefault();
             return new LabelTemplateCatalogueRow(row.TemplateId, row.Name, row.AppliesTo, row.AppliesToValue,
                 own.Count, own.Where(version => version.Status == LabelTemplateStatus.Active).Select(version => (int?)version.Version).Max(),
-                row.CreatedAt, row.CreatedBy);
+                row.CreatedAt, row.CreatedBy, latest?.Version, latest?.Status, latest?.EffectiveFrom, latest?.EffectiveTo,
+                latest?.LegalReview ?? false, latest?.LegalReviewedBy, latest?.ApprovedAt,
+                own.Sum(version => printedByVersion.GetValueOrDefault(version.TemplateVersionId)));
         }).ToList();
     }
 

@@ -66,7 +66,8 @@ public sealed record CertificateTriggerSnapshot(string Schema, Guid EventId, Dat
     string? Reason = null, bool? ConditionReverificationRequired = null, string? Note = null);
 public sealed record CertificateProvenanceSnapshot(string Kind, IReadOnlyList<string> Unknowns, IReadOnlyList<string> Evidence);
 public sealed record CertificateIssuerSnapshot(string Name, string? RegistrationCode);
-public sealed record CertificateBrandingSnapshot(string Profile, string? DisplayName, string? Mark);
+public sealed record CertificateBrandingSnapshot(string Profile, string? DisplayName, string? Mark,
+    Guid? LogoAssetId = null, string? LogoSha256 = null, string? LogoMediaType = null);
 public sealed record CertificateOwnerSnapshot(string Code, string Name, string? Kind, DateTime EffectiveFrom);
 
 public sealed record ReleaseIdentifierSnapshot(
@@ -241,11 +242,13 @@ public sealed record CertificateTriggerContext(Guid UnitId, string Schema, Guid 
 
 public sealed record CertificateFieldCatalogueEntry(string Path, string Type, bool Repeating, string? Description = null);
 public sealed record CertificateTemplateSummary(Guid TemplateId, string Code, string Name, string DocumentKind,
-    string FormType, string? AppliesToItemClass, bool BuiltIn, int LatestVersion, string LatestStatus);
+    string FormType, string? AppliesToItemClass, bool BuiltIn, int LatestVersion, string LatestStatus,
+    DateTime? EffectiveFrom, DateTime? EffectiveTo, string? ApprovedBy, DateTime? ApprovedAt, int IssuedCount);
 public sealed record CertificateTemplateVersionRow(Guid TemplateVersionId, int Version, string Status, string Language,
     string PayloadSchemaVersion, DateTime? EffectiveFrom, DateTime? EffectiveTo, string LayoutKind, string LayoutBody,
     string PageSize, string Orientation, decimal MarginTopMm, decimal MarginRightMm, decimal MarginBottomMm,
-    decimal MarginLeftMm, string? HeaderBody, string? FooterBody, string? BrandingAssetRef,
+    decimal MarginLeftMm, string? HeaderBody, string? FooterBody, Guid? BrandingAssetId,
+    IReadOnlyDictionary<string, Guid> BrandingAssets,
     IReadOnlyDictionary<string, string> StaticText, IReadOnlyList<string> Fields, string? ApprovedBy,
     DateTime? ApprovedAt, DateTime CreatedAt, string CreatedBy, DateTime UpdatedAt, string UpdatedBy);
 public sealed record CertificateTemplateDetail(Guid TemplateId, string Code, string Name, string DocumentKind,
@@ -255,8 +258,20 @@ public sealed record CreateCertificateTemplateRequest(string Code, string Name, 
 public sealed record SaveCertificateTemplateDraftRequest(Guid? TemplateVersionId, string Language,
     string PayloadSchemaVersion, string LayoutBody, string PageSize, string Orientation, decimal MarginTopMm,
     decimal MarginRightMm, decimal MarginBottomMm, decimal MarginLeftMm, string? HeaderBody, string? FooterBody,
-    string? BrandingAssetRef, IReadOnlyDictionary<string, string> StaticText, IReadOnlyList<string> Fields);
+    Guid? BrandingAssetId, IReadOnlyDictionary<string, Guid> BrandingAssets,
+    IReadOnlyDictionary<string, string> StaticText, IReadOnlyList<string> Fields);
 public sealed record CertificateTemplateValidation(bool Valid, IReadOnlyList<string> UnknownPlaceholders,
     IReadOnlyList<string> PartyFieldViolations, IReadOnlyList<string> DeclaredButUnusedFields, IReadOnlyList<string> Errors);
 public sealed record CertificateTemplatePreviewRequest(Guid SampleUnitId);
 public sealed record CertificateTemplatePreview(byte[] Bytes, string MediaType, CertificateTemplateValidation Validation);
+
+public static class TenantAssetKind
+{
+    public const string Logo = "logo";
+}
+
+public sealed record TenantAssetRow(Guid AssetId, string Kind, Guid? LegalEntityId, string MediaType, string Sha256,
+    int Width, int Height, int ByteLength, string UploadedBy, DateTime UploadedAt);
+public sealed record TenantAssetContent(Guid AssetId, string MediaType, byte[] Bytes, string Sha256, DateTime UploadedAt);
+public sealed record UploadTenantLogo(Guid CommandId, Guid? LegalEntityId, byte[] Bytes, string ActorRef = "");
+public sealed record TenantAssetUploadResult(TenantAssetRow Asset, bool Replayed);

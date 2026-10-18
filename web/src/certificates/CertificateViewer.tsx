@@ -1,0 +1,86 @@
+import { useEffect, useState, type ReactNode } from "react";
+import { Link, useParams } from "react-router";
+import { KpiStrip } from "../components/KpiStrip";
+import { PresenceChips, useDocumentPresence } from "../components/Presence";
+import { StatusBadge } from "../components/StatusBadge";
+import { usePeople } from "../people/people";
+import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
+import { Rail } from "../shell/Drawer";
+import { openDrawer } from "../shell/drawerStore";
+import { ErrorNote, Kv, Section } from "../units/common";
+import { certificateApi } from "./api";
+import { fmtDateTime, formLabel, humanise, shortHash, statusTone } from "./format";
+import type { CertificateDetail, CertificateListRow, CertificateVersionChain } from "./types";
+import "./certificates.css";
+
+export function Component() {
+  const { id = "" } = useParams();
+  const [certificate, setCertificate] = useState<CertificateDetail | null>(null);
+  const [chain, setChain] = useState<CertificateVersionChain | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const presence = useDocumentPresence("certificate", id, false);
+  const people = usePeople(certificate?.reprints.map((row) => row.requestedBy) ?? []);
+  useEffect(() => {
+    const controller = new AbortController(); setError(null);
+    certificateApi.detail(id, controller.signal).then(async (detail) => {
+      setCertificate(detail); setChain(await certificateApi.chain(detail.unitId, controller.signal));
+    }).catch((reason) => { if (!controller.signal.aborted) setError(reason); });
+    return () => controller.abort();
+  }, [id]);
+
+  if (!certificate) return <main className="content" id="main" tabIndex={-1}><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Certificates", to: "/certificates" }, { label: "Certificate" }]} /><ErrorNote error={error} /><div className="empty"><h2>{error ? "Certificate unavailable" : "Loading certificate…"}</h2></div></main>;
+  const trigger = objectValue(certificate.payload, "trigger", "schema") ?? humanise(certificate.supersedeReason);
+  const openVersion = (row: CertificateListRow) => openDrawer({ eyebrow: `${humanise(row.documentKind)} · version ${row.version}`, title: row.trackingNumber, mono: true }, <>
+    <Section title="Version"><Kv rows={[["Status", humanise(row.status)], ["Issued", fmtDateTime(row.issuedAt)], ["Form", formLabel(row.formType)], ["Provenance", humanise(row.provenance)]]} /></Section>
+    <div className="act"><Link className="btn primary block" to={`/certificates/${row.certificateId}`}>Open this version</Link></div>
+  </>);
+
+  return <>
+    <main className="content" id="main" tabIndex={-1}>
+      <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Certificates", to: "/certificates" }, { label: certificate.trackingNumber }]} />
+      <PageHeader title={certificate.trackingNumber} sub={`${certificate.primarySerial} · ${humanise(certificate.documentKind)} · version ${certificate.version}`}
+        actions={<><PresenceChips users={presence} /><Link className="btn" to={`/units/${certificate.unitId}`}>Open unit</Link></>} />
+      <div className="stack">
+        <KpiStrip kpis={[
+          { label: "Status", value: humanise(certificate.status), detail: "current state of this version" },
+          { label: "Form", value: formLabel(certificate.formType), detail: `version ${certificate.version} · ${certificate.language}` },
+          { label: "Payload hash", value: shortHash(certificate.payloadHash), detail: "SHA-256 · signatures bind to it" },
+          { label: "Reprints", value: certificate.reprints.length.toLocaleString(), detail: "each is a Copy, never a version" },
+        ]} />
+        <div className="certificate-viewer-columns">
+          <section className="card" aria-labelledby="rendered-certificate-heading"><div className="card-header"><h2 id="rendered-certificate-heading">Rendered certificate</h2><span className="meta">sandboxed · scripts disabled · paper stays white</span></div>
+            <div className="card-body certificate-frame-wrap"><iframe className="certificate-frame" title={`Rendered certificate ${certificate.trackingNumber}`} sandbox="" src={`/api/certificates/${certificate.certificateId}/rendered`} /></div>
+          </section>
+          <div className="stack certificate-side-stack">
+            <ChainCard title="Release record chain" meta="build facts only" rows={chain?.releaseRecords ?? []} currentId={certificate.certificateId} onOpen={openVersion} />
+            <ChainCard title="Warranty certificate chain" meta="separate · entitlements and owner" rows={chain?.warrantyCertificates ?? []} currentId={certificate.certificateId} onOpen={openVersion} empty="No warranty certificate exists for this unit yet. A warranty change never creates a release-record version." />
+            <section className="card" aria-labelledby="certificate-signatures"><div className="card-header"><h2 id="certificate-signatures">Signatures</h2><span className="meta">bound to the payload hash</span></div>
+              <table className="table dense"><thead><tr><th>Signer</th><th>Meaning</th><th>When</th></tr></thead><tbody>{certificate.signatures.map((row) => <tr key={row.signatureId} tabIndex={0} onClick={() => openDrawer({ eyebrow: "Signature", title: row.printedName }, <Section title="Signature"><Kv rows={[["Printed name", row.printedName], ["Meaning", humanise(row.meaning)], ["Method", humanise(row.method)], ["Bound to", <span className="mono" key="hash">{shortHash(row.hashSigned)}</span>], ["Time", fmtDateTime(row.signedAt)]]} /></Section>)}><td className="primary">{row.printedName}<span className="sub">{humanise(row.method)}</span></td><td>{humanise(row.meaning)}</td><td>{fmtDateTime(row.signedAt)}</td></tr>)}</tbody></table>
+            </section>
+            <section className="card" aria-labelledby="certificate-reprints"><div className="card-header"><h2 id="certificate-reprints">Reprint log</h2><span className="meta">Copy access events</span></div>
+              {certificate.reprints.length ? <table className="table dense"><thead><tr><th>By</th><th>Recipient</th><th>When</th></tr></thead><tbody>{certificate.reprints.map((row) => <tr key={row.reprintId} tabIndex={0} onClick={() => openDrawer({ eyebrow: "Reprint · Copy", title: people(row.requestedBy) }, <Section title="Reprint"><Kv rows={[["Requested by", people(row.requestedBy)], ["Recipient", row.recipient ?? "not recorded"], ["Version", row.version], ["Time", fmtDateTime(row.at)]]} /></Section>)}><td className="primary">{people(row.requestedBy)}</td><td>{row.recipient ?? "—"}</td><td>{fmtDateTime(row.at)}</td></tr>)}</tbody></table> : <div className="card-body muted">No reprints recorded.</div>}
+            </section>
+            <section className="card" aria-labelledby="certificate-snapshots"><div className="card-header"><h2 id="certificate-snapshots">Snapshots on this version</h2></div><div className="card-body"><Kv rows={[
+              ["Issuer", certificate.issuer.name], ["Owner", certificate.owner?.name ?? "not present on this document"],
+              ["Branding", certificate.branding.displayName ?? humanise(certificate.branding.profile)], ["Provenance", humanise(certificate.provenance)], ["Trigger", trigger],
+            ]} /></div></section>
+          </div>
+        </div>
+      </div>
+    </main>
+    <Rail label="Certificate"><Section title="Integrity"><Kv rows={[["Tracking number", <span className="mono" key="tracking">{certificate.trackingNumber}</span>], ["Payload SHA-256", <span className="mono" key="payload">{shortHash(certificate.payloadHash)}</span>], ["Signatures", certificate.signatures.length], ["Certificate version", `v${certificate.version}`]]} /></Section><Section title="Rendering boundary"><p className="muted">The stored HTML is displayed in a sandboxed iframe with no script permission. The renderer also sends a content-security policy that blocks scripts and network resources.</p></Section></Rail>
+  </>;
+}
+
+function ChainCard({ title, meta, rows, currentId, onOpen, empty }: { title: string; meta: string; rows: CertificateListRow[]; currentId: string; onOpen: (row: CertificateListRow) => void; empty?: string }) {
+  return <section className="card"><div className="card-header"><h2>{title}</h2><span className="meta">{meta}</span></div><div className="card-body">
+    {rows.length ? <ol className="certificate-chain">{[...rows].sort((a, b) => b.version - a.version).map((row) => <li key={row.certificateId} aria-current={row.certificateId === currentId} onClick={() => onOpen(row)}><span className="chain-version">{row.version}</span><span><span className="t mono">{row.trackingNumber}</span><span className="sub">{fmtDateTime(row.issuedAt)} · {humanise(row.provenance)}</span></span><StatusBadge tone={statusTone(row.status)}>{humanise(row.status)}</StatusBadge></li>)}</ol> : <div className="note">{empty ?? "No versions."}</div>}
+  </div></section>;
+}
+
+function objectValue(root: Record<string, unknown>, object: string, key: string): ReactNode {
+  const value = root[object];
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const nested = (value as Record<string, unknown>)[key];
+  return typeof nested === "string" || typeof nested === "number" ? String(nested) : null;
+}

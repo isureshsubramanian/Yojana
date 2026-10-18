@@ -6,19 +6,23 @@ namespace Yojana.Serialisation.Certificates;
 public sealed class CertificatePayloadBuilder(ICertificateUnitReadPort units, IItemQueryPort items, ICertificatePresentationPort presentation,
     ReleaseRecordPayloadBuilder releases, WarrantyCertificatePayloadBuilder warranties)
 {
-    public async Task<PayloadBuildResult?> BuildAsync(IssueCertificateVersion command, CancellationToken cancellationToken)
+    public async Task<PayloadBuildResult?> BuildAsync(IssueCertificateVersion command, Guid templateVersionId,
+        CancellationToken cancellationToken)
     {
         var unit = await units.ReadAsync(command.UnitId, cancellationToken);
         if (unit is null) return null;
-        return await BuildAsync(command, unit, cancellationToken);
+        return await BuildAsync(command, unit, templateVersionId, cancellationToken);
     }
 
+    public async Task<string?> ItemClassAsync(CertificateUnitFact unit, CancellationToken cancellationToken) =>
+        (await items.GetAsync(unit.ItemId, cancellationToken))?.ItemClass;
+
     public async Task<PayloadBuildResult> BuildAsync(IssueCertificateVersion command, CertificateUnitFact unit,
-        CancellationToken cancellationToken)
+        Guid templateVersionId, CancellationToken cancellationToken)
     {
-        var itemClass = (await items.GetAsync(unit.ItemId, cancellationToken))?.ItemClass;
+        var itemClass = await ItemClassAsync(unit, cancellationToken);
         var issuePresentation = await presentation.ResolveAsync(command.IssuerEntityId, command.DocumentKind,
-            command.FormType, command.Language, cancellationToken);
+            command.FormType, command.Language, templateVersionId, cancellationToken);
         var triggerSchema = command.TriggerSchema ?? TriggerSchema(command);
         var correction = command.DocumentKind == CertificateDocumentKind.ReleaseRecord
             && (command.SupersedeReason == CertificateSupersedeReason.Correction

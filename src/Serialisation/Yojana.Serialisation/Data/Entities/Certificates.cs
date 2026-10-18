@@ -104,6 +104,7 @@ public sealed class CertificateTemplateVersion : ITenantScoped
     public string? HeaderBody { get; set; }
     public string? FooterBody { get; set; }
     public string? BrandingAssetRef { get; set; }
+    public Guid? BrandingAssetId { get; set; }
     public string StaticText { get; set; } = "{}";
     public string Fields { get; set; } = "[]";
     public string? ApprovedBy { get; set; }
@@ -112,4 +113,19 @@ public sealed class CertificateTemplateVersion : ITenantScoped
     public required string CreatedBy { get; set; }
     public DateTime UpdatedAt { get; set; }
     public required string UpdatedBy { get; set; }
+}
+
+public sealed class TenantAsset : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid AssetId { get; set; }
+    public required string Kind { get; set; }
+    public Guid? LegalEntityId { get; set; }
+    public required string MediaType { get; set; }
+    public required byte[] Bytes { get; set; }
+    public required string Sha256 { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
+    public required string UploadedBy { get; set; }
+    public DateTime UploadedAt { get; set; }
 }

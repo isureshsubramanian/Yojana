@@ -1035,9 +1035,12 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("approved_by");
 
+                    b.Property<Guid?>("BrandingAssetId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("branding_asset_id");
+
                     b.Property<string>("BrandingAssetRef")
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar(300)")
+                        .HasColumnType("nvarchar(max)")
                         .HasColumnName("branding_asset_ref");
 
                     b.Property<DateTime>("CreatedAt")
@@ -1163,6 +1166,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasKey("TenantId", "TemplateVersionId")
                         .HasName("pk_certificate_template_version");
+
+                    b.HasIndex("TenantId", "BrandingAssetId")
+                        .HasDatabaseName("ix_certificate_template_version_tenant_id_branding_asset_id");
 
                     b.HasIndex("TenantId", "TemplateId", "Version")
                         .IsUnique()
@@ -5973,6 +5979,82 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("serial_range_member", "serialisation");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.TenantAsset", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("asset_id");
+
+                    b.Property<byte[]>("Bytes")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)")
+                        .HasColumnName("bytes");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("int")
+                        .HasColumnName("height");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid?>("LegalEntityId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("legal_entity_id");
+
+                    b.Property<string>("MediaType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("media_type");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("sha256")
+                        .IsFixedLength();
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("uploaded_at");
+
+                    b.Property<string>("UploadedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("uploaded_by");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("int")
+                        .HasColumnName("width");
+
+                    b.HasKey("TenantId", "AssetId")
+                        .HasName("pk_tenant_asset");
+
+                    b.HasIndex("TenantId", "Sha256")
+                        .HasDatabaseName("ix_tenant_asset_tenant_id_sha256");
+
+                    b.HasIndex("TenantId", "Kind", "LegalEntityId", "UploadedAt")
+                        .HasDatabaseName("ix_tenant_asset_tenant_id_kind_legal_entity_id_uploaded_at");
+
+                    b.ToTable("tenant_asset", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_tenant_asset_dimensions", "width > 0 AND height > 0");
+
+                            t.HasCheckConstraint("ck_tenant_asset_kind", "kind = 'logo'");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.TestRecord", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -7984,6 +8066,12 @@ namespace Yojana.Serialisation.Data.Migrations
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateTemplateVersion", b =>
                 {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.TenantAsset", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "BrandingAssetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_certificate_template_version_tenant_id_branding_asset_id");
+
                     b.HasOne("Yojana.Serialisation.Data.Entities.CertificateTemplate", null)
                         .WithMany()
                         .HasForeignKey("TenantId", "TemplateId")

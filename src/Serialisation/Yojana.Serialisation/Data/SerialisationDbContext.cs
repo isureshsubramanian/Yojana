@@ -149,6 +149,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<ReprintLog> ReprintLogs => Set<ReprintLog>();
     public DbSet<CertificateTemplate> CertificateTemplates => Set<CertificateTemplate>();
     public DbSet<CertificateTemplateVersion> CertificateTemplateVersions => Set<CertificateTemplateVersion>();
+    public DbSet<TenantAsset> TenantAssets => Set<TenantAsset>();
     // End P6 certificate block.
     // P6 labels block. Kept together so the certificate sibling can merge its DbSets mechanically.
     public DbSet<LabelTemplate> LabelTemplates => Set<LabelTemplate>();
@@ -1487,13 +1488,31 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(row => row.MarginRightMm).HasPrecision(7, 2);
             b.Property(row => row.MarginBottomMm).HasPrecision(7, 2);
             b.Property(row => row.MarginLeftMm).HasPrecision(7, 2);
-            b.Property(row => row.BrandingAssetRef).HasMaxLength(300);
             b.Property(row => row.ApprovedBy).HasMaxLength(200);
             b.Property(row => row.CreatedBy).HasMaxLength(200);
             b.Property(row => row.UpdatedBy).HasMaxLength(200);
             b.HasOne<CertificateTemplate>().WithMany().HasForeignKey(row => new { row.TenantId, row.TemplateId }).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<TenantAsset>().WithMany().HasForeignKey(row => new { row.TenantId, row.BrandingAssetId })
+                .OnDelete(DeleteBehavior.Restrict).IsRequired(false);
             b.HasIndex(row => new { row.TenantId, row.TemplateId, row.Version }).IsUnique();
             b.HasIndex(row => new { row.TenantId, row.TemplateId, row.Status, row.EffectiveFrom });
+            b.HasIndex(row => new { row.TenantId, row.BrandingAssetId });
+        });
+
+        modelBuilder.Entity<TenantAsset>(b =>
+        {
+            b.ToTable("tenant_asset", t =>
+            {
+                t.HasCheckConstraint("ck_tenant_asset_kind", "kind = 'logo'");
+                t.HasCheckConstraint("ck_tenant_asset_dimensions", "width > 0 AND height > 0");
+            });
+            b.HasKey(row => new { row.TenantId, row.AssetId });
+            b.Property(row => row.Kind).HasMaxLength(30).IsUnicode(false);
+            b.Property(row => row.MediaType).HasMaxLength(100).IsUnicode(false);
+            b.Property(row => row.Sha256).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.UploadedBy).HasMaxLength(200);
+            b.HasIndex(row => new { row.TenantId, row.Kind, row.LegalEntityId, row.UploadedAt });
+            b.HasIndex(row => new { row.TenantId, row.Sha256 });
         });
         // End P6 certificate block.
         // P6 labels block. Label versions carry both business-effective dates and SQL system time: the former selects
