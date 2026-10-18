@@ -151,7 +151,7 @@ public sealed class TenantTimeZonePort(TenantTimeZoneSettings settings, ITimeZon
         var direct = await KnownAsync(source.ForLocationAsync(locationId, cancellationToken));
         if (direct is not null) return direct;
         if (purpose != TimeZonePurpose.DocumentPresentation) return null;
-        var policy = await settings.PolicyAsync(cancellationToken);
+        var policy = await PolicyAsync(cancellationToken);
         return Known(policy?.TenantTimeZone) ?? "UTC";
     }
 
@@ -160,13 +160,20 @@ public sealed class TenantTimeZonePort(TenantTimeZoneSettings settings, ITimeZon
     {
         if (purpose is not (TimeZonePurpose.DocumentPresentation or TimeZonePurpose.EntitlementCalendar))
             return await KnownAsync(source.ForLegalEntityAsync(legalEntityId, cancellationToken));
-        var policy = await settings.PolicyAsync(cancellationToken);
+        var policy = await PolicyAsync(cancellationToken);
         var configured = policy?.LegalEntityOverrides.FirstOrDefault(row => row.LegalEntityId == legalEntityId)?.TimeZone;
         var entityZone = Known(configured)
             ?? await KnownAsync(source.ForLegalEntityAsync(legalEntityId, cancellationToken));
         if (entityZone is not null) return entityZone;
         return Known(policy?.TenantTimeZone) ?? "UTC";
     }
+
+    // The adapter is scoped to one request or command, so the tenant setting is read once per scope rather than once
+    // per unit; a bulk command over 500 units would otherwise issue 500 setting reads.
+    private Task<TenantTimeZonePolicy?>? cachedPolicy;
+
+    private Task<TenantTimeZonePolicy?> PolicyAsync(CancellationToken cancellationToken) =>
+        cachedPolicy ??= settings.PolicyAsync(cancellationToken);
 
     private static async Task<string?> KnownAsync(Task<string?> candidate) => Known(await candidate);
 
