@@ -207,6 +207,7 @@ public static class SerialisationModule
 
         builder.Services.AddScoped<SearchIndexer>();
         builder.Services.AddScoped<SearchBackfill>();
+        builder.Services.AddScoped<SearchIndexHealer>();
         builder.Services.AddScoped<ISearchIndex>(sp => sp.GetRequiredService<SearchIndexer>());
         builder.Services.AddSingleton<SearchEngineCapabilities>();
         builder.Services.AddScoped<SearchMetadataProfiles>();
@@ -224,6 +225,10 @@ public static class SerialisationModule
         builder.Services.AddSingleton(search);
         builder.Services.ConfigureWolverine(options =>
         {
+            // TIGHT COUPLING with PublishedEventMapper and SearchProjectionRequestMapper: ledger publication places
+            // SearchProjectionRequested in the same outbox, and this route keeps the actual writes on the bounded
+            // durable endpoint. Bypassing it restores cross-index deadlocks and public-event queue stalls.
+            options.PublishMessage<SearchProjectionRequested>().ToLocalQueue(SearchIndexOptions.ReindexQueueName);
             options.PublishMessage<SearchReindexRequested>().ToLocalQueue(SearchIndexOptions.ReindexQueueName);
             options.LocalQueue(SearchIndexOptions.ReindexQueueName).UseDurableInbox().MaximumParallelMessages(search.MaximumParallelReindexMessages);
 
@@ -365,6 +370,7 @@ public static class SerialisationModule
         // Replay-and-diff healer (P1-T05): per tenant, nightly, through the platform's recurring tenant jobs.
         builder.Services.AddScoped<UnitCurrentHealer>();
         builder.Services.AddSingleton(RecurringTenantJob.For<UnitCurrentHealerJob>(UnitCurrentHealerJob.JobName, UnitCurrentHealerJob.Cron));
+        builder.Services.AddSingleton(RecurringTenantJob.For<SearchIndexHealerJob>(SearchIndexHealerJob.JobName, SearchIndexHealerJob.Cron));
         builder.Services.AddSingleton(RecurringTenantJob.For<Entitlements.EntitlementRequirementJob>(Entitlements.EntitlementRequirementJob.JobName, Entitlements.EntitlementRequirementJob.Cron));
         // P5 advance-replacement block: one tenant-local nightly sweep, with publication through Wolverine's outbox.
         builder.Services.AddSingleton(RecurringTenantJob.For<Replacements.ReplacementOverdueJob>(Replacements.ReplacementOverdueJob.JobName, Replacements.ReplacementOverdueJob.Cron));
