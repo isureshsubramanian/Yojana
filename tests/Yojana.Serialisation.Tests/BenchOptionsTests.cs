@@ -47,6 +47,7 @@ public sealed class BenchOptionsTests
         var options = BenchOptions.Parse(["prepare-concurrency", "--tenant", "1", "--engineers", "120", "--duration", "10m"], Environment);
 
         Assert.Equal(12_600, ConcurrencyWorkload.RequiredRmaEligibleUnits(options));
+        Assert.Equal(12_000, ConcurrencyWorkload.RequiredReplacementCapacity(options));
     }
 
     [Fact]
@@ -55,6 +56,7 @@ public sealed class BenchOptionsTests
         var options = BenchOptions.Parse(["prepare-concurrency", "--tenant", "1", "--engineers", "40", "--duration", "3m"], Environment);
 
         Assert.Equal(12_000, ConcurrencyWorkload.RequiredRmaEligibleUnits(options));
+        Assert.Equal(12_000, ConcurrencyWorkload.RequiredReplacementCapacity(options));
     }
 
     [Fact]

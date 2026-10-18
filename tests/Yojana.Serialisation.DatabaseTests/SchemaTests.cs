@@ -29,7 +29,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
         using var scope = fixture.ScopeFor(null);
         var db = Db(scope);
         var expected = db.Model.GetEntityTypes().Where(e => typeof(ITenantScoped).IsAssignableFrom(e.ClrType)).Select(e => e.GetTableName()!).ToHashSet();
-        Assert.Equal(86, expected.Count);
+        Assert.Equal(87, expected.Count);
         var covered = await db.Database.SqlQueryRaw<string>($"""
             SELECT OBJECT_NAME(p.target_object_id) AS [Value]
             FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
@@ -48,6 +48,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
             "number_series_setting",
             "ledger_base_order_ref",
             "ledger_base_order_backfill_checkpoint",
+            "rma_stage_counter",
         });
         var blocks = await db.Database.SqlQueryRaw<int>($"SELECT COUNT(*) AS [Value] FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id WHERE s.name = 'tenant_policy_{S}' AND p.predicate_type_desc = 'BLOCK'").SingleAsync();
         Assert.Equal(expected.Count * 2, blocks);
@@ -116,6 +117,28 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
         Assert.Contains("CREATE TABLE [serialisation].[ledger_base_order_backfill_checkpoint]", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("JSON_VALUE", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("INSERT INTO [serialisation].[ledger_base_order_ref]", script, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [DatabaseFact]
+    public async Task Rma_volume_indexes_seek_the_default_order_and_only_exception_lines()
+    {
+        using var scope = fixture.ScopeFor(null);
+        var db = Db(scope);
+        var indexes = await db.Database.SqlQueryRaw<string>($"""
+            SELECT CONCAT(i.name, '|', ISNULL(i.filter_definition, '')) AS [Value]
+            FROM sys.indexes i
+            WHERE i.object_id IN (OBJECT_ID('{S}.rma'), OBJECT_ID('{S}.rma_line'))
+              AND i.name IN ('ix_rma_tenant_id_has_exception_requested_at_rma_id',
+                             'ix_rma_tenant_id_stage_has_exception_requested_at_rma_id',
+                             'ix_rma_line_tenant_id_is_exception_rma_id_sequence')
+            ORDER BY i.name;
+            """).ToListAsync();
+
+        Assert.Equal(3, indexes.Count);
+        Assert.Contains(indexes, value => value == "ix_rma_tenant_id_has_exception_requested_at_rma_id|");
+        Assert.Contains(indexes, value => value == "ix_rma_tenant_id_stage_has_exception_requested_at_rma_id|");
+        Assert.Contains(indexes, value => value.Contains("ix_rma_line_tenant_id_is_exception_rma_id_sequence|", StringComparison.Ordinal)
+            && value.Contains("is_exception", StringComparison.OrdinalIgnoreCase));
     }
 
     [DatabaseFact]

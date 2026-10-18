@@ -13,9 +13,17 @@ public sealed record ConcurrencyDiagnostics(
     int RetriesExhausted,
     long NumberSeriesLockWaitMilliseconds,
     long LockWaitDeltaMilliseconds,
+    long ConnectionAcquisitions,
+    double ConnectionAcquisitionMilliseconds,
+    double ConnectionAcquisitionMaximumMilliseconds,
     int Deadlocks,
     int ExpectedDocumentConflicts,
-    int LostUpdates);
+    int LostUpdates,
+    IReadOnlyDictionary<string, long> WaitMilliseconds,
+    int PublishedQueueStart,
+    int PublishedQueueMaximum,
+    int PublishedQueueEnd,
+    IReadOnlyList<QueryStoreDiagnostic> RmaCreateQueries);
 
 public static class ConcurrencyReportMath
 {
@@ -64,8 +72,21 @@ public static class ConcurrencyReportWriter
             .AppendLine($"- Retries exhausted: {diagnostics.RetriesExhausted}")
             .AppendLine($"- Sampled `number_series` request lock-wait time: {diagnostics.NumberSeriesLockWaitMilliseconds} ms")
             .AppendLine($"- SQL Server lock-wait-stat delta: {diagnostics.LockWaitDeltaMilliseconds} ms")
+            .AppendLine($"- Application SQL connection acquisition: {diagnostics.ConnectionAcquisitionMilliseconds:0.0} ms across {diagnostics.ConnectionAcquisitions:N0} opens ({(diagnostics.ConnectionAcquisitions == 0 ? 0 : diagnostics.ConnectionAcquisitionMilliseconds / diagnostics.ConnectionAcquisitions):0.000} ms/open; process maximum {diagnostics.ConnectionAcquisitionMaximumMilliseconds:0.0} ms)")
+            .AppendLine($"- `serialisation-published-events` queue depth: start {diagnostics.PublishedQueueStart:N0}, maximum {diagnostics.PublishedQueueMaximum:N0}, end {diagnostics.PublishedQueueEnd:N0}")
             .AppendLine($"- Deadlocks: {diagnostics.Deadlocks}")
             .AppendLine($"- Lost updates: {diagnostics.LostUpdates} {(diagnostics.LostUpdates == 0 ? "(PASS)" : "(FAIL)")}").AppendLine()
+            .AppendLine("### SQL wait-stat delta").AppendLine();
+        foreach (var wait in diagnostics.WaitMilliseconds.Where(pair => pair.Value > 0).OrderByDescending(pair => pair.Value))
+            markdown.AppendLine($"- `{wait.Key}`: {wait.Value:N0} ms");
+        if (!diagnostics.WaitMilliseconds.Any(pair => pair.Value > 0)) markdown.AppendLine("None.");
+        markdown.AppendLine().AppendLine("### RMA create-path Query Store delta").AppendLine()
+            .AppendLine("| Query | Executions | Average duration | Logical reads |")
+            .AppendLine("|---|---:|---:|---:|");
+        foreach (var query in diagnostics.RmaCreateQueries)
+            markdown.AppendLine($"| `{query.Query.Replace("|", "\\|", StringComparison.Ordinal)}` | {query.Executions:N0} | {query.AverageMilliseconds:0.000} ms | {query.LogicalReads:N0} |");
+        if (diagnostics.RmaCreateQueries.Count == 0) markdown.AppendLine("| No captured queries | 0 | 0 ms | 0 |");
+        markdown.AppendLine()
             .AppendLine("## Errors by type").AppendLine();
         if (errors.Count == 0) markdown.AppendLine("None.");
         else foreach (var error in errors) markdown.AppendLine($"- `{error.Key}`: {error.Value}");
@@ -87,6 +108,10 @@ public static class ConcurrencyReportWriter
         CsvDiagnostic(csv, "retries_exhausted", diagnostics.RetriesExhausted);
         CsvDiagnostic(csv, "number_series_lock_wait_ms", diagnostics.NumberSeriesLockWaitMilliseconds);
         CsvDiagnostic(csv, "lock_wait_delta_ms", diagnostics.LockWaitDeltaMilliseconds);
+        CsvDiagnostic(csv, "connection_acquisitions", diagnostics.ConnectionAcquisitions);
+        CsvDiagnostic(csv, "connection_acquisition_ms", diagnostics.ConnectionAcquisitionMilliseconds);
+        CsvDiagnostic(csv, "connection_acquisition_max_ms", diagnostics.ConnectionAcquisitionMaximumMilliseconds);
+        CsvDiagnostic(csv, "published_queue_maximum", diagnostics.PublishedQueueMaximum);
         CsvDiagnostic(csv, "deadlocks", diagnostics.Deadlocks);
         CsvDiagnostic(csv, "lost_updates", diagnostics.LostUpdates);
         await File.WriteAllTextAsync(csvPath, csv.ToString(), cancellationToken);
@@ -95,6 +120,9 @@ public static class ConcurrencyReportWriter
 
     private static void CsvDiagnostic(StringBuilder csv, string name, long value) =>
         csv.Append("diagnostic,").Append(Csv(name)).Append(",,,,,,,,").Append(value).AppendLine();
+
+    private static void CsvDiagnostic(StringBuilder csv, string name, double value) =>
+        csv.Append("diagnostic,").Append(Csv(name)).Append(",,,,,,,,").Append(value.ToString("0.000", CultureInfo.InvariantCulture)).AppendLine();
 
     private static string Csv(string value) => '"' + value.Replace("\"", "\"\"", StringComparison.Ordinal) + '"';
 }

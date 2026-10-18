@@ -7,7 +7,7 @@ export interface RmaListRow {
   receivedAt: string | null; requestedBy: string; lastActorRef: string | null;
 }
 export interface RmaStageCount { stage: string; count: number; oldestAgeDays: number | null; exceptionCount: number }
-export interface RmaListResult { rows: RmaListRow[]; summary: RmaStageCount[]; total: number; skip: number; take: number }
+export interface RmaListResult { rows: RmaListRow[]; summary: RmaStageCount[]; continuation: string | null; hasMore: boolean; take: number }
 
 export interface RmaDetailLine {
   rmaLineId: string; sequence: number; requestedUnitId: string; authorisedUnitId: string | null; ownershipEpisodeId: string;

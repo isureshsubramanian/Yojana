@@ -66,11 +66,13 @@ public static class DefineReturnReasonHandler
 public static class RequestRmaHandler
 {
     public static async Task<RequestRmaResult> Handle(RequestRma command, SerialisationDbContext db, UnitResolver units,
-        ISalesDocumentQueryPort sales, RmaSaleFactsResolver saleFacts, IUnitEventWriter writer, ITenantContext tenant, IClock clock,
+        ISalesDocumentQueryPort sales, RmaSaleFactsResolver saleFacts, RmaStageCounterWriter counters,
+        IUnitEventWriter writer, ITenantContext tenant, IClock clock,
         CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
-        if (await db.Rmas.AsNoTracking().SingleOrDefaultAsync(r => r.TenantId == tenantId && r.CommandId == command.CommandId, cancellationToken) is { } replay)
+        if (await db.Rmas.TagWith("P6-T22 RMA create: replay").AsNoTracking()
+                .SingleOrDefaultAsync(r => r.TenantId == tenantId && r.CommandId == command.CommandId, cancellationToken) is { } replay)
         {
             var replayLines = await db.RmaLines.AsNoTracking().Where(l => l.TenantId == tenantId && l.RmaId == replay.RmaId).OrderBy(l => l.Sequence).Select(l => l.RmaLineId).ToListAsync(cancellationToken);
             return new(replay.RmaId, replay.Stage, replayLines, replay.LastEventId, true);
@@ -97,7 +99,8 @@ public static class RequestRmaHandler
                 if (serials.Count != 1) throw new CommandRefusedException("proof_of_purchase_not_singular", "A proof-of-purchase RMA line must resolve to exactly one serial.", "supply the document line when the document contains several serials");
                 unitId = (await units.ResolveAsync(serials[0].Serial, serials[0].Line.ItemId, cancellationToken))?.UnitId;
             }
-            if (unitId is null || !await db.Units.AsNoTracking().AnyAsync(u => u.TenantId == tenantId && u.UnitId == unitId, cancellationToken))
+            if (unitId is null || !await db.Units.TagWith("P6-T22 RMA create: unit exists").AsNoTracking()
+                    .AnyAsync(u => u.TenantId == tenantId && u.UnitId == unitId, cancellationToken))
                 throw new CommandRefusedException("rma_unit_unknown", "The RMA identity does not resolve to a recorded unit.", "submit the no-record proof through the claim reconstruction path first");
             resolved.Add((input, unitId.Value));
         }
@@ -141,6 +144,7 @@ public static class RequestRmaHandler
         }
         db.RmaLines.AddRange(linesToWrite);
         await writer.AppendAsync(drafts, cancellationToken);
+        await counters.AddRequestedAsync(rmaId, cancellationToken);
         return new(rmaId, rma.Stage, linesToWrite.Select(l => l.RmaLineId).ToList(), eventId, false);
     }
 }
@@ -149,7 +153,7 @@ public static class AuthoriseRmaHandler
 {
     public static async Task<AuthoriseRmaResult> Handle(AuthoriseRma command, SerialisationDbContext db, ClaimUnitFacts facts,
         ClaimLineDecider decider, IItemQueryPort items, DocumentNumbers numbers, IUnitEventWriter writer, ITenantContext tenant,
-        IClock clock, CancellationToken cancellationToken)
+        IClock clock, RmaStageCounterWriter counters, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var rma = await db.Rmas.SingleOrDefaultAsync(r => r.TenantId == tenantId && r.RmaId == command.RmaId, cancellationToken)
@@ -158,10 +162,9 @@ public static class AuthoriseRmaHandler
         if (rma.Stage != RmaStage.Requested)
         {
             var replayed = await db.Events.AsNoTracking().AnyAsync(e => e.TenantId == tenantId && e.IdempotencyKey == IdempotencyKey.ForCommand(CommissionUnitsHandler.Source, command.CommandId, lines[0].RequestedUnitId, RmaEventType.Authorised, command.EventTime) && e.EventTime == command.EventTime, cancellationToken);
-            if (!replayed) RmaStateMachine.Transition(rma, RmaStage.Authorised);
-            else return Result(rma, lines, rma.LastEventId, true);
+            if (replayed) return Result(rma, lines, rma.LastEventId, true);
         }
-        else RmaStateMachine.Transition(rma, RmaStage.Authorised);
+        RmaStateMachine.EnsureCanTransition(rma, RmaStage.Authorised);
 
         rma.RmaNumber ??= await numbers.NextAsync(DocumentNumbers.Rma, command.EventTime, cancellationToken);
         var eventId = TimeOrderedId.New(command.EventTime);
@@ -208,6 +211,7 @@ public static class AuthoriseRmaHandler
         rma.LastModifiedAt = clock.UtcNow;
         rma.LastModifiedBy = command.ActorRef;
         await writer.AppendAsync(drafts, cancellationToken);
+        await RmaStateMachine.TransitionAsync(rma, RmaStage.Authorised, counters, cancellationToken);
         return Result(rma, lines, eventId, false);
     }
 
@@ -219,7 +223,7 @@ public static class AuthoriseRmaHandler
 public static class RecordReturnDispatchedHandler
 {
     public static async Task<RecordReturnDispatchedResult> Handle(RecordReturnDispatched command,
-        SerialisationDbContext db, EpisodeService episodes, IUnitEventWriter writer, ITenantContext tenant, IClock clock,
+        SerialisationDbContext db, EpisodeService episodes, RmaStageCounterWriter counters, IUnitEventWriter writer, ITenantContext tenant, IClock clock,
         CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -244,7 +248,7 @@ public static class RecordReturnDispatchedHandler
         var carrier = Clean(command.CarrierName, 160, "carrier_name_invalid", "Carrier name");
         var tracking = Clean(command.TrackingReference, 160, "tracking_reference_invalid", "Tracking reference");
 
-        RmaStateMachine.Transition(rma, RmaStage.InTransit);
+        RmaStateMachine.EnsureCanTransition(rma, RmaStage.InTransit);
         rma.InTransitAt = command.DispatchedAt;
         var unitIds = lines.Select(row => row.AuthorisedUnitId!.Value).Distinct().ToList();
         await episodes.PreloadOpenAsync(unitIds, cancellationToken);
@@ -275,6 +279,7 @@ public static class RecordReturnDispatchedHandler
         rma.LastModifiedAt = clock.UtcNow;
         rma.LastModifiedBy = command.ActorRef;
         await writer.AppendAsync(drafts, cancellationToken);
+        await RmaStateMachine.TransitionAsync(rma, RmaStage.InTransit, counters, cancellationToken);
         return new(rma.RmaId, rma.Stage, command.DispatchedAt, carrier, tracking, rma.LastEventId, false);
     }
 
@@ -294,7 +299,7 @@ public static class ReceiveReturnHandler
 {
     public static async Task<ReceiveReturnResult> Handle(ReceiveReturn command, SerialisationDbContext db, UnitResolver units,
         EpisodeService episodes, PostingPeriods periods, IStockUnitEventPort stock, IUnitEventWriter writer,
-        ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITenantContext tenant, IClock clock, RmaStageCounterWriter counters, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var rma = await db.Rmas.SingleOrDefaultAsync(r => r.TenantId == tenantId && r.RmaId == command.RmaId, cancellationToken)
@@ -308,8 +313,7 @@ public static class ReceiveReturnHandler
             throw new CommandRefusedException("return_time_invalid", "A return cannot be received before it was dispatched.");
         if (rma.InTransitAt is { } recordedDispatch && recordedDispatch > command.ReceivedAt)
             throw new CommandRefusedException("return_time_invalid", "A return cannot be received before its recorded dispatch.");
-        RmaStateMachine.Receive(rma);
-        rma.ReceivedAt = command.ReceivedAt;
+        RmaStateMachine.EnsureCanReceive(rma);
         var postingPeriod = await periods.ResolveAsync(command.ReceivedAt, cancellationToken);
         var resolved = new Dictionary<Guid, Guid?>();
         foreach (var input in command.Lines)
@@ -318,16 +322,27 @@ public static class ReceiveReturnHandler
             if (!ReturnOutcome.All.Contains(input.Outcome)) throw new CommandRefusedException("return_outcome_invalid", $"'{input.Outcome}' is not a return outcome.");
             resolved[input.RmaLineId] = input.ReceivedIdentifier is null ? null : (await units.ResolveAsync(input.ReceivedIdentifier, null, cancellationToken))?.UnitId;
         }
+        var receiptFacts = new Dictionary<Guid, (Guid Authorised, Guid? Received, Guid? Provisional, string Outcome)>();
+        foreach (var input in command.Lines)
+        {
+            var line = lines.Single(l => l.RmaLineId == input.RmaLineId);
+            var authorised = line.AuthorisedUnitId ?? throw new CommandRefusedException("rma_line_not_authorised", $"RMA line {line.RmaLineId} is not authorised.");
+            var received = resolved[input.RmaLineId];
+            var provisional = received is null ? TimeOrderedId.New(command.ReceivedAt) : (Guid?)null;
+            var outcome = input.Outcome == ReturnOutcome.Accepted && received is { } receivedUnit && receivedUnit != authorised
+                ? ReturnOutcome.Mismatch
+                : input.Outcome;
+            receiptFacts[input.RmaLineId] = (authorised, received, provisional, outcome);
+        }
+        var exceptionCount = receiptFacts.Values.Count(fact => fact.Provisional is not null || fact.Outcome != ReturnOutcome.Accepted);
+        rma.ReceivedAt = command.ReceivedAt;
         await episodes.PreloadOpenAsync(resolved.Values.OfType<Guid>().Distinct().ToList(), cancellationToken);
         var drafts = new List<UnitEventDraft>();
         var receipts = new List<ReturnReceipt>();
         foreach (var input in command.Lines)
         {
             var line = lines.Single(l => l.RmaLineId == input.RmaLineId);
-            var authorised = line.AuthorisedUnitId ?? throw new CommandRefusedException("rma_line_not_authorised", $"RMA line {line.RmaLineId} is not authorised.");
-            var receivedUnit = resolved[input.RmaLineId];
-            var provisional = receivedUnit is null ? TimeOrderedId.New(command.ReceivedAt) : (Guid?)null;
-            var outcome = input.Outcome == ReturnOutcome.Accepted && receivedUnit is { } received && received != authorised ? ReturnOutcome.Mismatch : input.Outcome;
+            var (authorised, receivedUnit, provisional, outcome) = receiptFacts[input.RmaLineId];
             var receiptId = TimeOrderedId.New(command.ReceivedAt);
             var eventId = TimeOrderedId.New(command.ReceivedAt);
             if (receivedUnit is { } unitId)
@@ -354,6 +369,7 @@ public static class ReceiveReturnHandler
             line.ReceivedUnitId = receivedUnit;
             line.ProvisionalUnitId = provisional;
             line.ReceiptOutcome = outcome;
+            line.IsException = provisional is not null || outcome != ReturnOutcome.Accepted;
             line.ConditionGrade = input.ConditionGrade;
             line.ValuationRule = input.ValuationRule;
             drafts.Add(new UnitEventDraft
@@ -370,6 +386,8 @@ public static class ReceiveReturnHandler
         rma.LastModifiedAt = clock.UtcNow;
         rma.LastModifiedBy = command.ActorRef;
         await writer.AppendAsync(drafts, cancellationToken);
+        rma.ExceptionCount = exceptionCount;
+        await RmaStateMachine.ReceiveAsync(rma, exceptionCount > 0, counters, cancellationToken);
         return Result(rma, receipts, receipts[0].EventId, false);
     }
 
@@ -382,7 +400,7 @@ public static class DispositionRmaHandler
 {
     public static async Task<DispositionRmaResult> Handle(DispositionRma command, SerialisationDbContext db, EpisodeService episodes,
         EntitlementLedger entitlementLedger, CorrectionLedger corrections, IRefurbishmentOpener refurbishments, IUnitEventWriter writer,
-        ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITenantContext tenant, IClock clock, RmaStageCounterWriter counters, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var rma = await db.Rmas.SingleOrDefaultAsync(r => r.TenantId == tenantId && r.RmaId == command.RmaId, cancellationToken)
@@ -404,7 +422,7 @@ public static class DispositionRmaHandler
         if (lines.Any(l => l.ReceiptOutcome is ReturnOutcome.Mismatch or ReturnOutcome.Unauthorised or ReturnOutcome.Counterfeit))
             throw new CommandRefusedException("rma_receipt_exception_open", "Mismatch, unauthorised and counterfeit receipts cannot be dispositioned silently.", "resolve the receipt exception first");
 
-        RmaStateMachine.Transition(rma, RmaStage.Dispositioned);
+        RmaStateMachine.EnsureCanTransition(rma, RmaStage.Dispositioned);
         rma.DispositionedAt = command.EventTime;
         var knownUnits = lines.Select(l => l.ReceivedUnitId).OfType<Guid>().Distinct().ToList();
         foreach (var line in lines.Where(l => l.ParentUnitId is not null))
@@ -525,6 +543,7 @@ public static class DispositionRmaHandler
         rma.LastModifiedAt = clock.UtcNow;
         rma.LastModifiedBy = command.ActorRef;
         await writer.AppendAsync(drafts, cancellationToken);
+        await RmaStateMachine.TransitionAsync(rma, RmaStage.Dispositioned, counters, cancellationToken);
         return Result(rma, lines, rma.LastEventId, false);
     }
 

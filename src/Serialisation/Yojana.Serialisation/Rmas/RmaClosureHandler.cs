@@ -12,11 +12,10 @@ namespace Yojana.Serialisation.Rmas;
 public static class CloseRmaHandler
 {
     public static async Task<CloseRmaResult> Handle(CloseRma command, SerialisationDbContext db,
-        IRmaFollowUpQueryPort followUps, ITenantContext tenant, IClock clock,
+        IRmaFollowUpQueryPort followUps, RmaStageCounterWriter counters, ITenantContext tenant, IClock clock,
         CancellationToken cancellationToken)
     {
-        var rma = await db.Rmas.SingleOrDefaultAsync(row => row.TenantId == tenant.TenantId && row.RmaId == command.RmaId,
-                cancellationToken)
+        var rma = await RmaClosure.LoadForClosureAsync(command.RmaId, db, tenant, cancellationToken)
             ?? throw new CommandRefusedException("rma_unknown", $"RMA {command.RmaId} does not exist.");
         if (rma.Stage == RmaStage.Closed)
             return new(rma.RmaId, rma.Stage, true, [], rma.LastEventId, true);
@@ -30,7 +29,7 @@ public static class CloseRmaHandler
             return new(rma.RmaId, rma.Stage, false, open, null, false);
 
         var eventId = await RmaClosure.CloseAsync(rma, command.EventTime, command.ActorRef,
-            null, clock.UtcNow, db, tenant, cancellationToken);
+            null, clock.UtcNow, db, counters, tenant, cancellationToken);
         return new(rma.RmaId, rma.Stage, true, [], eventId, false);
     }
 }
@@ -38,18 +37,18 @@ public static class CloseRmaHandler
 public static class RmaDispositionFollowUpHandler
 {
     public static Task Handle(RmaDispositioned message, SerialisationDbContext db, IRmaFollowUpQueryPort followUps,
-        ITenantContext tenant, IClock clock, CancellationToken cancellationToken) =>
+        RmaStageCounterWriter counters, ITenantContext tenant, IClock clock, CancellationToken cancellationToken) =>
         RmaClosure.TryCloseAsync(message.RmaId, message.Header.EventTime,
-            message.Header.ActorRef, message.Header.EventId, clock.UtcNow, db, followUps, tenant, cancellationToken);
+            message.Header.ActorRef, message.Header.EventId, clock.UtcNow, db, followUps, counters, tenant, cancellationToken);
 }
 
 public static class RmaReplacementFollowUpHandler
 {
     public static Task Handle(ReplacementShipped message, SerialisationDbContext db, IRmaFollowUpQueryPort followUps,
-        ITenantContext tenant, IClock clock, CancellationToken cancellationToken) =>
+        RmaStageCounterWriter counters, ITenantContext tenant, IClock clock, CancellationToken cancellationToken) =>
         message.SourceKind == ReplacementSourceKind.Rma
             ? RmaClosure.TryCloseAsync(message.SourceId, message.Header.EventTime,
-                message.Header.ActorRef, message.Header.EventId, clock.UtcNow, db, followUps, tenant, cancellationToken)
+                message.Header.ActorRef, message.Header.EventId, clock.UtcNow, db, followUps, counters, tenant, cancellationToken)
             : Task.CompletedTask;
 }
 
@@ -57,25 +56,24 @@ internal static class RmaClosure
 {
     internal static async Task TryCloseAsync(Guid rmaId, DateTime eventTime, string actorRef,
         Guid? triggerEventId, DateTime recordedAt, SerialisationDbContext db, IRmaFollowUpQueryPort followUps,
-        ITenantContext tenant, CancellationToken cancellationToken)
+        RmaStageCounterWriter counters, ITenantContext tenant, CancellationToken cancellationToken)
     {
-        var rma = await db.Rmas.SingleOrDefaultAsync(row => row.TenantId == tenant.TenantId && row.RmaId == rmaId,
-            cancellationToken);
+        var rma = await LoadForClosureAsync(rmaId, db, tenant, cancellationToken);
         if (rma?.Stage != RmaStage.Dispositioned) return;
         if ((await followUps.OpenAsync(rmaId, cancellationToken)).Count != 0) return;
-        await CloseAsync(rma, eventTime, actorRef, triggerEventId, recordedAt, db, tenant, cancellationToken);
+        await CloseAsync(rma, eventTime, actorRef, triggerEventId, recordedAt, db, counters, tenant, cancellationToken);
     }
 
     internal static async Task<Guid> CloseAsync(Rma rma, DateTime eventTime, string actorRef,
-        Guid? triggerEventId, DateTime recordedAt, SerialisationDbContext db, ITenantContext tenant,
-        CancellationToken cancellationToken)
+        Guid? triggerEventId, DateTime recordedAt, SerialisationDbContext db, RmaStageCounterWriter counters,
+        ITenantContext tenant, CancellationToken cancellationToken)
     {
         if (rma.DispositionedAt is { } dispositionedAt && eventTime < dispositionedAt)
             eventTime = dispositionedAt;
         if (!await db.RmaLines.AnyAsync(row => row.TenantId == tenant.TenantId && row.RmaId == rma.RmaId,
                 cancellationToken))
             throw new CommandRefusedException("rma_lines_required", "An RMA without lines cannot be closed.");
-        RmaStateMachine.Transition(rma, RmaStage.Closed);
+        await RmaStateMachine.TransitionAsync(rma, RmaStage.Closed, counters, cancellationToken);
         rma.ClosedAt = eventTime;
         rma.LastActorRef = actorRef;
         rma.LastModifiedAt = recordedAt;
@@ -85,4 +83,14 @@ internal static class RmaClosure
         rma.LastEventId = triggerEventId ?? TimeOrderedId.New(eventTime);
         return rma.LastEventId;
     }
+
+    internal static Task<Rma?> LoadForClosureAsync(Guid rmaId, SerialisationDbContext db, ITenantContext tenant,
+        CancellationToken cancellationToken) =>
+        // Deliberate coupling to the unit-scoped RmaDispositioned publication in PublishedEventMapper: one
+        // multi-line disposition emits one message per unit. The document row lock serialises those messages so
+        // exactly one moves the document and its stage counter; removing it permits duplicate counter decrements.
+        db.Rmas.FromSqlInterpolated($"""
+            SELECT * FROM serialisation.rma WITH (UPDLOCK, HOLDLOCK)
+            WHERE tenant_id = {tenant.TenantId.Value} AND rma_id = {rmaId}
+            """).SingleOrDefaultAsync(cancellationToken);
 }

@@ -319,6 +319,10 @@ internal static class P5AdvanceTestData
             EntitlementId = customerCase.SourceEntitlementId, PolicyVersionId = customerCase.World.PolicyVersionId,
         });
         await db.SaveChangesAsync();
+        // This helper deliberately bypasses RequestRma/AuthoriseRma, so repair the synchronous read projection that
+        // those commands normally maintain before exercising a real stage-transition command.
+        await InvokeAsync<RebuildRmaStageCountersResult>(fixture, customerCase.World.Tenant,
+            new RebuildRmaStageCounters(Guid.NewGuid(), "test administrator"));
         return new(rmaId, lineId);
     }
 

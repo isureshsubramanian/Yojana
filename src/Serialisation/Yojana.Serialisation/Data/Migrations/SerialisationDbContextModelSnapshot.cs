@@ -5642,6 +5642,14 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("dispositioned_at");
 
+                    b.Property<int>("ExceptionCount")
+                        .HasColumnType("int")
+                        .HasColumnName("exception_count");
+
+                    b.Property<bool>("HasException")
+                        .HasColumnType("bit")
+                        .HasColumnName("has_exception");
+
                     b.Property<DateTime?>("InTransitAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("in_transit_at");
@@ -5741,11 +5749,22 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "ReturningPartyRef", "Stage")
                         .HasDatabaseName("ix_rma_tenant_id_returning_party_ref_stage");
 
-                    b.HasIndex("TenantId", "Stage", "RequestedAt")
-                        .HasDatabaseName("ix_rma_tenant_id_stage_requested_at");
+                    b.HasIndex("TenantId", "HasException", "RequestedAt", "RmaId")
+                        .IsDescending(false, true, false, false)
+                        .HasDatabaseName("ix_rma_tenant_id_has_exception_requested_at_rma_id");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "HasException", "RequestedAt", "RmaId"), new[] { "RmaNumber", "Stage", "RequestDate", "ReturningPartyRef", "ClosedAt", "DispositionedAt", "ReceivedAt", "InTransitAt", "AuthorisedAt", "RequestedBy", "LastActorRef", "ExceptionCount" });
+
+                    b.HasIndex("TenantId", "Stage", "HasException", "RequestedAt", "RmaId")
+                        .IsDescending(false, false, true, false, false)
+                        .HasDatabaseName("ix_rma_tenant_id_stage_has_exception_requested_at_rma_id");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "Stage", "HasException", "RequestedAt", "RmaId"), new[] { "RmaNumber", "RequestDate", "ReturningPartyRef", "ClosedAt", "DispositionedAt", "ReceivedAt", "InTransitAt", "AuthorisedAt", "RequestedBy", "LastActorRef", "ExceptionCount" });
 
                     b.ToTable("rma", "serialisation", t =>
                         {
+                            t.HasCheckConstraint("ck_rma_exception_count", "exception_count >= 0 AND has_exception = CASE WHEN exception_count > 0 THEN 1 ELSE 0 END");
+
                             t.HasCheckConstraint("ck_rma_stage", "stage IN ('requested', 'authorised', 'in_transit', 'received', 'dispositioned', 'closed')");
                         });
                 });
@@ -5823,6 +5842,10 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<Guid?>("EntitlementId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("entitlement_id");
+
+                    b.Property<bool>("IsException")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_exception");
 
                     b.Property<Guid>("OriginalSaleDocumentId")
                         .HasColumnType("uniqueidentifier")
@@ -5914,6 +5937,12 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_rma_line_tenant_id_rma_id_sequence");
 
+                    b.HasIndex("TenantId", "IsException", "RmaId", "Sequence")
+                        .HasDatabaseName("ix_rma_line_tenant_id_is_exception_rma_id_sequence")
+                        .HasFilter("[is_exception] = CAST(1 AS bit)");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "IsException", "RmaId", "Sequence"), new[] { "ProvisionalUnitId", "ReceiptOutcome" });
+
                     b.ToTable("rma_line", "serialisation", t =>
                         {
                             t.HasCheckConstraint("ck_rma_line_amounts", "requested_amount >= 0 AND (coverage_pct IS NULL OR coverage_pct BETWEEN 0 AND 100) AND (approved_amount IS NULL OR (approved_amount >= 0 AND approved_amount <= requested_amount))");
@@ -5921,6 +5950,56 @@ namespace Yojana.Serialisation.Data.Migrations
                             t.HasCheckConstraint("ck_rma_line_disposition", "disposition IS NULL OR disposition IN ('return_to_stock', 'refurbish', 'repair_and_return', 'scrap', 'return_to_vendor', 'credit', 'refund', 'replace', 'reject', 'restock_as_new')");
 
                             t.HasCheckConstraint("ck_rma_line_outcome", "receipt_outcome IS NULL OR receipt_outcome IN ('accepted', 'mismatch', 'unauthorised', 'counterfeit')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RmaStageCounter", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Stage")
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("stage");
+
+                    b.Property<byte>("Slot")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("slot");
+
+                    b.Property<int>("DocumentCount")
+                        .HasColumnType("int")
+                        .HasColumnName("document_count");
+
+                    b.Property<int>("ExceptionCount")
+                        .HasColumnType("int")
+                        .HasColumnName("exception_count");
+
+                    b.Property<Guid?>("LastRebuildCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("last_rebuild_command_id");
+
+                    b.Property<DateTime?>("LastRebuiltAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_rebuilt_at");
+
+                    b.Property<string>("LastRebuiltBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_rebuilt_by");
+
+                    b.HasKey("TenantId", "Stage", "Slot")
+                        .HasName("pk_rma_stage_counter");
+
+                    b.ToTable("rma_stage_counter", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_rma_stage_counter_counts", "document_count >= 0 AND exception_count >= 0 AND exception_count <= document_count");
+
+                            t.HasCheckConstraint("ck_rma_stage_counter_slot", "slot BETWEEN 0 AND 15");
+
+                            t.HasCheckConstraint("ck_rma_stage_counter_stage", "stage IN ('requested', 'authorised', 'in_transit', 'received', 'dispositioned', 'closed')");
                         });
                 });
 

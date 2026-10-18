@@ -262,6 +262,9 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     GuidOrNull(a, "authorised_unit_id") ?? Guid.Empty, GuidOrNull(a, "received_unit_id"), GuidOrNull(a, "provisional_unit_id"),
                     Str(a, "outcome") ?? "", Str(a, "condition_grade") ?? "", Str(a, "valuation_rule") ?? "", Str(a, "posting_period") ?? "");
             case RmaEventType.Dispositioned:
+                // Deliberately coupled to RmaClosure.LoadForClosureAsync: disposition is a unit-scoped fact, so a
+                // multi-line RMA publishes several document follow-ups. Closure must serialise on the RMA row or the
+                // duplicate follow-ups can move its synchronous stage counter more than once.
                 return new RmaDispositioned(Header(RmaDispositioned.Schema, RmaDispositioned.Version), GuidOrNull(a, "rma_id") ?? Guid.Empty,
                     GuidOrNull(a, "rma_line_id") ?? Guid.Empty, GuidOrNull(a, "unit_id") ?? e.UnitId, Str(a, "disposition") ?? "",
                     Str(a, "entitlement_closed_reason"), GuidOrNull(a, "replacement_intent_id"));

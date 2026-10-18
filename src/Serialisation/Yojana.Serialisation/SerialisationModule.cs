@@ -187,6 +187,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<LegacyUnknownClaimUnitCreator>();
         builder.Services.AddScoped<RmaSaleFactsResolver>();
         builder.Services.AddScoped<RmaQueries>();
+        builder.Services.AddScoped<RmaStageCounterWriter>();
         builder.Services.TryAddScoped<IRmaFollowUpQueryPort, RmaFollowUpQueryPort>();
         // P5 coverage block. ServicePartEntitlementSettings is factory-registered to hide ITenantSettings'
         // PlatformDbContext from ServicePartInstalledHandler; a direct registration makes Wolverine see two contexts.

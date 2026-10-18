@@ -33,7 +33,7 @@ public abstract class YojanaDbContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        optionsBuilder.AddInterceptors(new TenantSessionContextInterceptor(tenant));
+        optionsBuilder.AddInterceptors(ConnectionAcquisitionInterceptor.Instance, new TenantSessionContextInterceptor(tenant));
     }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

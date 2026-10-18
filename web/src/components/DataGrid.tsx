@@ -45,9 +45,9 @@ const ROW_HEIGHT = 44;
 const DENSE_ROW_HEIGHT = 36;
 
 /**
- * Server-paged grid with visible totals (MOD-02): shows one page the server returned, the total, and the
- * paging controls; never asks for "all". Rows beyond the viewport are windowed so even a 500-row page keeps
- * the DOM small. Selection is reported outward as ids; totals come from the page result.
+ * Server-paged grid: shows one page and either an exact total or the continuation contract's "more" signal;
+ * never asks for "all". Rows beyond the viewport are windowed so even a 500-row page keeps the DOM small.
+ * Selection is reported outward as ids; paging facts come from the page result.
  */
 export function DataGrid<TRow>({ columns, page, rowId, onPage, selection, dense, isHit, viewportHeight = 640, footerNote, emptyText = "Nothing matches.", loading, describedBy, onRowClick, activeRowId }: DataGridProps<TRow>) {
   const rowHeight = dense ? DENSE_ROW_HEIGHT : ROW_HEIGHT;
@@ -57,6 +57,7 @@ export function DataGrid<TRow>({ columns, page, rowId, onPage, selection, dense,
   const win = windowRows(page.rows.length, rowHeight, scrollTop, viewportHeight);
   const slice = page.rows.slice(win.start, win.end);
   const range = rowRange(page.page, page.pageSize, page.total);
+  const continuationPaged = page.totalIsExact === false;
 
   const allOnPage = selection && page.rows.length > 0 && page.rows.every((r) => selection.selected.has(rowId(r)));
   const someOnPage = selection && !allOnPage && page.rows.some((r) => selection.selected.has(rowId(r)));
@@ -119,10 +120,11 @@ export function DataGrid<TRow>({ columns, page, rowId, onPage, selection, dense,
       <div className="card-footer">
         <span>
           {footerNote && <>{footerNote} · </>}
-          Rows {range.from.toLocaleString()}–{range.to.toLocaleString()} of <strong>{page.total.toLocaleString()}</strong>
+          Rows {range.from.toLocaleString()}–{range.to.toLocaleString()}{continuationPaged ? page.hasMore ? " · more match" : " · end" : <> of <strong>{page.total.toLocaleString()}</strong></>}
           {selection && selection.selected.size > 0 && <> · {selection.selected.size.toLocaleString()} selected</>}
         </span>
-        <Pager page={page.page} pageSize={page.pageSize} total={page.total} onPage={onPage} showPageCount={page.continuation === null || page.total > 0} />
+        <Pager page={page.page} pageSize={page.pageSize} total={page.total} onPage={onPage}
+          showPageCount={!continuationPaged} hasNext={continuationPaged ? page.hasMore : undefined} showMore={continuationPaged} />
       </div>
     </>
   );
