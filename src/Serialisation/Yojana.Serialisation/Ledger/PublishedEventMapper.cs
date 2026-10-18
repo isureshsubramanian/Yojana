@@ -295,6 +295,18 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                 return new CertificateReissueRequested(Header(CertificateReissueRequested.Schema, CertificateReissueRequested.Version),
                     GuidOrNull(a, "replacement_link_id") ?? Guid.Empty,
                     Strings(a, "document_kinds"), Str(a, "reason") ?? "");
+            // P6 labels block.
+            case LabelEventType.Printed:
+                return new LabelPrinted(Header(LabelPrinted.Schema, LabelPrinted.Version),
+                    GuidOrNull(a, "job_id") ?? Guid.Empty, GuidOrNull(a, "template_version_id") ?? Guid.Empty,
+                    Str(a, "layout_kind") ?? "", Str(a, "symbology") ?? "", Str(a, "payload_hash") ?? "",
+                    Str(a, "printer_ref") ?? "");
+            case LabelEventType.Reprinted:
+                return new LabelReprinted(Header(LabelReprinted.Schema, LabelReprinted.Version),
+                    GuidOrNull(a, "job_id") ?? Guid.Empty, GuidOrNull(a, "original_job_id") ?? Guid.Empty,
+                    GuidOrNull(a, "template_version_id") ?? Guid.Empty, Str(a, "layout_kind") ?? "",
+                    Str(a, "symbology") ?? "", Str(a, "payload_hash") ?? "", Str(a, "printer_ref") ?? "");
+            // End P6 labels block.
             default:
                 return null;
         }

@@ -94,6 +94,18 @@ public static class PlatformSetup
             {
                 auth.AddPolicy(YojanaPolicy.ForRole(role), p => p.RequireAuthenticatedUser().RequireClaim(YojanaClaim.TenantId).RequireClaim(YojanaClaim.Role, role));
             }
+            auth.AddPolicy(YojanaPolicy.LabelPrinter, p => p.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId)
+                .RequireClaim(YojanaClaim.Role,
+                    YojanaRole.LabelAdministrator,
+                    YojanaRole.Technician,
+                    YojanaRole.InventoryController,
+                    YojanaRole.ServiceDesk,
+                    YojanaRole.ServiceSupervisor,
+                    YojanaRole.ServiceManager,
+                    YojanaRole.ProductionSupervisor,
+                    YojanaRole.WarehouseLead,
+                    YojanaRole.ShippingSupervisor));
         });
 
         builder.Services.AddQuartz(q =>

@@ -86,6 +86,8 @@ public static class PublishedEventSinkHandler
     public static void Handle(ReleaseRecordReissueRequested e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(ReplacementLinkCorrected e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(CertificateReissueRequested e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(LabelPrinted e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(LabelReprinted e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitIdentifiersSwapped e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitItemCorrected e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitAsBuiltCorrected e) => PublishedEventSink.Received.Enqueue(e);

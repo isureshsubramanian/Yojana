@@ -22,6 +22,7 @@ using Yojana.Serialisation.Campaigns;
 using Yojana.Serialisation.Rmas;
 using Yojana.Serialisation.Condition;
 using Yojana.Serialisation.Refurbishments;
+using Yojana.Serialisation.Labels;
 
 namespace Yojana.Serialisation;
 
@@ -525,6 +526,79 @@ public static class SerialisationEndpoints
         }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
         // End P5 refurbishment endpoints.
 
+        // P6 labels block. Reads are tenant-wide; template lifecycle is administrative, sign-off is independent,
+        // and operational roles print through the narrow LabelPrinter policy.
+        var labels = app.MapGroup("/api/labels").RequireAuthorization(YojanaPolicy.TenantMember);
+        labels.MapGet("/templates", async (string? name, string? appliesTo, string? status, int? skip, int? take,
+            LabelQueries queries, CancellationToken ct) => Results.Ok(await queries.TemplatesAsync(name, appliesTo, status,
+                skip ?? 0, take ?? 50, ct)));
+        labels.MapGet("/templates/{templateId:guid}", async (Guid templateId, LabelQueries queries, CancellationToken ct) =>
+            await queries.TemplateAsync(templateId, ct) is { } template ? Results.Ok(template) : Results.NotFound());
+        labels.MapGet("/bindable-fields", () => Results.Ok(LabelBindableField.All.Select(field =>
+            new LabelBindableFieldRow(field, field == LabelBindableField.BaseEntitlementEndDate))));
+        labels.MapPost("/templates", (CreateLabelTemplateRequest request, ClaimsPrincipal user, IMessageBus bus,
+            ITenantContext tenant, CancellationToken ct) => Invoke<LabelTemplateCreated>(bus, tenant,
+                new CreateLabelTemplate(request.CommandId, request.Name, request.AppliesTo, request.AppliesToValue,
+                    Actor(user)), ct)).RequireAuthorization(YojanaPolicy.LabelAdministrator);
+        labels.MapPost("/templates/{templateId:guid}/versions/draft", (Guid templateId, SaveLabelTemplateDraftRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<LabelTemplateVersionSaved>(bus, tenant, new SaveLabelTemplateDraft(request.CommandId, templateId,
+                request.TemplateVersionId, request.EffectiveFrom, request.EffectiveTo, request.LayoutKind, request.Layout,
+                request.StaticText, request.Bindings, request.Symbology, request.PreviewSampleUnitId, request.Regulated,
+                Actor(user)), ct))
+            .RequireAuthorization(YojanaPolicy.LabelAdministrator);
+        labels.MapPost("/versions/{versionId:guid}/preview", (Guid versionId, PreviewLabelTemplateRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<LabelTemplatePreview>(bus, tenant, new PreviewLabelTemplate(versionId, request.SampleUnitId,
+                Actor(user)), ct))
+            .RequireAuthorization(YojanaPolicy.LabelAdministrator);
+        labels.MapPost("/versions/{versionId:guid}/legal-review/request", (Guid versionId, LabelVersionCommandRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<LabelTemplateVersionChanged>(bus, tenant, new RequestLabelLegalReview(request.CommandId, versionId,
+                Actor(user)), ct))
+            .RequireAuthorization(YojanaPolicy.LabelAdministrator);
+        labels.MapPost("/versions/{versionId:guid}/legal-review/sign", (Guid versionId, LabelVersionCommandRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<LabelTemplateVersionChanged>(bus, tenant, new SignLabelLegalReview(request.CommandId, versionId,
+                Actor(user)), ct))
+            .RequireAuthorization(YojanaPolicy.LegalReviewer);
+        labels.MapPost("/versions/{versionId:guid}/approve", (Guid versionId, LabelVersionCommandRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<LabelTemplateVersionChanged>(bus, tenant, new ApproveRegulatedLabel(request.CommandId, versionId,
+                Actor(user)), ct))
+            .RequireAuthorization(YojanaPolicy.LegalReviewer);
+        labels.MapPost("/versions/{versionId:guid}/activate", (Guid versionId, ActivateLabelTemplateVersionRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<LabelTemplateVersionChanged>(bus, tenant, new ActivateLabelTemplateVersion(request.CommandId,
+                versionId, request.ActivatedAt, Actor(user)), ct))
+            .RequireAuthorization(YojanaPolicy.LabelAdministrator);
+        labels.MapPost("/versions/{versionId:guid}/retire", (Guid versionId, RetireLabelTemplateVersionRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<LabelTemplateVersionChanged>(bus, tenant, new RetireLabelTemplateVersion(request.CommandId,
+                versionId, request.RetiredAt, Actor(user)), ct))
+            .RequireAuthorization(YojanaPolicy.LabelAdministrator);
+        labels.MapGet("/settings", async (LabelSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
+        labels.MapPut("/settings", async (LabelPolicy policy, LabelSettings settings, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await settings.SetAsync(policy, ct)); }
+            catch (CommandRefusedException ex) { return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest); }
+        }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        labels.MapGet("/print-jobs", async (string? status, Guid? template, string? serial, DateTime? requestedFrom,
+            DateTime? requestedTo, int? skip, int? take, LabelQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.JobsAsync(status, template, serial, requestedFrom, requestedTo, skip ?? 0, take ?? 50, ct)));
+        labels.MapGet("/print-jobs/{jobId:guid}", async (Guid jobId, LabelQueries queries, CancellationToken ct) =>
+            await queries.JobAsync(jobId, ct) is { } job ? Results.Ok(job) : Results.NotFound());
+        labels.MapPost("/print-jobs", (PrintLabelRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant,
+            CancellationToken ct) => Invoke<LabelPrintResult>(bus, tenant, new PrintLabel(request.CommandId,
+                request.UnitId, request.TemplateId, request.IdentifierId, request.PrinterRef, request.PrintAt,
+                request.LegalEntityId, Actor(user)), ct))
+            .RequireAuthorization(YojanaPolicy.LabelPrinter);
+        labels.MapPost("/print-jobs/{jobId:guid}/reprint", (Guid jobId, ReprintLabelRequest request, ClaimsPrincipal user,
+            IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<LabelPrintResult>(bus, tenant,
+                new ReprintLabel(request.CommandId, jobId, request.PrinterRef, request.ReprintedAt,
+                    request.LegalEntityId, Actor(user)), ct)).RequireAuthorization(YojanaPolicy.LabelPrinter);
+        // End P6 labels block.
+
         var replacements = app.MapGroup("/api/warranty-replacements").RequireAuthorization(YojanaPolicy.TenantMember);
         replacements.MapGet("/", async (string? status, int? skip, int? take, Replacements.WarrantyReplacementQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.ListAsync(status, skip ?? 0, take ?? 50, ct)));
@@ -1007,6 +1081,50 @@ public static class SerialisationEndpoints
         Guid? ItemId = null);
 
     public sealed record ReferenceSearchResponse(IReadOnlyList<ReferenceSearchResult> Results);
+
+    // P6 label HTTP inputs deliberately omit actor, reviewer and source-event fields. Those are server facts stamped
+    // from claims or the consumed event before the internal command crosses the Wolverine boundary.
+    public sealed record CreateLabelTemplateRequest(
+        Guid CommandId,
+        string Name,
+        string AppliesTo,
+        string AppliesToValue);
+
+    public sealed record SaveLabelTemplateDraftRequest(
+        Guid CommandId,
+        Guid? TemplateVersionId,
+        DateTime EffectiveFrom,
+        DateTime? EffectiveTo,
+        string LayoutKind,
+        string Layout,
+        IReadOnlyList<string> StaticText,
+        IReadOnlyList<LabelBinding> Bindings,
+        string Symbology,
+        Guid? PreviewSampleUnitId,
+        bool Regulated);
+
+    public sealed record PreviewLabelTemplateRequest(Guid? SampleUnitId = null);
+
+    public sealed record LabelVersionCommandRequest(Guid CommandId);
+
+    public sealed record ActivateLabelTemplateVersionRequest(Guid CommandId, DateTime ActivatedAt);
+
+    public sealed record RetireLabelTemplateVersionRequest(Guid CommandId, DateTime RetiredAt);
+
+    public sealed record PrintLabelRequest(
+        Guid CommandId,
+        Guid UnitId,
+        Guid? TemplateId,
+        Guid? IdentifierId,
+        string PrinterRef,
+        DateTime PrintAt,
+        Guid LegalEntityId);
+
+    public sealed record ReprintLabelRequest(
+        Guid CommandId,
+        string? PrinterRef,
+        DateTime ReprintedAt,
+        Guid LegalEntityId);
 
     public sealed record ScanRequest(string Raw);
 }

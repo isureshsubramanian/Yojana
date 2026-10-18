@@ -23,6 +23,7 @@ using Yojana.Serialisation.Campaigns;
 using Yojana.Serialisation.Rmas;
 using Yojana.Serialisation.Condition;
 using Yojana.Serialisation.Refurbishments;
+using Yojana.Serialisation.Labels;
 
 namespace Yojana.Serialisation;
 
@@ -76,6 +77,16 @@ public static class SerialisationModule
         builder.Services.AddScoped<RefurbishmentQueries>();
         builder.Services.TryAddScoped<IRefurbishmentOpener, DefaultRefurbishmentOpener>();
         // End P5 refurbishment block.
+        // P6 labels block. The settings factory is coupled to LabelSettings as documented there: it hides the
+        // PlatformDbContext behind ITenantSettings from Wolverine's SerialisationDbContext transaction graph.
+        builder.Services.AddScoped(sp => new LabelSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped<LabelRenderer>();
+        builder.Services.AddScoped<LabelPrintService>();
+        builder.Services.AddScoped<LabelQueries>();
+        builder.Services.AddSingleton<InMemoryLabelPrinterPort>();
+        builder.Services.TryAddSingleton<ILabelPrinterPort>(sp => sp.GetRequiredService<InMemoryLabelPrinterPort>());
+        builder.Services.TryAddSingleton<IBarcodeEncoder, StubBarcodeEncoder>();
+        // End P6 labels block.
         builder.Services.AddScoped<BulkExecutor>();
         builder.Services.AddScoped<BulkApprovalRequestQueries>();
         builder.Services.AddScoped<CorrectionLedger>();
