@@ -111,9 +111,9 @@ public static class NoticesGate
     public const string OutputRelativePath = "src/Web/Yojana.Web/Notices/THIRD-PARTY-NOTICES.txt";
     public const string InputRelativePath = "tools/notices-input";
 
-    public static GateResult Run(string root, string? depsPath, bool check)
+    public static GateResult Run(string root, string? depsPath, bool check, string configuration = "Debug")
     {
-        var depsPaths = depsPath is null ? FindDeps(root) : [Path.GetFullPath(depsPath)];
+        var depsPaths = depsPath is null ? FindDeps(root, configuration) : [Path.GetFullPath(depsPath)];
         var inputs = Path.Combine(root, InputRelativePath);
         var packages = new SortedDictionary<string, PackageInfo>(StringComparer.OrdinalIgnoreCase);
         foreach (var path in depsPaths)
@@ -155,12 +155,14 @@ public static class NoticesGate
         return new GateResult("notices", true, $"wrote {Repo.Relative(root, output)} for {packages.Count} packages", []);
     }
 
-    public static IReadOnlyList<string> FindDeps(string root)
+    /// <summary>The shipped dependency graphs of the given build configuration. The configuration is an explicit input,
+    /// never "whichever bin folder is newest", so the generated file does not change with what was built last.</summary>
+    public static IReadOnlyList<string> FindDeps(string root, string configuration = "Debug")
     {
         var artefacts = new[]
         {
-            (Folder: Path.Combine(root, "src", "Web", "Yojana.Web", "bin"), File: "Yojana.Web.deps.json"),
-            (Folder: Path.Combine(root, "src", "Workers", "Yojana.RenderWorker", "bin"), File: "Yojana.RenderWorker.deps.json"),
+            (Folder: Path.Combine(root, "src", "Web", "Yojana.Web", "bin", configuration), File: "Yojana.Web.deps.json"),
+            (Folder: Path.Combine(root, "src", "Workers", "Yojana.RenderWorker", "bin", configuration), File: "Yojana.RenderWorker.deps.json"),
         };
         var result = new List<string>();
         foreach (var artefact in artefacts)

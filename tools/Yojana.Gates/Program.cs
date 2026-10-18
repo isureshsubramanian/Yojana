@@ -2,7 +2,7 @@ using System.Text;
 using Yojana.Gates;
 
 // Local and CI gates (MOD-01): licence policy, notices generation, name audit, bundle budget.
-// Usage: Yojana.Gates <licences|notices|names|budget|self-test|all> [--root <repo>] [--check] [--deps <deps.json>]
+// Usage: Yojana.Gates <licences|notices|names|budget|self-test|all> [--root <repo>] [--check] [--deps <deps.json>] [--configuration <Debug|Release>]
 var arguments = new Arguments(args);
 var root = Path.GetFullPath(arguments.Option("--root") ?? Repo.FindRoot(Directory.GetCurrentDirectory()));
 var command = arguments.Command;
@@ -16,7 +16,7 @@ try
             results.Add(LicenceGate.Run(root));
             break;
         case "notices":
-            results.Add(NoticesGate.Run(root, arguments.Option("--deps"), check: arguments.Has("--check")));
+            results.Add(NoticesGate.Run(root, arguments.Option("--deps"), check: arguments.Has("--check"), configuration: arguments.Option("--configuration") ?? "Debug"));
             break;
         case "names":
             results.Add(NameAuditGate.Run(root));
@@ -29,12 +29,12 @@ try
             break;
         case "all":
             results.Add(LicenceGate.Run(root));
-            results.Add(NoticesGate.Run(root, arguments.Option("--deps"), check: true));
+            results.Add(NoticesGate.Run(root, arguments.Option("--deps"), check: true, configuration: arguments.Option("--configuration") ?? "Debug"));
             results.Add(NameAuditGate.Run(root));
             results.Add(BudgetGate.Run(root));
             break;
         default:
-            Console.Error.WriteLine("Usage: Yojana.Gates <licences|notices|names|budget|self-test|all> [--root <repo>] [--check] [--deps <deps.json>]");
+            Console.Error.WriteLine("Usage: Yojana.Gates <licences|notices|names|budget|self-test|all> [--root <repo>] [--check] [--deps <deps.json>] [--configuration <Debug|Release>]");
             return 2;
     }
 }

@@ -60,7 +60,7 @@ licences: ## Gate 1: every package carries an allow-listed licence or an approve
 	$(GATES) licences
 
 notices: build ## Regenerate THIRD-PARTY-NOTICES.txt from the host's shipped dependency graph
-	$(GATES) notices
+	$(GATES) notices --configuration $(CONFIG)
 
 names: ## Gate 3: no competitor or external-product name outside the connector boundary
 	$(GATES) names
@@ -72,7 +72,7 @@ self-test: ## Prove every gate fails on a planted violation
 	$(GATES) self-test
 
 gate: build ## All gates, as CI runs them (notices in check mode; needs `make web-install web`)
-	$(GATES) all
+	$(GATES) all --configuration $(CONFIG)
 
 db-up: ## Start the development SQL Server container (password from .env)
 	@test -n "$(YOJANA_SQL_PASSWORD)" || { echo "YOJANA_SQL_PASSWORD is not set; run: make env"; exit 1; }
