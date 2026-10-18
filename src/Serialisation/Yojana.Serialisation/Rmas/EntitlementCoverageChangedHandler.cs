@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Wolverine.ErrorHandling;
+using Wolverine.Runtime.Handlers;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Claims;
@@ -15,6 +17,16 @@ public static class EntitlementCoverageChangedHandler
 {
     private static readonly string[] ClosedClaimStatuses = [ClaimStatus.Settled, ClaimStatus.Closed];
     private static readonly string[] ClosedRmaStages = [RmaStage.Dispositioned, RmaStage.Closed];
+
+    /// <summary>
+    /// The re-check runs in the background beside user commands, so it can lose an optimistic-concurrency race on a
+    /// row a command is changing at the same moment. Without a retry that lost race sent the message to the error queue
+    /// and the open work kept its old coverage decision silently. The whole re-check is one transaction and each work
+    /// item is skipped once its decision for this source event exists, so a retry repeats only what did not commit.
+    /// </summary>
+    public static void Configure(HandlerChain chain) => chain.OnException<DbUpdateConcurrencyException>()
+        .RetryWithCooldown(TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(3));
 
     public static async Task Handle(EntitlementCoverageChanged message, SerialisationDbContext db, ClaimUnitFacts facts,
         ClaimLineDecider decider, IItemQueryPort items, ICampaignCoverPort campaigns, IServiceOrderQueryPort serviceOrders,

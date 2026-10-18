@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
+using Wolverine.Runtime.Handlers;
 using Xunit;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
@@ -146,6 +147,17 @@ public sealed class CoverageTests(SerialisationHostFixture fixture)
         var claimDecisionEvents = await db.Events.Where(e => e.UnitId == setup.UnitId
             && e.EventType == CoverageEventType.DecisionChanged && e.DocumentId == work.OpenClaimId).Select(e => e.Attributes ?? "").ToListAsync();
         Assert.Equal(1, claimDecisionEvents.Count(attributes => fromThisEvent.Any(id => attributes.Contains(id, StringComparison.OrdinalIgnoreCase))));
+    }
+
+    [DatabaseFact]
+    public void Coverage_re_check_retries_a_lost_concurrency_race_instead_of_dropping_it()
+    {
+        // A background re-check that loses an optimistic-concurrency race to a user command must retry; before this
+        // rule the message went straight to the error queue and the open work kept its old decision. Retrying is safe
+        // because a replay adds no second decision (Coverage_change_replay_does_not_create_a_second_decision).
+        var chain = fixture.Services.GetRequiredService<HandlerGraph>().ChainFor<EntitlementCoverageChanged>();
+        Assert.NotNull(chain);
+        Assert.Contains(chain.Failures, rule => rule.Match.Matches(new DbUpdateConcurrencyException("lost race")));
     }
 
     private async Task<CoveredUnit> SetUpCoveredUnitAsync(string prefix, DurationRule duration,
