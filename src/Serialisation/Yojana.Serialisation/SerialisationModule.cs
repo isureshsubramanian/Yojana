@@ -400,6 +400,14 @@ public static class SerialisationModule
         builder.Services.AddScoped<TenantAssetService>();
         // End P6 certificate block.
 
+        // P7 customer portal. All authenticated reads pass through PortalOwnershipScope; the public resolver has a
+        // separate closed response contract and can only suppress fields from its fixed safe catalogue.
+        builder.Services.AddScoped<Portal.PortalOwnershipScope>();
+        builder.Services.AddScoped<Portal.PortalQueries>();
+        builder.Services.AddScoped<Portal.DisclosurePolicyService>();
+        builder.Services.AddScoped<Portal.PublicPortalResolver>();
+        // End P7 customer portal.
+
         // Replay-and-diff healer (P1-T05): per tenant, nightly, through the platform's recurring tenant jobs.
         builder.Services.AddScoped<UnitCurrentHealer>();
         builder.Services.AddSingleton(RecurringTenantJob.For<UnitCurrentHealerJob>(UnitCurrentHealerJob.JobName, UnitCurrentHealerJob.Cron));

@@ -89,6 +89,14 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         return scope;
     }
 
+    /// <summary>A request-equivalent scope whose SQL connections carry the customer party RLS key.</summary>
+    public IServiceScope ScopeForPortal(TenantId tenant, Guid partyRef)
+    {
+        var scope = ScopeFor(tenant);
+        scope.ServiceProvider.GetRequiredService<IPortalPartyContextSetter>().SetPortalParty(partyRef);
+        return scope;
+    }
+
     public async Task<TenantId> NewTenantAsync(string prefix, bool importJurisdictionStarter = true)
     {
         var id = new TenantId(Guid.NewGuid());

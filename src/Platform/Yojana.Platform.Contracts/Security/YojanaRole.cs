@@ -72,6 +72,9 @@ public static class YojanaPolicy
 
     /// <summary>Any signed-in user with a selected tenant.</summary>
     public const string TenantMember = "tenant_member";
+
+    /// <summary>A signed-in external principal bound to one tenant and one customer party.</summary>
+    public const string CustomerPortal = "customer_portal";
 }
 
 /// <summary>Claim types issued by the platform's authentication.</summary>
@@ -81,4 +84,5 @@ public static class YojanaClaim
     public const string TenantId = "yojana:tenant_id";
     public const string TenantCode = "yojana:tenant_code";
     public const string Role = "yojana:role";
+    public const string CustomerPartyRef = "yojana:customer_party_ref";
 }
