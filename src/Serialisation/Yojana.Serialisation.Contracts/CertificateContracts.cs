@@ -155,6 +155,13 @@ public sealed record RequiredSerializedComponentSnapshot(
 
 public sealed record ReleaseTestSnapshot(string Kind, string Result, JsonElement Measurements, string Equipment, DateTime TestedAt);
 public sealed record ReleaseLifeEpisodeSnapshot(string Kind, DateTime StartedAt, DateTime? EndedAt, int? CycleNumber);
+public sealed record BatteryPassportSnapshot(
+    string? Chemistry,
+    string? RatedCapacityKwh,
+    string? StateOfHealthPercent,
+    string? CarbonFootprintKgCo2e,
+    string? ManufacturedAt,
+    string? ResponsibleOperator);
 
 /// <summary>
 /// The release-record schema deliberately has no bindable party, owner or customer member. The issuer address and the
@@ -183,7 +190,8 @@ public sealed record ReleaseRecordPayload(
     CertificateIssuerSnapshot Issuer,
     CertificateBrandingSnapshot Branding,
     CertificatePresentationSnapshot Presentation,
-    CertificateProvenanceSnapshot Provenance);
+    CertificateProvenanceSnapshot Provenance,
+    BatteryPassportSnapshot? Battery = null);
 
 public sealed record WarrantyEntitlementSnapshot(
     Guid EntitlementId,
@@ -229,7 +237,7 @@ public interface ICertificateUnitReadPort
 }
 
 public sealed record CertificateConditionFact(string Grade, IReadOnlyList<ReleaseTestSnapshot> Tests,
-    string? SanitisationReference, string? Firmware);
+    string? SanitisationReference, string? Firmware, BatteryPassportSnapshot? Battery = null);
 public interface ICertificateConditionReadPort
 {
     Task<CertificateConditionFact> ReadAsync(Guid unitId, CancellationToken cancellationToken);
@@ -270,7 +278,7 @@ public sealed record CertificateDetail(Guid CertificateId, Guid UnitId, Guid? It
     IReadOnlyList<CertificateSignatureRow> Signatures, IReadOnlyList<CertificateReprintRow> Reprints);
 public sealed record CertificateListRow(Guid CertificateId, Guid UnitId, Guid? ItemId, string PrimarySerial, string DocumentKind,
     string FormType, int Version, string TrackingNumber, string Status, DateTime IssuedAt, string IssuedAtDisplay,
-    string Provenance);
+    string Provenance, string? IssuedBy = null);
 public sealed record CertificateVersionChain(IReadOnlyList<CertificateListRow> ReleaseRecords,
     IReadOnlyList<CertificateListRow> WarrantyCertificates);
 

@@ -63,6 +63,9 @@ public sealed class RmaVolumeTests(SerialisationHostFixture fixture)
         Assert.Empty(first.Rows.Select(row => row.RmaId).Intersect(second.Rows.Select(row => row.RmaId)));
         Assert.Equal(4, first.Summary.Single(row => row.Stage == RmaStage.Requested).Count);
         Assert.Equal(1, first.Summary.Single(row => row.Stage == RmaStage.Requested).ExceptionCount);
+        var exceptions = await queries.ListAsync(new(null, null, null, null, ExceptionsOnly: true),
+            At.AddDays(10), null, 25, CancellationToken.None);
+        Assert.Equal(rows[3].RmaId, Assert.Single(exceptions.Rows).RmaId);
     }
 
     [DatabaseFact]

@@ -241,7 +241,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
                 $"{ItemFamilyName(itemClass)} asset label",
                 LabelTemplateAppliesTo.ItemFamily, itemClass, actor), cancellationToken);
             templateIds[itemClass] = created.TemplateId;
-            var previewUnit = itemClass is "network" or "component" ? samples["server"].UnitId : sample.UnitId;
+            var previewUnit = sample.UnitId;
             var notice = itemClass == "server" ? "Asterra Works server asset" : "Asterra Works equipment asset";
             var first = await SaveLabelVersionAsync(created.TemplateId, itemClass, 1, notice, previewUnit,
                 requireRevision: itemClass == "network", cancellationToken);
@@ -301,7 +301,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         await InvokeAsync<LabelPrintResult>(new PrintLabel(DemoIds.FromName("label-print:printer"),
             Units("PF-400")[0].UnitId, templates["printer"], null, "line-2", at.AddMinutes(1), LegalEntityId, actor), cancellationToken);
         var rejected = await InvokeAsync<LabelPrintResult>(new PrintLabel(DemoIds.FromName("label-print:network-missing-revision"),
-            Units("NX-4850")[0].UnitId, templates["network"], null, "line-2", at.AddMinutes(2), LegalEntityId, actor), cancellationToken);
+            Units("NX-4850")[1].UnitId, templates["network"], null, "line-2", at.AddMinutes(2), LegalEntityId, actor), cancellationToken);
         if (rejected.Status != LabelPrintStatus.Rejected || rejected.EmptyRequiredField != LabelBindableField.ItemRevision)
             throw new InvalidOperationException("network demo label must be rejected because item.revision is empty");
         await InvokeAsync<LabelPrintResult>(new ReprintLabel(DemoIds.FromName("label-reprint:server"),
@@ -611,6 +611,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             await AttributeAsync(psu, "psu.firmware", $"1.2.{index % 3}", at.AddMinutes(20 + index), cancellationToken);
         foreach (var (server, index) in Units("RS-1100").Select((unit, index) => (unit, index)))
             await AttributeAsync(server, "bmc.firmware", index < 14 ? "3.4.0" : "3.5.1", at.AddHours(1).AddMinutes(index), cancellationToken);
+        await AttributeAsync(Units("NX-4850")[0], "item.revision", "B3", at.AddHours(2), cancellationToken);
     }
 
     private async Task PostSalesAsync(CancellationToken cancellationToken)

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { PresenceAdvisory, PresenceChips, StatusBadge, useDocumentPresence } from "../components";
+import { useTenantTime, type TenantTimeFormatter } from "../components/tenantTime";
 import { ItemFamilyField, UnitField, useItemFamilies } from "../corrections/ReferenceFields";
 import { usePeople } from "../people/people";
 import { useSession } from "../session/session";
@@ -33,6 +34,7 @@ interface DraftState {
 }
 
 export function Component() {
+  const tenantTime = useTenantTime();
   const { id } = useParams();
   const navigate = useNavigate();
   const session = useSession();
@@ -42,7 +44,9 @@ export function Component() {
   const [detail, setDetail] = useState<LabelTemplateDetail | null>(null);
   const [selected, setSelected] = useState<LabelTemplateVersion | null>(null);
   const [newVersion, setNewVersion] = useState(isNew);
-  const [draft, setDraft] = useState<DraftState>(emptyDraft());
+  const [draft, setDraft] = useState<DraftState>(() => emptyDraft(tenantTime));
+  const [draftZone, setDraftZone] = useState(tenantTime.zone);
+  const [previewSampleUnitId, setPreviewSampleUnitId] = useState<string | null>(null);
   const [fields, setFields] = useState<LabelBindableField[]>([]);
   const [policy, setPolicy] = useState<LabelPolicy>({ legalReviewPhrases: [], printExpiryDates: false, defaultPrinterRef: "default" });
   const [preview, setPreview] = useState<LabelTemplatePreview | null>(null);
@@ -61,16 +65,22 @@ export function Component() {
   }, []);
 
   useEffect(() => {
+    if (!isNew || draftZone === tenantTime.zone) return;
+    setDraft((current) => ({ ...current, effectiveFrom: tenantTime.localInput(new Date().toISOString()) }));
+    setDraftZone(tenantTime.zone);
+  }, [draftZone, isNew, tenantTime]);
+
+  useEffect(() => {
     if (isNew || !id) return;
     const controller = new AbortController();
     setLoading(true);
     labelsApi.template(id, controller.signal).then((next) => {
       setDetail(next);
       const version = next.versions.find((candidate) => candidate.status === "draft") ?? next.versions[0] ?? null;
-      setSelected(version); setNewVersion(false); setDraft(fromVersion(next, version)); setDirty(false);
+      setSelected(version); setNewVersion(false); setDraft(fromVersion(next, version, tenantTime)); setPreviewSampleUnitId(version?.previewSampleUnitId ?? null); setDirty(false);
     }).catch((reason) => { if (!aborted(reason)) setError(reason); }).finally(() => setLoading(false));
     return () => controller.abort();
-  }, [id, isNew]);
+  }, [id, isNew, tenantTime]);
 
   const editable = canEdit && (isNew || newVersion || selected?.status === "draft");
   const presence = useDocumentPresence("label_template", detail?.templateId ?? "", editable && dirty);
@@ -83,8 +93,8 @@ export function Component() {
   const activationBlocks = activationReasons(selected, dirty);
 
   const change = (patch: Partial<DraftState>) => { setDraft((current) => ({ ...current, ...patch })); setDirty(true); setSaved(false); setPreview(null); };
-  const selectVersion = (version: LabelTemplateVersion) => { setSelected(version); setNewVersion(false); setDraft(fromVersion(detail!, version)); setPreview(null); setDirty(false); setError(null); };
-  const startVersion = () => { setSelected(detail?.versions[0] ?? null); setNewVersion(true); setDraft(fromVersion(detail, detail?.versions[0] ?? null)); setPreview(null); setDirty(true); setSaved(false); };
+  const selectVersion = (version: LabelTemplateVersion) => { setSelected(version); setNewVersion(false); setDraft(fromVersion(detail!, version, tenantTime)); setPreviewSampleUnitId(version.previewSampleUnitId); setPreview(null); setDirty(false); setError(null); };
+  const startVersion = () => { const source = detail?.versions[0] ?? null; setSelected(source); setNewVersion(true); setDraft(fromVersion(detail, source, tenantTime)); setPreviewSampleUnitId(source?.previewSampleUnitId ?? null); setPreview(null); setDirty(true); setSaved(false); };
 
   const save = async () => {
     if (!editable || missingBindings.length) return;
@@ -97,7 +107,7 @@ export function Component() {
       }
       const body: SaveDraftInput = {
         templateVersionId: !newVersion && selected?.status === "draft" ? selected.templateVersionId : null,
-        effectiveFrom: fromLocal(draft.effectiveFrom), effectiveTo: draft.effectiveTo ? fromLocal(draft.effectiveTo) : null,
+        effectiveFrom: tenantTime.fromLocalInput(draft.effectiveFrom), effectiveTo: draft.effectiveTo ? tenantTime.fromLocalInput(draft.effectiveTo) : null,
         layoutKind: draft.layoutKind, layout: draft.layout,
         staticText: draft.staticText.split("\n").map((value) => value.trim()).filter(Boolean),
         bindings: draft.bindings, symbology: draft.symbology, previewSampleUnitId: draft.previewSampleUnitId,
@@ -106,7 +116,7 @@ export function Component() {
       const result = await labelsApi.saveDraft(templateId, body);
       const next = await labelsApi.template(templateId);
       const version = next.versions.find((candidate) => candidate.templateVersionId === result.templateVersionId) ?? next.versions[0] ?? null;
-      setDetail(next); setSelected(version); setNewVersion(false); setDraft(fromVersion(next, version)); setDirty(false); setSaved(true);
+      setDetail(next); setSelected(version); setNewVersion(false); setDraft(fromVersion(next, version, tenantTime)); setPreviewSampleUnitId(version?.previewSampleUnitId ?? null); setDirty(false); setSaved(true);
       if (isNew) navigate(`/labels/templates/${templateId}`, { replace: true });
     } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
@@ -118,7 +128,7 @@ export function Component() {
       await work();
       const next = await labelsApi.template(detail.templateId);
       const version = selected ? next.versions.find((candidate) => candidate.templateVersionId === selected.templateVersionId) ?? null : null;
-      setDetail(next); setSelected(version); if (version) setDraft(fromVersion(next, version));
+      setDetail(next); setSelected(version); if (version) { setDraft(fromVersion(next, version, tenantTime)); setPreviewSampleUnitId(version.previewSampleUnitId); }
     } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
 
@@ -126,7 +136,7 @@ export function Component() {
     if (!selected || dirty) return;
     setBusy(true); setError(null);
     try {
-      setPreview(await labelsApi.preview(selected.templateVersionId, draft.previewSampleUnitId));
+      setPreview(await labelsApi.preview(selected.templateVersionId, previewSampleUnitId));
       if (detail) {
         const next = await labelsApi.template(detail.templateId);
         setDetail(next);
@@ -147,7 +157,7 @@ export function Component() {
       <PresenceChips users={presence} />
     </div><div className="actions">
       {!isNew && !newVersion && selected?.status !== "draft" && canEdit && <button type="button" className="btn" onClick={startVersion}>New draft</button>}
-      {canEdit && <button type="button" className="btn" disabled={!selected || dirty || busy || !draft.previewSampleUnitId} onClick={() => void renderPreview()}>Preview on sample</button>}
+      {canEdit && <button type="button" className="btn" disabled={!selected || dirty || busy || !previewSampleUnitId} onClick={() => void renderPreview()}>Preview on sample</button>}
       {editable && <button type="button" className="btn" disabled={busy || !draft.name.trim() || !draft.appliesToValue.trim() || !draft.effectiveFrom || !draft.layout.trim() || missingBindings.length > 0} onClick={() => void save()}>{busy ? "Saving…" : "Save draft"}</button>}
       {canEdit && selected?.status === "draft" && <span className="label-activation"><button type="button" className="btn primary" disabled={busy || activationBlocks.length > 0} title={activationBlocks.join(" ")} onClick={() => void run(() => labelsApi.activate(selected.templateVersionId))}><Icon name="check" />Activate</button>{activationBlocks.length > 0 && <span className="hint" role="status">{activationBlocks.join(" ")}</span>}</span>}
       {canEdit && selected?.status === "active" && <button type="button" className="btn" disabled={busy} onClick={() => void run(() => labelsApi.retire(selected.templateVersionId))}>Retire</button>}
@@ -183,14 +193,14 @@ export function Component() {
 
       <div className="stack">
         <section className="card" aria-labelledby="label-preview"><div className="card-header"><h2 id="label-preview">Preview</h2><span className="meta">{preview ? "saved draft rendered" : "choose a sample unit"}</span></div><div className="card-body label-preview-body">
-          <div className="label-preview-box" role="img" aria-label="Label preview">{preview?.barcode ? <img className="label-barcode" src={preview.barcode.dataUrl} alt={`${humanise(preview.barcode.symbology)} for ${preview.barcode.content}`} /> : <span className="label-barcode-placeholder" aria-hidden="true">2D</span>}<pre>{preview?.renderedPayload ?? "Save the draft, choose a sample unit, then preview."}</pre></div>
-          <span className="hint">{preview?.barcode ? `${humanise(preview.barcode.symbology)} · ${preview.barcode.content}` : "Preview a sample unit to draw its barcode."} Printer ZPL remains plain source; the printer draws its own symbol.</span>
+          <div className="label-preview-box" role="img" aria-label="Label preview">{preview?.barcode ? <img className="label-barcode" src={preview.barcode.dataUrl} alt={`${humanise(preview.barcode.symbology)} for ${preview.barcode.content}`} /> : <><span className="label-barcode-placeholder" aria-hidden="true">2D</span><span>{preview?.renderedPayload ?? "Save the draft, choose a sample unit, then preview."}</span></>}</div>
+          <span className="hint label-preview-caption">{preview?.barcode ? `${humanise(preview.barcode.symbology)} · ${preview.barcode.content}.` : "Preview a sample unit to draw its barcode."} Printer ZPL remains available in the stored payload; the printer draws its own symbol.</span>
           {preview?.rejectionReason && <div className="note bad"><strong>Preview rejected.</strong>&nbsp;{preview.rejectionReason}</div>}
         </div></section>
 
         <section className="card" aria-labelledby="label-properties"><div className="card-header"><h2 id="label-properties">Properties</h2></div><div className="card-body stack">
           <div className="kv wide"><span className="k">Applies to</span><span className="v">{humanise(draft.appliesTo)} · {draft.appliesToValue ? draft.appliesTo === "item_family" ? itemFamilies.name(draft.appliesToValue) : humanise(draft.appliesToValue) : "not set"}</span></div>
-          {editable ? <UnitField id="label-sample-unit" label="Sample unit" value={draft.previewSampleUnitId} onChange={(value) => change({ previewSampleUnitId: value })} optional /> : <div className="field"><span className="label">Sample unit</span><span>{draft.previewSampleUnitId ? "Recorded on this version" : "Not set"}</span></div>}
+          <UnitField id="label-sample-unit" label="Sample unit" value={previewSampleUnitId} onChange={(value) => { setPreviewSampleUnitId(value); setPreview(null); if (editable) change({ previewSampleUnitId: value }); }} hint={editable ? "Saved with this draft" : "Changes this preview only; the active version remains immutable"} optional />
           <label className="field"><span className="lbl">Symbology</span><select className="select" value={draft.symbology} disabled={!editable} onChange={(event) => change({ symbology: event.target.value as DraftState["symbology"] })}><option value="datamatrix">Data Matrix · recommended</option><option value="code128">Code 128 · recommended</option><option value="qr">QR</option><option value="code39">Code 39</option></select></label>
           <label className="check-setting"><input type="checkbox" checked={draft.regulated} disabled={!editable} onChange={(event) => change({ regulated: event.target.checked })} /><span><strong>Regulated label</strong><span className="help">Requires independent legal-review approval before activation.</span></span></label>
           <div className="form-grid"><label className="field"><span className="lbl">Effective from</span><input type="datetime-local" className="input" value={draft.effectiveFrom} disabled={!editable} onChange={(event) => change({ effectiveFrom: event.target.value })} /></label><label className="field"><span className="lbl">Effective to <span className="hint">· optional</span></span><input type="datetime-local" className="input" value={draft.effectiveTo} disabled={!editable} onChange={(event) => change({ effectiveTo: event.target.value })} /></label></div>
@@ -198,25 +208,25 @@ export function Component() {
 
         <section className="card" aria-labelledby="label-legal"><div className="card-header"><h2 id="label-legal">Legal review</h2><Link className="meta" to="/settings/labels">phrase list in Settings</Link></div><div className="card-body stack">
           <div className="label-review-row"><span>Phrase review<span className="sub">{selected?.legalReview ? "saved content matched the phrase list" : phraseHits.length ? "unsaved layout currently matches" : "no configured phrase matched"}</span></span><StatusBadge tone={selected?.legalReview || phraseHits.length ? "warn" : "ok"}>{selected?.legalReview || phraseHits.length ? "Review needed" : "Clear"}</StatusBadge></div>
-          <div className="label-review-row"><span>Reviewer<span className="sub">{selected?.legalReviewedBy ? `${people(selected.legalReviewedBy)} · ${fmt(selected.legalReviewedAt)}` : "independent legal reviewer"}</span></span><StatusBadge tone={selected?.legalReviewedBy ? "ok" : "neutral"}>{selected?.legalReviewedBy ? "Signed" : "Not signed"}</StatusBadge></div>
-          {selected?.regulated && <div className="label-review-row"><span>Regulated approval<span className="sub">{selected.approvedBy ? `${people(selected.approvedBy)} · ${fmt(selected.approvedAt)}` : "independent approval required"}</span></span><StatusBadge tone={selected.approvedBy ? "ok" : "warn"}>{selected.approvedBy ? "Approved" : "Needed"}</StatusBadge></div>}
+          <div className="label-review-row"><span>Reviewer<span className="sub">{selected?.legalReviewedBy ? `${people(selected.legalReviewedBy)} · ${tenantTime.dateTime(selected.legalReviewedAt)}` : "independent legal reviewer"}</span></span><StatusBadge tone={selected?.legalReviewedBy ? "ok" : "neutral"}>{selected?.legalReviewedBy ? "Signed" : "Not signed"}</StatusBadge></div>
+          {selected?.regulated && <div className="label-review-row"><span>Regulated approval<span className="sub">{selected.approvedBy ? `${people(selected.approvedBy)} · ${tenantTime.dateTime(selected.approvedAt)}` : "independent approval required"}</span></span><StatusBadge tone={selected.approvedBy ? "ok" : "warn"}>{selected.approvedBy ? "Approved" : "Needed"}</StatusBadge></div>}
           {actions.authorConflict && <div className="note bad"><strong>Independent review required.</strong>&nbsp;The server refuses an author signing or approving their own draft.</div>}
           <div className="label-review-actions">{actions.canRequest && selected && <button type="button" className="btn" disabled={busy} onClick={() => void run(() => labelsApi.requestReview(selected.templateVersionId))}>Request review</button>}{actions.canSign && selected && <button type="button" className="btn primary" disabled={busy} onClick={() => void run(() => labelsApi.signReview(selected.templateVersionId))}>Sign legal review</button>}{actions.canApprove && selected && <button type="button" className="btn primary" disabled={busy} onClick={() => void run(() => labelsApi.approve(selected.templateVersionId))}>Approve regulated label</button>}</div>
         </div></section>
 
-        <section className="card" aria-labelledby="label-versions"><div className="card-header"><h2 id="label-versions">Versions</h2></div><table className="table dense"><tbody>{detail?.versions.map((version) => <tr key={version.templateVersionId} className={selected?.templateVersionId === version.templateVersionId && !newVersion ? "sel" : undefined} onClick={() => selectVersion(version)}><td className="primary">v{version.version}</td><td>{humanise(version.status)} · {people(version.actorRef)}<span className="sub">{fmt(version.recordedAt)}</span></td><td><StatusBadge tone={version.status === "active" ? "ok" : version.legalReview && !version.legalReviewedAt ? "warn" : "neutral"}>{version.status === "active" ? "Active" : version.legalReview && !version.legalReviewedAt ? "Legal review" : humanise(version.status)}</StatusBadge></td></tr>)}{!detail?.versions.length && <tr><td className="muted label-empty-row">No saved versions.</td></tr>}</tbody></table></section>
+        <section className="card" aria-labelledby="label-versions"><div className="card-header"><h2 id="label-versions">Versions</h2></div><table className="table dense"><tbody>{detail?.versions.map((version) => <tr key={version.templateVersionId} className={selected?.templateVersionId === version.templateVersionId && !newVersion ? "sel" : undefined} onClick={() => selectVersion(version)}><td className="primary">v{version.version}</td><td>{humanise(version.status)} · {people(version.actorRef)}<span className="sub">{tenantTime.dateTime(version.recordedAt)}</span></td><td><StatusBadge tone={version.status === "active" ? "ok" : version.legalReview && !version.legalReviewedAt ? "warn" : "neutral"}>{version.status === "active" ? "Active" : version.legalReview && !version.legalReviewedAt ? "Legal review" : humanise(version.status)}</StatusBadge></td></tr>)}{!detail?.versions.length && <tr><td className="muted label-empty-row">No saved versions.</td></tr>}</tbody></table></section>
       </div>
     </div>
   </main>;
 }
 
-function emptyDraft(): DraftState {
-  return { name: "", appliesTo: "item_family", appliesToValue: "", effectiveFrom: toLocal(new Date().toISOString()), effectiveTo: "", layoutKind: "zpl", layout: DEFAULT_LAYOUT, staticText: "", bindings: [{ placeholder: "serial", fieldPath: "identifier.internal_serial", required: true }, { placeholder: "item_name", fieldPath: "item.name", required: true }], symbology: "datamatrix", previewSampleUnitId: null, regulated: false };
+function emptyDraft(time: TenantTimeFormatter): DraftState {
+  return { name: "", appliesTo: "item_family", appliesToValue: "", effectiveFrom: time.localInput(new Date().toISOString()), effectiveTo: "", layoutKind: "zpl", layout: DEFAULT_LAYOUT, staticText: "", bindings: [{ placeholder: "serial", fieldPath: "identifier.internal_serial", required: true }, { placeholder: "item_name", fieldPath: "item.name", required: true }], symbology: "datamatrix", previewSampleUnitId: null, regulated: false };
 }
 
-function fromVersion(detail: LabelTemplateDetail | null, version: LabelTemplateVersion | null): DraftState {
-  if (!detail && !version) return emptyDraft();
-  return { name: detail?.name ?? "", appliesTo: detail?.appliesTo ?? "item_family", appliesToValue: detail?.appliesToValue ?? "", effectiveFrom: toLocal(version?.effectiveFrom ?? new Date().toISOString()), effectiveTo: version?.effectiveTo ? toLocal(version.effectiveTo) : "", layoutKind: version?.layoutKind ?? "zpl", layout: version?.layout ?? DEFAULT_LAYOUT, staticText: version?.staticText.join("\n") ?? "", bindings: version?.bindings.map((binding) => ({ ...binding })) ?? [], symbology: version?.symbology ?? "datamatrix", previewSampleUnitId: version?.previewSampleUnitId ?? null, regulated: version?.regulated ?? false };
+function fromVersion(detail: LabelTemplateDetail | null, version: LabelTemplateVersion | null, time: TenantTimeFormatter): DraftState {
+  if (!detail && !version) return emptyDraft(time);
+  return { name: detail?.name ?? "", appliesTo: detail?.appliesTo ?? "item_family", appliesToValue: detail?.appliesToValue ?? "", effectiveFrom: time.localInput(version?.effectiveFrom ?? new Date().toISOString()), effectiveTo: version?.effectiveTo ? time.localInput(version.effectiveTo) : "", layoutKind: version?.layoutKind ?? "zpl", layout: version?.layout ?? DEFAULT_LAYOUT, staticText: version?.staticText.join("\n") ?? "", bindings: version?.bindings.map((binding) => ({ ...binding })) ?? [], symbology: version?.symbology ?? "datamatrix", previewSampleUnitId: version?.previewSampleUnitId ?? null, regulated: version?.regulated ?? false };
 }
 
 function updateBinding(bindings: readonly LabelBinding[], index: number, patch: Partial<LabelBinding>): LabelBinding[] {
@@ -231,10 +241,4 @@ function nextPlaceholder(draft: DraftState): string {
   return `field_${number}`;
 }
 
-function toLocal(value: string): string {
-  const date = new Date(value); const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-}
-function fromLocal(value: string): string { return new Date(value).toISOString(); }
-function fmt(value: string | null | undefined): string { return value ? new Date(value).toLocaleString() : "—"; }
 function aborted(reason: unknown): boolean { return reason instanceof DOMException && reason.name === "AbortError"; }

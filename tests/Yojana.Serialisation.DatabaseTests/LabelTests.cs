@@ -155,6 +155,26 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Bought_in_unit_revision_attribute_can_drive_a_required_label_binding()
+    {
+        var tenant = await fixture.NewTenantAsync("labels-recorded-revision");
+        var unit = await UnitAsync(tenant, "RECORDED-REVISION");
+        await InvokeAsync<RecordUnitAttributesResult>(tenant, new RecordUnitAttributes(Guid.NewGuid(), unit.UnitId,
+            new Dictionary<string, string?> { ["item.revision"] = "B3" }, At.AddMinutes(1), "receiving.operator", Entity));
+        var template = await ActiveTemplateAsync(tenant, unit.UnitId, "Revision label",
+            LabelTemplateAppliesTo.ItemFamily, "systems", "REV={{revision}}",
+            [new("revision", LabelBindableField.ItemRevision, true)]);
+
+        var printed = await InvokeAsync<LabelPrintResult>(tenant, new PrintLabel(Guid.NewGuid(), unit.UnitId,
+            template.TemplateId, null, "line-1", At.AddMinutes(3), Entity, "label.printer"));
+        using var scope = fixture.ScopeFor(tenant);
+        var job = await scope.ServiceProvider.GetRequiredService<LabelQueries>().JobAsync(printed.JobId, CancellationToken.None);
+
+        Assert.Equal(LabelPrintStatus.Confirmed, printed.Status);
+        Assert.Contains("REV=B3", job!.RenderedPayload, StringComparison.Ordinal);
+    }
+
+    [DatabaseFact]
     public async Task A_label_administrator_without_the_legal_reviewer_role_cannot_sign()
     {
         var tenant = await fixture.NewTenantAsync("labels-legal-role");
@@ -401,7 +421,7 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
         Assert.NotNull(between.Rows[0].OriginalJobId);
 
         var summary = await queries.SummaryAsync(At, At.AddHours(1), CancellationToken.None);
-        Assert.Equal((4, 3, 0, 1, 1, 1), (summary.Printed, summary.Confirmed, summary.Waiting,
+        Assert.Equal((3, 3, 0, 1, 1, 1), (summary.Printed, summary.Confirmed, summary.Waiting,
             summary.Rejected, summary.Reprints, summary.FromEvents));
     }
 

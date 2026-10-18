@@ -98,6 +98,7 @@ public sealed class LedgerBaseOrderBackfill(
     private async Task<LedgerBaseOrderBackfillProgress> RunOneBatchAsync(CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await AcquireTenantRunLockAsync(cancellationToken);
         var checkpoint = await db.LedgerBaseOrderBackfillCheckpoints
             .SingleOrDefaultAsync(row => row.TenantId == tenant.TenantId, cancellationToken);
         var created = checkpoint is null;
@@ -163,6 +164,30 @@ public sealed class LedgerBaseOrderBackfill(
         }
 
         return View(checkpoint);
+    }
+
+    private async Task AcquireTenantRunLockAsync(CancellationToken cancellationToken)
+    {
+        // TIGHT COUPLING (SQL Server checkpoint transaction): the per-tenant application lock and the checkpoint
+        // read/write must share this transaction. Moving either side outside it reopens the first-run duplicate insert
+        // and allows two workers to advance the durable cursor independently. The matching model note is in
+        // SerialisationDbContext's checkpoint mapping.
+        var connection = db.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.Transaction = db.Database.CurrentTransaction!.GetDbTransaction();
+        command.CommandTimeout = options.CommandTimeoutSeconds;
+        command.CommandText = """
+            DECLARE @result int;
+            EXEC @result = sys.sp_getapplock
+                @Resource = @resource,
+                @LockMode = N'Exclusive',
+                @LockOwner = N'Transaction',
+                @LockTimeout = @timeout;
+            IF @result < 0 THROW 51000, 'Could not acquire the ledger base-order backfill tenant lock.', 1;
+            """;
+        Add(command, "@resource", DbType.String, $"yojana:ledger-base-order-backfill:{tenant.TenantId}");
+        Add(command, "@timeout", DbType.Int32, options.CommandTimeoutSeconds * 1000);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private async Task<LedgerBaseOrderBackfillCheckpoint> CreateCheckpointAsync(CancellationToken cancellationToken)

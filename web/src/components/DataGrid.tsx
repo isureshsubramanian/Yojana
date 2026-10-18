@@ -120,7 +120,7 @@ export function DataGrid<TRow>({ columns, page, rowId, onPage, selection, dense,
       <div className="card-footer">
         <span>
           {footerNote && <>{footerNote} · </>}
-          Rows {range.from.toLocaleString()}–{range.to.toLocaleString()}{continuationPaged ? page.hasMore ? " · more match" : " · end" : <> of <strong>{page.total.toLocaleString()}</strong></>}
+          Rows {range.from.toLocaleString()}–{range.to.toLocaleString()}{continuationPaged ? page.hasMore ? " · more match" : "" : <> of <strong>{page.total.toLocaleString()}</strong></>}
           {selection && selection.selected.size > 0 && <> · {selection.selected.size.toLocaleString()} selected</>}
         </span>
         <Pager page={page.page} pageSize={page.pageSize} total={page.total} onPage={onPage}

@@ -97,6 +97,25 @@ public sealed class LedgerBaseOrderBackfillTests(SerialisationHostFixture fixtur
     }
 
     [DatabaseFact]
+    public async Task Concurrent_first_runs_share_one_checkpoint_without_a_primary_key_failure()
+    {
+        var tenant = await fixture.NewTenantAsync("base-race");
+        using var firstScope = fixture.ScopeFor(tenant);
+        using var secondScope = fixture.ScopeFor(tenant);
+        var first = firstScope.ServiceProvider.GetRequiredService<LedgerBaseOrderBackfill>()
+            .RunAsync(CancellationToken.None, maximumBatches: 1);
+        var second = secondScope.ServiceProvider.GetRequiredService<LedgerBaseOrderBackfill>()
+            .RunAsync(CancellationToken.None, maximumBatches: 1);
+
+        var results = await Task.WhenAll(first, second);
+
+        Assert.All(results, result => Assert.Equal(LedgerBaseOrderBackfillStatus.Complete, result.Status));
+        using var check = fixture.ScopeFor(tenant);
+        Assert.Equal(1, await check.ServiceProvider.GetRequiredService<SerialisationDbContext>()
+            .LedgerBaseOrderBackfillCheckpoints.CountAsync());
+    }
+
+    [DatabaseFact]
     public async Task Recurring_job_is_registered_per_tenant()
     {
         var tenant = await fixture.NewTenantAsync("basejob");

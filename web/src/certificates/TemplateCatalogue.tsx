@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { DataGrid, type GridColumn } from "../components/DataGrid";
 import { StatusBadge } from "../components/StatusBadge";
 import type { PageResult } from "../components/types";
+import { useTenantTime } from "../components/tenantTime";
 import { usePeople } from "../people/people";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { Rail } from "../shell/Drawer";
@@ -10,11 +11,12 @@ import { openDrawer, updateDrawer } from "../shell/drawerStore";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { useItemFamilies } from "../corrections/ReferenceFields";
 import { certificateApi } from "./api";
-import { fmtDate, fmtDateTime, formLabel, humanise, statusTone } from "./format";
+import { formLabel, humanise, statusTone } from "./format";
 import type { CertificateTemplateSummary, LabelTemplateSummary } from "./types";
 import "./certificates.css";
 
 export function Component() {
+  const tenantTime = useTenantTime();
   const [certificates, setCertificates] = useState<CertificateTemplateSummary[]>([]);
   const [labels, setLabels] = useState<LabelTemplateSummary[]>([]);
   const [tab, setTab] = useState<"all" | "certificates" | "labels">("all");
@@ -36,18 +38,18 @@ export function Component() {
     { key: "name", label: "Template", width: 30, render: (row) => <>{row.name}<span className="sub">{row.builtIn ? "built-in starter · copy to customise" : row.code}</span></> },
     { key: "document", label: "Document", width: 18, render: (row) => <>{humanise(row.documentKind)}<span className="sub">{formLabel(row.formType)}</span></> },
     { key: "version", label: "Version", width: 10, render: (row) => `v${row.latestVersion}` },
-    { key: "effective", label: "Effective", width: 18, render: (row) => row.effectiveFrom ? <>since {fmtDate(row.effectiveFrom)}{row.effectiveTo && <span className="sub">to {fmtDate(row.effectiveTo)}</span>}</> : <span className="muted">not active</span> },
+    { key: "effective", label: "Effective", width: 18, render: (row) => row.effectiveFrom ? <>since {tenantTime.date(row.effectiveFrom)}{row.effectiveTo && <span className="sub">to {tenantTime.date(row.effectiveTo)}</span>}</> : <span className="muted">not active</span> },
     { key: "approval", label: "Approval", width: 14, render: (row) => <StatusBadge tone={statusTone(row.latestStatus)}>{humanise(row.latestStatus)}</StatusBadge> },
     { key: "issued", label: "Issued with it", width: 10, numeric: true, render: (row) => row.issuedCount.toLocaleString() },
-  ], []);
+  ], [tenantTime]);
   const labelColumns = useMemo<GridColumn<LabelTemplateSummary>[]>(() => [
     { key: "name", label: "Template", width: 30, render: (row) => <>{row.name}<span className="sub">{humanise(row.appliesTo)} · {row.appliesTo === "item_family" ? itemFamilies.name(row.appliesToValue) : humanise(row.appliesToValue)}</span></> },
     { key: "layout", label: "Applies to", width: 18, render: (row) => row.appliesTo === "item_family" ? itemFamilies.name(row.appliesToValue) : humanise(row.appliesToValue) },
-    { key: "version", label: "Version", width: 10, render: (row) => row.latestVersion ? `v${row.latestVersion}` : "—" },
-    { key: "effective", label: "Effective", width: 18, render: (row) => row.effectiveFrom ? <>since {fmtDate(row.effectiveFrom)}{row.effectiveTo && <span className="sub">to {fmtDate(row.effectiveTo)}</span>}</> : <span className="muted">not active</span> },
-    { key: "review", label: "Legal review", width: 14, render: (row) => <StatusBadge tone={row.legalReview && !row.legalReviewedBy ? "warn" : statusTone(row.latestStatus)}>{row.legalReview ? row.legalReviewedBy ? "Signed" : "Needed" : "Not needed"}</StatusBadge> },
+    { key: "version", label: "Version", width: 10, render: (row) => row.activeVersion ? `v${row.activeVersion} · active` : row.latestVersion ? `v${row.latestVersion}` : "—" },
+    { key: "effective", label: "Effective", width: 18, render: (row) => row.effectiveFrom ? <>since {tenantTime.date(row.effectiveFrom)}{row.effectiveTo && <span className="sub">to {tenantTime.date(row.effectiveTo)}</span>}</> : <span className="muted">not active</span> },
+    { key: "review", label: "Legal review", width: 14, render: (row) => row.activeVersion ? <StatusBadge tone="ok">Active</StatusBadge> : <StatusBadge tone={row.legalReview && !row.legalReviewedBy ? "warn" : statusTone(row.latestStatus)}>{row.legalReview ? row.legalReviewedBy ? "Signed" : "Needed" : "Not needed"}</StatusBadge> },
     { key: "printed", label: "Printed with it", width: 10, numeric: true, render: (row) => row.printedCount.toLocaleString() },
-  ], [itemFamilies]);
+  ], [itemFamilies, tenantTime]);
   const certPage: PageResult<CertificateTemplateSummary> = { rows: certificates, total: certificates.length, page: 1, pageSize: Math.max(1, certificates.length), continuation: null };
   const labelPage: PageResult<LabelTemplateSummary> = { rows: labels, total: labels.length, page: 1, pageSize: Math.max(1, labels.length), continuation: null };
 
@@ -56,7 +58,7 @@ export function Component() {
     const head = { eyebrow: `${humanise(row.documentKind)} template`, title: row.name };
     openDrawer(head, <div className="muted">Loading versions…</div>);
     certificateApi.template(row.templateId).then((detail) => updateDrawer(head, <>
-      <Section title="Versions"><div className="certificate-version-list">{detail.versions.map((version) => <div className="job" key={version.templateVersionId}><span><span className="t">v{version.version} · {humanise(version.status)}</span><span className="s">{version.effectiveFrom ? fmtDate(version.effectiveFrom) : "not active"}{version.approvedBy ? ` · ${people(version.approvedBy)}` : ""}</span></span><StatusBadge tone={statusTone(version.status)}>{humanise(version.status)}</StatusBadge></div>)}</div></Section>
+      <Section title="Versions"><div className="certificate-version-list">{detail.versions.map((version) => <div className="job" key={version.templateVersionId}><span><span className="t">v{version.version} · {humanise(version.status)}</span><span className="s">{version.effectiveFrom ? tenantTime.date(version.effectiveFrom) : "not active"}{version.approvedBy ? ` · ${people(version.approvedBy)}` : ""}</span></span><StatusBadge tone={statusTone(version.status)}>{humanise(version.status)}</StatusBadge></div>)}</div></Section>
       <Section title="Inputs"><Kv rows={[["Language", "chosen and recorded per version"], ["Issuer", "chosen at issue and snapshotted"], ["Branding", "asset and hash snapshotted at issue"], ["Issued", row.issuedCount.toLocaleString()]]} /></Section>
       <div className="act"><Link className="btn primary block" to={`/templates/certificates/${row.templateId}`}>{row.builtIn ? "Copy or inspect starter" : "Open designer"}</Link></div>
     </>)).catch(setError);
@@ -66,8 +68,8 @@ export function Component() {
     const head = { eyebrow: "Label template", title: row.name };
     openDrawer(head, <div className="muted">Loading versions…</div>);
     certificateApi.label(row.templateId).then((detail) => updateDrawer(head, <>
-      <Section title="Versions"><div className="certificate-version-list">{detail.versions.map((version) => <div className="job" key={version.templateVersionId}><span><span className="t">v{version.version} · {humanise(version.status)}</span><span className="s">{fmtDate(version.effectiveFrom)}{version.legalReviewedBy ? ` · legal ${people(version.legalReviewedBy)}` : ""}</span></span><StatusBadge tone={statusTone(version.status)}>{humanise(version.status)}</StatusBadge></div>)}</div></Section>
-      <Section title="Catalogue"><Kv rows={[["Applies to", `${humanise(row.appliesTo)} · ${row.appliesTo === "item_family" ? itemFamilies.name(row.appliesToValue) : humanise(row.appliesToValue)}`], ["Printed", row.printedCount.toLocaleString()], ["Created", fmtDateTime(row.createdAt)]]} /></Section>
+      <Section title="Versions"><div className="certificate-version-list">{detail.versions.map((version) => <div className="job" key={version.templateVersionId}><span><span className="t">v{version.version} · {humanise(version.status)}</span><span className="s">{tenantTime.date(version.effectiveFrom)}{version.legalReviewedBy ? ` · legal ${people(version.legalReviewedBy)}` : ""}</span></span><StatusBadge tone={statusTone(version.status)}>{humanise(version.status)}</StatusBadge></div>)}</div></Section>
+      <Section title="Catalogue"><Kv rows={[["Applies to", `${humanise(row.appliesTo)} · ${row.appliesTo === "item_family" ? itemFamilies.name(row.appliesToValue) : humanise(row.appliesToValue)}`], ["Printed", row.printedCount.toLocaleString()], ["Created", tenantTime.dateTime(row.createdAt)]]} /></Section>
       <div className="act"><Link className="btn primary block" to={`/labels/templates/${row.templateId}`}>Open label editor</Link></div>
     </>)).catch(setError);
   };

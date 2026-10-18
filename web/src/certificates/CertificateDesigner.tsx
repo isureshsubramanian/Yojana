@@ -10,8 +10,10 @@ import { Rail } from "../shell/Drawer";
 import { openDrawer } from "../shell/drawerStore";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { certificateApi } from "./api";
+import { useTenantTime } from "../components/tenantTime";
+import { certificateLanguageName } from "../settings/certificateDateFormats";
 import { assetPreviewSource, designPreviewHtml, insertPlaceholder } from "./designerCore";
-import { fmtDateTime, humanise, statusTone } from "./format";
+import { humanise, statusTone } from "./format";
 import type {
   CertificateTemplateDetail, CertificateTemplateSummary, CertificateTemplateVersion, FieldCatalogueEntry,
   TemplateValidation, TenantAsset,
@@ -54,6 +56,7 @@ function ExistingCertificateTemplate({ id }: { id: string }) {
   const editor = useRef<HTMLTextAreaElement | null>(null);
   const presence = useDocumentPresence("certificate_template", id, dirty);
   const people = usePeople([draftVersion(template)?.approvedBy, draftVersion(template)?.updatedBy]);
+  const tenantTime = useTenantTime();
 
   const load = useCallback(() => {
     const controller = new AbortController(); setError(null);
@@ -138,8 +141,10 @@ function ExistingCertificateTemplate({ id }: { id: string }) {
   const previewDocument = sampleHtml ?? designPreviewHtml(draft.headerBody + draft.layoutBody + draft.footerBody, {
     top: draft.marginTopMm, right: draft.marginRightMm, bottom: draft.marginBottomMm, left: draft.marginLeftMm,
   });
+  const activatedValidation = current.status === "active" || current.status === "retired" || template.builtIn;
   const checks = validation ? validation.valid ? `Checks pass. ${draft.fields.length} declared fields; all placeholders are in the certificate payload catalogue.`
-    : validation.errors.join(" ") : "Run validation before activation. Unknown placeholders and party fields on a release record are refused.";
+    : validation.errors.join(" ") : activatedValidation ? "This immutable version passed validation before activation."
+      : "Run validation before activation. Unknown placeholders and party fields on a release record are refused.";
 
   return <>
     <main className="content" id="main" tabIndex={-1}>
@@ -153,14 +158,14 @@ function ExistingCertificateTemplate({ id }: { id: string }) {
         </>}</>} />
       <div className="stack">
         <PresenceAdvisory users={presence} editing={dirty} documentLabel="certificate template" />
-        <div className={`note ${validation?.valid ? "ok" : validation ? "bad" : ""}`}><strong>{validation?.valid ? "Checks pass." : validation ? "Checks need attention." : "Not checked."}</strong>&nbsp;{checks}</div>
+        <div className={`note ${validation?.valid || activatedValidation ? "ok" : validation ? "bad" : ""}`}><strong>{validation?.valid || activatedValidation ? "Checks pass." : validation ? "Checks need attention." : "Not checked."}</strong>&nbsp;{checks}</div>
         <ErrorNote error={error} onReload={load} />
         <div className="certificate-designer-grid">
           <div className="stack">
             <section className="card" aria-labelledby="branding-heading"><div className="card-header"><h2 id="branding-heading">Logo and branding</h2></div><div className="card-body stack certificate-branding-panel">
               <div className="logo-drop">{assetPreviewSource(selectedAsset) ? <img src={assetPreviewSource(selectedAsset) ?? undefined} alt="Current certificate logo" /> : <span className="logo-empty">No logo</span>}<span>{selectedAsset ? <><strong>{selectedAsset.originalFileName ?? `Logo · ${assetFormat(selectedAsset.mediaType)}`}</strong><span className="hint">{formatBytes(selectedAsset.byteLength)} · {selectedAsset.width ?? "?"} × {selectedAsset.height ?? "?"}<br />SHA-256 recorded at issue</span></> : <span className="hint">Tenant default branding</span>}</span></div>
               <PartyField id="certificate-issuer" label="Logo for issuing legal entity" value={issuerEntityId} onChange={setIssuerEntityId} optional hint="Leave empty for a tenant-wide logo" />
-              {issuerAssignments.length > 0 && <div className="certificate-issuer-assignments"><span className="lbl">Per-issuer assignments</span>{issuerAssignments.map(([legalEntityId, assetId]) => <button type="button" className="field-insert" key={legalEntityId} onClick={() => setIssuerEntityId(legalEntityId)}><span><span className="t">{issuerNames.party(legalEntityId)}</span><span className="p">{assets.find((asset) => asset.assetId === assetId)?.mediaType ?? "Logo asset"}</span></span><StatusBadge tone={issuerEntityId === legalEntityId ? "ok" : "neutral"}>{issuerEntityId === legalEntityId ? "Selected" : "View"}</StatusBadge></button>)}</div>}
+              {issuerAssignments.length > 0 && <div className="certificate-issuer-assignments"><span className="lbl">Per-issuer assignments</span>{issuerAssignments.map(([legalEntityId, assetId]) => { const asset = assets.find((candidate) => candidate.assetId === assetId); return <button type="button" className="field-insert" key={legalEntityId} onClick={() => setIssuerEntityId(legalEntityId)}><span><span className="t">{issuerNames.party(legalEntityId)}</span><span className="p">{asset ? assetFormat(asset.mediaType) : "Logo asset"}</span></span><StatusBadge tone={issuerEntityId === legalEntityId ? "ok" : "neutral"}>{issuerEntityId === legalEntityId ? "Selected" : "View"}</StatusBadge></button>; })}</div>}
               <label className="field"><span className="lbl">Upload replacement</span><input type="file" accept="image/png,image/jpeg,image/svg+xml" disabled={readOnly || busy} onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); }} /><span className="help">PNG, JPEG or SVG · maximum 1 MB and 4096 × 4096</span></label>
               {selectedAsset && <button type="button" className="btn sm" disabled={readOnly} onClick={() => { const next = { ...draft.brandingAssets }; delete next[brandingKey]; update({ brandingAssetId: brandingKey === "default" ? null : draft.brandingAssetId, brandingAssets: next }); }}>Remove for this issuer</button>}
               <label className="field"><span className="lbl">Issuer display name</span><input className="input" value={draft.staticText.issuer_display_name ?? ""} disabled={readOnly} onChange={(event) => update({ staticText: { ...draft.staticText, issuer_display_name: event.target.value } })} /></label>
@@ -177,11 +182,11 @@ function ExistingCertificateTemplate({ id }: { id: string }) {
             <div className="certificate-layout-settings">
               <label className="field"><span className="lbl">Page</span><select className="select" value={draft.pageSize} disabled={readOnly} onChange={(event) => update({ pageSize: event.target.value })}><option>A4</option><option>Letter</option><option>A5</option></select></label>
               <label className="field"><span className="lbl">Orientation</span><select className="select" value={draft.orientation} disabled={readOnly} onChange={(event) => update({ orientation: event.target.value })}><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label>
-              <label className="field"><span className="lbl">Language</span><input className="input" value={draft.language} disabled={readOnly} onChange={(event) => update({ language: event.target.value })} /></label>
+              <label className="field"><span className="lbl">Language</span><select className="select" value={draft.language} disabled={readOnly} onChange={(event) => update({ language: event.target.value })}><option value="en">English</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label>
               <label className="field"><span className="lbl">Applies to</span><input className="input" value={template.appliesToItemClass ?? "All items"} readOnly /></label>
             </div>
             <div className="certificate-margin-grid">{(["Top", "Right", "Bottom", "Left"] as const).map((side) => { const key = `margin${side}Mm` as keyof Draft; return <label className="field" key={side}><span className="lbl">{side} margin · mm</span><input className="input" type="number" min="0" max="100" step="0.5" value={draft[key] as number} disabled={readOnly} onChange={(event) => update({ [key]: Number(event.target.value) })} /></label>; })}</div>
-            <label className="field"><span className="lbl">Static text · {draft.language}</span><textarea className="textarea" value={draft.staticText[draft.language] ?? ""} disabled={readOnly} onChange={(event) => update({ staticText: { ...draft.staticText, [draft.language]: event.target.value } })} placeholder="Language-specific wording stored with this template version" /></label>
+            <label className="field"><span className="lbl">Static text · {certificateLanguageName(draft.language)}</span><textarea className="textarea" value={draft.staticText[draft.language] ?? ""} disabled={readOnly} onChange={(event) => update({ staticText: { ...draft.staticText, [draft.language]: event.target.value } })} placeholder="Language-specific wording stored with this template version" /></label>
             {view === "design" ? <iframe className="certificate-design-frame" sandbox="" title="Certificate layout design preview" srcDoc={previewDocument} /> : <>
               <div className="segmented certificate-editor-target" role="group" aria-label="HTML section">{(["layout", "header", "footer"] as EditTarget[]).map((value) => <button type="button" key={value} aria-pressed={target === value} onClick={() => { setTarget(value); setSelection({ start: 0, end: 0 }); }}>{humanise(value)}</button>)}</div>
               <textarea ref={editor} className="textarea certificate-html-editor" spellCheck={false} disabled={readOnly} value={target === "layout" ? draft.layoutBody : target === "header" ? draft.headerBody : draft.footerBody}
@@ -193,7 +198,7 @@ function ExistingCertificateTemplate({ id }: { id: string }) {
         </div>
       </div>
     </main>
-    <Rail label="Template"><Section title="Version"><Kv rows={[["Version", `v${current.version}`], ["State", humanise(current.status)], ["Effective", current.effectiveFrom ? fmtDateTime(current.effectiveFrom) : "not active"], ["Approved by", current.approvedBy ? people(current.approvedBy) : "not approved"], ["Last changed by", people(current.updatedBy)]]} /></Section><Section title="Editing boundary"><p className="muted">Only fixed certificate-payload fields may be inserted. Release-record layouts cannot bind an owner, customer, party or address field.</p></Section></Rail>
+    <Rail label="Template"><Section title="Version"><Kv rows={[["Version", `v${current.version}`], ["State", humanise(current.status)], ["Effective", current.effectiveFrom ? tenantTime.dateTime(current.effectiveFrom) : "not active"], ["Approved by", current.approvedBy ? people(current.approvedBy) : "not approved"], ["Last changed by", people(current.updatedBy)]]} /></Section><Section title="Editing boundary"><p className="muted">Only fixed certificate-payload fields may be inserted. Release-record layouts cannot bind an owner, customer, party or address field.</p></Section></Rail>
   </>;
 }
 

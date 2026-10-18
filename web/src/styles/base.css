@@ -123,6 +123,9 @@ svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-wid
 .btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--text-2); }
 .btn.ghost:hover { background: var(--surface-2); color: var(--text-1); }
+
+.settings-override { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+.settings-override-remove { margin-bottom: 1px; }
 .btn.sm { height: 30px; padding: 0 10px; font-size: 13px; }
 .btn.block { width: 100%; }
 /* Disabled buttons must read as unavailable; without this a disabled primary looked exactly like an enabled one. */
@@ -217,6 +220,9 @@ svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-wid
 .textarea { height: auto; min-height: 84px; padding: 10px 12px; resize: vertical; line-height: 1.45; }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .input::placeholder { color: var(--text-3); }
+fieldset { border-color: var(--border); }
+input[type="file"]::file-selector-button { margin-right: 10px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-s); color: var(--text-1); background: var(--surface-2); font: inherit; cursor: pointer; }
+input[type="file"]::file-selector-button:hover { border-color: var(--accent); background: var(--accent-soft); }
 .select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%), linear-gradient(135deg, var(--text-3) 50%, transparent 50%); background-position: calc(100% - 16px) 16px, calc(100% - 11px) 16px; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 32px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
 .form-grid .span { grid-column: 1 / -1; }

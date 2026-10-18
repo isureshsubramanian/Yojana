@@ -5,7 +5,11 @@ export const CONDITION_GRADES = ["new", "open_box", "refurbished_a", "refurbishe
 export const REPLACEMENT_REASONS = ["warranty_defect", "dead_on_arrival", "seller_error", "goodwill", "recall"] as const;
 export const PRICE_POLICIES = ["zero", "difference", "full"] as const;
 
-export function humanise(value: string | null | undefined): string { return value ? value.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase()) : "—"; }
+export function humanise(value: string | null | undefined): string {
+  if (!value) return "—";
+  const label = value.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase());
+  return label.replace(/^Refurbished ([abc])$/, (_, grade: string) => `Refurbished ${grade.toUpperCase()}`);
+}
 export function stageNumber(stage: string): number { const index = RMA_STAGES.indexOf(stage as typeof RMA_STAGES[number]); return index < 0 ? 0 : index + 1; }
 export function ageBucket(ageDays: number): "fresh" | "watch" | "aged" { return ageDays <= 2 ? "fresh" : ageDays <= 7 ? "watch" : "aged"; }
 export function ageBucketLabel(ageDays: number): string { return ageBucket(ageDays) === "fresh" ? "0–2 days" : ageBucket(ageDays) === "watch" ? "3–7 days" : "8+ days"; }

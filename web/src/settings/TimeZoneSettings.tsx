@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
+import { tenantTimeFormatter } from "../components/tenantTime";
 import { usePeople } from "../people/people";
 import { useSession } from "../session/session";
 import { Icon } from "../shell/Icons";
@@ -14,6 +15,7 @@ export function Component() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const actors = usePeople([settings?.updatedBy, ...(settings?.history.map((row) => row.updatedBy) ?? [])]);
+  const tenantTime = useMemo(() => tenantTimeFormatter(settings?.tenantTimeZone ?? "UTC"), [settings?.tenantTimeZone]);
 
   useEffect(() => {
     if (!permitted) return;
@@ -58,7 +60,7 @@ export function Component() {
         <section className="card" aria-labelledby="tenant-time-zone"><div className="card-header"><h2 id="tenant-time-zone">Tenant time zone</h2><span className="meta">document default</span></div><div className="card-body stack">
           <label className="field"><span className="lbl">IANA time zone</span><input className="input" list="tenant-time-zones" value={settings.tenantTimeZone ?? ""} placeholder="Search, for example Asia/Kolkata" onChange={(event) => setSettings({ ...settings, tenantTimeZone: event.target.value || null })} /><span className="help">{offsetFor(settings.tenantTimeZone) ? `Current offset ${offsetFor(settings.tenantTimeZone)}. ` : ""}Printed times and new warranty dates follow this zone. Existing warranties keep the zone they were computed in.</span></label>
           {settings.tenantTimeZone && !zoneIds.has(settings.tenantTimeZone) && <div className="note bad">Choose a time zone from the IANA list.</div>}
-          {settings.updatedBy && <p className="muted">Last changed by {actors(settings.updatedBy)}{settings.updatedAt ? ` · ${new Date(settings.updatedAt).toLocaleString()}` : ""}</p>}
+          {settings.updatedBy && <p className="muted">Last changed by {actors(settings.updatedBy)}{settings.updatedAt ? ` · ${tenantTime.dateTime(settings.updatedAt)}` : ""}</p>}
         </div></section>
         <section className="card" aria-labelledby="time-zone-resolution"><div className="card-header"><h2 id="time-zone-resolution">Resolution order</h2></div><div className="card-body"><ol className="stack"><li>Policy-selected customer site zone for new warranties</li><li>Legal entity override, then its own zone</li><li>Tenant time zone</li><li>UTC when none is set</li></ol><p className="muted">An explicit UTC warranty policy stays in UTC. Existing warranties always keep their stored zone.</p></div></section>
       </div>
@@ -71,7 +73,7 @@ export function Component() {
         </div>)}
         {invalid && <div className="note bad">Choose every configured time zone from the IANA list.</div>}
       </div></section>
-      {settings.history.length > 0 && <section className="card" aria-labelledby="time-zone-audit"><div className="card-header"><h2 id="time-zone-audit">Audit history</h2><span className="meta">temporal tenant setting</span></div><table className="table dense"><thead><tr><th>Changed by</th><th>Tenant zone</th><th>Overrides</th><th>Changed</th></tr></thead><tbody>{settings.history.map((row) => <tr key={`${row.validFrom}-${row.updatedBy}`}><td className="primary">{actors(row.updatedBy)}</td><td className="mono">{row.tenantTimeZone ?? "UTC fallback"}</td><td>{row.legalEntityOverrides.length}</td><td>{new Date(row.updatedAt).toLocaleString()}</td></tr>)}</tbody></table></section>}
+      {settings.history.length > 0 && <section className="card" aria-labelledby="time-zone-audit"><div className="card-header"><h2 id="time-zone-audit">Audit history</h2><span className="meta">temporal tenant setting</span></div><table className="table dense"><thead><tr><th>Changed by</th><th>Tenant zone</th><th>Overrides</th><th>Changed</th></tr></thead><tbody>{settings.history.map((row) => <tr key={`${row.validFrom}-${row.updatedBy}`}><td className="primary">{actors(row.updatedBy)}</td><td className="mono">{row.tenantTimeZone ?? "UTC fallback"}</td><td>{row.legalEntityOverrides.length}</td><td>{tenantTime.dateTime(row.updatedAt)}</td></tr>)}</tbody></table></section>}
     </div>}
   </main>;
 }

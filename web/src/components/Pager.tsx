@@ -17,7 +17,7 @@ export function Pager({ page, pageSize, total, onPage, showPageCount = true, has
     <span className="pager" role="navigation" aria-label="Pages">
       <button type="button" className="btn" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</button>
       {showPageCount && <span className="muted" style={{ padding: "0 8px" }}>Page {page.toLocaleString()} of {pages.toLocaleString()}</span>}
-      {showMore && <span className="muted" style={{ padding: "0 8px" }}>Page {page.toLocaleString()}{hasNext ? " · more" : " · end"}</span>}
+      {showMore && <span className="muted" style={{ padding: "0 8px" }}>Page {page.toLocaleString()}{hasNext ? " · more" : ""}</span>}
       <button type="button" className="btn" disabled={hasNext === undefined ? page >= pages : !hasNext} onClick={() => onPage(page + 1)}>Next</button>
     </span>
   );

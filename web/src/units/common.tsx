@@ -36,7 +36,9 @@ export function ErrorNote({ error, onReload }: { error: unknown; onReload?: (() 
   const changedBy = error instanceof ApiError && error.rule === "document_changed" ? error.changedBy : null;
   const people = usePeople([changedBy]);
   if (!error) return null;
-  const message = error instanceof Error ? error.message : String(error);
+  const message = error instanceof ApiError
+    ? error.detail ?? error.title ?? (error.rule ? error.rule.replace(/_/g, " ") : null) ?? `Something went wrong (HTTP ${error.status})`
+    : safeLocalError(error);
   const status = error instanceof ApiError ? error.status : null;
   const rule = error instanceof ApiError ? error.rule : null;
   const step = error instanceof ApiError ? error.unblockingStep : null;
@@ -45,6 +47,14 @@ export function ErrorNote({ error, onReload }: { error: unknown; onReload?: (() 
     return <div className="form-error" role="alert">Changed by {people(changedBy)} at {when}. Your unsaved changes are kept until you choose Reload. {step ?? "Reload to see their change"}.{onReload && <> <button type="button" className="btn sm" onClick={onReload}>Reload</button></>}</div>;
   }
   return <div className="form-error" role="alert">{status === 409 ? `Refused${rule ? ` · ${rule.replace(/_/g, " ")}` : ""} · ` : ""}{message}{step ? ` To unblock: ${step}.` : ""}</div>;
+}
+
+function safeLocalError(error: unknown): string {
+  if (!(error instanceof Error)) return "Something went wrong.";
+  const message = error.message.trim();
+  return /<(!doctype|html|head|body)|stack trace|set-cookie|yojana\.session/i.test(message) || message.includes("\n")
+    ? "Something went wrong."
+    : message || "Something went wrong.";
 }
 
 export function UnitLink({ unitId, children, className = "serial" }: { unitId: string; children: ReactNode; className?: string }) {

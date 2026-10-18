@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ScanInput, Shortcut, StatusBadge } from "../components";
+import { useTenantTime } from "../components/tenantTime";
 import { units } from "../api/units";
 import { LocationField, useReferenceNames } from "../corrections/ReferenceFields";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section } from "../units/common";
-import { fmtDateTime } from "../units/format";
 import { returnsApi } from "./api";
-import { CONDITION_GRADES, gradeOptionState, humanise, isToday, receiptTone, receiptValuationRule, valuationRuleForGrade } from "./format";
+import { CONDITION_GRADES, gradeOptionState, humanise, receiptTone, receiptValuationRule, valuationRuleForGrade } from "./format";
 import type { RmaDetail, RmaDetailLine, RmaListRow } from "./types";
 import "./returns.css";
 
 export function Component() {
+  const tenantTime = useTenantTime();
   const [params] = useSearchParams();
   const [detail, setDetail] = useState<RmaDetail | null>(null);
   const [activeLineId, setActiveLineId] = useState<string | null>(null);
@@ -23,7 +24,7 @@ export function Component() {
   const [grades, setGrades] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [locationId, setLocationId] = useState<string | null>(null);
-  const [receivedAt, setReceivedAt] = useState(toLocalInput(new Date()));
+  const [receivedAt, setReceivedAt] = useState(() => tenantTime.localInput(new Date().toISOString()));
   const [today, setToday] = useState<RmaListRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -32,8 +33,9 @@ export function Component() {
     setDetail(next); setActiveLineId(next.lines.find((line) => !line.receiptOutcome)?.rmaLineId ?? next.lines[0]?.rmaLineId ?? null);
     setGrades(Object.fromEntries(next.lines.map((line) => [line.rmaLineId, line.conditionGrade ?? "defective"])));
   }, []);
-  const loadToday = useCallback((signal?: AbortSignal) => returnsApi.list({ stage: "received", minimumAgeDays: null, maximumAgeDays: null, q: "" }, null, 50, signal)
-    .then((page) => setToday(page.rows.filter((row) => isToday(row.receivedAt)))), []);
+  const loadToday = useCallback((signal?: AbortSignal) => returnsApi.list({ stage: "received", minimumAgeDays: null, maximumAgeDays: null, exceptionsOnly: false, q: "" }, null, 50, signal)
+    .then((page) => { const day = tenantTime.localInput(new Date().toISOString()).slice(0, 10); setToday(page.rows.filter((row) => tenantTime.localInput(row.receivedAt).slice(0, 10) === day)); }), [tenantTime]);
+  useEffect(() => { setReceivedAt(tenantTime.localInput(new Date().toISOString())); }, [tenantTime]);
   useEffect(() => {
     const controller = new AbortController(); const id = params.get("rmaId");
     if (id) void returnsApi.detail(id, controller.signal).then(applyDetail).catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
@@ -48,7 +50,7 @@ export function Component() {
     try {
       let current = detail;
       if (!current) {
-        const matches = await returnsApi.list({ stage: "", minimumAgeDays: null, maximumAgeDays: null, q: value }, null, 10);
+        const matches = await returnsApi.list({ stage: "", minimumAgeDays: null, maximumAgeDays: null, exceptionsOnly: false, q: value }, null, 10);
         const candidate = matches.rows.find((row) => ["authorised", "in_transit"].includes(row.stage)) ?? matches.rows[0];
         if (!candidate) throw new Error("No return matches this RMA or unit label.");
         current = await returnsApi.detail(candidate.rmaId); applyDetail(current);
@@ -75,7 +77,7 @@ export function Component() {
     setBusy(true); setError(null);
     try {
       await returnsApi.receive(detail.rmaId, {
-        receivingLocationId: locationId, dispatchedAt: null, receivedAt: new Date(receivedAt).toISOString(),
+        receivingLocationId: locationId, dispatchedAt: null, receivedAt: tenantTime.fromLocalInput(receivedAt),
         lines: detail.lines.map((line) => ({ rmaLineId: line.rmaLineId, receivedIdentifier: unreadable.has(line.rmaLineId) ? null : { value: received[line.rmaLineId]!, issuerPartyRef: null, identifierType: null, erpSerialId: null }, conditionGrade: grades[line.rmaLineId] ?? "defective", valuationRule: valuationRuleForGrade(grades[line.rmaLineId] ?? "defective"), outcome: "accepted", exceptionNote: notes[line.rmaLineId]?.trim() || null })),
       });
       const next = await returnsApi.detail(detail.rmaId); applyDetail(next); setMessage(`${next.rmaNumber ?? "Return"} received into quarantine`); await loadToday();
@@ -110,9 +112,9 @@ export function Component() {
           <ErrorNote error={error} />
         </div>
         <div className="stack">
-          <section className="card"><div className="card-header"><h2>Will be recorded</h2><span className="meta">one transaction</span></div><table className="table dense"><tbody><tr><td className="primary">Rma.Received</td><td>authorised or in transit → received</td></tr><tr><td className="primary">Custody</td><td>current custody → quarantine</td></tr><tr><td className="primary">Unit.Graded{valuation.proposed ? " · proposed" : ""}</td><td>{humanise(activeGrade)} · {humanise(valuation.rule)}</td></tr><tr><td className="primary">Receipt outcome</td><td>{activeValue ? matched ? "accepted" : "mismatch" : unreadable.size ? "provisional identity" : "waiting for scan"}</td></tr></tbody></table><div className="card-footer"><span>Business time {receivedAt ? fmtDateTime(new Date(receivedAt).toISOString()) : "—"}</span></div></section>
+          <section className="card"><div className="card-header"><h2>Will be recorded</h2><span className="meta">one transaction</span></div><table className="table dense"><tbody><tr><td className="primary">Return received</td><td>authorised or in transit → received</td></tr><tr><td className="primary">Custody moved</td><td>current custody → quarantine</td></tr><tr><td className="primary">Condition graded{valuation.proposed ? " · proposed" : ""}</td><td>{humanise(activeGrade)} · {humanise(valuation.rule)}</td></tr><tr><td className="primary">Receipt outcome</td><td>{activeValue ? matched ? "accepted" : "mismatch" : unreadable.size ? "provisional identity" : "waiting for scan"}</td></tr></tbody></table><div className="card-footer"><span>Business time {receivedAt ? tenantTime.dateTime(tenantTime.fromLocalInput(receivedAt)) : "—"}</span></div></section>
           <section className="card"><div className="card-header"><h2>When the label cannot be read</h2></div><div className="card-body"><p className="muted">The unit is received under a provisional identity and stays in quarantine until it is matched. Nothing is guessed.</p></div></section>
-          <section className="card"><div className="card-header"><h2>Received today</h2><span className="meta">{today.length} returns</span></div><table className="table dense"><tbody>{today.length ? today.map((row) => <tr key={row.rmaId}><td>{row.receivedAt ? new Date(row.receivedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</td><td><Link className="serial" to={`/returns/${row.rmaId}`}>{row.primarySerial ?? row.rmaNumber ?? "Return"}</Link><span className="sub">{todayNames.item(row.primaryItemId)}</span></td><td><StatusBadge tone={receiptTone(row.receiptOutcome)}>{humanise(row.receiptOutcome)}</StatusBadge></td></tr>) : <tr><td className="muted" colSpan={3}>Nothing received today.</td></tr>}</tbody></table></section>
+          <section className="card"><div className="card-header"><h2>Received today</h2><span className="meta">{today.length} returns</span></div><table className="table dense"><tbody>{today.length ? today.map((row) => <tr key={row.rmaId}><td>{tenantTime.time(row.receivedAt)}</td><td><Link className="serial" to={`/returns/${row.rmaId}`}>{row.primarySerial ?? row.rmaNumber ?? "Return"}</Link><span className="sub">{todayNames.item(row.primaryItemId)}</span></td><td><StatusBadge tone={receiptTone(row.receiptOutcome)}>{humanise(row.receiptOutcome)}</StatusBadge></td></tr>) : <tr><td className="muted" colSpan={3}>Nothing received today.</td></tr>}</tbody></table></section>
         </div>
       </div>
     </main>
@@ -120,5 +122,4 @@ export function Component() {
   </>;
 }
 
-function toLocalInput(value: Date): string { const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000); return local.toISOString().slice(0, 16); }
 function gradeHelp(grade: string): string { if (grade === "new") return "sealed · never powered"; if (grade === "open_box") return "unused · packaging opened"; if (grade === "used") return "working · signs of use"; if (grade === "defective") return "fault confirmed or reported"; if (grade === "scrap") return "physically damaged beyond repair"; return "controlled condition grade"; }

@@ -1,6 +1,7 @@
 namespace Yojana.Serialisation.Contracts;
 
-public sealed record RmaListFilter(string? Stage, int? MinimumAgeDays, int? MaximumAgeDays, string? Find);
+public sealed record RmaListFilter(string? Stage, int? MinimumAgeDays, int? MaximumAgeDays, string? Find,
+    bool ExceptionsOnly = false);
 
 public sealed record RmaListRow(Guid RmaId, string? RmaNumber, string Stage, DateOnly RequestDate, DateTime UpdatedAt,
     int AgeDays, Guid ReturningPartyRef, int LineCount, int ExceptionCount, Guid? PrimaryUnitId, string? PrimarySerial,

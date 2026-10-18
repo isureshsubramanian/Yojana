@@ -41,6 +41,30 @@ public sealed class CertificateTests
     }
 
     [Fact]
+    public void Battery_passport_has_optional_battery_fields_and_no_authoring_note()
+    {
+        var starterType = typeof(CertificateHtmlComposer).Assembly.GetType(
+            "Yojana.Serialisation.Certificates.CertificateStarterLayouts", throwOnError: true)!;
+        var definitions = ((IEnumerable)starterType.GetField("All", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!
+            .GetValue(null)!).Cast<object>();
+        var battery = definitions.Single(definition => (string)definition.GetType().GetProperty("Form")!.GetValue(definition)!
+            == CertificateFormType.BatteryPassport);
+        var body = (string)battery.GetType().GetProperty("Body")!.GetValue(battery)!;
+
+        Assert.Contains("{{#if battery}}", body, StringComparison.Ordinal);
+        Assert.Contains("battery.state_of_health_percent", body, StringComparison.Ordinal);
+        Assert.Contains("{{#if battery}}<h2>Battery details</h2>", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("No battery-specific data was recorded", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("A predecessor is shown only when", body, StringComparison.Ordinal);
+
+        var catalogue = FieldCatalogue.For<ReleaseRecordPayload>().Select(row => row.Path).ToList();
+        Assert.Contains("battery.carbon_footprint_kg_co2e", catalogue);
+        var condition = new CertificateTemplateValidator(TemplateEngine()).Validate(
+            CertificateDocumentKind.ReleaseRecord, catalogue, "{{#if battery}}{{battery.chemistry}}{{/if}}", null, null, []);
+        Assert.True(condition.Valid, string.Join("; ", condition.Errors));
+    }
+
+    [Fact]
     public void Canonical_json_has_the_same_text_and_hash_for_different_property_order()
     {
         var first = CanonicalJson.Canonicalise("""{"z":3,"nested":{"b":2,"a":1},"a":"same"}""");

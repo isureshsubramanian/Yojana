@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ActionDialog, DataGrid, FindBar, KpiStrip, StatusBadge, type GridColumn } from "../components";
+import { useTenantTime, type TenantTimeFormatter } from "../components/tenantTime";
 import type { Kpi, PageResult, Tone } from "../components/types";
 import { usePeople } from "../people/people";
 import { useSession } from "../session/session";
@@ -10,7 +11,7 @@ import { openDrawer } from "../shell/drawerStore";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { labelsApi } from "./api";
 import { humanise } from "./editorModel";
-import { dayBounds, defaultPrintJobDays, printJobRejectionSummary, summaryKpis } from "./printJobModel";
+import { printJobRejectionSummary, summaryKpis } from "./printJobModel";
 import type { LabelBatchPrintOutcome, LabelPolicy, LabelPrintJob, LabelTemplateCatalogueRow } from "./types";
 import "./labels.css";
 
@@ -18,6 +19,7 @@ const PAGE_SIZE = 50;
 const PRINT_ROLES = new Set(["label_administrator", "technician", "inventory_controller", "service_desk", "service_supervisor", "service_manager", "production_supervisor", "warehouse_lead", "shipping_supervisor"]);
 
 export function Component() {
+  const tenantTime = useTenantTime();
   const session = useSession();
   const canPrint = session.roles.some((role) => PRINT_ROLES.has(role));
   const administrator = session.roles.includes("tenant_administrator");
@@ -29,8 +31,8 @@ export function Component() {
   const [status, setStatus] = useState<"all" | "rejected" | "waiting" | "reprints">("all");
   const [printer, setPrinter] = useState("");
   const [printers, setPrinters] = useState<string[]>([]);
-  const [fromDay, setFromDay] = useState(() => defaultPrintJobDays().fromDay);
-  const [throughDay, setThroughDay] = useState(() => defaultPrintJobDays().throughDay);
+  const [fromDay, setFromDay] = useState(() => tenantPrintJobDays(tenantTime).fromDay);
+  const [throughDay, setThroughDay] = useState(() => tenantPrintJobDays(tenantTime).throughDay);
   const [active, setActive] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -39,7 +41,8 @@ export function Component() {
   const [templates, setTemplates] = useState<LabelTemplateCatalogueRow[]>([]);
   const [kpis, setKpis] = useState<Kpi[]>(initialKpis());
   const people = usePeople(jobs.map((job) => job.requestedBy));
-  const range = useMemo(() => dayBounds(fromDay, throughDay), [fromDay, throughDay]);
+  const range = useMemo(() => tenantTime.dayBounds(fromDay, throughDay), [fromDay, tenantTime, throughDay]);
+  useEffect(() => { const days = tenantPrintJobDays(tenantTime); setFromDay(days.fromDay); setThroughDay(days.throughDay); }, [tenantTime.zone]);
 
   const load = async (signal?: AbortSignal) => {
     setLoading(true); setError(null);
@@ -106,6 +109,7 @@ export function Component() {
 }
 
 function JobDrawer({ job, canPrint, onOpenUnit, onReprinted }: { job: LabelPrintJob; canPrint: boolean; onOpenUnit: () => void; onReprinted: () => Promise<void> }) {
+  const tenantTime = useTenantTime();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const person = usePeople([job.requestedBy]);
@@ -115,8 +119,8 @@ function JobDrawer({ job, canPrint, onOpenUnit, onReprinted }: { job: LabelPrint
     catch (reason) { setError(reason); } finally { setBusy(false); }
   };
   return <>
-    {job.rejectionReason && <Section title="Rejection"><div className="note bad"><strong>Rejected · nothing sent.</strong>&nbsp;{job.rejectionReason}</div></Section>}
-    <Section title="Job"><Kv rows={[["Job number", job.jobNumber], ["Serial", job.serial], ["Template", job.templateName ? `${job.templateName} v${job.templateVersion ?? "—"}` : "No applicable template"], ["Requested", `${person(job.requestedBy)} · ${fmt(job.requestedAt)}`], ["Printer", job.printerRef], ["Payload hash", job.payloadHash ? <code className="label-hash">{job.payloadHash}</code> : "none · not rendered"], ["Status", humanise(job.originalJobId ? "reprinted" : job.status)]]} /></Section>
+    {job.rejectionReason && <Section title="Rejection"><div className="note bad"><strong>Rejected · nothing sent.</strong>&nbsp;{printJobRejectionSummary(job.emptyRequiredField, job.rejectionReason)}</div></Section>}
+    <Section title="Job"><Kv rows={[["Job number", job.jobNumber], ["Serial", job.serial], ["Template", job.templateName ? `${job.templateName} v${job.templateVersion ?? "—"}` : "No applicable template"], ["Requested", `${person(job.requestedBy)} · ${tenantTime.dateTime(job.requestedAt)}`], ["Printer", job.printerRef], ["Payload hash", job.payloadHash ? <code className="label-hash">{job.payloadHash}</code> : "none · not rendered"], ["Status", humanise(job.originalJobId ? "reprinted" : job.status)]]} /></Section>
     {job.renderedPayload && <Section title="Stored payload"><pre className="code label-drawer-payload">{job.renderedPayload}</pre></Section>}
     <Section title="Actions"><div className="act">{job.unitId && <button type="button" className="btn block" onClick={onOpenUnit}>Open unit</button>}{canPrint && <button type="button" className="btn primary block" disabled={busy || !job.renderedPayload} onClick={() => void reprint()}>{busy ? "Reprinting…" : "Reprint stored payload"}</button>}</div><ErrorNote error={error} /></Section>
   </>;
@@ -152,5 +156,9 @@ function BatchOutcomes({ outcomes }: { outcomes: LabelBatchPrintOutcome[] }) {
 
 function initialKpis(): Kpi[] { return ["Printed", "Waiting", "Rejected", "Reprints", "From events"].map((label) => ({ label, value: "…", detail: "Loading" })); }
 function statusTone(status: string): Tone { return status === "confirmed" ? "ok" : status === "rejected" ? "bad" : status === "sent" || status === "rendered" ? "warn" : "info"; }
-function fmt(value: string): string { return new Date(value).toLocaleString(); }
 function aborted(reason: unknown): boolean { return reason instanceof DOMException && reason.name === "AbortError"; }
+function tenantPrintJobDays(time: TenantTimeFormatter): { fromDay: string; throughDay: string } {
+  const throughDay = time.localInput(new Date().toISOString()).slice(0, 10);
+  const from = new Date(`${throughDay}T00:00:00Z`); from.setUTCDate(from.getUTCDate() - 29);
+  return { fromDay: from.toISOString().slice(0, 10), throughDay };
+}

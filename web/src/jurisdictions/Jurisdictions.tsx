@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ApiError } from "../api/client";
 import { DataGrid, type GridColumn } from "../components/DataGrid";
 import { PresenceAdvisory, PresenceChips, useDocumentPresence } from "../components/Presence";
 import { StatusBadge } from "../components/StatusBadge";
@@ -10,7 +9,7 @@ import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { openDrawer } from "../shell/drawerStore";
-import { Kv } from "../units/common";
+import { ErrorNote, Kv } from "../units/common";
 import { jurisdictionApi } from "./api";
 import { buildWhatAppliesRequest, displayRuleValue, effectiveRangeLabel, formatRuleValue, pageRules, parseRuleValue, ruleKindLabel, scopeDetails, starterName } from "./model";
 import type { Catalogue, JurisdictionRule, PackPreview, RuleContext, RuleResolution } from "./types";
@@ -65,8 +64,7 @@ export function Component() {
   const openRule = (rule: JurisdictionRule) => {
     setActive(rule.ruleId);
     openDrawer({ eyebrow: `${ruleKindLabel(rule.kind)} · version ${rule.version}`, title: scope(rule).short }, <>
-      <Kv rows={[["Scope", <span title={scope(rule).full}>{scope(rule).short}</span>], ["Value", formatted(rule.kind, rule.value)], ["Buyer", humanise(rule.buyerClass)], ["Date tested", humanise(rule.dateTested)], ["Effective", effectiveRangeLabel(rule.effectiveFrom, rule.effectiveTo)], ["Created by", actor(rule.createdBy)], ["Approved by", actor(rule.approvedBy)]]} />
-      {rule.sourceCitation && <p className="help">Source: {rule.sourceCitation}</p>}
+      <Kv rows={[["Scope", <span title={scope(rule).full}>{scope(rule).short}</span>], ["Value", formatted(rule.kind, rule.value)], ["Buyer", humanise(rule.buyerClass)], ["Date tested", humanise(rule.dateTested)], ["Effective", effectiveRangeLabel(rule.effectiveFrom, rule.effectiveTo)], ["Created by", actor(rule.createdBy)], ["Approved by", actor(rule.approvedBy)], ["Source", rule.sourceCitation ?? "—"]]} />
       {canWrite && rule.current && <div className="act"><button type="button" className="btn primary block" onClick={() => edit(rule)}>Edit as new version…</button></div>}
     </>);
   };
@@ -128,5 +126,4 @@ function humanise(value: string): string {
 }
 function numberOrNull(value: string): number | null { return value.trim() === "" ? null : Number(value); }
 function languageOf(value: unknown): string { return typeof value === "object" && value !== null && "language" in value ? String((value as { language: unknown }).language) : "en"; }
-function ErrorNote({ error }: { error: unknown }) { if (!error) return null; const rule = error instanceof ApiError ? error.rule : null; return <div className="form-error" role="alert">{rule && <strong>{humanise(rule)} · </strong>}{error instanceof Error ? error.message : String(error)}</div>; }
 

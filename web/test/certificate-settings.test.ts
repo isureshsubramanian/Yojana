@@ -20,3 +20,8 @@ test("certificate time setting presents both clock choices", () => {
     { value: "h:mm tt", label: "12-hour" },
   ]);
 });
+
+test("certificate date samples use the tenant time zone", () => {
+  const sample = certificateDateTimeExample("en", "d MMM yyyy", "HH:mm", "Asia/Kolkata");
+  assert.equal(sample, "18 Oct 2026, 19:15 IST");
+});

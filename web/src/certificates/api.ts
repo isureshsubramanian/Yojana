@@ -27,9 +27,17 @@ export const certificateApi = {
     const body = new FormData(); body.append("commandId", crypto.randomUUID()); body.append("file", file); if (legalEntityId) body.append("legalEntityId", legalEntityId);
     const response = await fetch("/api/tenant-assets/", { method: "POST", credentials: "same-origin", body });
     if (!response.ok) {
-      let detail = response.statusText || `HTTP ${response.status}`;
-      try { const problem = await response.json() as { detail?: string; title?: string }; detail = problem.detail ?? problem.title ?? detail; } catch { /* response was not JSON */ }
-      throw new ApiError(response.status, detail);
+      const fallback = `Something went wrong (HTTP ${response.status})`;
+      try {
+        const problem = await response.json() as { detail?: string; title?: string; rule?: string };
+        const title = typeof problem.title === "string" ? problem.title : null;
+        const detail = typeof problem.detail === "string" ? problem.detail : null;
+        const rule = typeof problem.rule === "string" ? problem.rule : null;
+        throw new ApiError(response.status, detail ?? title ?? rule ?? fallback, title, detail, rule);
+      } catch (reason) {
+        if (reason instanceof ApiError) throw reason;
+        throw new ApiError(response.status, fallback);
+      }
     }
     return await response.json() as TenantAsset;
   },

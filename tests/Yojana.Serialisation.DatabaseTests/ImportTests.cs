@@ -67,7 +67,8 @@ public sealed class ImportTests(SerialisationHostFixture fixture)
         Assert.Equal(1, job.Applied);
         Assert.NotNull(job.OriginalArchiveReference);
         Assert.Null(job.ConvertedHash);
-        Assert.Contains(fixture.Services.GetServices<ISpreadsheetReader>(), reader => reader.CanRead(ImportFormat.Xls));
+        using var scope = fixture.ScopeFor(tenant);
+        Assert.Contains(scope.ServiceProvider.GetServices<ISpreadsheetReader>(), reader => reader.CanRead(ImportFormat.Xls));
     }
 
     [DatabaseFact]

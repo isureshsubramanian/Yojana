@@ -58,7 +58,7 @@ internal static class CertificateStarterLayouts
         new("builtin-easa-form-1-style", "EASA Form 1-style release block", CertificateDocumentKind.ReleaseRecord,
             CertificateFormType.EasaForm1Style, 3, Airworthiness("EASA Form 1-style release block"), Footer: Footer),
         new("builtin-battery-passport", "Battery passport", CertificateDocumentKind.ReleaseRecord,
-            CertificateFormType.BatteryPassport, 3, Battery(), Footer: Footer),
+            CertificateFormType.BatteryPassport, 4, Battery(), Footer: Footer),
         new("builtin-warranty", "Warranty certificate", CertificateDocumentKind.WarrantyCertificate,
             CertificateFormType.WarrantyCertificate, 5, Warranty(), Footer: Footer),
     ];
@@ -71,9 +71,10 @@ internal static class CertificateStarterLayouts
         + "<tr><td colspan=\"2\"><span class=\"box-number\">13. Remarks, tests and release basis</span>" + Tests + "</td></tr></tbody></table>" + Integrity + "</article>";
 
     private static string Battery() => CertificateDocumentStyle.StyleTag + "<article class=\"certificate-sheet\">" + Meta
-        + "<h1>Battery passport</h1><p class=\"fine\">A predecessor is shown only when the signed identity lineage carries one.</p>"
+        + "<h1>Battery passport</h1>"
         + Identity + "<h2>Linked predecessor passport</h2><table><thead><tr><th>Current identifier</th><th>Predecessor</th></tr></thead><tbody>"
         + "{{#each identifiers}}<tr><td>{{label type}}<div class=\"numeric\">{{value}}</div></td><td>{{#if replaces}}<span class=\"numeric\">{{replaces}}</span>{{else}}<span class=\"quiet\">No linked predecessor passport recorded</span>{{/if}}</td></tr>{{else}}<tr><td colspan=\"2\" class=\"quiet\">No identifier lineage recorded</td></tr>{{/each}}</tbody></table>"
+        + "{{#if battery}}<h2>Battery details</h2><table><tbody><tr><td class=\"key\">Chemistry</td><td>{{#if battery.chemistry}}{{battery.chemistry}}{{else}}Not recorded{{/if}}</td></tr><tr><td class=\"key\">Rated capacity</td><td>{{#if battery.rated_capacity_kwh}}{{battery.rated_capacity_kwh}} kWh{{else}}Not recorded{{/if}}</td></tr><tr><td class=\"key\">State of health</td><td>{{#if battery.state_of_health_percent}}{{battery.state_of_health_percent}}%{{else}}Not recorded{{/if}}</td></tr><tr><td class=\"key\">Carbon footprint</td><td>{{#if battery.carbon_footprint_kg_co2e}}{{battery.carbon_footprint_kg_co2e}} kg CO2e{{else}}Not recorded{{/if}}</td></tr><tr><td class=\"key\">Manufactured</td><td>{{#if battery.manufactured_at}}{{battery.manufactured_at}}{{else}}Not recorded{{/if}}</td></tr><tr><td class=\"key\">Responsible operator</td><td>{{#if battery.responsible_operator}}{{battery.responsible_operator}}{{else}}Not recorded{{/if}}</td></tr></tbody></table>{{/if}}"
         + AsBuilt + Tests + Integrity + "</article>";
 
     private static string Warranty() => CertificateDocumentStyle.StyleTag + "<article class=\"certificate-sheet\">" + Meta

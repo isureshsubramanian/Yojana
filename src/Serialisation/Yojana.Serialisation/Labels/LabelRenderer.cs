@@ -44,6 +44,10 @@ public sealed class LabelRenderer(SerialisationDbContext db, ITenantContext tena
 
         var build = await db.BuildRecords.AsNoTracking().Where(row => row.TenantId == tenantId && row.UnitId == unitId && row.ReleasedAt <= at)
             .OrderByDescending(row => row.Version).FirstOrDefaultAsync(cancellationToken);
+        var recordedItemRevision = await db.AttributeHistory.AsNoTracking()
+            .Where(row => row.TenantId == tenantId && row.UnitId == unitId && row.Key == "item.revision" && row.EffectiveFrom <= at)
+            .OrderByDescending(row => row.EffectiveFrom).ThenByDescending(row => row.AttributeHistoryId)
+            .Select(row => row.Value).FirstOrDefaultAsync(cancellationToken);
         var itemLabels = await itemNames.NamesAsync([assignment.ItemId], cancellationToken);
         itemLabels.TryGetValue(assignment.ItemId, out var itemLabel);
         var baseEnd = await db.Entitlements.AsNoTracking()
@@ -66,7 +70,7 @@ public sealed class LabelRenderer(SerialisationDbContext db, ITenantContext tena
             [LabelBindableField.UnitExpiryDate] = Date(unit.ExpiryDate),
             [LabelBindableField.ItemCode] = itemLabel?.Code,
             [LabelBindableField.ItemName] = itemLabel?.Name,
-            [LabelBindableField.ItemRevision] = build?.Revision,
+            [LabelBindableField.ItemRevision] = build?.Revision ?? recordedItemRevision,
             [LabelBindableField.IdentifierValue] = selectedIdentifier?.RawValue,
             [LabelBindableField.ManufacturerSerial] = Identifier(IdentifierType.ManufacturerSerial),
             [LabelBindableField.InternalSerial] = Identifier(IdentifierType.InternalSerial),

@@ -123,7 +123,7 @@ public sealed class LabelQueries(SerialisationDbContext db, ITenantContext tenan
             .GroupBy(_ => 1)
             .Select(group => new
             {
-                Printed = group.Count(),
+                Printed = group.Count(row => row.Status != LabelPrintStatus.Rejected),
                 Confirmed = group.Count(row => row.Status == LabelPrintStatus.Confirmed),
                 Waiting = group.Count(row => row.Status == LabelPrintStatus.Rendered || row.Status == LabelPrintStatus.Sent),
                 Rejected = group.Count(row => row.Status == LabelPrintStatus.Rejected),

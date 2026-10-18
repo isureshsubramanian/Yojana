@@ -4,7 +4,7 @@ export interface Page<T> { items: T[]; total: number; skip: number; take: number
 
 export interface CertificateListRow {
   certificateId: string; unitId: string; itemId: string | null; primarySerial: string; documentKind: string; formType: string;
-  version: number; trackingNumber: string; status: string; issuedAt: string; issuedAtDisplay: string; provenance: string;
+  version: number; trackingNumber: string; status: string; issuedAt: string; issuedAtDisplay: string; provenance: string; issuedBy: string | null;
 }
 export interface CertificateSignature {
   signatureId: string; printedName: string; meaning: string; signedAt: string; signedAtDisplay: string; hashSigned: string; method: string;

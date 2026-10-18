@@ -22,12 +22,12 @@ public sealed class TenantSettings(PlatformDbContext db, ITenantContext tenant, 
         var row = await db.TenantSettings.FirstOrDefaultAsync(s => s.TenantId == tenantId && s.Key == key, cancellationToken);
         if (row is null)
         {
-            db.TenantSettings.Add(new TenantSetting { TenantId = tenantId, Key = key, Value = value, UpdatedAt = clock.UtcNow });
+            db.TenantSettings.Add(new TenantSetting { TenantId = tenantId, Key = key, Value = value, UpdatedAt = StoredTime(clock.UtcNow) });
         }
         else
         {
             row.Value = value;
-            row.UpdatedAt = clock.UtcNow;
+            row.UpdatedAt = NextStoredTime(clock.UtcNow, row.UpdatedAt);
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -51,7 +51,7 @@ public sealed class TenantSettings(PlatformDbContext db, ITenantContext tenant, 
         if (!string.Equals(currentVersion, expectedVersion, StringComparison.Ordinal))
             throw new TenantSettingVersionConflictException(key, expectedVersion, currentVersion);
 
-        var updatedAt = clock.UtcNow;
+        var updatedAt = StoredTime(clock.UtcNow);
         if (row is null)
         {
             row = new TenantSetting { TenantId = tenantId, Key = key, Value = value, UpdatedAt = updatedAt };
@@ -70,7 +70,7 @@ public sealed class TenantSettings(PlatformDbContext db, ITenantContext tenant, 
         }
         else
         {
-            if (updatedAt <= row.UpdatedAt) updatedAt = row.UpdatedAt.AddTicks(1);
+            updatedAt = NextStoredTime(updatedAt, row.UpdatedAt);
             var changed = await db.TenantSettings.Where(s => s.TenantId == tenantId && s.Key == key
                     && s.UpdatedAt == row.UpdatedAt)
                 .ExecuteUpdateAsync(setters => setters.SetProperty(s => s.Value, value)
@@ -101,4 +101,15 @@ public sealed class TenantSettings(PlatformDbContext db, ITenantContext tenant, 
     }
 
     private static string Version(DateTime updatedAt) => updatedAt.Ticks.ToString(CultureInfo.InvariantCulture);
+
+    // tenant_setting.updated_at is datetime2(3). Version tokens must be made from the exact value SQL Server stores,
+    // otherwise the successful response returns sub-millisecond ticks which cannot match the next API save.
+    private static DateTime StoredTime(DateTime value) =>
+        new(value.Ticks - value.Ticks % TimeSpan.TicksPerMillisecond, value.Kind);
+
+    private static DateTime NextStoredTime(DateTime candidate, DateTime current)
+    {
+        var stored = StoredTime(candidate);
+        return stored <= current ? current.AddMilliseconds(1) : stored;
+    }
 }

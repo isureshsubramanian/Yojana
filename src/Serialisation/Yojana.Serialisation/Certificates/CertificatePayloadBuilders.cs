@@ -84,7 +84,7 @@ public sealed class ReleaseRecordPayloadBuilder(
             unit.Build?.ReleasedAt ?? unit.CommissionedAt, facility, lots, assembly, required, condition.Tests, condition.Grade,
             refurbishment.CycleNumber, condition.SanitisationReference, condition.Firmware,
             refurbishment.WorkReference, refurbisher, refurbishment.LifeEpisode, presentation.Issuer,
-            presentation.Branding, presentation.Snapshot, provenance);
+            presentation.Branding, presentation.Snapshot, provenance, condition.Battery);
     }
 
     private static int IdentifierPriority(string type) => type switch

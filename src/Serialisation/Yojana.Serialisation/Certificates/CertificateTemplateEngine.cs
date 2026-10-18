@@ -134,7 +134,10 @@ public sealed class CertificateTemplateValidator(CertificateTemplateEngine engin
             .Where(value => value is not null)!));
         var used = analysis.Fields;
         var all = used.Concat(declaredFields).Distinct(StringComparer.Ordinal).ToList();
-        var unknown = all.Where(path => !allowed.Contains(path)).Order().ToList();
+        // Object-valued paths are valid condition targets when the fixed catalogue contains one of their leaves.
+        // They are deliberately not added as insertable fields, because rendering an object as text is meaningless.
+        var unknown = all.Where(path => !allowed.Contains(path)
+            && !allowed.Any(candidate => candidate.StartsWith(path + ".", StringComparison.Ordinal))).Order().ToList();
         var party = documentKind == CertificateDocumentKind.ReleaseRecord
             ? all.Where(IsPartyPath).Order().ToList() : [];
         var unused = declaredFields.Where(path => !used.Contains(path, StringComparer.Ordinal)).Distinct().Order().ToList();
