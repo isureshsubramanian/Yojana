@@ -823,7 +823,7 @@ public static class SerialisationEndpoints
                 await writer.FlushAsync(ct);
             }, "text/csv; charset=utf-8", $"campaign-{campaignId:N}-recipients.csv"));
 
-        // P6 certificate read surface. Issuance and reprints by selection set remain P6-T08 and are deliberately absent.
+        // P6 certificate read and selection issue/reprint surface.
         var certificates = app.MapGroup("/api/certificates").RequireAuthorization(YojanaPolicy.TenantMember);
         certificates.MapGet("/", async (string? kind, string? formType, string? status, string? unitSerial,
             DateTime? issuedFrom, DateTime? issuedTo, int? skip, int? take, CertificateQueries queries, CancellationToken ct) =>
@@ -833,6 +833,15 @@ public static class SerialisationEndpoints
             await queries.DetailAsync(certificateId, ct) is { } certificate ? Results.Ok(certificate) : Results.NotFound());
         certificates.MapGet("/units/{unitId:guid}/versions", async (Guid unitId, CertificateQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.ChainAsync(unitId, ct)));
+        // P6-T08 selection issue/reprint. Identity is always stamped from claims; one HTTP command handles the whole set.
+        certificates.MapPost("/selection/preview", async (CertificateSelectionPreviewRequest request,
+            CertificateSelectionService service, CancellationToken ct) => TemplateInvoke(() => service.PreviewAsync(request, ct)));
+        certificates.MapPost("/selection/issue", (IssueCertificate command, ClaimsPrincipal user, IMessageBus bus,
+            ITenantContext tenant, CancellationToken ct) => Invoke<CertificateRunResult>(bus, tenant,
+                command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.CertificateIssuer);
+        certificates.MapPost("/selection/reprint", (ReprintCertificate command, ClaimsPrincipal user, IMessageBus bus,
+            ITenantContext tenant, CancellationToken ct) => Invoke<CertificateRunResult>(bus, tenant,
+                command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.CertificateIssuer);
         // End P6 certificate read surface.
 
         // P6 tenant-owned certificate layouts. Layout placeholders are validated only against immutable payload fields;

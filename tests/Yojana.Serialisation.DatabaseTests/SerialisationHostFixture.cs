@@ -8,6 +8,7 @@ using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Tenancy;
 using Yojana.Serialisation;
+using Yojana.Serialisation.Certificates;
 
 namespace Yojana.Serialisation.DatabaseTests;
 
@@ -35,9 +36,12 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         builder.Configuration["Platform:MigrateOnStartup"] = "true";
         builder.Configuration["Platform:AutoBuildMessageStorage"] = "true";
         builder.Configuration["Platform:ServiceName"] = "yojana-serialisation-tests";
+        builder.Configuration[$"{CertificateRunOptions.SectionName}:MaximumSynchronousUnits"] = "120";
         PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);
         PlatformSetup.IncludeHandlers(typeof(SerialisationHostFixture).Assembly); // the published-event sink
         builder.AddYojanaPlatform();
+        builder.Services.AddSingleton<TestCertificateRunChunkObserver>();
+        builder.Services.AddSingleton<ICertificateRunChunkObserver>(sp => sp.GetRequiredService<TestCertificateRunChunkObserver>());
         builder.AddSerialisationModule();
         Host = builder.Build();
         await Host.StartAsync();

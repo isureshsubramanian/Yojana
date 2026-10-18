@@ -147,6 +147,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<CertificateTrigger> CertificateTriggers => Set<CertificateTrigger>();
     public DbSet<CertificateSignature> CertificateSignatures => Set<CertificateSignature>();
     public DbSet<ReprintLog> ReprintLogs => Set<ReprintLog>();
+    public DbSet<CertificateRun> CertificateRuns => Set<CertificateRun>();
+    public DbSet<CertificateRunUnit> CertificateRunUnits => Set<CertificateRunUnit>();
     public DbSet<CertificateTemplate> CertificateTemplates => Set<CertificateTemplate>();
     public DbSet<CertificateTemplateVersion> CertificateTemplateVersions => Set<CertificateTemplateVersion>();
     // End P6 certificate block.
@@ -1443,6 +1445,35 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(row => row.RequestedBy).HasMaxLength(200);
             b.HasOne<CertificateInstance>().WithMany().HasForeignKey(row => new { row.TenantId, row.CertificateId }).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(row => new { row.TenantId, row.CertificateId, row.At });
+        });
+
+        modelBuilder.Entity<CertificateRun>(b =>
+        {
+            b.ToTable("certificate_run");
+            b.HasKey(row => new { row.TenantId, row.CommandId });
+            b.Property(row => row.RequestHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.CreatedBy).HasMaxLength(200);
+            b.HasOne<SelectionSet>().WithMany().HasForeignKey(row => new { row.TenantId, row.SelectionId }).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(row => new { row.TenantId, row.SelectionId, row.CreatedAt });
+        });
+
+        modelBuilder.Entity<CertificateRunUnit>(b =>
+        {
+            b.ToTable("certificate_run_unit", t => t.HasCheckConstraint("ck_certificate_run_unit_outcome",
+                "outcome IN ('issued', 'copied', 'skipped', 'failed')"));
+            b.HasKey(row => new { row.TenantId, row.CommandId, row.UnitId });
+            b.Property(row => row.Serial).HasMaxLength(200);
+            b.Property(row => row.ItemCode).HasMaxLength(100);
+            b.Property(row => row.ItemName).HasMaxLength(200);
+            b.Property(row => row.Revision).HasMaxLength(100);
+            b.Property(row => row.TrackingNumber).HasMaxLength(50).IsUnicode(false);
+            b.Property(row => row.Outcome).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.Rule).HasMaxLength(100).IsUnicode(false);
+            b.Property(row => row.Detail).HasMaxLength(500);
+            b.Property(row => row.UnblockingStep).HasMaxLength(500);
+            b.HasOne<CertificateRun>().WithMany().HasForeignKey(row => new { row.TenantId, row.CommandId }).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<CertificateInstance>().WithMany().HasForeignKey(row => new { row.TenantId, row.CertificateId }).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(row => new { row.TenantId, row.CommandId, row.Outcome });
         });
 
         modelBuilder.Entity<CertificateTemplate>(b =>

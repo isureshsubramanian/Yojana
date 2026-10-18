@@ -1,0 +1,11 @@
+.certificate-selection-grid { display: grid; grid-template-columns: 180px minmax(260px, 1fr) 230px minmax(220px, .8fr) 140px; gap: 12px; align-items: end; }
+.certificate-not-issuable { list-style: none; margin: 0; padding: 0; }
+.certificate-not-issuable li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.certificate-not-issuable li:last-child { border-bottom: 0; }
+.certificate-not-issuable .s { display: block; margin-top: 2px; color: var(--text-3); font-size: 12px; }
+.certificate-output-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.certificate-output-options label { display: flex; gap: 9px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface-2); }
+.certificate-output-options label.on { border-color: var(--accent); background: var(--accent-soft); }
+.certificate-output-options .s { display: block; margin-top: 3px; color: var(--text-3); font-size: 12px; }
+@media (max-width: 1180px) { .certificate-selection-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 720px) { .certificate-selection-grid, .certificate-output-options { grid-template-columns: 1fr; } }

@@ -30,3 +30,17 @@ public sealed record CertificateSuperseded(
     public const string Schema = "Certificate.Superseded";
     public const string Version = "1.0";
 }
+
+public sealed record CertificateReprinted(
+    PublishedEventHeader Header,
+    Guid ReprintId,
+    Guid CertificateId,
+    int CertificateVersion,
+    string TrackingNumber,
+    string Reason,
+    bool Copy,
+    DateTime ReprintedAt) : IPublishedUnitEvent
+{
+    public const string Schema = "Certificate.Reprinted";
+    public const string Version = "1.0";
+}

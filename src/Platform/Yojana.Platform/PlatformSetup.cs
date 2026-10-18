@@ -109,6 +109,9 @@ public static class PlatformSetup
                     YojanaRole.ProductionSupervisor,
                     YojanaRole.WarehouseLead,
                     YojanaRole.ShippingSupervisor));
+            auth.AddPolicy(YojanaPolicy.CertificateIssuer, p => p.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId)
+                .RequireClaim(YojanaClaim.Role, YojanaRole.CertificateAdministrator, YojanaRole.Quality));
         });
 
         builder.Services.AddQuartz(q =>

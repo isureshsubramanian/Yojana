@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/certificate.reprinted.json",
+  "title": "Certificate.Reprinted",
+  "type": "object",
+  "required": ["header", "reprint_id", "certificate_id", "certificate_version", "tracking_number", "reason", "copy", "reprinted_at"],
+  "properties": {
+    "header": {
+      "type": "object",
+      "required": ["schema", "version", "event_id", "unit_id", "event_time", "recorded_time", "seq", "legal_entity_id", "actor_ref"],
+      "properties": {
+        "schema": { "const": "Certificate.Reprinted" },
+        "version": { "const": "1.0" },
+        "event_id": { "type": "string", "format": "uuid" },
+        "unit_id": { "type": "string", "format": "uuid" },
+        "event_time": { "type": "string", "format": "date-time" },
+        "recorded_time": { "type": "string", "format": "date-time" },
+        "seq": { "type": "integer" },
+        "legal_entity_id": { "type": "string", "format": "uuid" },
+        "actor_ref": { "type": "string" },
+        "document": { "type": ["object", "null"] }
+      }
+    },
+    "reprint_id": { "type": "string", "format": "uuid" },
+    "certificate_id": { "type": "string", "format": "uuid" },
+    "certificate_version": { "type": "integer", "minimum": 1 },
+    "tracking_number": { "type": "string", "pattern": "^CRT-[0-9]{4}-[0-9]{6}$" },
+    "reason": { "type": "string", "minLength": 1 },
+    "copy": { "const": true },
+    "reprinted_at": { "type": "string", "format": "date-time" }
+  }
+}

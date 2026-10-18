@@ -40,6 +40,11 @@ public sealed class AsBuiltCompleteness(SerialisationDbContext db, IBomQueryPort
 
     /// <summary>Completeness for a list of units (the "by serial or list" query). Units of one item share one BOM read.</summary>
     public async Task<IReadOnlyList<UnitCompleteness>> QueryAsync(IReadOnlyList<(Guid UnitId, Guid ItemId)> units, DateOnly effectiveAt, CancellationToken cancellationToken)
+        => await QueryAsync(units.Select(unit => (unit.UnitId, unit.ItemId, effectiveAt)).ToList(), cancellationToken);
+
+    /// <summary>Completeness for units whose governing BOM dates may differ, with one set-based read per dependency.</summary>
+    public async Task<IReadOnlyList<UnitCompleteness>> QueryAsync(
+        IReadOnlyList<(Guid UnitId, Guid ItemId, DateOnly EffectiveAt)> units, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var unitIds = units.Select(u => u.UnitId).ToList();
@@ -47,17 +52,15 @@ public sealed class AsBuiltCompleteness(SerialisationDbContext db, IBomQueryPort
         var childUnitIds = links.Where(l => l.ChildUnitId != null).Select(l => l.ChildUnitId!.Value).Distinct().ToList();
         var childItems = childUnitIds.Count == 0 ? new Dictionary<Guid, Guid>() : await db.ItemAssignments.AsNoTracking().Where(a => a.TenantId == tenantId && childUnitIds.Contains(a.UnitId) && a.ValidTo == null).ToDictionaryAsync(a => a.UnitId, a => a.ItemId, cancellationToken);
         var childSerials = childUnitIds.Count == 0 ? new Dictionary<Guid, string>() : await db.Identifiers.AsNoTracking().Where(i => i.TenantId == tenantId && childUnitIds.Contains(i.UnitId) && i.ValidTo == null && i.Type == IdentifierType.InternalSerial).ToDictionaryAsync(i => i.UnitId, i => i.NormalisedValue, cancellationToken);
-        var boms = new Dictionary<Guid, IReadOnlyList<ExpectedComponent>>();
-        var policies = new Dictionary<Guid, string>();
+        var itemIds = units.Select(unit => unit.ItemId).Distinct().ToList();
+        var profiles = await items.GetManyAsync(itemIds, cancellationToken);
+        var bomQueries = units.Select(unit => new ExpectedComponentQuery(unit.ItemId, unit.EffectiveAt)).Distinct().ToList();
+        var boms = await bom.ExpectedSerialisedComponentsAsync(bomQueries, cancellationToken);
         var result = new List<UnitCompleteness>(units.Count);
-        foreach (var (unitId, itemId) in units)
+        foreach (var (unitId, itemId, effectiveAt) in units)
         {
-            if (!boms.TryGetValue(itemId, out var expected))
-            {
-                expected = await bom.ExpectedSerialisedComponentsAsync(itemId, effectiveAt, cancellationToken);
-                boms[itemId] = expected;
-                policies[itemId] = (await items.GetAsync(itemId, cancellationToken))?.AsBuiltCompleteness ?? ItemSerialisationProfile.Completeness.Block;
-            }
+            var expected = boms.GetValueOrDefault(new ExpectedComponentQuery(itemId, effectiveAt)) ?? [];
+            var policy = profiles.GetValueOrDefault(itemId)?.AsBuiltCompleteness ?? ItemSerialisationProfile.Completeness.Block;
 
             var mine = links.Where(l => l.ParentUnitId == unitId).ToList();
             var used = new HashSet<Guid>();
@@ -76,7 +79,7 @@ public sealed class AsBuiltCompleteness(SerialisationDbContext db, IBomQueryPort
             // Serialised children outside every expected slot (slot-less or an unknown slot name) are reported, never silently accepted.
             var unexpected = mine.Where(l => l.ChildUnitId != null && !used.Contains(l.LinkId) && expected.Count > 0)
                 .Select(l => new CapturedChild(l.LinkId, l.ChildUnitId, childItems.TryGetValue(l.ChildUnitId!.Value, out var ci) ? ci : null, childSerials.TryGetValue(l.ChildUnitId!.Value, out var s) ? s : null)).ToList();
-            result.Add(new UnitCompleteness(unitId, itemId, slots, unexpected, policies[itemId]));
+            result.Add(new UnitCompleteness(unitId, itemId, slots, unexpected, policy));
         }
 
         return result;

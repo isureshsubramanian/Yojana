@@ -68,6 +68,48 @@ public sealed class ReprintLog : ITenantScoped
     public Guid? RecipientPartyRef { get; set; }
 }
 
+/// <summary>Root receipt for a resumable selection run. Unit progress commits independently in <see cref="CertificateRunUnit"/>.</summary>
+public sealed class CertificateRun : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid CommandId { get; set; }
+    public Guid SelectionId { get; set; }
+    public required string RequestHash { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public required string CreatedBy { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
+/// <summary>Durable per-unit progress: a retry skips committed units and resumes at the first unit without a row.</summary>
+public sealed class CertificateRunUnit : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid CommandId { get; set; }
+    public Guid UnitId { get; set; }
+    public string? Serial { get; set; }
+    public Guid? ItemId { get; set; }
+    public string? ItemCode { get; set; }
+    public string? ItemName { get; set; }
+    public string? Revision { get; set; }
+    public Guid? CertificateId { get; set; }
+    public int? CertificateVersion { get; set; }
+    public string? TrackingNumber { get; set; }
+    public required string Outcome { get; set; }
+    public string? Rule { get; set; }
+    public string? Detail { get; set; }
+    public string? UnblockingStep { get; set; }
+    public bool Copy { get; set; }
+    public DateTime ProcessedAt { get; set; }
+}
+
+public static class CertificateRunUnitOutcome
+{
+    public const string Issued = "issued";
+    public const string Copied = "copied";
+    public const string Skipped = "skipped";
+    public const string Failed = "failed";
+}
+
 public sealed class CertificateTemplate : ITenantScoped
 {
     public TenantId TenantId { get; set; }

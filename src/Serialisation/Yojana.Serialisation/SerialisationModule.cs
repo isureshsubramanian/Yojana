@@ -270,6 +270,13 @@ public static class SerialisationModule
         builder.Services.TryAddScoped<ICertificateEntitlementReadPort, Entitlements.CertificateEntitlementReadPort>();
         builder.Services.TryAddScoped<ICertificatePresentationPort, NeutralCertificatePresentationPort>();
         builder.Services.TryAddScoped<ICertificateRenderer, PlainHtmlCertificateRenderer>();
+        var certificateRuns = builder.Configuration.GetSection(CertificateRunOptions.SectionName).Get<CertificateRunOptions>()
+            ?? new CertificateRunOptions();
+        if (certificateRuns.MaximumSynchronousUnits < 1)
+            throw new InvalidOperationException($"{CertificateRunOptions.SectionName}:MaximumSynchronousUnits must be at least 1.");
+        builder.Services.AddSingleton(certificateRuns);
+        builder.Services.TryAddSingleton<ICertificateRunChunkObserver, NullCertificateRunChunkObserver>();
+        builder.Services.AddScoped<CertificateSelectionService>();
         builder.Services.AddScoped<ReleaseRecordPayloadBuilder>();
         builder.Services.AddScoped<WarrantyCertificatePayloadBuilder>();
         builder.Services.AddScoped<CertificatePayloadBuilder>();

@@ -20,7 +20,10 @@ public sealed partial class PlainHtmlCertificateRenderer(SerialisationDbContext 
         using var payload = JsonDocument.Parse(request.Payload);
         var html = EachPattern().Replace(template.LayoutBody, match => RenderEach(match, payload.RootElement));
         html = ValuePattern().Replace(html, match => Encode(Read(payload.RootElement, match.Groups[1].Value)));
-        var document = $"<!doctype html><html><body>{template.HeaderBody}{html}{template.FooterBody}</body></html>";
+        var copy = request.Copy ? "<div role=\"note\" style=\"font:700 18px sans-serif;letter-spacing:.12em\">COPY</div>" : "";
+        var signature = request.Signature is null ? "" : $"<footer><hr><strong>{Encode(request.Signature.PrintedName)}</strong><br>" +
+            $"{Encode(request.Signature.Meaning)} · {request.Signature.SignedAt:O}</footer>";
+        var document = $"<!doctype html><html><body>{copy}{template.HeaderBody}{html}{template.FooterBody}{signature}</body></html>";
         return new CertificateRenderResult(Encoding.UTF8.GetBytes(document), "text/html; charset=utf-8");
     }
 
@@ -42,6 +45,7 @@ public sealed partial class PlainHtmlCertificateRenderer(SerialisationDbContext 
     }
 
     private static string Encode(JsonElement? element) => WebUtility.HtmlEncode(element?.ToString() ?? "");
+    private static string Encode(string value) => WebUtility.HtmlEncode(value);
 
     [GeneratedRegex(@"\{\{#each\s+([a-zA-Z0-9_.]+)\s*\}\}([\s\S]*?)\{\{/each\}\}", RegexOptions.CultureInvariant)]
     private static partial Regex EachPattern();

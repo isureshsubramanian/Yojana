@@ -111,6 +111,11 @@ public sealed class ReferencePortTests
     private sealed class ItemFacts(ItemSerialisationProfile? profile) : IItemQueryPort
     {
         public Task<ItemSerialisationProfile?> GetAsync(Guid itemId, CancellationToken cancellationToken) => Task.FromResult(profile);
+
+        public Task<IReadOnlyDictionary<Guid, ItemSerialisationProfile?>> GetManyAsync(
+            IReadOnlyCollection<Guid> itemIds, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyDictionary<Guid, ItemSerialisationProfile?>>(itemIds.Distinct().ToDictionary(
+                itemId => itemId, _ => profile));
     }
 
     private sealed class RecordedDocuments(IReadOnlyList<DocumentRef> documents) : IRecordedDocumentReferenceQuery
