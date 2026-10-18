@@ -1,10 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
+using Wolverine;
 
 namespace Yojana.Serialisation.Commands;
 
@@ -48,7 +50,7 @@ public static class CustodyTransitions
 
 public static class OpenOwnershipHandler
 {
-    public static async Task<OpenOwnershipResult> Handle(OpenOwnership command, SerialisationDbContext db, IUnitEventWriter writer, EpisodeService episodes, ITenantContext tenant, CancellationToken cancellationToken)
+    public static async Task<OpenOwnershipResult> Handle(OpenOwnership command, SerialisationDbContext db, IUnitEventWriter writer, EpisodeService episodes, ITenantContext tenant, IMessageBus bus, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var unit = await db.Units.AsNoTracking().FirstOrDefaultAsync(u => u.TenantId == tenantId && u.UnitId == command.UnitId, cancellationToken)
@@ -68,7 +70,14 @@ public static class OpenOwnershipHandler
         var drafts = new List<UnitEventDraft>();
         if (prepared.CloseDraft is not null) drafts.Add(prepared.CloseDraft);
         drafts.Add(prepared.Draft);
-        await writer.AppendAsync(drafts, cancellationToken);
+        var appended = await writer.AppendAsync(drafts, cancellationToken);
+        if (command.PartyType == PartyType.Customer && command.Reason == EpisodeReason.Sale
+            && !await db.Episodes.AsNoTracking().AnyAsync(row => row.UnitId == unit.UnitId
+                && row.Kind == EpisodeKind.Custody && row.LocationKind == LocationKind.CustomerSite
+                && row.PartyType == PartyType.Customer && row.Reason == EpisodeReason.Sale, cancellationToken))
+            await CustomerSaleCertificateTrigger.QueueAsync(bus, tenantId,
+                appended.Written.Single(row => row.EventType is UnitEventType.OwnershipOpened
+                    or UnitEventType.OwnershipTransferred), OwnershipOpened.Schema);
         return new OpenOwnershipResult(unit.UnitId, prepared.Episode.EpisodeId, prepared.Closed?.EpisodeId);
     }
 }
@@ -94,7 +103,7 @@ public static class CloseOwnershipHandler
 
 public static class ChangeCustodyHandler
 {
-    public static async Task<ChangeCustodyResult> Handle(ChangeCustody command, SerialisationDbContext db, IUnitEventWriter writer, EpisodeService episodes, ITenantContext tenant, CancellationToken cancellationToken)
+    public static async Task<ChangeCustodyResult> Handle(ChangeCustody command, SerialisationDbContext db, IUnitEventWriter writer, EpisodeService episodes, ITenantContext tenant, IMessageBus bus, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var unit = await db.Units.AsNoTracking().FirstOrDefaultAsync(u => u.TenantId == tenantId && u.UnitId == command.UnitId, cancellationToken)
@@ -111,7 +120,27 @@ public static class ChangeCustodyHandler
         var prepared = await episodes.PrepareCustodyMoveAsync(unit.UnitId,
             new CustodyTarget(command.LocationKind, command.LocationId, command.PartyRef, command.PartyType, command.Reason, command.Source, command.Confidence, command.DueBack, command.ExternalOrderRef),
             UnitEventType.CustodyChanged, key, command.EventTime, command.ActorRef, command.LegalEntityId, command.Document, new Dictionary<string, object?> { ["command_id"] = command.CommandId }, null, true, cancellationToken);
-        await writer.AppendAsync([prepared.Draft], cancellationToken);
+        var appended = await writer.AppendAsync([prepared.Draft], cancellationToken);
+        if (command.LocationKind == LocationKind.CustomerSite && command.PartyType == PartyType.Customer
+            && command.Reason == EpisodeReason.Sale)
+            await CustomerSaleCertificateTrigger.QueueAsync(bus, tenantId,
+                appended.Written.Single(), CustodyChanged.Schema);
         return new ChangeCustodyResult(unit.UnitId, prepared.Episode.EpisodeId, prepared.Closed?.EpisodeId, prepared.Closed?.LocationKind ?? "(none)", command.LocationKind);
+    }
+}
+
+// TIGHT COUPLING (first-shipment certificate trigger): these command boundaries publish CertificateTriggerWork
+// directly after the sale ledger fact is appended. Wolverine cannot conditionally route only sale-shaped published
+// custody/ownership events; routing their whole types creates durable no-op traffic and serialises unrelated handlers.
+// Removing this hand-off leaves at_first_shipment and bought-in fallback units without version one.
+internal static class CustomerSaleCertificateTrigger
+{
+    public static async Task QueueAsync(IMessageBus bus, TenantId tenantId, UnitEvent fact, string schema)
+    {
+        var command = new IssueCertificateVersion(fact.EventId, fact.UnitId, CertificateDocumentKind.ReleaseRecord,
+            CertificateFormType.GenericRelease, CertificateSupersedeReason.Reassembly, fact.EventTime,
+            "system:certificates", fact.LegalEntityId, TriggerSchema: schema);
+        await bus.PublishAsync(new CertificateTriggerWork(command),
+            new DeliveryOptions { TenantId = tenantId.ToString() });
     }
 }

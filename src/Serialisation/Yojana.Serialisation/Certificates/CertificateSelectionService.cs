@@ -30,6 +30,7 @@ public sealed class CertificateSelectionService(
     AsBuiltCompleteness completeness,
     CertificateTemplateService templates,
     CertificateVersioningEngine versions,
+    ReleaseRecordIssuePointSettings issuePoints,
     ICertificateRenderer renderer,
     ICertificateBundleRenderer bundleRenderer,
     IUnitEventWriter events,
@@ -189,6 +190,26 @@ public sealed class CertificateSelectionService(
             .GroupBy(row => row.UnitId)
             .Select(group => new { UnitId = group.Key, ReleasedAt = group.Max(row => row.ReleasedAt) })
             .ToDictionaryAsync(row => row.UnitId, row => row.ReleasedAt, cancellationToken);
+        var saleTimes = await db.Episodes.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && unitIds.Contains(row.UnitId) && row.Reason == EpisodeReason.Sale
+                && row.PartyType == PartyType.Customer
+                && (row.Kind == EpisodeKind.Ownership
+                    || row.Kind == EpisodeKind.Custody && row.LocationKind == LocationKind.CustomerSite))
+            .GroupBy(row => row.UnitId)
+            .Select(group => new { UnitId = group.Key, At = group.Min(row => row.ValidFrom) })
+            .ToDictionaryAsync(row => row.UnitId, row => row.At, cancellationToken);
+        var createdEvents = await db.Units.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && unitIds.Contains(row.UnitId))
+            .Select(row => new { row.UnitId, row.CreatedEventId }).ToListAsync(cancellationToken);
+        var createdEventIds = createdEvents.Select(row => row.CreatedEventId).ToList();
+        var createdTimesByEvent = await db.Events.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && createdEventIds.Contains(row.EventId))
+            .ToDictionaryAsync(row => row.EventId, row => row.EventTime, cancellationToken);
+        var commissionedTimes = createdEvents.ToDictionary(row => row.UnitId,
+            row => createdTimesByEvent[row.CreatedEventId]);
+        var itemIds = chunk.Select(row => row.ItemId).OfType<Guid>().Distinct().ToList();
+        var profiles = await itemProfiles.GetManyAsync(itemIds, cancellationToken);
+        var issueSettings = await issuePoints.GetAsync(cancellationToken);
         var certificateIds = chunk.Select(row => row.CertificateId).OfType<Guid>().Distinct().ToList();
         var copyCertificates = certificateIds.Count == 0
             ? new Dictionary<Guid, CertificateInstance>()
@@ -217,20 +238,19 @@ public sealed class CertificateSelectionService(
             if (!copy)
             {
                 var triggerId = Deterministic(commandId, row.UnitId, "issue");
-                var effectiveAt = releaseTimes.GetValueOrDefault(row.UnitId);
-                if (effectiveAt == default)
+                var itemClass = row.ItemId is { } itemId ? profiles.GetValueOrDefault(itemId)?.ItemClass : null;
+                var issuePoint = ReleaseRecordIssuePointSettings.Resolve(issueSettings, itemClass);
+                var effectiveAt = issuePoint switch
                 {
-                    db.CertificateRunUnits.Add(Receipt(commandId, row with
-                    {
-                        Reason = "build_record_missing",
-                        Detail = "The released unit has no BuildRecord.",
-                        UnblockingStep = "reconstruct or correct the release record",
-                    }, CertificateRunUnitOutcome.Failed, null, null, null, copy: false));
-                    continue;
-                }
+                    ReleaseRecordIssuePoint.AtFirstShipment => saleTimes.GetValueOrDefault(row.UnitId),
+                    ReleaseRecordIssuePoint.AtBuildRelease when releaseTimes.TryGetValue(row.UnitId, out var releasedAt) => releasedAt,
+                    ReleaseRecordIssuePoint.AtBuildRelease => saleTimes.GetValueOrDefault(row.UnitId),
+                    _ => clock.UtcNow,
+                };
+                if (effectiveAt == default) effectiveAt = commissionedTimes[row.UnitId];
                 var issued = await versions.IssueAsync(new IssueCertificateVersion(triggerId, row.UnitId,
                     documentKind, formType, null, effectiveAt, actorRef, issuerEntityId, Language: language,
-                    TriggerSchema: "Certificate.SelectionIssued"), cancellationToken);
+                    TriggerSchema: ReleaseRecordIssuePolicy.SelectionTrigger), cancellationToken);
                 if (!issued.Issued || issued.CertificateId is null)
                 {
                     db.CertificateRunUnits.Add(Receipt(commandId, row with
@@ -308,7 +328,7 @@ public sealed class CertificateSelectionService(
         var tenantId = tenant.TenantId;
         var unitIds = members.Select(row => row.UnitId).ToList();
         var units = await db.Units.AsNoTracking().Where(row => row.TenantId == tenantId && unitIds.Contains(row.UnitId))
-            .Select(row => new { row.UnitId, row.LifecycleStatus }).ToDictionaryAsync(row => row.UnitId, cancellationToken);
+            .Select(row => new { row.UnitId, row.LifecycleStatus, row.CreatedEventId }).ToDictionaryAsync(row => row.UnitId, cancellationToken);
         var assignments = await db.ItemAssignments.AsNoTracking().Where(row => row.TenantId == tenantId
                 && unitIds.Contains(row.UnitId) && row.ValidTo == null)
             .Select(row => new { row.UnitId, row.ItemId }).ToDictionaryAsync(row => row.UnitId, cancellationToken);
@@ -325,12 +345,30 @@ public sealed class CertificateSelectionService(
         var profiles = await itemProfiles.GetManyAsync(itemIds, cancellationToken);
         var activeTemplates = await templates.ActiveVersionsAsync(documentKind, formType,
             profiles.Values.Select(row => row?.ItemClass).Distinct().ToList(), cancellationToken);
+        var issueSettings = documentKind == CertificateDocumentKind.ReleaseRecord
+            ? await issuePoints.GetAsync(cancellationToken) : null;
+        var customerSaleUnits = documentKind == CertificateDocumentKind.ReleaseRecord
+            ? (await db.Episodes.AsNoTracking().Where(row => row.TenantId == tenantId
+                    && unitIds.Contains(row.UnitId) && row.Reason == EpisodeReason.Sale
+                    && row.PartyType == PartyType.Customer
+                    && (row.Kind == EpisodeKind.Ownership
+                        || row.Kind == EpisodeKind.Custody && row.LocationKind == LocationKind.CustomerSite))
+                .Select(row => row.UnitId).Distinct().ToListAsync(cancellationToken)).ToHashSet()
+            : [];
+        var createdEventIds = units.Values.Select(row => row.CreatedEventId).ToList();
+        var commissionedRows = documentKind == CertificateDocumentKind.ReleaseRecord
+            ? await db.Events.AsNoTracking().Where(row => row.TenantId == tenantId
+                    && createdEventIds.Contains(row.EventId))
+                .Select(row => new { row.UnitId, row.EventTime }).ToListAsync(cancellationToken)
+            : [];
+        var commissioned = commissionedRows.ToDictionary(row => row.UnitId, row => row.EventTime);
 
         var completenessByUnit = new Dictionary<Guid, UnitCompleteness>();
         if (documentKind == CertificateDocumentKind.ReleaseRecord)
         {
-            var requests = assignments.Values.Where(row => builds.ContainsKey(row.UnitId))
-                .Select(row => (row.UnitId, row.ItemId, DateOnly.FromDateTime(builds[row.UnitId].ReleasedAt))).ToList();
+            var requests = assignments.Values.Where(row => builds.ContainsKey(row.UnitId) || commissioned.ContainsKey(row.UnitId))
+                .Select(row => (row.UnitId, row.ItemId, DateOnly.FromDateTime(builds.TryGetValue(row.UnitId, out var build)
+                    ? build.ReleasedAt : commissioned[row.UnitId]))).ToList();
             var reports = await completeness.QueryAsync(requests, cancellationToken);
             foreach (var row in reports) completenessByUnit[row.UnitId] = row;
         }
@@ -361,11 +399,23 @@ public sealed class CertificateSelectionService(
                     CertificateSelectionOutcome.NotIssuable, "not_released", $"Lifecycle is {unit.LifecycleStatus}.", "release the unit first"));
                 continue;
             }
-            if (documentKind == CertificateDocumentKind.ReleaseRecord && build is null)
+            if (documentKind == CertificateDocumentKind.ReleaseRecord && issueSettings is not null)
             {
-                result.Add(Row(member.UnitId, member.Serial, itemId, label, null,
-                    CertificateSelectionOutcome.NotIssuable, "build_record_missing", "The released unit has no BuildRecord.", "reconstruct or correct the release record"));
-                continue;
+                var selectedClass = itemId is { } selectedItemId ? profiles.GetValueOrDefault(selectedItemId)?.ItemClass : null;
+                var issuePoint = ReleaseRecordIssuePointSettings.Resolve(issueSettings, selectedClass);
+                var reached = issuePoint == ReleaseRecordIssuePoint.OnRequest
+                    || issuePoint == ReleaseRecordIssuePoint.AtBuildRelease && build is not null
+                    || customerSaleUnits.Contains(member.UnitId);
+                if (!reached)
+                {
+                    result.Add(Row(member.UnitId, member.Serial, itemId, label, build?.Revision,
+                        CertificateSelectionOutcome.NotIssuable, "release_record_issue_point_not_reached",
+                        issuePoint == ReleaseRecordIssuePoint.AtFirstShipment || build is null
+                            ? "The unit has not yet shipped to a customer."
+                            : "The configured release-record issue point has not been reached.",
+                        issuePoint == ReleaseRecordIssuePoint.OnRequest ? "request the release record" : "ship the unit to a customer first"));
+                    continue;
+                }
             }
             if (completenessByUnit.TryGetValue(member.UnitId, out var report) && report.MissingRequiredComponentSerials > 0)
             {

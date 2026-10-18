@@ -125,6 +125,7 @@ public sealed class AssemblyTests(SerialisationHostFixture fixture)
         var current = await db.Current.AsNoTracking().SingleAsync(row => row.UnitId == parent);
         Assert.Equal(UnitEventType.Reassembled, (await db.Events.AsNoTracking()
             .SingleAsync(e => e.UnitId == parent && e.Seq == current.LastEventSeq)).EventType);
+        Assert.Equal(1, await db.Events.CountAsync(e => e.UnitId == parent && e.EventType == UnitEventType.Reassembled));
         Assert.Equal([UnitEventType.Commissioned, UnitEventType.Installed, UnitEventType.Removed, UnitEventType.Installed], await db.Events.Where(e => e.UnitId == x).OrderBy(e => e.Seq).Select(e => e.EventType).ToListAsync());
         Assert.Equal(3, await db.AssemblyLinks.CountAsync(l => l.ParentUnitId == parent));
         Assert.Equal(1, await db.AssemblyLinks.CountAsync(l => l.ParentUnitId == parent && l.RemovedAt == null));

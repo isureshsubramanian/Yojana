@@ -1,0 +1,132 @@
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Ledger;
+
+namespace Yojana.Serialisation.Certificates;
+
+/// <summary>Tenant-owned release-record timing, isolated from trigger handlers behind this narrow policy contract.</summary>
+public sealed class ReleaseRecordIssuePointSettings(ITenantSettings settings)
+{
+    public const string Key = "certificates.release_record_issue_point";
+    public static readonly ReleaseRecordIssuePointPolicy Default = new(ReleaseRecordIssuePoint.AtBuildRelease, []);
+
+    // Coupled to the factory registration in SerialisationModule: exposing ITenantSettings directly to certificate
+    // handlers would expose PlatformDbContext beside SerialisationDbContext and break Wolverine transaction discovery.
+    public async Task<ReleaseRecordIssuePointSettingsView> GetAsync(CancellationToken cancellationToken)
+    {
+        var stored = await settings.GetVersionedAsync(Key, cancellationToken);
+        var policy = stored is null ? Default : Deserialise(stored.Value);
+        return new(policy.DefaultIssuePoint, policy.ItemClassOverrides,
+            stored?.Version ?? ITenantSettings.MissingVersion);
+    }
+
+    public async Task<ReleaseRecordIssuePointSettingsView> SetAsync(UpdateReleaseRecordIssuePointSettings update,
+        CancellationToken cancellationToken)
+    {
+        var policy = Normalise(new(update.DefaultIssuePoint, update.ItemClassOverrides));
+        var stored = await settings.SetAsync(Key, JsonSerializer.Serialize(policy, LedgerJson.Options),
+            update.ExpectedVersion, cancellationToken);
+        return new(policy.DefaultIssuePoint, policy.ItemClassOverrides, stored.Version);
+    }
+
+    public async Task<string> ResolveAsync(string? itemClass, CancellationToken cancellationToken)
+    {
+        var view = await GetAsync(cancellationToken);
+        return Resolve(view, itemClass);
+    }
+
+    public static string Resolve(ReleaseRecordIssuePointSettingsView view, string? itemClass) =>
+        itemClass is null
+            ? view.DefaultIssuePoint
+            : view.ItemClassOverrides.FirstOrDefault(row =>
+                string.Equals(row.ItemClass, itemClass, StringComparison.OrdinalIgnoreCase))?.IssuePoint
+                ?? view.DefaultIssuePoint;
+
+    private static ReleaseRecordIssuePointPolicy Deserialise(string text) =>
+        Normalise(JsonSerializer.Deserialize<ReleaseRecordIssuePointPolicy>(text, LedgerJson.Options) ?? Default);
+
+    private static ReleaseRecordIssuePointPolicy Normalise(ReleaseRecordIssuePointPolicy policy)
+    {
+        RequireIssuePoint(policy.DefaultIssuePoint);
+        var rows = policy.ItemClassOverrides.Select(row => new ReleaseRecordIssuePointOverride(
+                row.ItemClass.Trim(), row.IssuePoint.Trim()))
+            .Where(row => row.ItemClass.Length > 0)
+            .OrderBy(row => row.ItemClass, StringComparer.OrdinalIgnoreCase).ToList();
+        if (rows.Any(row => row.ItemClass.Length > 100))
+            throw new CommandRefusedException("certificate_issue_point_item_class_invalid",
+                "An item class override cannot exceed 100 characters.");
+        if (rows.GroupBy(row => row.ItemClass, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
+            throw new CommandRefusedException("certificate_issue_point_item_class_duplicate",
+                "Each item class can have only one release-record issue-point override.");
+        foreach (var row in rows) RequireIssuePoint(row.IssuePoint);
+        return new(policy.DefaultIssuePoint.Trim(), rows);
+    }
+
+    private static void RequireIssuePoint(string value)
+    {
+        if (!ReleaseRecordIssuePoint.All.Contains(value.Trim(), StringComparer.Ordinal))
+            throw new CommandRefusedException("certificate_issue_point_unknown",
+                $"Unknown release-record issue point '{value}'.");
+    }
+}
+
+public sealed class ReleaseRecordIssuePolicy(
+    SerialisationDbContext db,
+    ReleaseRecordIssuePointSettings settings)
+{
+    public const string SelectionTrigger = "Certificate.SelectionIssued";
+    public const string RequestedTrigger = "Certificate.IssueRequested";
+
+    public async Task<ReleaseRecordIssueDecision> DecideAsync(CertificateUnitFact unit, string? itemClass,
+        string triggerSchema, bool chainExists, CancellationToken cancellationToken)
+    {
+        if (chainExists) return ReleaseRecordIssueDecision.Allowed;
+
+        var issuePoint = await settings.ResolveAsync(itemClass, cancellationToken);
+        var manual = triggerSchema is SelectionTrigger or RequestedTrigger;
+        if (manual)
+        {
+            if (issuePoint == ReleaseRecordIssuePoint.OnRequest) return ReleaseRecordIssueDecision.Allowed;
+            if (issuePoint == ReleaseRecordIssuePoint.AtBuildRelease && unit.Build is not null)
+                return ReleaseRecordIssueDecision.Allowed;
+            if (await HasCustomerSaleAsync(unit.UnitId, cancellationToken)) return ReleaseRecordIssueDecision.Allowed;
+            return NotReached(issuePoint);
+        }
+
+        var firstSale = triggerSchema is CustodyChanged.Schema or OwnershipOpened.Schema;
+        var allowed = issuePoint switch
+        {
+            ReleaseRecordIssuePoint.AtBuildRelease => unit.Build is not null
+                ? triggerSchema == UnitReleased.Schema
+                : firstSale,
+            ReleaseRecordIssuePoint.AtFirstShipment => firstSale,
+            ReleaseRecordIssuePoint.OnRequest => false,
+            _ => false,
+        };
+        return allowed ? ReleaseRecordIssueDecision.Allowed : NotReached(issuePoint);
+    }
+
+    public async Task<bool> HasCustomerSaleAsync(Guid unitId, CancellationToken cancellationToken) =>
+        await db.Episodes.AsNoTracking().AnyAsync(row => row.UnitId == unitId && row.Reason == EpisodeReason.Sale
+            && row.PartyType == PartyType.Customer
+            && (row.Kind == EpisodeKind.Ownership
+                || row.Kind == EpisodeKind.Custody && row.LocationKind == LocationKind.CustomerSite), cancellationToken);
+
+    private static ReleaseRecordIssueDecision NotReached(string issuePoint) => issuePoint switch
+    {
+        ReleaseRecordIssuePoint.AtFirstShipment => new(false, "release_record_issue_point_not_reached",
+            "The unit has not yet shipped to a customer."),
+        ReleaseRecordIssuePoint.OnRequest => new(false, "release_record_waiting_for_request",
+            "This tenant issues release records only on request."),
+        _ => new(false, "release_record_issue_point_not_reached",
+            "The configured build-release issue point was not reached by this trigger."),
+    };
+}
+
+public sealed record ReleaseRecordIssueDecision(bool Issue, string? Reason, string? Detail)
+{
+    public static readonly ReleaseRecordIssueDecision Allowed = new(true, null, null);
+}

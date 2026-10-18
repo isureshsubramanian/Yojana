@@ -65,6 +65,7 @@ export const router = createBrowserRouter([
           { path: "settings/recovery", lazy: () => import("./settings/SupplierRecovery") },
           { path: "settings/refurbishment", lazy: () => import("./settings/RefurbishmentPolicy") },
           { path: "settings/workbench-choices", lazy: () => import("./corrections/WorkbenchChoices") },
+          { path: "settings/certificates", lazy: () => import("./settings/CertificateSettings") },
           // P6 jurisdiction rules route block.
           { path: "settings/jurisdictions", lazy: () => import("./jurisdictions/Jurisdictions") },
           // End P6 jurisdiction rules route block.

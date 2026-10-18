@@ -63,7 +63,7 @@ public sealed class CertificateTests
                 "{\"service_mode\":\"depot\"}", previous, previous, [previous])]),
             new PartyNames(owner, new PartyLabel(owner, "OWNER-7", "Fictional Field Lab", "customer")));
         var unit = new CertificateUnitFact(Guid.NewGuid(), LifecycleStatus.Released, UnitOrigin.Manufactured,
-            HistoryDepth.Full, Guid.NewGuid(), null, null,
+            HistoryDepth.Full, Guid.NewGuid(), null, new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc), null,
             new CertificateOwnershipFact(Guid.NewGuid(), owner, "customer", new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc)), [], []);
 
         var (payload, snapshot) = await builder.BuildAsync(unit,

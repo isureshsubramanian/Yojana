@@ -426,6 +426,9 @@ public sealed class RefurbishmentService(
             releasedUnitId = await CreateDerivedUnitAsync(workOrder, sourceUnit, command, profile, releaseEventId, cancellationToken);
         }
 
+        // TIGHT COUPLING (refurbishment release trigger): the certificate subscriber deliberately suppresses this
+        // refurbishment-work-order grade because the Refurbishment.Released fact below owns the version and its
+        // refurbishment reason. Removing the shared document type would make the earlier grade win as a correction.
         await GradeUnitHandler.Handle(new GradeUnit(command.CommandId, releasedUnitId, command.Grade, command.ValuationRule,
             command.ReleasedAt, command.ActorRef, command.LegalEntityId, command.FCode, command.CCode, Document(workOrder)),
             db, eventWriter, tenant, cancellationToken);

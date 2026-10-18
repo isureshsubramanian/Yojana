@@ -448,7 +448,9 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         var versions = await db.CertificateInstances.AsNoTracking().Where(row => row.UnitId == setup.UnitId
             && row.DocumentKind == CertificateDocumentKind.ReleaseRecord).OrderBy(row => row.Version).ToListAsync();
         Assert.Equal([1, 2], versions.Select(row => row.Version));
-        Assert.Equal(1, await db.CertificateTriggers.CountAsync(row => row.UnitId == setup.UnitId
+        Assert.Equal(2, await db.CertificateTriggers.CountAsync(row => row.UnitId == setup.UnitId
+            && row.DocumentKind == CertificateDocumentKind.ReleaseRecord && row.Outcome == "issued"));
+        Assert.Equal(0, await db.CertificateTriggers.CountAsync(row => row.UnitId == setup.UnitId
             && row.DocumentKind == CertificateDocumentKind.ReleaseRecord && row.Outcome == "absorbed"));
         await AssertWholeUnitAsync(db, setup.UnitId, Entity, setup.LocationId);
     }

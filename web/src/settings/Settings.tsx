@@ -11,6 +11,7 @@ const sections = [
   ["Supplier recovery", "Claim lines and vendor answer timing", "/settings/recovery"],
   ["Refurbishment policy", "Identity outcomes and cycle limits", "/settings/refurbishment"],
   ["Workbench choices", "Correction choices and permissions", "/settings/workbench-choices"],
+  ["Certificates", "Release-record issue point by item class", "/settings/certificates"],
 ] as const;
 
 export function Component() {
