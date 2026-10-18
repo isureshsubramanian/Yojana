@@ -31,7 +31,15 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
     private static readonly Guid CustomerSite = Guid.Parse("b0c00000-0000-4000-8000-000000000003");
     private static readonly Guid Quarantine = Guid.Parse("b0c00000-0000-4000-8000-000000000004");
     public static readonly Guid ShipmentDocumentId = Guid.Parse("b0c00000-0000-4000-8000-000000000010");
-    public static readonly Guid StockSelectionId = Guid.Parse("b0c00000-0000-4000-8000-000000000011");
+    private static readonly Guid FirstRoundStockSelectionId = Guid.Parse("b0c00000-0000-4000-8000-000000000011");
+
+    /// <summary>The run's working-set round (YOJANA_BENCH_CLAIM_ROUND; unset = 1). Later rounds get fresh claims and a
+    /// fresh replacement-stock selection, because a run consumes both. Shared by preparation and the runner.</summary>
+    public static string Round => Environment.GetEnvironmentVariable("YOJANA_BENCH_CLAIM_ROUND") is { Length: > 0 } round
+        && round.Trim() != "1" ? round.Trim() : "";
+
+    public static Guid StockSelectionId => Round.Length == 0 ? FirstRoundStockSelectionId
+        : new Guid(SHA256.HashData(Encoding.UTF8.GetBytes($"yojana-bench-concurrency:stock-selection:r{Round}"))[..16]);
     private static readonly Guid RefurbishmentRmaCommandId = Guid.Parse("b0c00000-0000-4000-8000-000000000012");
     private const string ShipmentDocumentType = "bench_concurrency";
     private const string BasePolicyCode = "BENCH-CONCURRENCY-36";
@@ -260,8 +268,7 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
         var claimIds = new List<Guid>(units.Count);
         // A run adjudicates its pool's open claims, so a later run needs a fresh round: YOJANA_BENCH_CLAIM_ROUND gives the
         // claims new stable command ids (unset = round 1, the original ids, so earlier preparations still replay).
-        var round = Environment.GetEnvironmentVariable("YOJANA_BENCH_CLAIM_ROUND");
-        var roundSuffix = string.IsNullOrWhiteSpace(round) || round == "1" ? "" : $"-r{round.Trim()}";
+        var roundSuffix = Round.Length == 0 ? "" : $"-r{Round}";
         foreach (var (unit, index) in units.Select((unit, index) => (unit, index)))
         {
             var sequencePool = index < ApprovedClaims + OpenClaims / 2;
@@ -351,6 +358,9 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
                 SELECT 1 FROM serialisation.unit_event e
                 WHERE e.tenant_id = c.tenant_id AND e.unit_id = c.unit_id
                   AND e.document_type = @document_type AND e.document_id = @document_id)
+              AND NOT EXISTS (
+                SELECT 1 FROM serialisation.replacement_link r
+                WHERE r.tenant_id = c.tenant_id AND r.replacement_unit_id = c.unit_id)
             ORDER BY i.normalised_value;
             """, 120, ("@tenant", Tenant), ("@take", ReplacementStockUnits), ("@document_type", ShipmentDocumentType),
             ("@document_id", ShipmentDocumentId));
