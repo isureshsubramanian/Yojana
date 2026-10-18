@@ -31,6 +31,7 @@ public sealed class CertificateSelectionService(
     CertificateTemplateService templates,
     CertificateVersioningEngine versions,
     ICertificateRenderer renderer,
+    ICertificateBundleRenderer bundleRenderer,
     IUnitEventWriter events,
     IDbContextOutbox<SerialisationDbContext> outbox,
     CertificateRunOptions options,
@@ -406,15 +407,17 @@ public sealed class CertificateSelectionService(
         {
             var certificate = byId[row.CertificateId!.Value];
             signatureByCertificate.TryGetValue(certificate.CertificateId, out var signature);
-            var render = await renderer.RenderAsync(new CertificateRenderRequest(certificate.Payload,
-                certificate.TemplateVersionId, row.Copy, signature is null ? null : new CertificateRenderSignature(
-                    signature.PrintedName, DisplayMeaning(signature.Meaning), signature.SignedAt)), cancellationToken);
+            var request = new CertificateRenderRequest(certificate.Payload, certificate.TemplateVersionId, row.Copy,
+                signature is null ? null : new CertificateRenderSignature(
+                    signature.PrintedName, DisplayMeaning(signature.Meaning), signature.SignedAt));
+            var render = await renderer.RenderAsync(request, cancellationToken);
             var extension = render.MediaType.StartsWith("application/pdf", StringComparison.OrdinalIgnoreCase) ? "pdf" : "html";
             var serial = row.Serial ?? certificate.UnitId.ToString("N");
             var fileName = $"{Safe(serial)}-{certificate.TrackingNumber}-v{certificate.Version}{(row.Copy ? "-copy" : "")}.{extension}";
-            rendered.Add(new RenderedDocument(row.UnitId, serial, certificate, fileName, render));
+            rendered.Add(new RenderedDocument(row.UnitId, serial, certificate, fileName, request, render));
         }
-        var archive = Archive(rendered, stored.Where(row => row.CertificateId is null).ToList(), includeBundle);
+        var archive = await ArchiveAsync(rendered, stored.Where(row => row.CertificateId is null).ToList(),
+            includeBundle, cancellationToken);
         var rows = stored.Select(ToSelectionUnit).ToList();
         return new CertificateRunResult(commandId, replayed, Kpis(rows, includeBundle), rendered.Select(row =>
             new CertificateOutputEntry(row.UnitId, row.Serial, row.Certificate.CertificateId, row.Certificate.Version,
@@ -424,8 +427,8 @@ public sealed class CertificateSelectionService(
             "application/zip", $"certificates-{commandId:N}.zip");
     }
 
-    private static byte[] Archive(IReadOnlyList<RenderedDocument> documents, IReadOnlyList<CertificateRunUnit> skipped,
-        bool includeBundle)
+    private async Task<byte[]> ArchiveAsync(IReadOnlyList<RenderedDocument> documents,
+        IReadOnlyList<CertificateRunUnit> skipped, bool includeBundle, CancellationToken cancellationToken)
     {
         var archiveTimestamp = new DateTimeOffset(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
         using var output = new MemoryStream();
@@ -440,10 +443,14 @@ public sealed class CertificateSelectionService(
             }
             var cover = Cover(skipped);
             WriteText(archive, "cover.html", cover, archiveTimestamp);
-            if (includeBundle && documents.All(row => row.Render.MediaType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase)))
+            if (includeBundle && documents.Count > 0)
             {
-                var frames = string.Join("\n", documents.Select(row => $"<iframe title=\"{WebUtility.HtmlEncode(row.Serial)}\" src=\"{WebUtility.HtmlEncode(row.FileName)}\"></iframe>"));
-                WriteText(archive, "bundle.html", $"<!doctype html><html><head><meta charset=\"utf-8\"><style>iframe{{display:block;width:100%;height:1100px;border:0;page-break-after:always}}</style></head><body>{cover}{frames}</body></html>", archiveTimestamp);
+                var bundle = await bundleRenderer.RenderBundleAsync(documents.Select(row => row.Request).ToList(), cancellationToken);
+                var extension = bundle.MediaType.StartsWith("application/pdf", StringComparison.OrdinalIgnoreCase) ? "pdf" : "html";
+                var entry = archive.CreateEntry($"bundle.{extension}", CompressionLevel.Fastest);
+                entry.LastWriteTime = archiveTimestamp;
+                using var stream = entry.Open();
+                await stream.WriteAsync(bundle.Bytes, cancellationToken);
             }
         }
         return output.ToArray();
@@ -540,7 +547,7 @@ public sealed class CertificateSelectionService(
 
     private sealed record SelectionMember(Guid UnitId, string? Serial);
     private sealed record RenderedDocument(Guid UnitId, string Serial, CertificateInstance Certificate,
-        string FileName, CertificateRenderResult Render);
+        string FileName, CertificateRenderRequest Request, CertificateRenderResult Render);
 }
 
 // TIGHT COUPLING (certificate run transaction boundary)

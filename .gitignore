@@ -7,6 +7,7 @@ obj/
 .idea/
 TestResults/
 artifacts/
+src/Workers/Yojana.RenderWorker/.browser/
 web/node_modules/
 web/dist/
 web/.dev/

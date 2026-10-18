@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="../../Serialisation/Yojana.Serialisation.Contracts/Yojana.Serialisation.Contracts.csproj" />
+    <!-- MIT. Direct and transitive notices are generated with the worker dependency graph in the same change. -->
+    <PackageReference Include="PuppeteerSharp" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The same generated notices ship with both processes; the browser licence is also copied beside the installed executable. -->
+    <Content Include="../../Web/Yojana.Web/Notices/THIRD-PARTY-NOTICES.txt" Link="Notices/THIRD-PARTY-NOTICES.txt"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -12,6 +12,7 @@ are not part of the repository history).
 | `src/Platform/` | MOD-01 platform foundation: tenancy (session context + row-level security), SQL Server conventions, Wolverine messaging with the SQL Server outbox, Quartz.NET scheduling with the SQL Server job store, authentication and role policies, development seeding. `Yojana.Platform.Contracts` is the only project every module may reference besides its own and other modules' `.Contracts` projects. |
 | `src/Serialisation/`, `src/Integration/` | Bounded contexts, one implementation project and one `.Contracts` project each. Modules talk through contracts, commands and events, never through each other's tables. |
 | `src/Web/Yojana.Web` | The composition root and HTTP host. Serves the web client from its `wwwroot` (copied from `web/dist` at build), `/notices` (third-party attributions), `/health`, sign-in, tenant selection, the shell's overview and health endpoints, and the P0 smoke endpoints. |
+| `src/Workers/Yojana.RenderWorker` | Loopback-only certificate PDF worker. It owns the bounded browser pool and the pinned headless-shell installer; the serialisation module talks to it only through the `IPdfRenderer` HTTP contract. |
 | `web/` | MOD-02 web client: React shell in the Glass house theme (tokens in `src/styles/theme-glass.css`, applied through `data-theme`; light and dark through `data-mode` or the OS preference), routing with one lazy chunk per route, one inline SVG sprite, system font stack, print stylesheet. Built by esbuild alone (`web/build.mjs`); no bundler plugins, no CSS-in-JS. Shared components in `web/src/components/` (scan-first input, server-paged grid, find-within bar, selection-set preview, approval inbox, timeline rail, status badge, search palette with hover card) render server-shaped data only. Development builds add a `/patterns` gallery of them on fixture data. |
 | `tools/web-perf/` | `lcp.mjs`: drives a Chromium-based browser over the DevTools protocol (no packages) to measure largest contentful paint under a 10 Mbit link and to take the design screenshots. |
 | `tests/` | Architecture rules (project-reference graph), platform unit tests, and database tests that run when `YOJANA_TEST_SQL` points at a disposable SQL Server database. |
@@ -34,6 +35,37 @@ make seed           # migrate and seed tenant DEV with one user per role
 make run            # http://localhost:5080 serves the client and the API
 make web-dev        # optional: client with live reload on http://localhost:5173 (builds into web/.dev), API proxied to 5080
 ```
+
+### Certificate PDF worker
+
+The default certificate renderer remains dependency-free HTML. To enable PDF output:
+
+```
+make browser        # downloads and verifies the pinned headless-shell archive for this host
+make render-worker  # loopback worker at http://127.0.0.1:5091
+```
+
+The browser comes directly from the upstream Chrome for Testing archive onto the customer host; it is
+not redistributed with Yojana. The installer verifies the configured SHA-256 before unpacking, records
+the installed executable hash, and keeps `LICENSE.headless_shell` beside the executable. It downloads
+only `chrome-headless-shell`: it never downloads full Chrome or ffmpeg. Browser version, platform URLs,
+hashes and install path are pinned in `src/Workers/Yojana.RenderWorker/appsettings.json`.
+
+Set `Serialisation:Certificates:Renderer` to `pdf` and
+`Serialisation:Certificates:PdfWorkerBaseUrl` to `http://127.0.0.1:5091` in the web-host configuration.
+Leaving the renderer as `html` is the documented fallback when no worker is configured. The worker accepts
+`POST /render` with `{ html, page }` (`page` contains size, orientation, four millimetre margins,
+header/footer HTML and the page-number flag) and returns `application/pdf` bytes. It disables JavaScript,
+blocks every page request except `data:` URLs, enforces the configured render timeout, and recycles bounded
+browser slots after the configured render count.
+
+The generated `src/Web/Yojana.Web/Notices/THIRD-PARTY-NOTICES.txt` includes PuppeteerSharp, every newly shipped
+transitive package and the platform-specific `LICENSE.headless_shell` texts. Restored transitive packages supplied
+by the .NET shared framework are still licence-gated, but are not duplicated as worker artefact notice blocks. The
+generated file is copied into the worker artefact under
+`Notices/` and is available from the loopback worker at `/notices`. The notice gate compares every configured
+browser version, URL and archive hash with `tools/notices-input/components/`, so a browser bump cannot pass
+without its matching notice input.
 
 No password is built into the repository. The host's development connection string carries the login only;
 `YOJANA_SQL_PASSWORD` completes it (a string with no SQL login, or with its own password, is used as is), and

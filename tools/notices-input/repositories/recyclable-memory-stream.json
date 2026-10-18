@@ -1,0 +1,7 @@
+{
+  "name": "Microsoft.IO.RecyclableMemoryStream",
+  "matchRepositoryUrls": ["https://github.com/Microsoft/Microsoft.IO.RecyclableMemoryStream"],
+  "licenceFile": "texts/recyclable-memory-stream-3.0.1-LICENSE",
+  "sourceUrl": "https://raw.githubusercontent.com/microsoft/Microsoft.IO.RecyclableMemoryStream/e29a28387da9018fa9605a1dcb3f7a0435aa9974/LICENSE",
+  "takenOn": "2026-10-18"
+}

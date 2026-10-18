@@ -43,6 +43,18 @@
       "readOn": "2026-10-15"
     }
   },
+  "reviewedPackages": {
+    "PuppeteerSharp/25.12.0": { "spdx": "MIT", "readOn": "2026-10-18", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },
+    "ReactiveExtensionsSharp/0.3.0": { "spdx": "MIT", "readOn": "2026-10-18", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },
+    "WebDriverBiDi/0.0.61": { "spdx": "MIT", "readOn": "2026-10-18", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },
+    "Microsoft.IO.RecyclableMemoryStream/3.0.1": { "spdx": "MIT", "readOn": "2026-10-18", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },
+    "Microsoft.Extensions.Logging/8.0.0": { "spdx": "MIT", "readOn": "2026-10-18", "bundledLicenceFiles": ["LICENSE.TXT"], "bundledNoticeFiles": ["THIRD-PARTY-NOTICES.TXT"] },
+    "Microsoft.Extensions.Logging.Abstractions/8.0.0": { "spdx": "MIT", "readOn": "2026-10-18", "bundledLicenceFiles": ["LICENSE.TXT"], "bundledNoticeFiles": ["THIRD-PARTY-NOTICES.TXT"] },
+    "Microsoft.Extensions.DependencyInjection/8.0.0": { "spdx": "MIT", "readOn": "2026-10-18", "bundledLicenceFiles": ["LICENSE.TXT"], "bundledNoticeFiles": ["THIRD-PARTY-NOTICES.TXT"] },
+    "Microsoft.Extensions.DependencyInjection.Abstractions/8.0.0": { "spdx": "MIT", "readOn": "2026-10-18", "bundledLicenceFiles": ["LICENSE.TXT"], "bundledNoticeFiles": ["THIRD-PARTY-NOTICES.TXT"] },
+    "Microsoft.Extensions.Options/8.0.0": { "spdx": "MIT", "readOn": "2026-10-18", "bundledLicenceFiles": ["LICENSE.TXT"], "bundledNoticeFiles": ["THIRD-PARTY-NOTICES.TXT"] },
+    "Microsoft.Extensions.Primitives/8.0.0": { "spdx": "MIT", "readOn": "2026-10-18", "bundledLicenceFiles": ["LICENSE.TXT"], "bundledNoticeFiles": ["THIRD-PARTY-NOTICES.TXT"] }
+  },
   "exceptions": [
     {
       "package": "Microsoft.Data.SqlClient.SNI.runtime",
