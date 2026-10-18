@@ -5,6 +5,8 @@ export { DataGrid, type GridColumn } from "./DataGrid";
 export { FindBar } from "./FindBar";
 export { KpiStrip } from "./KpiStrip";
 export { Pager } from "./Pager";
+export { PresenceAdvisory, PresenceChips, useDocumentPresence } from "./Presence";
+export type { PresenceMode, PresenceUser } from "./Presence";
 export { ScanInput } from "./ScanInput";
 export { SelectionPreview } from "./SelectionPreview";
 export { StatusBadge } from "./StatusBadge";

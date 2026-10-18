@@ -158,6 +158,20 @@ public sealed class DocumentVersionTests(SerialisationHostFixture fixture)
         "campaign", "policy_draft", "return_reason", "coverage_family", "replacement_policy",
     };
 
+    [Fact]
+    public void Append_only_refurbishment_commands_do_not_claim_to_be_document_edits()
+    {
+        var appendOnly = new[]
+        {
+            typeof(AddRefurbishmentOperation), typeof(RecordRefurbishmentLabour),
+            typeof(RecordRefurbishmentCost), typeof(RemoveRefurbishmentPart),
+            typeof(InstallRefurbishmentPart),
+        };
+
+        Assert.All(appendOnly, type => Assert.False(typeof(IExpectedDocumentVersion).IsAssignableFrom(type), type.Name));
+        Assert.Contains("refurbishment_work_order", DocumentKinds);
+    }
+
     [DatabaseTheory]
     [MemberData(nameof(DocumentKinds))]
     public async Task Two_editors_with_one_loaded_version_keep_the_first_change_and_refuse_the_second(string kind)

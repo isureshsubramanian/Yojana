@@ -14,6 +14,8 @@ test("document-changed refusal keeps actor, time and reload instruction", async 
   }), { status: 409, headers: { "content-type": "application/problem+json" } });
 
   try {
+    let draftText = "Controller replaced; customer text is still here.";
+    const reload = () => { draftText = "server text after reload"; };
     let error: ApiError | null = null;
     try {
       await api("/api/campaigns/one");
@@ -28,6 +30,9 @@ test("document-changed refusal keeps actor, time and reload instruction", async 
     assert.equal(error.changedBy, "user-42");
     assert.equal(error.changedAt, "2026-09-01T09:30:00Z");
     assert.equal(error.unblockingStep, "Reload to see their change");
+    assert.equal(draftText, "Controller replaced; customer text is still here.", "the refusal does not mutate local form state");
+    reload();
+    assert.equal(draftText, "server text after reload", "the screen replaces local state only after the user chooses Reload");
   } finally {
     globalThis.fetch = originalFetch;
   }

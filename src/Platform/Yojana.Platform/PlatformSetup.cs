@@ -20,6 +20,8 @@ using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Data;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Messaging;
+using Yojana.Platform.Contracts.Presence;
+using Yojana.Platform.Presence;
 using Yojana.Platform.Scheduling;
 using Yojana.Platform.Scheduling.Smoke;
 using Yojana.Platform.Security;
@@ -69,6 +71,7 @@ public static class PlatformSetup
         HandlerAssemblies.Add(typeof(PlatformSetup).Assembly);
 
         builder.Services.AddScoped<SignInService>();
+        builder.Services.AddScoped<IPresenceService, PresenceService>();
         // A factory for the same reason as ITenantCurrency above: it keeps PlatformDbContext out of the generated graph of
         // any module handler that later takes IUserDirectory.
         builder.Services.AddScoped<IUserDirectory>(sp => new UserDirectory(sp.GetRequiredService<PlatformDbContext>(), sp.GetRequiredService<ITenantContext>()));
@@ -126,6 +129,7 @@ public static class PlatformSetup
         builder.Services.AddQuartzHostedService(h => h.WaitForJobsToComplete = true);
         builder.Services.AddSingleton<RecurringTenantJobScheduler>();
         builder.Services.AddSingleton(RecurringTenantJob.For<SmokeHeartbeatJob>(SmokeHeartbeatJob.JobName, SmokeHeartbeatJob.Cron));
+        builder.Services.AddSingleton(RecurringTenantJob.For<PresenceCleanupJob>(PresenceCleanupJob.JobName, PresenceCleanupJob.Cron));
         builder.Services.AddHostedService<RecurringJobsRegistrar>();
 
         ((IHostBuilder)new HostBuilderAdapter(builder)).UseWolverine(opts =>

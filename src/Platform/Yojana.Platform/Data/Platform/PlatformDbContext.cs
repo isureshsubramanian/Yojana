@@ -24,6 +24,8 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
 
     public DbSet<SmokeLog> SmokeLogs => Set<SmokeLog>();
 
+    public DbSet<DocumentPresence> DocumentPresence => Set<DocumentPresence>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Tenant>(b =>
@@ -67,6 +69,17 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             b.Property(s => s.Source).HasMaxLength(20);
             b.Property(s => s.Note).HasMaxLength(400);
             b.HasIndex(s => new { s.TenantId, s.RecordedAt });
+        });
+
+        modelBuilder.Entity<DocumentPresence>(b =>
+        {
+            b.ToTable("document_presence");
+            b.HasKey(p => new { p.TenantId, p.UserId, p.DocumentType, p.DocumentId });
+            b.Property(p => p.DocumentType).HasMaxLength(80);
+            b.Property(p => p.DocumentId).HasMaxLength(160);
+            b.Property(p => p.Mode).HasMaxLength(10);
+            b.HasIndex(p => new { p.TenantId, p.DocumentType, p.DocumentId, p.LastHeartbeat });
+            b.HasIndex(p => new { p.TenantId, p.LastHeartbeat });
         });
 
         // Base conventions (naming, filters) run after the explicit mapping so they see the final shape.

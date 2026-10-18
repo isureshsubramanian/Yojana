@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
-import { StatusBadge } from "../components";
+import { PresenceAdvisory, PresenceChips, StatusBadge, useDocumentPresence } from "../components";
 import { campaignApi } from "../campaigns/api";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 import { usePeople } from "../people/people";
@@ -31,6 +31,7 @@ export function Component() {
   const [dialog, setDialog] = useState<DialogState>(null);
   const [note, setNote] = useState("");
   const [denialReason, setDenialReason] = useState("");
+  const presence = useDocumentPresence("claim", claimId, dialog !== null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true); setError(null);
@@ -76,12 +77,13 @@ export function Component() {
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Claims", to: "/claims" }, { label: detail.claimNumber }]} />
-      <div className="page-header"><div><div className="eyebrow">Claim {detail.claimNumber} · {humanise(decided ? detail.coverageSource : preview.coverageSource)} · {humanise(detail.status)} · submitted {fmtDate(detail.submittedAt)} by {person(detail.submittedBy)}</div><h1>{detail.serial ?? "No serial recorded"} · {fault}</h1><p className="sub">{names.party(detail.claimantPartyRef)} claims, {names.party(detail.settlementPartyRef)} settles · each line is decided against the policy stack on the claim date{decided ? " · recorded decisions are read-only" : " · approving publishes Claim.Adjudicated"}</p>{detail.campaignId && <div className="claims-header-facts"><span><strong>Campaign</strong> {detail.campaignCode} · {detail.campaignName}</span>{(detail.reserveTag ?? preview.reserveTag) && <span><strong>Reserve</strong> {detail.reserveTag ?? preview.reserveTag}</span>}</div>}{detail.campaignCode && detail.campaignCoverReason && <p className="muted claims-campaign-cover-note">{campaignCoverNote(detail.campaignCode, detail.campaignCoverReason, campaignRunsUntil)}</p>}</div><div className="actions">
+      <div className="page-header"><div><div className="eyebrow">Claim {detail.claimNumber} · {humanise(decided ? detail.coverageSource : preview.coverageSource)} · {humanise(detail.status)} · submitted {fmtDate(detail.submittedAt)} by {person(detail.submittedBy)}</div><h1>{detail.serial ?? "No serial recorded"} · {fault}</h1><p className="sub">{names.party(detail.claimantPartyRef)} claims, {names.party(detail.settlementPartyRef)} settles · each line is decided against the policy stack on the claim date{decided ? " · recorded decisions are read-only" : " · approving publishes Claim.Adjudicated"}</p>{detail.campaignId && <div className="claims-header-facts"><span><strong>Campaign</strong> {detail.campaignCode} · {detail.campaignName}</span>{(detail.reserveTag ?? preview.reserveTag) && <span><strong>Reserve</strong> {detail.reserveTag ?? preview.reserveTag}</span>}</div>}{detail.campaignCode && detail.campaignCoverReason && <p className="muted claims-campaign-cover-note">{campaignCoverNote(detail.campaignCode, detail.campaignCoverReason, campaignRunsUntil)}</p>}<PresenceChips users={presence} /></div><div className="actions">
         {detail.remedy === "replacement" && detail.lines.find((line) => line.entitlementId) && ["approved", "partially_approved", "settled"].includes(detail.status) && <Link className="btn" to={`/replacements/new?sourceKind=claim&sourceId=${detail.claimId}&sourceEntitlementId=${detail.lines.find((line) => line.entitlementId)!.entitlementId}`}>Create replacement</Link>}
         {!decided && <><button type="button" className="btn" onClick={() => { setNote(""); setDialog("evidence"); }}>Ask for evidence</button><button type="button" className="btn" onClick={() => { setNote(""); setDialog("deny"); }}>Deny…</button><button type="button" className="btn primary" disabled={busy || !!preview.refusal} title={preview.refusal ? humanise(preview.refusal) : undefined} onClick={() => void approve()}><Icon name="check" />Approve {approvedLines} of {preview.lines.length} lines<kbd className="key">⌘↵</kbd></button></>}
         {["approved", "partially_approved", "denied"].includes(detail.status) && <button type="button" className="btn primary" disabled={busy} onClick={() => void change("settle")}>Settle claim</button>}
         {detail.status === "settled" && <button type="button" className="btn primary" disabled={busy} onClick={() => void change("close")}>Close claim</button>}
       </div></div>
+      <PresenceAdvisory users={presence} editing={dialog !== null} documentLabel="claim" />
       <ErrorNote error={error} onReload={() => { setDialog(null); setNote(""); void load(); }} />
       {preview.refusal && <div className="note bad" style={{ marginBottom: 16 }}><strong>Approval refused · {humanise(preview.refusal)}.</strong>&nbsp;{preview.refusalStep ? `To unblock: ${preview.refusalStep}.` : "Review the claim lines before approving."}</div>}
       {preview.requiredReviewerRole && !decided && <div className="note warn" style={{ marginBottom: 16 }}><strong>Reviewer role required.</strong>&nbsp;Approval must be made by a user with the {humanise(preview.requiredReviewerRole).toLowerCase()} role because this claim uses low-confidence cover.</div>}

@@ -65,6 +65,52 @@ namespace Yojana.Platform.Data.Platform.Migrations
                     b.ToTable("app_user", "platform");
                 });
 
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.DocumentPresence", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("DocumentType")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("document_type");
+
+                    b.Property<string>("DocumentId")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("document_id");
+
+                    b.Property<DateTime>("LastHeartbeat")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_heartbeat");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("mode");
+
+                    b.Property<DateTime>("Since")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("since");
+
+                    b.HasKey("TenantId", "UserId", "DocumentType", "DocumentId")
+                        .HasName("pk_document_presence");
+
+                    b.HasIndex("TenantId", "DocumentType", "DocumentId", "LastHeartbeat")
+                        .HasDatabaseName("ix_document_presence_tenant_id_document_type_document_id_last_heartbeat");
+
+                    b.HasIndex("TenantId", "LastHeartbeat")
+                        .HasDatabaseName("ix_document_presence_tenant_id_last_heartbeat");
+
+                    b.ToTable("document_presence", "platform");
+                });
+
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.SmokeLog", b =>
                 {
                     b.Property<Guid>("TenantId")

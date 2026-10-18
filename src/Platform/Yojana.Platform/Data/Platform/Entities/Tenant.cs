@@ -76,3 +76,21 @@ public sealed class SmokeLog : ITenantScoped
 
     public DateTime RecordedAt { get; set; }
 }
+
+/// <summary>Ephemeral advisory state; never copied to a document, ledger or outbox.</summary>
+public sealed class DocumentPresence : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+
+    public Guid UserId { get; set; }
+
+    public required string DocumentType { get; set; }
+
+    public required string DocumentId { get; set; }
+
+    public required string Mode { get; set; }
+
+    public DateTime Since { get; set; }
+
+    public DateTime LastHeartbeat { get; set; }
+}

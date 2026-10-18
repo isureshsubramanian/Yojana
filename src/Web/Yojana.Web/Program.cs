@@ -12,6 +12,7 @@ using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Messaging.Smoke;
+using Yojana.Platform.Presence;
 using Yojana.Platform.Seeding;
 using Yojana.Platform.Security;
 using Yojana.Platform.Shell;
@@ -84,6 +85,7 @@ app.UseStaticFiles(new StaticFileOptions
     },
 });
 app.UseYojanaPlatform();
+app.MapPresenceEndpoints();
 app.MapSerialisationEndpoints();
 
 app.MapGet("/health", async (PlatformDbContext db, CancellationToken ct) =>

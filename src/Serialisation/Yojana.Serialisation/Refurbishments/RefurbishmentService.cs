@@ -145,7 +145,6 @@ public sealed class RefurbishmentService(
         if (await db.RefurbishmentOperations.AsNoTracking().FirstOrDefaultAsync(o => o.TenantId == tenantId && o.CommandId == command.CommandId, cancellationToken) is { } replay)
             return OperationResult(replay, true);
         var workOrder = await OpenWorkOrderAsync(command.WorkOrderId, cancellationToken);
-        DocumentVersion.RequireExpected(command.ExpectedVersion, workOrder.RowVersion, workOrder.LastModifiedBy, workOrder.LastModifiedAt);
         if (command.Sequence <= 0) throw new CommandRefusedException("operation_sequence_invalid", "Operation sequence must be positive.");
         if (await db.RefurbishmentOperations.AnyAsync(o => o.TenantId == tenantId && o.WorkOrderId == workOrder.WorkOrderId && o.Sequence == command.Sequence, cancellationToken))
             throw new CommandRefusedException("operation_sequence_in_use", $"Operation sequence {command.Sequence} already exists.");
@@ -197,7 +196,6 @@ public sealed class RefurbishmentService(
         if (await db.RefurbishmentParts.AsNoTracking().FirstOrDefaultAsync(p => p.TenantId == tenantId && p.CommandId == command.CommandId, cancellationToken) is { } replay)
             return PartResult(replay, true);
         var workOrder = await OpenWorkOrderAsync(command.WorkOrderId, cancellationToken);
-        DocumentVersion.RequireExpected(command.ExpectedVersion, workOrder.RowVersion, workOrder.LastModifiedBy, workOrder.LastModifiedAt);
         if (!RemovedPartDestination.All.Contains(command.Destination))
             throw new CommandRefusedException("removed_part_destination_unknown", $"'{command.Destination}' is not spares, scrap or vendor return.");
         if (command.Destination == RemovedPartDestination.VendorReturn && command.VendorPartyRef is null)
@@ -270,7 +268,6 @@ public sealed class RefurbishmentService(
         if (await db.RefurbishmentParts.AsNoTracking().FirstOrDefaultAsync(p => p.TenantId == tenantId && p.CommandId == command.CommandId, cancellationToken) is { } replay)
             return PartResult(replay, true);
         var workOrder = await OpenWorkOrderAsync(command.WorkOrderId, cancellationToken);
-        DocumentVersion.RequireExpected(command.ExpectedVersion, workOrder.RowVersion, workOrder.LastModifiedBy, workOrder.LastModifiedAt);
         if (command.UnitCost < 0) throw new CommandRefusedException("part_cost_invalid", "Installed part cost cannot be negative.");
         var currency = Currency(command.Currency);
         var custodyDrafts = new List<UnitEventDraft>();
@@ -323,7 +320,6 @@ public sealed class RefurbishmentService(
         if (await db.RefurbishmentLabour.AsNoTracking().FirstOrDefaultAsync(l => l.TenantId == tenantId && l.CommandId == command.CommandId, cancellationToken) is { } replay)
             return new(replay.WorkOrderId, replay.LabourId, replay.Hours, replay.HourlyRate, replay.Amount, replay.Currency, replay.CostId, replay.EventId, true);
         var workOrder = await OpenWorkOrderAsync(command.WorkOrderId, cancellationToken);
-        DocumentVersion.RequireExpected(command.ExpectedVersion, workOrder.RowVersion, workOrder.LastModifiedBy, workOrder.LastModifiedAt);
         if (command.Hours <= 0 || command.HourlyRate < 0) throw new CommandRefusedException("labour_amount_invalid", "Labour hours must be positive and the hourly rate cannot be negative.");
         if (command.OperationId is { } operationId && !await db.RefurbishmentOperations.AnyAsync(o => o.TenantId == tenantId && o.WorkOrderId == workOrder.WorkOrderId && o.OperationId == operationId, cancellationToken))
             throw new CommandRefusedException("operation_unknown", $"Operation {operationId} does not exist on this work order.");
@@ -348,7 +344,6 @@ public sealed class RefurbishmentService(
         if (await db.RefurbishmentCosts.AsNoTracking().FirstOrDefaultAsync(c => c.TenantId == tenant.TenantId && c.CommandId == command.CommandId, cancellationToken) is { } replay)
             return CostResult(replay, true);
         var workOrder = await OpenWorkOrderAsync(command.WorkOrderId, cancellationToken);
-        DocumentVersion.RequireExpected(command.ExpectedVersion, workOrder.RowVersion, workOrder.LastModifiedBy, workOrder.LastModifiedAt);
         if (!RefurbishmentCostKind.All.Contains(command.Kind)) throw new CommandRefusedException("refurbishment_cost_kind_unknown", $"'{command.Kind}' is not a refurbishment cost kind.");
         if (command.Amount < 0) throw new CommandRefusedException("refurbishment_cost_invalid", "Refurbishment cost cannot be negative.");
         if (command.Kind == RefurbishmentCostKind.GradedReceipt && await db.RefurbishmentCosts.AnyAsync(c => c.TenantId == tenant.TenantId && c.WorkOrderId == workOrder.WorkOrderId && c.Kind == RefurbishmentCostKind.GradedReceipt, cancellationToken))

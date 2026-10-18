@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { DataGrid, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, PresenceAdvisory, PresenceChips, StatusBadge, useDocumentPresence, type GridColumn } from "../components";
 import { ItemField, LotField, UnitField, useReferenceNames } from "../corrections/ReferenceFields";
 import { usePeople } from "../people/people";
 import { Rail } from "../shell/Drawer";
@@ -62,6 +62,8 @@ export function Component() {
   const coverValid = [draft.partsPct, draft.labourPct, draft.travelPct].every((value) => Number.isInteger(value) && value >= 0 && value <= 100);
   const valid = draft.code.trim() && draft.name.trim() && draft.reserveTag.trim() && draft.reasonCode && draft.reasonNote.length <= 500 && draft.criteria.length > 0 && coverValid;
   const selectionEnded = campaignSchedule(draft.runsUntil || null, TODAY).ended;
+  const campaignDirty = campaign !== null && JSON.stringify(draft) !== JSON.stringify(toDraft(campaign));
+  const presence = useDocumentPresence("campaign", campaignId ?? "", campaignDirty);
 
   const save = useCallback(async () => {
     if (!valid) return;
@@ -105,7 +107,8 @@ export function Component() {
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Campaigns", to: "/claims/campaigns" }, { label: isNew ? "New" : campaign?.code ?? "Campaign" }]} />
-      <div className="page-header"><div><div className="eyebrow">{isNew ? "New campaign" : `Campaign ${campaign?.code ?? "…"} · ${draft.coverageSource} · ${draft.status} · created ${fmtDate(campaign?.createdAt)} by ${people(campaign?.createdBy)}`}</div><h1>{draft.name || "Name this campaign"}</h1><p className="sub">Units are chosen by criteria, never by hand · the preview is the selection · repairs post to this campaign’s reserve</p></div><div className="actions"><button type="button" className="btn" disabled={!valid || busy} onClick={() => void save()}>Save draft</button><button type="button" className="btn primary" disabled={!campaignId || !preview?.page.total || busy || selectionEnded || draft.status === "active" || draft.status === "closed"} onClick={() => void select()}><Icon name="check" />{selectionEnded ? "Selection ended" : `Select ${(preview?.page.total ?? 0).toLocaleString()} units`}<kbd className="key">⌘↵</kbd></button></div></div>
+      <div className="page-header"><div><div className="eyebrow">{isNew ? "New campaign" : `Campaign ${campaign?.code ?? "…"} · ${draft.coverageSource} · ${draft.status} · created ${fmtDate(campaign?.createdAt)} by ${people(campaign?.createdBy)}`}</div><h1>{draft.name || "Name this campaign"}</h1><p className="sub">Units are chosen by criteria, never by hand · the preview is the selection · repairs post to this campaign’s reserve</p><PresenceChips users={presence} /></div><div className="actions"><button type="button" className="btn" disabled={!valid || busy} onClick={() => void save()}>Save draft</button><button type="button" className="btn primary" disabled={!campaignId || !preview?.page.total || busy || selectionEnded || draft.status === "active" || draft.status === "closed"} onClick={() => void select()}><Icon name="check" />{selectionEnded ? "Selection ended" : `Select ${(preview?.page.total ?? 0).toLocaleString()} units`}<kbd className="key">⌘↵</kbd></button></div></div>
+      <PresenceAdvisory users={presence} editing={campaignDirty} documentLabel="campaign" />
       <div className="cols-3-2 top">
         <div className="stack">
           <section className="card" aria-labelledby="campaign-criteria"><div className="card-header"><h2 id="campaign-criteria">Criteria <span className="meta">all {grouped} kinds must match · any row within a kind</span></h2><div className="campaign-add"><select className="select" aria-label="Criterion kind" value={addKind} onChange={(event) => setAddKind(event.target.value as CampaignCriterionKind)}><option value="identifier_range">Serial range</option><option value="child">Child unit or item</option><option value="firmware">Firmware</option><option value="lot">Lot</option></select><button type="button" className="btn sm" onClick={addCriterion}><Icon name="plus" />Add</button></div></div><div className="card-body">{draft.criteria.map((criterion, index) => <CriterionEditor key={criterion.criterionId} criterion={criterion} onChange={(patch) => updateCriterion(index, patch)} onRemove={() => removeCriterion(index)} />)}{draft.criteria.length === 0 && <p className="muted">Add at least one criterion. Different kinds narrow with AND; repeated rows of one kind widen with OR.</p>}</div></section>
