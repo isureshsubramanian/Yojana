@@ -83,7 +83,7 @@ public sealed class OwnershipRlsPerformanceTests(SerialisationHostFixture fixtur
                 CancellationToken.None));
         var (_, rmaStatements) = await StatementCounter.CountAsync(() => scope.ServiceProvider
             .GetRequiredService<RmaQueries>().ListAsync(new RmaListFilter(null, null, null, serial[..8]),
-                At.AddDays(10), 0, 25, CancellationToken.None));
+                At.AddDays(10), null, 25, CancellationToken.None));
         var (_, certificateStatements) = await StatementCounter.CountAsync(() => scope.ServiceProvider
             .GetRequiredService<CertificateQueries>().PageAsync(null, null, null, serial[..8], null, null,
                 0, 25, CancellationToken.None));
