@@ -52,6 +52,8 @@ public sealed class TimeZoneSettingsTests
         var withoutDefault = await settings.SetAsync(new UpdateTenantTimeZoneSettings(null, [], saved.Version),
             "administrator", default);
         Assert.Null(withoutDefault.TenantTimeZone);
+        // The port is scoped to one request and reads the setting once; a later request sees the change.
+        port = new TenantTimeZonePort(settings, source);
         Assert.Equal("UTC", await port.ForLegalEntityAsync(Guid.NewGuid(),
             TimeZonePurpose.DocumentPresentation, default));
     }
@@ -87,6 +89,7 @@ public sealed class TimeZoneSettingsTests
 
         await settings.SetAsync(new UpdateTenantTimeZoneSettings(null, [], saved.Version),
             "administrator", default);
+        port = new TenantTimeZonePort(settings, source);
         Assert.Equal("UTC", await CreateEntitlementHandler.ZoneAsync(
             PolicyTerms.TimeZoneCustomerSite, null, Guid.NewGuid(), port, default));
     }
