@@ -44,7 +44,7 @@ public sealed class TenantAssetCertificatePresentationPort(SerialisationDbContex
         var text = ParseText(binding?.StaticText);
         return new CertificatePresentation(
             new CertificateIssuerSnapshot(text.GetValueOrDefault("issuer_display_name") ?? issuer?.Name ?? issuer?.Code ?? "Issuing entity",
-                text.GetValueOrDefault("issuer_registration_code") ?? issuer?.Code, text.GetValueOrDefault("issuer_address")),
+                text.GetValueOrDefault("issuer_registration_code"), text.GetValueOrDefault("issuer_address")),
             asset is null
                 ? new CertificateBrandingSnapshot("default", null, null)
                 : new CertificateBrandingSnapshot("tenant_logo", null, null, asset.AssetId, asset.Sha256, asset.MediaType));

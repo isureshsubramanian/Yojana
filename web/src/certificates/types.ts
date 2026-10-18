@@ -45,7 +45,8 @@ export interface CertificateTemplateDetail {
 }
 export interface FieldCatalogueEntry { path: string; type: string; repeating: boolean; description: string | null }
 export interface TemplateValidation {
-  valid: boolean; unknownPlaceholders: string[]; partyFieldViolations: string[]; declaredButUnusedFields: string[]; errors: string[];
+  valid: boolean; unknownPlaceholders: string[]; partyFieldViolations: string[]; declaredButUnusedFields: string[];
+  unknownHelpers: string[]; errors: string[];
 }
 export interface TenantAsset {
   assetId: string; kind: string; legalEntityId: string | null; mediaType: string; sha256: string;

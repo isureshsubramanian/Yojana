@@ -1,6 +1,5 @@
 using System.Reflection;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
@@ -13,7 +12,8 @@ namespace Yojana.Serialisation.Certificates;
 
 public sealed partial class CertificateTemplateService(SerialisationDbContext db, ITenantContext tenant, IClock clock,
     CertificatePayloadBuilder payloads, ICertificateRenderer renderer, CertificateDatabaseLock databaseLock,
-    IJurisdictionCertificateTextPort jurisdictionText)
+    IJurisdictionCertificateTextPort jurisdictionText, CertificateTemplateEngine templateEngine,
+    CertificateTemplateValidator templateValidator)
 {
     private const string BuiltInActor = "system:certificate-starters";
 
@@ -130,18 +130,8 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
     public CertificateTemplateValidation Validate(string documentKind, string layoutBody, string? headerBody,
         string? footerBody, IReadOnlyList<string> declaredFields)
     {
-        var catalogue = Catalogue(documentKind).Select(field => field.Path).ToHashSet(StringComparer.Ordinal);
-        var used = Placeholders(string.Join('\n', new[] { layoutBody, headerBody, footerBody }.Where(value => value is not null)!));
-        var all = used.Concat(declaredFields).Distinct(StringComparer.Ordinal).ToList();
-        var unknown = all.Where(path => !catalogue.Contains(path)).Order().ToList();
-        var party = documentKind == CertificateDocumentKind.ReleaseRecord
-            ? all.Where(IsPartyPath).Order().ToList() : [];
-        var unused = declaredFields.Where(path => !used.Contains(path, StringComparer.Ordinal)).Distinct().Order().ToList();
-        var errors = new List<string>();
-        if (string.IsNullOrWhiteSpace(layoutBody)) errors.Add("Layout body is required.");
-        if (unknown.Count > 0) errors.Add("The layout contains placeholders outside the fixed payload catalogue.");
-        if (party.Count > 0) errors.Add("Release-record layouts cannot bind party fields.");
-        return new CertificateTemplateValidation(errors.Count == 0, unknown, party, unused, errors);
+        return templateValidator.Validate(documentKind, Catalogue(documentKind).Select(field => field.Path).ToList(),
+            layoutBody, headerBody, footerBody, declaredFields);
     }
 
     public IReadOnlyList<CertificateFieldCatalogueEntry> Catalogue(string documentKind)
@@ -323,8 +313,8 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
                     EffectiveFrom = now, LayoutKind = CertificateLayoutKind.Html, LayoutBody = starter.Body, PageSize = "A4",
                     Orientation = "portrait", MarginTopMm = 15, MarginRightMm = 15, MarginBottomMm = 15, MarginLeftMm = 15,
                     HeaderBody = starter.Header, FooterBody = starter.Footer, StaticText = "{}",
-                    Fields = JsonSerializer.Serialize(Placeholders(string.Join('\n', new[] { starter.Body, starter.Header, starter.Footer }
-                        .Where(value => value is not null)))), ApprovedBy = BuiltInActor,
+                    Fields = JsonSerializer.Serialize(templateEngine.Analyse(string.Join('\n', new[] { starter.Body, starter.Header, starter.Footer }
+                        .Where(value => value is not null))).Fields), ApprovedBy = BuiltInActor,
                     ApprovedAt = now, CreatedAt = now, CreatedBy = BuiltInActor, UpdatedAt = now, UpdatedBy = BuiltInActor,
                 });
             }
@@ -404,35 +394,12 @@ public sealed partial class CertificateTemplateService(SerialisationDbContext db
         catch (JsonException) { return new Dictionary<string, Guid>(); }
     }
 
-    private static List<string> Placeholders(string text)
-    {
-        var result = new HashSet<string>(StringComparer.Ordinal);
-        var withoutEach = EachPattern().Replace(text, match =>
-        {
-            var collection = match.Groups[1].Value;
-            result.Add(collection);
-            foreach (Match token in ValuePattern().Matches(match.Groups[2].Value)) result.Add(collection + "." + token.Groups[1].Value);
-            return "";
-        });
-        foreach (Match token in ValuePattern().Matches(withoutEach)) result.Add(token.Groups[1].Value);
-        return result.Order().ToList();
-    }
-
-    private static bool IsPartyPath(string path) => !path.StartsWith("issuer.", StringComparison.Ordinal)
-        && path.Split('.').Any(part => part.Contains("party", StringComparison.OrdinalIgnoreCase)
-            || part.Contains("owner", StringComparison.OrdinalIgnoreCase) || part.Contains("customer", StringComparison.OrdinalIgnoreCase)
-            || part.Contains("address", StringComparison.OrdinalIgnoreCase));
-
     private static void ValidateIdentity(string kind, string form)
     {
         if (!CertificateDocumentKind.All.Contains(kind)) throw new CommandRefusedException("certificate_document_kind_unknown", $"Unknown document kind '{kind}'.");
         if (!CertificateFormType.All.Contains(form)) throw new CommandRefusedException("certificate_form_type_unknown", $"Unknown certificate form type '{form}'.");
     }
 
-    [GeneratedRegex(@"\{\{#each\s+([a-zA-Z0-9_.]+)\s*\}\}([\s\S]*?)\{\{/each\}\}", RegexOptions.CultureInvariant)]
-    private static partial Regex EachPattern();
-    [GeneratedRegex(@"\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}", RegexOptions.CultureInvariant)]
-    private static partial Regex ValuePattern();
 }
 
 public sealed record CertificateTemplateSaveResult(CertificateTemplateVersionRow? Version, CertificateTemplateValidation Validation);

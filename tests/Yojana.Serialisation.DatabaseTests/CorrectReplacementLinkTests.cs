@@ -5,6 +5,7 @@ using Wolverine;
 using Xunit;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
@@ -151,9 +152,17 @@ public sealed class CorrectReplacementLinkTests(SerialisationHostFixture fixture
         Assert.Empty(await db.Corrections.Where(row => row.CorrectionId == commandId).ToListAsync());
     }
 
-    internal async Task<Setup> SetUpAsync(string prefix)
+    internal async Task<Setup> SetUpAsync(string prefix, string? releaseRecordIssuePoint = null)
     {
         var tenant = await fixture.NewTenantAsync(prefix);
+        if (releaseRecordIssuePoint is not null)
+        {
+            using var settingsScope = fixture.ScopeFor(tenant);
+            var settings = settingsScope.ServiceProvider.GetRequiredService<ReleaseRecordIssuePointSettings>();
+            var current = await settings.GetAsync(CancellationToken.None);
+            await settings.SetAsync(new UpdateReleaseRecordIssuePointSettings(
+                releaseRecordIssuePoint, [], current.Version), CancellationToken.None);
+        }
         await InvokeAsync<CoverageFamilyRow>(tenant, new DefineCoverageFamily("base_warranty", "Base warranty", false, AssuranceOrService.Assurance));
         await InvokeAsync<ReplacementPolicyRow>(tenant, new DefineReplacementPolicy("STD-90", ReplacementRule.MaxRemainingOrMinDays, 90, null, null));
         var code = "CRL-" + Guid.NewGuid().ToString("N")[..7];

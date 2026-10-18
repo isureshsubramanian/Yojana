@@ -96,7 +96,11 @@ public sealed class ReleaseRecordIssuePolicy(
             return NotReached(issuePoint);
         }
 
-        var firstSale = triggerSchema is CustodyChanged.Schema or OwnershipOpened.Schema;
+        // A replacement shipment is the replacement unit's first customer shipment even though its custody reason is
+        // "replacement", not "sale". A corrected link establishes the same fact for the unit that physically shipped.
+        // These published replacement facts are the narrow issue-point contract; relying on custody reason would miss both.
+        var firstSale = triggerSchema is CustodyChanged.Schema or OwnershipOpened.Schema
+            or ReplacementShipped.Schema or ReplacementLinkCorrected.Schema;
         var allowed = issuePoint switch
         {
             ReleaseRecordIssuePoint.AtBuildRelease => unit.Build is not null

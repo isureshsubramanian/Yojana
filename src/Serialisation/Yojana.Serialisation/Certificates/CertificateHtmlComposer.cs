@@ -1,6 +1,5 @@
 using System.Net;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
@@ -18,13 +17,15 @@ public sealed record CertificateHtmlDocument(string BodyHtml, PdfPageSpec Page)
         ".certificate-copy{position:fixed;right:4mm;top:2mm;z-index:2;border:2px solid #991b1b;color:#991b1b;" +
         "padding:2mm 4mm;font-weight:800;font-size:18px;letter-spacing:.12em;transform:rotate(-4deg)}" +
         ".certificate-signature{break-inside:avoid}.certificate-logo{position:absolute;left:0;top:0}" +
+        ".certificate-footer{font-size:7.5pt;line-height:1.25;color:#64748b}" +
         ".certificate-logo img{max-width:48mm;max-height:20mm}</style></head><body>" +
         (pageChrome ? $"<header>{Page.HeaderHtml}</header>" : "") + BodyHtml +
         (pageChrome ? $"<footer>{Page.FooterHtml}</footer>" : "") + "</body></html>";
 }
 
 /// <summary>Creates inert HTML from an immutable payload and template; browser transport is deliberately outside this class.</summary>
-public sealed partial class CertificateHtmlComposer(SerialisationDbContext db, ITenantContext tenant)
+public sealed class CertificateHtmlComposer(SerialisationDbContext db, ITenantContext tenant,
+    CertificateTemplateEngine engine)
 {
     public async Task<CertificateHtmlDocument> ComposeAsync(CertificateRenderRequest request, CancellationToken cancellationToken)
     {
@@ -33,15 +34,15 @@ public sealed partial class CertificateHtmlComposer(SerialisationDbContext db, I
             ?? throw new InvalidOperationException($"Certificate template version {request.TemplateVersionId} does not exist.");
         using var payload = JsonDocument.Parse(request.Payload);
         var root = payload.RootElement;
-        var header = Render(template.HeaderBody, root, request);
-        var body = Render(template.LayoutBody, root, request);
-        var footer = Render(template.FooterBody, root, request);
+        var header = engine.Render(template.HeaderBody, root, request, template.Language);
+        var body = engine.Render(template.LayoutBody, root, request, template.Language);
+        var footer = engine.Render(template.FooterBody, root, request, template.Language);
         var logo = await LogoAsync(root, cancellationToken);
         var copy = request.Copy ? "<div class=\"certificate-copy\" role=\"note\">COPY</div>" : "";
         var signature = request.Signature is null ? "" :
             $"<section class=\"certificate-signature\"><hr><div><strong>Released by</strong><br>" +
             $"{Encode(request.Signature.PrintedName)} · {Encode(request.Signature.Meaning)}</div>" +
-            $"<div><strong>Signed</strong><br>{request.Signature.SignedAt:yyyy-MM-dd HH:mm} UTC · " +
+            $"<div><strong>Signed</strong><br>{Encode(engine.FormatDateTime(template.Language, request.Signature.SignedAt))} · " +
             $"{Encode(request.Signature.Method.Replace('_', ' '))}</div></section>";
         var articleEnd = body.LastIndexOf("</article>", StringComparison.OrdinalIgnoreCase);
         var signedBody = signature.Length > 0 && articleEnd >= 0
@@ -68,21 +69,6 @@ public sealed partial class CertificateHtmlComposer(SerialisationDbContext db, I
         return $"<div class=\"certificate-logo\"><img alt=\"\" src=\"{source}\"></div>";
     }
 
-    private static string Render(string? template, JsonElement payload, CertificateRenderRequest request)
-    {
-        var html = EachPattern().Replace(template ?? "", match => RenderEach(match, payload));
-        return ValuePattern().Replace(html, match => Encode(Read(payload, request, match.Groups[1].Value)));
-    }
-
-    private static string RenderEach(Match match, JsonElement root)
-    {
-        var value = Read(root, match.Groups[1].Value);
-        if (value is not { ValueKind: JsonValueKind.Array }) return "";
-        var body = match.Groups[2].Value;
-        return string.Concat(value.Value.EnumerateArray().Select(item =>
-            ValuePattern().Replace(body, token => Encode(Read(item, token.Groups[1].Value)))));
-    }
-
     private static JsonElement? Read(JsonElement root, string path)
     {
         var current = root;
@@ -91,43 +77,6 @@ public sealed partial class CertificateHtmlComposer(SerialisationDbContext db, I
         return current;
     }
 
-    private static string? Read(JsonElement root, CertificateRenderRequest request, string path)
-    {
-        if (path.StartsWith("certificate.", StringComparison.Ordinal))
-        {
-            var metadata = request.Metadata;
-            return path[12..] switch
-            {
-                "tracking_number" => metadata?.TrackingNumber,
-                "version" => metadata?.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                "issued_at" => metadata?.IssuedAt.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture),
-                "supersedes_tracking_number" => metadata?.SupersedesTrackingNumber,
-                "supersede_reason" => metadata?.SupersedeReason?.Replace('_', ' '),
-                "payload_hash" => metadata?.PayloadHash,
-                "verify_reference" => metadata?.VerifyReference,
-                _ => null,
-            };
-        }
-        if (path.StartsWith("signature.", StringComparison.Ordinal))
-        {
-            var signature = request.Signature;
-            return path[10..] switch
-            {
-                "printed_name" => signature?.PrintedName,
-                "meaning" => signature?.Meaning,
-                "signed_at" => signature?.SignedAt.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture),
-                "method" => signature?.Method.Replace('_', ' '),
-                _ => null,
-            };
-        }
-        return Read(root, path)?.ToString();
-    }
-
     private static string Encode(JsonElement? element) => WebUtility.HtmlEncode(element?.ToString() ?? "");
     private static string Encode(string? value) => WebUtility.HtmlEncode(value ?? "");
-
-    [GeneratedRegex(@"\{\{#each\s+([a-zA-Z0-9_.]+)\s*\}\}([\s\S]*?)\{\{/each\}\}", RegexOptions.CultureInvariant)]
-    private static partial Regex EachPattern();
-    [GeneratedRegex(@"\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}", RegexOptions.CultureInvariant)]
-    private static partial Regex ValuePattern();
 }

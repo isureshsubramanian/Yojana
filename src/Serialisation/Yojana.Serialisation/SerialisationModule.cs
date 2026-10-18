@@ -319,6 +319,9 @@ public static class SerialisationModule
         builder.Services.TryAddScoped<ICertificateReplacementReadPort, Replacements.CertificateReplacementReadPort>();
         builder.Services.TryAddScoped<ICertificateEntitlementReadPort, Entitlements.CertificateEntitlementReadPort>();
         builder.Services.TryAddScoped<ICertificatePresentationPort, TenantAssetCertificatePresentationPort>();
+        builder.Services.TryAddSingleton<ICertificateTemplateLanguageCatalogue, BuiltInCertificateTemplateLanguageCatalogue>();
+        builder.Services.AddSingleton<CertificateTemplateEngine>();
+        builder.Services.AddSingleton<CertificateTemplateValidator>();
         var certificateRuns = builder.Configuration.GetSection(CertificateRunOptions.SectionName).Get<CertificateRunOptions>()
             ?? new CertificateRunOptions();
         if (certificateRuns.MaximumSynchronousUnits < 1)

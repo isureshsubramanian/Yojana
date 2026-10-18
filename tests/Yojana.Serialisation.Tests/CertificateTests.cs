@@ -8,6 +8,8 @@ namespace Yojana.Serialisation.Tests;
 
 public sealed class CertificateTests
 {
+    private static readonly DateTime RenderedAt = new(2026, 7, 20, 14, 5, 6, DateTimeKind.Utc);
+
     [Fact]
     public void Canonical_json_has_the_same_text_and_hash_for_different_property_order()
     {
@@ -91,6 +93,64 @@ public sealed class CertificateTests
         Assert.Equal(schema, document.RootElement.GetProperty("title").GetString());
     }
 
+    [Fact]
+    public void Certificate_template_helpers_format_dates_labels_and_money_for_the_template_language()
+    {
+        using var payload = JsonDocument.Parse("""
+            {"made_on":"2026-07-20T14:05:06.1234567Z","identifier_type":"internal_serial",
+             "amount":1234.5,"currency":"EUR"}
+            """);
+        var engine = TemplateEngine();
+
+        var html = engine.Render("{{date made_on}}|{{datetime made_on}}|{{label identifier_type}}|{{money amount currency}}",
+            payload.RootElement, RenderRequest(), "en");
+
+        Assert.Equal("20 Jul 2026|20 Jul 2026, 14:05 UTC|Serial number|EUR 1,234.50", html);
+        Assert.DoesNotContain(".123", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Certificate_template_conditions_and_empty_repeats_remove_empty_fragments()
+    {
+        using var payload = JsonDocument.Parse("""{"revision":"","tests":[],"condition":"new"}""");
+        var engine = TemplateEngine();
+        const string template = "{{#if revision}}Revision {{revision}}{{else}}No revision{{/if}}|" +
+            "{{#unless revision}}No revision row{{/unless}}|" +
+            "{{#each tests}}{{label result}}{{else}}No tests recorded{{/each}}|{{label condition}}";
+
+        var html = engine.Render(template, payload.RootElement, RenderRequest(), "en");
+
+        Assert.Equal("No revision|No revision row|No tests recorded|New", html);
+        Assert.DoesNotContain("{{", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Certificate_template_validator_understands_relative_block_fields_and_names_unknown_helpers()
+    {
+        var validator = new CertificateTemplateValidator(TemplateEngine());
+        var validation = validator.Validate(CertificateDocumentKind.ReleaseRecord,
+            ["identifiers", "identifiers.type", "model.code"],
+            "{{#each identifiers}}{{label type}}{{else}}None{{/each}} {{mystery model.code}}", null, null,
+            ["identifiers", "identifiers.type", "model.code"]);
+
+        Assert.False(validation.Valid);
+        Assert.Empty(validation.UnknownPlaceholders);
+        Assert.Equal(["mystery"], validation.UnknownHelpers);
+        Assert.Contains("Unknown template helper 'mystery'.", validation.Errors);
+    }
+
+    [Fact]
+    public void Certificate_template_validator_rejects_unclosed_blocks_and_release_party_fields()
+    {
+        var validator = new CertificateTemplateValidator(TemplateEngine());
+        var validation = validator.Validate(CertificateDocumentKind.ReleaseRecord,
+            ["owner.name", "model.code"], "{{#if model.code}}{{model.code}} {{owner.name}}", null, null, []);
+
+        Assert.False(validation.Valid);
+        Assert.Equal(["owner.name"], validation.PartyFieldViolations);
+        Assert.Contains(validation.Errors, error => error.Contains("not closed", StringComparison.Ordinal));
+    }
+
     private static IEnumerable<string> MemberPaths(Type type, string prefix = "", HashSet<Type>? stack = null)
     {
         stack ??= [];
@@ -109,6 +169,12 @@ public sealed class CertificateTests
         }
         stack.Remove(type);
     }
+
+    private static CertificateTemplateEngine TemplateEngine() =>
+        new(new BuiltInCertificateTemplateLanguageCatalogue());
+
+    private static CertificateRenderRequest RenderRequest() => new("{}", Guid.Empty,
+        Metadata: new CertificateRenderMetadata("CRT-1", 1, RenderedAt, null, null, "hash", "urn:test"));
 
     private sealed class WarrantyFacts(IReadOnlyList<CertificateEntitlementFact> rows) : ICertificateEntitlementReadPort
     {
