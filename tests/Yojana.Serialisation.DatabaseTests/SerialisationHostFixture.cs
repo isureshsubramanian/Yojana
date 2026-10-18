@@ -1,8 +1,18 @@
+using System.Net;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
 using Yojana.Platform;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
@@ -34,7 +44,8 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
             return;
         }
 
-        var builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder();
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = Environments.Development });
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Configuration["Platform:ConnectionString"] = ConnectionString;
         builder.Configuration["Platform:MigrateOnStartup"] = "true";
         builder.Configuration["Platform:AutoBuildMessageStorage"] = "true";
@@ -62,8 +73,52 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
                     .MaximumParallelMessages(PublishedEventSink.MaximumParallelMessages);
             }
         });
-        Host = builder.Build();
-        await Host.StartAsync();
+        var app = builder.Build();
+        app.UseApiProblemDetails();
+        app.UseYojanaPlatform();
+        app.UseSerialisationInteractiveReads();
+        app.MapSerialisationEndpoints();
+        app.MapGet("/test/sign-in/{tenantId:guid}", async (Guid tenantId, HttpContext http) =>
+        {
+            var userId = Guid.NewGuid();
+            var claims = new List<Claim>
+            {
+                new(YojanaClaim.UserId, userId.ToString("D")),
+                new(ClaimTypes.NameIdentifier, userId.ToString("D")),
+                new(ClaimTypes.Name, "Fictional Quality User"),
+                new(ClaimTypes.Email, "quality.user@example.invalid"),
+                new(YojanaClaim.TenantId, tenantId.ToString("D")),
+                new(YojanaClaim.TenantCode, "http-test"),
+            };
+            claims.AddRange(YojanaRole.All.Select(role => new Claim(YojanaClaim.Role, role)));
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(claims,
+                CookieAuthenticationDefaults.AuthenticationScheme, ClaimTypes.Name, YojanaClaim.Role));
+            await http.SignInAsync(principal);
+            return Results.NoContent();
+        }).AllowAnonymous();
+        app.MapGet("/api/test/unhandled", (Func<IResult>)(() =>
+                throw new InvalidOperationException("secret stack and cookie must not escape")))
+            .AllowAnonymous();
+        Host = app;
+        await app.StartAsync();
+    }
+
+    public async Task<HttpClient> AuthenticatedClientAsync(TenantId tenant)
+    {
+        var handler = new HttpClientHandler { CookieContainer = new CookieContainer(), UseCookies = true };
+        var client = new HttpClient(handler) { BaseAddress = Address() };
+        using var response = await client.GetAsync($"/test/sign-in/{tenant.Value:D}");
+        response.EnsureSuccessStatusCode();
+        return client;
+    }
+
+    public HttpClient Client() => new() { BaseAddress = Address() };
+
+    private Uri Address()
+    {
+        var server = Services.GetRequiredService<IServer>();
+        var address = server.Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+        return new Uri(address);
     }
 
     public async Task DisposeAsync()

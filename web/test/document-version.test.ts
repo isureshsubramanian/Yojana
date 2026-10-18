@@ -37,3 +37,21 @@ test("document-changed refusal keeps actor, time and reload instruction", async 
     globalThis.fetch = originalFetch;
   }
 });
+
+test("an HTML 500 body is never exposed to the user", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("<html><body>stack trace; Cookie: yojana.session=secret</body></html>", {
+    status: 500,
+    headers: { "content-type": "text/html" },
+  });
+  try {
+    await assert.rejects(() => api("/api/certificates/selection/preview"), (reason: unknown) => {
+      assert.ok(reason instanceof ApiError);
+      assert.equal(reason.message, "Something went wrong (HTTP 500)");
+      assert.doesNotMatch(reason.message, /stack|cookie|secret|html/i);
+      return true;
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

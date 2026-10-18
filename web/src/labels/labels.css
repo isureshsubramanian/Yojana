@@ -13,10 +13,11 @@
 .label-remove { color: var(--text-2); }
 .label-empty-row { height: 72px !important; text-align: center !important; }
 .label-preview-body { display: grid; justify-items: stretch; gap: 12px; }
-.label-preview-box { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 12px; align-items: center; min-height: 180px; padding: 16px; border: 1px dashed var(--border-strong); border-radius: var(--radius-s); background: var(--surface-1); color: var(--text-1); }
+.label-preview-box { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 16px; align-items: center; min-height: 180px; padding: 16px; border: 1px dashed var(--border-strong); border-radius: var(--radius-s); background: var(--surface-1); color: var(--text-1); }
 .label-preview-box pre { margin: 0; min-width: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; font-family: var(--font-mono); font-size: 12px; }
 .label-barcode { width: 72px; height: 72px; image-rendering: pixelated; background: #fff; }
 .label-barcode-placeholder { width: 72px; height: 72px; display: grid; place-items: center; border: 2px solid var(--border-strong); background: var(--surface-2); color: var(--text-3); font-family: var(--font-mono); font-weight: 700; letter-spacing: .08em; }
+.label-preview-caption { display: block; line-height: 1.5; }
 .check-setting { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; align-items: start; }
 .check-setting input { margin: 3px 0 0; }
 .check-setting strong, .check-setting .help { display: block; }

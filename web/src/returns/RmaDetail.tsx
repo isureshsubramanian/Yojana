@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ActionDialog, PresenceAdvisory, PresenceChips, StatusBadge, useDocumentPresence } from "../components";
+import { useTenantTime } from "../components/tenantTime";
 import { PartyField, useReferenceNames } from "../corrections/ReferenceFields";
 import { usePeople } from "../people/people";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
-import { fmtDate, fmtDateTime } from "../units/format";
 import { returnsApi } from "./api";
 import { dispositionOptionState, humanise, initialDisposition, receiptTone, stageNumber, stageTone } from "./format";
 import type { RmaDetail, RmaDetailLine } from "./types";
@@ -22,6 +22,7 @@ const DISPOSITIONS = [
 ] as const;
 
 export function Component() {
+  const tenantTime = useTenantTime();
   const { rmaId = "" } = useParams();
   const [detail, setDetail] = useState<RmaDetail | null>(null);
   const [choices, setChoices] = useState<Record<string, string>>({});
@@ -29,7 +30,7 @@ export function Component() {
   const [dialog, setDialog] = useState<"dispatch" | "close" | null>(null);
   const [carrierName, setCarrierName] = useState("");
   const [trackingReference, setTrackingReference] = useState("");
-  const [dispatchedAt, setDispatchedAt] = useState(toLocalInput(new Date()));
+  const [dispatchedAt, setDispatchedAt] = useState(() => tenantTime.localInput(new Date().toISOString()));
   const [closeFollowUps, setCloseFollowUps] = useState<RmaDetail["openFollowUps"]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -42,7 +43,7 @@ export function Component() {
     if (!dispatchedAt) return;
     setBusy(true); setError(null);
     try {
-      await returnsApi.dispatch(rmaId, { dispatchedAt: new Date(dispatchedAt).toISOString(), carrierName: carrierName.trim() || null, trackingReference: trackingReference.trim() || null });
+      await returnsApi.dispatch(rmaId, { dispatchedAt: tenantTime.fromLocalInput(dispatchedAt), carrierName: carrierName.trim() || null, trackingReference: trackingReference.trim() || null });
       setDialog(null); await load();
     } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
@@ -83,9 +84,9 @@ export function Component() {
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Returns", to: "/returns" }, { label: detail.rmaNumber ?? "Return request" }]} />
-      <div className="page-header"><div><div className="eyebrow">{detail.rmaNumber ?? "Return request"} · stage {stageNumber(detail.stage)} of 6 · {humanise(detail.stage)} · requested {fmtDate(detail.requestedAt)} by {people(detail.requestedBy)}</div><h1>{primary?.authorisedSerial ?? primary?.requestedSerial ?? "Return awaiting unit"}{primary?.description ? ` · ${primary.description}` : ""}</h1><p className="sub">{names.party(detail.returningPartyRef)} owns the returned unit · the original sale is resolved from its ownership episode and latest shipment, never chosen by hand</p><PresenceChips users={presence} /></div><div className="actions">
+      <div className="page-header"><div><div className="eyebrow">{detail.rmaNumber ?? "Return request"} · stage {stageNumber(detail.stage)} of 6 · {humanise(detail.stage)} · requested {tenantTime.date(detail.requestedAt)} by {people(detail.requestedBy)}</div><h1>{primary?.authorisedSerial ?? primary?.requestedSerial ?? "Return awaiting unit"}{primary?.description ? ` · ${primary.description}` : ""}</h1><p className="sub">{names.party(detail.returningPartyRef)} owns the returned unit · the original sale is resolved from its ownership episode and latest shipment, never chosen by hand</p><PresenceChips users={presence} /></div><div className="actions">
         {detail.stage === "requested" && <button type="button" className="btn primary" disabled={busy} onClick={() => void authorise()}><Icon name="check" />Authorise return</button>}
-        {detail.stage === "authorised" && <button type="button" className="btn" disabled={busy} onClick={() => { setCloseFollowUps([]); setDialog("dispatch"); }}><Icon name="returns" />Record dispatch</button>}
+        {detail.stage === "authorised" && <button type="button" className="btn" disabled={busy} onClick={() => { setCloseFollowUps([]); setDispatchedAt(tenantTime.localInput(new Date().toISOString())); setDialog("dispatch"); }}><Icon name="returns" />Record dispatch</button>}
         {["authorised", "in_transit"].includes(detail.stage) && <Link className="btn primary" to={`/returns/receipt?rmaId=${detail.rmaId}`}><Icon name="scan" />Receive return</Link>}
         {detail.stage === "received" && <button type="button" className="btn primary" disabled={busy || !canDisposition} title={!canDisposition ? "Choose an enabled disposition for every line and any required vendor" : undefined} onClick={() => void disposition()}><Icon name="check" />Disposition {detail.lines.length === 1 ? "line" : `${detail.lines.length} lines`}</button>}
         {detail.stage === "dispositioned" && <button type="button" className="btn primary" disabled={busy} onClick={() => { setCloseFollowUps(detail.openFollowUps); setDialog("close"); }}><Icon name="check" />Close RMA</button>}
@@ -104,8 +105,8 @@ export function Component() {
         <div className="stack">
           <section className="card"><div className="card-header"><h2>Stages</h2><StatusBadge tone={stageTone(detail.stage)}>{stageNumber(detail.stage)} of 6</StatusBadge></div><div className="card-body"><ol className="returns-checks">{[
             ["Requested", detail.requestedAt], ["Authorised", detail.authorisedAt], ["In transit", detail.inTransitAt], ["Received", detail.receivedAt], ["Dispositioned", detail.dispositionedAt], ["Closed", detail.closedAt],
-          ].map(([label, at], index) => <li key={label}><span>{label}<span className="s">{at ? fmtDateTime(at) : "waiting"}</span></span><StatusBadge tone={at ? "ok" : index + 1 === stageNumber(detail.stage) ? "info" : "neutral"}>{at ? "Recorded" : index + 1 === stageNumber(detail.stage) ? "Current" : "Pending"}</StatusBadge></li>)}</ol>{detail.dispatch && <div className="note info returns-card-note"><strong>Dispatch recorded.</strong>&nbsp;{detail.dispatch.carrierName ?? "Carrier not recorded"}{detail.dispatch.trackingReference ? ` · ${detail.dispatch.trackingReference}` : ""} · by {people(detail.dispatch.dispatchedBy)}</div>}</div></section>
-          {detail.lines.filter((line) => line.receiptBusinessTime).map((line) => <section className="card" key={line.rmaLineId}><div className="card-header"><h2>Receipt · line {line.sequence}</h2></div><div className="card-body"><Kv rows={[["Received unit", line.receivedUnitId ? <UnitLink unitId={line.receivedUnitId}>{line.receivedSerial ?? "Open unit"}</UnitLink> : "Provisional identity"], ["Grade", `${humanise(line.conditionGrade)} · ${humanise(line.valuationRule)}`], ["Outcome", humanise(line.receiptOutcome)], ["Location", names.location(line.receivingLocationId)], ["Business time", fmtDateTime(line.receiptBusinessTime)], ["Posting period", line.postingPeriod ?? "—"], ["Received by", people(line.receivedBy)]]} /></div></section>)}
+          ].map(([label, at], index) => { const skipped = !at && index + 1 < stageNumber(detail.stage); return <li key={label}><span>{label}<span className="s">{at ? tenantTime.dateTime(at) : skipped ? "not required" : "waiting"}</span></span><StatusBadge tone={at ? "ok" : index + 1 === stageNumber(detail.stage) ? "info" : "neutral"}>{at ? "Recorded" : index + 1 === stageNumber(detail.stage) ? "Current" : skipped ? "Skipped" : "Pending"}</StatusBadge></li>; })}</ol>{detail.dispatch && <div className="note info returns-card-note"><strong>Dispatch recorded.</strong>&nbsp;{detail.dispatch.carrierName ?? "Carrier not recorded"}{detail.dispatch.trackingReference ? ` · ${detail.dispatch.trackingReference}` : ""} · by {people(detail.dispatch.dispatchedBy)}</div>}</div></section>
+          {detail.lines.filter((line) => line.receiptBusinessTime).map((line) => <section className="card" key={line.rmaLineId}><div className="card-header"><h2>Receipt · line {line.sequence}</h2></div><div className="card-body"><Kv rows={[["Received unit", line.receivedUnitId ? <UnitLink unitId={line.receivedUnitId}>{line.receivedSerial ?? "Open unit"}</UnitLink> : "Provisional identity"], ["Grade", `${humanise(line.conditionGrade)} · ${humanise(line.valuationRule)}`], ["Outcome", humanise(line.receiptOutcome)], ["Location", names.location(line.receivingLocationId)], ["Business time", tenantTime.dateTime(line.receiptBusinessTime)], ["Posting period", line.postingPeriod ?? "—"], ["Received by", people(line.receivedBy)]]} /></div></section>)}
         </div>
       </div>
     </main>
@@ -116,10 +117,6 @@ export function Component() {
 }
 
 function MismatchPanel({ line, names }: { line: RmaDetailLine; names: ReturnType<typeof useReferenceNames> }) {
-  return <section className="card" aria-labelledby={`mismatch-${line.rmaLineId}`}><div className="card-header"><h2 id={`mismatch-${line.rmaLineId}`}>Line {line.sequence} · received unit is not the authorised unit</h2><StatusBadge tone="bad">Held in quarantine</StatusBadge></div><div className="card-body"><div className="returns-pair"><div className="returns-pair-side"><div className="returns-pair-label">Authorised</div><div className="serial">{line.authorisedSerial ?? "No serial recorded"}</div><div className="sub muted">{names.item(line.requestedItemId)}</div></div><div className="returns-pair-arrow" aria-hidden="true">≠</div><div className="returns-pair-side bad"><div className="returns-pair-label">Received · {fmtDateTime(line.receiptBusinessTime)}</div><div className="serial">{line.receivedSerial ?? "Provisional identity"}</div><div className="sub muted">{names.item(line.receivedItemId)}{line.exceptionNote ? ` · ${line.exceptionNote}` : ""}</div></div></div><div className="returns-options" style={{ marginTop: 12 }} aria-label="Mismatch resolution choices">{[["Amend to the received unit", "confirm ownership and cover before binding"], ["Reject and return", "ship it back and request the authorised unit"], ["Treat as unauthorised", "no claim attaches · separate receipt"]].map(([label, reason]) => <div className="returns-option off" key={label}><span><span className="returns-option-title">{label}</span><span className="s">{reason} · use the correction workbench</span></span></div>)}</div></div></section>;
-}
-
-function toLocalInput(value: Date): string {
-  const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
+  const tenantTime = useTenantTime();
+  return <section className="card" aria-labelledby={`mismatch-${line.rmaLineId}`}><div className="card-header"><h2 id={`mismatch-${line.rmaLineId}`}>Line {line.sequence} · received unit is not the authorised unit</h2><StatusBadge tone="bad">Held in quarantine</StatusBadge></div><div className="card-body"><div className="returns-pair"><div className="returns-pair-side"><div className="returns-pair-label">Authorised</div><div className="serial">{line.authorisedSerial ?? "No serial recorded"}</div><div className="sub muted">{names.item(line.requestedItemId)}</div></div><div className="returns-pair-arrow" aria-hidden="true">≠</div><div className="returns-pair-side bad"><div className="returns-pair-label">Received · {tenantTime.dateTime(line.receiptBusinessTime)}</div><div className="serial">{line.receivedSerial ?? "Provisional identity"}</div><div className="sub muted">{names.item(line.receivedItemId)}{line.exceptionNote ? ` · ${line.exceptionNote}` : ""}</div></div></div><div className="returns-options" style={{ marginTop: 12 }} aria-label="Mismatch resolution choices">{[["Amend to the received unit", "confirm ownership and cover before binding"], ["Reject and return", "ship it back and request the authorised unit"], ["Treat as unauthorised", "no claim attaches · separate receipt"]].map(([label, reason]) => <div className="returns-option off" key={label}><span><span className="returns-option-title">{label}</span><span className="s">{reason} · use the correction workbench</span></span></div>)}</div></div></section>;
 }

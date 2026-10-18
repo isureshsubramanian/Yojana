@@ -162,7 +162,7 @@ public static class SerialisationEndpoints
 
         var units = app.MapGroup("/api/units").RequireAuthorization(YojanaPolicy.TenantMember);
         units.MapGet("/lookup", async (string q, string? type, UnitQueries queries, CancellationToken ct) =>
-            string.IsNullOrWhiteSpace(q) ? Results.BadRequest(new { error = "q is required" }) : Results.Ok(await queries.LookupAsync(q.Trim(), type, ct)));
+            string.IsNullOrWhiteSpace(q) ? ApiProblem("query_required", "q is required.") : Results.Ok(await queries.LookupAsync(q.Trim(), type, ct)));
         units.MapGet("/search", async (string? q, string? type, Guid? item, string? status, Guid? owner, Guid? location, bool? superseded, string? sort, int? skip, int? take, string? document, UnitQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.SearchAsync(new UnitSearch(q, type, item, status, owner, location, superseded ?? true, sort ?? "identifier", Math.Max(0, skip ?? 0), take ?? 50, ParseDocument(document)), ct)));
         units.MapGet("/search/export", (string? q, string? type, Guid? item, string? status, Guid? owner,
@@ -328,7 +328,7 @@ public static class SerialisationEndpoints
                 var end = to ?? DateOnly.FromDateTime(clock.UtcNow);
                 return Results.Ok(await queries.QueryAsync(from ?? end.AddMonths(-11).AddDays(1 - end.Day), end, breakdown ?? CorrectionKpiBreakdown.RootCause, item, ct));
             }
-            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "kpi_query_invalid", detail = ex.Message }); }
+            catch (ArgumentException ex) { return ApiProblem("kpi_query_invalid", ex.Message); }
         });
         corrections.MapGet("/kpi/export", async (DateOnly? from, DateOnly? to, string? breakdown, Guid? item, string? format,
             CorrectionKpiQueries queries, ITabularExporter exporter, IClock clock, CancellationToken ct) =>
@@ -339,9 +339,9 @@ public static class SerialisationEndpoints
                 var end = to ?? DateOnly.FromDateTime(clock.UtcNow);
                 report = await queries.QueryAsync(from ?? end.AddMonths(-11).AddDays(1 - end.Day), end, breakdown ?? CorrectionKpiBreakdown.RootCause, item, ct);
             }
-            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "kpi_query_invalid", detail = ex.Message }); }
+            catch (ArgumentException ex) { return ApiProblem("kpi_query_invalid", ex.Message); }
             var selected = (format ?? "csv").ToLowerInvariant();
-            if (selected is not "csv" and not "xlsx") return Results.BadRequest(new { rule = "export_format_unknown" });
+            if (selected is not "csv" and not "xlsx") return ExportFormatProblem();
             return Results.Stream(stream => exporter.WriteAsync(selected, new TabularExport(
                 ["month", "breakdown", "dimension", "corrections", "units_corrected", "units_shipped", "per_1000", "reversed_later", "target_per_1000"],
                 CorrectionKpiRows(report.Breakdown, report.Rows, ct)), stream, ct), exporter.ContentType(selected), "correction-volume" + exporter.Extension(selected));
@@ -518,7 +518,9 @@ public static class SerialisationEndpoints
             var lookup = await unitQueries.LookupAsync(identifier, type, ct);
             var unitsFound = lookup.Hits.Select(h => h.UnitId).Distinct().ToList();
             if (unitsFound.Count == 0) return Results.NotFound();
-            if (unitsFound.Count > 1) return Results.Conflict(new { reason = "ambiguous_identifier", lookup.Hits });
+            if (unitsFound.Count > 1) return ApiProblem("ambiguous_identifier",
+                "More than one unit matches this identifier.", StatusCodes.Status409Conflict,
+                new Dictionary<string, object?> { ["hits"] = lookup.Hits });
             return Results.Ok(await entitlementQueries.WarrantyCheckAsync(unitsFound[0], on ?? DateOnly.FromDateTime(clock.UtcNow), family, ct));
         });
         entitlements.MapPost("/", (CreateEntitlement command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CreateEntitlementResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
@@ -612,18 +614,18 @@ public static class SerialisationEndpoints
             Invoke<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
 
         var rmas = app.MapGroup("/api/rmas").RequireAuthorization(YojanaPolicy.TenantMember);
-        rmas.MapGet("/", async (string? stage, int? minimumAgeDays, int? maximumAgeDays, string? q, string? after, int? take,
+        rmas.MapGet("/", async (string? stage, int? minimumAgeDays, int? maximumAgeDays, bool? exceptionsOnly, string? q, string? after, int? take,
             RmaQueries queries, IClock clock, CancellationToken ct) =>
         {
-            try { return Results.Ok(await queries.ListAsync(new RmaListFilter(stage, minimumAgeDays, maximumAgeDays, q), clock.UtcNow, after, take ?? 50, ct)); }
-            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "filters_invalid", detail = ex.Message }); }
+            try { return Results.Ok(await queries.ListAsync(new RmaListFilter(stage, minimumAgeDays, maximumAgeDays, q, exceptionsOnly ?? false), clock.UtcNow, after, take ?? 50, ct)); }
+            catch (ArgumentException ex) { return ApiProblem("filters_invalid", ex.Message); }
         });
-        rmas.MapGet("/export", (string? stage, int? minimumAgeDays, int? maximumAgeDays, string? q, string? format,
+        rmas.MapGet("/export", (string? stage, int? minimumAgeDays, int? maximumAgeDays, bool? exceptionsOnly, string? q, string? format,
             HttpContext http, RmaQueries queries, IClock clock, ITabularExporter exporter, CancellationToken ct) =>
             ListExport<RmaListRow>(format, "rmas", http, exporter,
                 ExistingListExports.CursorPages<RmaListRow>(async (after, take, token) =>
                 {
-                    var page = await queries.ListAsync(new RmaListFilter(stage, minimumAgeDays, maximumAgeDays, q),
+                    var page = await queries.ListAsync(new RmaListFilter(stage, minimumAgeDays, maximumAgeDays, q, exceptionsOnly ?? false),
                         clock.UtcNow, after, take, token);
                     return (page.Rows, page.Continuation);
                 }, ct)));
@@ -881,7 +883,7 @@ public static class SerialisationEndpoints
         replacementLinks.MapGet("/", async (string? state, bool? overdue, int? dueWithinDays, string? q, int? skip, int? take, Replacements.ReplacementLinkQueries queries, IClock clock, CancellationToken ct) =>
         {
             try { return Results.Ok(await queries.PageAsync(state, overdue ?? false, dueWithinDays, q, DateOnly.FromDateTime(clock.UtcNow), skip ?? 0, take ?? 50, ct)); }
-            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "filters_invalid", detail = ex.Message }); }
+            catch (ArgumentException ex) { return ApiProblem("filters_invalid", ex.Message); }
         });
         replacementLinks.MapGet("/export", (string? state, bool? overdue, int? dueWithinDays, string? q,
             string? format, HttpContext http, Replacements.ReplacementLinkQueries queries, IClock clock,
@@ -904,7 +906,7 @@ public static class SerialisationEndpoints
                 var matchingVendors = string.IsNullOrWhiteSpace(find) ? [] : (await parties.SearchAsync(find, 25, ct)).Select(row => row.PartyRef).ToList();
                 return Results.Ok(await queries.PageAsync(status, vendor, childItem, find, matchingVendors, DateOnly.FromDateTime(clock.UtcNow), skip ?? 0, take ?? 50, ct));
             }
-            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "filters_invalid", detail = ex.Message }); }
+            catch (ArgumentException ex) { return ApiProblem("filters_invalid", ex.Message); }
         });
         recoveryClaims.MapGet("/summary", async (RecoveryQueries queries, IClock clock, CancellationToken ct) =>
             Results.Ok(await queries.SummaryAsync(DateOnly.FromDateTime(clock.UtcNow), ct)));
@@ -915,7 +917,7 @@ public static class SerialisationEndpoints
             ITabularExporter exporter, CancellationToken ct) =>
         {
             try { _ = RecoveryClaimFilter.Parse(status); }
-            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "filters_invalid", detail = ex.Message }); }
+            catch (ArgumentException ex) { return ApiProblem("filters_invalid", ex.Message); }
             var matchingVendors = string.IsNullOrWhiteSpace(find) ? [] : (await parties.SearchAsync(find, 25, ct)).Select(row => row.PartyRef).ToList();
             return DirectExport(format, "recovery-claims", http, exporter,
                 ["recovery_number", "raised_at", "customer_claim", "claim_date", "child_serial", "child_item", "vendor",
@@ -945,7 +947,7 @@ public static class SerialisationEndpoints
                     new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, ct);
                 return Results.Ok(await queries.PageAsync(filters, skip ?? 0, take ?? 50, ct));
             }
-            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "filters_invalid", detail = ex.Message }); }
+            catch (ArgumentException ex) { return ApiProblem("filters_invalid", ex.Message); }
         });
         entitlements.MapGet("/gap-report/runs/latest", async (EntitlementGapQueries queries, CancellationToken ct) =>
             await queries.LastRunAsync(ct) is { } run ? Results.Ok(run) : Results.NotFound());
@@ -956,7 +958,7 @@ public static class SerialisationEndpoints
         {
             EntitlementGapFilters filters;
             try { filters = EntitlementGapFilterParser.Parse(items, saleFrom, saleTo, channels, dropShip, requirementStatus, sort); }
-            catch (ArgumentException ex) { return Results.BadRequest(new { reason = "filters_invalid", detail = ex.Message }); }
+            catch (ArgumentException ex) { return ApiProblem("filters_invalid", ex.Message); }
             await bus.InvokeAsync<EntitlementGapRunResult>(new RunEntitlementGapReport(Guid.NewGuid(), EntitlementGapTrigger.OnDemand, filters),
                 new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, ct);
             return DirectExport(format, "entitlement-gap-report", http, exporter,
@@ -1076,7 +1078,7 @@ public static class SerialisationEndpoints
         // P6 certificate read and selection issue/reprint surface.
         var generalSettings = app.MapGroup("/api/settings").RequireAuthorization(YojanaPolicy.TenantMember);
         generalSettings.MapGet("/time-zone", async (TenantTimeZoneSettings settings, CancellationToken ct) =>
-            Results.Ok(await settings.GetAsync(ct))).RequireAuthorization(YojanaPolicy.TenantAdministrator);
+            Results.Ok(await settings.GetAsync(ct)));
         generalSettings.MapPut("/time-zone", async (UpdateTenantTimeZoneSettings update,
             TenantTimeZoneSettings settings, ClaimsPrincipal user, CancellationToken ct) =>
         {
@@ -1204,10 +1206,10 @@ public static class SerialisationEndpoints
             Results.Ok(await queries.ChainAsync(unitId, ct)));
         certificates.MapGet("/units/{unitId:guid}/composite", async (Guid unitId, CertificateQueries queries, CancellationToken ct) =>
             await queries.RenderCompositeAsync(unitId, ct) is { } rendered
-                ? Results.File(rendered.Bytes, rendered.MediaType, $"certificate-composite-{unitId:N}.{(rendered.MediaType.StartsWith("application/pdf", StringComparison.OrdinalIgnoreCase) ? "pdf" : "html")}")
+                ? Results.File(rendered.Bytes, rendered.MediaType)
                 : Results.NotFound());
         // P6-T08 selection issue/reprint. Identity is always stamped from claims; one HTTP command handles the whole set.
-        certificates.MapPost("/selection/preview", async (CertificateSelectionPreviewRequest request,
+        certificates.MapPost("/selection/preview", (CertificateSelectionPreviewRequest request,
             CertificateSelectionService service, CancellationToken ct) => TemplateInvoke(() => service.PreviewAsync(request, ct)));
         certificates.MapPost("/selection/issue", (IssueCertificate command, ClaimsPrincipal user, IMessageBus bus,
             ITenantContext tenant, CancellationToken ct) => Invoke<CertificateRunResult>(bus, tenant,
@@ -1239,7 +1241,11 @@ public static class SerialisationEndpoints
             try
             {
                 var saved = await service.SaveDraftAsync(templateId, request, Actor(user), ct);
-                return saved.Version is null ? Results.UnprocessableEntity(saved.Validation) : Results.Ok(saved);
+                return saved.Version is null
+                    ? ApiProblem("certificate_template_invalid", string.Join(" ", saved.Validation.Errors),
+                        StatusCodes.Status422UnprocessableEntity,
+                        new Dictionary<string, object?> { ["validation"] = saved.Validation })
+                    : Results.Ok(saved);
             }
             catch (CommandRefusedException ex)
             {
@@ -1358,7 +1364,7 @@ public static class SerialisationEndpoints
             var job = await queries.GetAsync(jobId, ct);
             if (job is null) return Results.NotFound();
             var selected = (format ?? "csv").ToLowerInvariant();
-            if (selected is not "csv" and not "xlsx") return Results.BadRequest(new { rule = "export_format_unknown" });
+            if (selected is not "csv" and not "xlsx") return ExportFormatProblem();
             return Results.Stream(stream => exporter.WriteAsync(selected, new TabularExport(
                 ["row", "sheet", "raw_value", "normalised_value", "outcome", "rule", "order_number", "lot", "customer_asset_tag", "partition", "proposed_action", "reviewed_action", "collision_unit", "collision_owner"],
                 queries.ExportRowsAsync(jobId, ct)), stream, ct), exporter.ContentType(selected), $"import-{job.JobId:N}{exporter.Extension(selected)}");
@@ -1411,7 +1417,7 @@ public static class SerialisationEndpoints
             BackOfficeReportQueries queries, ITabularExporter exporter, CancellationToken ct) =>
         {
             var selected = ExportFormat(format);
-            if (selected is null) return Results.BadRequest(new { rule = "export_format_unknown" });
+            if (selected is null) return ExportFormatProblem();
             http.Response.Headers["X-Export-Row-Limit"] = BackOfficeReportQueries.MaximumExportRows.ToString(System.Globalization.CultureInfo.InvariantCulture);
             return Results.Stream(stream => exporter.WriteAsync(selected, new TabularExport(
                 ["root_serial", "parent_serial", "depth", "slot", "internal_serial", "manufacturer_serial",
@@ -1426,7 +1432,7 @@ public static class SerialisationEndpoints
             HttpContext http, BackOfficeReportQueries queries, ITabularExporter exporter, CancellationToken ct) =>
         {
             var selected = ExportFormat(format);
-            if (selected is null) return Results.BadRequest(new { rule = "export_format_unknown" });
+            if (selected is null) return ExportFormatProblem();
             InstalledBaseStockFilter filter;
             try { filter = new InstalledBaseStockFilter(ParseIds(item), holding ?? BackOfficeHolding.All, location); }
             catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
@@ -1444,7 +1450,7 @@ public static class SerialisationEndpoints
             BackOfficeReportQueries queries, ITabularExporter exporter, IClock clock, CancellationToken ct) =>
         {
             var selected = ExportFormat(format);
-            if (selected is null) return Results.BadRequest(new { rule = "export_format_unknown" });
+            if (selected is null) return ExportFormatProblem();
             http.Response.Headers["X-Export-Row-Limit"] = BackOfficeReportQueries.MaximumExportRows.ToString(System.Globalization.CultureInfo.InvariantCulture);
             return Results.Stream(stream => exporter.WriteAsync(selected, new TabularExport(
                 ["root_serial", "root_item", "customer_item_reference", "current_owner", "slot", "component_item",
@@ -1459,7 +1465,7 @@ public static class SerialisationEndpoints
             BackOfficeReportQueries queries, ITabularExporter exporter, CancellationToken ct) =>
         {
             var selected = ExportFormat(format);
-            if (selected is null) return Results.BadRequest(new { rule = "export_format_unknown" });
+            if (selected is null) return ExportFormatProblem();
             http.Response.Headers["X-Export-Row-Limit"] = BackOfficeReportQueries.MaximumExportRows.ToString(System.Globalization.CultureInfo.InvariantCulture);
             return Results.Stream(stream => exporter.WriteAsync(selected, new TabularExport(
                 ["section", "serial", "item", "owner", "from_or_recorded_at", "to", "order", "delivery",
@@ -1615,6 +1621,17 @@ public static class SerialisationEndpoints
         title: ex.Rule, detail: ex.Message, statusCode: statusCode,
         extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
 
+    private static IResult ApiProblem(string rule, string detail, int statusCode = StatusCodes.Status400BadRequest,
+        IDictionary<string, object?>? extra = null)
+    {
+        var extensions = extra is null ? new Dictionary<string, object?>() : new Dictionary<string, object?>(extra);
+        extensions["rule"] = rule;
+        return Results.Problem(title: rule, detail: detail, statusCode: statusCode, extensions: extensions);
+    }
+
+    private static IResult ExportFormatProblem() =>
+        ApiProblem("export_format_unknown", "Choose CSV or XLSX.");
+
     private static string? ExportFormat(string? format)
     {
         var selected = (format ?? "csv").ToLowerInvariant();
@@ -1629,7 +1646,7 @@ public static class SerialisationEndpoints
         ITabularExporter exporter, IReadOnlyList<string> headers, IAsyncEnumerable<IReadOnlyList<string?>> rows)
     {
         var selected = ExportFormat(format);
-        if (selected is null) return Results.BadRequest(new { rule = "export_format_unknown" });
+        if (selected is null) return ExportFormatProblem();
         http.Response.Headers["X-Export-Row-Limit"] = BackOfficeReportQueries.MaximumExportRows
             .ToString(System.Globalization.CultureInfo.InvariantCulture);
         return Results.Stream(stream => exporter.WriteAsync(selected,

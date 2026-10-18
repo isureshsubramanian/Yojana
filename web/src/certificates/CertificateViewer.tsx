@@ -38,10 +38,13 @@ export function Component() {
   const totalVersions = ownChain?.reduce((maximum, row) => Math.max(maximum, row.version), certificate.version) ?? certificate.version;
   const predecessor = certificate.supersedesCertificateId
     ? ownChain?.find((row) => row.certificateId === certificate.supersedesCertificateId)?.trackingNumber : null;
+  const provenance = certificate.signatures.some((signature) => signature.method === "authenticated_user")
+    ? `Issued by ${certificate.signatures.find((signature) => signature.method === "authenticated_user")?.printedName ?? "an authenticated user"}`
+    : humanise(certificate.provenance);
   const eyebrow = `${humanise(certificate.documentKind)} · version ${certificate.version} of ${totalVersions} · issued ${certificate.issuedAtDisplay}`
     + (predecessor ? ` · supersedes ${predecessor} (${humanise(certificate.supersedeReason)})` : "");
   const openVersion = (row: CertificateListRow) => openDrawer({ eyebrow: `${humanise(row.documentKind)} · version ${row.version}`, title: row.trackingNumber, mono: true }, <>
-    <Section title="Version"><Kv rows={[["Status", humanise(row.status)], ["Issued", row.issuedAtDisplay], ["Form", formLabel(row.formType, row.documentKind)], ["Provenance", humanise(row.provenance)]]} /></Section>
+    <Section title="Version"><Kv rows={[["Status", humanise(row.status)], ["Issued", row.issuedAtDisplay], ["Form", formLabel(row.formType, row.documentKind)], ["Provenance", provenanceLabel(row)]]} /></Section>
     <div className="act"><Link className="btn primary block" to={`/certificates/${row.certificateId}`}>Open this version</Link></div>
   </>);
 
@@ -49,11 +52,11 @@ export function Component() {
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Certificates", to: "/certificates" }, { label: certificate.trackingNumber }]} />
       <PageHeader eyebrow={eyebrow} title={`${certificate.primarySerial} · ${itemName}`} sub={`A signed ${humanise(certificate.documentKind).toLowerCase()} whose payload and presentation snapshot never change.`}
-        actions={<><PresenceChips users={presence} />{chain?.releaseRecords.length && chain.warrantyCertificates.length ? <a className="btn" href={`/api/certificates/units/${certificate.unitId}/composite`}>Composite print</a> : null}<Link className="btn" to={`/units/${certificate.unitId}`}>Open unit</Link></>} />
+        actions={<><PresenceChips users={presence} />{chain?.releaseRecords.length && chain.warrantyCertificates.length ? <a className="btn" href={`/api/certificates/units/${certificate.unitId}/composite`} target="_blank" rel="noreferrer">Composite print</a> : null}<Link className="btn" to={`/units/${certificate.unitId}`}>Open unit</Link></>} />
       <div className="stack">
         <KpiStrip kpis={[
           { label: "Status", value: humanise(certificate.status), detail: "current state of this version" },
-          { label: "Form", value: formLabel(certificate.formType, certificate.documentKind), detail: `version ${certificate.version} · ${certificate.language}` },
+          { label: "Form", value: compactFormLabel(certificate.formType, certificate.documentKind), detail: `version ${certificate.version} · ${languageName(certificate.language)}` },
           { label: "Payload hash", value: shortHash(certificate.payloadHash), detail: "SHA-256 · signatures bind to it" },
           { label: "Reprints", value: certificate.reprints.length.toLocaleString(), detail: "each is a Copy, never a version" },
         ]} />
@@ -72,7 +75,7 @@ export function Component() {
             </section>
             <section className="card" aria-labelledby="certificate-snapshots"><div className="card-header"><h2 id="certificate-snapshots">Snapshots on this version</h2></div><div className="card-body"><Kv rows={[
               ["Issuer", certificate.issuer.name], ["Owner", certificate.owner?.name ?? "not present on this document"],
-              ["Branding", certificate.branding.displayName ?? humanise(certificate.branding.profile)], ["Provenance", humanise(certificate.provenance)], ["Trigger", trigger],
+              ["Branding", certificate.branding.displayName ?? humanise(certificate.branding.profile)], ["Provenance", provenance], ["Trigger", trigger],
             ]} /></div></section>
           </div>
         </div>
@@ -84,7 +87,7 @@ export function Component() {
 
 function ChainCard({ title, meta, rows, currentId, onOpen, empty }: { title: string; meta: string; rows: CertificateListRow[]; currentId: string; onOpen: (row: CertificateListRow) => void; empty?: string }) {
   return <section className="card"><div className="card-header"><h2>{title}</h2><span className="meta">{meta}</span></div><div className="card-body">
-    {rows.length ? <ol className="certificate-chain">{[...rows].sort((a, b) => b.version - a.version).map((row) => <li key={row.certificateId} aria-current={row.certificateId === currentId} onClick={() => onOpen(row)}><span className="chain-version">{row.version}</span><span><span className="t mono">{row.trackingNumber}</span><span className="sub">{row.issuedAtDisplay} · {humanise(row.provenance)}</span></span><StatusBadge tone={statusTone(row.status)}>{humanise(row.status)}</StatusBadge></li>)}</ol> : <div className="note">{empty ?? "No versions."}</div>}
+    {rows.length ? <ol className="certificate-chain">{[...rows].sort((a, b) => b.version - a.version).map((row) => <li key={row.certificateId} aria-current={row.certificateId === currentId} onClick={() => onOpen(row)}><span className="chain-version">{row.version}</span><span><span className="t mono">{row.trackingNumber}</span><span className="sub">{row.issuedAtDisplay} · {provenanceLabel(row)}</span></span><StatusBadge tone={statusTone(row.status)}>{humanise(row.status)}</StatusBadge></li>)}</ol> : <div className="note">{empty ?? "No versions."}</div>}
   </div></section>;
 }
 
@@ -93,4 +96,19 @@ function objectValue(root: Record<string, unknown>, object: string, key: string)
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const nested = (value as Record<string, unknown>)[key];
   return typeof nested === "string" || typeof nested === "number" ? String(nested) : null;
+}
+
+function languageName(code: string): string {
+  try { return new Intl.DisplayNames(undefined, { type: "language" }).of(code) ?? code; }
+  catch { return code; }
+}
+
+function compactFormLabel(formType: string, documentKind: string): string {
+  if (formType === "easa_form_1_style") return "EASA Form 1-style";
+  if (formType === "release_8130_3_style") return "8130-3 style";
+  return formLabel(formType, documentKind);
+}
+
+function provenanceLabel(row: CertificateListRow): string {
+  return row.issuedBy ? `Issued by ${row.issuedBy}` : humanise(row.provenance);
 }

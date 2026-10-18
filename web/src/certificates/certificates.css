@@ -2,7 +2,7 @@
 .certificate-viewer-columns { display: grid; grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr); gap: 24px; align-items: start; }
 .certificate-frame-wrap { background: var(--surface-2); }
 .certificate-frame, .certificate-design-frame {
-  display: block; width: 100%; min-height: 780px; border: 1px solid var(--paper-border); border-radius: var(--radius-s);
+  display: block; width: 100%; min-height: 1160px; border: 1px solid var(--paper-border); border-radius: var(--radius-s);
   background: var(--paper-bg); color: var(--paper-text);
 }
 .certificate-side-stack { gap: 16px; }
@@ -30,7 +30,7 @@
 .certificate-layout-card { min-width: 0; }
 .certificate-layout-settings { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .certificate-margin-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.certificate-design-frame { min-height: 650px; }
+.certificate-design-frame { min-height: 780px; }
 .certificate-html-editor { min-height: 540px; font-family: var(--font-mono); font-size: 12px; tab-size: 2; }
 .certificate-editor-target { justify-self: start; }
 .certificate-preview-controls { display: grid; grid-template-columns: minmax(260px, 1fr) auto auto; align-items: end; gap: 10px; }

@@ -1,5 +1,5 @@
 .jurisdiction-toolbar { display: grid; grid-template-columns: minmax(160px, .7fr) minmax(220px, 1.3fr) auto; gap: 10px; align-items: end; }
-.jurisdiction-sections { display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); gap: var(--gap); align-items: start; }
+.jurisdiction-sections { display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); gap: var(--gap); margin-top: var(--gap); align-items: start; }
 .jurisdiction-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .jurisdiction-form .wide { grid-column: 1 / -1; }
 .jurisdiction-form .span-2 { grid-column: span 2; }

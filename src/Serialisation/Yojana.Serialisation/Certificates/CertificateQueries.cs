@@ -124,8 +124,15 @@ public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext
     private async Task<List<CertificateListRow>> Rows(IReadOnlyList<Data.Entities.CertificateInstance> entities, CancellationToken cancellationToken)
     {
         var unitIds = entities.Select(row => row.UnitId).Distinct().ToList();
+        var certificateIds = entities.Select(row => row.CertificateId).ToList();
         var serials = await units.PrimarySerialsAsync(unitIds, cancellationToken);
         var itemIds = await units.CurrentItemIdsAsync(unitIds, cancellationToken);
+        var issuedBy = certificateIds.Count == 0 ? new Dictionary<Guid, string>() : await db.CertificateSignatures.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && certificateIds.Contains(row.CertificateId)
+                && row.SignatureMethod == "authenticated_user")
+            .GroupBy(row => row.CertificateId)
+            .Select(group => new { CertificateId = group.Key, PrintedName = group.OrderBy(row => row.SignedAt).Select(row => row.PrintedName).First() })
+            .ToDictionaryAsync(row => row.CertificateId, row => row.PrintedName, cancellationToken);
         return entities.Select(row =>
         {
             using var document = JsonDocument.Parse(row.Payload);
@@ -133,7 +140,8 @@ public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext
                 itemIds.TryGetValue(row.UnitId, out var itemId) ? itemId : null,
                 serials.GetValueOrDefault(row.UnitId) ?? "Unlabelled unit", row.DocumentKind, row.FormType, row.Version,
                 row.TrackingNumber, row.Status, row.IssuedAt,
-                DisplayTime(row.Language, row.IssuedAt, document.RootElement), row.Provenance);
+                DisplayTime(row.Language, row.IssuedAt, document.RootElement), row.Provenance,
+                issuedBy.GetValueOrDefault(row.CertificateId));
         }).ToList();
     }
 

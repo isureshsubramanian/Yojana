@@ -2,9 +2,9 @@ import { api } from "../api/client";
 import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
 import type { CloseRmaResult, ReplacementCreateDraft, RmaDetail, RmaListResult, WarrantyReplacementDetail } from "./types";
 
-export interface RmaFilters { stage: string; minimumAgeDays: number | null; maximumAgeDays: number | null; q: string }
+export interface RmaFilters { stage: string; minimumAgeDays: number | null; maximumAgeDays: number | null; exceptionsOnly: boolean; q: string }
 
-function query(values: Record<string, string | number | null | undefined>): string {
+function query(values: Record<string, string | number | boolean | null | undefined>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(values)) if (value !== null && value !== undefined && value !== "") params.set(key, String(value));
   const text = params.toString(); return text ? `?${text}` : "";

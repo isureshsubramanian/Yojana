@@ -1,4 +1,6 @@
 using System.IO.Compression;
+using System.Net;
+using System.Net.Http.Json;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -97,6 +99,34 @@ public sealed class CertificateSelectionTests(SerialisationHostFixture fixture)
             row.Header.UnitId == copy.UnitId && row.Reason == "Fictional delivery pack", 1, TimeSpan.FromSeconds(20)));
         Assert.True(publication.Copy);
         Assert.Equal((CertificateReprinted.Schema, "1.0"), (publication.Header.Schema, publication.Header.Version));
+    }
+
+    [DatabaseFact]
+    public async Task Selection_preview_endpoint_returns_kpis_over_http()
+    {
+        var tenant = await fixture.NewTenantAsync("cert-http");
+        var ready = await UnitAsync(tenant, "HTTP-READY", released: true, suppressPublication: true);
+        var selection = await InvokeAsync<ResolveSelectionSetResult>(tenant, new ResolveSelectionSet(Guid.NewGuid(),
+            SelectionSource.ByPastedList([ready.Serial]), "quality.user"));
+        using var client = await fixture.AuthenticatedClientAsync(tenant);
+
+        using var response = await client.PostAsJsonAsync("/api/certificates/selection/preview", new
+        {
+            selectionId = selection.SelectionId,
+            documentKind = CertificateDocumentKind.ReleaseRecord,
+            formType = CertificateFormType.CertificateOfConformity,
+            issuerEntityId = Entity,
+            language = "en",
+            includeBundle = false,
+            skip = 0,
+            take = 50,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var preview = await response.Content.ReadFromJsonAsync<CertificateSelectionPreview>();
+        Assert.NotNull(preview);
+        Assert.Equal(1, preview.Kpis.InSelection);
+        Assert.Equal(1, preview.Kpis.NewVersion1);
     }
 
     [DatabaseFact]

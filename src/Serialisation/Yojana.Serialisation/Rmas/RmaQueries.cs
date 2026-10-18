@@ -27,6 +27,7 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
         if (filter.Stage is not null) query = query.Where(r => r.Stage == filter.Stage);
         if (filter.MinimumAgeDays is { } minimum) { var before = now.AddDays(-minimum); query = query.Where(r => r.RequestedAt <= before); }
         if (filter.MaximumAgeDays is { } maximum) { var youngerThan = now.AddDays(-(maximum + 1)); query = query.Where(r => r.RequestedAt > youngerThan); }
+        if (filter.ExceptionsOnly) query = query.Where(r => r.HasException);
         if (!string.IsNullOrWhiteSpace(filter.Find))
         {
             var find = filter.Find.Trim();

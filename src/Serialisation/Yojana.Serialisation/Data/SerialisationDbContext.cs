@@ -436,6 +436,9 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
         modelBuilder.Entity<LedgerBaseOrderBackfillCheckpoint>(b =>
         {
+            // TIGHT COUPLING (SQL Server checkpoint transaction): LedgerBaseOrderBackfill serialises each tenant's
+            // first read/insert and later cursor advance with a transaction-owned application lock. Removing that lock
+            // while this tenant primary key remains the sole checkpoint permits duplicate first-run inserts.
             b.ToTable("ledger_base_order_backfill_checkpoint");
             b.HasKey(checkpoint => checkpoint.TenantId);
             b.Property(checkpoint => checkpoint.Status).HasMaxLength(20);

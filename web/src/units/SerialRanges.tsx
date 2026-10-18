@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { ranges, toPage, DEFAULT_LEGAL_ENTITY, newCommandId, now, type AllocateSerialRangeResult, type SerialRangeList, type SerialRangeRow, type SerialSchemeRow } from "../api/units";
 import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
+import { DocumentField, ItemField, useReferenceNames, type DocumentValue } from "../corrections/ReferenceFields";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
@@ -15,7 +16,6 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function rangeTone(status: string) { return status === "exhausted" ? "ok" : status === "commissioning" ? "warn" : status === "released" ? "bad" : "neutral"; }
 
-/** Serial range allocation (P1 screen 4): a reservation, not an identity; overlaps refused, the start moved to the next free serial when asked. */
 export function Component() {
   const actor = useActor();
   const [schemes, setSchemes] = useState<SerialSchemeRow[]>([]);
@@ -27,9 +27,8 @@ export function Component() {
   const [loading, setLoading] = useState(false);
   const [version, setVersion] = useState(0);
   const [quantity, setQuantity] = useState(500);
-  const [docType, setDocType] = useState("production_order");
-  const [docId, setDocId] = useState("");
-  const [itemId, setItemId] = useState("");
+  const [allocatedTo, setAllocatedTo] = useState<DocumentValue | null>(null);
+  const [itemId, setItemId] = useState<string | null>(null);
   const [start, setStart] = useState("");
   const [randomised, setRandomised] = useState(false);
   const [note, setNote] = useState("");
@@ -37,6 +36,10 @@ export function Component() {
   const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<AllocateSerialRangeResult | null>(null);
   const [active, setActive] = useState<string | null>(null);
+  const names = useReferenceNames({
+    items: [itemId, ...(list?.page.items.map((row) => row.itemId) ?? [])],
+    documents: [allocatedTo, ...(list?.page.items.map((row) => row.allocatedToDocumentId && row.allocatedToDocumentType ? { type: row.allocatedToDocumentType, id: row.allocatedToDocumentId } : null) ?? [])],
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -53,12 +56,12 @@ export function Component() {
   }, [scheme, status, page, version]);
 
   const definition = schemes.find((s) => s.code === scheme);
-  const ready = scheme && quantity > 0 && GUID.test(docId) && !busy;
+  const ready = scheme && quantity > 0 && !!allocatedTo && GUID.test(allocatedTo.id) && !busy;
 
   const allocate = async () => {
     setBusy(true); setError(null); setResult(null);
     try {
-      const r = await ranges.allocate({ commandId: newCommandId(), scheme, quantity, allocatedTo: { type: docType, id: docId }, eventTime: now(), actorRef: actor, legalEntityId: DEFAULT_LEGAL_ENTITY, requestedStart: start || null, randomised, itemId: GUID.test(itemId) ? itemId : null, note: note || null });
+      const r = await ranges.allocate({ commandId: newCommandId(), scheme, quantity, allocatedTo: allocatedTo!, eventTime: now(), actorRef: actor, legalEntityId: DEFAULT_LEGAL_ENTITY, requestedStart: start || null, randomised, itemId, note: note || null });
       setResult(r);
       setVersion((v) => v + 1);
     } catch (e) { setError(e); } finally { setBusy(false); }
@@ -69,7 +72,7 @@ export function Component() {
     { key: "range", label: "Range", width: 23, mono: true, render: (r) => r.randomised ? <>{shortId(r.rangeId)}<span className="sub">randomised list</span></> : <>{r.startValue}<span className="sub serial">→ {r.endValue}</span></> },
     { key: "qty", label: "Qty", width: 10, numeric: true, render: (r) => r.count.toLocaleString() },
     { key: "used", label: "Used", width: 10, numeric: true, render: (r) => r.commissionedCount ? r.commissionedCount.toLocaleString() : <span className="muted">—</span> },
-    { key: "to", label: "Allocated to", width: 21, render: (r) => <><span className="primary">{r.allocatedToDocumentType ? `${humanise(r.allocatedToDocumentType)} ${shortId(r.allocatedToDocumentId)}` : "—"}</span><span className="sub">{r.itemId ? `item ${shortId(r.itemId)}` : "any item"}</span></> },
+    { key: "to", label: "Allocated to", width: 21, render: (r) => <><span className="primary">{r.allocatedToDocumentType && r.allocatedToDocumentId ? names.document({ type: r.allocatedToDocumentType, id: r.allocatedToDocumentId }) : "—"}</span><span className="sub">{r.itemId ? names.item(r.itemId) : "any item"}</span></> },
     { key: "reserved", label: "Reserved", width: 16, render: (r) => <>{fmtDate(r.reservedAt)}<span className="sub">{person(r.reservedBy)}</span></> },
     { key: "status", label: "Status", width: 20, render: (r) => <StatusBadge tone={rangeTone(r.status)}>{humanise(r.status)}</StatusBadge> },
   ];
@@ -77,7 +80,7 @@ export function Component() {
   const rowClick = (r: SerialRangeRow) => openDrawer({ eyebrow: `Selected range · ${humanise(r.status)}`, title: r.startValue ?? shortId(r.rangeId), mono: true }, (
     <>
       <h3>Range</h3>
-      <Kv rows={[["Start", <span className="serial">{r.startValue ?? "—"}</span>], ["End", <span className="serial">{r.endValue ?? "—"}</span>], ["Count", r.count.toLocaleString()], ["Commissioned", `${r.commissionedCount} of ${r.count}`], ["Allocated to", r.allocatedToDocumentType ? `${humanise(r.allocatedToDocumentType)} ${shortId(r.allocatedToDocumentId)}` : "—"], ["Item", r.itemId ? shortId(r.itemId) : "any"], ["Reserved", `${fmtDate(r.reservedAt)} · ${person(r.reservedBy)}`], ["Mode", r.randomised ? "randomised list" : "contiguous block"], ["Note", r.note ?? "—"]]} />
+      <Kv rows={[["Start", <span className="serial">{r.startValue ?? "—"}</span>], ["End", <span className="serial">{r.endValue ?? "—"}</span>], ["Count", r.count.toLocaleString()], ["Commissioned", `${r.commissionedCount} of ${r.count}`], ["Allocated to", r.allocatedToDocumentType && r.allocatedToDocumentId ? names.document({ type: r.allocatedToDocumentType, id: r.allocatedToDocumentId }) : "—"], ["Item", r.itemId ? names.item(r.itemId) : "any"], ["Reserved", `${fmtDate(r.reservedAt)} · ${person(r.reservedBy)}`], ["Mode", r.randomised ? "randomised list" : "contiguous block"], ["Note", r.note ?? "—"]]} />
       <div className="act"><Link className="btn block" to={`/units?q=${encodeURIComponent((r.startValue ?? "").slice(0, Math.max(0, (r.startValue ?? "").length - 3)))}`}>Units in this block</Link></div>
     </>
   ));
@@ -104,9 +107,8 @@ export function Component() {
             <div className="card-body">
               <div className="form-grid">
                 <div className="field"><label htmlFor="a-scheme">Scheme</label><select id="a-scheme" className="select" value={scheme} onChange={(e) => { setScheme(e.target.value); setPage(1); }}>{schemes.map((s) => <option key={s.code} value={s.code}>{s.code} · {s.identifierType} · {s.example}</option>)}</select></div>
-                <div className="field"><label htmlFor="a-item">Item id <span className="hint">· optional</span></label><input id="a-item" className="input serial" value={itemId} onChange={(e) => setItemId(e.target.value)} placeholder="guid" /></div>
-                <div className="field"><label htmlFor="a-doctype">Allocated to · document type</label><input id="a-doctype" className="input" value={docType} onChange={(e) => setDocType(e.target.value)} /></div>
-                <div className="field"><label htmlFor="a-docid">Document id</label><input id="a-docid" className="input serial" value={docId} onChange={(e) => setDocId(e.target.value)} placeholder="guid" /></div>
+                <ItemField id="a-item" label="Item" value={itemId} onChange={setItemId} optional hint="Leave empty when the range may be used across items" />
+                <DocumentField id="a-document" label="Allocated to" types={["production_order"]} value={allocatedTo} onChange={setAllocatedTo} hint="Search by production-order number" />
                 <div className="field span">
                   <span className="lbl">Mode</span>
                   <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
@@ -126,7 +128,7 @@ export function Component() {
                 <ErrorNote error={error} />
               </div>
             </div>
-            <div className="card-footer"><span>Records <strong>serial_range</strong> with <code>reserved_at</code> now · no unit exists until <code>unit.commissioned</code></span><span className="muted">ReassignAllocation (P3) re-points reservations</span></div>
+            <div className="card-footer"><span>The range is reserved now; units are created only as serials are commissioned.</span></div>
           </section>
 
           <section className="card" aria-labelledby="h-ranges">
@@ -149,7 +151,7 @@ export function Component() {
           <Kv rows={[["Ranges", list?.ranges.toLocaleString() ?? "—"], ["Serials issued", list?.serialsIssued.toLocaleString() ?? "—"], ["Next free", <span className="serial">{list?.nextFree ?? "—"}</span>]]} />
         </Section>
         <Section title="Rules applied">
-          <p className="muted">Overlapping ranges are refused at insert. Count equals the order quantity. A reservation is not an identity: nothing exists in <code>unit</code> until commissioning, and a serial is never re-issued to a different physical unit once a unit exists. Released ranges from cancelled orders stay unused by policy (OD-07).</p>
+          <p className="muted">Ranges cannot overlap. The count matches the order quantity, and reserving a range does not create units. A serial is never re-issued to another physical unit; released ranges remain unused.</p>
         </Section>
       </Rail>
     </>

@@ -40,6 +40,9 @@ builder.AddIntegrationModule();
 
 var app = builder.Build();
 
+// Development must not replace this API boundary with an HTML exception page: that can disclose headers and cookies.
+app.UseApiProblemDetails();
+
 // Operational commands: `--migrate` applies migrations and exits; `--seed` seeds the DEV tenant and exits.
 if (args.Contains("--migrate") || args.Contains("--seed"))
 {
