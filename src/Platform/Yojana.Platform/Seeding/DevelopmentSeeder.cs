@@ -5,6 +5,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
+using Yojana.Platform.Scheduling;
 using Yojana.Platform.Security;
 
 namespace Yojana.Platform.Seeding;
@@ -70,6 +71,10 @@ public static class DevelopmentSeeder
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        // This is the platform's current tenant-creation seam. Schedule after the tenant commits so Quartz never
+        // points at a tenant that rolled back; the startup reconciliation remains the recovery path after a crash.
+        await services.GetRequiredService<RecurringTenantJobProvisioner>()
+            .EnsureScheduledAsync(seed.TenantId, cancellationToken);
     }
 }
 

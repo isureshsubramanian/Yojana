@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using JasperFx;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -131,11 +132,17 @@ public static class PlatformSetup
                 store.UseSqlServer(options.ConnectionString);
                 store.ConfigureStore(ado => ado.TablePrefix = options.QuartzSchema + ".QRTZ_");
                 store.UseSystemTextJsonSerializer(_ => { });
+                // TIGHT COUPLING (recurring-job reconciliation lock)
+                // WHAT: Quartz clustering and RecurringJobReconciliationLock must use this same SQL database.
+                // WHY: clustering coordinates job firing but exposes no cluster-wide lock for application reconciliation.
+                // WHAT BREAKS IF SEPARATED: two hosts can both observe a missing schedule and race to insert it.
                 store.UseClustering(cluster => cluster.Enabled = true);
             });
         });
         builder.Services.AddQuartzHostedService(h => h.WaitForJobsToComplete = true);
         builder.Services.AddSingleton<RecurringTenantJobScheduler>();
+        builder.Services.AddSingleton<RecurringJobReconciliationLock>();
+        builder.Services.AddSingleton<RecurringTenantJobProvisioner>();
         builder.Services.AddSingleton(RecurringTenantJob.For<SmokeHeartbeatJob>(SmokeHeartbeatJob.JobName, SmokeHeartbeatJob.Cron));
         builder.Services.AddSingleton(RecurringTenantJob.For<PresenceCleanupJob>(PresenceCleanupJob.JobName, PresenceCleanupJob.Cron));
         builder.Services.AddHostedService<RecurringJobsRegistrar>();
@@ -273,18 +280,52 @@ public sealed class StartupMigrator(IServiceProvider services, PlatformOptions o
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
-/// <summary>At start, after migrations and the scheduler: every registered recurring job exists for every active tenant.</summary>
-public sealed class RecurringJobsRegistrar(IServiceProvider services, ISchedulerFactory schedulerFactory, RecurringTenantJobScheduler scheduler, ILogger<RecurringJobsRegistrar> logger) : IHostedService
+/// <summary>After the host starts accepting requests, reconciles recurring jobs for every active tenant.</summary>
+public sealed class RecurringJobsRegistrar(
+    IServiceProvider services,
+    ISchedulerFactory schedulerFactory,
+    RecurringTenantJobScheduler scheduler,
+    RecurringJobReconciliationLock reconciliationLock,
+    IHostApplicationLifetime applicationLifetime,
+    ILogger<RecurringJobsRegistrar> logger) : BackgroundService
 {
-    public async Task StartAsync(CancellationToken cancellationToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var scope = services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-        var tenants = await db.Tenants.AsNoTracking().Where(t => t.IsActive).Select(t => t.Id).ToListAsync(cancellationToken);
-        var quartz = await schedulerFactory.GetScheduler(cancellationToken);
-        await scheduler.EnsureScheduledAsync(quartz, tenants, cancellationToken);
-        logger.LogInformation("Recurring jobs ensured for {Count} tenant(s)", tenants.Count);
+        try
+        {
+            await WaitForApplicationStartedAsync(applicationLifetime, stoppingToken);
+            var started = Stopwatch.GetTimestamp();
+            await using var lease = await reconciliationLock.AcquireAsync(stoppingToken);
+            using var scope = services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var tenants = await db.Tenants.AsNoTracking().Where(t => t.IsActive).Select(t => t.Id).ToListAsync(stoppingToken);
+            var quartz = await schedulerFactory.GetScheduler(stoppingToken);
+            var result = await scheduler.EnsureScheduledAsync(quartz, tenants, stoppingToken);
+            logger.LogInformation(
+                "Recurring jobs reconciled for {TenantCount} tenant(s) in {ElapsedMilliseconds} ms: {CreatedCount} created, {UpdatedCount} updated, {UnchangedCount} unchanged",
+                result.TenantCount,
+                Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                result.CreatedJobCount,
+                result.UpdatedJobCount,
+                result.UnchangedJobCount);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Normal host shutdown cancels an in-flight reconciliation.
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Recurring job reconciliation failed after host startup");
+        }
     }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    private static async Task WaitForApplicationStartedAsync(IHostApplicationLifetime lifetime, CancellationToken stoppingToken)
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var startedRegistration = lifetime.ApplicationStarted.Register(static state =>
+            ((TaskCompletionSource)state!).TrySetResult(), started);
+        using var stoppingRegistration = stoppingToken.Register(static state =>
+            ((TaskCompletionSource)state!).TrySetCanceled(), started);
+        await started.Task;
+    }
 }
