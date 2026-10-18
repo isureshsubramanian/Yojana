@@ -37,10 +37,14 @@ export const navigation: NavEntry[] = [
   { path: "/labels/print-jobs", label: "Labels", icon: "label", section: "Work" },
   { path: "/templates", label: "Templates", icon: "templates", section: "Data" },
   // End P6 certificates and labels.
-  { path: "/imports", label: "Imports", icon: "upload", section: "Data", placeholder: "Imports and 3PL capture" },
+  { path: "/lookup", label: "Lookup", icon: "lookup", section: "Data" },
+  { path: "/imports", label: "Imports", icon: "upload", section: "Data" },
+  { path: "/reconcile", label: "Reconcile", icon: "reconcile", section: "Data", roles: ["serial_administrator", "order_desk_supervisor"] },
+  { path: "/reports/identifier-cross-reference", label: "Reports", icon: "report", section: "Data" },
   { path: "/integration", label: "Integration", icon: "int", section: "Data", placeholder: "Connections and the integration gateway" },
   // P6 OD-26 numbering settings navigation block.
   { path: "/settings", label: "Settings", icon: "set", section: "Data", roles: ["tenant_administrator"] },
+  { path: "/settings/disclosure", label: "Disclosure tiers", icon: "disclosure", section: "Data", roles: ["tenant_administrator"] },
   // End P6 OD-26 numbering settings navigation block.
   { path: "/settings/currencies", label: "Currencies", icon: "coins", section: "Data", roles: ["tenant_administrator"] },
   { path: "/settings/recovery", label: "Supplier recovery", icon: "sliders", section: "Data", roles: ["tenant_administrator"] },

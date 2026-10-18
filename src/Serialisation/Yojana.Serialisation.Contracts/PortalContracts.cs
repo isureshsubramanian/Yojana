@@ -88,6 +88,7 @@ public static class PublicPortalOutcome
 
 /// <summary>The external identity boundary. No endpoint accepts either value from the request body.</summary>
 public sealed record PortalPrincipal(TenantId TenantId, Guid PartyRef);
+public sealed record PortalContext(string OrganisationName);
 
 public sealed record PortalIdentifierLineage(string Value, string Type, bool Current, string? ReplacedBy);
 public sealed record PortalCoverageExpiry(string CoverageFamily, DateOnly? Start, DateOnly? Expiry, string Status);

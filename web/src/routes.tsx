@@ -22,6 +22,7 @@ const patterns: RouteObject[] = process.env.NODE_ENV === "production" ? [] : [
 
 export const router = createBrowserRouter([
   { path: "/sign-in", lazy: () => import("./pages/SignIn"), errorElement: <ErrorPage /> },
+  { path: "/public/:tenantCode/lookup", lazy: () => import("./p7/PublicLookup"), errorElement: <ErrorPage /> },
   {
     id: ROOT_ROUTE_ID,
     path: "/",
@@ -30,11 +31,29 @@ export const router = createBrowserRouter([
     children: [
       { path: "tenants", lazy: () => import("./pages/ChooseTenant") },
       {
+        path: "portal",
+        lazy: () => import("./p7/PortalLayout"),
+        errorElement: <ErrorPage />,
+        children: [
+          { index: true, lazy: () => import("./p7/PortalLookup") },
+          { path: "lookup", lazy: () => import("./p7/PortalLookup") },
+          { path: "installed-base", lazy: () => import("./p7/InstalledBase") },
+          { path: "where-used", lazy: () => import("./p7/WhereUsed") },
+          { path: "units/:unitId", lazy: () => import("./p7/PortalUnit") },
+        ],
+      },
+      {
         Component: Frame,
         errorElement: <ErrorPage />,
         children: [
           { index: true, lazy: () => import("./pages/Overview") },
           { path: "search", lazy: () => import("./pages/Search") },
+          { path: "lookup", lazy: () => import("./p7/InternalLookup") },
+          { path: "imports", lazy: () => import("./p7/ImportJob") },
+          { path: "imports/compare", lazy: () => import("./p7/CompareMode") },
+          { path: "reconcile", lazy: () => import("./p7/Reconcile") },
+          { path: "reports/identifier-cross-reference", lazy: () => import("./p7/Xref") },
+          { path: "settings/disclosure", lazy: () => import("./p7/Disclosure") },
           { path: "units", lazy: () => import("./units/UnitSearch") },
           { path: "units/receive", lazy: () => import("./units/Receive") },
           { path: "units/ranges", lazy: () => import("./units/SerialRanges") },

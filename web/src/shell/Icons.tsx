@@ -3,7 +3,8 @@ export type IconName =
   | "units" | "ent" | "corr" | "claim" | "rma" | "cert" | "import" | "int" | "set" | "scan" | "chev" | "bell"
   | "home" | "plus" | "filter" | "print" | "x" | "down" | "search" | "range" | "tree" | "check" | "panel"
   | "campaign" | "recover" | "policy" | "layers" | "upload" | "coins" | "sliders" | "list" | "grid" | "returns"
-  | "swap" | "refurb" | "cycle" | "label" | "sun" | "moon" | "templates" | "globe";
+  | "swap" | "refurb" | "cycle" | "label" | "sun" | "moon" | "templates" | "globe"
+  | "lookup" | "reconcile" | "report" | "disclosure";
 
 export function IconSprite() {
   return (
@@ -39,6 +40,10 @@ export function IconSprite() {
       <symbol id="i-set" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" /></symbol>
       <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3" /><path d="M7 12h10" /></symbol>
       <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="M20 20l-4.5-4.5" /></symbol>
+      <symbol id="i-lookup" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" /><path d="M14.5 14.5L21 21M7 10h6M10 7v6" /></symbol>
+      <symbol id="i-reconcile" viewBox="0 0 24 24"><path d="M4 7h12l-3-3M20 17H8l3 3" /><path d="M16 4l4 3-4 3M8 14l-4 3 4 3" /><circle cx="12" cy="12" r="2" /></symbol>
+      <symbol id="i-report" viewBox="0 0 24 24"><path d="M5 3h14v18H5zM8 16v2M12 12v6M16 8v10" /></symbol>
+      <symbol id="i-disclosure" viewBox="0 0 24 24"><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="3" /><path d="M4 4l16 16" /></symbol>
       <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" /></symbol>
       <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4l2-2z" /><path d="M10 20a2 2 0 0 0 4 0" /></symbol>
       <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7" /><path d="M5 10v10h14V10" /></symbol>

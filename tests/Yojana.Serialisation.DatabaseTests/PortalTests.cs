@@ -246,6 +246,31 @@ public sealed class PortalTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Portal_unit_page_read_returns_the_owner_summary_and_hides_an_unowned_unit()
+    {
+        var tenant = await fixture.NewTenantAsync("p7unitpage");
+        var owner = Guid.NewGuid();
+        var stranger = Guid.NewGuid();
+        var item = Guid.NewGuid();
+        var serial = Serial("UNITPAGE");
+        var unit = await UnitAsync(tenant, item, serial);
+        RegisterItem(item, "UNIT-PAGE", "Fictional Service Console");
+        fixture.Services.GetRequiredService<InMemoryPartyNamePort>().Register(new(owner, "FIELD-01",
+            "Fictional Field Cooperative", PartyType.Customer));
+        await OwnAsync(tenant, unit, owner, At.AddDays(1));
+
+        using var scope = fixture.ScopeFor(tenant);
+        var api = scope.ServiceProvider.GetRequiredService<PortalQueries>();
+        var visible = await api.UnitAsync(new(tenant, owner), unit, CancellationToken.None);
+        Assert.NotNull(visible);
+        Assert.Equal(serial.Replace("-", "", StringComparison.Ordinal), visible.Serial);
+        Assert.Equal("Fictional Service Console", visible.ItemName);
+        Assert.Equal("Fictional Field Cooperative",
+            (await api.ContextAsync(new(tenant, owner), CancellationToken.None)).OrganisationName);
+        Assert.Null(await api.UnitAsync(new(tenant, stranger), unit, CancellationToken.None));
+    }
+
+    [DatabaseFact]
     public async Task Ticket_T14_customer_assertion_does_not_grant_lookup_and_expiry_is_never_guessed_from_delivery()
     {
         var tenant = await fixture.NewTenantAsync("p7t14");
