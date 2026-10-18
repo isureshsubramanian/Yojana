@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text;
+using System.Text.Json;
 using Wolverine;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
@@ -7,6 +9,7 @@ using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Seeding;
 using Yojana.Platform.Tenancy;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ports;
@@ -73,10 +76,209 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         await StepAsync("record PSU and BMC firmware history", RecordFirmwareAsync, cancellationToken);
         await StepAsync("post shipments, deliveries and invoices", PostSalesAsync, cancellationToken);
         await StepAsync("create outbound entitlements", CreateOutboundEntitlementsAsync, cancellationToken);
+        await StepAsync("drain entitlement certificate notifications", WaitForAutomaticCertificatesAsync, cancellationToken);
         await StepAsync("create recall and goodwill campaigns", CreateCampaignsAsync, cancellationToken);
         await StepAsync("submit and progress 27 claims", CreateClaimsAsync, cancellationToken);
         await StepAsync("load RMA, replacement and refurbishment stories", CreatePhaseFiveScenariosAsync, cancellationToken);
+        await StepAsync("finish automatic release and warranty certificates", WaitForAutomaticCertificatesAsync, cancellationToken);
+        await StepAsync("load certificate and label stories", CreatePhaseSixScenariosAsync, cancellationToken);
         await PrintSummaryAsync(cancellationToken);
+    }
+
+    private async Task WaitForAutomaticCertificatesAsync(CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddMinutes(3);
+        while (true)
+        {
+            using var scope = TenantScope();
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            // Purchased units enter the released lifecycle at commissioning, but MOD-09 version 1 is issued only from
+            // a BuildRecord. Count actual first-release facts, not every unit whose lifecycle happens to be released.
+            var releaseExpected = await (from build in db.BuildRecords.AsNoTracking()
+                                         join unit in db.Units.AsNoTracking()
+                                             on new { build.TenantId, build.UnitId }
+                                             equals new { unit.TenantId, unit.UnitId }
+                                         where unit.LifecycleStatus == LifecycleStatus.Released
+                                         select build.UnitId).Distinct().CountAsync(cancellationToken);
+            var releaseActual = await db.CertificateInstances.AsNoTracking()
+                .Where(row => row.DocumentKind == CertificateDocumentKind.ReleaseRecord
+                    && row.Status == CertificateStatus.Issued)
+                .Select(row => row.UnitId).Distinct().CountAsync(cancellationToken);
+            var warrantyExpected = await (from current in db.Current.AsNoTracking()
+                                          join entitlement in db.Entitlements.AsNoTracking()
+                                              on new { current.TenantId, current.UnitId }
+                                              equals new { entitlement.TenantId, entitlement.UnitId }
+                                          where current.LifecycleStatus == LifecycleStatus.Released
+                                              && current.OwnerPartyRef != null
+                                              && entitlement.Direction == EntitlementDirection.Outbound
+                                              && entitlement.Status != EntitlementStatus.Closed
+                                          select current.UnitId).Distinct().CountAsync(cancellationToken);
+            var warrantyActual = await db.CertificateInstances.AsNoTracking()
+                .Where(row => row.DocumentKind == CertificateDocumentKind.WarrantyCertificate
+                    && row.Status == CertificateStatus.Issued)
+                .Select(row => row.UnitId).Distinct().CountAsync(cancellationToken);
+            var coverageEvents = (await db.Events.AsNoTracking()
+                    .Where(row => row.EventType.StartsWith("entitlement.") && row.Attributes != null)
+                    .Select(row => new { row.EventId, row.Attributes })
+                    .ToListAsync(cancellationToken))
+                .Where(row => IsCoverageChangedSource(row.Attributes!))
+                .Select(row => row.EventId)
+                .ToHashSet();
+            var coverageReceipts = coverageEvents.Count == 0
+                ? 0
+                : await db.CertificateTriggers.AsNoTracking()
+                    .Where(row => row.DocumentKind == CertificateDocumentKind.WarrantyCertificate
+                        && coverageEvents.Contains(row.TriggeringEventId))
+                    .Select(row => row.TriggeringEventId).Distinct().CountAsync(cancellationToken);
+            if (releaseActual >= releaseExpected && warrantyActual >= warrantyExpected
+                && coverageReceipts >= coverageEvents.Count) return;
+            if (DateTime.UtcNow >= deadline)
+                throw new InvalidOperationException($"certificate drain timed out: release {releaseActual}/{releaseExpected}, warranty {warrantyActual}/{warrantyExpected}, coverage notifications {coverageReceipts}/{coverageEvents.Count}");
+            await Task.Delay(200, cancellationToken);
+        }
+    }
+
+    private static bool IsCoverageChangedSource(string attributes)
+    {
+        using var document = JsonDocument.Parse(attributes);
+        var root = document.RootElement;
+        return (!root.TryGetProperty("direction", out var direction)
+                || !string.Equals(direction.GetString(), EntitlementDirection.Inbound, StringComparison.Ordinal))
+            && root.TryGetProperty("coverage_before", out _)
+            && root.TryGetProperty("_state", out var state)
+            && state.TryGetProperty("live_entitlement_ids", out _);
+    }
+
+    private async Task CreatePhaseSixScenariosAsync(CancellationToken cancellationToken)
+    {
+        var templateIds = await CreateLabelTemplatesAsync(cancellationToken);
+        await CreateLabelPrintJobsAsync(templateIds, cancellationToken);
+        await CreateTenantCertificateLayoutAsync(cancellationToken);
+
+        var salesOrder = new DocumentRef("sales_order", DemoIds.FromName("order:hpc"));
+        var selection = await InvokeAsync<ResolveSelectionSetResult>(new ResolveSelectionSet(
+            DemoIds.FromName("certificate-selection:order:hpc"), SelectionSource.ByDocument(salesOrder), actor), cancellationToken);
+        var issued = await InvokeAsync<CertificateRunResult>(new IssueCertificate(
+            DemoIds.FromName("certificate-issue:order:hpc"), selection.SelectionId,
+            CertificateDocumentKind.ReleaseRecord, CertificateFormType.CertificateOfConformity,
+            LegalEntityId, "en", "Copy requested for the demo sales order", true, actor), cancellationToken);
+        if (issued.Kpis.ReprintAsCopy == 0 || issued.Kpis.NotIssuable == 0)
+            throw new InvalidOperationException($"sales-order certificate story needs both Copy and not-issuable units; got Copy {issued.Kpis.ReprintAsCopy}, not issuable {issued.Kpis.NotIssuable}");
+    }
+
+    private async Task<Dictionary<string, Guid>> CreateLabelTemplatesAsync(CancellationToken cancellationToken)
+    {
+        var samples = new Dictionary<string, DemoUnit>(StringComparer.Ordinal)
+        {
+            ["server"] = Units("RS-1100")[0],
+            ["server_node"] = Units("RT-N1")[0],
+            ["storage"] = Units("SS-1110")[0],
+            ["network"] = Units("NX-4850")[0],
+            ["client"] = Units("DW-300")[0],
+            ["printer"] = Units("PF-400")[0],
+            ["component"] = Units("MD-64R")[0],
+        };
+        var templateIds = new Dictionary<string, Guid>(StringComparer.Ordinal);
+        foreach (var (itemClass, sample) in samples)
+        {
+            var created = await InvokeAsync<LabelTemplateCreated>(new CreateLabelTemplate(
+                DemoIds.FromName($"label-template:{itemClass}"),
+                itemClass == "server" ? "Server asset label" : $"{itemClass.Replace('_', ' ')} asset label",
+                LabelTemplateAppliesTo.ItemFamily, itemClass, actor), cancellationToken);
+            templateIds[itemClass] = created.TemplateId;
+            var previewUnit = itemClass is "network" or "component" ? samples["server"].UnitId : sample.UnitId;
+            var notice = itemClass == "server" ? "Asterra Works server asset" : "Asterra Works equipment asset";
+            var first = await SaveLabelVersionAsync(created.TemplateId, itemClass, 1, notice, previewUnit,
+                requireRevision: itemClass == "network", cancellationToken);
+            await InvokeAsync<LabelTemplatePreview>(new PreviewLabelTemplate(first.TemplateVersionId, previewUnit, actor), cancellationToken);
+            await InvokeAsync<LabelTemplateVersionChanged>(new ActivateLabelTemplateVersion(
+                DemoIds.FromName($"label-activate:{itemClass}:v1"), first.TemplateVersionId,
+                DemoDates.At(today.AddDays(-199), 9), actor), cancellationToken);
+        }
+
+        var serverId = templateIds["server"];
+        var serverSample = samples["server"].UnitId;
+        var approved = "Tampering may affect warranty coverage; see warranty terms.";
+        var second = await SaveLabelVersionAsync(serverId, "server", 2, approved, serverSample, false, cancellationToken);
+        await InvokeAsync<LabelTemplatePreview>(new PreviewLabelTemplate(second.TemplateVersionId, serverSample, actor), cancellationToken);
+        await InvokeAsync<LabelTemplateVersionChanged>(new ActivateLabelTemplateVersion(
+            DemoIds.FromName("label-activate:server:v2"), second.TemplateVersionId,
+            DemoDates.At(today.AddDays(-99), 9), actor), cancellationToken);
+
+        var draft = await SaveLabelVersionAsync(serverId, "server", 3,
+            "Opening this enclosure will make the warranty void.", serverSample, false, cancellationToken);
+        await InvokeAsync<LabelTemplateVersionChanged>(new RequestLabelLegalReview(
+            DemoIds.FromName("label-legal-review:server:v3"), draft.TemplateVersionId, actor), cancellationToken);
+        return templateIds;
+    }
+
+    private Task<LabelTemplateVersionSaved> SaveLabelVersionAsync(Guid templateId, string itemClass, int version,
+        string notice, Guid previewUnit, bool requireRevision, CancellationToken cancellationToken)
+    {
+        var layout = "^XA^FO24,20^A0N,28,28^FD{{item_code}}^FS^FO24,55^FD{{serial}}^FS"
+            + (requireRevision ? "^FO24,90^FDRev {{revision}}^FS" : "")
+            + $"^FO24,125^FD{notice}^FS^XZ";
+        var bindings = new List<LabelBinding>
+        {
+            new("item_code", LabelBindableField.ItemCode, true),
+            new("serial", LabelBindableField.InternalSerial, true),
+        };
+        if (requireRevision) bindings.Add(new("revision", LabelBindableField.ItemRevision, true));
+        return InvokeAsync<LabelTemplateVersionSaved>(new SaveLabelTemplateDraft(
+            DemoIds.FromName($"label-save:{itemClass}:v{version}"), templateId, null,
+            DemoDates.At(today.AddDays(version == 1 ? -200 : version == 2 ? -100 : -1), 9), null,
+            LabelLayoutKind.Zpl, layout, [notice], bindings, LabelSymbology.Code128,
+            previewUnit, false, actor), cancellationToken);
+    }
+
+    private async Task CreateLabelPrintJobsAsync(Dictionary<string, Guid> templates,
+        CancellationToken cancellationToken)
+    {
+        var at = DemoDates.At(today, 15);
+        var server = await InvokeAsync<LabelPrintResult>(new PrintLabel(DemoIds.FromName("label-print:server"),
+            Units("RS-1100")[0].UnitId, templates["server"], null, "line-2", at, LegalEntityId, actor), cancellationToken);
+        await InvokeAsync<LabelPrintResult>(new PrintLabel(DemoIds.FromName("label-print:printer"),
+            Units("PF-400")[0].UnitId, templates["printer"], null, "line-2", at.AddMinutes(1), LegalEntityId, actor), cancellationToken);
+        var rejected = await InvokeAsync<LabelPrintResult>(new PrintLabel(DemoIds.FromName("label-print:network-missing-revision"),
+            Units("NX-4850")[0].UnitId, templates["network"], null, "line-2", at.AddMinutes(2), LegalEntityId, actor), cancellationToken);
+        if (rejected.Status != LabelPrintStatus.Rejected || rejected.EmptyRequiredField != LabelBindableField.ItemRevision)
+            throw new InvalidOperationException("network demo label must be rejected because item.revision is empty");
+        await InvokeAsync<LabelPrintResult>(new ReprintLabel(DemoIds.FromName("label-reprint:server"),
+            server.JobId, "line-2", at.AddMinutes(3), LegalEntityId, actor), cancellationToken);
+    }
+
+    private async Task CreateTenantCertificateLayoutAsync(CancellationToken cancellationToken)
+    {
+        using var scope = TenantScope();
+        var templates = scope.ServiceProvider.GetRequiredService<CertificateTemplateService>();
+        var catalogue = await templates.ListAsync(cancellationToken);
+        var starter = catalogue.Single(row => row.BuiltIn && row.DocumentKind == CertificateDocumentKind.ReleaseRecord
+            && row.FormType == CertificateFormType.CertificateOfConformity);
+        var existing = catalogue.SingleOrDefault(row => row.Code == "DEMO-COC");
+        var detail = existing is null
+            ? await templates.CreateAsync(new CreateCertificateTemplateRequest("DEMO-COC", "Asterra Works C of C",
+                CertificateDocumentKind.ReleaseRecord, CertificateFormType.CertificateOfConformity, null,
+                starter.TemplateId), actor, cancellationToken)
+            : await templates.GetAsync(existing.TemplateId, cancellationToken)
+                ?? throw new InvalidOperationException("DEMO-COC disappeared while loading the demo");
+        if (detail.Versions.Any(row => row.Status == CertificateTemplateStatus.Active)) return;
+
+        var assets = scope.ServiceProvider.GetRequiredService<TenantAssetService>();
+        var logo = await assets.UploadLogoAsync(DemoIds.FromName("certificate-logo:asterra"), Encoding.UTF8.GetBytes(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"36\" viewBox=\"0 0 120 36\"><rect width=\"120\" height=\"36\" rx=\"5\" fill=\"#24384f\"/><path d=\"M12 27L24 8l12 19h-7l-5-8-5 8z\" fill=\"#ffffff\"/></svg>"),
+            LegalEntityId, actor, cancellationToken);
+        var draft = detail.Versions.OrderByDescending(row => row.Version).First();
+        var saved = await templates.SaveDraftAsync(detail.TemplateId, new SaveCertificateTemplateDraftRequest(
+            draft.TemplateVersionId, draft.Language, draft.PayloadSchemaVersion, draft.LayoutBody,
+            draft.PageSize, draft.Orientation, draft.MarginTopMm, draft.MarginRightMm, draft.MarginBottomMm,
+            draft.MarginLeftMm, draft.HeaderBody, draft.FooterBody, null,
+            new Dictionary<string, Guid> { [LegalEntityId.ToString()] = logo.Asset.AssetId },
+            new Dictionary<string, string>(draft.StaticText, StringComparer.Ordinal)
+            {
+                ["issuer_display_name"] = "Asterra Works",
+            }, draft.Fields), actor, cancellationToken);
+        if (saved.Version is null) throw new InvalidOperationException(string.Join("; ", saved.Validation.Errors));
+        await templates.ActivateAsync(detail.TemplateId, saved.Version.TemplateVersionId, actor, cancellationToken);
     }
 
     private async Task SetUpTenantAsync(CancellationToken cancellationToken)
@@ -517,12 +719,19 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
     private async Task CreatePhaseFiveScenariosAsync(CancellationToken cancellationToken)
     {
         await StepAsync("  warranty server refurbishment", CreateServerReturnAndRefurbishmentAsync, cancellationToken);
+        await WaitForAutomaticCertificatesAsync(cancellationToken);
         await StepAsync("  RMA stages and receipt exceptions", CreateRmaStageAndExceptionCasesAsync, cancellationToken);
+        await WaitForAutomaticCertificatesAsync(cancellationToken);
         await StepAsync("  DOA, seller-error, goodwill and chargeable replacements", CreateReplacementReasonCasesAsync, cancellationToken);
+        await WaitForAutomaticCertificatesAsync(cancellationToken);
         await StepAsync("  advance replacement due dates and overdue run", CreateAdvanceReplacementCasesAsync, cancellationToken);
+        await WaitForAutomaticCertificatesAsync(cancellationToken);
         await StepAsync("  loan conversion", CreateLoanConversionAsync, cancellationToken);
+        await WaitForAutomaticCertificatesAsync(cancellationToken);
         await StepAsync("  supplier return and replacement", CreateVendorReplacementAsync, cancellationToken);
+        await WaitForAutomaticCertificatesAsync(cancellationToken);
         await StepAsync("  replacement-link correction", CreateReplacementCorrectionAsync, cancellationToken);
+        await WaitForAutomaticCertificatesAsync(cancellationToken);
     }
 
     private async Task CreateServerReturnAndRefurbishmentAsync(CancellationToken cancellationToken)
@@ -983,9 +1192,13 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             createdAt, LegalEntityId, actor, conditionAllowed, replacementPolicy, returnDue,
             returnDue is null ? null : NonReturnPriceBasis.List, returnReason, restockingFeeBasis,
             nonReturnAmount), cancellationToken);
-        return await InvokeAsync<ShipWarrantyReplacementResult>(new ShipWarrantyReplacement(
+        var shipped = await InvokeAsync<ShipWarrantyReplacementResult>(new ShipWarrantyReplacement(
             DemoIds.FromName("p5:replacement-ship:" + key), created.Document.Document.WarrantyReplacementId,
             DateOnly.FromDateTime(shippedAt), shippedAt, actor), cancellationToken);
+        // Shipping transfers entitlement coverage. Let the durable coverage subscriber re-adjudicate affected service
+        // records before this deterministic scenario advances another command against those same rowversion rows.
+        await WaitForAutomaticCertificatesAsync(cancellationToken);
+        return shipped;
     }
 
     private async Task<ApprovedClaim> CreateApprovedClaimAsync(string key, DemoUnit unit,
@@ -1198,8 +1411,15 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         var overdueCount = await db.ReplacementLinks.CountAsync(row => row.OverdueEventId != null && row.State == ReplacementLinkState.AwaitingReturn, cancellationToken);
         var heldCustomers = await db.PartyReplacementHolds.CountAsync(row => row.LiftedAt == null, cancellationToken);
         var refurbishmentCount = await db.RefurbishmentWorkOrders.CountAsync(cancellationToken);
+        var certificateCount = await db.CertificateInstances.CountAsync(cancellationToken);
+        var certificateTriggerCount = await db.CertificateTriggers.CountAsync(cancellationToken);
+        var refusedCertificateTriggerCount = await db.CertificateTriggers.CountAsync(row => row.Outcome == "refused", cancellationToken);
+        var labelTemplateCount = await db.LabelTemplates.CountAsync(cancellationToken);
+        var printJobCount = await db.PrintJobs.CountAsync(cancellationToken);
+        var rejectedPrintJobCount = await db.PrintJobs.CountAsync(row => row.Status == LabelPrintStatus.Rejected, cancellationToken);
         Console.WriteLine($"Units {unitCount}; assembled finished goods {assembled}; entitlements {entitlementCount}; claims {claimCount}; recovery claims {recoveryCount}; campaigns {campaignCount}.");
         Console.WriteLine($"RMAs {rmaCounts.Values.Sum()} ({string.Join(", ", RmaStage.All.Select(stage => $"{stage} {rmaCounts.GetValueOrDefault(stage)}"))}); replacements {replacementCount}; awaiting return {awaitingCount}; overdue {overdueCount}; customers on hold {heldCustomers}; refurbishment work orders {refurbishmentCount}.");
+        Console.WriteLine($"Certificates {certificateCount}; certificate triggers {certificateTriggerCount} ({refusedCertificateTriggerCount} refused); label templates {labelTemplateCount}; print jobs {printJobCount} ({rejectedPrintJobCount} rejected).");
         Console.WriteLine($"This run added {claimsCreated + p5ClaimsCreated} claim(s) and approved {recoveriesApproved} vendor answer(s); stable command ids make re-runs no-ops.");
     }
 

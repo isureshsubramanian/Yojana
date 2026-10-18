@@ -12,7 +12,12 @@ using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation.Rmas;
 
-/// <summary>Re-runs the shared claim-line policy decider only for work whose lifecycle is still open.</summary>
+/// <summary>
+/// Re-runs the shared claim-line policy decider only for work whose lifecycle is still open.
+/// TIGHT COUPLING with the serial <c>CertificatePublishedEventQueue</c> configuration in SerialisationModule: adjacent
+/// coverage facts can update the same rowversion-protected claim/RMA rows, so parallel delivery would create avoidable
+/// retries and may reorder their decisions. Removing that single-reader boundary requires a per-work-item ordering seam.
+/// </summary>
 public static class EntitlementCoverageChangedHandler
 {
     private static readonly string[] ClosedClaimStatuses = [ClaimStatus.Settled, ClaimStatus.Closed];

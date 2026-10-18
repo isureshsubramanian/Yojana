@@ -133,6 +133,10 @@ public sealed class UnitCurrentHealer(SerialisationDbContext db, ITenantContext 
         UnitCurrent? row = null;
         foreach (var e in live.Concat(archived).OrderBy(e => e.Seq))
         {
+            // TIGHT COUPLING (state-neutral ledger facts): UnitEventWriter persists this marker and omits the same
+            // fact from the live projection. Advancing it here would make the healer manufacture a rowversion write
+            // which the command path deliberately avoids; change both sides together.
+            if (!UnitCurrentStateProjector.ProjectsCurrentState(e.Attributes)) continue;
             var delta = e.MergedFromUnitId is not null || e.Attributes is null ? null : DeltaOf(e.Attributes);
             if (delta?.Create is { } create)
             {

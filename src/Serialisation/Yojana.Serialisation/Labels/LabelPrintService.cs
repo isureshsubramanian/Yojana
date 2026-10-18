@@ -193,6 +193,7 @@ public sealed class LabelPrintService(SerialisationDbContext db, ITenantContext 
             job_id = job.JobId, original_job_id = job.OriginalJobId, template_version_id = version.TemplateVersionId,
             layout_kind = version.LayoutKind, symbology = version.Symbology, payload_hash = job.PayloadHash, printer_ref = job.PrinterRef,
         }),
+        ProjectCurrentState = false,
     };
 
     private static LabelPrintResult Result(PrintJob job, bool replayed) =>

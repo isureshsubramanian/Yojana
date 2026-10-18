@@ -54,6 +54,13 @@ public sealed record UnitEventDraft
 
     /// <summary>The change to current state this fact implies; null when the fact changes nothing operational.</summary>
     public CurrentStateDelta? Delta { get; init; }
+
+    /// <summary>
+    /// Whether this fact advances <c>unit_current.last_event_*</c>. Set false only for explicitly state-neutral
+    /// audit facts, which stay in the ledger but must not create a rowversion write against operational commands.
+    /// The marker is stored with the event so the replay healer makes the identical decision.
+    /// </summary>
+    public bool ProjectCurrentState { get; init; } = true;
 }
 
 /// <summary>A string that is a JSON object; constructed only through <see cref="Parse"/> or <see cref="Of"/> so the check constraint never fires.</summary>

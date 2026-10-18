@@ -270,6 +270,7 @@ public sealed class CertificateSelectionService(
                             certificate_version = certificate.Version, tracking_number = certificate.TrackingNumber,
                             reason = reason.Trim(), copy = true, reprinted_at = at,
                         }),
+                        ProjectCurrentState = false,
                     }], cancellationToken);
                 }
             }
