@@ -128,9 +128,10 @@ public sealed class OwnershipRlsPerformanceTests(SerialisationHostFixture fixtur
         // 10/4 and 40 respectively. Absolute page reads can rise as this shared suite grows its
         // B-trees; the stable regression signal is that the NULL-key startup branch performs no
         // ownership-table reads at all.
-        Assert.Equal(2, lookupStatements);
-        Assert.Equal(18, rmaStatements);
-        Assert.Equal(10, certificateStatements);
+        // Ceilings, not exact counts: other work may lower a read shape's statements without touching row security.
+        Assert.InRange(lookupStatements, 1, 2);
+        Assert.InRange(rmaStatements, 1, 18);
+        Assert.InRange(certificateStatements, 1, 10);
         AssertNoOwnershipReads("current-state lookup", lookupIo);
         AssertNoOwnershipReads("RMA list", rmaIo);
         AssertNoOwnershipReads("certificate read", certificateIo);
