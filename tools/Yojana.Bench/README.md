@@ -80,3 +80,9 @@ concurrency retries, retries exhausted, number-series and SQL lock waits, deadlo
 
 Without `--tenant`, `concurrency` retains its DEV-tenant default for the small development/test case. Benchmark runs
 must always pass `--tenant <index>`.
+
+## Running again on the same database
+
+Each run adjudicates the open claims of its numbering pool. Before another run of the same mode, prepare a fresh round
+of claims: `YOJANA_BENCH_CLAIM_ROUND=2 dotnet run --project tools/Yojana.Bench -c Release --no-build -- prepare-concurrency --tenant 1 --documents 50 --engineers 120 --duration 10m`
+(increase the round each time). Units and refurbishment work orders are topped up or reused automatically.

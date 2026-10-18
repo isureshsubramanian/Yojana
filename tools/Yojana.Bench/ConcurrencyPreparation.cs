@@ -258,11 +258,15 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
         CancellationToken cancellationToken)
     {
         var claimIds = new List<Guid>(units.Count);
+        // A run adjudicates its pool's open claims, so a later run needs a fresh round: YOJANA_BENCH_CLAIM_ROUND gives the
+        // claims new stable command ids (unset = round 1, the original ids, so earlier preparations still replay).
+        var round = Environment.GetEnvironmentVariable("YOJANA_BENCH_CLAIM_ROUND");
+        var roundSuffix = string.IsNullOrWhiteSpace(round) || round == "1" ? "" : $"-r{round.Trim()}";
         foreach (var (unit, index) in units.Select((unit, index) => (unit, index)))
         {
             var sequencePool = index < ApprovedClaims + OpenClaims / 2;
             var pool = sequencePool ? "SEQUENCE" : "GAP-FREE";
-            var submitted = await InvokeAsync<SubmitClaimResult>(new SubmitClaim(Stable($"claim-{pool}", index), unit.UnitId, null,
+            var submitted = await InvokeAsync<SubmitClaimResult>(new SubmitClaim(Stable($"claim-{pool}{roundSuffix}", index), unit.UnitId, null,
                 new DateOnly(2026, 9, 2), Customer, Customer, ServiceEntity, BenchOptions.LegalEntity, "AQ", "EUR",
                 [new ClaimLineInput(ClaimLineKind.Parts, CoverageFamilyCode.Base, 10m, Description: "Benchmark open claim")],
                 [new ClaimEvidenceInput(ClaimEvidenceKind.Attachment, $"BENCH-CONCURRENCY-{pool}", "Synthetic benchmark evidence")],
