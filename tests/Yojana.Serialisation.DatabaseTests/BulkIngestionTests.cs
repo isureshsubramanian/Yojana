@@ -37,7 +37,7 @@ public sealed class BulkIngestionTests(SerialisationHostFixture fixture)
                 IdempotencyKey = IdempotencyKey.For("cx01", "receipt", receipt, 3, unit, UnitEventType.Commissioned, at),
                 Delta = new CurrentStateDelta { Create = new CreateCurrentState(item, LifecycleStatus.Released, UnitDisposition.Available), LocationId = location, LocationKind = LocationKind.Warehouse, CustodyKind = EpisodeKind.Custody },
             });
-            units.Add(new Unit { TenantId = tenant, UnitId = unit, LifecycleStatus = LifecycleStatus.Released, Origin = UnitOrigin.Purchased, SerialisationPoint = SerialisationPoint.Receipt, RetentionClass = "standard_10y", CreatedAt = at, CreatedEventId = eventId });
+            units.Add(new Unit { TenantId = tenant, UnitId = unit, LifecycleStatus = LifecycleStatus.Released, Origin = UnitOrigin.Purchased, SerialisationPoint = SerialisationPoint.Receipt, RetentionClass = "standard_10y", CreatedAt = at, CreatedEventId = eventId, CreatedEventTime = at });
             identifiers.Add(new UnitIdentifier { TenantId = tenant, IdentifierId = TimeOrderedId.New(at), UnitId = unit, Type = IdentifierType.InternalSerial, Scheme = IdentifierScheme.Internal, ScopeKey = item.ToString("N"), RawValue = serial, NormalisedValue = serial.Replace("-", "", StringComparison.Ordinal).ToUpperInvariant(), ValidFrom = at, ActorRef = "receiving", RecordedTime = at, EventId = eventId });
             assignments.Add(new UnitItemAssignment { TenantId = tenant, AssignmentId = TimeOrderedId.New(at), UnitId = unit, ItemId = item, ValidFrom = at, Reason = ItemAssignmentReason.Initial, EventId = eventId });
             episodes.Add(new CustodyEpisode { TenantId = tenant, EpisodeId = TimeOrderedId.New(at), UnitId = unit, Kind = EpisodeKind.Custody, PartyType = PartyType.Us, LocationId = location, LocationKind = LocationKind.Warehouse, Reason = EpisodeReason.Receipt, Source = EpisodeSource.Receipt, Confidence = Confidence.High, ValidFrom = at, OpeningDocumentType = "receipt", OpeningDocumentId = receipt, OpeningDocumentLine = 3, OpeningEventId = eventId });
@@ -88,6 +88,7 @@ public sealed class BulkIngestionTests(SerialisationHostFixture fixture)
         {
             var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
             Assert.Equal(10_000, await db.Units.CountAsync(u => u.CreatedAt == at));
+            Assert.Equal(10_000, await db.Units.CountAsync(u => u.CreatedEventTime == at));
             Assert.Equal(10_000, await db.Current.CountAsync(c => c.ItemId == item));
             var one = await db.Current.AsNoTracking().FirstAsync(c => c.ItemId == item);
             Assert.Equal(LocationKind.Warehouse, one.LocationKind);
@@ -135,10 +136,12 @@ public sealed class BulkIngestionTests(SerialisationHostFixture fixture)
 
         // A shipment of the five units through the bulk path: no new units, five events, five current rows updated.
         var delivery = Guid.NewGuid();
+        var baseOrder = new DocumentRef("sales_order", Guid.NewGuid(), 3);
         var shipment = batch.Units.Select(u => new UnitEventDraft
         {
             UnitId = u.UnitId, EventTime = at.AddDays(2), EventType = UnitEventType.Shipped, LegalEntityId = Guid.NewGuid(), ActorRef = "shipping", DocumentType = "delivery", DocumentId = delivery,
             IdempotencyKey = IdempotencyKey.For("cx01", "delivery", delivery, 1, u.UnitId, UnitEventType.Shipped, at.AddDays(2)),
+            Attributes = JsonObjectText.Of(new { base_order = baseOrder }),
             Delta = new CurrentStateDelta { Disposition = UnitDisposition.InTransit, LocationKind = LocationKind.InTransit, LocationId = (Guid?)null },
         }).ToList();
         using (var scope = fixture.ScopeFor(tenant))
@@ -147,6 +150,11 @@ public sealed class BulkIngestionTests(SerialisationHostFixture fixture)
             Assert.Equal(5, result.EventsInserted);
             Assert.Equal(0, result.CurrentInserted);
             Assert.Equal(5, result.CurrentUpdated);
+            var references = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>()
+                .LedgerBaseOrderReferences.AsNoTracking().Where(reference => reference.BaseDocumentId == baseOrder.Id)
+                .ToListAsync();
+            Assert.Equal(5, references.Count);
+            Assert.Equal(5, references.Select(reference => reference.EventId).Distinct().Count());
         }
 
         using (var scope = fixture.ScopeFor(tenant))

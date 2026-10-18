@@ -1,6 +1,7 @@
 using System.Data;
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Yojana.Platform.Contracts.Identifiers;
 
@@ -129,6 +130,7 @@ public sealed class Loader(BenchOptions options, BenchReport report)
         long written = 0;
         var docCounter = 0;
         var docId = Guid.Empty;
+        var baseOrderId = Guid.Empty;
         var docLine = 0;
         var eventRows = EventTable();
         for (var m = 0; m < months; m++)
@@ -178,7 +180,7 @@ public sealed class Loader(BenchOptions options, BenchReport report)
                     locationId = locations[lastLocation[n]];
                     episodeId[n] = DeterministicId(truncated, tenantIndex, 3, n);
                     var item = items[n % ItemCount];
-                    unitRows.Rows.Add(tenant, unitIds[n], "pre_release", "[]", "manufactured", true, DBNull.Value, DBNull.Value, DBNull.Value, DBNull.Value, DBNull.Value, "production_release", "standard_10y", "full", truncated, eventId);
+                    unitRows.Rows.Add(tenant, unitIds[n], "pre_release", "[]", "manufactured", true, DBNull.Value, DBNull.Value, DBNull.Value, DBNull.Value, DBNull.Value, "production_release", "standard_10y", "full", truncated, eventId, truncated);
                     identifierRows.Rows.Add(tenant, DeterministicId(truncated, tenantIndex, 4, n), unitIds[n], "internal_serial", "internal", DBNull.Value, DBNull.Value, DBNull.Value, Serial(tenantIndex, n), Normalised(tenantIndex, n), item.ToString("N"), truncated, DBNull.Value, DBNull.Value, DBNull.Value, DBNull.Value, false, "bench", truncated, eventId);
                     assignmentRows.Rows.Add(tenant, DeterministicId(truncated, tenantIndex, 5, n), unitIds[n], item, DBNull.Value, truncated, DBNull.Value, "initial", eventId);
                     episodeRows.Rows.Add(tenant, episodeId[n], unitIds[n], "custody", DBNull.Value, "us", BenchOptions.LegalEntity, locationId, "warehouse", "production", DBNull.Value, "receipt", "high", truncated, DBNull.Value, "production_order", DeterministicId(truncated, tenantIndex, 7, n), 1, eventId, DBNull.Value, DBNull.Value, DBNull.Value, DBNull.Value, false, DBNull.Value, DBNull.Value, DBNull.Value);
@@ -197,7 +199,12 @@ public sealed class Loader(BenchOptions options, BenchReport report)
                             break;
                         case "unit.shipped":
                         case "unit.delivered":
-                            if (docCounter % 500 == 0) { docId = DeterministicId(truncated, tenantIndex, 6, docCounter); docLine = 0; }
+                            if (docCounter % 500 == 0)
+                            {
+                                docId = DeterministicId(truncated, tenantIndex, 6, docCounter);
+                                baseOrderId = DeterministicId(truncated, tenantIndex, 8, docCounter);
+                                docLine = 0;
+                            }
                             docCounter++;
                             documentType = "delivery";
                             documentId = docId;
@@ -220,7 +227,10 @@ public sealed class Loader(BenchOptions options, BenchReport report)
 
                 lastSeq[n] = seq;
                 lastTime[n] = truncated;
-                eventRows.Rows.Add(tenant, truncated, eventId, unitIds[n], seq, type, (object?)bizStep ?? DBNull.Value, status[n] == 1 ? "active" : "in_progress", (object?)locationId ?? DBNull.Value, BenchOptions.LegalEntity, "bench", (object?)documentType ?? DBNull.Value, (object?)documentId ?? DBNull.Value, (object?)documentLine ?? DBNull.Value, truncated.AddSeconds(2), DBNull.Value, "b-" + seq.ToString(CultureInfo.InvariantCulture), DBNull.Value, "{\"bench\":true}");
+                var attributes = documentId is not null
+                    ? JsonSerializer.Serialize(new { bench = true, base_order = new { type = "sales_order", id = baseOrderId, line = documentLine } })
+                    : "{\"bench\":true}";
+                eventRows.Rows.Add(tenant, truncated, eventId, unitIds[n], seq, type, (object?)bizStep ?? DBNull.Value, status[n] == 1 ? "active" : "in_progress", (object?)locationId ?? DBNull.Value, BenchOptions.LegalEntity, "bench", (object?)documentType ?? DBNull.Value, (object?)documentId ?? DBNull.Value, (object?)documentLine ?? DBNull.Value, truncated.AddSeconds(2), DBNull.Value, "b-" + seq.ToString(CultureInfo.InvariantCulture), DBNull.Value, attributes);
                 if (eventRows.Rows.Count >= 200_000)
                 {
                     if (m >= resumeMonth) { await WriteAsync("serialisation.unit_event", eventRows); written += eventRows.Rows.Count; }
@@ -282,7 +292,7 @@ public sealed class Loader(BenchOptions options, BenchReport report)
 
     private static DataTable EventTable() => Sql.Table(("tenant_id", typeof(Guid)), ("event_time", typeof(DateTime)), ("event_id", typeof(Guid)), ("unit_id", typeof(Guid)), ("seq", typeof(long)), ("event_type", typeof(string)), ("biz_step", typeof(string)), ("disposition", typeof(string)), ("location_id", typeof(Guid)), ("legal_entity_id", typeof(Guid)), ("actor_ref", typeof(string)), ("document_type", typeof(string)), ("document_id", typeof(Guid)), ("document_line", typeof(int)), ("recorded_time", typeof(DateTime)), ("posting_period", typeof(string)), ("idempotency_key", typeof(string)), ("reverses_event_id", typeof(Guid)), ("attributes", typeof(string)));
 
-    private static DataTable UnitTable() => Sql.Table(("tenant_id", typeof(Guid)), ("unit_id", typeof(Guid)), ("lifecycle_status", typeof(string)), ("overlay_flags", typeof(string)), ("origin", typeof(string)), ("brand_is_ours", typeof(bool)), ("lot_id", typeof(Guid)), ("expiry_date", typeof(DateTime)), ("configuration_snapshot_id", typeof(Guid)), ("derived_from_unit_id", typeof(Guid)), ("merged_into_unit_id", typeof(Guid)), ("serialisation_point", typeof(string)), ("retention_class", typeof(string)), ("history_depth", typeof(string)), ("created_at", typeof(DateTime)), ("created_event_id", typeof(Guid)));
+    private static DataTable UnitTable() => Sql.Table(("tenant_id", typeof(Guid)), ("unit_id", typeof(Guid)), ("lifecycle_status", typeof(string)), ("overlay_flags", typeof(string)), ("origin", typeof(string)), ("brand_is_ours", typeof(bool)), ("lot_id", typeof(Guid)), ("expiry_date", typeof(DateTime)), ("configuration_snapshot_id", typeof(Guid)), ("derived_from_unit_id", typeof(Guid)), ("merged_into_unit_id", typeof(Guid)), ("serialisation_point", typeof(string)), ("retention_class", typeof(string)), ("history_depth", typeof(string)), ("created_at", typeof(DateTime)), ("created_event_id", typeof(Guid)), ("created_event_time", typeof(DateTime)));
 
     private static DataTable IdentifierTable() => Sql.Table(("tenant_id", typeof(Guid)), ("identifier_id", typeof(Guid)), ("unit_id", typeof(Guid)), ("type", typeof(string)), ("scheme", typeof(string)), ("issuer_party_ref", typeof(Guid)), ("enterprise_identifier", typeof(string)), ("qualifier", typeof(string)), ("raw_value", typeof(string)), ("normalised_value", typeof(string)), ("scope_key", typeof(string)), ("valid_from", typeof(DateTime)), ("valid_to", typeof(DateTime)), ("superseded_by_identifier_id", typeof(Guid)), ("supersedes_identifier_id", typeof(Guid)), ("correction_reason", typeof(string)), ("duplicate_acknowledged", typeof(bool)), ("actor_ref", typeof(string)), ("recorded_time", typeof(DateTime)), ("event_id", typeof(Guid)));
 

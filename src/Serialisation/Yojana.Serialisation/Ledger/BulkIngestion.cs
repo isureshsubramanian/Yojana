@@ -132,6 +132,30 @@ public sealed class BulkIngestion(SerialisationDbContext db, ITenantContext tena
         var eventsInserted = await session.CountAsync("SELECT COUNT(*) FROM #inserted", cancellationToken);
         var eventsDuplicate = events.Count - eventsInserted;
 
+        // HIDDEN COUPLING (base-order ledger projection): these detached event rows cannot use
+        // LedgerBaseOrderReferenceObserver, whose EF rows commit with UnitEventWriter's caller-owned SaveChanges.
+        // Project the identical base_order contract here from #ev, in this transaction and only for inserted facts;
+        // LedgerBaseOrderBackfill carries the same field paths for facts from before this sparse projection existed.
+        // SelectionSetResolver depends on this sparse row; omitting it makes bulk-posted shipments unselectable by
+        // their originating order. Keep this statement and the observer/reader coupling comments in step.
+        await session.ExecuteAsync($"""
+            INSERT INTO [{S}].[ledger_base_order_ref]
+                (tenant_id, base_document_type, base_document_id, base_document_line, unit_id, event_time, event_id)
+            SELECT e.tenant_id,
+                   CONVERT(nvarchar(40), JSON_VALUE(e.attributes, '$.base_order.type')),
+                   TRY_CONVERT(uniqueidentifier, JSON_VALUE(e.attributes, '$.base_order.id')),
+                   TRY_CONVERT(int, JSON_VALUE(e.attributes, '$.base_order.line')),
+                   e.unit_id, e.event_time, e.event_id
+            FROM #ev AS e
+            INNER JOIN #inserted AS i ON i.event_id = e.event_id
+            WHERE NULLIF(JSON_VALUE(e.attributes, '$.base_order.type'), N'') IS NOT NULL
+              AND TRY_CONVERT(uniqueidentifier, JSON_VALUE(e.attributes, '$.base_order.id')) IS NOT NULL
+              AND NOT EXISTS
+                  (SELECT 1 FROM [{S}].[ledger_base_order_ref] AS existing
+                   WHERE existing.tenant_id = e.tenant_id AND existing.event_time = e.event_time
+                     AND existing.event_id = e.event_id);
+            """, cancellationToken);
+
         // 4. Dependents follow their writing event (a duplicate event brings none of its rows).
         var unitsInserted = await session.ExecuteAsync($"""
             INSERT INTO [{S}].[unit] ({UnitColumns})
@@ -436,7 +460,7 @@ public sealed class BulkIngestion(SerialisationDbContext db, ITenantContext tena
     // ---- staging shapes: the same columns as the target tables, no constraints, no policy ----
 
     private const string EventColumns = "tenant_id, event_time, event_id, unit_id, seq, event_type, biz_step, disposition, location_id, legal_entity_id, actor_ref, document_type, document_id, document_line, recorded_time, posting_period, idempotency_key, reverses_event_id, attributes";
-    private const string UnitColumns = "tenant_id, unit_id, lifecycle_status, overlay_flags, origin, brand_is_ours, lot_id, expiry_date, configuration_snapshot_id, derived_from_unit_id, merged_into_unit_id, serialisation_point, retention_class, history_depth, created_at, created_event_id";
+    private const string UnitColumns = "tenant_id, unit_id, lifecycle_status, overlay_flags, origin, brand_is_ours, lot_id, expiry_date, configuration_snapshot_id, derived_from_unit_id, merged_into_unit_id, serialisation_point, retention_class, history_depth, created_at, created_event_id, created_event_time";
     private const string IdentifierColumns = "tenant_id, identifier_id, unit_id, type, scheme, issuer_party_ref, enterprise_identifier, qualifier, raw_value, normalised_value, scope_key, valid_from, valid_to, superseded_by_identifier_id, supersedes_identifier_id, correction_reason, duplicate_acknowledged, actor_ref, recorded_time, event_id";
     private const string AssignmentColumns = "tenant_id, assignment_id, unit_id, item_id, model_version_id, valid_from, valid_to, reason, event_id";
     private const string EpisodeColumns = "tenant_id, episode_id, unit_id, kind, party_ref, party_type, legal_entity_id, location_id, location_kind, reason, due_back, source, confidence, valid_from, valid_to, opening_document_type, opening_document_id, opening_document_line, opening_event_id, closing_document_type, closing_document_id, closing_document_line, closing_event_id, party_is_group_member, external_order_ref, customer_po_ref, customer_item_ref";
@@ -445,7 +469,7 @@ public sealed class BulkIngestion(SerialisationDbContext db, ITenantContext tena
 
     private const string StagingDdl = """
         CREATE TABLE #ev (tenant_id uniqueidentifier NOT NULL, event_time datetime2(3) NOT NULL, event_id uniqueidentifier NOT NULL, unit_id uniqueidentifier NOT NULL, seq bigint NOT NULL, event_type nvarchar(60) NOT NULL, biz_step nvarchar(40) NULL, disposition nvarchar(40) NULL, location_id uniqueidentifier NULL, legal_entity_id uniqueidentifier NOT NULL, actor_ref nvarchar(200) NOT NULL, document_type nvarchar(40) NULL, document_id uniqueidentifier NULL, document_line int NULL, recorded_time datetime2(3) NOT NULL, posting_period char(7) NULL, idempotency_key varchar(64) NOT NULL, reverses_event_id uniqueidentifier NULL, attributes nvarchar(max) NULL);
-        CREATE TABLE #unit (tenant_id uniqueidentifier NOT NULL, unit_id uniqueidentifier NOT NULL, lifecycle_status nvarchar(40) NOT NULL, overlay_flags nvarchar(max) NOT NULL, origin nvarchar(40) NOT NULL, brand_is_ours bit NOT NULL, lot_id uniqueidentifier NULL, expiry_date date NULL, configuration_snapshot_id uniqueidentifier NULL, derived_from_unit_id uniqueidentifier NULL, merged_into_unit_id uniqueidentifier NULL, serialisation_point nvarchar(40) NOT NULL, retention_class nvarchar(40) NOT NULL, history_depth nvarchar(20) NOT NULL, created_at datetime2(3) NOT NULL, created_event_id uniqueidentifier NOT NULL);
+        CREATE TABLE #unit (tenant_id uniqueidentifier NOT NULL, unit_id uniqueidentifier NOT NULL, lifecycle_status nvarchar(40) NOT NULL, overlay_flags nvarchar(max) NOT NULL, origin nvarchar(40) NOT NULL, brand_is_ours bit NOT NULL, lot_id uniqueidentifier NULL, expiry_date date NULL, configuration_snapshot_id uniqueidentifier NULL, derived_from_unit_id uniqueidentifier NULL, merged_into_unit_id uniqueidentifier NULL, serialisation_point nvarchar(40) NOT NULL, retention_class nvarchar(40) NOT NULL, history_depth nvarchar(20) NOT NULL, created_at datetime2(3) NOT NULL, created_event_id uniqueidentifier NOT NULL, created_event_time datetime2(3) NOT NULL);
         CREATE TABLE #ident (tenant_id uniqueidentifier NOT NULL, identifier_id uniqueidentifier NOT NULL, unit_id uniqueidentifier NOT NULL, type nvarchar(40) NOT NULL, scheme nvarchar(20) NOT NULL, issuer_party_ref uniqueidentifier NULL, enterprise_identifier nvarchar(50) NULL, qualifier nvarchar(100) NULL, raw_value nvarchar(100) NOT NULL, normalised_value nvarchar(100) NOT NULL, scope_key nvarchar(100) NOT NULL, valid_from datetime2(3) NOT NULL, valid_to datetime2(3) NULL, superseded_by_identifier_id uniqueidentifier NULL, supersedes_identifier_id uniqueidentifier NULL, correction_reason nvarchar(40) NULL, duplicate_acknowledged bit NOT NULL, actor_ref nvarchar(200) NOT NULL, recorded_time datetime2(3) NOT NULL, event_id uniqueidentifier NOT NULL);
         CREATE TABLE #assign (tenant_id uniqueidentifier NOT NULL, assignment_id uniqueidentifier NOT NULL, unit_id uniqueidentifier NOT NULL, item_id uniqueidentifier NOT NULL, model_version_id uniqueidentifier NULL, valid_from datetime2(3) NOT NULL, valid_to datetime2(3) NULL, reason nvarchar(20) NOT NULL, event_id uniqueidentifier NOT NULL);
         CREATE TABLE #ep (tenant_id uniqueidentifier NOT NULL, episode_id uniqueidentifier NOT NULL, unit_id uniqueidentifier NOT NULL, kind nvarchar(20) NOT NULL, party_ref uniqueidentifier NULL, party_type nvarchar(30) NULL, legal_entity_id uniqueidentifier NULL, location_id uniqueidentifier NULL, location_kind nvarchar(30) NULL, reason nvarchar(40) NULL, due_back date NULL, source nvarchar(40) NULL, confidence nvarchar(20) NULL, valid_from datetime2(3) NOT NULL, valid_to datetime2(3) NULL, opening_document_type nvarchar(40) NULL, opening_document_id uniqueidentifier NULL, opening_document_line int NULL, opening_event_id uniqueidentifier NOT NULL, closing_document_type nvarchar(40) NULL, closing_document_id uniqueidentifier NULL, closing_document_line int NULL, closing_event_id uniqueidentifier NULL, party_is_group_member bit NOT NULL, external_order_ref nvarchar(100) NULL, customer_po_ref nvarchar(100) NULL, customer_item_ref nvarchar(100) NULL);
@@ -489,10 +513,10 @@ public sealed class BulkIngestion(SerialisationDbContext db, ITenantContext tena
 
     private static DataTable UnitTable(IEnumerable<Unit> rows)
     {
-        var t = Table(("tenant_id", typeof(Guid)), ("unit_id", typeof(Guid)), ("lifecycle_status", typeof(string)), ("overlay_flags", typeof(string)), ("origin", typeof(string)), ("brand_is_ours", typeof(bool)), ("lot_id", typeof(Guid)), ("expiry_date", typeof(DateTime)), ("configuration_snapshot_id", typeof(Guid)), ("derived_from_unit_id", typeof(Guid)), ("merged_into_unit_id", typeof(Guid)), ("serialisation_point", typeof(string)), ("retention_class", typeof(string)), ("history_depth", typeof(string)), ("created_at", typeof(DateTime)), ("created_event_id", typeof(Guid)));
+        var t = Table(("tenant_id", typeof(Guid)), ("unit_id", typeof(Guid)), ("lifecycle_status", typeof(string)), ("overlay_flags", typeof(string)), ("origin", typeof(string)), ("brand_is_ours", typeof(bool)), ("lot_id", typeof(Guid)), ("expiry_date", typeof(DateTime)), ("configuration_snapshot_id", typeof(Guid)), ("derived_from_unit_id", typeof(Guid)), ("merged_into_unit_id", typeof(Guid)), ("serialisation_point", typeof(string)), ("retention_class", typeof(string)), ("history_depth", typeof(string)), ("created_at", typeof(DateTime)), ("created_event_id", typeof(Guid)), ("created_event_time", typeof(DateTime)));
         foreach (var u in rows)
         {
-            t.Rows.Add(u.TenantId.Value, u.UnitId, u.LifecycleStatus, u.OverlayFlags, u.Origin, u.BrandIsOurs, V(u.LotId), D(u.ExpiryDate), V(u.ConfigurationSnapshotId), V(u.DerivedFromUnitId), V(u.MergedIntoUnitId), u.SerialisationPoint, u.RetentionClass, u.HistoryDepth, u.CreatedAt, u.CreatedEventId);
+            t.Rows.Add(u.TenantId.Value, u.UnitId, u.LifecycleStatus, u.OverlayFlags, u.Origin, u.BrandIsOurs, V(u.LotId), D(u.ExpiryDate), V(u.ConfigurationSnapshotId), V(u.DerivedFromUnitId), V(u.MergedIntoUnitId), u.SerialisationPoint, u.RetentionClass, u.HistoryDepth, u.CreatedAt, u.CreatedEventId, u.CreatedEventTime);
         }
 
         return t;

@@ -72,6 +72,64 @@ public sealed class UnitEventArchive : UnitEventRow;
 public sealed class UnitEventArchiveStage : UnitEventRow;
 
 /// <summary>
+/// Sparse lookup for the originating document carried by <c>UnitEvent.attributes.base_order</c>. It is written in
+/// the ledger append transaction and remains independent of live/archive partition movement.
+/// </summary>
+public sealed class LedgerBaseOrderReference : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+
+    public required string BaseDocumentType { get; set; }
+
+    public Guid BaseDocumentId { get; set; }
+
+    public int? BaseDocumentLine { get; set; }
+
+    public Guid UnitId { get; set; }
+
+    public DateTime EventTime { get; set; }
+
+    public Guid EventId { get; set; }
+}
+
+/// <summary>
+/// One resumable cursor per tenant for the historical <c>base_order</c> projection. New appends write the sparse
+/// reference synchronously; this row exists only to retire the bounded legacy-read fallback after old facts catch up.
+/// </summary>
+public sealed class LedgerBaseOrderBackfillCheckpoint : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+
+    public required string Status { get; set; }
+
+    public DateTime? CheckpointMonth { get; set; }
+
+    public DateTime? NewestMonth { get; set; }
+
+    public DateTime? OldestMonth { get; set; }
+
+    public DateTime? CursorEventTime { get; set; }
+
+    public Guid? CursorEventId { get; set; }
+
+    public long RowsScanned { get; set; }
+
+    public long RowsWritten { get; set; }
+
+    public long? EstimatedRows { get; set; }
+
+    public int MonthsCompleted { get; set; }
+
+    public int MonthsTotal { get; set; }
+
+    public DateTime StartedAt { get; set; }
+
+    public DateTime UpdatedAt { get; set; }
+
+    public DateTime? CompletedAt { get; set; }
+}
+
+/// <summary>
 /// One row per unit with everything an operational read needs (ADR-0001 UnitCurrentState). Maintained in the
 /// same transaction as every event write (coupling 2, P1-T04); <see cref="LastEventSeq"/> only ever grows.
 /// </summary>

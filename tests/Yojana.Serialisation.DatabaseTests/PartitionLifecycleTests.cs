@@ -61,7 +61,7 @@ public sealed class PartitionLifecycleTests(SerialisationHostFixture fixture)
         using (var scope = fixture.ScopeFor(tenant))
         {
             var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
-            db.Units.Add(new Unit { TenantId = tenant, UnitId = unit, LifecycleStatus = LifecycleStatus.Released, Origin = UnitOrigin.Migrated, SerialisationPoint = SerialisationPoint.Receipt, RetentionClass = "standard_10y", CreatedAt = DateTime.UtcNow, CreatedEventId = TimeOrderedId.New() });
+            db.Units.Add(new Unit { TenantId = tenant, UnitId = unit, LifecycleStatus = LifecycleStatus.Released, Origin = UnitOrigin.Migrated, SerialisationPoint = SerialisationPoint.Receipt, RetentionClass = "standard_10y", CreatedAt = DateTime.UtcNow, CreatedEventId = TimeOrderedId.New(cold), CreatedEventTime = cold });
             foreach (var (at, n) in new[] { (cold, 1), (older, 2), (warm, 3) })
             {
                 db.Events.Add(new UnitEvent { TenantId = tenant, EventTime = at, EventId = TimeOrderedId.New(at), UnitId = unit, Seq = n, EventType = UnitEventType.Commissioned, LegalEntityId = Guid.NewGuid(), ActorRef = "test", RecordedTime = DateTime.UtcNow, IdempotencyKey = "pl-" + Guid.NewGuid().ToString("N") });

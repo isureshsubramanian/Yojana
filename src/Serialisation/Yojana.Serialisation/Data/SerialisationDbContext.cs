@@ -47,6 +47,10 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<UnitEventArchiveStage> ArchiveStage => Set<UnitEventArchiveStage>();
 
+    public DbSet<LedgerBaseOrderReference> LedgerBaseOrderReferences => Set<LedgerBaseOrderReference>();
+
+    public DbSet<LedgerBaseOrderBackfillCheckpoint> LedgerBaseOrderBackfillCheckpoints => Set<LedgerBaseOrderBackfillCheckpoint>();
+
     public DbSet<UnitCurrent> Current => Set<UnitCurrent>();
 
     public DbSet<PendingShipmentLine> PendingShipmentLines => Set<PendingShipmentLine>();
@@ -184,6 +188,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(u => u.SerialisationPoint).HasMaxLength(40);
             b.Property(u => u.RetentionClass).HasMaxLength(40);
             b.Property(u => u.HistoryDepth).HasMaxLength(20).HasDefaultValue("full");
+            b.Property(u => u.CreatedEventTime).HasPrecision(3);
             b.HasIndex(u => new { u.TenantId, u.LotId });
             b.HasIndex(u => new { u.TenantId, u.DerivedFromUnitId });
             b.HasIndex(u => new { u.TenantId, u.LifecycleStatus });
@@ -322,6 +327,36 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
         ConfigureLedger<UnitEvent>(modelBuilder, "unit_event");
         ConfigureLedger<UnitEventArchive>(modelBuilder, "unit_event_archive");
         ConfigureLedger<UnitEventArchiveStage>(modelBuilder, "unit_event_archive_stage");
+
+        modelBuilder.Entity<LedgerBaseOrderReference>(b =>
+        {
+            b.ToTable("ledger_base_order_ref");
+            b.HasKey(reference => new { reference.TenantId, reference.EventTime, reference.EventId });
+            b.Property(reference => reference.BaseDocumentType).HasMaxLength(40);
+            b.Property(reference => reference.EventTime).HasPrecision(3);
+            b.HasIndex(reference => new
+                {
+                    reference.TenantId,
+                    reference.BaseDocumentType,
+                    reference.BaseDocumentId,
+                    reference.BaseDocumentLine,
+                })
+                .IncludeProperties(reference => reference.UnitId);
+        });
+
+        modelBuilder.Entity<LedgerBaseOrderBackfillCheckpoint>(b =>
+        {
+            b.ToTable("ledger_base_order_backfill_checkpoint");
+            b.HasKey(checkpoint => checkpoint.TenantId);
+            b.Property(checkpoint => checkpoint.Status).HasMaxLength(20);
+            b.Property(checkpoint => checkpoint.CheckpointMonth).HasPrecision(3);
+            b.Property(checkpoint => checkpoint.NewestMonth).HasPrecision(3);
+            b.Property(checkpoint => checkpoint.OldestMonth).HasPrecision(3);
+            b.Property(checkpoint => checkpoint.CursorEventTime).HasPrecision(3);
+            b.Property(checkpoint => checkpoint.StartedAt).HasPrecision(3);
+            b.Property(checkpoint => checkpoint.UpdatedAt).HasPrecision(3);
+            b.Property(checkpoint => checkpoint.CompletedAt).HasPrecision(3);
+        });
 
         modelBuilder.Entity<UnitCurrent>(b =>
         {

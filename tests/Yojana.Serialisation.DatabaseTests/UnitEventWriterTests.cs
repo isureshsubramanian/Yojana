@@ -145,6 +145,39 @@ public sealed class UnitEventWriterTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task An_append_with_a_base_order_writes_exactly_one_sparse_reference()
+    {
+        var tenant = await fixture.NewTenantAsync("wbase");
+        var unit = TimeOrderedId.New();
+        var order = new DocumentRef("sales_order", Guid.NewGuid(), 4);
+        var at = new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            await scope.ServiceProvider.GetRequiredService<IUnitEventWriter>().AppendAsync(
+            [
+                Draft(unit, at, UnitEventType.Commissioned, Commission(Guid.NewGuid())) with
+                {
+                    Attributes = JsonObjectText.Of(new { base_order = order }),
+                },
+            ], CancellationToken.None);
+            Assert.Single(db.ChangeTracker.Entries<LedgerBaseOrderReference>());
+            await db.SaveChangesAsync();
+        }
+
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var reference = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>()
+                .LedgerBaseOrderReferences.AsNoTracking().SingleAsync();
+            Assert.Equal(order.Type, reference.BaseDocumentType);
+            Assert.Equal(order.Id, reference.BaseDocumentId);
+            Assert.Equal(order.Line, reference.BaseDocumentLine);
+            Assert.Equal(unit, reference.UnitId);
+            Assert.Equal(at, reference.EventTime);
+        }
+    }
+
+    [DatabaseFact]
     public async Task The_projector_refuses_an_out_of_order_apply_and_a_change_before_creation()
     {
         var tenant = await fixture.NewTenantAsync("o");

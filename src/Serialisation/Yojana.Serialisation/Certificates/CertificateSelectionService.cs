@@ -194,13 +194,8 @@ public sealed class CertificateSelectionService(
         var saleTimes = await issuePolicy.CustomerSaleTimesAsync(unitIds, cancellationToken);
         var createdEvents = await db.Units.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
                 && unitIds.Contains(row.UnitId))
-            .Select(row => new { row.UnitId, row.CreatedEventId }).ToListAsync(cancellationToken);
-        var createdEventIds = createdEvents.Select(row => row.CreatedEventId).ToList();
-        var createdTimesByEvent = await db.Events.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
-                && createdEventIds.Contains(row.EventId))
-            .ToDictionaryAsync(row => row.EventId, row => row.EventTime, cancellationToken);
-        var commissionedTimes = createdEvents.ToDictionary(row => row.UnitId,
-            row => createdTimesByEvent[row.CreatedEventId]);
+            .Select(row => new { row.UnitId, row.CreatedEventTime }).ToListAsync(cancellationToken);
+        var commissionedTimes = createdEvents.ToDictionary(row => row.UnitId, row => row.CreatedEventTime);
         var itemIds = chunk.Select(row => row.ItemId).OfType<Guid>().Distinct().ToList();
         var profiles = await itemProfiles.GetManyAsync(itemIds, cancellationToken);
         var issueSettings = await issuePoints.GetAsync(cancellationToken);
@@ -322,7 +317,7 @@ public sealed class CertificateSelectionService(
         var tenantId = tenant.TenantId;
         var unitIds = members.Select(row => row.UnitId).ToList();
         var units = await db.Units.AsNoTracking().Where(row => row.TenantId == tenantId && unitIds.Contains(row.UnitId))
-            .Select(row => new { row.UnitId, row.LifecycleStatus, row.CreatedEventId }).ToDictionaryAsync(row => row.UnitId, cancellationToken);
+            .Select(row => new { row.UnitId, row.LifecycleStatus, row.CreatedEventTime }).ToDictionaryAsync(row => row.UnitId, cancellationToken);
         var assignments = await db.ItemAssignments.AsNoTracking().Where(row => row.TenantId == tenantId
                 && unitIds.Contains(row.UnitId) && row.ValidTo == null)
             .Select(row => new { row.UnitId, row.ItemId }).ToDictionaryAsync(row => row.UnitId, cancellationToken);
@@ -344,13 +339,9 @@ public sealed class CertificateSelectionService(
         var customerSaleUnits = documentKind == CertificateDocumentKind.ReleaseRecord
             ? (await issuePolicy.CustomerSaleTimesAsync(unitIds, cancellationToken)).Keys.ToHashSet()
             : [];
-        var createdEventIds = units.Values.Select(row => row.CreatedEventId).ToList();
-        var commissionedRows = documentKind == CertificateDocumentKind.ReleaseRecord
-            ? await db.Events.AsNoTracking().Where(row => row.TenantId == tenantId
-                    && createdEventIds.Contains(row.EventId))
-                .Select(row => new { row.UnitId, row.EventTime }).ToListAsync(cancellationToken)
+        var commissioned = documentKind == CertificateDocumentKind.ReleaseRecord
+            ? units.ToDictionary(row => row.Key, row => row.Value.CreatedEventTime)
             : [];
-        var commissioned = commissionedRows.ToDictionary(row => row.UnitId, row => row.EventTime);
 
         var completenessByUnit = new Dictionary<Guid, UnitCompleteness>();
         if (documentKind == CertificateDocumentKind.ReleaseRecord)

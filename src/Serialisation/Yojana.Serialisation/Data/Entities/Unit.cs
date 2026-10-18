@@ -51,6 +51,9 @@ public sealed class Unit : ITenantScoped
 
     /// <summary>The event that created the row (<c>unit.commissioned</c> or <c>unit.created_pending_identifier</c>).</summary>
     public Guid CreatedEventId { get; set; }
+
+    /// <summary>Business time of <see cref="CreatedEventId"/>; carries the ledger partition key with its id.</summary>
+    public DateTime CreatedEventTime { get; set; }
 }
 
 /// <summary>
