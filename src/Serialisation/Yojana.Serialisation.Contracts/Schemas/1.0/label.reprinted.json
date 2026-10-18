@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/label.reprinted.json",
+  "title": "Label.Reprinted",
+  "type": "object",
+  "required": ["header", "job_id", "original_job_id", "template_version_id", "layout_kind", "symbology", "payload_hash", "printer_ref"],
+  "properties": {
+    "header": {
+      "type": "object",
+      "required": ["schema", "version", "event_id", "unit_id", "event_time", "recorded_time", "seq", "legal_entity_id", "actor_ref"],
+      "properties": {
+        "schema": { "const": "Label.Reprinted" },
+        "version": { "const": "1.0" },
+        "event_id": { "type": "string", "format": "uuid" },
+        "unit_id": { "type": "string", "format": "uuid" },
+        "event_time": { "type": "string", "format": "date-time" },
+        "recorded_time": { "type": "string", "format": "date-time" },
+        "seq": { "type": "integer" },
+        "legal_entity_id": { "type": "string", "format": "uuid" },
+        "actor_ref": { "type": "string" },
+        "document": { "type": ["object", "null"] }
+      }
+    },
+    "job_id": { "type": "string", "format": "uuid" },
+    "original_job_id": { "type": "string", "format": "uuid" },
+    "template_version_id": { "type": "string", "format": "uuid" },
+    "layout_kind": { "enum": ["zpl", "html"] },
+    "symbology": { "enum": ["code128", "datamatrix", "qr", "code39"] },
+    "payload_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "printer_ref": { "type": "string", "minLength": 1 }
+  }
+}

@@ -2964,6 +2964,293 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.LabelTemplate", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_id");
+
+                    b.Property<string>("AppliesTo")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("applies_to");
+
+                    b.Property<string>("AppliesToValue")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("applies_to_value");
+
+                    b.Property<Guid>("CreateCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("create_command_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("name");
+
+                    b.HasKey("TenantId", "TemplateId")
+                        .HasName("pk_label_template");
+
+                    b.HasIndex("TenantId", "CreateCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_label_template_tenant_id_create_command_id");
+
+                    b.HasIndex("TenantId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ux_label_template_tenant_id_name");
+
+                    b.HasIndex("TenantId", "AppliesTo", "AppliesToValue")
+                        .HasDatabaseName("ix_label_template_tenant_id_applies_to_applies_to_value");
+
+                    b.ToTable("label_template", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_label_template_applies_to", "applies_to IN ('item_family', 'identifier_type')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.LabelTemplateVersion", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TemplateVersionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_version_id");
+
+                    b.Property<DateTime?>("ActivatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("activated_at");
+
+                    b.Property<string>("ActivatedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("activated_by");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<string>("ApprovalContentHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("approval_content_hash")
+                        .IsFixedLength();
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("approved_at");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("approved_by");
+
+                    b.Property<string>("Bindings")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("bindings");
+
+                    b.Property<string>("CommandIds")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("command_ids");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("content_hash")
+                        .IsFixedLength();
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("effective_from");
+
+                    b.Property<DateTime?>("EffectiveTo")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("effective_to");
+
+                    b.Property<string>("Layout")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("layout");
+
+                    b.Property<string>("LayoutKind")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(10)")
+                        .HasColumnName("layout_kind");
+
+                    b.Property<bool>("LegalReview")
+                        .HasColumnType("bit")
+                        .HasColumnName("legal_review");
+
+                    b.Property<string>("LegalReviewContentHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("legal_review_content_hash")
+                        .IsFixedLength();
+
+                    b.Property<DateTime?>("LegalReviewRequestedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("legal_review_requested_at");
+
+                    b.Property<string>("LegalReviewRequestedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("legal_review_requested_by");
+
+                    b.Property<DateTime?>("LegalReviewedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("legal_reviewed_at");
+
+                    b.Property<string>("LegalReviewedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("legal_reviewed_by");
+
+                    b.Property<DateTime>("PeriodEnd")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("sys_end");
+
+                    b.Property<DateTime>("PeriodStart")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("sys_start");
+
+                    b.Property<Guid?>("PreviewSampleUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("preview_sample_unit_id");
+
+                    b.Property<DateTime?>("PreviewedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("previewed_at");
+
+                    b.Property<string>("PreviewedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("previewed_by");
+
+                    b.Property<string>("PreviewedContentHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("previewed_content_hash")
+                        .IsFixedLength();
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("recorded_at");
+
+                    b.Property<bool>("Regulated")
+                        .HasColumnType("bit")
+                        .HasColumnName("regulated");
+
+                    b.Property<DateTime?>("RetiredAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("retired_at");
+
+                    b.Property<string>("RetiredBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("retired_by");
+
+                    b.Property<string>("StaticText")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("static_text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Symbology")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("symbology");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_id");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int")
+                        .HasColumnName("version");
+
+                    b.HasKey("TenantId", "TemplateVersionId")
+                        .HasName("pk_label_template_version");
+
+                    b.HasIndex("TenantId", "PreviewSampleUnitId")
+                        .HasDatabaseName("ix_label_template_version_tenant_id_preview_sample_unit_id");
+
+                    b.HasIndex("TenantId", "TemplateId", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("ux_label_template_version_tenant_id_template_id_version");
+
+                    b.HasIndex("TenantId", "TemplateId", "Status", "EffectiveFrom")
+                        .HasDatabaseName("ix_label_template_version_tenant_id_template_id_status_effective_from");
+
+                    b.ToTable("label_template_version", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_label_template_version_bindings_json", "ISJSON(bindings) = 1");
+
+                            t.HasCheckConstraint("ck_label_template_version_command_ids_json", "ISJSON(command_ids) = 1");
+
+                            t.HasCheckConstraint("ck_label_template_version_effective", "effective_to IS NULL OR effective_to > effective_from");
+
+                            t.HasCheckConstraint("ck_label_template_version_layout_kind", "layout_kind IN ('zpl', 'html')");
+
+                            t.HasCheckConstraint("ck_label_template_version_static_text_json", "ISJSON(static_text) = 1");
+
+                            t.HasCheckConstraint("ck_label_template_version_status", "status IN ('draft', 'active', 'retired')");
+
+                            t.HasCheckConstraint("ck_label_template_version_symbology", "symbology IN ('code128', 'datamatrix', 'qr', 'code39')");
+                        });
+
+                    b.ToTable(tb => tb.IsTemporal(ttb =>
+                            {
+                                ttb.UseHistoryTable("label_template_version_history");
+                                ttb
+                                    .HasPeriodStart("PeriodStart")
+                                    .HasColumnName("sys_start");
+                                ttb
+                                    .HasPeriodEnd("PeriodEnd")
+                                    .HasColumnName("sys_end");
+                            }));
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.LifeEpisode", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -3267,6 +3554,127 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ux_pending_shipment_line_tenant_id_document_type_document_id_document_line");
 
                     b.ToTable("pending_shipment_line", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PrintJob", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("job_id");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<DateTime?>("ConfirmedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("confirmed_at");
+
+                    b.Property<Guid?>("IdentifierId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("identifier_id");
+
+                    b.Property<Guid?>("LedgerEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("ledger_event_id");
+
+                    b.Property<Guid?>("OriginalJobId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("original_job_id");
+
+                    b.Property<string>("PayloadHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("payload_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("PrinterRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("printer_ref");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("rejection_reason");
+
+                    b.Property<DateTime?>("RenderedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("rendered_at");
+
+                    b.Property<string>("RenderedPayload")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("rendered_payload");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("requested_at");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("requested_by");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("sent_at");
+
+                    b.Property<Guid?>("SourceEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_event_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid?>("TemplateVersionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_version_id");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("TenantId", "JobId")
+                        .HasName("pk_print_job");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_print_job_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "IdentifierId")
+                        .HasDatabaseName("ix_print_job_tenant_id_identifier_id");
+
+                    b.HasIndex("TenantId", "OriginalJobId")
+                        .HasDatabaseName("ix_print_job_tenant_id_original_job_id");
+
+                    b.HasIndex("TenantId", "SourceEventId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_print_job_tenant_id_source_event_id")
+                        .HasFilter("[source_event_id] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "Status", "RequestedAt")
+                        .HasDatabaseName("ix_print_job_tenant_id_status_requested_at");
+
+                    b.HasIndex("TenantId", "TemplateVersionId", "RequestedAt")
+                        .HasDatabaseName("ix_print_job_tenant_id_template_version_id_requested_at");
+
+                    b.HasIndex("TenantId", "UnitId", "RequestedAt")
+                        .HasDatabaseName("ix_print_job_tenant_id_unit_id_requested_at");
+
+                    b.ToTable("print_job", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_print_job_status", "status IN ('rendered', 'sent', 'confirmed', 'rejected')");
+                        });
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RecoveryClaim", b =>
@@ -7621,6 +8029,31 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_correction_record_unit_tenant_id_correction_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.LabelTemplateVersion", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.LabelTemplate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TemplateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_label_template_version_tenant_id_template_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PrintJob", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.PrintJob", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "OriginalJobId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_print_job_tenant_id_original_job_id");
+
+                    b.HasOne("Yojana.Serialisation.Data.Entities.LabelTemplateVersion", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TemplateVersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_print_job_tenant_id_template_version_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RecoveryClaim", b =>

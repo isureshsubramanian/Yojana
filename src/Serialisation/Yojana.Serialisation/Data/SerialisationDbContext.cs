@@ -150,6 +150,11 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<CertificateTemplate> CertificateTemplates => Set<CertificateTemplate>();
     public DbSet<CertificateTemplateVersion> CertificateTemplateVersions => Set<CertificateTemplateVersion>();
     // End P6 certificate block.
+    // P6 labels block. Kept together so the certificate sibling can merge its DbSets mechanically.
+    public DbSet<LabelTemplate> LabelTemplates => Set<LabelTemplate>();
+    public DbSet<LabelTemplateVersion> LabelTemplateVersions => Set<LabelTemplateVersion>();
+    public DbSet<PrintJob> PrintJobs => Set<PrintJob>();
+    // End P6 labels block.
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -1491,6 +1496,77 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(row => new { row.TenantId, row.TemplateId, row.Status, row.EffectiveFrom });
         });
         // End P6 certificate block.
+        // P6 labels block. Label versions carry both business-effective dates and SQL system time: the former selects
+        // what was printable at a business instant; the latter audits every draft/lifecycle save.
+        modelBuilder.Entity<LabelTemplate>(b =>
+        {
+            b.ToTable("label_template", t =>
+                t.HasCheckConstraint("ck_label_template_applies_to", "applies_to IN ('item_family', 'identifier_type')"));
+            b.HasKey(row => new { row.TenantId, row.TemplateId });
+            b.Property(row => row.Name).HasMaxLength(200);
+            b.Property(row => row.AppliesTo).HasMaxLength(30).IsUnicode(false);
+            b.Property(row => row.AppliesToValue).HasMaxLength(100);
+            b.Property(row => row.CreatedBy).HasMaxLength(200);
+            b.HasIndex(row => new { row.TenantId, row.CreateCommandId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.Name }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.AppliesTo, row.AppliesToValue });
+        });
+
+        modelBuilder.Entity<LabelTemplateVersion>(b =>
+        {
+            b.ToTable("label_template_version", t =>
+            {
+                t.IsTemporal(history => history.UseHistoryTable("label_template_version_history"));
+                t.HasCheckConstraint("ck_label_template_version_layout_kind", "layout_kind IN ('zpl', 'html')");
+                t.HasCheckConstraint("ck_label_template_version_symbology", "symbology IN ('code128', 'datamatrix', 'qr', 'code39')");
+                t.HasCheckConstraint("ck_label_template_version_status", "status IN ('draft', 'active', 'retired')");
+                t.HasCheckConstraint("ck_label_template_version_effective", "effective_to IS NULL OR effective_to > effective_from");
+                t.HasCheckConstraint("ck_label_template_version_static_text_json", "ISJSON(static_text) = 1");
+                t.HasCheckConstraint("ck_label_template_version_bindings_json", "ISJSON(bindings) = 1");
+                t.HasCheckConstraint("ck_label_template_version_command_ids_json", "ISJSON(command_ids) = 1");
+            });
+            b.HasKey(row => new { row.TenantId, row.TemplateVersionId });
+            b.Property(row => row.LayoutKind).HasMaxLength(10).IsUnicode(false);
+            b.Property(row => row.Symbology).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.Status).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.ContentHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.LegalReviewContentHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.ApprovalContentHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.PreviewedContentHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.PreviewedBy).HasMaxLength(200);
+            b.Property(row => row.LegalReviewRequestedBy).HasMaxLength(200);
+            b.Property(row => row.LegalReviewedBy).HasMaxLength(200);
+            b.Property(row => row.ApprovedBy).HasMaxLength(200);
+            b.Property(row => row.ActorRef).HasMaxLength(200);
+            b.Property(row => row.ActivatedBy).HasMaxLength(200);
+            b.Property(row => row.RetiredBy).HasMaxLength(200);
+            b.HasOne<LabelTemplate>().WithMany().HasForeignKey(row => new { row.TenantId, row.TemplateId }).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(row => new { row.TenantId, row.TemplateId, row.Version }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.TemplateId, row.Status, row.EffectiveFrom });
+            b.HasIndex(row => new { row.TenantId, row.PreviewSampleUnitId });
+        });
+
+        modelBuilder.Entity<PrintJob>(b =>
+        {
+            b.ToTable("print_job", t =>
+                t.HasCheckConstraint("ck_print_job_status", "status IN ('rendered', 'sent', 'confirmed', 'rejected')"));
+            b.HasKey(row => new { row.TenantId, row.JobId });
+            b.Property(row => row.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.PrinterRef).HasMaxLength(200);
+            b.Property(row => row.RequestedBy).HasMaxLength(200);
+            b.Property(row => row.Status).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.RejectionReason).HasMaxLength(500);
+            b.HasOne<LabelTemplateVersion>().WithMany().HasForeignKey(row => new { row.TenantId, row.TemplateVersionId }).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<PrintJob>().WithMany().HasForeignKey(row => new { row.TenantId, row.OriginalJobId }).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.SourceEventId }).IsUnique().HasFilter("[source_event_id] IS NOT NULL");
+            b.HasIndex(row => new { row.TenantId, row.Status, row.RequestedAt });
+            b.HasIndex(row => new { row.TenantId, row.TemplateVersionId, row.RequestedAt });
+            b.HasIndex(row => new { row.TenantId, row.UnitId, row.RequestedAt });
+            b.HasIndex(row => new { row.TenantId, row.IdentifierId });
+            b.HasIndex(row => new { row.TenantId, row.OriginalJobId });
+        });
+        // End P6 labels block.
 
         base.OnModelCreating(modelBuilder);
     }

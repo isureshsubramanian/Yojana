@@ -89,6 +89,8 @@ public static class PublishedEventSinkHandler
     // P6 certificate publications.
     public static void Handle(CertificateIssued e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(CertificateSuperseded e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(LabelPrinted e) => PublishedEventSink.Received.Enqueue(e);
+    public static void Handle(LabelReprinted e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitIdentifiersSwapped e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitItemCorrected e) => PublishedEventSink.Received.Enqueue(e);
     public static void Handle(UnitAsBuiltCorrected e) => PublishedEventSink.Received.Enqueue(e);

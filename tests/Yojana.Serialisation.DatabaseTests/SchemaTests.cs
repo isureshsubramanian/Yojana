@@ -27,7 +27,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
         using var scope = fixture.ScopeFor(null);
         var db = Db(scope);
         var expected = db.Model.GetEntityTypes().Where(e => typeof(ITenantScoped).IsAssignableFrom(e.ClrType)).Select(e => e.GetTableName()!).ToHashSet();
-        Assert.Equal(73, expected.Count);
+        Assert.Equal(76, expected.Count);
         var covered = await db.Database.SqlQueryRaw<string>($"""
             SELECT OBJECT_NAME(p.target_object_id) AS [Value]
             FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
@@ -39,6 +39,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
             "claim", "claim_line", "claim_evidence", "recovery_claim", "rma", "rma_line", "return_receipt", "return_reason",
             "refurbishment_work_order", "refurbishment_operation", "refurbishment_part", "refurbishment_labour", "refurbishment_cost", "coverage_decision",
             "certificate_template", "certificate_template_version", "certificate_instance", "certificate_trigger", "certificate_signature", "reprint_log",
+            "label_template", "label_template_version", "print_job",
         });
         var blocks = await db.Database.SqlQueryRaw<int>($"SELECT COUNT(*) AS [Value] FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id WHERE s.name = 'tenant_policy_{S}' AND p.predicate_type_desc = 'BLOCK'").SingleAsync();
         Assert.Equal(expected.Count * 2, blocks);
@@ -85,7 +86,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
     {
         using var scope = fixture.ScopeFor(null);
         var db = Db(scope);
-        foreach (var table in new[] { "unit", "custody_episode" })
+        foreach (var table in new[] { "unit", "custody_episode", "label_template_version" })
         {
             var temporal = await db.Database.SqlQueryRaw<int>($"SELECT CAST(temporal_type AS int) AS [Value] FROM sys.tables WHERE name = '{table}' AND schema_id = SCHEMA_ID('{S}')").SingleAsync();
             Assert.Equal(2, temporal);
