@@ -142,6 +142,15 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<RefurbishmentLabour> RefurbishmentLabour => Set<RefurbishmentLabour>();
     public DbSet<RefurbishmentCost> RefurbishmentCosts => Set<RefurbishmentCost>();
 
+    // P6 certificate block. Keep sibling-owned label tables outside this block for a mechanical merge.
+    public DbSet<CertificateInstance> CertificateInstances => Set<CertificateInstance>();
+    public DbSet<CertificateTrigger> CertificateTriggers => Set<CertificateTrigger>();
+    public DbSet<CertificateSignature> CertificateSignatures => Set<CertificateSignature>();
+    public DbSet<ReprintLog> ReprintLogs => Set<ReprintLog>();
+    public DbSet<CertificateTemplate> CertificateTemplates => Set<CertificateTemplate>();
+    public DbSet<CertificateTemplateVersion> CertificateTemplateVersions => Set<CertificateTemplateVersion>();
+    // End P6 certificate block.
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasSequence<long>(EventSequence, SchemaName).StartsAt(1).IncrementsBy(1);
@@ -1322,6 +1331,147 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(row => new { row.TenantId, row.ReplacementLinkId });
             b.HasIndex(row => new { row.TenantId, row.ItemId });
         });
+
+        // P6 certificate block. Certificate payloads are immutable; the migration adds a database trigger which permits
+        // only the status transition performed when a successor is issued.
+        modelBuilder.Entity<CertificateInstance>(b =>
+        {
+            b.ToTable("certificate_instance", t =>
+            {
+                t.HasTrigger("tr_certificate_instance_immutable");
+                t.HasCheckConstraint("ck_certificate_instance_document_kind", "document_kind IN ('release_record', 'warranty_certificate')");
+                t.HasCheckConstraint("ck_certificate_instance_form_type", "form_type IN ('generic_release', 'coc', 'dhr_extract', 'release_8130_3_style', 'easa_form_1_style', 'battery_passport', 'custom')");
+                t.HasCheckConstraint("ck_certificate_instance_payload_json", "ISJSON(payload) = 1");
+                t.HasCheckConstraint("ck_certificate_instance_issuer_json", "ISJSON(issuer_snapshot) = 1");
+                t.HasCheckConstraint("ck_certificate_instance_owner_json", "owner_snapshot IS NULL OR ISJSON(owner_snapshot) = 1");
+                t.HasCheckConstraint("ck_certificate_instance_branding_json", "ISJSON(branding_snapshot) = 1");
+                t.HasCheckConstraint("ck_certificate_instance_unknowns_json", "ISJSON(unknowns) = 1");
+                t.HasCheckConstraint("ck_certificate_instance_evidence_json", "ISJSON(evidence) = 1");
+                t.HasCheckConstraint("ck_certificate_instance_provenance", "provenance IN ('system_generated', 'migrated', 'reconstructed')");
+                t.HasCheckConstraint("ck_certificate_instance_status", "status IN ('draft', 'issued', 'superseded')");
+                t.HasCheckConstraint("ck_certificate_instance_owner_kind", "(document_kind = 'release_record' AND owner_snapshot IS NULL) OR document_kind = 'warranty_certificate'");
+                t.HasCheckConstraint("ck_certificate_instance_reconstruction", "provenance = 'system_generated' OR (JSON_QUERY(unknowns) <> '[]' AND JSON_QUERY(evidence) <> '[]')");
+            });
+            b.HasKey(row => new { row.TenantId, row.CertificateId });
+            b.Property(row => row.DocumentKind).HasMaxLength(30).IsUnicode(false);
+            b.Property(row => row.FormType).HasMaxLength(40).IsUnicode(false);
+            b.Property(row => row.TrackingNumber).HasMaxLength(30).IsUnicode(false);
+            b.Property(row => row.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.FactsHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.SupersedeReason).HasMaxLength(40).IsUnicode(false);
+            b.Property(row => row.Language).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.Provenance).HasMaxLength(30).IsUnicode(false);
+            b.Property(row => row.Status).HasMaxLength(20).IsUnicode(false);
+            b.HasOne<CertificateTemplateVersion>().WithMany().HasForeignKey(row => new { row.TenantId, row.TemplateVersionId }).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<CertificateInstance>().WithMany().HasForeignKey(row => new { row.TenantId, row.SupersedesCertificateId }).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(row => new { row.TenantId, row.TrackingNumber }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.UnitId, row.DocumentKind, row.Version }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.UnitId, row.DocumentKind, row.TriggeringEventId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.DocumentKind, row.FormType, row.Status, row.IssuedAt });
+            b.HasIndex(row => new { row.TenantId, row.UnitId, row.DocumentKind, row.IssuedAt });
+            b.HasIndex(row => new { row.TenantId, row.SupersedesCertificateId });
+        });
+
+        // TIGHT COUPLING (certificate chain serialization)
+        // WHAT: CertificateVersioningEngine takes a transaction-owned application lock for this entity's
+        // (tenant, unit, document kind) key before it reads or writes this receipt and the version chain.
+        // WHY: a chain may have no row to range-lock, while different triggers must still allocate one gap-free sequence.
+        // WHAT BREAKS IF SEPARATED: two consumers can choose the same next version and one message is dead-lettered by
+        // the unique version index. Keep the matching engine comment and resource-key format in step.
+        modelBuilder.Entity<CertificateTrigger>(b =>
+        {
+            b.ToTable("certificate_trigger", t =>
+            {
+                t.HasCheckConstraint("ck_certificate_trigger_document_kind", "document_kind IN ('release_record', 'warranty_certificate')");
+                t.HasCheckConstraint("ck_certificate_trigger_outcome", "outcome IN ('issued', 'absorbed', 'refused')");
+            });
+            b.HasKey(row => new { row.TenantId, row.UnitId, row.DocumentKind, row.TriggeringEventId });
+            b.Property(row => row.DocumentKind).HasMaxLength(30).IsUnicode(false);
+            b.Property(row => row.Outcome).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.RefusalRule).HasMaxLength(100).IsUnicode(false);
+            b.Property(row => row.RefusalDetail).HasMaxLength(500);
+            b.HasOne<CertificateInstance>().WithMany().HasForeignKey(row => new { row.TenantId, row.CertificateId })
+                .OnDelete(DeleteBehavior.Restrict).IsRequired(false);
+            b.HasIndex(row => new { row.TenantId, row.CertificateId });
+        });
+
+        modelBuilder.Entity<CertificateSignature>(b =>
+        {
+            b.ToTable("certificate_signature", t =>
+            {
+                t.HasTrigger("tr_certificate_signature_immutable");
+                t.HasCheckConstraint("ck_certificate_signature_meaning", "meaning IN ('release', 'review', 'approval', 'authorship')");
+            });
+            b.HasKey(row => new { row.TenantId, row.SignatureId });
+            b.Property(row => row.SignerIdentity).HasMaxLength(200);
+            b.Property(row => row.PrintedName).HasMaxLength(200);
+            b.Property(row => row.Meaning).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.HashSigned).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.SignatureMethod).HasMaxLength(40).IsUnicode(false);
+            b.HasOne<CertificateInstance>().WithMany().HasForeignKey(row => new { row.TenantId, row.CertificateId }).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(row => new { row.TenantId, row.CertificateId, row.SignedAt });
+        });
+
+        modelBuilder.Entity<ReprintLog>(b =>
+        {
+            b.ToTable("reprint_log");
+            b.HasKey(row => new { row.TenantId, row.ReprintId });
+            b.Property(row => row.RequestedBy).HasMaxLength(200);
+            b.HasOne<CertificateInstance>().WithMany().HasForeignKey(row => new { row.TenantId, row.CertificateId }).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(row => new { row.TenantId, row.CertificateId, row.At });
+        });
+
+        modelBuilder.Entity<CertificateTemplate>(b =>
+        {
+            b.ToTable("certificate_template", t =>
+            {
+                t.HasCheckConstraint("ck_certificate_template_document_kind", "document_kind IN ('release_record', 'warranty_certificate')");
+                t.HasCheckConstraint("ck_certificate_template_form_type", "form_type IN ('generic_release', 'coc', 'dhr_extract', 'release_8130_3_style', 'easa_form_1_style', 'battery_passport', 'custom')");
+            });
+            b.HasKey(row => new { row.TenantId, row.TemplateId });
+            b.Property(row => row.Code).HasMaxLength(100).IsUnicode(false);
+            b.Property(row => row.Name).HasMaxLength(200);
+            b.Property(row => row.DocumentKind).HasMaxLength(30).IsUnicode(false);
+            b.Property(row => row.FormType).HasMaxLength(40).IsUnicode(false);
+            b.Property(row => row.AppliesToItemClass).HasMaxLength(100);
+            b.Property(row => row.CreatedBy).HasMaxLength(200);
+            // Coupled to CertificateTemplateService's starter application lock: this key is the final guard which makes
+            // lazy starter creation insert-if-absent. Removing either side permits duplicate built-ins on concurrent GETs.
+            b.HasIndex(row => new { row.TenantId, row.Code }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.DocumentKind, row.FormType, row.AppliesToItemClass });
+        });
+
+        modelBuilder.Entity<CertificateTemplateVersion>(b =>
+        {
+            b.ToTable("certificate_template_version", t =>
+            {
+                t.HasTrigger("tr_certificate_template_version_immutable");
+                t.HasCheckConstraint("ck_certificate_template_version_status", "status IN ('draft', 'active', 'retired')");
+                t.HasCheckConstraint("ck_certificate_template_version_layout", "layout_kind = 'html'");
+                t.HasCheckConstraint("ck_certificate_template_version_static_text_json", "ISJSON(static_text) = 1");
+                t.HasCheckConstraint("ck_certificate_template_version_fields_json", "ISJSON(fields) = 1");
+                t.HasCheckConstraint("ck_certificate_template_version_dates", "effective_to IS NULL OR (effective_from IS NOT NULL AND effective_to > effective_from)");
+            });
+            b.HasKey(row => new { row.TenantId, row.TemplateVersionId });
+            b.Property(row => row.Language).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.PayloadSchemaVersion).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.Status).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.LayoutKind).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.PageSize).HasMaxLength(30).IsUnicode(false);
+            b.Property(row => row.Orientation).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.MarginTopMm).HasPrecision(7, 2);
+            b.Property(row => row.MarginRightMm).HasPrecision(7, 2);
+            b.Property(row => row.MarginBottomMm).HasPrecision(7, 2);
+            b.Property(row => row.MarginLeftMm).HasPrecision(7, 2);
+            b.Property(row => row.BrandingAssetRef).HasMaxLength(300);
+            b.Property(row => row.ApprovedBy).HasMaxLength(200);
+            b.Property(row => row.CreatedBy).HasMaxLength(200);
+            b.Property(row => row.UpdatedBy).HasMaxLength(200);
+            b.HasOne<CertificateTemplate>().WithMany().HasForeignKey(row => new { row.TenantId, row.TemplateId }).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(row => new { row.TenantId, row.TemplateId, row.Version }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.TemplateId, row.Status, row.EffectiveFrom });
+        });
+        // End P6 certificate block.
 
         base.OnModelCreating(modelBuilder);
     }

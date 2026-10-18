@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/certificate.superseded.json",
+  "title": "Certificate.Superseded",
+  "type": "object",
+  "required": ["header", "certificate_id", "superseding_certificate_id", "document_kind", "certificate_version", "reason", "triggering_event_id", "superseded_at"],
+  "properties": {
+    "header": {
+      "type": "object",
+      "required": ["schema", "version", "event_id", "unit_id", "event_time", "recorded_time", "seq", "legal_entity_id", "actor_ref"],
+      "properties": {
+        "schema": { "const": "Certificate.Superseded" },
+        "version": { "const": "1.0" },
+        "event_id": { "type": "string", "format": "uuid" },
+        "unit_id": { "type": "string", "format": "uuid" },
+        "event_time": { "type": "string", "format": "date-time" },
+        "recorded_time": { "type": "string", "format": "date-time" },
+        "seq": { "type": "integer" },
+        "legal_entity_id": { "type": "string", "format": "uuid" },
+        "actor_ref": { "type": "string" },
+        "document": { "type": ["object", "null"] }
+      }
+    },
+    "certificate_id": { "type": "string", "format": "uuid" },
+    "superseding_certificate_id": { "type": "string", "format": "uuid" },
+    "document_kind": { "enum": ["release_record", "warranty_certificate"] },
+    "certificate_version": { "type": "integer", "minimum": 1 },
+    "reason": { "enum": ["repair", "refurbishment", "component_replacement", "correction", "reassembly", "identifier_change", "entitlement_change"] },
+    "triggering_event_id": { "type": "string", "format": "uuid" },
+    "superseded_at": { "type": "string", "format": "date-time" }
+  }
+}

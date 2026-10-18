@@ -33,7 +33,8 @@ public sealed class RecordedScenarioTests(SerialisationHostFixture fixture)
         Assert.Equal(expect.GetProperty("locationKind").GetString(), current.LocationKind);
         Assert.Equal(expect.GetProperty("locationId").GetGuid(), current.LocationId);
         var events = await db.Events.AsNoTracking().Where(e => e.UnitId == unit).OrderBy(e => e.Seq).Select(e => e.EventType).ToListAsync();
-        Assert.Equal(expect.GetProperty("events").EnumerateArray().Select(e => e.GetString()!).ToList(), events);
+        Assert.Equal(expect.GetProperty("events").EnumerateArray().Select(e => e.GetString()!).ToList(),
+            events.Where(eventType => eventType != CertificateEventType.Issued && eventType != CertificateEventType.Superseded));
         var record = await db.BuildRecords.AsNoTracking().SingleAsync(b => b.UnitId == unit);
         Assert.Equal(expect.GetProperty("buildRecordVersion").GetInt32(), record.Version);
         Assert.Contains(expect.GetProperty("componentSerial").GetString()!.Replace("-", "", StringComparison.Ordinal), record.Payload);

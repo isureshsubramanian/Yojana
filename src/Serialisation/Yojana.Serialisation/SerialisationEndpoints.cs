@@ -22,6 +22,7 @@ using Yojana.Serialisation.Campaigns;
 using Yojana.Serialisation.Rmas;
 using Yojana.Serialisation.Condition;
 using Yojana.Serialisation.Refurbishments;
+using Yojana.Serialisation.Certificates;
 
 namespace Yojana.Serialisation;
 
@@ -732,6 +733,65 @@ public static class SerialisationEndpoints
                 await writer.FlushAsync(ct);
             }, "text/csv; charset=utf-8", $"campaign-{campaignId:N}-recipients.csv"));
 
+        // P6 certificate read surface. Issuance and reprints by selection set remain P6-T08 and are deliberately absent.
+        var certificates = app.MapGroup("/api/certificates").RequireAuthorization(YojanaPolicy.TenantMember);
+        certificates.MapGet("/", async (string? kind, string? formType, string? status, string? unitSerial,
+            DateTime? issuedFrom, DateTime? issuedTo, int? skip, int? take, CertificateQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.PageAsync(kind, formType, status, unitSerial, issuedFrom, issuedTo,
+                skip ?? 0, take ?? 50, ct)));
+        certificates.MapGet("/{certificateId:guid}", async (Guid certificateId, CertificateQueries queries, CancellationToken ct) =>
+            await queries.DetailAsync(certificateId, ct) is { } certificate ? Results.Ok(certificate) : Results.NotFound());
+        certificates.MapGet("/units/{unitId:guid}/versions", async (Guid unitId, CertificateQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.ChainAsync(unitId, ct)));
+        // End P6 certificate read surface.
+
+        // P6 tenant-owned certificate layouts. Layout placeholders are validated only against immutable payload fields;
+        // these endpoints never query live unit data except the explicit sample used for preview.
+        var certificateTemplates = app.MapGroup("/api/certificate-templates").RequireAuthorization(YojanaPolicy.TenantMember);
+        var templateEditor = YojanaPolicy.ForRole(YojanaRole.CertificateAdministrator);
+        certificateTemplates.MapGet("/", async (CertificateTemplateService service, CancellationToken ct) =>
+            Results.Ok(await service.ListAsync(ct)));
+        certificateTemplates.MapGet("/field-catalogue/{documentKind}", (string documentKind, CertificateTemplateService service) =>
+            TemplateInvoke(() => Task.FromResult(service.Catalogue(documentKind))));
+        certificateTemplates.MapGet("/{templateId:guid}", async (Guid templateId, CertificateTemplateService service, CancellationToken ct) =>
+            await service.GetAsync(templateId, ct) is { } template ? Results.Ok(template) : Results.NotFound());
+        certificateTemplates.MapPost("/", (CreateCertificateTemplateRequest request, ClaimsPrincipal user,
+            CertificateTemplateService service, CancellationToken ct) =>
+            TemplateInvoke(() => service.CreateAsync(request, Actor(user), ct))).RequireAuthorization(templateEditor);
+        certificateTemplates.MapPost("/{templateId:guid}/versions/draft", async (Guid templateId,
+            SaveCertificateTemplateDraftRequest request, ClaimsPrincipal user, CertificateTemplateService service, CancellationToken ct) =>
+        {
+            try
+            {
+                var saved = await service.SaveDraftAsync(templateId, request, Actor(user), ct);
+                return saved.Version is null ? Results.UnprocessableEntity(saved.Validation) : Results.Ok(saved);
+            }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+            }
+        }).RequireAuthorization(templateEditor);
+        certificateTemplates.MapPost("/{templateId:guid}/validate", (Guid templateId,
+            SaveCertificateTemplateDraftRequest request, CertificateTemplateService service) =>
+            TemplateInvoke(async () =>
+            {
+                var template = await service.GetAsync(templateId, CancellationToken.None)
+                    ?? throw new CommandRefusedException("certificate_template_unknown", $"Certificate template {templateId} does not exist.");
+                return service.Validate(template.DocumentKind, request.LayoutBody, request.HeaderBody, request.FooterBody, request.Fields);
+            })).RequireAuthorization(templateEditor);
+        certificateTemplates.MapPost("/{templateId:guid}/versions/{versionId:guid}/activate", (Guid templateId, Guid versionId,
+            ClaimsPrincipal user, CertificateTemplateService service, CancellationToken ct) =>
+            TemplateInvoke(() => service.ActivateAsync(templateId, versionId, Actor(user), ct))).RequireAuthorization(templateEditor);
+        certificateTemplates.MapPost("/{templateId:guid}/versions/{versionId:guid}/retire", (Guid templateId, Guid versionId,
+            ClaimsPrincipal user, CertificateTemplateService service, CancellationToken ct) =>
+            TemplateInvoke(() => service.RetireAsync(templateId, versionId, Actor(user), ct))).RequireAuthorization(templateEditor);
+        certificateTemplates.MapPost("/{templateId:guid}/versions/{versionId:guid}/preview", (Guid templateId, Guid versionId,
+            CertificateTemplatePreviewRequest request, ClaimsPrincipal user, CertificateTemplateService service, CancellationToken ct) =>
+            TemplateInvoke(() => service.PreviewAsync(templateId, versionId, request.SampleUnitId, Actor(user), ct)))
+            .RequireAuthorization(templateEditor);
+        // End P6 certificate-template surface.
+
         var selections = app.MapGroup("/api/selections").RequireAuthorization(YojanaPolicy.TenantMember);
         selections.MapPost("/", (ResolveSelectionSet command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ResolveSelectionSetResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         // Approver and roles come from the claims, never the body: the operations judge approval tiers on them.
@@ -795,6 +855,21 @@ public static class SerialisationEndpoints
         {
             return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict,
                 extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+        }
+    }
+
+    private static async Task<IResult> TemplateInvoke<TResult>(Func<Task<TResult>> action)
+    {
+        try { return Results.Ok(await action()); }
+        catch (CommandRefusedException ex)
+        {
+            return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict,
+                extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.Problem(title: "certificate_template_invalid", detail: ex.Message,
+                statusCode: StatusCodes.Status400BadRequest);
         }
     }
 

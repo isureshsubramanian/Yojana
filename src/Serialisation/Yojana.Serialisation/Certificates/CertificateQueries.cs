@@ -1,0 +1,80 @@
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Data;
+
+namespace Yojana.Serialisation.Certificates;
+
+public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext tenant, ICertificateUnitReadPort units,
+    IPartyNamePort partyNames)
+{
+    public async Task<CertificateDetail?> DetailAsync(Guid certificateId, CancellationToken cancellationToken)
+    {
+        var row = await db.CertificateInstances.AsNoTracking().FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId
+            && item.CertificateId == certificateId, cancellationToken);
+        if (row is null) return null;
+        var signatures = await db.CertificateSignatures.AsNoTracking().Where(item => item.TenantId == tenant.TenantId && item.CertificateId == certificateId)
+            .OrderBy(item => item.SignedAt).Select(item => new CertificateSignatureRow(item.SignatureId, item.PrintedName,
+                item.Meaning, item.SignedAt, item.HashSigned, item.SignatureMethod)).ToListAsync(cancellationToken);
+        var reprints = await db.ReprintLogs.AsNoTracking().Where(item => item.TenantId == tenant.TenantId && item.CertificateId == certificateId)
+            .OrderByDescending(item => item.At).ToListAsync(cancellationToken);
+        var recipientIds = reprints.Where(item => item.RecipientPartyRef != null).Select(item => item.RecipientPartyRef!.Value).Distinct().ToList();
+        var recipients = recipientIds.Count == 0 ? new Dictionary<Guid, PartyLabel>() : await partyNames.NamesAsync(recipientIds, cancellationToken);
+        var serials = await units.PrimarySerialsAsync([row.UnitId], cancellationToken);
+        return new CertificateDetail(row.CertificateId, row.UnitId, serials.GetValueOrDefault(row.UnitId) ?? "Unlabelled unit",
+            row.DocumentKind, row.FormType, row.Version, row.TrackingNumber, row.TemplateVersionId, row.AsBuiltRevisionId,
+            JsonDocument.Parse(row.Payload).RootElement.Clone(), row.PayloadHash, row.SupersedesCertificateId, row.SupersedeReason,
+            row.TriggeringEventId, Deserialize<CertificateIssuerSnapshot>(row.IssuerSnapshot),
+            row.OwnerSnapshot is null ? null : Deserialize<CertificateOwnerSnapshot>(row.OwnerSnapshot),
+            Deserialize<CertificateBrandingSnapshot>(row.BrandingSnapshot), row.Language, row.Provenance,
+            Deserialize<List<string>>(row.Unknowns), Deserialize<List<string>>(row.Evidence), row.IssuedAt, row.Status,
+            signatures, reprints.Select(item => new CertificateReprintRow(item.ReprintId, item.Version, item.RequestedBy, item.At,
+                item.RecipientPartyRef is { } recipient && recipients.TryGetValue(recipient, out var name) ? name.Name ?? name.Code : null)).ToList());
+    }
+
+    public async Task<CertificateVersionChain> ChainAsync(Guid unitId, CancellationToken cancellationToken)
+    {
+        var rows = await Rows(db.CertificateInstances.AsNoTracking().Where(row => row.TenantId == tenant.TenantId && row.UnitId == unitId)
+            .OrderBy(row => row.DocumentKind).ThenBy(row => row.Version), cancellationToken);
+        return new CertificateVersionChain(rows.Where(row => row.DocumentKind == CertificateDocumentKind.ReleaseRecord).ToList(),
+            rows.Where(row => row.DocumentKind == CertificateDocumentKind.WarrantyCertificate).ToList());
+    }
+
+    public async Task<Page<CertificateListRow>> PageAsync(string? kind, string? formType, string? status, string? unitSerial,
+        DateTime? issuedFrom, DateTime? issuedTo, int skip, int take, CancellationToken cancellationToken)
+    {
+        take = Math.Clamp(take, 1, 200);
+        skip = Math.Max(0, skip);
+        var source = db.CertificateInstances.AsNoTracking().Where(row => row.TenantId == tenant.TenantId);
+        if (!string.IsNullOrWhiteSpace(kind)) source = source.Where(row => row.DocumentKind == kind);
+        if (!string.IsNullOrWhiteSpace(formType)) source = source.Where(row => row.FormType == formType);
+        if (!string.IsNullOrWhiteSpace(status)) source = source.Where(row => row.Status == status);
+        if (issuedFrom is { } from) source = source.Where(row => row.IssuedAt >= from);
+        if (issuedTo is { } to) source = source.Where(row => row.IssuedAt <= to);
+        if (!string.IsNullOrWhiteSpace(unitSerial))
+        {
+            var unitIds = await units.FindUnitIdsBySerialAsync(unitSerial.Trim(), cancellationToken);
+            source = source.Where(row => unitIds.Contains(row.UnitId));
+        }
+        var total = await source.CountAsync(cancellationToken);
+        var entities = await source.OrderByDescending(row => row.IssuedAt).ThenBy(row => row.TrackingNumber)
+            .Skip(skip).Take(take).ToListAsync(cancellationToken);
+        var rows = await Rows(entities, cancellationToken);
+        return new Page<CertificateListRow>(rows, total, skip, take);
+    }
+
+    private async Task<List<CertificateListRow>> Rows(IQueryable<Data.Entities.CertificateInstance> source, CancellationToken cancellationToken) =>
+        await Rows(await source.ToListAsync(cancellationToken), cancellationToken);
+
+    private async Task<List<CertificateListRow>> Rows(IReadOnlyList<Data.Entities.CertificateInstance> entities, CancellationToken cancellationToken)
+    {
+        var serials = await units.PrimarySerialsAsync(entities.Select(row => row.UnitId).Distinct().ToList(), cancellationToken);
+        return entities.Select(row => new CertificateListRow(row.CertificateId, row.UnitId,
+            serials.GetValueOrDefault(row.UnitId) ?? "Unlabelled unit", row.DocumentKind, row.FormType, row.Version,
+            row.TrackingNumber, row.Status, row.IssuedAt, row.Provenance)).ToList();
+    }
+
+    private static T Deserialize<T>(string json) => JsonSerializer.Deserialize<T>(json, CanonicalJson.Options)
+        ?? throw new InvalidOperationException("Stored certificate JSON is invalid.");
+}

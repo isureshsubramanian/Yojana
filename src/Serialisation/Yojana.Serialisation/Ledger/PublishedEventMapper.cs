@@ -46,7 +46,8 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
         var idsAfter = afterIds.EnumerateArray().Select(i => i.GetGuid()).Order().ToList();
         var endBefore = Date(before, "warranty_end_max");
         var endAfter = state.TryGetProperty("warranty_end_max", out var w) && w.ValueKind == JsonValueKind.Object ? Date(w, "value") : Date(state, "warranty_end_max");
-        if (idsBefore.SequenceEqual(idsAfter) && endBefore == endAfter) return null;
+        // Suspension, resume and changes hidden by another family's later end still change certificate terms. Publish
+        // the common seam for every outbound entitlement fact; Cause retains the exact source event kind.
         return new EntitlementCoverageChanged(Header(e, EntitlementCoverageChanged.Schema, EntitlementCoverageChanged.Version), idsBefore, idsAfter, endBefore, endAfter, e.EventType);
     }
 
@@ -295,6 +296,24 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                 return new CertificateReissueRequested(Header(CertificateReissueRequested.Schema, CertificateReissueRequested.Version),
                     GuidOrNull(a, "replacement_link_id") ?? Guid.Empty,
                     Strings(a, "document_kinds"), Str(a, "reason") ?? "");
+            // P6 certificate block. Certificate issuance is recorded as a state-neutral unit event so publication uses
+            // the same transactional outbox and PublishedEventHeader contract as every other unit-scoped fact.
+            case CertificateEventType.Issued:
+                return new CertificateIssued(Header(CertificateIssued.Schema, CertificateIssued.Version),
+                    GuidOrNull(a, "certificate_id") ?? Guid.Empty, Str(a, "document_kind") ?? "",
+                    Str(a, "form_type") ?? "", Int(a, "certificate_version") ?? 0,
+                    Str(a, "tracking_number") ?? "", Str(a, "payload_hash") ?? "",
+                    GuidOrNull(a, "triggering_event_id") ?? Guid.Empty,
+                    GuidOrNull(a, "supersedes_certificate_id"), Str(a, "provenance") ?? "",
+                    DateTimeValue(a, "issued_at") ?? e.EventTime);
+            case CertificateEventType.Superseded:
+                return new CertificateSuperseded(Header(CertificateSuperseded.Schema, CertificateSuperseded.Version),
+                    GuidOrNull(a, "certificate_id") ?? Guid.Empty,
+                    GuidOrNull(a, "superseding_certificate_id") ?? Guid.Empty,
+                    Str(a, "document_kind") ?? "", Int(a, "certificate_version") ?? 0,
+                    Str(a, "reason") ?? "", GuidOrNull(a, "triggering_event_id") ?? Guid.Empty,
+                    DateTimeValue(a, "superseded_at") ?? e.EventTime);
+            // End P6 certificate block.
             default:
                 return null;
         }

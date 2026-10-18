@@ -18,6 +18,7 @@ public static class YojanaRole
     public const string InventoryController = "inventory_controller";
     public const string OrderDeskSupervisor = "order_desk_supervisor";
     public const string LabelAdministrator = "label_administrator";
+    public const string CertificateAdministrator = "certificate_administrator";
     public const string FinanceReview = "finance_review";
     public const string Technician = "technician";
     public const string CustomerService = "customer_service";
@@ -29,7 +30,7 @@ public static class YojanaRole
     public static readonly IReadOnlyList<string> All =
     [
         SerialAdministrator, ServiceDesk, ServiceSupervisor, ServiceManager, ShippingSupervisor, ProductionSupervisor,
-        ItemMasterOwner, Quality, InventoryController, OrderDeskSupervisor, LabelAdministrator, FinanceReview,
+        ItemMasterOwner, Quality, InventoryController, OrderDeskSupervisor, LabelAdministrator, CertificateAdministrator, FinanceReview,
         Technician, CustomerService, WarehouseLead, TenantAdministrator,
     ];
 
@@ -54,6 +55,7 @@ public static class YojanaPolicy
     public const string InventoryController = Prefix + YojanaRole.InventoryController;
     public const string OrderDeskSupervisor = Prefix + YojanaRole.OrderDeskSupervisor;
     public const string LabelAdministrator = Prefix + YojanaRole.LabelAdministrator;
+    public const string CertificateAdministrator = Prefix + YojanaRole.CertificateAdministrator;
     public const string FinanceReview = Prefix + YojanaRole.FinanceReview;
     public const string Technician = Prefix + YojanaRole.Technician;
     public const string CustomerService = Prefix + YojanaRole.CustomerService;
