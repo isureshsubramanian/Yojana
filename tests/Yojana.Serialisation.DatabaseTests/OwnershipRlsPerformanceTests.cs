@@ -131,7 +131,8 @@ public sealed class OwnershipRlsPerformanceTests(SerialisationHostFixture fixtur
         // Ceilings, not exact counts: other work may lower a read shape's statements without touching row security.
         Assert.InRange(lookupStatements, 1, 2);
         Assert.InRange(rmaStatements, 1, 18);
-        Assert.InRange(certificateStatements, 1, 10);
+        // 12 since P6 polish 4, which added a batched issued-by name read per page (not per row).
+        Assert.InRange(certificateStatements, 1, 12);
         AssertNoOwnershipReads("current-state lookup", lookupIo);
         AssertNoOwnershipReads("RMA list", rmaIo);
         AssertNoOwnershipReads("certificate read", certificateIo);
