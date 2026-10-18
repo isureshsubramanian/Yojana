@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/import.completed.json",
+  "title": "Import.Completed 1.0",
+  "type": "object",
+  "required": ["header", "job_id", "source", "original_hash", "status", "applied", "skipped", "rejected"],
+  "properties": {
+    "header": {
+      "type": "object",
+      "required": ["schema", "version", "event_id", "event_time", "recorded_time", "legal_entity_id", "actor_ref"],
+      "properties": {
+        "schema": { "const": "Import.Completed" },
+        "version": { "const": "1.0" },
+        "event_id": { "type": "string", "format": "uuid" },
+        "event_time": { "type": "string", "format": "date-time" },
+        "recorded_time": { "type": "string", "format": "date-time" },
+        "legal_entity_id": { "type": "string", "format": "uuid" },
+        "actor_ref": { "type": "string" },
+        "document": { "type": ["object", "null"] }
+      }
+    },
+    "job_id": { "type": "string", "format": "uuid" },
+    "source": { "type": "string" },
+    "original_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "converted_hash": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+    "status": { "type": "string" },
+    "applied": { "type": "integer", "minimum": 0 },
+    "skipped": { "type": "integer", "minimum": 0 },
+    "rejected": { "type": "integer", "minimum": 0 }
+  }
+}

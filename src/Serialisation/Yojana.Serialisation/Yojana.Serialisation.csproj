@@ -6,6 +6,9 @@
     <PackageReference Include="Solidsoft.Reply.Parsers.Gs1Ai" />
     <!-- Barcode generation (Apache-2.0; tagged licence recorded in the same change; package and tag contain no NOTICE). -->
     <PackageReference Include="ZXing.Net" />
+    <!-- OD-30 adapters only; import/application code depends on ISpreadsheetReader and ITabularExporter. MIT. -->
+    <PackageReference Include="DocumentFormat.OpenXml" />
+    <PackageReference Include="ExcelDataReader" />
     <!-- Minimal-API endpoints of the module's read models (the host maps them). -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>

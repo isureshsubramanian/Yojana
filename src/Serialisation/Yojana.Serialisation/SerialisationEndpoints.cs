@@ -28,6 +28,7 @@ using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Labels;
 using Yojana.Serialisation.Jurisdictions;
 using Yojana.Serialisation.Ledger;
+using Yojana.Serialisation.Imports;
 
 namespace Yojana.Serialisation;
 
@@ -200,7 +201,8 @@ public static class SerialisationEndpoints
             }
             catch (ArgumentException ex) { return Results.BadRequest(new { reason = "kpi_query_invalid", detail = ex.Message }); }
         });
-        corrections.MapGet("/kpi/export", async (DateOnly? from, DateOnly? to, string? breakdown, Guid? item, CorrectionKpiQueries queries, IClock clock, CancellationToken ct) =>
+        corrections.MapGet("/kpi/export", async (DateOnly? from, DateOnly? to, string? breakdown, Guid? item, string? format,
+            CorrectionKpiQueries queries, ITabularExporter exporter, IClock clock, CancellationToken ct) =>
         {
             CorrectionKpiReport report;
             try
@@ -209,13 +211,11 @@ public static class SerialisationEndpoints
                 report = await queries.QueryAsync(from ?? end.AddMonths(-11).AddDays(1 - end.Day), end, breakdown ?? CorrectionKpiBreakdown.RootCause, item, ct);
             }
             catch (ArgumentException ex) { return Results.BadRequest(new { reason = "kpi_query_invalid", detail = ex.Message }); }
-            return Results.Stream(async stream =>
-            {
-                await using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false), leaveOpen: true);
-                await writer.WriteAsync(CorrectionKpiCsv.Header.AsMemory(), ct);
-                foreach (var row in report.Rows) await writer.WriteAsync(CorrectionKpiCsv.Row(report.Breakdown, row).AsMemory(), ct);
-                await writer.FlushAsync(ct);
-            }, "text/csv; charset=utf-8", "correction-volume.csv");
+            var selected = (format ?? "csv").ToLowerInvariant();
+            if (selected is not "csv" and not "xlsx") return Results.BadRequest(new { rule = "export_format_unknown" });
+            return Results.Stream(stream => exporter.WriteAsync(selected, new TabularExport(
+                ["month", "breakdown", "dimension", "corrections", "units_corrected", "units_shipped", "per_1000", "reversed_later", "target_per_1000"],
+                CorrectionKpiRows(report.Breakdown, report.Rows, ct)), stream, ct), exporter.ContentType(selected), "correction-volume" + exporter.Extension(selected));
         });
         corrections.MapGet("/kpi/targets", async (CorrectionKpiTargetSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
         corrections.MapPut("/kpi/targets", async (CorrectionKpiTargetPolicy policy, CorrectionKpiTargetSettings settings, CancellationToken ct) =>
@@ -1135,6 +1135,34 @@ public static class SerialisationEndpoints
         }).RequireAuthorization(templateEditor);
         // End P6 tenant image assets.
 
+        var importJobs = app.MapGroup("/api/imports").RequireAuthorization(YojanaPolicy.TenantMember);
+        importJobs.MapGet("/", (string? cursor, int? take, ImportQueries queries, CancellationToken ct) =>
+            ImportInvoke(() => queries.PageAsync(cursor, take ?? 50, ct)));
+        importJobs.MapGet("/{jobId:guid}", async (Guid jobId, ImportQueries queries, CancellationToken ct) =>
+            await queries.GetAsync(jobId, ct) is { } job ? Results.Ok(job) : Results.NotFound());
+        importJobs.MapGet("/{jobId:guid}/rows", async (Guid jobId, string? cursor, int? take, ImportQueries queries, CancellationToken ct) =>
+            await queries.RowsAsync(jobId, cursor, take ?? 100, ct) is { } page ? Results.Ok(page) : Results.NotFound());
+        importJobs.MapPost("/run", (RunImport command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<RunImportResult>(bus, tenant, command with { ActorRef = Actor(user), CommittedBy = CorrectionCommitter(user) }, ct));
+        importJobs.MapPost("/compare", (CompareImports command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<CompareImportsResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
+        importJobs.MapPost("/{jobId:guid}/review", (Guid jobId, ApplyImportReview command, ClaimsPrincipal user,
+            IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ApplyImportReviewResult>(bus, tenant,
+                command with { JobId = jobId, ActorRef = Actor(user), CommittedBy = CorrectionCommitter(user) }, ct));
+        importJobs.MapPost("/three-pl", (ReceiveThreePlFeed command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<ReceiveThreePlFeedResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
+        importJobs.MapGet("/{jobId:guid}/rows/export", async (Guid jobId, string? format, ImportQueries queries,
+            ITabularExporter exporter, CancellationToken ct) =>
+        {
+            var job = await queries.GetAsync(jobId, ct);
+            if (job is null) return Results.NotFound();
+            var selected = (format ?? "csv").ToLowerInvariant();
+            if (selected is not "csv" and not "xlsx") return Results.BadRequest(new { rule = "export_format_unknown" });
+            return Results.Stream(stream => exporter.WriteAsync(selected, new TabularExport(
+                ["row", "sheet", "raw_value", "normalised_value", "outcome", "rule", "order_number", "lot", "customer_asset_tag", "partition", "proposed_action", "reviewed_action", "collision_unit", "collision_owner"],
+                queries.ExportRowsAsync(jobId, ct)), stream, ct), exporter.ContentType(selected), $"import-{job.JobId:N}{exporter.Extension(selected)}");
+        });
+
         var selections = app.MapGroup("/api/selections").RequireAuthorization(YojanaPolicy.TenantMember);
         selections.MapPost("/", (ResolveSelectionSet command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ResolveSelectionSetResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         // Approver and roles come from the claims, never the body: the operations judge approval tiers on them.
@@ -1230,6 +1258,33 @@ public static class SerialisationEndpoints
         {
             return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict, extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
         }
+    }
+
+    private static async Task<IResult> ImportInvoke<T>(Func<Task<T>> action)
+    {
+        try { return Results.Ok(await action()); }
+        catch (CommandRefusedException ex)
+        {
+            return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest,
+                extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+        }
+    }
+
+    private static async IAsyncEnumerable<IReadOnlyList<string?>> CorrectionKpiRows(string breakdown, IReadOnlyList<CorrectionKpiRow> rows,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        foreach (var row in rows)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return [row.Bucket, breakdown, row.Dimension,
+                row.Corrections.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                row.UnitsCorrected.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                row.UnitsShipped.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                row.PerThousand?.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture),
+                row.ReversedLater.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                row.TargetPerThousand?.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)];
+        }
+        await Task.CompletedTask;
     }
 
     private static Task<IResult> InvokeEdit<TResult>(IMessageBus bus, ITenantContext tenant, IExpectedDocumentVersion command, CancellationToken ct) where TResult : class

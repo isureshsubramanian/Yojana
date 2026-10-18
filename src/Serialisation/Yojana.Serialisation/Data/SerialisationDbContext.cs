@@ -61,6 +61,12 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<SelectionSetMember> SelectionSetMembers => Set<SelectionSetMember>();
 
+    // P7 imports block (MOD-12). Files are accessed only through IImportFileStore; these DbSets own persistence.
+    public DbSet<ImportJob> ImportJobs => Set<ImportJob>();
+    public DbSet<ImportRowResult> ImportRowResults => Set<ImportRowResult>();
+    public DbSet<ColumnMapping> ColumnMappings => Set<ColumnMapping>();
+    public DbSet<ThreePlFeedMessage> ThreePlFeedMessages => Set<ThreePlFeedMessage>();
+
     public DbSet<BulkApprovalRequest> BulkApprovalRequests => Set<BulkApprovalRequest>();
 
     public DbSet<WorkbenchRequest> WorkbenchRequests => Set<WorkbenchRequest>();
@@ -1759,6 +1765,79 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
                 .IncludeProperties(row => new { row.Status, row.PrinterRef, row.OriginalJobId, row.SourceEventId });
         });
         // End P6 labels block.
+
+        modelBuilder.Entity<ImportJob>(b =>
+        {
+            b.ToTable("import_job", t =>
+            {
+                t.HasCheckConstraint("ck_import_job_status", "status IN ('intake', 'applied', 'partial', 'rejected', 'compared')");
+                t.HasCheckConstraint("ck_import_job_mode", "mode IN ('apply', 'compare')");
+            });
+            b.HasKey(row => new { row.TenantId, row.JobId });
+            b.Property(row => row.Source).HasMaxLength(40).IsUnicode(false);
+            b.Property(row => row.FileName).HasMaxLength(260);
+            b.Property(row => row.OriginalHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.ConvertedHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.Format).HasMaxLength(10).IsUnicode(false);
+            b.Property(row => row.Mode).HasMaxLength(10).IsUnicode(false);
+            b.Property(row => row.TargetType).HasMaxLength(40).IsUnicode(false);
+            b.Property(row => row.Status).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.OriginalArchiveReference).HasMaxLength(500);
+            b.Property(row => row.ConvertedArchiveReference).HasMaxLength(500);
+            b.Property(row => row.InboxReference).HasMaxLength(500);
+            b.Property(row => row.ActorRef).HasMaxLength(200);
+            b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.Source, row.OriginalHash });
+            b.HasIndex(row => new { row.TenantId, row.Status, row.RecordedTime });
+            b.HasIndex(row => new { row.TenantId, row.TargetType, row.TargetId, row.TargetLine });
+        });
+
+        modelBuilder.Entity<ImportRowResult>(b =>
+        {
+            b.ToTable("import_row_result", t => t.HasCheckConstraint("ck_import_row_result_outcome", "outcome IN ('applied', 'skipped', 'rejected')"));
+            b.HasKey(row => new { row.TenantId, row.RowResultId });
+            b.Property(row => row.Sheet).HasMaxLength(128);
+            b.Property(row => row.RawValue).HasMaxLength(500);
+            b.Property(row => row.NormalisedValue).HasMaxLength(500);
+            b.Property(row => row.Outcome).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.Rule).HasMaxLength(100).IsUnicode(false);
+            b.Property(row => row.OrderNumber).HasMaxLength(100);
+            b.Property(row => row.Lot).HasMaxLength(100);
+            b.Property(row => row.CustomerAssetTag).HasMaxLength(100);
+            b.Property(row => row.ComparisonPartition).HasMaxLength(40).IsUnicode(false);
+            b.Property(row => row.ProposedAction).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.ReviewedAction).HasMaxLength(20).IsUnicode(false);
+            b.HasOne<ImportJob>().WithMany().HasForeignKey(row => new { row.TenantId, row.JobId }).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(row => new { row.TenantId, row.JobId, row.RowNumber, row.RowResultId });
+            b.HasIndex(row => new { row.TenantId, row.NormalisedValue, row.JobId });
+            b.HasIndex(row => new { row.TenantId, row.UnitId, row.JobId });
+        });
+
+        modelBuilder.Entity<ColumnMapping>(b =>
+        {
+            b.ToTable("column_mapping", t => t.HasCheckConstraint("ck_column_mapping_json", "ISJSON(mapping_json) = 1"));
+            b.HasKey(row => new { row.TenantId, row.MappingId });
+            b.Property(row => row.Source).HasMaxLength(40).IsUnicode(false);
+            b.Property(row => row.Name).HasMaxLength(100);
+            b.Property(row => row.ActorRef).HasMaxLength(200);
+            b.HasIndex(row => new { row.TenantId, row.Source, row.Name }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.Source, row.IsDefault });
+        });
+
+        modelBuilder.Entity<ThreePlFeedMessage>(b =>
+        {
+            b.ToTable("three_pl_feed_message");
+            b.HasKey(row => new { row.TenantId, row.FeedMessageId });
+            b.Property(row => row.MessageReference).HasMaxLength(200);
+            b.Property(row => row.DocumentType).HasMaxLength(40).IsUnicode(false);
+            b.Property(row => row.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.Property(row => row.Status).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.ActorRef).HasMaxLength(200);
+            b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.MessageReference }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.DocumentType, row.DocumentId, row.DocumentLine });
+            b.HasOne<ImportJob>().WithMany().HasForeignKey(row => new { row.TenantId, row.ImportJobId }).OnDelete(DeleteBehavior.Restrict);
+        });
 
         base.OnModelCreating(modelBuilder);
     }

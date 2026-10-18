@@ -27,6 +27,7 @@ using Yojana.Serialisation.Refurbishments;
 using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Labels;
 using Yojana.Serialisation.Jurisdictions;
+using Yojana.Serialisation.Imports;
 
 namespace Yojana.Serialisation;
 
@@ -60,6 +61,7 @@ public static class SerialisationModule
         // in-house module registers them, the in-memory ports answer with defaults (development and tests only).
         builder.Services.AddSingleton<IIdentifierPolicySource, IdentifierPolicySet>();
         builder.Services.AddScoped<IdentifierService>();
+        builder.Services.AddScoped<IdentifierAssignmentService>();
         builder.Services.AddSingleton<InMemorySerialSchemes>();
         builder.Services.TryAddSingleton<ISerialSchemeSource>(sp => sp.GetRequiredService<InMemorySerialSchemes>());
         builder.Services.AddScoped<SerialAllocationReservationStore>();
@@ -72,6 +74,16 @@ public static class SerialisationModule
 
         // Selection sets and bulk operations (MOD-11 part built in P1, P1-T18); later phases add their IBulkOperation beside ReleaseUnitsOperation.
         builder.Services.AddScoped<SelectionSetResolver>();
+        // MOD-12 import application depends only on the spreadsheet/file/export contracts; hosts may replace storage.
+        builder.Services.AddScoped<ImportService>();
+        builder.Services.AddScoped<ImportComparisonService>();
+        builder.Services.AddScoped<ImportQueries>();
+        builder.Services.AddScoped<ImportJobSource>();
+        builder.Services.TryAddScoped<IImportJobSource>(sp => sp.GetRequiredService<ImportJobSource>());
+        builder.Services.TryAddScoped<IImportFileStore, DatabaseImportFileStore>();
+        builder.Services.AddScoped<ISpreadsheetReader, OpenXmlSpreadsheetReader>();
+        builder.Services.AddScoped<ISpreadsheetReader, LegacyXlsSpreadsheetReader>();
+        builder.Services.TryAddSingleton<ITabularExporter, TabularExporter>();
         builder.Services.AddScoped<UnitQueries>();
         builder.Services.AddScoped<SerialRangeQueries>();
         builder.Services.AddScoped<CompletenessQueries>();

@@ -16,7 +16,8 @@ public sealed record SelectionSource(
     IReadOnlyList<string>? Serials = null,
     string? Scheme = null,
     string? RangeStart = null,
-    string? RangeEnd = null)
+    string? RangeEnd = null,
+    Guid? ImportJobId = null)
 {
     public static class Kinds
     {
@@ -26,6 +27,7 @@ public sealed record SelectionSource(
         public const string DateRange = "date_range";
         public const string PastedList = "pasted_list";
         public const string SerialRange = "serial_range";
+        public const string ImportJob = "import_job";
     }
 
     public static SelectionSource ByDocument(DocumentRef document) => new(Kinds.Document, Document: document);
@@ -34,6 +36,7 @@ public sealed record SelectionSource(
     public static SelectionSource ByDateRange(DateTime from, DateTime to, string? eventType = null) => new(Kinds.DateRange, From: from, To: to, EventType: eventType);
     public static SelectionSource ByPastedList(IReadOnlyList<string> serials) => new(Kinds.PastedList, Serials: serials);
     public static SelectionSource BySerialRange(string scheme, string start, string end) => new(Kinds.SerialRange, Scheme: scheme, RangeStart: start, RangeEnd: end);
+    public static SelectionSource ByImportJob(Guid jobId) => new(Kinds.ImportJob, ImportJobId: jobId);
 }
 
 /// <summary>Resolve a source into a stored selection set; the result names what resolved and what did not.</summary>
