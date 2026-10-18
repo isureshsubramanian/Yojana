@@ -7,9 +7,12 @@ namespace Yojana.Serialisation.Ports;
 /// Document query ports fed from memory: the recorded-message harness (P1-T17) and the tests load documents here and
 /// publish the thin events; a connector (P8) or an in-house module (P12) replaces these registrations in a real host.
 /// </summary>
-public sealed class InMemoryDocumentPorts : IPurchasingDocumentQueryPort, IManufacturingDocumentQueryPort, IProductionOrderAllocationPort, IInventoryDocumentQueryPort, ISalesDocumentQueryPort, IOwnershipSourceDocumentQueryPort, IServiceDocumentQueryPort
+public sealed class InMemoryDocumentPorts : IPurchasingDocumentQueryPort, IManufacturingDocumentQueryPort,
+    IProductionOrderAllocationPort, IInventoryDocumentQueryPort, ISalesDocumentQueryPort,
+    IOwnershipSourceDocumentQueryPort, IServiceDocumentQueryPort, IInternalSaleDocumentQueryPort
 {
     private readonly ConcurrentDictionary<(string Type, Guid Id), object> documents = new();
+    private readonly ConcurrentDictionary<Guid, IReadOnlyList<InternalSaleChainFact>> internalSaleChains = new();
 
     public void Add(ReceiptDocument d) => documents[(d.Document.Type, d.Document.Id)] = d;
     public void Add(VendorShipment d) => documents[(d.Document.Type, d.Document.Id)] = d;
@@ -24,6 +27,8 @@ public sealed class InMemoryDocumentPorts : IPurchasingDocumentQueryPort, IManuf
     public void Add(DeliveryConfirmation d) => documents[(d.Document.Type, d.Document.Id)] = d;
     public void Add(ReturnDocument d) => documents[(d.Document.Type, d.Document.Id)] = d;
     public void Add(LoanerIssue d) => documents[(d.Document.Type, d.Document.Id)] = d;
+    public void Add(InternalSaleChainFact d) => internalSaleChains.AddOrUpdate(d.OwnershipEpisodeId,
+        [d], (_, rows) => [.. rows, d]);
 
     private Task<T?> Get<T>(DocumentRef r) where T : class => Task.FromResult(documents.TryGetValue((r.Type, r.Id), out var d) ? d as T : null);
 
@@ -65,6 +70,56 @@ public sealed class InMemoryDocumentPorts : IPurchasingDocumentQueryPort, IManuf
         if (byOrder.Count == 0 || owners.Count != 1) return Task.FromResult<OwnershipSourceDocument?>(null);
         return Task.FromResult<OwnershipSourceDocument?>(new(document, owners[0], PartyType.Customer,
             byOrder[0].PostedAt, byOrder.Select(i => i.CustomerPoRef).FirstOrDefault(value => value is not null), byOrder));
+    }
+
+    public Task<IReadOnlyList<InternalSaleChainFact>> ReadAsync(
+        IReadOnlyCollection<InternalSaleChainRequest> requests,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = documents.Values.ToList();
+        var shipments = snapshot.OfType<ShipmentDocument>().ToList();
+        var invoices = snapshot.OfType<InvoiceDocument>().ToList();
+        var answer = new List<InternalSaleChainFact>();
+        foreach (var request in requests)
+        {
+            if (internalSaleChains.TryGetValue(request.OwnershipEpisodeId, out var registered))
+            {
+                answer.AddRange(registered);
+                continue;
+            }
+            var directShipment = snapshot.OfType<ShipmentDocument>()
+                .FirstOrDefault(row => SameDocument(row.Document, request.OpeningDocument));
+            var directInvoice = snapshot.OfType<InvoiceDocument>()
+                .FirstOrDefault(row => SameDocument(row.Document, request.OpeningDocument));
+            var order = directShipment?.BaseOrder ?? directInvoice?.Order
+                ?? (request.OpeningDocument.Type is "sales_order" or "order" ? request.OpeningDocument : null);
+            var matchingShipments = directShipment is not null
+                ? [directShipment]
+                : order is null ? [] : shipments.Where(row => row.BaseOrder is { } baseOrder && SameDocument(baseOrder, order)).ToList();
+            var matchingInvoices = directInvoice is not null
+                ? [directInvoice]
+                : order is null ? [] : invoices.Where(row => SameDocument(row.Order, order)).OrderBy(row => row.PostedAt).ToList();
+
+            if (matchingInvoices.Count == 0)
+            {
+                var deliveries = matchingShipments.Count == 0 ? new ShipmentDocument?[] { null } : matchingShipments.Cast<ShipmentDocument?>();
+                answer.AddRange(deliveries.Select(delivery => new InternalSaleChainFact(request.OwnershipEpisodeId,
+                    order, delivery?.Document, null, delivery?.PostedAt, null, [])));
+                continue;
+            }
+
+            foreach (var invoice in matchingInvoices)
+            {
+                var delivery = matchingShipments.FirstOrDefault();
+                var warranty = invoice.Lines.Where(line => line.ItemType == "warranty_service")
+                    .Select(line => new InternalWarrantyLineFact(line.LineNo, line.ItemId, line.Price, line.Currency,
+                        line.PolicyCode, line.PolicyVersionId)).ToList();
+                answer.Add(new InternalSaleChainFact(request.OwnershipEpisodeId, order, delivery?.Document,
+                    invoice.Document, delivery?.PostedAt, invoice.PostedAt, warranty));
+            }
+        }
+
+        return Task.FromResult<IReadOnlyList<InternalSaleChainFact>>(answer);
     }
 
     private static bool SameDocument(DocumentRef left, DocumentRef right) =>
