@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Documents;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
 
@@ -145,7 +146,8 @@ public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort c
             claim.AdjudicatedBy, claim.ReviewerRole, claim.SuccessorItemId, claim.ClaimNumber, serials.GetValueOrDefault(claim.UnitId),
             items.TryGetValue(claim.UnitId, out var itemId) ? itemId : null, claim.SubmittedAt, claim.SubmittedBy, claim.AdjudicatedAt,
             lines.Select(l => Row(l, serials, items)).ToList(), recoveries, CampaignId: claim.CampaignId, CampaignCode: campaign?.Code,
-            CampaignName: campaign?.Name, ReserveTag: claim.ReserveTag, CampaignCoverReason: claim.CampaignCoverReason);
+            CampaignName: campaign?.Name, ReserveTag: claim.ReserveTag, CampaignCoverReason: claim.CampaignCoverReason,
+            Version: DocumentVersion.Encode(claim.RowVersion));
     }
 
     internal static ClaimLineRow Row(ClaimLine line, IReadOnlyDictionary<Guid, string> serials, IReadOnlyDictionary<Guid, Guid> items) =>
@@ -161,14 +163,20 @@ public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort c
         return AgeBucketBounds.Length;
     }
 
-    public Task<List<RecoveryClaimRow>> RecoveryListAsync(string? status, CancellationToken cancellationToken)
+    public async Task<List<RecoveryClaimRow>> RecoveryListAsync(string? status, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var rows = db.RecoveryClaims.AsNoTracking().Where(r => r.TenantId == tenantId);
         if (!string.IsNullOrWhiteSpace(status)) rows = rows.Where(r => r.Status == status);
-        return rows.OrderBy(r => r.Status).ThenBy(r => r.RaisedAt).Select(r => new RecoveryClaimRow(r.RecoveryClaimId, r.CustomerClaimId, r.ClaimLineId,
-            r.InboundEntitlementId, r.ChildUnitId, r.VendorPartyRef, r.RequestedAmount, r.ApprovedAmount, r.Currency, r.Status, r.RaisedAt, r.ApprovedAt, r.ApprovedBy,
-            r.RecoveryNumber, db.Claims.Where(c => c.TenantId == tenantId && c.ClaimId == r.CustomerClaimId).Select(c => c.ClaimNumber).First())).ToListAsync(cancellationToken);
+        var facts = await rows.OrderBy(r => r.Status).ThenBy(r => r.RaisedAt).Select(r => new
+        {
+            Recovery = r,
+            CustomerClaimNumber = db.Claims.Where(c => c.TenantId == tenantId && c.ClaimId == r.CustomerClaimId).Select(c => c.ClaimNumber).First(),
+        }).ToListAsync(cancellationToken);
+        return facts.Select(x => new RecoveryClaimRow(x.Recovery.RecoveryClaimId, x.Recovery.CustomerClaimId, x.Recovery.ClaimLineId,
+            x.Recovery.InboundEntitlementId, x.Recovery.ChildUnitId, x.Recovery.VendorPartyRef, x.Recovery.RequestedAmount, x.Recovery.ApprovedAmount,
+            x.Recovery.Currency, x.Recovery.Status, x.Recovery.RaisedAt, x.Recovery.ApprovedAt, x.Recovery.ApprovedBy,
+            x.Recovery.RecoveryNumber, x.CustomerClaimNumber, DocumentVersion.Encode(x.Recovery.RowVersion))).ToList();
     }
 
     public Task<bool> HasOpenClaimsAsync(Guid unitId, Guid entitlementId, CancellationToken cancellationToken) =>

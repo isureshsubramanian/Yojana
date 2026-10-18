@@ -1,13 +1,26 @@
 // The one place the client talks HTTP. Same-origin cookies; JSON in and out; non-2xx becomes ApiError.
 export class ApiError extends Error {
+  public readonly status: number;
+  public readonly rule: string | null;
+  public readonly unblockingStep: string | null;
+  public readonly changedBy: string | null;
+  public readonly changedAt: string | null;
+
   constructor(
-    public readonly status: number,
+    status: number,
     message: string,
-    public readonly rule: string | null = null,
-    public readonly unblockingStep: string | null = null,
+    rule: string | null = null,
+    unblockingStep: string | null = null,
+    changedBy: string | null = null,
+    changedAt: string | null = null,
   ) {
     super(message);
     this.name = "ApiError";
+    this.status = status;
+    this.rule = rule;
+    this.unblockingStep = unblockingStep;
+    this.changedBy = changedBy;
+    this.changedAt = changedAt;
   }
 }
 
@@ -26,7 +39,7 @@ export async function api<T>(path: string, init?: {
   });
   if (!response.ok && !init?.acceptedStatuses?.includes(response.status)) {
     const problem = await describe(response);
-    throw new ApiError(response.status, problem.message, problem.rule, problem.unblockingStep);
+    throw new ApiError(response.status, problem.message, problem.rule, problem.unblockingStep, problem.changedBy, problem.changedAt);
   }
   if (response.status === 204) {
     return undefined as T;
@@ -34,17 +47,17 @@ export async function api<T>(path: string, init?: {
   return (await response.json()) as T;
 }
 
-async function describe(response: Response): Promise<{ message: string; rule: string | null; unblockingStep: string | null }> {
+async function describe(response: Response): Promise<{ message: string; rule: string | null; unblockingStep: string | null; changedBy: string | null; changedAt: string | null }> {
   try {
     const text = await response.text();
-    if (!text) return { message: response.statusText || `HTTP ${response.status}`, rule: null, unblockingStep: null };
+    if (!text) return { message: response.statusText || `HTTP ${response.status}`, rule: null, unblockingStep: null, changedBy: null, changedAt: null };
     try {
-      const problem = JSON.parse(text) as { title?: string; detail?: string; rule?: string; unblockingStep?: string };
-      return { message: problem.detail ?? problem.title ?? text, rule: problem.rule ?? problem.title ?? null, unblockingStep: problem.unblockingStep ?? null };
+      const problem = JSON.parse(text) as { title?: string; detail?: string; rule?: string; unblock?: string; unblockingStep?: string; changedBy?: string; changedAt?: string };
+      return { message: problem.detail ?? problem.title ?? text, rule: problem.rule ?? problem.title ?? null, unblockingStep: problem.unblock ?? problem.unblockingStep ?? null, changedBy: problem.changedBy ?? null, changedAt: problem.changedAt ?? null };
     } catch {
-      return { message: text, rule: null, unblockingStep: null };
+      return { message: text, rule: null, unblockingStep: null, changedBy: null, changedAt: null };
     }
   } catch {
-    return { message: `HTTP ${response.status}`, rule: null, unblockingStep: null };
+    return { message: `HTTP ${response.status}`, rule: null, unblockingStep: null, changedBy: null, changedAt: null };
   }
 }

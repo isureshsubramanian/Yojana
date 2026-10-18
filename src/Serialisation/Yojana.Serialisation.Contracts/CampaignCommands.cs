@@ -85,7 +85,8 @@ public sealed record UpdateCampaign(
     DateOnly? RunsUntil,
     decimal PartsPct = 100m,
     decimal LabourPct = 100m,
-    decimal TravelPct = 100m);
+    decimal TravelPct = 100m,
+    string? ExpectedVersion = null) : IExpectedDocumentVersion;
 
 public sealed record PreviewCampaign(Guid CampaignId, int Skip = 0, int Take = 50);
 
@@ -125,7 +126,8 @@ public sealed record CampaignRow(
     DateOnly? RunsUntil,
     decimal PartsPct,
     decimal LabourPct,
-    decimal TravelPct);
+    decimal TravelPct,
+    string Version = "");
 
 /// <summary>Recipients are snapshotted when the unit is selected; callers de-duplicate equal owner and custodian refs.</summary>
 public sealed record CampaignUnitRow(

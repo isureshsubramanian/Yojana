@@ -21,7 +21,7 @@ export interface Campaign {
   partsPct: number; labourPct: number; travelPct: number;
   status: "draft" | "selected" | "active" | "closed"; criteria: CampaignCriterion[];
   createdAt: string; createdBy: string; updatedAt: string; updatedBy: string; selectedAt: string | null;
-  reasonCode: CampaignReason; reasonNote: string | null; runsUntil: string | null;
+  reasonCode: CampaignReason; reasonNote: string | null; runsUntil: string | null; version: string;
 }
 
 export interface CampaignListRow { campaignId: string; code: string; name: string; coverageSource: string; status: string; selectedUnits: number; selectedAt: string | null; reserveTag: string; reasonCode: CampaignReason; runsUntil: string | null; partsPct: number; labourPct: number; travelPct: number }

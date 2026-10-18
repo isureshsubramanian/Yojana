@@ -6,7 +6,9 @@ public sealed record DefineReturnReason(
     string RestockFeeRule,
     decimal? RestockFeeValue = null,
     int? DoaWindowDays = null,
-    bool Active = true);
+    bool Active = true,
+    string ActorRef = "",
+    string? ExpectedVersion = null) : IExpectedDocumentVersion;
 
 public sealed record ReturnReasonRow(
     string Code,
@@ -14,7 +16,8 @@ public sealed record ReturnReasonRow(
     string RestockFeeRule,
     decimal? RestockFeeValue,
     int? DoaWindowDays,
-    bool Active);
+    bool Active,
+    string Version = "");
 
 /// <summary>One RMA line identified by a unit/serial, or by a sales document whose serial is resolved server-side.</summary>
 public sealed record RmaRequestLineInput(

@@ -11,6 +11,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Documents;
 using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Ledger;
@@ -114,6 +115,7 @@ public sealed class RefurbishmentService(
             SelectionReference = selectionReference, Status = RefurbishmentStatus.Open, CycleNumber = cycle,
             IdentityPolicy = identityPolicy, MaxCycles = policy.MaxCycles, ReplacementPolicyCode = policy.ReplacementPolicyCode,
             LifeEpisodeId = lifeEpisodeId, OpenedAt = command.OpenedAt, OpenedBy = command.ActorRef, OpeningEventId = eventId,
+            LastModifiedAt = clock.UtcNow, LastModifiedBy = command.ActorRef,
         };
         db.RefurbishmentWorkOrders.Add(workOrder);
         var drafts = new List<UnitEventDraft>();
@@ -143,6 +145,7 @@ public sealed class RefurbishmentService(
         if (await db.RefurbishmentOperations.AsNoTracking().FirstOrDefaultAsync(o => o.TenantId == tenantId && o.CommandId == command.CommandId, cancellationToken) is { } replay)
             return OperationResult(replay, true);
         var workOrder = await OpenWorkOrderAsync(command.WorkOrderId, cancellationToken);
+        DocumentVersion.RequireExpected(command.ExpectedVersion, workOrder.RowVersion, workOrder.LastModifiedBy, workOrder.LastModifiedAt);
         if (command.Sequence <= 0) throw new CommandRefusedException("operation_sequence_invalid", "Operation sequence must be positive.");
         if (await db.RefurbishmentOperations.AnyAsync(o => o.TenantId == tenantId && o.WorkOrderId == workOrder.WorkOrderId && o.Sequence == command.Sequence, cancellationToken))
             throw new CommandRefusedException("operation_sequence_in_use", $"Operation sequence {command.Sequence} already exists.");
@@ -157,6 +160,7 @@ public sealed class RefurbishmentService(
             Status = RefurbishmentOperationStatus.Open, AddedEventId = eventId,
         };
         db.RefurbishmentOperations.Add(row);
+        Touch(workOrder, command.ActorRef);
         await eventWriter.AppendAsync([Draft(workOrder.TargetUnitId, eventId, command.CommandId,
             RefurbishmentEventType.OperationAdded, command.EventTime, command.ActorRef, command.LegalEntityId,
             Document(workOrder), new { work_order_id = workOrder.WorkOrderId, operation_id = row.OperationId, row.Sequence, description, technician_ref = row.TechnicianRef, planned_hours = row.PlannedHours })], cancellationToken);
@@ -180,6 +184,7 @@ public sealed class RefurbishmentService(
         row.SignedBy = command.ActorRef;
         row.SignedAt = command.CompletedAt;
         row.CompletedEventId = eventId;
+        Touch(workOrder, command.ActorRef);
         await eventWriter.AppendAsync([Draft(workOrder.TargetUnitId, eventId, command.CommandId,
             RefurbishmentEventType.OperationCompleted, command.CompletedAt, command.ActorRef, command.LegalEntityId,
             Document(workOrder), new { work_order_id = workOrder.WorkOrderId, operation_id = row.OperationId, actual_hours = command.ActualHours, signed_by = command.ActorRef })], cancellationToken);
@@ -192,6 +197,7 @@ public sealed class RefurbishmentService(
         if (await db.RefurbishmentParts.AsNoTracking().FirstOrDefaultAsync(p => p.TenantId == tenantId && p.CommandId == command.CommandId, cancellationToken) is { } replay)
             return PartResult(replay, true);
         var workOrder = await OpenWorkOrderAsync(command.WorkOrderId, cancellationToken);
+        DocumentVersion.RequireExpected(command.ExpectedVersion, workOrder.RowVersion, workOrder.LastModifiedBy, workOrder.LastModifiedAt);
         if (!RemovedPartDestination.All.Contains(command.Destination))
             throw new CommandRefusedException("removed_part_destination_unknown", $"'{command.Destination}' is not spares, scrap or vendor return.");
         if (command.Destination == RemovedPartDestination.VendorReturn && command.VendorPartyRef is null)
@@ -247,6 +253,7 @@ public sealed class RefurbishmentService(
         };
         db.RefurbishmentParts.Add(row);
         workOrder.AsBuiltChanged = true;
+        Touch(workOrder, command.ActorRef);
         drafts.Add(Draft(workOrder.TargetUnitId, eventId, command.CommandId, RefurbishmentEventType.PartRemoved,
             command.EventTime, command.ActorRef, command.LegalEntityId, Document(workOrder), new
             {
@@ -263,6 +270,7 @@ public sealed class RefurbishmentService(
         if (await db.RefurbishmentParts.AsNoTracking().FirstOrDefaultAsync(p => p.TenantId == tenantId && p.CommandId == command.CommandId, cancellationToken) is { } replay)
             return PartResult(replay, true);
         var workOrder = await OpenWorkOrderAsync(command.WorkOrderId, cancellationToken);
+        DocumentVersion.RequireExpected(command.ExpectedVersion, workOrder.RowVersion, workOrder.LastModifiedBy, workOrder.LastModifiedAt);
         if (command.UnitCost < 0) throw new CommandRefusedException("part_cost_invalid", "Installed part cost cannot be negative.");
         var currency = Currency(command.Currency);
         var custodyDrafts = new List<UnitEventDraft>();
@@ -299,6 +307,7 @@ public sealed class RefurbishmentService(
         };
         db.RefurbishmentParts.Add(row);
         workOrder.AsBuiltChanged = true;
+        Touch(workOrder, command.ActorRef);
         await eventWriter.AppendAsync([Draft(workOrder.TargetUnitId, eventId, command.CommandId,
             RefurbishmentEventType.PartInstalled, command.EventTime, command.ActorRef, command.LegalEntityId,
             Document(workOrder), new { work_order_id = workOrder.WorkOrderId, part_id = row.PartId, assembly_link_id = linkId, child_unit_id = row.ChildUnitId, child_item_id = row.ChildItemId, slot = row.Slot, unit_cost = row.UnitCost, currency })], cancellationToken);
@@ -314,6 +323,7 @@ public sealed class RefurbishmentService(
         if (await db.RefurbishmentLabour.AsNoTracking().FirstOrDefaultAsync(l => l.TenantId == tenantId && l.CommandId == command.CommandId, cancellationToken) is { } replay)
             return new(replay.WorkOrderId, replay.LabourId, replay.Hours, replay.HourlyRate, replay.Amount, replay.Currency, replay.CostId, replay.EventId, true);
         var workOrder = await OpenWorkOrderAsync(command.WorkOrderId, cancellationToken);
+        DocumentVersion.RequireExpected(command.ExpectedVersion, workOrder.RowVersion, workOrder.LastModifiedBy, workOrder.LastModifiedAt);
         if (command.Hours <= 0 || command.HourlyRate < 0) throw new CommandRefusedException("labour_amount_invalid", "Labour hours must be positive and the hourly rate cannot be negative.");
         if (command.OperationId is { } operationId && !await db.RefurbishmentOperations.AnyAsync(o => o.TenantId == tenantId && o.WorkOrderId == workOrder.WorkOrderId && o.OperationId == operationId, cancellationToken))
             throw new CommandRefusedException("operation_unknown", $"Operation {operationId} does not exist on this work order.");
@@ -329,6 +339,7 @@ public sealed class RefurbishmentService(
             RecordedAt = command.EventTime, EventId = cost.EventId, CostId = cost.CostId,
         };
         db.RefurbishmentLabour.Add(row);
+        Touch(workOrder, command.ActorRef);
         return new(workOrder.WorkOrderId, row.LabourId, row.Hours, row.HourlyRate, row.Amount, row.Currency, row.CostId, row.EventId, false);
     }
 
@@ -337,10 +348,12 @@ public sealed class RefurbishmentService(
         if (await db.RefurbishmentCosts.AsNoTracking().FirstOrDefaultAsync(c => c.TenantId == tenant.TenantId && c.CommandId == command.CommandId, cancellationToken) is { } replay)
             return CostResult(replay, true);
         var workOrder = await OpenWorkOrderAsync(command.WorkOrderId, cancellationToken);
+        DocumentVersion.RequireExpected(command.ExpectedVersion, workOrder.RowVersion, workOrder.LastModifiedBy, workOrder.LastModifiedAt);
         if (!RefurbishmentCostKind.All.Contains(command.Kind)) throw new CommandRefusedException("refurbishment_cost_kind_unknown", $"'{command.Kind}' is not a refurbishment cost kind.");
         if (command.Amount < 0) throw new CommandRefusedException("refurbishment_cost_invalid", "Refurbishment cost cannot be negative.");
         if (command.Kind == RefurbishmentCostKind.GradedReceipt && await db.RefurbishmentCosts.AnyAsync(c => c.TenantId == tenant.TenantId && c.WorkOrderId == workOrder.WorkOrderId && c.Kind == RefurbishmentCostKind.GradedReceipt, cancellationToken))
             throw new CommandRefusedException("graded_receipt_value_exists", "The work order already has its graded receipt value.");
+        Touch(workOrder, command.ActorRef);
         return CostResult(await AddCostAsync(workOrder, command.CommandId, command.Kind, command.Amount,
             Currency(command.Currency), Required(command.Description, "cost_description", 500), command.EventTime,
             command.ActorRef, command.LegalEntityId, cancellationToken), false);
@@ -475,6 +488,7 @@ public sealed class RefurbishmentService(
         workOrder.ReleasedEventId = releaseEventId;
         workOrder.ReleasedUnitId = releasedUnitId;
         workOrder.Grade = command.Grade;
+        Touch(workOrder, command.ActorRef);
         return new(workOrder.WorkOrderId, workOrder.WorkOrderNumber, workOrder.TargetUnitId, releasedUnitId,
             workOrder.IdentityPolicy, command.Grade, workOrder.CycleNumber, totalCost, currency, releaseEventId, false);
     }
@@ -511,6 +525,7 @@ public sealed class RefurbishmentService(
         workOrder.CancelledBy = command.ActorRef;
         workOrder.CancellationReason = reason;
         workOrder.CancelledEventId = eventId;
+        Touch(workOrder, command.ActorRef);
         return new(workOrder.WorkOrderId, workOrder.Status, eventId, false);
     }
 
@@ -656,6 +671,12 @@ public sealed class RefurbishmentService(
 
     private static RefurbishmentCostResult CostResult(RefurbishmentCost row, bool replayed) =>
         new(row.WorkOrderId, row.CostId, row.Kind, row.Amount, row.Currency, row.EventId, replayed);
+
+    private void Touch(RefurbishmentWorkOrder workOrder, string actorRef)
+    {
+        workOrder.LastModifiedBy = actorRef;
+        workOrder.LastModifiedAt = clock.UtcNow;
+    }
 
     private static string Required(string value, string field, int maximum)
     {

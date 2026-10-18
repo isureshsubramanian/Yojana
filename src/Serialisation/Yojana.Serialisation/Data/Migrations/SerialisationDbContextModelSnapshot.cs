@@ -457,6 +457,13 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("reserve_tag");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
                     b.Property<DateOnly?>("RunsUntil")
                         .HasColumnType("date")
                         .HasColumnName("runs_until");
@@ -756,6 +763,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("last_event_id");
 
+                    b.Property<DateTime>("LastModifiedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_modified_at");
+
+                    b.Property<string>("LastModifiedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_modified_by");
+
                     b.Property<Guid>("ObligorEntityId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("obligor_entity_id");
@@ -785,6 +802,13 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)")
                         .HasColumnName("reviewer_role");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
 
                     b.Property<string>("ServiceCountry")
                         .IsRequired()
@@ -1273,11 +1297,28 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("created_at");
 
+                    b.Property<DateTime>("LastModifiedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_modified_at");
+
+                    b.Property<string>("LastModifiedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_modified_by");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("name");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
 
                     b.Property<bool>("Stacking")
                         .HasColumnType("bit")
@@ -2710,6 +2751,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("inbound_entitlement_id");
 
+                    b.Property<DateTime>("LastModifiedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_modified_at");
+
+                    b.Property<string>("LastModifiedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_modified_by");
+
                     b.Property<DateTime>("RaisedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("raised_at");
@@ -2729,6 +2780,13 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("requested_amount");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -3195,6 +3253,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("varchar(20)")
                         .HasColumnName("kind");
 
+                    b.Property<DateTime>("LastModifiedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_modified_at");
+
+                    b.Property<string>("LastModifiedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_modified_by");
+
                     b.Property<Guid>("LifeEpisodeId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("life_episode_id");
@@ -3246,6 +3314,13 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(60)
                         .HasColumnType("nvarchar(60)")
                         .HasColumnName("replacement_policy_code");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
 
                     b.Property<string>("SelectionKind")
                         .HasMaxLength(30)
@@ -3644,9 +3719,26 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("int")
                         .HasColumnName("extension_months");
 
+                    b.Property<DateTime>("LastModifiedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_modified_at");
+
+                    b.Property<string>("LastModifiedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_modified_by");
+
                     b.Property<int?>("MinDays")
                         .HasColumnType("int")
                         .HasColumnName("min_days");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
 
                     b.Property<string>("Rule")
                         .IsRequired()
@@ -3688,6 +3780,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("int")
                         .HasColumnName("doa_window_days");
 
+                    b.Property<DateTime>("LastModifiedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_modified_at");
+
+                    b.Property<string>("LastModifiedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_modified_by");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -3705,6 +3807,13 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("restock_fee_value");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
 
                     b.HasKey("TenantId", "Code")
                         .HasName("pk_return_reason");
@@ -3877,6 +3986,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("last_event_id");
 
+                    b.Property<DateTime>("LastModifiedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_modified_at");
+
+                    b.Property<string>("LastModifiedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_modified_by");
+
                     b.Property<Guid>("ObligorEntityId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("obligor_entity_id");
@@ -3908,6 +4027,13 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(20)")
                         .HasColumnName("rma_number");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
 
                     b.Property<string>("ServiceCountry")
                         .IsRequired()
@@ -6196,6 +6322,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("fallback_chain");
 
+                    b.Property<DateTime>("LastModifiedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_modified_at");
+
+                    b.Property<string>("LastModifiedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_modified_by");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -6246,6 +6382,13 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<Guid?>("ReplacementPolicyId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("replacement_policy_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
 
                     b.Property<string>("RuleVersion")
                         .IsRequired()
@@ -6366,6 +6509,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("created_by");
 
+                    b.Property<DateTime>("LastModifiedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_modified_at");
+
+                    b.Property<string>("LastModifiedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_modified_by");
+
                     b.Property<Guid>("LegalEntityId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("legal_entity_id");
@@ -6410,6 +6563,13 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(40)")
                         .HasColumnName("return_reason_code");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
 
                     b.Property<string>("ServiceCountry")
                         .IsRequired()

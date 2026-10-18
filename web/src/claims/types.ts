@@ -41,7 +41,7 @@ export interface ClaimDetail {
   successorItemId: string | null; claimNumber: string; serial: string | null; itemId: string | null; submittedAt: string;
   submittedBy: string; adjudicatedAt: string | null; lineRows: ClaimLineRow[] | null; recoveries: ClaimRecoveryRef[] | null; openWork: string | null;
   campaignId: string | null; campaignCode: string | null; campaignName: string | null; reserveTag: string | null;
-  campaignCoverReason: CampaignCoverReason | null;
+  campaignCoverReason: CampaignCoverReason | null; version: string;
 }
 
 export interface PolicyStackStep { level: string; outcome: string; detail: string }

@@ -80,6 +80,7 @@ public static class CreateWarrantyReplacementHandler
             ServiceCountry = command.ServiceCountry.ToUpperInvariant(), ConsumerContract = command.ConsumerContract, Status = WarrantyReplacementStatus.Proposed,
             ReplacementPolicyCode = replacementPolicy.Code, ReturnReasonCode = command.ReturnReasonCode ?? source.ReturnReasonCode,
             RestockingFeeRule = fee.Rule, RestockingFeeAmount = fee.Amount, CreatedAt = now, CreatedBy = command.ActorRef,
+            LastModifiedAt = now, LastModifiedBy = command.ActorRef,
         };
         var link = new ReplacementLink
         {
@@ -233,6 +234,8 @@ public sealed class ShipWarrantyReplacementHandler
         document.ShippedAt = clock.UtcNow;
         document.ShippedBy = command.ActorRef;
         document.StockPostingReference = stockResult.PostingReference;
+        document.LastModifiedAt = clock.UtcNow;
+        document.LastModifiedBy = command.ActorRef;
         var alreadyReturned = link.SourceKind == ReplacementSourceKind.Rma
             && await db.ReturnReceipts.AsNoTracking().AnyAsync(row => row.TenantId == tenantId && row.RmaId == link.SourceId
                 && row.ReceivedUnitId == link.OriginalUnitId && row.Outcome == ReturnOutcome.Accepted, cancellationToken);

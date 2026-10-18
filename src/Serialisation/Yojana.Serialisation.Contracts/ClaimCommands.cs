@@ -51,7 +51,8 @@ public sealed record AdjudicateClaim(Guid CommandId, Guid ClaimId, DateTime Even
     string? DenialReason = null, string? DenialNote = null);
 
 /// <summary>Asks the claimant for more evidence; the claim keeps its status and the request shows on the list until evidence arrives.</summary>
-public sealed record RequestClaimEvidence(Guid CommandId, Guid ClaimId, string Note, DateTime EventTime, string ActorRef);
+public sealed record RequestClaimEvidence(Guid CommandId, Guid ClaimId, string Note, DateTime EventTime, string ActorRef,
+    string? ExpectedVersion = null) : IExpectedDocumentVersion;
 
 /// <summary>
 /// Tenant claim settings: the role that must review adjudication based on low-confidence cover, and the adjudication
@@ -145,7 +146,8 @@ public sealed record ClaimDetail(
     string? CampaignCode = null,
     string? CampaignName = null,
     string? ReserveTag = null,
-    string? CampaignCoverReason = null);
+    string? CampaignCoverReason = null,
+    string Version = "");
 
 public sealed record RecoveryClaimRow(
     Guid RecoveryClaimId,
@@ -162,7 +164,8 @@ public sealed record RecoveryClaimRow(
     DateTime? ApprovedAt,
     string? ApprovedBy,
     string RecoveryNumber = "",
-    string CustomerClaimNumber = "");
+    string CustomerClaimNumber = "",
+    string Version = "");
 
 public sealed record RecoveryClaimListRow(
     Guid RecoveryClaimId,
@@ -190,7 +193,8 @@ public sealed record RecoveryClaimListRow(
     DateTime? ApprovedAt,
     string? ApprovedBy,
     string? VendorReference,
-    string? VendorNote);
+    string? VendorNote,
+    string Version = "");
 
 public sealed record RecoveryClaimPage(IReadOnlyList<RecoveryClaimListRow> Rows, int Total, int Skip, int Take);
 

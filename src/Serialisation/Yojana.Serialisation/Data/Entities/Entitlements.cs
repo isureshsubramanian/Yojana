@@ -23,6 +23,9 @@ public sealed class CoverageFamily : ITenantScoped
     public bool Active { get; set; } = true;
 
     public DateTime CreatedAt { get; set; }
+    public string LastModifiedBy { get; set; } = "";
+    public DateTime LastModifiedAt { get; set; }
+    public byte[] RowVersion { get; set; } = [];
 }
 
 /// <summary>What a replacement unit inherits: the rule and its parameter (N days, or the statutory months).</summary>
@@ -43,6 +46,9 @@ public sealed class ReplacementPolicy : ITenantScoped
     public string? Description { get; set; }
 
     public DateTime CreatedAt { get; set; }
+    public string LastModifiedBy { get; set; } = "";
+    public DateTime LastModifiedAt { get; set; }
+    public byte[] RowVersion { get; set; } = [];
 }
 
 /// <summary>
@@ -134,6 +140,9 @@ public sealed class WarrantyPolicyVersion : ITenantScoped
     public DateTime? PublishedAt { get; set; }
 
     public string? PublishedBy { get; set; }
+    public string LastModifiedBy { get; set; } = "";
+    public DateTime LastModifiedAt { get; set; }
+    public byte[] RowVersion { get; set; } = [];
 }
 
 /// <summary>The accrual cohort an entitlement's reserve belongs to (obligor, item, period, tag); inherited entitlements carry none (case 71).</summary>

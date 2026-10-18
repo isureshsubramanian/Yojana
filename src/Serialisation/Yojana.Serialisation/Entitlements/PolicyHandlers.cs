@@ -5,6 +5,7 @@ using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Documents;
 
 namespace Yojana.Serialisation.Entitlements;
 
@@ -39,6 +40,7 @@ public static class CreatePolicyDraftHandler
             TenantId = tenantId, PolicyVersionId = TimeOrderedId.New(now), PolicyCode = code, Version = version, Name = command.Name, CoverageFamily = command.CoverageFamily, EntitlementType = command.EntitlementType,
             AppliesToContractsFrom = command.AppliesToContractsFrom, Status = PolicyVersionStatus.Draft, RuleVersion = PolicyStore.RuleVersionFor(version), DurationUnit = "", EndOfMonthRule = "", DurationBasis = "", StartTrigger = "",
             Transferable = "", SettlementFormula = "", AssuranceOrService = "", ReferenceTimeZoneRule = "", CreatedAt = now, CreatedBy = command.ActorRef,
+            LastModifiedAt = now, LastModifiedBy = command.ActorRef,
         };
         await store.WriteTermsAsync(row, terms, cancellationToken);
         db.PolicyVersions.Add(row);
@@ -48,11 +50,14 @@ public static class CreatePolicyDraftHandler
 
 public static class UpdatePolicyDraftHandler
 {
-    public static async Task<PolicyDraftResult> Handle(UpdatePolicyDraft command, SerialisationDbContext db, PolicyStore store, ITenantContext tenant, CancellationToken cancellationToken)
+    public static async Task<PolicyDraftResult> Handle(UpdatePolicyDraft command, SerialisationDbContext db, PolicyStore store, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var row = await PolicyDrafts.DraftAsync(db, tenant.TenantId, command.PolicyVersionId, cancellationToken);
+        DocumentVersion.RequireExpected(command.ExpectedVersion, row.RowVersion, row.LastModifiedBy, row.LastModifiedAt);
         row.Name = command.Name;
         row.AppliesToContractsFrom = command.AppliesToContractsFrom;
+        row.LastModifiedAt = clock.UtcNow;
+        row.LastModifiedBy = command.ActorRef;
         await store.WriteTermsAsync(row, command.Terms, cancellationToken);
         return new PolicyDraftResult(row.PolicyVersionId, row.PolicyCode, row.Version, row.Status, await store.ValidateAsync(row, command.Terms, cancellationToken));
     }
@@ -84,6 +89,8 @@ public static class PublishPolicyVersionHandler
         row.Status = PolicyVersionStatus.Published;
         row.PublishedAt = clock.UtcNow;
         row.PublishedBy = command.ActorRef;
+        row.LastModifiedAt = clock.UtcNow;
+        row.LastModifiedBy = command.ActorRef;
         return new PolicyDraftResult(row.PolicyVersionId, row.PolicyCode, row.Version, row.Status, validation);
     }
 }
@@ -122,15 +129,19 @@ public static class DefineCoverageFamilyHandler
 
         if (row is null)
         {
-            row = new CoverageFamily { TenantId = tenantId, FamilyCode = command.FamilyCode, Name = command.Name, AccountingTag = command.AccountingTag, CreatedAt = clock.UtcNow };
+            row = new CoverageFamily { TenantId = tenantId, FamilyCode = command.FamilyCode, Name = command.Name, AccountingTag = command.AccountingTag, CreatedAt = clock.UtcNow,
+                LastModifiedAt = clock.UtcNow, LastModifiedBy = command.ActorRef };
             db.CoverageFamilies.Add(row);
         }
+        else DocumentVersion.RequireExpected(command.ExpectedVersion, row.RowVersion, row.LastModifiedBy, row.LastModifiedAt);
 
         row.Name = command.Name;
         row.Stacking = command.Stacking;
         row.AccountingTag = command.AccountingTag;
         row.Active = command.Active;
-        return new CoverageFamilyRow(row.FamilyCode, row.Name, row.Stacking, row.AccountingTag, row.Active);
+        row.LastModifiedAt = clock.UtcNow;
+        row.LastModifiedBy = command.ActorRef;
+        return new CoverageFamilyRow(row.FamilyCode, row.Name, row.Stacking, row.AccountingTag, row.Active, DocumentVersion.Encode(row.RowVersion));
     }
 }
 
@@ -165,15 +176,19 @@ public static class DefineReplacementPolicyHandler
 
         if (row is null)
         {
-            row = new ReplacementPolicy { TenantId = tenantId, ReplacementPolicyId = TimeOrderedId.New(clock.UtcNow), Code = command.Code, Rule = command.Rule, CreatedAt = clock.UtcNow };
+            row = new ReplacementPolicy { TenantId = tenantId, ReplacementPolicyId = TimeOrderedId.New(clock.UtcNow), Code = command.Code, Rule = command.Rule, CreatedAt = clock.UtcNow,
+                LastModifiedAt = clock.UtcNow, LastModifiedBy = command.ActorRef };
             db.ReplacementPolicies.Add(row);
         }
+        else DocumentVersion.RequireExpected(command.ExpectedVersion, row.RowVersion, row.LastModifiedBy, row.LastModifiedAt);
 
         row.Rule = command.Rule;
         row.MinDays = command.MinDays;
         row.ExtensionMonths = command.ExtensionMonths;
         row.Description = command.Description;
-        return new ReplacementPolicyRow(row.ReplacementPolicyId, row.Code, row.Rule, row.MinDays, row.ExtensionMonths, row.Description);
+        row.LastModifiedAt = clock.UtcNow;
+        row.LastModifiedBy = command.ActorRef;
+        return new ReplacementPolicyRow(row.ReplacementPolicyId, row.Code, row.Rule, row.MinDays, row.ExtensionMonths, row.Description, DocumentVersion.Encode(row.RowVersion));
     }
 }
 

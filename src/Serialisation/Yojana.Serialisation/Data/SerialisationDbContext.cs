@@ -483,6 +483,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(f => f.FamilyCode).HasMaxLength(40);
             b.Property(f => f.Name).HasMaxLength(100);
             b.Property(f => f.AccountingTag).HasMaxLength(20);
+            b.Property(f => f.LastModifiedBy).HasMaxLength(200);
+            b.Property(f => f.RowVersion).IsRowVersion();
         });
 
         modelBuilder.Entity<ReplacementPolicy>(b =>
@@ -492,6 +494,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(r => r.Code).HasMaxLength(60);
             b.Property(r => r.Rule).HasMaxLength(40);
             b.Property(r => r.Description).HasMaxLength(400);
+            b.Property(r => r.LastModifiedBy).HasMaxLength(200);
+            b.Property(r => r.RowVersion).IsRowVersion();
             b.HasIndex(r => new { r.TenantId, r.Code }).IsUnique();
         });
 
@@ -525,6 +529,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(v => v.ReferenceTimeZoneRule).HasMaxLength(20);
             b.Property(v => v.CreatedBy).HasMaxLength(200);
             b.Property(v => v.PublishedBy).HasMaxLength(200);
+            b.Property(v => v.LastModifiedBy).HasMaxLength(200);
+            b.Property(v => v.RowVersion).IsRowVersion();
             // A policy's versions are numbered once; resolution by contract date walks (code, applies_to_contracts_from).
             b.HasIndex(v => new { v.TenantId, v.PolicyCode, v.Version }).IsUnique();
             b.HasIndex(v => new { v.TenantId, v.PolicyCode, v.AppliesToContractsFrom });
@@ -775,6 +781,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.SubmittedBy).HasMaxLength(200);
             b.Property(c => c.AdjudicatedBy).HasMaxLength(200);
             b.Property(c => c.ReviewerRole).HasMaxLength(80);
+            b.Property(c => c.LastModifiedBy).HasMaxLength(200);
+            b.Property(c => c.RowVersion).IsRowVersion();
             b.Property(c => c.ClaimNumber).HasMaxLength(20).IsUnicode(false);
             b.HasIndex(c => new { c.TenantId, c.CommandId }).IsUnique();
             b.HasIndex(c => new { c.TenantId, c.ClaimNumber }).IsUnique();
@@ -855,6 +863,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(r => r.VendorReference).HasMaxLength(100);
             b.Property(r => r.VendorNote).HasMaxLength(500);
             b.Property(r => r.RecoveryNumber).HasMaxLength(20).IsUnicode(false);
+            b.Property(r => r.LastModifiedBy).HasMaxLength(200);
+            b.Property(r => r.RowVersion).IsRowVersion();
             b.HasIndex(r => new { r.TenantId, r.RecoveryNumber }).IsUnique();
             b.HasIndex(r => new { r.TenantId, r.CustomerClaimId, r.ClaimLineId, r.InboundEntitlementId, r.ChildUnitId }).IsUnique();
             b.HasIndex(r => new { r.TenantId, r.Status, r.RaisedAt });
@@ -896,6 +906,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.Status).HasMaxLength(20);
             b.Property(c => c.CreatedBy).HasMaxLength(200);
             b.Property(c => c.UpdatedBy).HasMaxLength(200);
+            b.Property(c => c.RowVersion).IsRowVersion();
             b.HasIndex(c => new { c.TenantId, c.Code }).IsUnique();
             b.HasIndex(c => new { c.TenantId, c.Status, c.UpdatedAt });
         });
@@ -947,6 +958,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(r => r.Currency).HasMaxLength(3).IsUnicode(false);
             b.Property(r => r.RequestedBy).HasMaxLength(200);
             b.Property(r => r.LastActorRef).HasMaxLength(200);
+            b.Property(r => r.LastModifiedBy).HasMaxLength(200);
+            b.Property(r => r.RowVersion).IsRowVersion();
             b.HasIndex(r => new { r.TenantId, r.CommandId }).IsUnique();
             b.HasIndex(r => new { r.TenantId, r.RmaNumber }).IsUnique().HasFilter("[rma_number] IS NOT NULL");
             b.HasIndex(r => new { r.TenantId, r.Stage, r.RequestedAt });
@@ -1017,6 +1030,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(r => r.Name).HasMaxLength(200);
             b.Property(r => r.RestockFeeRule).HasMaxLength(20).IsUnicode(false);
             b.Property(r => r.RestockFeeValue).HasPrecision(18, 2);
+            b.Property(r => r.LastModifiedBy).HasMaxLength(200);
+            b.Property(r => r.RowVersion).IsRowVersion();
             b.HasIndex(r => new { r.TenantId, r.Active, r.Name });
         });
 
@@ -1132,6 +1147,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(w => w.Grade).HasMaxLength(30).IsUnicode(false);
             b.Property(w => w.CancelledBy).HasMaxLength(200);
             b.Property(w => w.CancellationReason).HasMaxLength(500);
+            b.Property(w => w.LastModifiedBy).HasMaxLength(200);
+            b.Property(w => w.RowVersion).IsRowVersion();
             b.HasIndex(w => new { w.TenantId, w.OpenCommandId, w.TargetUnitId }).IsUnique();
             b.HasIndex(w => new { w.TenantId, w.WorkOrderNumber }).IsUnique();
             b.HasIndex(w => new { w.TenantId, w.TargetUnitId, w.OpenedAt });
@@ -1233,6 +1250,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(row => row.CreatedBy).HasMaxLength(200);
             b.Property(row => row.ShippedBy).HasMaxLength(200);
             b.Property(row => row.StockPostingReference).HasMaxLength(100);
+            b.Property(row => row.LastModifiedBy).HasMaxLength(200);
+            b.Property(row => row.RowVersion).IsRowVersion();
             b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
             b.HasIndex(row => new { row.TenantId, row.ReplacementNumber }).IsUnique();
             b.HasIndex(row => new { row.TenantId, row.SourceKind, row.SourceId });

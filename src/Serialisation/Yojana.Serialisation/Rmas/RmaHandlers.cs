@@ -8,6 +8,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Documents;
 using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Ledger;
 
@@ -44,23 +45,28 @@ public static class DefineReturnReasonHandler
                 Name = name,
                 RestockFeeRule = command.RestockFeeRule,
                 CreatedAt = clock.UtcNow,
+                LastModifiedAt = clock.UtcNow,
+                LastModifiedBy = command.ActorRef,
             };
             db.ReturnReasons.Add(row);
         }
+        else DocumentVersion.RequireExpected(command.ExpectedVersion, row.RowVersion, row.LastModifiedBy, row.LastModifiedAt);
 
         row.Name = name;
         row.RestockFeeRule = command.RestockFeeRule;
         row.RestockFeeValue = command.RestockFeeValue;
         row.DoaWindowDays = command.DoaWindowDays;
         row.Active = command.Active;
-        return new(row.Code, row.Name, row.RestockFeeRule, row.RestockFeeValue, row.DoaWindowDays, row.Active);
+        row.LastModifiedAt = clock.UtcNow;
+        row.LastModifiedBy = command.ActorRef;
+        return new(row.Code, row.Name, row.RestockFeeRule, row.RestockFeeValue, row.DoaWindowDays, row.Active, DocumentVersion.Encode(row.RowVersion));
     }
 }
 
 public static class RequestRmaHandler
 {
     public static async Task<RequestRmaResult> Handle(RequestRma command, SerialisationDbContext db, UnitResolver units,
-        ISalesDocumentQueryPort sales, RmaSaleFactsResolver saleFacts, IUnitEventWriter writer, ITenantContext tenant,
+        ISalesDocumentQueryPort sales, RmaSaleFactsResolver saleFacts, IUnitEventWriter writer, ITenantContext tenant, IClock clock,
         CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -107,6 +113,7 @@ public static class RequestRmaHandler
             ServiceEntityId = command.ServiceEntityId, ObligorEntityId = command.ObligorEntityId, ServiceCountry = command.ServiceCountry.Trim().ToUpperInvariant(),
             Currency = command.Currency.Trim().ToUpperInvariant(), RequestedAt = command.EventTime, RequestedBy = command.ActorRef,
             LastActorRef = command.ActorRef, LastEventId = eventId,
+            LastModifiedAt = clock.UtcNow, LastModifiedBy = command.ActorRef,
         };
         db.Rmas.Add(rma);
         var linesToWrite = new List<RmaLine>();
@@ -142,7 +149,7 @@ public static class AuthoriseRmaHandler
 {
     public static async Task<AuthoriseRmaResult> Handle(AuthoriseRma command, SerialisationDbContext db, ClaimUnitFacts facts,
         ClaimLineDecider decider, IItemQueryPort items, DocumentNumbers numbers, IUnitEventWriter writer, ITenantContext tenant,
-        CancellationToken cancellationToken)
+        IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var rma = await db.Rmas.SingleOrDefaultAsync(r => r.TenantId == tenantId && r.RmaId == command.RmaId, cancellationToken)
@@ -198,6 +205,8 @@ public static class AuthoriseRmaHandler
         rma.AuthorisedAt = command.EventTime;
         rma.LastActorRef = command.ActorRef;
         rma.LastEventId = eventId;
+        rma.LastModifiedAt = clock.UtcNow;
+        rma.LastModifiedBy = command.ActorRef;
         await writer.AppendAsync(drafts, cancellationToken);
         return Result(rma, lines, eventId, false);
     }
@@ -210,7 +219,7 @@ public static class AuthoriseRmaHandler
 public static class RecordReturnDispatchedHandler
 {
     public static async Task<RecordReturnDispatchedResult> Handle(RecordReturnDispatched command,
-        SerialisationDbContext db, EpisodeService episodes, IUnitEventWriter writer, ITenantContext tenant,
+        SerialisationDbContext db, EpisodeService episodes, IUnitEventWriter writer, ITenantContext tenant, IClock clock,
         CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -263,6 +272,8 @@ public static class RecordReturnDispatchedHandler
 
         rma.LastActorRef = command.ActorRef;
         rma.LastEventId = drafts[0].PresetEventId!.Value;
+        rma.LastModifiedAt = clock.UtcNow;
+        rma.LastModifiedBy = command.ActorRef;
         await writer.AppendAsync(drafts, cancellationToken);
         return new(rma.RmaId, rma.Stage, command.DispatchedAt, carrier, tracking, rma.LastEventId, false);
     }
@@ -356,6 +367,8 @@ public static class ReceiveReturnHandler
         db.ReturnReceipts.AddRange(receipts);
         rma.LastActorRef = command.ActorRef;
         rma.LastEventId = receipts[0].EventId;
+        rma.LastModifiedAt = clock.UtcNow;
+        rma.LastModifiedBy = command.ActorRef;
         await writer.AppendAsync(drafts, cancellationToken);
         return Result(rma, receipts, receipts[0].EventId, false);
     }
@@ -509,6 +522,8 @@ public static class DispositionRmaHandler
         }
         rma.LastActorRef = command.ActorRef;
         rma.LastEventId = drafts.Last(d => d.EventType == RmaEventType.Dispositioned).PresetEventId!.Value;
+        rma.LastModifiedAt = clock.UtcNow;
+        rma.LastModifiedBy = command.ActorRef;
         await writer.AppendAsync(drafts, cancellationToken);
         return Result(rma, lines, rma.LastEventId, false);
     }

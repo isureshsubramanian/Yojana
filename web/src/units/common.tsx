@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { ApiError } from "../api/client";
+import { usePeople } from "../people/people";
 import { useSession } from "../session/session";
 
 /** Key/value rows for the drawer and state strips. */
@@ -31,12 +32,18 @@ export function Section({ title, children }: { title: ReactNode; children: React
 }
 
 /** A refusal (409 problem) or any other failure, in the form's own words. */
-export function ErrorNote({ error }: { error: unknown }) {
+export function ErrorNote({ error, onReload }: { error: unknown; onReload?: (() => void) | undefined }) {
+  const changedBy = error instanceof ApiError && error.rule === "document_changed" ? error.changedBy : null;
+  const people = usePeople([changedBy]);
   if (!error) return null;
   const message = error instanceof Error ? error.message : String(error);
   const status = error instanceof ApiError ? error.status : null;
   const rule = error instanceof ApiError ? error.rule : null;
   const step = error instanceof ApiError ? error.unblockingStep : null;
+  if (rule === "document_changed") {
+    const when = error instanceof ApiError && error.changedAt ? new Date(error.changedAt).toLocaleString() : "an unknown time";
+    return <div className="form-error" role="alert">Changed by {people(changedBy)} at {when}. {step ?? "Reload to see their change"}.{onReload && <> <button type="button" className="btn sm" onClick={onReload}>Reload</button></>}</div>;
+  }
   return <div className="form-error" role="alert">{status === 409 ? `Refused${rule ? ` · ${rule.replace(/_/g, " ")}` : ""} · ` : ""}{message}{step ? ` To unblock: ${step}.` : ""}</div>;
 }
 

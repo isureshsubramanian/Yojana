@@ -22,7 +22,7 @@ export interface RefurbishmentWorkOrderRow {
   grade: string | null; totalCost: number; currency: string | null; operations: RefurbishmentOperationRow[];
   parts: RefurbishmentPartRow[]; labour: RefurbishmentLabourRow[]; costs: RefurbishmentCostRow[];
   targetSerial: string | null; releasedSerial: string | null; currentLocationId: string | null;
-  releaseChecks: RefurbishmentReleaseCheck[];
+  releaseChecks: RefurbishmentReleaseCheck[]; version: string;
 }
 export interface RefurbishmentWorkOrderPage { items: RefurbishmentWorkOrderRow[]; total: number; skip: number; take: number }
 

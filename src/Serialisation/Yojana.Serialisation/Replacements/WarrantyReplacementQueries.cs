@@ -3,6 +3,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Documents;
 using Yojana.Serialisation.Data.Entities;
 
 namespace Yojana.Serialisation.Replacements;
@@ -117,7 +118,7 @@ public sealed class WarrantyReplacementQueries(SerialisationDbContext db, ITenan
             link.OriginalUnitId, link.ReplacementUnitId, link.OriginalItemId, link.ReplacementItemId, link.ReplacementReason, link.State, document.Status,
             link.PricePolicy, link.DifferenceAmount, link.Currency, link.ReturnDue, link.NonReturnPriceBasis, link.ReplacementConditionAllowed,
             link.ReplacementCondition, link.ConsentRefurbished, link.PolicyApplied, link.ComputedEnd, document.RestockingFeeAmount,
-            document.CreatedAt, document.CreatedBy, document.ShippedAt, document.ShippedBy);
+            document.CreatedAt, document.CreatedBy, document.ShippedAt, document.ShippedBy, DocumentVersion.Encode(document.RowVersion));
 
     private static bool ConditionAllowed(string reason, string allowed, string actual)
     {

@@ -38,6 +38,9 @@ public sealed class RefurbishmentWorkOrder : ITenantScoped
     public string? CancelledBy { get; set; }
     public string? CancellationReason { get; set; }
     public Guid? CancelledEventId { get; set; }
+    public string LastModifiedBy { get; set; } = "";
+    public DateTime LastModifiedAt { get; set; }
+    public byte[] RowVersion { get; set; } = [];
 }
 
 public sealed class RefurbishmentOperation : ITenantScoped

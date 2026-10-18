@@ -4,6 +4,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Documents;
 using Yojana.Serialisation.Identity;
 
 namespace Yojana.Serialisation.Rmas;
@@ -124,7 +125,7 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
                     l.ReceivedUnitId is { } received && items.TryGetValue(received, out var receivedItem) ? receivedItem : null,
                     l.ReceivedUnitId is { } receivedId ? serials.GetValueOrDefault(receivedId) : null,
                     receipt?.BusinessTime, receipt?.PostingPeriod, receipt?.ReceivedBy, receipt?.ReceivingLocationId, receipt?.ExceptionNote);
-            }).ToList(), dispatch, openFollowUps);
+            }).ToList(), dispatch, openFollowUps, DocumentVersion.Encode(rma.RowVersion));
     }
 
     private static RmaDispatchDetail? Dispatch(DateTime? at, string? actor, string? attributes)

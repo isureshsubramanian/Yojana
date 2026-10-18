@@ -65,7 +65,7 @@ export function Component() {
     try { await action(); setDialog(null); setNote(""); await load(); } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
   const approve = () => preview?.refusal ? Promise.resolve() : act(() => claimsApi.adjudicate(claimId));
-  const requestEvidence = () => act(() => claimsApi.requestEvidence(claimId, note.trim()));
+  const requestEvidence = () => act(() => claimsApi.requestEvidence(claimId, note.trim(), detail!.version));
   const deny = () => act(() => claimsApi.adjudicate(claimId, denialReason, note.trim()));
   const change = (kind: "settle" | "close") => act(() => kind === "settle" ? claimsApi.settle(claimId) : claimsApi.close(claimId));
 
@@ -82,7 +82,7 @@ export function Component() {
         {["approved", "partially_approved", "denied"].includes(detail.status) && <button type="button" className="btn primary" disabled={busy} onClick={() => void change("settle")}>Settle claim</button>}
         {detail.status === "settled" && <button type="button" className="btn primary" disabled={busy} onClick={() => void change("close")}>Close claim</button>}
       </div></div>
-      <ErrorNote error={error} />
+      <ErrorNote error={error} onReload={() => { setDialog(null); setNote(""); void load(); }} />
       {preview.refusal && <div className="note bad" style={{ marginBottom: 16 }}><strong>Approval refused · {humanise(preview.refusal)}.</strong>&nbsp;{preview.refusalStep ? `To unblock: ${preview.refusalStep}.` : "Review the claim lines before approving."}</div>}
       {preview.requiredReviewerRole && !decided && <div className="note warn" style={{ marginBottom: 16 }}><strong>Reviewer role required.</strong>&nbsp;Approval must be made by a user with the {humanise(preview.requiredReviewerRole).toLowerCase()} role because this claim uses low-confidence cover.</div>}
       <div className="cols-3-2">

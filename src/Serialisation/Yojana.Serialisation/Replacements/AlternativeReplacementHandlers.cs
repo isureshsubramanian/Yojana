@@ -139,6 +139,7 @@ public static class ConvertLoanToReplacementHandler
         SourceKind = sourceKind, SourceId = sourceId, SourceNumber = sourceNumber, LegalEntityId = legalEntityId,
         ServiceCountry = country.ToUpperInvariant(), ConsumerContract = consumer, Status = WarrantyReplacementStatus.Shipped,
         ReplacementPolicyCode = policyCode, RestockingFeeAmount = 0m, CreatedAt = at, CreatedBy = actor,
+        LastModifiedAt = at, LastModifiedBy = actor,
     };
 
     internal static ReplacementLink NewLink(TenantId tenantId, Guid linkId, Guid documentId, string direction, string reason,
@@ -169,6 +170,8 @@ public static class ConvertLoanToReplacementHandler
         document.ShipCommandId = commandId;
         document.ShippedAt = recordedAt;
         document.ShippedBy = actor;
+        document.LastModifiedAt = recordedAt;
+        document.LastModifiedBy = actor;
         link.State = state;
         link.TargetEntitlementId = transfer.TargetEntitlementId;
         link.PolicyApplied = transfer.PolicyApplied;

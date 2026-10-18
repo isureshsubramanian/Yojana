@@ -97,7 +97,8 @@ public sealed record PolicyValidation(IReadOnlyList<PolicyIssue> Issues)
 /// <summary>Opens the next version of a policy as a draft; without terms it copies the newest version's terms.</summary>
 public sealed record CreatePolicyDraft(Guid CommandId, string PolicyCode, string Name, string CoverageFamily, string EntitlementType, DateOnly AppliesToContractsFrom, PolicyTerms? Terms, string ActorRef);
 
-public sealed record UpdatePolicyDraft(Guid PolicyVersionId, string Name, DateOnly AppliesToContractsFrom, PolicyTerms Terms, string ActorRef);
+public sealed record UpdatePolicyDraft(Guid PolicyVersionId, string Name, DateOnly AppliesToContractsFrom, PolicyTerms Terms,
+    string ActorRef, string? ExpectedVersion = null) : IExpectedDocumentVersion;
 
 public sealed record ValidatePolicyDraft(Guid PolicyVersionId);
 
@@ -107,20 +108,25 @@ public sealed record DiscardPolicyDraft(Guid PolicyVersionId, string ActorRef);
 
 public sealed record PolicyDraftResult(Guid PolicyVersionId, string PolicyCode, int Version, string Status, PolicyValidation Validation);
 
-public sealed record DefineCoverageFamily(string FamilyCode, string Name, bool Stacking, string AccountingTag, bool Active = true);
+public sealed record DefineCoverageFamily(string FamilyCode, string Name, bool Stacking, string AccountingTag, bool Active = true,
+    string ActorRef = "", string? ExpectedVersion = null) : IExpectedDocumentVersion;
 
-public sealed record DefineReplacementPolicy(string Code, string Rule, int? MinDays, int? ExtensionMonths, string? Description);
+public sealed record DefineReplacementPolicy(string Code, string Rule, int? MinDays, int? ExtensionMonths, string? Description,
+    string ActorRef = "", string? ExpectedVersion = null) : IExpectedDocumentVersion;
 
-public sealed record CoverageFamilyRow(string FamilyCode, string Name, bool Stacking, string AccountingTag, bool Active);
+public sealed record CoverageFamilyRow(string FamilyCode, string Name, bool Stacking, string AccountingTag, bool Active,
+    string Version = "");
 
-public sealed record ReplacementPolicyRow(Guid ReplacementPolicyId, string Code, string Rule, int? MinDays, int? ExtensionMonths, string? Description);
+public sealed record ReplacementPolicyRow(Guid ReplacementPolicyId, string Code, string Rule, int? MinDays, int? ExtensionMonths, string? Description,
+    string Version = "");
 
 /// <summary>One policy as the editor's list shows it: the newest version and how many entitlements each version carries.</summary>
 public sealed record PolicySummary(string PolicyCode, string Name, string CoverageFamily, int Versions, int? InForceVersion, DateOnly? InForceFrom, int? DraftVersion, long LiveEntitlements);
 
 public sealed record PolicyVersionRow(Guid PolicyVersionId, int Version, DateOnly AppliesToContractsFrom, string Status, string RuleVersion, long LiveEntitlements, DateTime CreatedAt, string CreatedBy, DateTime? PublishedAt, string? PublishedBy);
 
-public sealed record PolicyVersionDetail(Guid PolicyVersionId, string PolicyCode, int Version, string Name, string CoverageFamily, string EntitlementType, DateOnly AppliesToContractsFrom, string Status, string RuleVersion, PolicyTerms Terms, PolicyValidation Validation);
+public sealed record PolicyVersionDetail(Guid PolicyVersionId, string PolicyCode, int Version, string Name, string CoverageFamily, string EntitlementType, DateOnly AppliesToContractsFrom, string Status, string RuleVersion, PolicyTerms Terms, PolicyValidation Validation,
+    string DocumentVersion = "");
 
 /// <summary>Where the policy stack stopped (ADR-0001 "Policy stack and resolution order").</summary>
 public static class PolicyLevel

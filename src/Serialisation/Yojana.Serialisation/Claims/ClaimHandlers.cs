@@ -3,10 +3,12 @@ using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Documents;
 using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Queries;
@@ -17,7 +19,7 @@ public static class SubmitClaimHandler
 {
     public static async Task<SubmitClaimResult> Handle(SubmitClaim command, SerialisationDbContext db, UnitQueries units, ClaimUnitFacts facts,
         ClaimLedger ledger, LegacyUnknownClaimUnitCreator legacyUnits, DocumentNumbers numbers, ICampaignCoverPort campaigns,
-        ITenantCurrency currencies, ITenantContext tenant, CancellationToken cancellationToken)
+        ITenantCurrency currencies, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         if (await db.Claims.AsNoTracking().FirstOrDefaultAsync(c => c.TenantId == tenantId && c.CommandId == command.CommandId, cancellationToken) is { } replay)
@@ -95,6 +97,7 @@ public static class SubmitClaimHandler
             ObligorEntityId = command.ObligorEntityId, ServiceCountry = command.ServiceCountry.Trim().ToUpperInvariant(), Currency = command.Currency.Trim().ToUpperInvariant(),
             CoverageSource = ClaimCoverageSource.Chargeable, Remedy = command.Remedy, Status = ClaimStatus.Submitted, SubmittedAt = command.EventTime,
             SubmittedBy = command.ActorRef, LastEventId = eventId,
+            LastModifiedAt = clock.UtcNow, LastModifiedBy = command.ActorRef,
         };
         db.Claims.Add(claim);
         var claimLines = command.Lines.Select((line, sequence) => new ClaimLine
@@ -134,7 +137,7 @@ public static class AdjudicateClaimHandler
 {
     public static async Task<AdjudicateClaimResult> Handle(AdjudicateClaim command, SerialisationDbContext db, ClaimLedger ledger, ClaimUnitFacts facts,
         ClaimLineDecider decider, IItemQueryPort items, IEntitlementRecoveryQuery recoveries, ClaimReviewSettings reviewSettings,
-        RecoverySettings recoverySettings, DocumentNumbers numbers, ICampaignCoverPort campaigns, ITenantContext tenant, CancellationToken cancellationToken)
+        RecoverySettings recoverySettings, DocumentNumbers numbers, ICampaignCoverPort campaigns, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var claim = await ledger.LoadAsync(command.ClaimId, cancellationToken);
@@ -248,6 +251,8 @@ public static class AdjudicateClaimHandler
 
         var eventId = ClaimLedger.EventId(command.EventTime);
         claim.LastEventId = eventId;
+        claim.LastModifiedAt = clock.UtcNow;
+        claim.LastModifiedBy = command.ActorRef;
         var drafts = new List<UnitEventDraft>
         {
             new()
@@ -292,6 +297,7 @@ public static class AdjudicateClaimHandler
                             InboundEntitlementId = cover.EntitlementId, ChildUnitId = cover.UnitId, VendorPartyRef = cover.VendorPartyRef,
                             RequestedAmount = line.ApprovedAmount, Currency = claim.Currency, Status = RecoveryClaimStatus.Raised,
                             RaisedAt = command.EventTime, RaisedEventId = recoveryEventId,
+                            LastModifiedAt = clock.UtcNow, LastModifiedBy = command.ActorRef,
                         });
                         recoveryIds.Add(recoveryId);
                         drafts.Add(new UnitEventDraft
@@ -337,7 +343,8 @@ public static class AdjudicateClaimHandler
 
 public static class ApproveRecoveryClaimHandler
 {
-    public static async Task<RecoveryClaimChangeResult> Handle(ApproveRecoveryClaim command, SerialisationDbContext db, ClaimLedger ledger, ITenantContext tenant, CancellationToken cancellationToken)
+    public static async Task<RecoveryClaimChangeResult> Handle(ApproveRecoveryClaim command, SerialisationDbContext db, ClaimLedger ledger,
+        ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var recovery = await db.RecoveryClaims.FirstOrDefaultAsync(r => r.TenantId == tenantId && r.RecoveryClaimId == command.RecoveryClaimId, cancellationToken)
@@ -359,6 +366,8 @@ public static class ApproveRecoveryClaimHandler
         recovery.VendorReference = vendorReference;
         recovery.VendorNote = vendorNote;
         recovery.ApprovedEventId = eventId;
+        recovery.LastModifiedAt = clock.UtcNow;
+        recovery.LastModifiedBy = command.ActorRef;
         await ledger.AppendAsync(
         [
             new UnitEventDraft
@@ -374,19 +383,20 @@ public static class ApproveRecoveryClaimHandler
 
 public static class SettleClaimHandler
 {
-    public static Task<ClaimChangeResult> Handle(SettleClaim command, ClaimLedger ledger, CancellationToken cancellationToken) =>
-        ChangeClaimHandler.ChangeAsync(command.CommandId, command.ClaimId, command.EventTime, command.ActorRef, ClaimEventType.Settled, ledger, cancellationToken);
+    public static Task<ClaimChangeResult> Handle(SettleClaim command, ClaimLedger ledger, IClock clock, CancellationToken cancellationToken) =>
+        ChangeClaimHandler.ChangeAsync(command.CommandId, command.ClaimId, command.EventTime, command.ActorRef, ClaimEventType.Settled, ledger, clock, cancellationToken);
 }
 
 public static class CloseClaimHandler
 {
-    public static Task<ClaimChangeResult> Handle(CloseClaim command, ClaimLedger ledger, CancellationToken cancellationToken) =>
-        ChangeClaimHandler.ChangeAsync(command.CommandId, command.ClaimId, command.EventTime, command.ActorRef, ClaimEventType.Closed, ledger, cancellationToken);
+    public static Task<ClaimChangeResult> Handle(CloseClaim command, ClaimLedger ledger, IClock clock, CancellationToken cancellationToken) =>
+        ChangeClaimHandler.ChangeAsync(command.CommandId, command.ClaimId, command.EventTime, command.ActorRef, ClaimEventType.Closed, ledger, clock, cancellationToken);
 }
 
 internal static class ChangeClaimHandler
 {
-    public static async Task<ClaimChangeResult> ChangeAsync(Guid commandId, Guid claimId, DateTime eventTime, string actorRef, string eventType, ClaimLedger ledger, CancellationToken cancellationToken)
+    public static async Task<ClaimChangeResult> ChangeAsync(Guid commandId, Guid claimId, DateTime eventTime, string actorRef,
+        string eventType, ClaimLedger ledger, IClock clock, CancellationToken cancellationToken)
     {
         var claim = await ledger.LoadAsync(claimId, cancellationToken);
         var key = ClaimLedger.Key(commandId, claim.UnitId, eventType, eventTime);
@@ -394,6 +404,8 @@ internal static class ChangeClaimHandler
         ClaimLedger.Transition(claim, eventType);
         var eventId = ClaimLedger.EventId(eventTime);
         claim.LastEventId = eventId;
+        claim.LastModifiedAt = clock.UtcNow;
+        claim.LastModifiedBy = actorRef;
         if (eventType == ClaimEventType.Settled) claim.SettledAt = eventTime;
         if (eventType == ClaimEventType.Closed) claim.ClosedAt = eventTime;
         await ledger.AppendAsync(
@@ -411,11 +423,13 @@ internal static class ChangeClaimHandler
 
 public static class RequestClaimEvidenceHandler
 {
-    public static async Task<ClaimChangeResult> Handle(RequestClaimEvidence command, SerialisationDbContext db, ClaimLedger ledger, ITenantContext tenant, CancellationToken cancellationToken)
+    public static async Task<ClaimChangeResult> Handle(RequestClaimEvidence command, SerialisationDbContext db, ClaimLedger ledger,
+        ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var claim = await ledger.LoadAsync(command.ClaimId, cancellationToken);
         var key = ClaimLedger.Key(command.CommandId, claim.ClaimId, ClaimEventType.EvidenceRequested, command.EventTime);
         if (await ledger.ReplayedAsync(key, command.EventTime, cancellationToken) is { } replayed) return new(claim.ClaimId, claim.Status, replayed.EventId, true);
+        DocumentVersion.RequireExpected(command.ExpectedVersion, claim.RowVersion, claim.LastModifiedBy, claim.LastModifiedAt);
         if (claim.Status is not (ClaimStatus.Submitted or ClaimStatus.Adjudicating))
         {
             throw new CommandRefusedException("claim_evidence_request_not_allowed", $"Claim {claim.ClaimNumber} is {claim.Status}; evidence can be asked for only before it is decided.");
@@ -428,6 +442,9 @@ public static class RequestClaimEvidenceHandler
             Reference = claim.ClaimNumber, Description = command.Note.Trim(), RecordedAt = command.EventTime, ActorRef = command.ActorRef,
         });
         var eventId = ClaimLedger.EventId(command.EventTime);
+        claim.LastModifiedAt = clock.UtcNow;
+        claim.LastModifiedBy = command.ActorRef;
+        claim.LastEventId = eventId;
         await ledger.AppendAsync(
         [
             new UnitEventDraft

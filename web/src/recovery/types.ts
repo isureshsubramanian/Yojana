@@ -25,6 +25,7 @@ export interface RecoveryClaimRow {
   approvedBy: string | null;
   vendorReference: string | null;
   vendorNote: string | null;
+  version: string;
 }
 
 export interface RecoveryClaimPage { rows: RecoveryClaimRow[]; total: number; skip: number; take: number }

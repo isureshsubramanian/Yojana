@@ -23,7 +23,7 @@ export const claimsApi = {
   campaignOptions: (unitId: string, claimDate: string, signal?: AbortSignal) => api<ClaimCampaignOption[]>(`/api/claims/campaign-options${query({ unitId, claimDate })}`, { signal }),
   submit: (body: SubmitClaim) => api<SubmitClaimResult>("/api/claims/", { method: "POST", body }),
   adjudicate: (claimId: string, denialReason: string | null = null, denialNote: string | null = null) => api<unknown>(`/api/claims/${claimId}/adjudicate`, { method: "POST", body: { commandId: crypto.randomUUID(), claimId, eventTime: new Date().toISOString(), denialReason, denialNote } }),
-  requestEvidence: (claimId: string, note: string) => api<ClaimChangeResult>(`/api/claims/${claimId}/request-evidence`, { method: "POST", body: { commandId: crypto.randomUUID(), claimId, note, eventTime: new Date().toISOString() } }),
+  requestEvidence: (claimId: string, note: string, expectedVersion: string) => api<ClaimChangeResult>(`/api/claims/${claimId}/request-evidence`, { method: "POST", body: { commandId: crypto.randomUUID(), claimId, note, eventTime: new Date().toISOString(), expectedVersion } }),
   settle: (claimId: string) => api<ClaimChangeResult>(`/api/claims/${claimId}/settle`, { method: "POST", body: { commandId: crypto.randomUUID(), claimId, eventTime: new Date().toISOString() } }),
   close: (claimId: string) => api<ClaimChangeResult>(`/api/claims/${claimId}/close`, { method: "POST", body: { commandId: crypto.randomUUID(), claimId, eventTime: new Date().toISOString() } }),
   currency: (signal?: AbortSignal) => api<TenantCurrency>("/api/tenant/currency", { signal }),

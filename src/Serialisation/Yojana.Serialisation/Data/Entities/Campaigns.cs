@@ -40,6 +40,8 @@ public sealed class Campaign : ITenantScoped
     public required string UpdatedBy { get; set; }
 
     public DateTime? SelectedAt { get; set; }
+
+    public byte[] RowVersion { get; set; } = [];
 }
 
 public sealed class CampaignCriterion : ITenantScoped

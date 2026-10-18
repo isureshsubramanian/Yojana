@@ -31,7 +31,8 @@ public sealed record RmaDetail(
     string? LastActorRef,
     IReadOnlyList<RmaDetailLine> Lines,
     RmaDispatchDetail? Dispatch,
-    IReadOnlyList<RmaOpenFollowUp> OpenFollowUps);
+    IReadOnlyList<RmaOpenFollowUp> OpenFollowUps,
+    string Version = "");
 
 public sealed record RmaDispatchDetail(
     DateTime DispatchedAt,

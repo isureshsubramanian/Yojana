@@ -347,7 +347,7 @@ public static class SerialisationEndpoints
         policies.MapGet("/versions/{policyVersionId:guid}", async (Guid policyVersionId, PolicyQueries queries, CancellationToken ct) =>
             await queries.DetailAsync(policyVersionId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
         policies.MapPost("/drafts", (CreatePolicyDraft command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyDraftResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(editor);
-        policies.MapPut("/versions/{policyVersionId:guid}", (Guid policyVersionId, UpdatePolicyDraft command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyDraftResult>(bus, tenant, command with { ActorRef = Actor(user), PolicyVersionId = policyVersionId }, ct)).RequireAuthorization(editor);
+        policies.MapPut("/versions/{policyVersionId:guid}", (Guid policyVersionId, UpdatePolicyDraft command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => InvokeEdit<PolicyDraftResult>(bus, tenant, command with { ActorRef = Actor(user), PolicyVersionId = policyVersionId }, ct)).RequireAuthorization(editor);
         policies.MapPost("/versions/{policyVersionId:guid}/validate", (Guid policyVersionId, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyValidation>(bus, tenant, new ValidatePolicyDraft(policyVersionId), ct));
         policies.MapPost("/versions/{policyVersionId:guid}/publish", (Guid policyVersionId, PublishPolicyVersion command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyDraftResult>(bus, tenant, command with { ActorRef = Actor(user), PolicyVersionId = policyVersionId }, ct)).RequireAuthorization(editor);
         policies.MapPost("/versions/{policyVersionId:guid}/discard", (Guid policyVersionId, DiscardPolicyDraft command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<PolicyDraftResult>(bus, tenant, command with { ActorRef = Actor(user), PolicyVersionId = policyVersionId }, ct)).RequireAuthorization(editor);
@@ -404,7 +404,7 @@ public static class SerialisationEndpoints
         claims.MapGet("/{claimId:guid}/adjudication-preview", async (Guid claimId, ClaimAdjudicationPreviewQuery preview, ClaimReviewSettings settings, CancellationToken ct) =>
             await preview.PreviewAsync(claimId, (await settings.GetAsync(ct)).LowConfidenceReviewerRole, ct) is { } model ? Results.Ok(model) : Results.NotFound());
         claims.MapPost("/{claimId:guid}/request-evidence", (Guid claimId, RequestClaimEvidence command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
+            InvokeEdit<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
         // Read by every claims screen (the recovery list's waiting rule); changed only by the tenant administrator.
         claims.MapGet("/recovery-policy", async (RecoverySettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
         claims.MapPut("/recovery-policy", async (RecoveryPolicy policy, RecoverySettings settings, CancellationToken ct) =>
@@ -478,9 +478,9 @@ public static class SerialisationEndpoints
                 request.RepairLocationId, request.SourceDocument), ct)).RequireAuthorization(YojanaPolicy.ProductionSupervisor);
         refurbishments.MapPost("/{workOrderId:guid}/operations", (Guid workOrderId, AddRefurbishmentOperationRequest request,
             ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<RefurbishmentOperationResult>(bus, tenant, new AddRefurbishmentOperation(request.CommandId,
+            InvokeEdit<RefurbishmentOperationResult>(bus, tenant, new AddRefurbishmentOperation(request.CommandId,
                 workOrderId, request.Sequence, request.Description, request.TechnicianRef, request.PlannedHours,
-                request.EventTime, Actor(user), request.LegalEntityId), ct)).RequireAuthorization(YojanaPolicy.Technician);
+                request.EventTime, Actor(user), request.LegalEntityId, request.ExpectedVersion), ct)).RequireAuthorization(YojanaPolicy.Technician);
         refurbishments.MapPost("/{workOrderId:guid}/operations/{operationId:guid}/complete", (Guid workOrderId,
             Guid operationId, CompleteRefurbishmentOperationRequest request, ClaimsPrincipal user, IMessageBus bus,
             ITenantContext tenant, CancellationToken ct) => Invoke<RefurbishmentOperationResult>(bus, tenant,
@@ -488,24 +488,24 @@ public static class SerialisationEndpoints
                     request.CompletedAt, Actor(user), request.LegalEntityId), ct)).RequireAuthorization(YojanaPolicy.Technician);
         refurbishments.MapPost("/{workOrderId:guid}/parts/remove", (Guid workOrderId, RemoveRefurbishmentPartRequest request,
             ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<RefurbishmentPartResult>(bus, tenant, new RemoveRefurbishmentPart(request.CommandId, workOrderId,
+            InvokeEdit<RefurbishmentPartResult>(bus, tenant, new RemoveRefurbishmentPart(request.CommandId, workOrderId,
                 request.AssemblyLinkId, request.Destination, request.EventTime, Actor(user), request.LegalEntityId,
-                request.DestinationLocationId, request.VendorPartyRef), ct)).RequireAuthorization(YojanaPolicy.Technician);
+                request.DestinationLocationId, request.VendorPartyRef, request.ExpectedVersion), ct)).RequireAuthorization(YojanaPolicy.Technician);
         refurbishments.MapPost("/{workOrderId:guid}/parts/install", (Guid workOrderId, InstallRefurbishmentPartRequest request,
             ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<RefurbishmentPartResult>(bus, tenant, new InstallRefurbishmentPart(request.CommandId, workOrderId,
+            InvokeEdit<RefurbishmentPartResult>(bus, tenant, new InstallRefurbishmentPart(request.CommandId, workOrderId,
                 request.Part, request.UnitCost, request.Currency, request.EventTime, Actor(user), request.LegalEntityId,
-                request.RepairLocationId), ct)).RequireAuthorization(YojanaPolicy.Technician);
+                request.RepairLocationId, request.ExpectedVersion), ct)).RequireAuthorization(YojanaPolicy.Technician);
         refurbishments.MapPost("/{workOrderId:guid}/labour", (Guid workOrderId, RecordRefurbishmentLabourRequest request,
             ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<RefurbishmentLabourResult>(bus, tenant, new RecordRefurbishmentLabour(request.CommandId, workOrderId,
+            InvokeEdit<RefurbishmentLabourResult>(bus, tenant, new RecordRefurbishmentLabour(request.CommandId, workOrderId,
                 request.OperationId, request.Hours, request.HourlyRate, request.Currency, request.EventTime,
-                Actor(user), request.LegalEntityId), ct)).RequireAuthorization(YojanaPolicy.Technician);
+                Actor(user), request.LegalEntityId, request.ExpectedVersion), ct)).RequireAuthorization(YojanaPolicy.Technician);
         refurbishments.MapPost("/{workOrderId:guid}/costs", (Guid workOrderId, RecordRefurbishmentCostRequest request,
             ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<RefurbishmentCostResult>(bus, tenant, new RecordRefurbishmentCost(request.CommandId, workOrderId,
+            InvokeEdit<RefurbishmentCostResult>(bus, tenant, new RecordRefurbishmentCost(request.CommandId, workOrderId,
                 request.Kind, request.Amount, request.Currency, request.Description, request.EventTime,
-                Actor(user), request.LegalEntityId), ct)).RequireAuthorization(YojanaPolicy.InventoryController);
+                Actor(user), request.LegalEntityId, request.ExpectedVersion), ct)).RequireAuthorization(YojanaPolicy.InventoryController);
         refurbishments.MapPost("/{workOrderId:guid}/release", (Guid workOrderId, ReleaseRefurbishmentRequest request,
             ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<ReleaseRefurbishmentResult>(bus, tenant, new ReleaseRefurbishment(request.CommandId, workOrderId,
@@ -651,7 +651,15 @@ public static class SerialisationEndpoints
 
         var reference = app.MapGroup("/api/warranty-reference").RequireAuthorization(YojanaPolicy.TenantMember);
         reference.MapGet("/coverage-families", async (PolicyQueries queries, CancellationToken ct) => Results.Ok(await queries.FamiliesAsync(ct)));
-        reference.MapPost("/coverage-families", (DefineCoverageFamily command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<CoverageFamilyRow>(bus, tenant, command, ct)).RequireAuthorization(editor);
+        reference.MapPost("/coverage-families", async (DefineCoverageFamily command, ClaimsPrincipal user, IMessageBus bus,
+            SerialisationDbContext db, ITenantContext tenant, CancellationToken ct) =>
+        {
+            var stamped = command with { ActorRef = Actor(user) };
+            return await db.CoverageFamilies.AsNoTracking().AnyAsync(row => row.TenantId == tenant.TenantId
+                    && row.FamilyCode == command.FamilyCode, ct)
+                ? await InvokeEdit<CoverageFamilyRow>(bus, tenant, stamped, ct)
+                : await Invoke<CoverageFamilyRow>(bus, tenant, stamped, ct);
+        }).RequireAuthorization(editor);
         reference.MapGet("/amendment-approval", async (AmendmentApprovalSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
         reference.MapPut("/amendment-approval", async (AmendmentApprovalPolicy policy, AmendmentApprovalSettings settings, CancellationToken ct) =>
         {
@@ -685,7 +693,15 @@ public static class SerialisationEndpoints
             catch (CommandRefusedException ex) { return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest); }
         }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         reference.MapGet("/replacement-policies", async (PolicyQueries queries, CancellationToken ct) => Results.Ok(await queries.ReplacementPoliciesAsync(ct)));
-        reference.MapPost("/replacement-policies", (DefineReplacementPolicy command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ReplacementPolicyRow>(bus, tenant, command, ct)).RequireAuthorization(editor);
+        reference.MapPost("/replacement-policies", async (DefineReplacementPolicy command, ClaimsPrincipal user, IMessageBus bus,
+            SerialisationDbContext db, ITenantContext tenant, CancellationToken ct) =>
+        {
+            var stamped = command with { ActorRef = Actor(user) };
+            return await db.ReplacementPolicies.AsNoTracking().AnyAsync(row => row.TenantId == tenant.TenantId
+                    && row.Code == command.Code, ct)
+                ? await InvokeEdit<ReplacementPolicyRow>(bus, tenant, stamped, ct)
+                : await Invoke<ReplacementPolicyRow>(bus, tenant, stamped, ct);
+        }).RequireAuthorization(editor);
 
         var warrantyLines = app.MapGroup("/api/warranty-lines").RequireAuthorization(YojanaPolicy.TenantMember);
         warrantyLines.MapPost("/validate", async (WarrantyLineValidation request, WarrantyLineValidationService validation, CancellationToken ct) =>
@@ -705,7 +721,7 @@ public static class SerialisationEndpoints
         campaigns.MapPost("/", (CreateCampaign command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<CampaignResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(editor);
         campaigns.MapPut("/{campaignId:guid}", (Guid campaignId, UpdateCampaign command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<CampaignResult>(bus, tenant, command with { CampaignId = campaignId, ActorRef = Actor(user) }, ct)).RequireAuthorization(editor);
+            InvokeEdit<CampaignResult>(bus, tenant, command with { CampaignId = campaignId, ActorRef = Actor(user) }, ct)).RequireAuthorization(editor);
         campaigns.MapPost("/{campaignId:guid}/preview", (Guid campaignId, PreviewCampaign command, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<CampaignPreview>(bus, tenant, command with { CampaignId = campaignId }, ct));
         campaigns.MapPost("/{campaignId:guid}/select", (Guid campaignId, SelectCampaignUnits command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
@@ -804,11 +820,36 @@ public static class SerialisationEndpoints
         {
             return Results.Ok(await bus.InvokeAsync<TResult>(command, new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, ct));
         }
+        catch (DocumentChangedException ex)
+        {
+            return DocumentChanged(ex);
+        }
         catch (CommandRefusedException ex)
         {
             return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict, extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
         }
     }
+
+    private static Task<IResult> InvokeEdit<TResult>(IMessageBus bus, ITenantContext tenant, IExpectedDocumentVersion command, CancellationToken ct) where TResult : class
+    {
+        if (string.IsNullOrWhiteSpace(command.ExpectedVersion))
+        {
+            return Task.FromResult<IResult>(Results.Problem(title: "document_version_required", detail: "ExpectedVersion is required for an API edit.",
+                statusCode: StatusCodes.Status400BadRequest, extensions: new Dictionary<string, object?> { ["rule"] = "document_version_required" }));
+        }
+
+        return Invoke<TResult>(bus, tenant, command, ct);
+    }
+
+    private static IResult DocumentChanged(DocumentChangedException ex) => Results.Problem(title: ex.Rule, detail: ex.Message,
+        statusCode: StatusCodes.Status409Conflict, extensions: new Dictionary<string, object?>
+        {
+            ["rule"] = ex.Rule,
+            ["changedBy"] = ex.ChangedBy,
+            ["changedAt"] = ex.ChangedAt,
+            ["unblock"] = ex.UnblockingStep,
+            ["unblockingStep"] = ex.UnblockingStep,
+        });
 
     private static async Task<IResult> InvokeCloseRma(IMessageBus bus, ITenantContext tenant, CloseRma command, CancellationToken ct)
     {

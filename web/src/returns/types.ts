@@ -24,7 +24,7 @@ export interface RmaDetail {
   serviceEntityId: string; serviceCountry: string; currency: string; requestedAt: string; authorisedAt: string | null;
   inTransitAt: string | null; receivedAt: string | null; dispositionedAt: string | null; closedAt: string | null;
   requestedBy: string; lastActorRef: string | null; lines: RmaDetailLine[]; dispatch: RmaDispatchDetail | null;
-  openFollowUps: RmaOpenFollowUp[];
+  openFollowUps: RmaOpenFollowUp[]; version: string;
 }
 export interface RmaDispatchDetail { dispatchedAt: string; carrierName: string | null; trackingReference: string | null; dispatchedBy: string }
 export interface RmaOpenFollowUp { rmaLineId: string; sequence: number; disposition: string; code: string; detail: string }
@@ -36,7 +36,7 @@ export interface WarrantyReplacementRow {
   state: string; status: string; pricePolicy: string; differenceAmount: number; currency: string; returnDue: string | null;
   nonReturnPriceBasis: string | null; replacementConditionAllowed: string; replacementCondition: string | null;
   consentRefurbished: boolean; policyApplied: string | null; computedEnd: string | null; restockingFeeAmount: number;
-  createdAt: string; createdBy: string; shippedAt: string | null; shippedBy: string | null;
+  createdAt: string; createdBy: string; shippedAt: string | null; shippedBy: string | null; version: string;
 }
 export interface WarrantyReplacementLineRow { lineId: string; sequence: number; kind: string; itemId: string | null; description: string; quantity: number; unitAmount: number; lineAmount: number; currency: string; revenueRule: string | null }
 export interface WarrantyReplacementUnitView { unitId: string; serial: string | null; itemId: string; conditionGrade: string; lifecycleStatus: string; locationKind: string | null; locationId: string | null }

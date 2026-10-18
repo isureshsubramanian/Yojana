@@ -3,6 +3,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Documents;
 using Yojana.Serialisation.Ports;
 
 namespace Yojana.Serialisation.Refurbishments;
@@ -84,7 +85,7 @@ public sealed class RefurbishmentQueries(SerialisationDbContext db, EffectiveIte
             workOrder.IdentityPolicy, workOrder.MaxCycles, workOrder.OpenedAt, workOrder.OpenedBy,
             workOrder.ReleasedAt, workOrder.ReleasedBy, workOrder.ReleasedUnitId, workOrder.Grade,
             costs.Sum(c => c.Amount), costs.Select(c => c.Currency).Distinct().SingleOrDefault(), operations, parts, labour, costs,
-            targetSerial, releasedSerial, currentLocationId, releaseChecks);
+            targetSerial, releasedSerial, currentLocationId, releaseChecks, DocumentVersion.Encode(workOrder.RowVersion));
     }
 
     private Task<string?> SerialAtAsync(Guid unitId, DateTime effectiveAt, CancellationToken cancellationToken) =>

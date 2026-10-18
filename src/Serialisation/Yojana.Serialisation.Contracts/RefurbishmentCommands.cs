@@ -133,11 +133,12 @@ public sealed record OpenReworkResult(IReadOnlyList<OpenRefurbishmentResult> Wor
 
 public sealed record AddRefurbishmentOperation(
     Guid CommandId, Guid WorkOrderId, int Sequence, string Description, string? TechnicianRef,
-    decimal PlannedHours, DateTime EventTime, string ActorRef, Guid LegalEntityId);
+    decimal PlannedHours, DateTime EventTime, string ActorRef, Guid LegalEntityId,
+    string? ExpectedVersion = null) : IExpectedDocumentVersion;
 
 public sealed record AddRefurbishmentOperationRequest(
     Guid CommandId, int Sequence, string Description, string? TechnicianRef,
-    decimal PlannedHours, DateTime EventTime, Guid LegalEntityId);
+    decimal PlannedHours, DateTime EventTime, Guid LegalEntityId, string? ExpectedVersion = null);
 
 public sealed record CompleteRefurbishmentOperation(
     Guid CommandId, Guid WorkOrderId, Guid OperationId, decimal ActualHours,
@@ -153,19 +154,22 @@ public sealed record RefurbishmentOperationResult(
 public sealed record RemoveRefurbishmentPart(
     Guid CommandId, Guid WorkOrderId, Guid AssemblyLinkId, string Destination,
     DateTime EventTime, string ActorRef, Guid LegalEntityId, Guid? DestinationLocationId = null,
-    Guid? VendorPartyRef = null);
+    Guid? VendorPartyRef = null, string? ExpectedVersion = null) : IExpectedDocumentVersion;
 
 public sealed record RemoveRefurbishmentPartRequest(
     Guid CommandId, Guid AssemblyLinkId, string Destination, DateTime EventTime,
-    Guid LegalEntityId, Guid? DestinationLocationId = null, Guid? VendorPartyRef = null);
+    Guid LegalEntityId, Guid? DestinationLocationId = null, Guid? VendorPartyRef = null,
+    string? ExpectedVersion = null);
 
 public sealed record InstallRefurbishmentPart(
     Guid CommandId, Guid WorkOrderId, ChildInput Part, decimal UnitCost, string Currency,
-    DateTime EventTime, string ActorRef, Guid LegalEntityId, Guid? RepairLocationId = null);
+    DateTime EventTime, string ActorRef, Guid LegalEntityId, Guid? RepairLocationId = null,
+    string? ExpectedVersion = null) : IExpectedDocumentVersion;
 
 public sealed record InstallRefurbishmentPartRequest(
     Guid CommandId, ChildInput Part, decimal UnitCost, string Currency,
-    DateTime EventTime, Guid LegalEntityId, Guid? RepairLocationId = null);
+    DateTime EventTime, Guid LegalEntityId, Guid? RepairLocationId = null,
+    string? ExpectedVersion = null);
 
 public sealed record RefurbishmentPartResult(
     Guid WorkOrderId, Guid PartId, string Action, Guid? ChildUnitId, Guid? ChildItemId,
@@ -173,19 +177,21 @@ public sealed record RefurbishmentPartResult(
 
 public sealed record RecordRefurbishmentLabour(
     Guid CommandId, Guid WorkOrderId, Guid? OperationId, decimal Hours, decimal HourlyRate,
-    string Currency, DateTime EventTime, string ActorRef, Guid LegalEntityId);
+    string Currency, DateTime EventTime, string ActorRef, Guid LegalEntityId,
+    string? ExpectedVersion = null) : IExpectedDocumentVersion;
 
 public sealed record RecordRefurbishmentLabourRequest(
     Guid CommandId, Guid? OperationId, decimal Hours, decimal HourlyRate,
-    string Currency, DateTime EventTime, Guid LegalEntityId);
+    string Currency, DateTime EventTime, Guid LegalEntityId, string? ExpectedVersion = null);
 
 public sealed record RecordRefurbishmentCost(
     Guid CommandId, Guid WorkOrderId, string Kind, decimal Amount, string Currency,
-    string Description, DateTime EventTime, string ActorRef, Guid LegalEntityId);
+    string Description, DateTime EventTime, string ActorRef, Guid LegalEntityId,
+    string? ExpectedVersion = null) : IExpectedDocumentVersion;
 
 public sealed record RecordRefurbishmentCostRequest(
     Guid CommandId, string Kind, decimal Amount, string Currency,
-    string Description, DateTime EventTime, Guid LegalEntityId);
+    string Description, DateTime EventTime, Guid LegalEntityId, string? ExpectedVersion = null);
 
 public sealed record RefurbishmentCostResult(
     Guid WorkOrderId, Guid CostId, string Kind, decimal Amount, string Currency,
@@ -246,6 +252,7 @@ public sealed record RefurbishmentWorkOrderRow(
     string? Currency, IReadOnlyList<RefurbishmentOperationRow> Operations,
     IReadOnlyList<RefurbishmentPartRow> Parts, IReadOnlyList<RefurbishmentLabourRow> Labour,
     IReadOnlyList<RefurbishmentCostRow> Costs, string? TargetSerial, string? ReleasedSerial,
-    Guid? CurrentLocationId, IReadOnlyList<RefurbishmentReleaseCheck> ReleaseChecks);
+    Guid? CurrentLocationId, IReadOnlyList<RefurbishmentReleaseCheck> ReleaseChecks,
+    string Version = "");
 
 public sealed record RefurbishmentWorkOrderPage(IReadOnlyList<RefurbishmentWorkOrderRow> Items, int Total, int Skip, int Take);

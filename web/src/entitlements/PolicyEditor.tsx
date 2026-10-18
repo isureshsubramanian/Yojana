@@ -3,14 +3,13 @@ import { Link } from "react-router";
 import { StatusBadge } from "../components";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
-import { ErrorNote, Kv, Section, useActor } from "../units/common";
+import { ErrorNote, Kv, Section } from "../units/common";
 import { fmtDate, humanise, shortId } from "../units/format";
 import { entitlementApi } from "./api";
 import { commaList, issueTone, nullableNumber } from "./format";
 import type { AmendmentApprovalPolicy, CoverageFamily, PolicyDetail, PolicySummary, PolicyVersion, RefurbishedGoodsPolicy, ReplacementPolicy, TenantCurrency, WarrantyReferencePolicy } from "./types";
 
 export function Component() {
-  const actor = useActor();
   const [summaries, setSummaries] = useState<PolicySummary[]>([]);
   const [policyCode, setPolicyCode] = useState("");
   const [versions, setVersions] = useState<PolicyVersion[]>([]);
@@ -52,7 +51,7 @@ export function Component() {
   const save = async () => {
     if (!detail || !editable) return;
     setBusy(true); setError(null); setMessage("");
-    try { const result = await entitlementApi.updatePolicy(detail, actor); const fresh = await entitlementApi.policyDetail(result.policyVersionId); setDetail(fresh); setMessage("Draft saved and validated."); } catch (reason) { setError(reason); } finally { setBusy(false); }
+    try { const result = await entitlementApi.updatePolicy(detail); const fresh = await entitlementApi.policyDetail(result.policyVersionId); setDetail(fresh); setMessage("Draft saved and validated."); } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
   const validate = async () => {
     if (!detail) return;
@@ -62,13 +61,13 @@ export function Component() {
   const publish = async () => {
     if (!detail || !editable) return;
     setBusy(true); setError(null);
-    try { await entitlementApi.publishPolicy(detail.policyVersionId, actor); setMessage("Policy version published."); await loadList(); setDetail(await entitlementApi.policyDetail(detail.policyVersionId)); } catch (reason) { setError(reason); } finally { setBusy(false); }
+    try { await entitlementApi.publishPolicy(detail.policyVersionId); setMessage("Policy version published."); await loadList(); setDetail(await entitlementApi.policyDetail(detail.policyVersionId)); } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
   const newVersion = async () => {
     if (!selectedSummary) return;
     setBusy(true); setError(null);
     try {
-      const result = await entitlementApi.createPolicyDraft({ commandId: crypto.randomUUID(), policyCode: selectedSummary.policyCode, name: selectedSummary.name, coverageFamily: selectedSummary.coverageFamily, entitlementType: detail?.entitlementType ?? "manufacturer", appliesToContractsFrom: new Date().toISOString().slice(0, 10), terms: null, actorRef: actor });
+      const result = await entitlementApi.createPolicyDraft({ commandId: crypto.randomUUID(), policyCode: selectedSummary.policyCode, name: selectedSummary.name, coverageFamily: selectedSummary.coverageFamily, entitlementType: detail?.entitlementType ?? "manufacturer", appliesToContractsFrom: new Date().toISOString().slice(0, 10), terms: null });
       setVersions(await entitlementApi.policyVersions(selectedSummary.policyCode)); setSelectedId(result.policyVersionId); setMessage("New draft opened from the newest version.");
     } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
@@ -81,7 +80,7 @@ export function Component() {
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Entitlements", to: "/entitlements/gaps" }, { label: "Warranty policies" }]} />
       <div className="page-header"><div><div className="eyebrow">Warranty policy · versions by contract date · {detail?.coverageFamily ?? "…"}</div><h1>{detail?.name ?? (loading ? "Loading policy…" : "Warranty policies")}</h1><p className="sub">Published versions are immutable · draft changes are validated before publication · {detail ? `${selectedSummary?.liveEntitlements ?? 0} live entitlements remain on their recorded version` : "select a policy"}</p></div><div className="actions"><button type="button" className="btn" disabled={!selectedSummary || !!selectedSummary.draftVersion || busy} onClick={newVersion}>New version</button><button type="button" className="btn" disabled={!detail || busy} onClick={validate}>Validate</button><button type="button" className="btn primary" disabled={!editable || errors > 0 || busy} aria-busy={busy} onClick={publish}>Publish version<kbd className="key">⌘↵</kbd></button></div></div>
-      <ErrorNote error={error} />{message && <div className="note ok" role="status" style={{ marginBottom: "var(--gap)" }}>{message}</div>}
+      <ErrorNote error={error} onReload={detail ? () => { setError(null); void entitlementApi.policyDetail(detail.policyVersionId).then(setDetail).catch(setError); } : undefined} />{message && <div className="note ok" role="status" style={{ marginBottom: "var(--gap)" }}>{message}</div>}
       <div className="cols-2-3">
         <div className="stack">
           <section className="card"><div className="card-header"><h2>Policies</h2><span className="meta">{summaries.length}</span></div><div className="card-body"><label className="lbl" htmlFor="policy-select">Policy</label><select id="policy-select" className="select" value={policyCode} onChange={(event) => setPolicyCode(event.target.value)}>{policyOptions}</select></div></section>

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Documents;
 
 namespace Yojana.Serialisation.Claims;
 
@@ -69,6 +70,7 @@ public sealed class RecoveryQueries(SerialisationDbContext db, ITenantContext te
         public string? ApprovedBy { get; init; }
         public string? VendorReference { get; init; }
         public string? VendorNote { get; init; }
+        public byte[] RowVersion { get; init; } = [];
     }
 
     private sealed class NotRaisedFact
@@ -119,7 +121,7 @@ public sealed class RecoveryQueries(SerialisationDbContext db, ITenantContext te
             row.ChildUnitId, Serial(serials, row.ChildUnitId), row.ChildItemId, row.ParentUnitId, row.ParentUnitId is { } parentId ? Serial(serials, parentId) : null,
             row.VendorPartyRef, row.VendorTermStart, row.VendorTermEnd, TermMonths(row.DurationValue, row.DurationUnit), MonthOfTerm(row.VendorTermStart, row.ClaimDate),
             row.RequestedAmount, row.ApprovedAmount, row.Currency, row.Status, Math.Max(0, asOf.DayNumber - DateOnly.FromDateTime(row.RaisedAt).DayNumber),
-            row.ApprovedAt, row.ApprovedBy, row.VendorReference, row.VendorNote)).ToList();
+            row.ApprovedAt, row.ApprovedBy, row.VendorReference, row.VendorNote, DocumentVersion.Encode(row.RowVersion))).ToList();
         return new(rows, total, skip, take);
     }
 
@@ -190,6 +192,7 @@ public sealed class RecoveryQueries(SerialisationDbContext db, ITenantContext te
                    VendorTermStart = entitlement.StartDate, VendorTermEnd = entitlement.EndDate, DurationValue = entitlement.DurationValue, DurationUnit = entitlement.DurationUnit,
                    RequestedAmount = recovery.RequestedAmount, ApprovedAmount = recovery.ApprovedAmount, Currency = recovery.Currency, Status = recovery.Status,
                    ApprovedAt = recovery.ApprovedAt, ApprovedBy = recovery.ApprovedBy, VendorReference = recovery.VendorReference, VendorNote = recovery.VendorNote,
+                   RowVersion = recovery.RowVersion,
                };
     }
 

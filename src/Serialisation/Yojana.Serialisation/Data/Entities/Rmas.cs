@@ -25,6 +25,9 @@ public sealed class Rma : ITenantScoped
     public required string RequestedBy { get; set; }
     public string? LastActorRef { get; set; }
     public Guid LastEventId { get; set; }
+    public string LastModifiedBy { get; set; } = "";
+    public DateTime LastModifiedAt { get; set; }
+    public byte[] RowVersion { get; set; } = [];
 }
 
 public sealed class RmaLine : ITenantScoped
@@ -95,4 +98,7 @@ public sealed class ReturnReason : ITenantScoped
     public int? DoaWindowDays { get; set; }
     public bool Active { get; set; }
     public DateTime CreatedAt { get; set; }
+    public string LastModifiedBy { get; set; } = "";
+    public DateTime LastModifiedAt { get; set; }
+    public byte[] RowVersion { get; set; } = [];
 }

@@ -68,18 +68,18 @@ export function Component() {
     setBusy(true); setError(null);
     try {
       if (campaignId) {
-        const result = await campaignApi.update(campaignId, draft); setCampaign(result.campaign); setDraft(toDraft(result.campaign));
+        const result = await campaignApi.update(campaignId, draft, campaign!.version); await load(result.campaign.campaignId);
       } else {
         const result = await campaignApi.create(draft); navigate(`/claims/campaigns/${result.campaign.campaignId}`, { replace: true });
       }
     } catch (reason) { setError(reason); } finally { setBusy(false); }
-  }, [campaignId, draft, navigate, valid]);
+  }, [campaign, campaignId, draft, load, navigate, valid]);
   const select = useCallback(async () => {
     if (!campaignId || !valid || selectionEnded) return;
     setBusy(true); setError(null);
-    try { await campaignApi.update(campaignId, draft); const result = await campaignApi.select(campaignId); await load(campaignId); navigate(`/claims/campaigns/${campaignId}/units`, { state: { selected: result } }); }
+    try { await campaignApi.update(campaignId, draft, campaign!.version); const result = await campaignApi.select(campaignId); await load(campaignId); navigate(`/claims/campaigns/${campaignId}/units`, { state: { selected: result } }); }
     catch (reason) { setError(reason); } finally { setBusy(false); }
-  }, [campaignId, draft, load, navigate, selectionEnded, valid]);
+  }, [campaign, campaignId, draft, load, navigate, selectionEnded, valid]);
   useEffect(() => {
     const key = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && campaignId && preview?.page.total) { event.preventDefault(); void select(); } };
     window.addEventListener("keydown", key); return () => window.removeEventListener("keydown", key);
@@ -127,7 +127,7 @@ export function Component() {
           </section>
           <section className="card campaign-funnel" aria-labelledby="campaign-funnel"><div className="card-header"><h2 id="campaign-funnel">How the criteria narrow</h2></div><div className="card-body">{funnel.map((step, index) => <div className="job" key={step.kind}><div><div className="t">{step.count.toLocaleString()} units after {humanise(step.kind)}</div><div className="s">cumulative AND step</div></div><StatusBadge tone={index === funnel.length - 1 ? "ok" : "neutral"}>{index === funnel.length - 1 ? "Selected" : title(step.kind)}</StatusBadge></div>)}{funnel.length === 0 && (selectionFixed ? <p className="muted">The selection is fixed; the criteria are kept as the record of how units were chosen.</p> : <p className="muted">Save the criteria to see each cumulative AND step.</p>)}</div></section>
           <div className="note"><strong>Re-selecting later</strong>&nbsp;adds units that match since the last selection and never removes one already selected.</div>
-          <ErrorNote error={error} />
+          <ErrorNote error={error} onReload={campaignId ? () => { void load(campaignId); } : undefined} />
         </div>
       </div>
     </main>

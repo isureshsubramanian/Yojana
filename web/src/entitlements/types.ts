@@ -23,7 +23,7 @@ export interface PolicyIssue { severity: string; code: string; field: string; me
 export interface PolicyValidation { issues: PolicyIssue[]; canPublish: boolean }
 export interface PolicySummary { policyCode: string; name: string; coverageFamily: string; versions: number; inForceVersion: number | null; inForceFrom: string | null; draftVersion: number | null; liveEntitlements: number }
 export interface PolicyVersion { policyVersionId: string; version: number; appliesToContractsFrom: string; status: string; ruleVersion: string; liveEntitlements: number; createdAt: string; createdBy: string; publishedAt: string | null; publishedBy: string | null }
-export interface PolicyDetail { policyVersionId: string; policyCode: string; version: number; name: string; coverageFamily: string; entitlementType: string; appliesToContractsFrom: string; status: string; ruleVersion: string; terms: PolicyTerms; validation: PolicyValidation }
+export interface PolicyDetail { policyVersionId: string; policyCode: string; version: number; name: string; coverageFamily: string; entitlementType: string; appliesToContractsFrom: string; status: string; ruleVersion: string; terms: PolicyTerms; validation: PolicyValidation; documentVersion: string }
 export interface PolicyDraftResult { policyVersionId: string; policyCode: string; version: number; status: string; validation: PolicyValidation }
 export interface CoverageFamily { familyCode: string; name: string; stacking: boolean; accountingTag: string; active: boolean }
 export interface ReplacementPolicy { replacementPolicyId: string; code: string; rule: string; minDays: number | null; extensionMonths: number | null; description: string | null }

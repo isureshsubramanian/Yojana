@@ -43,6 +43,9 @@ public sealed class Claim : ITenantScoped
     public DateTime? ClosedAt { get; set; }
     public required string SubmittedBy { get; set; }
     public Guid LastEventId { get; set; }
+    public string LastModifiedBy { get; set; } = "";
+    public DateTime LastModifiedAt { get; set; }
+    public byte[] RowVersion { get; set; } = [];
 }
 
 public sealed class ClaimLine : ITenantScoped
@@ -103,6 +106,9 @@ public sealed class RecoveryClaim : ITenantScoped
     public string? VendorNote { get; set; }
     public Guid RaisedEventId { get; set; }
     public Guid? ApprovedEventId { get; set; }
+    public string LastModifiedBy { get; set; } = "";
+    public DateTime LastModifiedAt { get; set; }
+    public byte[] RowVersion { get; set; } = [];
 }
 
 /// <summary>

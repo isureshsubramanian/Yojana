@@ -163,7 +163,8 @@ public sealed record WarrantyReplacementRow(
     DateTime CreatedAt,
     string CreatedBy,
     DateTime? ShippedAt,
-    string? ShippedBy);
+    string? ShippedBy,
+    string Version = "");
 
 public sealed record WarrantyReplacementDetail(
     WarrantyReplacementRow Document,

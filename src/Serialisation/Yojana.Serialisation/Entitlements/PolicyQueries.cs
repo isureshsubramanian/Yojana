@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Documents;
 
 namespace Yojana.Serialisation.Entitlements;
 
@@ -37,21 +38,21 @@ public sealed class PolicyQueries(SerialisationDbContext db, PolicyStore store, 
         var row = await db.PolicyVersions.AsNoTracking().FirstOrDefaultAsync(v => v.TenantId == tenantId && v.PolicyVersionId == policyVersionId, cancellationToken);
         if (row is null) return null;
         var terms = await store.ReadTermsAsync(row, cancellationToken);
-        return new PolicyVersionDetail(row.PolicyVersionId, row.PolicyCode, row.Version, row.Name, row.CoverageFamily, row.EntitlementType, row.AppliesToContractsFrom, row.Status, row.RuleVersion, terms, await store.ValidateAsync(row, terms, cancellationToken));
+        return new PolicyVersionDetail(row.PolicyVersionId, row.PolicyCode, row.Version, row.Name, row.CoverageFamily, row.EntitlementType, row.AppliesToContractsFrom, row.Status, row.RuleVersion, terms, await store.ValidateAsync(row, terms, cancellationToken), DocumentVersion.Encode(row.RowVersion));
     }
 
     public async Task<IReadOnlyList<CoverageFamilyRow>> FamiliesAsync(CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
-        return await db.CoverageFamilies.AsNoTracking().Where(f => f.TenantId == tenantId).OrderBy(f => f.FamilyCode)
-            .Select(f => new CoverageFamilyRow(f.FamilyCode, f.Name, f.Stacking, f.AccountingTag, f.Active)).ToListAsync(cancellationToken);
+        return (await db.CoverageFamilies.AsNoTracking().Where(f => f.TenantId == tenantId).OrderBy(f => f.FamilyCode).ToListAsync(cancellationToken))
+            .Select(f => new CoverageFamilyRow(f.FamilyCode, f.Name, f.Stacking, f.AccountingTag, f.Active, DocumentVersion.Encode(f.RowVersion))).ToList();
     }
 
     public async Task<IReadOnlyList<ReplacementPolicyRow>> ReplacementPoliciesAsync(CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
-        return await db.ReplacementPolicies.AsNoTracking().Where(r => r.TenantId == tenantId).OrderBy(r => r.Code)
-            .Select(r => new ReplacementPolicyRow(r.ReplacementPolicyId, r.Code, r.Rule, r.MinDays, r.ExtensionMonths, r.Description)).ToListAsync(cancellationToken);
+        return (await db.ReplacementPolicies.AsNoTracking().Where(r => r.TenantId == tenantId).OrderBy(r => r.Code).ToListAsync(cancellationToken))
+            .Select(r => new ReplacementPolicyRow(r.ReplacementPolicyId, r.Code, r.Rule, r.MinDays, r.ExtensionMonths, r.Description, DocumentVersion.Encode(r.RowVersion))).ToList();
     }
 
     // Live entitlements per policy version, one grouped read over the (tenant, policy_version_id) index.

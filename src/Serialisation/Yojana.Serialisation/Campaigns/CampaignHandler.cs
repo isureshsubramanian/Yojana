@@ -6,6 +6,7 @@ using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Documents;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Queries;
 
@@ -17,7 +18,7 @@ public static class CampaignHandler
     private const int EventBatchSize = 1000;
 
     public static async Task<CampaignResult> Handle(CreateCampaign command, SerialisationDbContext db,
-        ISerialSchemeSource schemes, IIdentifierPolicySource identifierPolicies, ITenantContext tenant,
+        ISerialSchemeSource schemes, IIdentifierPolicySource identifierPolicies, ITenantContext tenant, IClock clock,
         CancellationToken cancellationToken)
     {
         ValidateCampaign(command.Code, command.Name, command.CoverageSource, command.ReserveTag, command.ReasonCode, command.ReasonNote,
@@ -48,7 +49,7 @@ public static class CampaignHandler
             Status = CampaignStatus.Draft,
             CreatedAt = command.EventTime,
             CreatedBy = command.ActorRef,
-            UpdatedAt = command.EventTime,
+            UpdatedAt = clock.UtcNow,
             UpdatedBy = command.ActorRef,
         };
         var criteriaRows = CampaignCriteriaRules.Prepare(campaign.CampaignId, command.Criteria, schemes, identifierPolicies, command.EventTime);
@@ -59,7 +60,7 @@ public static class CampaignHandler
     }
 
     public static async Task<CampaignResult> Handle(UpdateCampaign command, SerialisationDbContext db,
-        ISerialSchemeSource schemes, IIdentifierPolicySource identifierPolicies, ITenantContext tenant,
+        ISerialSchemeSource schemes, IIdentifierPolicySource identifierPolicies, ITenantContext tenant, IClock clock,
         CancellationToken cancellationToken)
     {
         ValidateCampaign(command.Code, command.Name, command.CoverageSource, command.ReserveTag, command.ReasonCode, command.ReasonNote,
@@ -68,6 +69,7 @@ public static class CampaignHandler
             throw new CommandRefusedException("campaign_status_unknown", $"Campaign status '{command.Status}' is not known.");
         var campaign = await db.Campaigns.SingleOrDefaultAsync(c => c.TenantId == tenant.TenantId && c.CampaignId == command.CampaignId, cancellationToken)
             ?? throw new CommandRefusedException("campaign_unknown", $"Campaign {command.CampaignId:N} does not exist.");
+        DocumentVersion.RequireExpected(command.ExpectedVersion, campaign.RowVersion, campaign.UpdatedBy, campaign.UpdatedAt);
         var oldCriteria = await db.CampaignCriteria.Where(c => c.TenantId == tenant.TenantId && c.CampaignId == campaign.CampaignId).ToListAsync(cancellationToken);
         if (!CampaignCriteriaRules.CanMove(campaign.Status, command.Status))
             throw new CommandRefusedException("campaign_status_transition_invalid", $"A campaign cannot move from {campaign.Status} to {command.Status}.");
@@ -111,7 +113,7 @@ public static class CampaignHandler
         campaign.LabourPct = command.LabourPct;
         campaign.TravelPct = command.TravelPct;
 
-        campaign.UpdatedAt = command.EventTime;
+        campaign.UpdatedAt = clock.UtcNow;
         campaign.UpdatedBy = command.ActorRef;
         return new(ToRow(campaign, oldCriteria));
     }
@@ -143,7 +145,7 @@ public static class CampaignHandler
         db.CampaignUnits.AddRange(snapshots);
         if (loaded.Campaign.Status == CampaignStatus.Draft) loaded.Campaign.Status = CampaignStatus.Selected;
         if (loaded.Campaign.SelectedAt is null && snapshots.Count > 0) loaded.Campaign.SelectedAt = command.EventTime;
-        loaded.Campaign.UpdatedAt = command.EventTime;
+        loaded.Campaign.UpdatedAt = clock.UtcNow;
         loaded.Campaign.UpdatedBy = command.ActorRef;
 
         var batches = snapshots.Chunk(EventBatchSize).ToList();
@@ -204,6 +206,6 @@ public static class CampaignHandler
         criteria.Select(c => new CampaignCriterionRow(c.CriterionId, c.Kind, c.Scheme, c.RangeStart, c.RangeEnd, c.LotId,
             c.ChildUnitId, c.ChildItemId, c.FirmwareValue, c.EffectiveAt, c.ChildLotId, c.FirmwareKey)).ToList(), campaign.CreatedAt, campaign.CreatedBy,
         campaign.UpdatedAt, campaign.UpdatedBy, campaign.SelectedAt, campaign.ReasonCode, campaign.ReasonNote, campaign.RunsUntil,
-        campaign.PartsPct, campaign.LabourPct, campaign.TravelPct);
+        campaign.PartsPct, campaign.LabourPct, campaign.TravelPct, DocumentVersion.Encode(campaign.RowVersion));
 }
 
