@@ -259,7 +259,13 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
             "template.admin", CancellationToken.None);
         Assert.True(preview.Validation.Valid);
         Assert.Equal("text/html; charset=utf-8", preview.MediaType);
-        Assert.Contains("YT-100", System.Text.Encoding.UTF8.GetString(preview.Bytes), StringComparison.Ordinal);
+        var previewHtml = System.Text.Encoding.UTF8.GetString(preview.Bytes);
+        Assert.Contains("YT-100", previewHtml, StringComparison.Ordinal);
+        Assert.Contains("Serial number", previewHtml, StringComparison.Ordinal);
+        Assert.Contains("No tests recorded", previewHtml, StringComparison.Ordinal);
+        Assert.DoesNotContain("internal_serial", previewHtml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Supersedes</span>", previewHtml, StringComparison.Ordinal);
+        Assert.DoesNotContain(".0000000Z", previewHtml, StringComparison.Ordinal);
 
         await InvokeAsync<CorrectIdentifierResult>(setup.Tenant, new CorrectIdentifier(Guid.NewGuid(), setup.UnitId,
             IdentifierType.InternalSerial, setup.Serial + "-LAYOUT", IdentifierCorrectionReason.Typo, At.AddHours(5),
@@ -625,7 +631,7 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         var dbAfter = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var builtIn = await dbAfter.CertificateTemplateVersions.AsNoTracking().Where(row => row.TemplateId == builtInId)
             .OrderBy(row => row.Version).ToListAsync();
-        Assert.Equal([1, 2], builtIn.Select(row => row.Version));
+        Assert.Equal([1, 3], builtIn.Select(row => row.Version));
         Assert.Equal(CertificateTemplateStatus.Retired, builtIn[0].Status);
         Assert.Equal(CertificateTemplateStatus.Active, builtIn[1].Status);
         Assert.Contains("As-built at release", builtIn[1].LayoutBody, StringComparison.Ordinal);

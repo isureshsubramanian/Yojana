@@ -323,7 +323,8 @@ public sealed record SaveCertificateTemplateDraftRequest(Guid? TemplateVersionId
     Guid? BrandingAssetId, IReadOnlyDictionary<string, Guid> BrandingAssets,
     IReadOnlyDictionary<string, string> StaticText, IReadOnlyList<string> Fields);
 public sealed record CertificateTemplateValidation(bool Valid, IReadOnlyList<string> UnknownPlaceholders,
-    IReadOnlyList<string> PartyFieldViolations, IReadOnlyList<string> DeclaredButUnusedFields, IReadOnlyList<string> Errors);
+    IReadOnlyList<string> PartyFieldViolations, IReadOnlyList<string> DeclaredButUnusedFields,
+    IReadOnlyList<string> UnknownHelpers, IReadOnlyList<string> Errors);
 public sealed record CertificateTemplatePreviewRequest(Guid SampleUnitId);
 public sealed record CertificateTemplatePreview(byte[] Bytes, string MediaType, CertificateTemplateValidation Validation);
 

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Commands;
@@ -10,6 +11,7 @@ using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Ports;
 using Yojana.Serialisation.Refurbishments;
+using Yojana.Serialisation.Replacements;
 using Xunit;
 
 namespace Yojana.Serialisation.DatabaseTests;
@@ -80,6 +82,133 @@ public sealed class CertificateIssuePointTests(SerialisationHostFixture fixture)
         Assert.DoesNotContain("Fictional Source Works", certificate.Payload, StringComparison.Ordinal);
         Assert.Null(certificate.AsBuiltRevisionId);
         await AssertWholeUnitAsync(db, setup, setup.Customer, LocationKind.CustomerSite, 1);
+    }
+
+    [InlineData(ReleaseRecordIssuePoint.AtBuildRelease, true)]
+    [InlineData(ReleaseRecordIssuePoint.AtFirstShipment, true)]
+    [InlineData(ReleaseRecordIssuePoint.OnRequest, false)]
+    [DatabaseTheory]
+    public async Task Advance_replacement_reaches_each_configured_issue_point_without_leaving_the_unit_inconsistent(
+        string issuePoint, bool issuesOnShipment)
+    {
+        var world = await P5AdvanceTestData.NewWorldAsync(fixture, "cert-point-replacement-" + issuePoint);
+        await SetIssuePointAsync(world.Tenant, issuePoint);
+        var customerCase = await P5AdvanceTestData.AddCustomerCaseAsync(fixture, world, issuePoint);
+        var created = await P5AdvanceTestData.InvokeAsync<CreateWarrantyReplacementResult>(fixture, world.Tenant,
+            P5AdvanceTestData.CreateCommand(customerCase, ReplacementSourceKind.Claim, customerCase.ClaimId,
+                At.AddDays(2), new DateOnly(2026, 9, 20)));
+        var shipped = await P5AdvanceTestData.InvokeAsync<ShipWarrantyReplacementResult>(fixture, world.Tenant,
+            new ShipWarrantyReplacement(Guid.NewGuid(), created.Document.Document.WarrantyReplacementId,
+                new DateOnly(2026, 9, 4), At.AddDays(3)));
+
+        if (issuesOnShipment) await WaitForCountAsync(world.Tenant, customerCase.ReplacementUnitId, 1);
+        else
+        {
+            await WaitForSettledAsync(world.Tenant, customerCase.ReplacementUnitId);
+            Assert.Equal(0, await CountAsync(world.Tenant, customerCase.ReplacementUnitId));
+            var selection = await P5AdvanceTestData.InvokeAsync<ResolveSelectionSetResult>(fixture, world.Tenant,
+                new ResolveSelectionSet(Guid.NewGuid(), SelectionSource.ByPastedList([customerCase.ReplacementSerial]), "quality"));
+            await P5AdvanceTestData.InvokeAsync<CertificateRunResult>(fixture, world.Tenant,
+                new IssueCertificate(Guid.NewGuid(), selection.SelectionId, CertificateDocumentKind.ReleaseRecord,
+                    CertificateFormType.GenericRelease, world.Entity, "en", "Requested release record", false, "quality"));
+            await WaitForCountAsync(world.Tenant, customerCase.ReplacementUnitId, 1);
+        }
+
+        using var scope = fixture.ScopeFor(world.Tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var owner = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == customerCase.ReplacementUnitId
+            && row.Kind == EpisodeKind.Ownership && row.ValidTo == null);
+        var custody = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == customerCase.ReplacementUnitId
+            && row.Kind == EpisodeKind.Custody && row.ValidTo == null);
+        Assert.Equal((world.Customer, PartyType.Customer, At.AddDays(3)),
+            (owner.PartyRef, owner.PartyType, owner.ValidFrom));
+        Assert.Equal((LocationKind.CustomerSite, world.Customer, EpisodeReason.Replacement, At.AddDays(3)),
+            (custody.LocationKind, custody.PartyRef, custody.Reason, custody.ValidFrom));
+        Assert.Equal(EntitlementStatus.Closed,
+            (await db.Entitlements.AsNoTracking().SingleAsync(row => row.EntitlementId == customerCase.SourceEntitlementId)).Status);
+        var target = await db.Entitlements.AsNoTracking().SingleAsync(row => row.EntitlementId == shipped.TargetEntitlementId);
+        Assert.Equal((customerCase.ReplacementUnitId, EntitlementStatus.Active, customerCase.SourceEntitlementId),
+            (target.UnitId, target.Status, target.ParentEntitlementId));
+        Assert.Single(await db.Identifiers.AsNoTracking().Where(row => row.UnitId == customerCase.ReplacementUnitId
+            && row.ValidTo == null).ToListAsync());
+        Assert.Equal(1, await db.CertificateInstances.CountAsync(row => row.UnitId == customerCase.ReplacementUnitId
+            && row.DocumentKind == CertificateDocumentKind.ReleaseRecord));
+        var eventTypes = await db.Events.AsNoTracking().Where(row => row.UnitId == customerCase.ReplacementUnitId)
+            .Select(row => row.EventType).ToListAsync();
+        Assert.Contains(ReplacementEventType.Shipped, eventTypes);
+        Assert.Contains(UnitEventType.OwnershipOpened, eventTypes);
+        Assert.Contains(EntitlementEventType.Transferred, eventTypes);
+        Assert.Contains(CertificateEventType.Issued, eventTypes);
+        if (issuesOnShipment)
+            Assert.Equal(shipped.EventId, (await db.CertificateInstances.AsNoTracking().SingleAsync(row =>
+                row.UnitId == customerCase.ReplacementUnitId
+                && row.DocumentKind == CertificateDocumentKind.ReleaseRecord)).TriggeringEventId);
+    }
+
+    [InlineData(ReleaseRecordIssuePoint.AtBuildRelease, true)]
+    [InlineData(ReleaseRecordIssuePoint.AtFirstShipment, true)]
+    [InlineData(ReleaseRecordIssuePoint.OnRequest, false)]
+    [DatabaseTheory]
+    public async Task Corrected_advance_replacement_reaches_each_configured_issue_point_and_keeps_the_physical_unit_consistent(
+        string issuePoint, bool issuesOnCorrection)
+    {
+        var setup = await new CorrectReplacementLinkTests(fixture).SetUpAsync(
+            "cert-point-corrected-" + issuePoint, issuePoint);
+        var correctionId = Guid.NewGuid();
+        await InvokeAsync<CorrectReplacementLinkResult>(setup.Tenant, new CorrectReplacementLink(
+            correctionId, setup.RecordedUnitId, setup.ActualUnitId,
+            CorrectReplacementLinkReason.WrongUnitRecorded, At.AddDays(6), "service.manager", Entity,
+            "Physical delivery evidence checked", new(correctionId, CorrectReplacementLinkReason.WrongUnitRecorded),
+            new("service.manager", [YojanaRole.ServiceManager])));
+
+        if (issuesOnCorrection) await WaitForCountAsync(setup.Tenant, setup.ActualUnitId, 1);
+        else
+        {
+            await WaitForSettledAsync(setup.Tenant, setup.ActualUnitId);
+            Assert.Equal(0, await CountAsync(setup.Tenant, setup.ActualUnitId));
+            var selection = await P5AdvanceTestData.InvokeAsync<ResolveSelectionSetResult>(fixture, setup.Tenant,
+                new ResolveSelectionSet(Guid.NewGuid(), SelectionSource.ByPastedList([
+                    await PrimarySerialAsync(setup.Tenant, setup.ActualUnitId)]), "quality"));
+            await P5AdvanceTestData.InvokeAsync<CertificateRunResult>(fixture, setup.Tenant,
+                new IssueCertificate(Guid.NewGuid(), selection.SelectionId, CertificateDocumentKind.ReleaseRecord,
+                    CertificateFormType.GenericRelease, Entity, "en", "Requested release record", false, "quality"));
+            await WaitForCountAsync(setup.Tenant, setup.ActualUnitId, 1);
+        }
+
+        using var scope = fixture.ScopeFor(setup.Tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var owner = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == setup.ActualUnitId
+            && row.Kind == EpisodeKind.Ownership && row.ValidTo == null);
+        var custody = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == setup.ActualUnitId
+            && row.Kind == EpisodeKind.Custody && row.ValidTo == null);
+        Assert.Equal((setup.Customer, PartyType.Customer, At.AddDays(4)),
+            (owner.PartyRef, owner.PartyType, owner.ValidFrom));
+        Assert.Equal((LocationKind.CustomerSite, setup.Customer, EpisodeReason.Replacement, At.AddDays(4)),
+            (custody.LocationKind, custody.PartyRef, custody.Reason, custody.ValidFrom));
+        Assert.Single(await db.Entitlements.AsNoTracking().Where(row => row.UnitId == setup.ActualUnitId
+            && row.Status == EntitlementStatus.Active).ToListAsync());
+        Assert.Empty(await db.Entitlements.AsNoTracking().Where(row => row.UnitId == setup.RecordedUnitId
+            && row.Status == EntitlementStatus.Active).ToListAsync());
+        var identifiers = await db.Identifiers.AsNoTracking().Where(row => row.UnitId == setup.ActualUnitId
+            && row.ValidTo == null).Select(row => row.Type).ToListAsync();
+        Assert.Contains(IdentifierType.InternalSerial, identifiers);
+        Assert.Contains(IdentifierType.CustomerAssetTag, identifiers);
+        Assert.Equal(1, await db.CertificateInstances.CountAsync(row => row.UnitId == setup.ActualUnitId
+            && row.DocumentKind == CertificateDocumentKind.ReleaseRecord));
+        var eventTypes = await db.Events.AsNoTracking().Where(row => row.UnitId == setup.ActualUnitId)
+            .Select(row => row.EventType).ToListAsync();
+        Assert.Contains(ReplacementEventType.LinkCorrected, eventTypes);
+        Assert.Contains(UnitEventType.OwnershipOpened, eventTypes);
+        Assert.Contains(EntitlementEventType.Transferred, eventTypes);
+        Assert.Contains(CertificateEventType.Issued, eventTypes);
+        if (issuesOnCorrection)
+        {
+            var correctionEvent = await db.Events.AsNoTracking().SingleAsync(row => row.UnitId == setup.ActualUnitId
+                && row.EventType == ReplacementEventType.LinkCorrected);
+            Assert.Equal(correctionEvent.EventId, (await db.CertificateInstances.AsNoTracking().SingleAsync(row =>
+                row.UnitId == setup.ActualUnitId
+                && row.DocumentKind == CertificateDocumentKind.ReleaseRecord)).TriggeringEventId);
+        }
     }
 
     [DatabaseFact]
@@ -323,6 +452,14 @@ public sealed class CertificateIssuePointTests(SerialisationHostFixture fixture)
         using var scope = fixture.ScopeFor(tenant);
         return await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().CertificateInstances
             .CountAsync(row => row.UnitId == unitId && row.DocumentKind == CertificateDocumentKind.ReleaseRecord);
+    }
+
+    private async Task<string> PrimarySerialAsync(TenantId tenant, Guid unitId)
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        return await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Identifiers.AsNoTracking()
+            .Where(row => row.UnitId == unitId && row.ValidTo == null && row.Type == IdentifierType.InternalSerial)
+            .Select(row => row.RawValue).SingleAsync();
     }
 
     private async Task WaitForCountAsync(TenantId tenant, Guid unitId, int count)

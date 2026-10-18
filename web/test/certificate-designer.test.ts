@@ -24,6 +24,17 @@ test("design preview highlights placeholders without granting script or network 
   assert.ok(!html.includes("https:"));
 });
 
+test("design preview labels control blocks and keeps template markers out of attributes", () => {
+  const html = designPreviewHtml(`<table><tbody>{{#each identifiers}}<tr class="status-{{type}}"><td>{{label type}}</td>{{#if issuer}}<td>{{issuer}}</td>{{/if}}</tr>{{else}}<tr><td>None</td></tr>{{/each}}</tbody></table>`);
+
+  assert.match(html, /Repeats for each identifier/);
+  assert.match(html, /Shown only when issuer has a value/);
+  assert.match(html, /<mark class="placeholder">label · type<\/mark>/);
+  assert.ok(!html.includes("#each"));
+  assert.ok(!html.includes("/each"));
+  assert.ok(!html.includes('status">'));
+});
+
 test("SVG logo preview uses the authenticated tenant asset endpoint", () => {
   const source = assetPreviewSource({ assetId: "0199a4be-7532-7000-8000-000000000001", mediaType: "image/svg+xml" });
 

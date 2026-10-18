@@ -8,11 +8,64 @@ export function insertPlaceholder(text: string, field: string, start: number, en
 }
 
 export function designPreviewHtml(layout: string): string {
-  const highlighted = layout.replace(/\{\{\s*([#/]?[^{}]+?)\s*\}\}/g, (_match, field: string) =>
-    `<mark class="placeholder">${escapeHtml(field.trim())}</mark>`);
+  const safeAttributes = layout.replace(/<[^>]*>/g, (tag) => tag.replace(/\{\{[^{}]+\}\}/g, "preview-value"));
+  const highlighted = renderDesignFragment(safeAttributes, 0).html;
   return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-    <style>body{font-family:system-ui,sans-serif;margin:24px;color:CanvasText;background:Canvas}.placeholder{background:Highlight;color:HighlightText;border-radius:3px;padding:1px 3px}</style>
+    <style>body{font-family:system-ui,sans-serif;margin:24px;color:CanvasText;background:Canvas}.placeholder{background:Highlight;color:HighlightText;border-radius:3px;padding:1px 3px}.template-block-label{display:block;width:max-content;max-width:100%;margin:5px 0 3px;padding:3px 7px;border:1px dashed color-mix(in srgb,Highlight 55%,CanvasText);border-radius:4px;background:color-mix(in srgb,Highlight 12%,Canvas);color:CanvasText;font:600 11px/1.3 system-ui,sans-serif}.template-block-else{opacity:.75}</style>
     </head><body>${highlighted}</body></html>`;
+}
+
+interface DesignFragment { html: string; index: number; stop: "else" | "close" | null }
+
+function renderDesignFragment(source: string, from: number, closing?: string): DesignFragment {
+  let html = "";
+  let index = from;
+  while (index < source.length) {
+    const start = source.indexOf("{{", index);
+    if (start < 0) return { html: html + source.slice(index), index: source.length, stop: null };
+    html += source.slice(index, start);
+    const end = source.indexOf("}}", start + 2);
+    if (end < 0) return { html: html + escapeHtml(source.slice(start)), index: source.length, stop: null };
+    const expression = source.slice(start + 2, end).trim();
+    index = end + 2;
+    if (expression === "else" && closing) return { html, index, stop: "else" };
+    if (expression === `/${closing}`) return { html, index, stop: "close" };
+    if (expression.startsWith("#")) {
+      const [helper = "", path = ""] = expression.slice(1).trim().split(/\s+/, 2);
+      const body = renderDesignFragment(source, index, helper);
+      index = body.index;
+      let otherwise = "";
+      if (body.stop === "else") {
+        const alternate = renderDesignFragment(source, index, helper);
+        index = alternate.index;
+        otherwise = `<span class="template-block-label template-block-else">${helper === "each" ? "When the list is empty" : "Otherwise"}</span>${alternate.html}`;
+      }
+      html += `<span class="template-block-label">${blockLabel(helper, path)}</span>${body.html}${otherwise}`;
+      continue;
+    }
+    if (expression.startsWith("/")) continue;
+    const parts = expression.split(/\s+/);
+    const helper = parts.length > 1 ? parts[0] : null;
+    const field = helper ? parts.slice(1).join(" ") : expression;
+    html += `<mark class="placeholder">${helper ? `${escapeHtml(helper)} · ` : ""}${escapeHtml(field)}</mark>`;
+  }
+  return { html, index, stop: null };
+}
+
+function blockLabel(helper: string, path: string): string {
+  const field = humanLabel(path);
+  if (helper === "each") return `Repeats for each ${singular(field)}`;
+  if (helper === "unless") return `Shown only when ${field} is empty`;
+  if (helper === "if") return `Shown only when ${field} has a value`;
+  return `Template block ${helper} · ${field}`;
+}
+
+function humanLabel(path: string): string {
+  return path.split(".").at(-1)?.replace(/_/g, " ") ?? path;
+}
+
+function singular(value: string): string {
+  return value.endsWith("ies") ? value.slice(0, -3) + "y" : value.endsWith("s") ? value.slice(0, -1) : value;
 }
 
 export function assetPreviewSource(asset: Pick<TenantAsset, "assetId" | "mediaType"> | null): string | null {
