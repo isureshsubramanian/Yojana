@@ -256,18 +256,13 @@ public sealed class PortalTests(SerialisationHostFixture fixture)
         var unit = await UnitAsync(tenant, item, serial);
         await OwnAsync(tenant, unit, owner, At.AddDays(1));
         await AddEntitlementAsync(tenant, unit, owner, "base", new DateOnly(2026, 9, 27));
-        using (var scope = fixture.ScopeFor(tenant))
-        {
-            var db = Db(scope);
-            db.CustomerAssertions.Add(new CustomerAssertion
-            {
-                TenantId = tenant, AssertionId = Guid.NewGuid(), CommandId = Guid.NewGuid(), PartyRef = claimant,
-                UnitId = unit, IdentifierType = IdentifierType.InternalSerial, RawIdentifier = serial,
-                NormalisedIdentifier = serial.Replace("-", "", StringComparison.Ordinal),
-                Status = "pending_verification", AssertedAt = At.AddDays(2), AssertedBy = "test:claimant",
-            });
-            await db.SaveChangesAsync();
-        }
+        var reconciliation = await InvokeAsync<CustomerListReconciliationPage>(tenant,
+            new ReconcileCustomerList(Guid.NewGuid(), claimant,
+                new CustomerListSource(Pasted: [new CustomerListInput(serial)]), At.AddDays(2), "test:claimant"));
+        var assertion = Assert.Single(reconciliation.Items);
+        Assert.Equal(CustomerListMatchOutcome.OwnedByAnotherParty, assertion.Outcome);
+        Assert.Equal(CustomerAssertionStatus.PendingVerification, assertion.AssertionStatus);
+        Assert.NotNull(assertion.AssertionId);
         using var readScope = fixture.ScopeFor(tenant);
         var api = readScope.ServiceProvider.GetRequiredService<PortalQueries>();
         Assert.Equal(PortalQueryOutcome.NotFound,

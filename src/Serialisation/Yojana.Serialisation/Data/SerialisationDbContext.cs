@@ -179,6 +179,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     // P7 portal block. Customer assertions are intake evidence only; PortalQueries always authorises through ownership episodes.
     public DbSet<DisclosurePolicy> DisclosurePolicies => Set<DisclosurePolicy>();
     public DbSet<CustomerAssertion> CustomerAssertions => Set<CustomerAssertion>();
+    public DbSet<CustomerReconciliation> CustomerReconciliations => Set<CustomerReconciliation>();
+    public DbSet<CustomerReconciliationRow> CustomerReconciliationRows => Set<CustomerReconciliationRow>();
     // End P7 portal block.
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -338,11 +340,53 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(row => row.EvidenceRef).HasMaxLength(500);
             b.Property(row => row.AssertedBy).HasMaxLength(200);
             b.Property(row => row.VerifiedBy).HasMaxLength(200);
+            b.Property(row => row.RejectionReason).HasMaxLength(500);
+            b.Property(row => row.RejectedBy).HasMaxLength(200);
             b.Property(row => row.AssertedAt).HasPrecision(3);
             b.Property(row => row.VerifiedAt).HasPrecision(3);
+            b.Property(row => row.EvidenceDate).HasPrecision(3);
+            b.Property(row => row.RejectedAt).HasPrecision(3);
             b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
             b.HasIndex(row => new { row.TenantId, row.PartyRef, row.AssertedAt, row.AssertionId });
             b.HasIndex(row => new { row.TenantId, row.NormalisedIdentifier, row.IdentifierType });
+        });
+
+        modelBuilder.Entity<CustomerReconciliation>(b =>
+        {
+            b.ToTable("customer_reconciliation", t =>
+                t.HasCheckConstraint("ck_customer_reconciliation_source_kind",
+                    "[source_kind] IN ('pasted_list','import_job','selection_set')"));
+            b.HasKey(row => new { row.TenantId, row.ReconciliationId });
+            b.Property(row => row.SourceKind).HasMaxLength(30);
+            b.Property(row => row.ReconciledAt).HasPrecision(3);
+            b.Property(row => row.ReconciledBy).HasMaxLength(200);
+            b.HasIndex(row => new { row.TenantId, row.PartyRef, row.ReconciledAt, row.ReconciliationId });
+        });
+
+        modelBuilder.Entity<CustomerReconciliationRow>(b =>
+        {
+            b.ToTable("customer_reconciliation_row", t =>
+            {
+                t.HasCheckConstraint("ck_customer_reconciliation_row_outcome",
+                    "[outcome] IN ('owned','owned_by_another_party','not_found','invalid')");
+                t.HasCheckConstraint("ck_customer_reconciliation_row_reasons_json", "ISJSON([validation_reasons_json]) = 1");
+            });
+            b.HasKey(row => new { row.TenantId, row.ReconciliationId, row.Ordinal });
+            b.Property(row => row.RawIdentifier).HasMaxLength(100);
+            b.Property(row => row.RequestedIdentifierType).HasMaxLength(40);
+            b.Property(row => row.MatchedIdentifierType).HasMaxLength(40);
+            b.Property(row => row.NormalisedIdentifier).HasMaxLength(100);
+            b.Property(row => row.Outcome).HasMaxLength(30);
+            b.Property(row => row.ValidationReasonsJson).HasDefaultValue("[]");
+            b.Property(row => row.CustomerPoRef).HasMaxLength(100);
+            b.Property(row => row.CustomerItemRef).HasMaxLength(100);
+            b.HasOne<CustomerReconciliation>().WithMany()
+                .HasForeignKey(row => new { row.TenantId, row.ReconciliationId }).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<CustomerAssertion>().WithMany()
+                .HasForeignKey(row => new { row.TenantId, row.AssertionId }).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(row => new { row.TenantId, row.UnitId });
+            b.HasIndex(row => new { row.TenantId, row.AssertionId }).IsUnique()
+                .HasFilter("[assertion_id] IS NOT NULL");
         });
 
         modelBuilder.Entity<CustodyEpisode>(b =>

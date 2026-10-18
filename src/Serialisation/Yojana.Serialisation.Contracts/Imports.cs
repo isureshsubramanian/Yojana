@@ -139,6 +139,13 @@ public sealed record ImportJobSourceRow(Guid? UnitId, string RawValue, string? N
 public interface IImportJobSource
 {
     Task<IReadOnlyList<ImportJobSourceRow>> ReadAsync(Guid jobId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Every validator-accepted source row for customer reconciliation. Unlike selection/correction consumption,
+    /// compare-mode review actions do not suppress a customer's claim before reconciliation classifies it.
+    /// </summary>
+    Task<IReadOnlyList<ImportJobSourceRow>> ReadForReconciliationAsync(Guid jobId,
+        CancellationToken cancellationToken);
 }
 
 public sealed record SpreadsheetCell(string? Text, bool IsNumeric = false, bool IsFormula = false);

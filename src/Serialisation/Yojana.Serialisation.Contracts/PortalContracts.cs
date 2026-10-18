@@ -138,3 +138,125 @@ public static class PortalExportFormat
     public const string Xlsx = "xlsx";
     public const string SpreadsheetUnavailableReason = "spreadsheet_library_not_approved";
 }
+
+public static class CustomerListSourceKind
+{
+    public const string PastedList = "pasted_list";
+    public const string ImportJob = "import_job";
+    public const string SelectionSet = "selection_set";
+}
+
+public static class CustomerListMatchOutcome
+{
+    public const string Owned = "owned";
+    public const string OwnedByAnotherParty = "owned_by_another_party";
+    public const string NotFound = "not_found";
+    public const string Invalid = "invalid";
+}
+
+public static class CustomerAssertionStatus
+{
+    public const string PendingVerification = "pending_verification";
+    public const string Verified = "verified";
+    public const string Rejected = "rejected";
+    public const string PendingVerificationLabel = "PENDING VERIFICATION";
+}
+
+public sealed record CustomerListInput(
+    string Value,
+    string? IdentifierType = null,
+    string? CustomerPoRef = null,
+    string? CustomerItemRef = null);
+
+/// <summary>Exactly one source is supplied. Import and selection references are read through their existing boundaries.</summary>
+public sealed record CustomerListSource(
+    IReadOnlyList<CustomerListInput>? Pasted = null,
+    Guid? ImportJobId = null,
+    Guid? SelectionId = null);
+
+/// <summary>
+/// Starts a durable internal reconciliation. ActorRef is a trusted boundary field and is always replaced from claims.
+/// PartyRef is the customer whose supplied list is being reconciled, not the signed-in actor.
+/// </summary>
+public sealed record ReconcileCustomerList(
+    Guid CommandId,
+    Guid PartyRef,
+    CustomerListSource Source,
+    DateTime AssertedAt,
+    string ActorRef,
+    int Take = 50,
+    string? After = null);
+
+/// <summary>HTTP request shape; the actor is deliberately absent and is stamped from the authenticated principal.</summary>
+public sealed record ReconcileCustomerListRequest(
+    Guid CommandId,
+    Guid PartyRef,
+    CustomerListSource Source,
+    DateTime AssertedAt,
+    int Take = 50,
+    string? After = null);
+
+public sealed record CustomerListReconciliationRow(
+    int Ordinal,
+    string Input,
+    string? IdentifierType,
+    string? NormalisedIdentifier,
+    string Outcome,
+    IReadOnlyList<string> ValidationReasons,
+    string? Unit,
+    string? Item,
+    string? OtherOwner,
+    Guid? AssertionId,
+    string? AssertionStatus,
+    string? CustomerPoRef,
+    string? CustomerItemRef);
+
+public sealed record CustomerListReconciliationPage(
+    Guid ReconciliationId,
+    string SourceKind,
+    string Customer,
+    int Total,
+    int Owned,
+    int OwnedByAnotherParty,
+    int NotFound,
+    int Invalid,
+    IReadOnlyList<CustomerListReconciliationRow> Items,
+    string? NextCursor,
+    bool Replayed = false);
+
+/// <summary>Verification evidence opens authoritative ownership through OpenOwnership from EvidenceDate.</summary>
+public sealed record VerifyCustomerAssertion(
+    Guid CommandId,
+    Guid AssertionId,
+    string EvidenceRef,
+    DateTime EvidenceDate,
+    Guid LegalEntityId,
+    string ActorRef,
+    IReadOnlyList<string> ActorRoles);
+
+/// <summary>HTTP request shape; actor and roles never travel from the browser.</summary>
+public sealed record VerifyCustomerAssertionRequest(
+    Guid CommandId,
+    string EvidenceRef,
+    DateTime EvidenceDate,
+    Guid LegalEntityId);
+
+public sealed record RejectCustomerAssertion(
+    Guid CommandId,
+    Guid AssertionId,
+    string Reason,
+    string ActorRef,
+    IReadOnlyList<string> ActorRoles);
+
+/// <summary>HTTP request shape; actor and roles never travel from the browser.</summary>
+public sealed record RejectCustomerAssertionRequest(Guid CommandId, string Reason);
+
+public sealed record CustomerAssertionDecision(
+    Guid AssertionId,
+    string Status,
+    string? EvidenceRef,
+    string? RejectionReason,
+    DateTime DecidedAt,
+    string DecidedBy,
+    Guid? OwnershipEpisodeId,
+    bool Replayed);
