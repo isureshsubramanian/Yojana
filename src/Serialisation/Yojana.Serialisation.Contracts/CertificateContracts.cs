@@ -50,6 +50,22 @@ public static class CertificateEventType
     public const string Reprinted = "certificate.reprinted";
 }
 
+public static class ReleaseRecordIssuePoint
+{
+    public const string AtFirstShipment = "at_first_shipment";
+    public const string AtBuildRelease = "at_build_release";
+    public const string OnRequest = "on_request";
+    public static readonly IReadOnlyList<string> All = [AtFirstShipment, AtBuildRelease, OnRequest];
+}
+
+public sealed record ReleaseRecordIssuePointOverride(string ItemClass, string IssuePoint);
+public sealed record ReleaseRecordIssuePointPolicy(string DefaultIssuePoint,
+    IReadOnlyList<ReleaseRecordIssuePointOverride> ItemClassOverrides);
+public sealed record ReleaseRecordIssuePointSettingsView(string DefaultIssuePoint,
+    IReadOnlyList<ReleaseRecordIssuePointOverride> ItemClassOverrides, string Version);
+public sealed record UpdateReleaseRecordIssuePointSettings(string DefaultIssuePoint,
+    IReadOnlyList<ReleaseRecordIssuePointOverride> ItemClassOverrides, string ExpectedVersion);
+
 public static class CertificateTemplateStatus
 {
     public const string Draft = "draft";
@@ -122,6 +138,7 @@ public sealed record ReleaseRecordPayload(
     CertificateTriggerSnapshot Trigger,
     IReadOnlyList<ReleaseIdentifierSnapshot> Identifiers,
     ReleaseModelSnapshot Model,
+    string BuildSource,
     DateTime? BuildDate,
     string? Facility,
     IReadOnlyList<string> SourceLots,
@@ -169,7 +186,7 @@ public sealed record CertificateBuildFact(Guid BuildRecordId, int Version, DateT
     string? Revision, Guid? FacilityId, string Payload, string PayloadHash, string? ReleaseSignatureRef);
 public sealed record CertificateOwnershipFact(Guid EpisodeId, Guid? HolderRef, string? HolderKind, DateTime EffectiveFrom);
 public sealed record CertificateUnitFact(Guid UnitId, string LifecycleStatus, string Origin, string HistoryDepth, Guid ItemId,
-    Guid? LotId, CertificateBuildFact? Build, CertificateOwnershipFact? Ownership,
+    Guid? LotId, DateTime CommissionedAt, CertificateBuildFact? Build, CertificateOwnershipFact? Ownership,
     IReadOnlyList<CertificateUnitIdentifierFact> Identifiers, IReadOnlyList<CertificateAssemblyFact> Assembly);
 
 public interface ICertificateUnitReadPort

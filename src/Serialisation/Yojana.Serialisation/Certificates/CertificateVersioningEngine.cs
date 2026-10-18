@@ -14,7 +14,8 @@ namespace Yojana.Serialisation.Certificates;
 
 public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITenantContext tenant, IClock clock,
     ICertificateUnitReadPort units, CertificatePayloadBuilder payloads, CertificateTemplateService templates, DocumentNumbers numbers,
-    IUnitEventWriter events, IUserDirectory users, CertificateDatabaseLock databaseLock)
+    IUnitEventWriter events, IUserDirectory users, CertificateDatabaseLock databaseLock,
+    ReleaseRecordIssuePolicy issuePolicy)
 {
     public Task<IssueCertificateVersionResult> IssueAsync(string documentKind, CertificateTriggerContext trigger,
         string reason, CancellationToken cancellationToken) => IssueAsync(new IssueCertificateVersion(
@@ -67,7 +68,7 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
                 }
                 if (transaction is not null) await transaction.CommitAsync(cancellationToken);
                 return receipt.Outcome == CertificateTriggerOutcome.Absorbed
-                    ? new(false, true, null, null, null, Absorbed: true)
+                    ? new(false, true, null, null, null, receipt.RefusalRule, receipt.RefusalDetail, Absorbed: true)
                     : new(false, true, null, null, null, receipt.RefusalRule, receipt.RefusalDetail);
             }
 
@@ -81,6 +82,22 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
             if (unit.LifecycleStatus != LifecycleStatus.Released)
                 return await RefuseAsync("certificate_unit_not_released", $"Unit {command.UnitId} is '{unit.LifecycleStatus}'; certificates can be issued only for released units.");
             var itemClass = await payloads.ItemClassAsync(unit, cancellationToken);
+            var previous = await db.CertificateInstances.Where(row => row.TenantId == tenantId && row.UnitId == command.UnitId
+                    && row.DocumentKind == command.DocumentKind && row.Status == CertificateStatus.Issued)
+                .OrderByDescending(row => row.Version).FirstOrDefaultAsync(cancellationToken);
+            if (command.DocumentKind == CertificateDocumentKind.ReleaseRecord)
+            {
+                var triggerSchema = command.TriggerSchema ?? "Unit.ReleaseFact";
+                var decision = await issuePolicy.DecideAsync(unit, itemClass, triggerSchema, previous is not null,
+                    cancellationToken);
+                if (!decision.Issue)
+                {
+                    db.CertificateTriggers.Add(Trigger(CertificateTriggerOutcome.Absorbed, null,
+                        decision.Reason, decision.Detail));
+                    await PersistAsync();
+                    return new(false, false, null, null, null, decision.Reason, decision.Detail, Absorbed: true);
+                }
+            }
             var templateVersionId = await templates.ActiveVersionAsync(command.DocumentKind, command.FormType,
                 itemClass, cancellationToken);
             if (templateVersionId is null)
@@ -95,17 +112,14 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
                 return await RefuseAsync(exception.Refusal.Rule, exception.Refusal.Message);
             }
             if (built is null) return await RefuseAsync("certificate_payload_unavailable", $"Certificate facts for unit {command.UnitId} are unavailable.");
-            if (command.DocumentKind == CertificateDocumentKind.ReleaseRecord && built.AsBuiltRevisionId is null)
-                return await RefuseAsync("certificate_build_record_missing", $"Released unit {command.UnitId} has no BuildRecord.");
-            var previous = await db.CertificateInstances.Where(row => row.TenantId == tenantId && row.UnitId == command.UnitId
-                    && row.DocumentKind == command.DocumentKind && row.Status == CertificateStatus.Issued)
-                .OrderByDescending(row => row.Version).FirstOrDefaultAsync(cancellationToken);
             var factsHash = CanonicalJson.HashExcludingRootProperties(built.CanonicalPayload, "trigger");
             if (previous?.FactsHash == factsHash)
             {
-                db.CertificateTriggers.Add(Trigger(CertificateTriggerOutcome.Absorbed));
+                const string reason = "certificate_facts_unchanged";
+                const string detail = "The trigger reached an existing certificate chain, but the certificate facts have not changed.";
+                db.CertificateTriggers.Add(Trigger(CertificateTriggerOutcome.Absorbed, null, reason, detail));
                 await PersistAsync();
-                return new(false, false, null, null, null, Absorbed: true);
+                return new(false, false, null, null, null, reason, detail, Absorbed: true);
             }
             var version = (previous?.Version ?? 0) + 1;
             if (version > 1 && string.IsNullOrWhiteSpace(command.SupersedeReason))

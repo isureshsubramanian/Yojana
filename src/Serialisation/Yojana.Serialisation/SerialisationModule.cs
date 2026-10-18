@@ -351,6 +351,11 @@ public static class SerialisationModule
         builder.Services.AddScoped<WarrantyCertificatePayloadBuilder>();
         builder.Services.AddScoped<CertificatePayloadBuilder>();
         builder.Services.AddScoped<CertificateDatabaseLock>();
+        // Coupled to ReleaseRecordIssuePointSettings for the same two-DbContext Wolverine constraint documented on
+        // that type: the factory keeps PlatformDbContext outside certificate trigger handler discovery.
+        builder.Services.AddScoped(sp => new ReleaseRecordIssuePointSettings(
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped<ReleaseRecordIssuePolicy>();
         builder.Services.AddScoped<CertificateTemplateService>();
         builder.Services.AddScoped<CertificateVersioningEngine>();
         builder.Services.AddScoped<CertificateQueries>();

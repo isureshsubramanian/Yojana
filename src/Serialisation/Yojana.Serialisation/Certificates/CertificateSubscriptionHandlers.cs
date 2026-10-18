@@ -19,6 +19,9 @@ internal static class CertificatePublishedEventQueue
     public const string Name = "serialisation-published-events";
 }
 
+// TIGHT COUPLING (customer-sale command hand-off): ChangeCustodyHandler and OpenOwnershipHandler publish this work
+// directly because Wolverine routing is message-type-wide and cannot durably subscribe only to sale facts. Replacing
+// this message or queue without changing those command handlers silently loses first-shipment certificate issuance.
 /// <summary>The narrow, tenant-scoped hand-off from published-event subscribers to certificate persistence.</summary>
 public sealed record CertificateTriggerWork(IssueCertificateVersion Command);
 
@@ -47,7 +50,13 @@ public static class ReleaseCertificateSubscriptionHandler
         Queue(bus, tenant, CertificateDocumentKind.ReleaseRecord, message.Header, CertificateSupersedeReason.Correction, ct);
 
     public static Task Handle(UnitGraded message, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-        Queue(bus, tenant, CertificateDocumentKind.ReleaseRecord, message.Header, CertificateSupersedeReason.Correction, ct);
+        // TIGHT COUPLING (refurbishment release trigger): RefurbishmentService grades and releases in one transaction.
+        // Its Refurbishment.Released fact owns that certificate version and reason; queueing this adjacent grade first
+        // would create a misleading correction version. Separating the facts requires a shared operation id instead.
+        message.Header.Document?.Type == "refurbishment_work_order"
+            ? Task.CompletedTask
+            : Queue(bus, tenant, CertificateDocumentKind.ReleaseRecord, message.Header,
+                CertificateSupersedeReason.Correction, ct);
 
     public static Task Handle(RefurbishmentReleased message, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
         Queue(bus, tenant, CertificateDocumentKind.ReleaseRecord, message.Header with { UnitId = message.ReleasedUnitId }, CertificateSupersedeReason.Refurbishment, ct);
@@ -80,7 +89,7 @@ public static class ReleaseCertificateSubscriptionHandler
         Queue(bus, tenant, new IssueCertificateVersion(message.RequestId, message.UnitId, message.DocumentKind,
             message.DocumentKind == CertificateDocumentKind.ReleaseRecord ? CertificateFormType.GenericRelease : CertificateFormType.Custom,
             null, message.RequestedAt, "system:certificates", message.LegalEntityId, CertificateProvenance.Reconstructed,
-            ["original build facts"], message.EvidenceRefs), ct);
+            ["original build facts"], message.EvidenceRefs, TriggerSchema: ReleaseRecordIssuePolicy.RequestedTrigger), ct);
 
     internal static Task Queue(IMessageBus bus, ITenantContext tenant, string documentKind,
         PublishedEventHeader header, string reason, CancellationToken cancellationToken) =>

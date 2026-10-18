@@ -111,14 +111,31 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         {
             using var scope = TenantScope();
             var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
-            // Purchased units enter the released lifecycle at commissioning, but MOD-09 version 1 is issued only from
-            // a BuildRecord. Count actual first-release facts, not every unit whose lifecycle happens to be released.
-            var releaseExpected = await (from build in db.BuildRecords.AsNoTracking()
-                                         join unit in db.Units.AsNoTracking()
-                                             on new { build.TenantId, build.UnitId }
-                                             equals new { unit.TenantId, unit.UnitId }
-                                         where unit.LifecycleStatus == LifecycleStatus.Released
-                                         select build.UnitId).Distinct().CountAsync(cancellationToken);
+            var issueSettings = await scope.ServiceProvider.GetRequiredService<ReleaseRecordIssuePointSettings>()
+                .GetAsync(cancellationToken);
+            var releasedUnits = await (from unit in db.Units.AsNoTracking()
+                                       join assignment in db.ItemAssignments.AsNoTracking()
+                                           on new { unit.TenantId, unit.UnitId }
+                                           equals new { assignment.TenantId, assignment.UnitId }
+                                       where unit.LifecycleStatus == LifecycleStatus.Released && assignment.ValidTo == null
+                                       select new { unit.UnitId, assignment.ItemId }).ToListAsync(cancellationToken);
+            var built = (await db.BuildRecords.AsNoTracking().Select(row => row.UnitId).Distinct()
+                .ToListAsync(cancellationToken)).ToHashSet();
+            var sold = (await db.Episodes.AsNoTracking().Where(row => row.Reason == EpisodeReason.Sale
+                    && row.PartyType == PartyType.Customer
+                    && (row.Kind == EpisodeKind.Ownership
+                        || row.Kind == EpisodeKind.Custody && row.LocationKind == LocationKind.CustomerSite))
+                .Select(row => row.UnitId).Distinct().ToListAsync(cancellationToken)).ToHashSet();
+            var itemClasses = catalogue.Items.Values.ToDictionary(row => row.Id,
+                row => row.Serialisation?.ItemClass, EqualityComparer<Guid>.Default);
+            var releaseExpected = releasedUnits.Count(row =>
+            {
+                var issuePoint = ReleaseRecordIssuePointSettings.Resolve(issueSettings,
+                    itemClasses.GetValueOrDefault(row.ItemId));
+                return issuePoint == ReleaseRecordIssuePoint.AtBuildRelease
+                    ? built.Contains(row.UnitId) || sold.Contains(row.UnitId)
+                    : issuePoint == ReleaseRecordIssuePoint.AtFirstShipment && sold.Contains(row.UnitId);
+            });
             var releaseActual = await db.CertificateInstances.AsNoTracking()
                 .Where(row => row.DocumentKind == CertificateDocumentKind.ReleaseRecord
                     && row.Status == CertificateStatus.Issued)
@@ -312,6 +329,20 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         var currency = scope.ServiceProvider.GetRequiredService<ITenantCurrency>();
         await currency.SetAsync("EUR", cancellationToken);
         await currency.SetAcceptedAsync(["GBP", "INR", "USD"], cancellationToken);
+        var certificateSettings = scope.ServiceProvider.GetRequiredService<ReleaseRecordIssuePointSettings>();
+        var currentCertificateSettings = await certificateSettings.GetAsync(cancellationToken);
+        var certificateOverrides = new[]
+        {
+            new ReleaseRecordIssuePointOverride("server", ReleaseRecordIssuePoint.AtFirstShipment),
+            new ReleaseRecordIssuePointOverride("server_node", ReleaseRecordIssuePoint.AtFirstShipment),
+        };
+        if (currentCertificateSettings.DefaultIssuePoint != ReleaseRecordIssuePoint.AtBuildRelease
+            || !currentCertificateSettings.ItemClassOverrides.SequenceEqual(certificateOverrides))
+        {
+            await certificateSettings.SetAsync(new UpdateReleaseRecordIssuePointSettings(
+                ReleaseRecordIssuePoint.AtBuildRelease, certificateOverrides,
+                currentCertificateSettings.Version), cancellationToken);
+        }
         var serialisation = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var firstReceipt = Document("GR-DIMM-2601", "receipt");
         var existingAnchorFact = await serialisation.Events.AsNoTracking()

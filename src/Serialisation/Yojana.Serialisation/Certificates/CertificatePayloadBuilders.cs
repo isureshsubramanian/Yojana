@@ -21,7 +21,7 @@ public sealed class ReleaseRecordPayloadBuilder(
         var condition = await conditions.ReadAsync(unit.UnitId, cancellationToken);
         var refurbishment = await refurbishments.ReadAsync(unit.UnitId, cancellationToken);
         var replacement = await replacements.ReadAsync(unit.UnitId, cancellationToken);
-        var buildAt = unit.Build?.ReleasedAt ?? trigger.EffectiveAt;
+        var buildAt = unit.Build?.ReleasedAt ?? unit.CommissionedAt;
         var report = await completeness.CheckAsync(unit.UnitId, unit.ItemId, DateOnly.FromDateTime(buildAt), cancellationToken);
         var itemIds = unit.Assembly.Select(row => row.ChildItemId).OfType<Guid>().Append(unit.ItemId)
             .Concat(report.Slots.Select(row => row.ExpectedItemId)).Distinct().ToList();
@@ -47,7 +47,7 @@ public sealed class ReleaseRecordPayloadBuilder(
                 replaces ??= Join(replacement.Replaces.Values);
                 replacedBy ??= Join(replacement.ReplacedBy.Values);
             }
-            var issuer = row.IssuerRef is { } issuerRef && partyNames.TryGetValue(issuerRef, out var issuerLabel)
+            var issuer = unit.Build is not null && row.IssuerRef is { } issuerRef && partyNames.TryGetValue(issuerRef, out var issuerLabel)
                 ? issuerLabel.Name ?? issuerLabel.Code : null;
             return new ReleaseIdentifierSnapshot(row.Type, row.Scheme, row.Value, issuer, row.ValidFrom, row.ValidTo,
                 replaces, replacedBy);
@@ -80,7 +80,8 @@ public sealed class ReleaseRecordPayloadBuilder(
             ? refLabel.Name ?? refLabel.Code : null;
         return new("1.0", formType, trigger, identifiers,
             new ReleaseModelSnapshot(model?.Code ?? "Unknown item", model?.Name, unit.Build?.Revision),
-            unit.Build?.ReleasedAt, facility, lots, assembly, required, condition.Tests, condition.Grade,
+            unit.Build is null ? "purchased" : "built_in_house",
+            unit.Build?.ReleasedAt ?? unit.CommissionedAt, facility, lots, assembly, required, condition.Tests, condition.Grade,
             refurbishment.CycleNumber, condition.SanitisationReference, condition.Firmware,
             refurbishment.WorkReference, refurbisher, refurbishment.LifeEpisode, presentation.Issuer,
             presentation.Branding, provenance);

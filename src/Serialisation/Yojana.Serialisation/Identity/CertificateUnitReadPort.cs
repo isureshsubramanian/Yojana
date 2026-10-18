@@ -17,6 +17,9 @@ public sealed class CertificateUnitReadPort(SerialisationDbContext db, ITenantCo
         var assignment = await db.ItemAssignments.AsNoTracking().Where(row => row.TenantId == tenantId && row.UnitId == unitId && row.ValidTo == null)
             .Select(row => new { row.ItemId, row.ModelVersionId }).SingleOrDefaultAsync(cancellationToken);
         if (assignment is null) return null;
+        var commissionedAt = await db.Events.AsNoTracking().Where(row => row.TenantId == tenantId
+                && row.UnitId == unitId && row.EventId == unit.CreatedEventId)
+            .Select(row => row.EventTime).SingleAsync(cancellationToken);
         var build = await db.BuildRecords.AsNoTracking().Where(row => row.TenantId == tenantId && row.UnitId == unitId)
             .OrderByDescending(row => row.Version).FirstOrDefaultAsync(cancellationToken);
         var ownership = await db.Episodes.AsNoTracking().Where(row => row.TenantId == tenantId && row.UnitId == unitId
@@ -44,7 +47,7 @@ public sealed class CertificateUnitReadPort(SerialisationDbContext db, ITenantCo
         var buildFact = build is null ? null : new CertificateBuildFact(build.BuildRecordId, build.Version, build.ReleasedAt,
             build.ItemId, build.ModelVersionId, build.Revision, build.FacilityId, build.Payload, build.PayloadHash, build.ReleaseSignatureRef);
         return new CertificateUnitFact(unitId, unit.LifecycleStatus, unit.Origin, unit.HistoryDepth, assignment.ItemId,
-            unit.LotId, buildFact, ownership, identifiers, assembly);
+            unit.LotId, commissionedAt, buildFact, ownership, identifiers, assembly);
     }
 
     public Task<IReadOnlyList<Guid>> FindUnitIdsBySerialAsync(string serial, CancellationToken cancellationToken) =>

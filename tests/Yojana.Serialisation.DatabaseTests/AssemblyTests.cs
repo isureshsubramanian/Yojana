@@ -122,7 +122,7 @@ public sealed class AssemblyTests(SerialisationHostFixture fixture)
         Assert.Equal(LifecycleStatus.Released, again.ParentLifecycleStatus);
         using var scope = fixture.ScopeFor(tenant);
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
-        Assert.Equal(UnitEventType.Reassembled, (await db.Events.Where(e => e.UnitId == parent).OrderByDescending(e => e.Seq).FirstAsync()).EventType);
+        Assert.Equal(1, await db.Events.CountAsync(e => e.UnitId == parent && e.EventType == UnitEventType.Reassembled));
         Assert.Equal([UnitEventType.Commissioned, UnitEventType.Installed, UnitEventType.Removed, UnitEventType.Installed], await db.Events.Where(e => e.UnitId == x).OrderBy(e => e.Seq).Select(e => e.EventType).ToListAsync());
         Assert.Equal(3, await db.AssemblyLinks.CountAsync(l => l.ParentUnitId == parent));
         Assert.Equal(1, await db.AssemblyLinks.CountAsync(l => l.ParentUnitId == parent && l.RemovedAt == null));
