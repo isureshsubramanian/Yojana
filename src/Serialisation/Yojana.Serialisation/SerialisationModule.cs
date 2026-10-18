@@ -15,6 +15,7 @@ using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Ports;
 using Yojana.Serialisation.Queries;
 using Yojana.Serialisation.Search;
+using Yojana.Serialisation.TimeZones;
 using Yojana.Serialisation.Selection;
 using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Projections;
@@ -319,7 +320,16 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<IItemPolicyPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
         builder.Services.TryAddSingleton<ICustomerContractPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
         builder.Services.TryAddSingleton<IVendorWarrantyTermsPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
-        builder.Services.TryAddSingleton<ITimeZonePort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
+        builder.Services.TryAddSingleton<ITimeZoneSourcePort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
+        // Coupled to TenantTimeZoneSettings for the same two-DbContext Wolverine constraint as the certificate settings:
+        // the factories hide PlatformDbContext from entitlement handlers. Registering either implementation by type
+        // makes Wolverine discover both database contexts and the transactional handler graph no longer starts.
+        builder.Services.AddScoped(sp => new TenantTimeZoneSettings(
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>(),
+            sp.GetRequiredService<IPartyNamePort>(),
+            sp.GetRequiredService<Yojana.Platform.Contracts.Time.IClock>()));
+        builder.Services.TryAddScoped<ITimeZonePort>(sp => new TenantTimeZonePort(
+            sp.GetRequiredService<TenantTimeZoneSettings>(), sp.GetRequiredService<ITimeZoneSourcePort>()));
         builder.Services.TryAddSingleton<IWarrantyClaimsPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
         builder.Services.TryAddSingleton<IWarrantyCertificatePort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
 

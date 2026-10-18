@@ -19,6 +19,7 @@ using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Ports;
 using Yojana.Serialisation.Refurbishments;
+using Yojana.Serialisation.TimeZones;
 
 namespace Yojana.Serialisation.DatabaseTests;
 
@@ -438,10 +439,12 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         const string facilityName = "Fictional North Works";
         fixture.Services.GetRequiredService<InMemoryLocationNameRegistry>().Register(
             new LocationLabel(setup.LocationId, "FAC-21", facilityName, LocationKind.Warehouse));
-        var zones = fixture.Services.GetRequiredService<InMemoryWarrantyPorts>();
-        zones.RegisterZone(issuer, "Asia/Kolkata");
         using (var settingsScope = fixture.ScopeFor(setup.Tenant))
         {
+            var timeZones = settingsScope.ServiceProvider.GetRequiredService<TenantTimeZoneSettings>();
+            var timeZoneView = await timeZones.GetAsync(CancellationToken.None);
+            await timeZones.SetAsync(new UpdateTenantTimeZoneSettings("Asia/Kolkata", [], timeZoneView.Version),
+                "tenant.admin", CancellationToken.None);
             var settings = settingsScope.ServiceProvider.GetRequiredService<CertificateDateFormatSettings>();
             var settingsView = await settings.GetAsync(CancellationToken.None);
             await settings.SetAsync(new UpdateCertificateDateFormatSettings(
@@ -469,12 +472,25 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         Assert.DoesNotContain(setup.LocationId.ToString("D"), beforeHtml, StringComparison.OrdinalIgnoreCase);
         Assert.True(beforeHtml.Split("IST", StringSplitOptions.None).Length >= 3,
             "The issued and signed lines should both carry the snapshotted zone abbreviation.");
+        db.ReprintLogs.Add(new Yojana.Serialisation.Data.Entities.ReprintLog
+        {
+            TenantId = setup.Tenant, ReprintId = Guid.NewGuid(), CertificateId = certificate.CertificateId,
+            Version = certificate.Version, RequestedBy = "quality.user", At = At.AddHours(1).AddMinutes(30),
+        });
+        await db.SaveChangesAsync();
+        var beforeDetail = await queries.DetailAsync(certificate.CertificateId, CancellationToken.None);
+        Assert.EndsWith("IST", beforeDetail!.IssuedAtDisplay, StringComparison.Ordinal);
+        Assert.All(beforeDetail.Signatures, row => Assert.EndsWith("IST", row.SignedAtDisplay, StringComparison.Ordinal));
+        Assert.EndsWith("IST", Assert.Single(beforeDetail.Reprints).AtDisplay, StringComparison.Ordinal);
 
-        zones.RegisterZone(issuer, "America/New_York");
         fixture.Services.GetRequiredService<InMemoryLocationNameRegistry>().Register(
             new LocationLabel(setup.LocationId, "FAC-22", "Fictional South Works", LocationKind.Warehouse));
         using (var settingsScope = fixture.ScopeFor(setup.Tenant))
         {
+            var timeZones = settingsScope.ServiceProvider.GetRequiredService<TenantTimeZoneSettings>();
+            var timeZoneView = await timeZones.GetAsync(CancellationToken.None);
+            await timeZones.SetAsync(new UpdateTenantTimeZoneSettings("America/New_York", [], timeZoneView.Version),
+                "tenant.admin", CancellationToken.None);
             var settings = settingsScope.ServiceProvider.GetRequiredService<CertificateDateFormatSettings>();
             var settingsView = await settings.GetAsync(CancellationToken.None);
             await settings.SetAsync(new UpdateCertificateDateFormatSettings(
@@ -484,6 +500,9 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         var after = await queries.RenderAsync(certificate.CertificateId, CancellationToken.None);
 
         Assert.Equal(before.Bytes, after!.Bytes);
+        var afterDetail = await queries.DetailAsync(certificate.CertificateId, CancellationToken.None);
+        Assert.Equal(beforeDetail.IssuedAtDisplay, afterDetail!.IssuedAtDisplay);
+        Assert.Equal(beforeDetail.Reprints.Single().AtDisplay, afterDetail.Reprints.Single().AtDisplay);
         await InvokeAsync<CorrectIdentifierResult>(setup.Tenant, new CorrectIdentifier(Guid.NewGuid(), setup.UnitId,
             IdentifierType.InternalSerial, setup.Serial + "-FORMAT", IdentifierCorrectionReason.Typo, At.AddHours(2),
             "quality.user", issuer));

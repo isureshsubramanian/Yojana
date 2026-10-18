@@ -18,6 +18,7 @@ import {
   type CertificateDatePattern,
   type CertificateTimePattern,
 } from "./certificateDateFormats";
+import { timeZoneSettingsApi, type TenantTimeZoneSettings } from "./timeZoneSettingsApi";
 
 const options: ReadonlyArray<{ value: ReleaseRecordIssuePoint; label: string; help: string }> = [
   { value: "at_build_release", label: "At build release", help: "Built units receive version 1 when quality releases the build; bought-in units wait for their first customer shipment." },
@@ -29,6 +30,7 @@ export function Component() {
   const permitted = useSession().roles.includes("tenant_administrator");
   const [settings, setSettings] = useState<ReleaseRecordIssuePointSettings | null>(null);
   const [dateFormats, setDateFormats] = useState<CertificateDateFormatSettings | null>(null);
+  const [timeZone, setTimeZone] = useState<TenantTimeZoneSettings | null>(null);
   const [loading, setLoading] = useState(permitted);
   const [busy, setBusy] = useState(false);
   const [dateBusy, setDateBusy] = useState(false);
@@ -39,8 +41,8 @@ export function Component() {
   useEffect(() => {
     if (!permitted) return;
     const controller = new AbortController();
-    Promise.all([certificateSettingsApi.get(controller.signal), certificateSettingsApi.getDateFormats(controller.signal)])
-      .then(([issuePoint, formats]) => { setSettings(issuePoint); setDateFormats(formats); })
+    Promise.all([certificateSettingsApi.get(controller.signal), certificateSettingsApi.getDateFormats(controller.signal), timeZoneSettingsApi.get(controller.signal)])
+      .then(([issuePoint, formats, zone]) => { setSettings(issuePoint); setDateFormats(formats); setTimeZone(zone); })
       .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); })
       .finally(() => setLoading(false));
     return () => controller.abort();
@@ -83,6 +85,7 @@ export function Component() {
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Settings", to: "/settings" }, { label: "Certificates" }]} />
     <div className="page-header"><div><div className="eyebrow">Settings · tenant administrator</div><h1>Certificate settings</h1><p className="sub">Choose when release records begin and how dates appear on newly issued certificates. Existing certificate presentation snapshots never change.</p></div><div className="actions"><Link className="btn" to="/settings">Back to settings</Link><button type="button" className="btn primary" disabled={loading || busy || !settings || invalid} aria-busy={busy} onClick={() => void save()}><Icon name="check" />{busy ? "Saving…" : "Save issue point"}</button></div></div>
     <ErrorNote error={error} />
+    {timeZone && !timeZone.tenantTimeZone && <div className="note warn"><strong>No tenant time zone set — documents print UTC.</strong>&nbsp;<Link to="/settings/time-zone">Set the tenant time zone</Link> for future certificate versions.</div>}
     {saved && <div className="note ok"><strong>Certificate settings saved.</strong>&nbsp;Future issue-point triggers use this configuration.</div>}
     {loading && <p className="muted">Loading certificate settings…</p>}
     {settings && <div className="stack top">

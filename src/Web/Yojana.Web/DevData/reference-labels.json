@@ -40,6 +40,7 @@
     { "id": "20000000-0000-0000-0000-000000000016", "code": "L-PARCELORA", "name": "Parcelora Logistics", "partyType": "3pl" },
     { "id": "20000000-0000-0000-0000-000000000017", "code": "S-ASTERRA", "name": "Asterra Field Services", "partyType": "service_entity" },
     { "id": "00000000-0000-0000-0000-000000000001", "code": "LE-ASTERRA", "name": "Asterra Compute Works", "partyType": "legal_entity" },
+    { "id": "00000000-0000-0000-0000-000000000002", "code": "LE-ASTERRA-UK", "name": "Asterra Britain Operations", "partyType": "legal_entity" },
     { "id": "20000000-0000-0000-0000-000000000019", "code": "V-VOLTARY-HIST", "name": "Voltary Legacy Supply", "partyType": "vendor" }
   ],
   "documents": [

@@ -30,8 +30,26 @@ public interface IVendorWarrantyTermsPort
     Task<VendorWarrantyTerm?> TermsForAsync(Guid vendorPartyRef, Guid itemId, DateOnly receiptDate, CancellationToken cancellationToken);
 }
 
-/// <summary>IANA zone of a customer site or of the obligor legal entity, for the reference time-zone rule (case 112); null when unknown.</summary>
+public static class TimeZonePurpose
+{
+    public const string EntitlementCalendar = "entitlement_calendar";
+    public const string DocumentPresentation = "document_presentation";
+}
+
+/// <summary>
+/// IANA zone of a customer site or legal entity. Document presentation may fall back to the tenant zone; entitlement
+/// calendar maths deliberately requests only a directly assigned location or entity zone so its established dates do
+/// not change when an administrator configures the tenant's printing zone.
+/// </summary>
 public interface ITimeZonePort
+{
+    Task<string?> ForLocationAsync(Guid locationId, string purpose, CancellationToken cancellationToken);
+
+    Task<string?> ForLegalEntityAsync(Guid legalEntityId, string purpose, CancellationToken cancellationToken);
+}
+
+/// <summary>Direct location/entity zones from their owning modules, without tenant or UTC fallback.</summary>
+public interface ITimeZoneSourcePort
 {
     Task<string?> ForLocationAsync(Guid locationId, CancellationToken cancellationToken);
 

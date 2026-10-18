@@ -61,6 +61,7 @@ export const router = createBrowserRouter([
           // P6 OD-26 numbering settings route block.
           { path: "settings", lazy: () => import("./settings/Settings") },
           // End P6 OD-26 numbering settings route block.
+          { path: "settings/time-zone", lazy: () => import("./settings/TimeZoneSettings") },
           { path: "settings/currencies", lazy: () => import("./settings/Currencies") },
           { path: "settings/recovery", lazy: () => import("./settings/SupplierRecovery") },
           { path: "settings/refurbishment", lazy: () => import("./settings/RefurbishmentPolicy") },

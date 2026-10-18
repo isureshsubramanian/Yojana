@@ -70,13 +70,14 @@ public static class LabelBindableField
     public const string AsBuiltRevision = "as_built.revision";
     public const string AsBuiltBuildDate = "as_built.build_date";
     public const string BaseEntitlementEndDate = "entitlement.base.end_date";
+    public const string PrintedAt = "label.printed_at";
     public const string LookupUrl = "lookup.url";
 
     public static readonly IReadOnlyList<string> All =
     [
         UnitLifecycleStatus, UnitExpiryDate, ItemCode, ItemName, ItemRevision, IdentifierValue,
         ManufacturerSerial, InternalSerial, VendorSerial, CustomerAssetTag, AsBuiltRevision,
-        AsBuiltBuildDate, BaseEntitlementEndDate, LookupUrl,
+        AsBuiltBuildDate, BaseEntitlementEndDate, PrintedAt, LookupUrl,
     ];
 }
 

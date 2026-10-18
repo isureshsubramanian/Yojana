@@ -4,13 +4,13 @@ export interface Page<T> { items: T[]; total: number; skip: number; take: number
 
 export interface CertificateListRow {
   certificateId: string; unitId: string; itemId: string | null; primarySerial: string; documentKind: string; formType: string;
-  version: number; trackingNumber: string; status: string; issuedAt: string; provenance: string;
+  version: number; trackingNumber: string; status: string; issuedAt: string; issuedAtDisplay: string; provenance: string;
 }
 export interface CertificateSignature {
-  signatureId: string; printedName: string; meaning: string; signedAt: string; hashSigned: string; method: string;
+  signatureId: string; printedName: string; meaning: string; signedAt: string; signedAtDisplay: string; hashSigned: string; method: string;
 }
 export interface CertificateReprint {
-  reprintId: string; version: number; requestedBy: string; at: string; recipient: string | null;
+  reprintId: string; version: number; requestedBy: string; at: string; atDisplay: string; recipient: string | null;
 }
 export interface BrandingSnapshot {
   profile: string; displayName: string | null; mark: string | null; logoAssetId: string | null;

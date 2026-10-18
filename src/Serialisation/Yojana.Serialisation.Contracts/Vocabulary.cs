@@ -173,6 +173,7 @@ public static class PartyType
     public const string Insurer = "insurer";
     public const string MarketplaceBuyer = "marketplace_buyer";
     public const string GroupEntity = "group_entity";
+    public const string LegalEntity = "legal_entity";
     public const string Us = "us";
 }
 

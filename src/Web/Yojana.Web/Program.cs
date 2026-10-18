@@ -16,8 +16,11 @@ using Yojana.Platform.Presence;
 using Yojana.Platform.Seeding;
 using Yojana.Platform.Security;
 using Yojana.Platform.Shell;
+using Yojana.Platform.Tenancy;
 using Yojana.Serialisation;
+using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Ports;
+using Yojana.Serialisation.TimeZones;
 using Yojana.Web;
 
 // The web client (web/, MOD-02) is built by esbuild into web/dist and copied into this host's output as
@@ -52,6 +55,21 @@ if (args.Contains("--migrate") || args.Contains("--seed"))
         }
 
         await DevelopmentSeeder.SeedAsync(app.Services, password, CancellationToken.None);
+        using (var scope = app.Services.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<ITenantContextSetter>().Set(DevelopmentSeeder.DevTenantId);
+            var platform = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var administrator = await platform.Users.AsNoTracking()
+                .SingleAsync(user => user.Email == DevelopmentSeeder.AdministratorEmail(DevelopmentSeeder.EmailDomain));
+            var timeZones = scope.ServiceProvider.GetRequiredService<TenantTimeZoneSettings>();
+            var current = await timeZones.GetAsync(CancellationToken.None);
+            if (current.TenantTimeZone is null)
+            {
+                await timeZones.SetAsync(new UpdateTenantTimeZoneSettings("Asia/Kolkata",
+                    current.LegalEntityOverrides, current.Version), administrator.Id.ToString(),
+                    CancellationToken.None);
+            }
+        }
         app.Logger.LogInformation("Seeded tenant {Code} with one user per role (password from YOJANA_SEED_PASSWORD)", DevelopmentSeeder.DevTenantCode);
     }
 
