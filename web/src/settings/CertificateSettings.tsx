@@ -6,9 +6,18 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote } from "../units/common";
 import {
   certificateSettingsApi,
+  type CertificateDateFormatSettings,
   type ReleaseRecordIssuePoint,
   type ReleaseRecordIssuePointSettings,
 } from "./certificateSettingsApi";
+import {
+  certificateDatePatterns,
+  certificateDateTimeExample,
+  certificateLanguageName,
+  certificateTimePatterns,
+  type CertificateDatePattern,
+  type CertificateTimePattern,
+} from "./certificateDateFormats";
 
 const options: ReadonlyArray<{ value: ReleaseRecordIssuePoint; label: string; help: string }> = [
   { value: "at_build_release", label: "At build release", help: "Built units receive version 1 when quality releases the build; bought-in units wait for their first customer shipment." },
@@ -19,15 +28,19 @@ const options: ReadonlyArray<{ value: ReleaseRecordIssuePoint; label: string; he
 export function Component() {
   const permitted = useSession().roles.includes("tenant_administrator");
   const [settings, setSettings] = useState<ReleaseRecordIssuePointSettings | null>(null);
+  const [dateFormats, setDateFormats] = useState<CertificateDateFormatSettings | null>(null);
   const [loading, setLoading] = useState(permitted);
   const [busy, setBusy] = useState(false);
+  const [dateBusy, setDateBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [dateSaved, setDateSaved] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!permitted) return;
     const controller = new AbortController();
-    certificateSettingsApi.get(controller.signal).then(setSettings)
+    Promise.all([certificateSettingsApi.get(controller.signal), certificateSettingsApi.getDateFormats(controller.signal)])
+      .then(([issuePoint, formats]) => { setSettings(issuePoint); setDateFormats(formats); })
       .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); })
       .finally(() => setLoading(false));
     return () => controller.abort();
@@ -41,6 +54,22 @@ export function Component() {
     finally { setBusy(false); }
   };
 
+  const saveDateFormats = async () => {
+    if (!dateFormats) return;
+    setDateBusy(true); setDateSaved(false); setError(null);
+    try { setDateFormats(await certificateSettingsApi.saveDateFormats(dateFormats)); setDateSaved(true); }
+    catch (reason) { setError(reason); }
+    finally { setDateBusy(false); }
+  };
+
+  const changeDateFormat = (language: string, field: "datePattern" | "timePattern",
+    value: CertificateDatePattern | CertificateTimePattern) => {
+    if (!dateFormats) return;
+    setDateSaved(false);
+    setDateFormats({ ...dateFormats, languages: dateFormats.languages.map((row) => row.language === language
+      ? { ...row, [field]: value } : row) });
+  };
+
   if (!permitted) return <main className="content" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Settings", to: "/settings" }, { label: "Certificates" }]} />
     <div className="page-header"><div><div className="eyebrow">Settings · tenant administrator</div><h1>Certificate settings</h1></div></div>
@@ -52,7 +81,7 @@ export function Component() {
 
   return <main className="content" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Settings", to: "/settings" }, { label: "Certificates" }]} />
-    <div className="page-header"><div><div className="eyebrow">Settings · tenant administrator</div><h1>Certificate settings</h1><p className="sub">Choose when a unit receives its first release record. Changes apply only when a unit reaches a later trigger; existing certificates are never reissued or withdrawn by this edit.</p></div><div className="actions"><Link className="btn" to="/settings">Cancel</Link><button type="button" className="btn primary" disabled={loading || busy || !settings || invalid} aria-busy={busy} onClick={() => void save()}><Icon name="check" />{busy ? "Saving…" : "Save"}</button></div></div>
+    <div className="page-header"><div><div className="eyebrow">Settings · tenant administrator</div><h1>Certificate settings</h1><p className="sub">Choose when release records begin and how dates appear on newly issued certificates. Existing certificate presentation snapshots never change.</p></div><div className="actions"><Link className="btn" to="/settings">Back to settings</Link><button type="button" className="btn primary" disabled={loading || busy || !settings || invalid} aria-busy={busy} onClick={() => void save()}><Icon name="check" />{busy ? "Saving…" : "Save issue point"}</button></div></div>
     <ErrorNote error={error} />
     {saved && <div className="note ok"><strong>Certificate settings saved.</strong>&nbsp;Future issue-point triggers use this configuration.</div>}
     {loading && <p className="muted">Loading certificate settings…</p>}
@@ -70,6 +99,17 @@ export function Component() {
         </div>)}
         {invalid && <div className="note bad">Enter a distinct item class for every override.</div>}
       </div></section>
+      {dateFormats && <section className="card" aria-labelledby="certificate-date-time"><div className="card-header"><div><h2 id="certificate-date-time">Date and time</h2><span className="meta">per certificate language · snapshotted at issue</span></div><button type="button" className="btn primary sm" disabled={dateBusy} aria-busy={dateBusy} onClick={() => void saveDateFormats()}><Icon name="check" />{dateBusy ? "Saving…" : "Save date and time"}</button></div><div className="card-body stack">
+        <p className="muted">These choices apply to future versions only. Date-times use the issuing entity’s time zone and print its abbreviation; UTC is used when no zone is configured.</p>
+        {dateSaved && <div className="note ok"><strong>Date and time settings saved.</strong>&nbsp;The next certificate snapshots these patterns.</div>}
+        {dateFormats.languages.map((row) => <div className="card" key={row.language}>
+          <div className="card-header"><h3>{certificateLanguageName(row.language)}</h3><span className="meta mono">{row.language}</span></div>
+          <div className="card-body cols-2">
+            <fieldset className="stack"><legend className="lbl">Date format</legend>{certificateDatePatterns.map((pattern) => <label className="radiorow" key={pattern}><input type="radio" name={`certificate-date-${row.language}`} checked={row.datePattern === pattern} disabled={dateBusy} onChange={() => changeDateFormat(row.language, "datePattern", pattern)} /><span><strong className="mono">{pattern}</strong><span className="help">{certificateDateTimeExample(row.language, pattern, row.timePattern)}</span></span></label>)}</fieldset>
+            <fieldset className="stack"><legend className="lbl">Time format</legend>{certificateTimePatterns.map((pattern) => <label className="radiorow" key={pattern.value}><input type="radio" name={`certificate-time-${row.language}`} checked={row.timePattern === pattern.value} disabled={dateBusy} onChange={() => changeDateFormat(row.language, "timePattern", pattern.value)} /><span><strong>{pattern.label}</strong><span className="help">{certificateDateTimeExample(row.language, row.datePattern, pattern.value)}</span></span></label>)}</fieldset>
+          </div>
+        </div>)}
+      </div></section>}
     </div>}
   </main>;
 }

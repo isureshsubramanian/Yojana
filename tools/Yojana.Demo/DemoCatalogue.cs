@@ -58,6 +58,10 @@ public sealed class DemoCatalogue
         var documents = services.GetRequiredService<InMemoryDocumentNumberRegistry>();
         foreach (var document in Documents.Values)
             documents.Register(new DocumentLabel(new DocumentRef(document.Type, document.Id), document.Number, document.Status, document.ItemId));
+
+        var locations = services.GetRequiredService<InMemoryLocationNameRegistry>();
+        foreach (var location in Locations.Values)
+            locations.Register(new LocationLabel(location.Id, location.Code, location.Name, location.Kind));
     }
 
     // Shared JSON contract: the web host's DevReferenceCatalogue reads this same development-only source. Keeping the

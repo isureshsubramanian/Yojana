@@ -42,7 +42,7 @@ public sealed class CertificateHtmlComposer(SerialisationDbContext db, ITenantCo
         var signature = request.Signature is null ? "" :
             $"<section class=\"certificate-signature\"><hr><div><strong>Released by</strong><br>" +
             $"{Encode(request.Signature.PrintedName)} · {Encode(request.Signature.Meaning)}</div>" +
-            $"<div><strong>Signed</strong><br>{Encode(engine.FormatDateTime(template.Language, request.Signature.SignedAt))} · " +
+            $"<div><strong>Signed</strong><br>{Encode(engine.FormatDateTime(template.Language, request.Signature.SignedAt, root))} · " +
             $"{Encode(request.Signature.Method.Replace('_', ' '))}</div></section>";
         var articleEnd = body.LastIndexOf("</article>", StringComparison.OrdinalIgnoreCase);
         var signedBody = signature.Length > 0 && articleEnd >= 0

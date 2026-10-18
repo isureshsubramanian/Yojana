@@ -86,6 +86,12 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
                     && row.DocumentKind == command.DocumentKind)
                 .OrderByDescending(row => row.Version).FirstOrDefaultAsync(cancellationToken);
             var previous = latest?.Status == CertificateStatus.Issued ? latest : null;
+            // COUPLING (automatic language inheritance): CertificateSubscriptionHandlers sends an empty language on
+            // its internal published-fact hand-off because those events carry no presentation language. It means
+            // "continue this chain's explicit language"; separating the sentinel from either side silently changes
+            // an automatic version of a non-English certificate to English.
+            if (string.IsNullOrWhiteSpace(command.Language))
+                command = command with { Language = previous?.Language ?? "en" };
             if (command.DocumentKind == CertificateDocumentKind.ReleaseRecord)
             {
                 var triggerSchema = command.TriggerSchema ?? "Unit.ReleaseFact";

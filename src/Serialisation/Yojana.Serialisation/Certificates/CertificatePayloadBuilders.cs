@@ -33,7 +33,7 @@ public sealed class ReleaseRecordPayloadBuilder(
         var partyNames = await parties.NamesAsync(issuerRefs, cancellationToken);
         var facility = unit.Build?.FacilityId is not { } facilityId ? null
             : (await locations.NamesAsync([facilityId], cancellationToken)).GetValueOrDefault(facilityId) is { } label
-                ? label.Name ?? label.Code : null;
+                ? string.IsNullOrWhiteSpace(label.Name) ? label.Code : label.Name : null;
         var identifierById = unit.Identifiers.ToDictionary(row => row.IdentifierId);
         var primaryOpen = unit.Identifiers.Where(row => row.ValidTo == null).OrderBy(row => IdentifierPriority(row.Type)).FirstOrDefault();
         var identifiers = unit.Identifiers.OrderBy(row => row.ValidFrom).ThenBy(row => row.Type).Select(row =>
@@ -84,7 +84,7 @@ public sealed class ReleaseRecordPayloadBuilder(
             unit.Build?.ReleasedAt ?? unit.CommissionedAt, facility, lots, assembly, required, condition.Tests, condition.Grade,
             refurbishment.CycleNumber, condition.SanitisationReference, condition.Firmware,
             refurbishment.WorkReference, refurbisher, refurbishment.LifeEpisode, presentation.Issuer,
-            presentation.Branding, provenance);
+            presentation.Branding, presentation.Snapshot, provenance);
     }
 
     private static int IdentifierPriority(string type) => type switch
@@ -124,7 +124,7 @@ public sealed class WarrantyCertificatePayloadBuilder(
             row.Type, row.StartBasis ?? "unknown", row.StartDate, row.EndDate, row.PolicyCode, row.PolicyVersion,
             Term(row), row.SupersededLineage)).OrderBy(row => row.CoverageFamily).ToList();
         return (new WarrantyCertificatePayload("1.0", trigger, rows, owner, presentation.Issuer,
-            presentation.Branding, provenance), owner);
+            presentation.Branding, presentation.Snapshot, provenance), owner);
     }
 
     private static string Term(CertificateEntitlementFact row)

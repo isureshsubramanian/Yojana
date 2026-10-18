@@ -235,6 +235,10 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         Assert.Contains(starters, row => row.BuiltIn && row.FormType == CertificateFormType.BatteryPassport);
         Assert.DoesNotContain(service.Catalogue(CertificateDocumentKind.ReleaseRecord), row =>
             row.Path.Contains("party", StringComparison.OrdinalIgnoreCase) || row.Path.Contains("owner", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(service.Catalogue(CertificateDocumentKind.ReleaseRecord), row =>
+            row.Path.EndsWith("_id", StringComparison.Ordinal) || row.Path is "source_lots" or "as_maintained.lot_reference");
+        Assert.DoesNotContain(service.Catalogue(CertificateDocumentKind.WarrantyCertificate), row =>
+            row.Path.EndsWith("_id", StringComparison.Ordinal) || row.Path.EndsWith("superseded_lineage", StringComparison.Ordinal));
         foreach (var starter in starters.Where(row => row.BuiltIn && row.DocumentKind == CertificateDocumentKind.ReleaseRecord))
         {
             var detail = (await service.GetAsync(starter.TemplateId, CancellationToken.None))!;
@@ -424,6 +428,93 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         var oversized = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<TenantAssetUploadResult>(tenant,
             new UploadTenantLogo(Guid.NewGuid(), null, new byte[TenantAssetService.MaximumBytes + 1], "template.admin")));
         Assert.Equal("tenant_asset_too_large", oversized.Rule);
+    }
+
+    [DatabaseFact]
+    public async Task Issued_certificate_keeps_facility_time_zone_and_date_format_snapshots_while_a_new_version_uses_changes()
+    {
+        var setup = await CommissionAsync("cert-zone");
+        var issuer = Guid.NewGuid();
+        const string facilityName = "Fictional North Works";
+        fixture.Services.GetRequiredService<InMemoryLocationNameRegistry>().Register(
+            new LocationLabel(setup.LocationId, "FAC-21", facilityName, LocationKind.Warehouse));
+        var zones = fixture.Services.GetRequiredService<InMemoryWarrantyPorts>();
+        zones.RegisterZone(issuer, "Asia/Kolkata");
+        using (var settingsScope = fixture.ScopeFor(setup.Tenant))
+        {
+            var settings = settingsScope.ServiceProvider.GetRequiredService<CertificateDateFormatSettings>();
+            var settingsView = await settings.GetAsync(CancellationToken.None);
+            await settings.SetAsync(new UpdateCertificateDateFormatSettings(
+                [new("en", CertificateDatePattern.DayMonthYear, CertificateTimePattern.TwelveHour)], settingsView.Version),
+                CancellationToken.None);
+        }
+
+        await InvokeAsync<ReleaseUnitResult>(setup.Tenant,
+            new ReleaseUnit(Guid.NewGuid(), setup.UnitId, At.AddHours(1), "quality.user", issuer, "sig:quality",
+                FacilityId: setup.LocationId));
+        await WaitForCountAsync(setup.Tenant, setup.UnitId, CertificateDocumentKind.ReleaseRecord, 1);
+
+        using var scope = fixture.ScopeFor(setup.Tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var certificate = await db.CertificateInstances.AsNoTracking().SingleAsync(row => row.UnitId == setup.UnitId
+            && row.DocumentKind == CertificateDocumentKind.ReleaseRecord);
+        Assert.Contains($"\"facility\":\"{facilityName}\"", certificate.Payload, StringComparison.Ordinal);
+        Assert.Contains("\"presentation\":{\"date_pattern\":\"dd/MM/yyyy\",\"time_pattern\":\"h:mm tt\",\"time_zone\":\"Asia/Kolkata\"}",
+            certificate.Payload, StringComparison.Ordinal);
+        var queries = scope.ServiceProvider.GetRequiredService<CertificateQueries>();
+        var before = await queries.RenderAsync(certificate.CertificateId, CancellationToken.None);
+        var beforeHtml = Encoding.UTF8.GetString(before!.Bytes);
+        Assert.Contains(facilityName, beforeHtml, StringComparison.Ordinal);
+        Assert.DoesNotContain("FAC-21", beforeHtml, StringComparison.Ordinal);
+        Assert.DoesNotContain(setup.LocationId.ToString("D"), beforeHtml, StringComparison.OrdinalIgnoreCase);
+        Assert.True(beforeHtml.Split("IST", StringSplitOptions.None).Length >= 3,
+            "The issued and signed lines should both carry the snapshotted zone abbreviation.");
+
+        zones.RegisterZone(issuer, "America/New_York");
+        fixture.Services.GetRequiredService<InMemoryLocationNameRegistry>().Register(
+            new LocationLabel(setup.LocationId, "FAC-22", "Fictional South Works", LocationKind.Warehouse));
+        using (var settingsScope = fixture.ScopeFor(setup.Tenant))
+        {
+            var settings = settingsScope.ServiceProvider.GetRequiredService<CertificateDateFormatSettings>();
+            var settingsView = await settings.GetAsync(CancellationToken.None);
+            await settings.SetAsync(new UpdateCertificateDateFormatSettings(
+                [new("en", CertificateDatePattern.YearMonthDay, CertificateTimePattern.TwentyFourHour)], settingsView.Version),
+                CancellationToken.None);
+        }
+        var after = await queries.RenderAsync(certificate.CertificateId, CancellationToken.None);
+
+        Assert.Equal(before.Bytes, after!.Bytes);
+        await InvokeAsync<CorrectIdentifierResult>(setup.Tenant, new CorrectIdentifier(Guid.NewGuid(), setup.UnitId,
+            IdentifierType.InternalSerial, setup.Serial + "-FORMAT", IdentifierCorrectionReason.Typo, At.AddHours(2),
+            "quality.user", issuer));
+        await WaitForCountAsync(setup.Tenant, setup.UnitId, CertificateDocumentKind.ReleaseRecord, 2);
+
+        db.ChangeTracker.Clear();
+        var replacement = await db.CertificateInstances.AsNoTracking().SingleAsync(row => row.UnitId == setup.UnitId
+            && row.DocumentKind == CertificateDocumentKind.ReleaseRecord && row.Version == 2);
+        Assert.Contains("\"presentation\":{\"date_pattern\":\"yyyy-MM-dd\",\"time_pattern\":\"HH:mm\",\"time_zone\":\"America/New_York\"}",
+            replacement.Payload, StringComparison.Ordinal);
+        var replacementHtml = Encoding.UTF8.GetString((await queries.RenderAsync(replacement.CertificateId,
+            CancellationToken.None))!.Bytes);
+        Assert.Contains("Fictional South Works", replacementHtml, StringComparison.Ordinal);
+        Assert.Contains("EDT", replacementHtml, StringComparison.Ordinal);
+        Assert.DoesNotContain(facilityName, replacementHtml, StringComparison.Ordinal);
+        Assert.NotEqual(beforeHtml, replacementHtml);
+        var current = await db.Current.AsNoTracking().SingleAsync(row => row.UnitId == setup.UnitId);
+        Assert.Null(current.OwnerPartyRef);
+        Assert.Equal((setup.LocationId, LocationKind.Warehouse, "[]"),
+            (current.LocationId, current.LocationKind, current.LiveEntitlementIds));
+        Assert.Empty(await db.Episodes.AsNoTracking().Where(row => row.UnitId == setup.UnitId
+            && row.Kind == EpisodeKind.Ownership && row.ValidTo == null).ToListAsync());
+        var custody = await db.Episodes.AsNoTracking().SingleAsync(row => row.UnitId == setup.UnitId
+            && row.Kind == EpisodeKind.Custody && row.ValidTo == null);
+        Assert.Equal((setup.LocationId, LocationKind.Warehouse), (custody.LocationId, custody.LocationKind));
+        Assert.Empty(await db.Entitlements.AsNoTracking().Where(row => row.UnitId == setup.UnitId).ToListAsync());
+        Assert.Single(await db.Identifiers.AsNoTracking().Where(row => row.UnitId == setup.UnitId && row.ValidTo == null).ToListAsync());
+        Assert.Equal(1, await db.Events.CountAsync(row => row.UnitId == setup.UnitId && row.EventType == UnitEventType.Released));
+        Assert.Equal(2, await db.Events.CountAsync(row => row.UnitId == setup.UnitId && row.EventType == CertificateEventType.Issued));
+        Assert.Equal(1, await db.Events.CountAsync(row => row.UnitId == setup.UnitId && row.EventType == CertificateEventType.Superseded));
+        Assert.Equal(1, await db.Events.CountAsync(row => row.UnitId == setup.UnitId && row.EventType == UnitEventType.IdentifierCorrected));
     }
 
     [DatabaseFact]

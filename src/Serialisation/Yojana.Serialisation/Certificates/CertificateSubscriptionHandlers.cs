@@ -157,10 +157,14 @@ public static class ReleaseCertificateSubscriptionHandler
         CancellationToken cancellationToken) => await bus.PublishAsync(new CertificateTriggerWork(command),
         new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
 
+    // COUPLING (automatic language inheritance): CertificateVersioningEngine interprets an empty language only on
+    // this internal published-fact hand-off as "keep the chain language". Published events carry no language; using
+    // the command's public English default would silently change later versions of a non-English certificate.
     private static IssueCertificateVersion Command(string documentKind, CertificateTriggerContext trigger, string reason) =>
         new(trigger.EventId, trigger.UnitId, documentKind,
             documentKind == CertificateDocumentKind.ReleaseRecord ? CertificateFormType.GenericRelease : CertificateFormType.WarrantyCertificate,
-            reason, trigger.EventTime, "system:certificates", trigger.LegalEntityId, TriggerSchema: trigger.Schema);
+            reason, trigger.EventTime, "system:certificates", trigger.LegalEntityId, Language: "",
+            TriggerSchema: trigger.Schema);
 
     internal static CertificateTriggerContext From(PublishedEventHeader header, Guid? unitId = null) => new(
         unitId ?? header.UnitId, header.Schema, header.EventId, header.EventTime, header.RecordedTime, header.Seq,
