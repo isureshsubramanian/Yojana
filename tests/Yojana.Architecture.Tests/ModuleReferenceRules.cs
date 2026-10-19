@@ -101,6 +101,14 @@ public sealed class ModuleReferenceRules
     }
 
     [Fact]
+    public void Integration_reaches_serialisation_only_through_its_contracts()
+    {
+        var references = Graph()["Yojana.Integration"];
+        Assert.Contains("Yojana.Serialisation.Contracts", references);
+        Assert.DoesNotContain("Yojana.Serialisation", references);
+    }
+
+    [Fact]
     public void Every_source_project_is_in_the_solution()
     {
         var solution = File.ReadAllText(Path.Combine(Root, "Yojana.slnx"));

@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sw.integration/1.0/create-replacement-delivery",
+  "title": "CreateReplacementDelivery",
+  "type": "object",
+  "required": [
+    "envelope",
+    "message_type",
+    "payload"
+  ],
+  "properties": {
+    "envelope": {
+      "$ref": "envelope.schema.json"
+    },
+    "message_type": {
+      "const": "CreateReplacementDelivery"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "idempotency_key",
+        "module_document_ref",
+        "erp_reference_text",
+        "customer_ref",
+        "ship_to_ref",
+        "replacement_unit",
+        "price_policy",
+        "original_invoice_ref",
+        "reason_code_text"
+      ],
+      "properties": {
+        "idempotency_key": {
+          "type": "string"
+        },
+        "module_document_ref": {
+          "type": "string"
+        },
+        "erp_reference_text": {
+          "type": "string"
+        },
+        "customer_ref": {
+          "type": "string"
+        },
+        "ship_to_ref": {
+          "type": "string"
+        },
+        "replacement_unit": {
+          "type": "object",
+          "required": [
+            "unit_id",
+            "identifier_value"
+          ],
+          "properties": {
+            "unit_id": {
+              "type": "string"
+            },
+            "identifier_value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        },
+        "price_policy": {
+          "type": "string"
+        },
+        "original_invoice_ref": {
+          "type": "string"
+        },
+        "reason_code_text": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "command_reply": {
+      "type": "object",
+      "required": [
+        "idempotency_key",
+        "erp_external_id",
+        "erp_change_marker",
+        "outcome"
+      ],
+      "properties": {
+        "idempotency_key": {
+          "type": "string"
+        },
+        "erp_external_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "erp_change_marker": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "outcome": {
+          "type": [
+            "string",
+            "object"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

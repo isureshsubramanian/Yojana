@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sw.integration/1.0/delivery-posted",
+  "title": "DeliveryPosted",
+  "type": "object",
+  "required": [
+    "envelope",
+    "message_type",
+    "payload"
+  ],
+  "properties": {
+    "envelope": {
+      "$ref": "envelope.schema.json"
+    },
+    "message_type": {
+      "const": "DeliveryPosted"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "document_ref",
+        "customer_party_external_id",
+        "ship_to_ref",
+        "lines",
+        "base_order_ref",
+        "is_drop_ship"
+      ],
+      "properties": {
+        "document_ref": {
+          "type": "object",
+          "required": [
+            "type",
+            "number",
+            "date",
+            "external_id",
+            "line"
+          ],
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "number": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string"
+            },
+            "external_id": {
+              "type": "string"
+            },
+            "line": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "customer_party_external_id": {
+          "type": "string"
+        },
+        "ship_to_ref": {
+          "type": "string"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "line_no",
+              "erp_line_id",
+              "item_external_id",
+              "quantity",
+              "uom",
+              "serials",
+              "lots",
+              "location_external_id",
+              "base_document_ref",
+              "party_external_id",
+              "price",
+              "currency"
+            ],
+            "properties": {
+              "line_no": {
+                "type": "number"
+              },
+              "erp_line_id": {
+                "type": "string"
+              },
+              "item_external_id": {
+                "type": "string"
+              },
+              "quantity": {
+                "type": "number"
+              },
+              "uom": {
+                "type": "string"
+              },
+              "serials": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "value",
+                    "issuer",
+                    "erp_serial_id"
+                  ],
+                  "properties": {
+                    "value": {
+                      "type": "string"
+                    },
+                    "issuer": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "erp_serial_id": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "lots": {
+                "type": "array",
+                "items": {}
+              },
+              "location_external_id": {
+                "type": "string"
+              },
+              "base_document_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "party_external_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "price": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "currency": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "base_order_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "is_drop_ship": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

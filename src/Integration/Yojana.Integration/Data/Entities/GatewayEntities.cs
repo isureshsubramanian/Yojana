@@ -1,0 +1,98 @@
+using Yojana.Platform.Contracts.Tenancy;
+
+namespace Yojana.Integration.Data.Entities;
+
+public sealed class ReferenceProjection : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ConnectionId { get; set; }
+    public required string EntityType { get; set; }
+    public required string ExternalId { get; set; }
+    public Guid ModuleId { get; set; }
+    public string? Code { get; set; }
+    public string? DisplayName { get; set; }
+    public string? TrackingMode { get; set; }
+    public string? Uom { get; set; }
+    public bool Deleted { get; set; }
+    public bool Provisional { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public sealed class CanonicalDocument : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid DocumentId { get; set; }
+    public Guid ConnectionId { get; set; }
+    public required string ErpEntity { get; set; }
+    public required string ErpExternalId { get; set; }
+    public required string MessageType { get; set; }
+    public required string Payload { get; set; }
+    public DateTime OccurredAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public Guid SourceInboundMessageId { get; set; }
+}
+
+public sealed class ConnectionCapability : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ConnectionId { get; set; }
+    public required string CanonicalMessage { get; set; }
+    public required string SupportLevel { get; set; }
+}
+
+public static class CapabilitySupport
+{
+    public const string Native = "native";
+    public const string TenantCode = "tenant_code";
+    public const string QuantityOnly = "quantity_only";
+    public const string Manual = "manual";
+    public const string Unsupported = "unsupported";
+}
+
+public sealed class ConnectionDegradationSetting : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ConnectionId { get; set; }
+    public int RuleNumber { get; set; }
+    public bool Enabled { get; set; }
+    public required string SettingsJson { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public sealed class ConnectionGatewaySetting : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ConnectionId { get; set; }
+    public Guid LegalEntityId { get; set; }
+    public Guid? LedgerConnectionId { get; set; }
+    public required string OutboundMode { get; set; }
+    public required string NativeWarrantyObjectMode { get; set; }
+    public int OrderingWaitMinutes { get; set; } = 15;
+}
+
+public sealed class OutboundCommandRow : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid OutboundCommandId { get; set; }
+    public Guid ConnectionId { get; set; }
+    public required string CommandType { get; set; }
+    public Guid IdempotencyKey { get; set; }
+    public required string ModuleDocumentRef { get; set; }
+    public required string ErpReferenceText { get; set; }
+    public required string Payload { get; set; }
+    public required string Status { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public sealed class IntegrationExceptionTask : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ExceptionTaskId { get; set; }
+    public Guid ConnectionId { get; set; }
+    public Guid? InboundMessageId { get; set; }
+    public required string Kind { get; set; }
+    public required string SubjectRef { get; set; }
+    public required string Detail { get; set; }
+    public required string Status { get; set; }
+    public DateTime CreatedAt { get; set; }
+}

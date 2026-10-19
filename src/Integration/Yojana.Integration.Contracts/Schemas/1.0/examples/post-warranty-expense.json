@@ -1,0 +1,38 @@
+{
+  "envelope": {
+    "contract_version": "1.0",
+    "message_id": "0199f3d0-7d7f-7000-8000-000000000001",
+    "tenant_id": "0199f3d0-7d7f-7000-8000-000000000002",
+    "connection_id": "0199f3d0-7d7f-7000-8000-000000000003",
+    "connector_code": "CX01",
+    "erp_entity": "post-warranty-expense",
+    "erp_external_id": "POST-WARRANTY-EXPENSE-1001",
+    "erp_change_marker": {
+      "value": "2026-09-01T08:00:00Z",
+      "marker_kind": "timestamp"
+    },
+    "occurred_at": "2026-09-01T08:00:00+00:00",
+    "observed_at": "2026-09-01T08:00:01+00:00",
+    "capture_mode": "poll",
+    "attribution_completeness": "complete",
+    "payload_ref": "raw/post-warranty-expense/1001",
+    "correlation_id": null
+  },
+  "message_type": "PostWarrantyExpense",
+  "payload": {
+    "idempotency_key": "0199f3d0-7d7f-7000-8000-000000000013",
+    "module_document_ref": "claim/C-100",
+    "erp_reference_text": "YOJ-C-100",
+    "journal_lines": [
+      {
+        "account_ref": "WARRANTY",
+        "debit": 100,
+        "credit": 0,
+        "currency": "GBP"
+      }
+    ],
+    "cohort_tag": "2026-Q3",
+    "accrual_suppressed": false,
+    "reserve_drawdown": false
+  }
+}

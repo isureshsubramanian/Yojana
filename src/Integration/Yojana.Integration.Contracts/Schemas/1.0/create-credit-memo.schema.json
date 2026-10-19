@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sw.integration/1.0/create-credit-memo",
+  "title": "CreateCreditMemo",
+  "type": "object",
+  "required": [
+    "envelope",
+    "message_type",
+    "payload"
+  ],
+  "properties": {
+    "envelope": {
+      "$ref": "envelope.schema.json"
+    },
+    "message_type": {
+      "const": "CreateCreditMemo"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "idempotency_key",
+        "module_document_ref",
+        "erp_reference_text",
+        "customer_ref",
+        "lines",
+        "restocking_fee",
+        "base_invoice_ref"
+      ],
+      "properties": {
+        "idempotency_key": {
+          "type": "string"
+        },
+        "module_document_ref": {
+          "type": "string"
+        },
+        "erp_reference_text": {
+          "type": "string"
+        },
+        "customer_ref": {
+          "type": "string"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "unit_id",
+              "description",
+              "quantity",
+              "amount"
+            ],
+            "properties": {
+              "unit_id": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "quantity": {
+                "type": "number"
+              },
+              "amount": {
+                "type": "object",
+                "required": [
+                  "amount",
+                  "currency"
+                ],
+                "properties": {
+                  "amount": {
+                    "type": "number"
+                  },
+                  "currency": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "restocking_fee": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_invoice_ref": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "command_reply": {
+      "type": "object",
+      "required": [
+        "idempotency_key",
+        "erp_external_id",
+        "erp_change_marker",
+        "outcome"
+      ],
+      "properties": {
+        "idempotency_key": {
+          "type": "string"
+        },
+        "erp_external_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "erp_change_marker": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "outcome": {
+          "type": [
+            "string",
+            "object"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

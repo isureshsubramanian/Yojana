@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sw.integration/1.0/post-warranty-expense",
+  "title": "PostWarrantyExpense",
+  "type": "object",
+  "required": [
+    "envelope",
+    "message_type",
+    "payload"
+  ],
+  "properties": {
+    "envelope": {
+      "$ref": "envelope.schema.json"
+    },
+    "message_type": {
+      "const": "PostWarrantyExpense"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "idempotency_key",
+        "module_document_ref",
+        "erp_reference_text",
+        "journal_lines",
+        "cohort_tag",
+        "accrual_suppressed",
+        "reserve_drawdown"
+      ],
+      "properties": {
+        "idempotency_key": {
+          "type": "string"
+        },
+        "module_document_ref": {
+          "type": "string"
+        },
+        "erp_reference_text": {
+          "type": "string"
+        },
+        "journal_lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "account_ref",
+              "debit",
+              "credit",
+              "currency"
+            ],
+            "properties": {
+              "account_ref": {
+                "type": "string"
+              },
+              "debit": {
+                "type": "number"
+              },
+              "credit": {
+                "type": "number"
+              },
+              "currency": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "cohort_tag": {
+          "type": "string"
+        },
+        "accrual_suppressed": {
+          "type": "boolean"
+        },
+        "reserve_drawdown": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "command_reply": {
+      "type": "object",
+      "required": [
+        "idempotency_key",
+        "erp_external_id",
+        "erp_change_marker",
+        "outcome"
+      ],
+      "properties": {
+        "idempotency_key": {
+          "type": "string"
+        },
+        "erp_external_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "erp_change_marker": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "outcome": {
+          "type": [
+            "string",
+            "object"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

@@ -2,4 +2,8 @@
   <ItemGroup>
     <ProjectReference Include="../../Platform/Yojana.Platform.Contracts/Yojana.Platform.Contracts.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Schemas/**/*.json" />
+    <EmbeddedResource Include="Schemas/**/*.md" />
+  </ItemGroup>
 </Project>

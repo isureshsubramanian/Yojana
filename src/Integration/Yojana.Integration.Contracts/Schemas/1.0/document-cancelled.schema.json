@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sw.integration/1.0/document-cancelled",
+  "title": "DocumentCancelled",
+  "type": "object",
+  "required": [
+    "envelope",
+    "message_type",
+    "payload"
+  ],
+  "properties": {
+    "envelope": {
+      "$ref": "envelope.schema.json"
+    },
+    "message_type": {
+      "const": "DocumentCancelled"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "document_ref",
+        "cancellation_kind",
+        "cancelled_by_document_ref"
+      ],
+      "properties": {
+        "document_ref": {
+          "type": "object",
+          "required": [
+            "type",
+            "number",
+            "date",
+            "external_id",
+            "line"
+          ],
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "number": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string"
+            },
+            "external_id": {
+              "type": "string"
+            },
+            "line": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "cancellation_kind": {
+          "type": "string"
+        },
+        "cancelled_by_document_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sw.integration/1.0/inventory-adjusted",
+  "title": "InventoryAdjusted",
+  "type": "object",
+  "required": [
+    "envelope",
+    "message_type",
+    "payload"
+  ],
+  "properties": {
+    "envelope": {
+      "$ref": "envelope.schema.json"
+    },
+    "message_type": {
+      "const": "InventoryAdjusted"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "document_ref",
+        "adjustment_kind",
+        "lines",
+        "reason_code"
+      ],
+      "properties": {
+        "document_ref": {
+          "type": "object",
+          "required": [
+            "type",
+            "number",
+            "date",
+            "external_id",
+            "line"
+          ],
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "number": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string"
+            },
+            "external_id": {
+              "type": "string"
+            },
+            "line": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "adjustment_kind": {
+          "type": "string"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "line_no",
+              "erp_line_id",
+              "item_external_id",
+              "quantity",
+              "uom",
+              "serials",
+              "lots",
+              "location_external_id",
+              "base_document_ref",
+              "party_external_id",
+              "price",
+              "currency"
+            ],
+            "properties": {
+              "line_no": {
+                "type": "number"
+              },
+              "erp_line_id": {
+                "type": "string"
+              },
+              "item_external_id": {
+                "type": "string"
+              },
+              "quantity": {
+                "type": "number"
+              },
+              "uom": {
+                "type": "string"
+              },
+              "serials": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "value",
+                    "issuer",
+                    "erp_serial_id"
+                  ],
+                  "properties": {
+                    "value": {
+                      "type": "string"
+                    },
+                    "issuer": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "erp_serial_id": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "lots": {
+                "type": "array",
+                "items": {}
+              },
+              "location_external_id": {
+                "type": "string"
+              },
+              "base_document_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "party_external_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "price": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "currency": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "reason_code": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
