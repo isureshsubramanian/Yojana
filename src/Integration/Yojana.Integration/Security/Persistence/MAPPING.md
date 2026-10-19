@@ -46,3 +46,24 @@ Append-only connection audit records. Expected columns:
 
 Primary key: `(tenant_id, sequence_no)` and alternate key `(tenant_id, event_id)`. The database writer must reject
 updates and deletes; immutable-storage replication is a separate `IConnectionAuditSink` implementation.
+
+## `connection_throttle_profile`
+
+One editable throttle profile and its current UTC-day budget per connection. Connector declarations seed these values
+at onboarding; they are tenant-owned data after that point, not hard-coded connector rules. Expected columns:
+
+- `tenant_id uniqueidentifier`, `connection_id uniqueidentifier`, `connector_code nvarchar(20)`
+- `requests_per_second int null`, `requests_per_minute int null`, `requests_per_day int null`
+- `burst int`, `max_concurrent_calls int`, `retry_after_ceiling_seconds int`
+- `alert_threshold_percent int` (connector declaration normally seeds `80`)
+- `updated_at datetime2(3)`
+- `budget_date_utc date null`, `used_calls int`, `approach_alert_raised bit`, `cap_alert_raised bit`
+- `budget_revision bigint`
+
+Primary key: `(tenant_id, connection_id)`. Constraint all configured caps to positive values, `burst` and
+`max_concurrent_calls` to at least one, `alert_threshold_percent` to 1–100, and `used_calls`/`budget_revision` to
+non-negative values. `IConnectionDailyBudgetStore.TrySaveAsync` uses `budget_revision` for optimistic concurrency;
+the update of count, alert flags and revision is one conditional write. Resetting for a new UTC date is the same
+conditional write, so a restart cannot restore spent calls or re-raise either once-per-day event. The core mapping may
+split the daily fields into a tenant-led child table if its transaction adapter preserves that compare-and-swap
+contract.

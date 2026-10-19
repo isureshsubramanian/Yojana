@@ -40,4 +40,20 @@ public sealed class ConnectionWorkerIsolationTests
 
         Assert.Equal(otherTenant, second.WorkerKey.TenantId);
     }
+
+    [Fact]
+    public async Task Profile_concurrency_is_applied_per_connection()
+    {
+        using var isolation = new ConnectionWorkerIsolation();
+        var key = new ConnectionWorkerKey(Tenant,
+            Guid.Parse("20000000-0000-0000-0000-000000000001"));
+        await using var first = await isolation.AcquireAsync(key, 2, CancellationToken.None);
+        await using var second = await isolation.AcquireAsync(key, 2, CancellationToken.None);
+
+        var third = isolation.AcquireAsync(key, 2, CancellationToken.None).AsTask();
+
+        Assert.False(third.IsCompleted);
+        await first.DisposeAsync();
+        await using var admitted = await third;
+    }
 }

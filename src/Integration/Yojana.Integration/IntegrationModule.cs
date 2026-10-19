@@ -145,6 +145,19 @@ public static class IntegrationModule
         builder.Services.TryAddScoped<CredentialExpiryAlertEvaluator>();
         builder.Services.TryAddSingleton<HmacSha256WebhookSignatureVerifier>();
         builder.Services.TryAddSingleton<IConnectionWorkerIsolation, ConnectionWorkerIsolation>();
+        builder.Services.TryAddSingleton<InMemoryConnectionThrottleProfileStore>();
+        builder.Services.TryAddSingleton<IConnectionThrottleProfileStore>(services =>
+            services.GetRequiredService<InMemoryConnectionThrottleProfileStore>());
+        builder.Services.TryAddSingleton<InMemoryConnectionDailyBudgetStore>();
+        builder.Services.TryAddSingleton<IConnectionDailyBudgetStore>(services =>
+            services.GetRequiredService<InMemoryConnectionDailyBudgetStore>());
+        builder.Services.TryAddSingleton<IConnectionCallBudgetAlertPublisher,
+            NullConnectionCallBudgetAlertPublisher>();
+        builder.Services.TryAddSingleton<IConnectionThrottleDelay, SystemConnectionThrottleDelay>();
+        builder.Services.TryAddSingleton<IConnectionRetryJitter, RandomConnectionRetryJitter>();
+        builder.Services.TryAddSingleton<IConnectionThrottleWorkerRegistry,
+            ConnectionThrottleWorkerRegistry>();
+        builder.Services.TryAddScoped<ConnectionThrottleProfiles>();
         return builder;
     }
 }
