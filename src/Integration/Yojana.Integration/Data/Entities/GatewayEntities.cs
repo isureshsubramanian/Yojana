@@ -82,6 +82,25 @@ public sealed class OutboundCommandRow : ITenantScoped
     public required string Payload { get; set; }
     public required string Status { get; set; }
     public DateTime CreatedAt { get; set; }
+    public int AttemptCount { get; set; }
+    public DateTime? NextAttemptAt { get; set; }
+    public DateTime? LastAttemptAt { get; set; }
+    public DateTime? LockedUntil { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string? ErpExternalId { get; set; }
+    public string? ErpChangeMarker { get; set; }
+    public string? Outcome { get; set; }
+    public string? LastFailure { get; set; }
+    public byte[] RowVersion { get; set; } = [];
+}
+
+public static class OutboundCommandStatus
+{
+    public const string Pending = "pending";
+    public const string Processing = "processing";
+    public const string Retry = "retry";
+    public const string Done = "done";
+    public const string Parked = "parked";
 }
 
 public sealed class IntegrationExceptionTask : ITenantScoped

@@ -112,6 +112,7 @@ app.UseYojanaPlatform();
 app.UseSerialisationInteractiveReads();
 app.MapPresenceEndpoints();
 app.MapSerialisationEndpoints();
+app.MapIntegrationEndpoints();
 
 app.MapGet("/health", async (PlatformDbContext db, CancellationToken ct) =>
 {

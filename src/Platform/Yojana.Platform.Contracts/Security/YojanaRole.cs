@@ -24,6 +24,7 @@ public static class YojanaRole
     public const string Technician = "technician";
     public const string CustomerService = "customer_service";
     public const string WarehouseLead = "warehouse_lead";
+    public const string IntegrationOperator = "integration_operator";
 
     /// <summary>Tenant administration (user and connector setup); a platform role, not an ADR approval role.</summary>
     public const string TenantAdministrator = "tenant_administrator";
@@ -32,7 +33,7 @@ public static class YojanaRole
     [
         SerialAdministrator, ServiceDesk, ServiceSupervisor, ServiceManager, ShippingSupervisor, ProductionSupervisor,
         ItemMasterOwner, Quality, InventoryController, OrderDeskSupervisor, LabelAdministrator, CertificateAdministrator, LegalReviewer, FinanceReview,
-        Technician, CustomerService, WarehouseLead, TenantAdministrator,
+        Technician, CustomerService, WarehouseLead, IntegrationOperator, TenantAdministrator,
     ];
 
     public static bool IsKnown(string role) => All.Contains(role, StringComparer.Ordinal);
@@ -63,6 +64,10 @@ public static class YojanaPolicy
     public const string CustomerService = Prefix + YojanaRole.CustomerService;
     public const string WarehouseLead = Prefix + YojanaRole.WarehouseLead;
     public const string TenantAdministrator = Prefix + YojanaRole.TenantAdministrator;
+    public const string IntegrationOperator = Prefix + YojanaRole.IntegrationOperator;
+
+    /// <summary>Tenant administrators and integration operators may work integration exceptions.</summary>
+    public const string IntegrationOperations = "integration_operations";
 
     /// <summary>Operational label printing across service, warehouse, shipping and production roles.</summary>
     public const string LabelPrinter = "label_printer";
