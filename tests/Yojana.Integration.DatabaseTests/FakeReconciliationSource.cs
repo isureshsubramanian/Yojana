@@ -1,9 +1,11 @@
+using Yojana.Integration.Connectors;
 using Yojana.Integration.Inbox;
+using Yojana.Integration.Notifications;
 using Yojana.Integration.Reconciliation;
 
 namespace Yojana.Integration.DatabaseTests;
 
-public sealed class FakeReconciliationSource : IConnectorReconciliationSource
+public sealed class FakeReconciliationSource : IConnectorAdapter
 {
     private readonly object sync = new();
     private readonly Dictionary<(Guid ConnectionId, string Entity, DateOnly Day), List<InboundAcceptance>> messages = [];
@@ -12,6 +14,10 @@ public sealed class FakeReconciliationSource : IConnectorReconciliationSource
     private readonly Dictionary<Guid, TaskCompletionSource> readGates = [];
     private readonly Dictionary<Guid, int> readCalls = [];
 
+    public string ConnectorCode => "CX01";
+    public List<ConnectorPollRequest> Requests { get; } = [];
+    public ConnectorPollResult NextResult { get; set; } = new([], null);
+    public ConnectorOnHandRequest? LastOnHandRequest { get; private set; }
     public Guid? FailConnection { get; set; }
     public int? FailOnReadCall { get; set; }
 
@@ -70,12 +76,22 @@ public sealed class FakeReconciliationSource : IConnectorReconciliationSource
         }
     }
 
-    public Task<IReadOnlyList<ConnectorOnHandBalance>> OnHandAsync(Guid connectionId,
+    public Task<IReadOnlyList<ConnectorOnHandBalance>> OnHandAsync(ConnectorOnHandRequest request,
         CancellationToken cancellationToken)
     {
         lock (sync)
-            return Task.FromResult(onHand.GetValueOrDefault(connectionId)
+        {
+            LastOnHandRequest = request;
+            return Task.FromResult(onHand.GetValueOrDefault(request.ConnectionId)
                 ?? (IReadOnlyList<ConnectorOnHandBalance>)[]);
+        }
+    }
+
+    public Task<ConnectorPollResult> PollAsync(ConnectorPollRequest request,
+        CancellationToken cancellationToken)
+    {
+        Requests.Add(request);
+        return Task.FromResult(NextResult);
     }
 
     public Task<bool> SupportsRangedReadsAsync(Guid connectionId, string entity,

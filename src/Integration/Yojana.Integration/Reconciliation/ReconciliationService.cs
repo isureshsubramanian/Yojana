@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Yojana.Integration.Connectors;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.DeadLetters;
@@ -15,7 +16,7 @@ public sealed class ReconciliationService(
     IntegrationDbContext db,
     ITenantContext tenant,
     IClock clock,
-    IConnectorReconciliationSource source,
+    IConnectorAdapterResolver adapters,
     ISerialisedOnHandQuery serialisedOnHand,
     IItemNamePort itemNames,
     ILocationNamePort locationNames,
@@ -54,9 +55,12 @@ public sealed class ReconciliationService(
         if (rangeEnd < rangeStart)
             throw new ReconciliationRuleException("reconciliation_range_invalid",
                 "The reconciliation end date must not precede its start date.");
-        if (!await db.Connections.AnyAsync(row => row.TenantId == tenant.TenantId
-                && row.ConnectionId == connectionId && row.Status == ConnectionStatus.Active, cancellationToken))
+        var connectorCode = await db.Connections.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && row.ConnectionId == connectionId && row.Status == ConnectionStatus.Active)
+            .Select(row => row.ConnectorCode).SingleOrDefaultAsync(cancellationToken);
+        if (connectorCode is null)
             throw new ReconciliationRuleException("connection_not_found", "The active connection was not found.");
+        var source = adapters.ReconciliationSource(connectorCode);
 
         var run = new ReconciliationRun
         {
@@ -74,9 +78,9 @@ public sealed class ReconciliationService(
         try
         {
             var entityResults = includeEntityDays
-                ? await CompareEntityDaysAsync(run, cancellationToken)
+                ? await CompareEntityDaysAsync(run, source, cancellationToken)
                 : [];
-            var locationResults = await CompareLocationsAsync(run, cancellationToken);
+            var locationResults = await CompareLocationsAsync(run, source, cancellationToken);
             run.MismatchCount = entityResults.Count(row => row.Status == ReconciliationResultStatus.Mismatch);
             run.LocationMismatchCount = locationResults.Count(row => row.Status == ReconciliationResultStatus.Mismatch);
             run.Status = run.MismatchCount + run.LocationMismatchCount == 0
@@ -170,7 +174,8 @@ public sealed class ReconciliationService(
     }
 
     private async Task<List<ReconciliationEntityDayResult>> CompareEntityDaysAsync(
-        ReconciliationRun run, CancellationToken cancellationToken)
+        ReconciliationRun run, IConnectorReconciliationSource source,
+        CancellationToken cancellationToken)
     {
         var sourceRows = await source.EntityDayDigestsAsync(run.ConnectionId, run.RangeStart,
             run.RangeEnd, cancellationToken);
@@ -232,9 +237,15 @@ public sealed class ReconciliationService(
     }
 
     private async Task<List<ReconciliationLocationResult>> CompareLocationsAsync(
-        ReconciliationRun run, CancellationToken cancellationToken)
+        ReconciliationRun run, IConnectorReconciliationSource source,
+        CancellationToken cancellationToken)
     {
-        var sourceRows = await source.OnHandAsync(run.ConnectionId, cancellationToken);
+        var mappingJson = await db.ConnectionGatewaySettings.AsNoTracking().Where(row =>
+                row.TenantId == tenant.TenantId && row.ConnectionId == run.ConnectionId)
+            .Select(row => row.OnHandStatusMappingJson).SingleAsync(cancellationToken);
+        var statusMapping = JsonSerializer.Deserialize<Dictionary<string, bool>>(mappingJson)
+            ?? throw new InvalidOperationException("The connection on-hand status mapping must be a JSON object.");
+        var sourceRows = await source.OnHandAsync(new(run.ConnectionId, statusMapping), cancellationToken);
         var moduleRows = await serialisedOnHand.CountsAsync(cancellationToken);
         var sourceByKey = sourceRows.ToDictionary(row => (row.ItemId, row.LocationId));
         var moduleByKey = moduleRows.ToDictionary(row => (row.ItemId, row.LocationId));

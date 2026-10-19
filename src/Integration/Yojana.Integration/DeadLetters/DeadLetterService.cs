@@ -10,7 +10,11 @@ using Yojana.Platform.Contracts.Time;
 
 namespace Yojana.Integration.DeadLetters;
 
-public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext tenant, IClock clock)
+public sealed class DeadLetterService(
+    IntegrationDbContext db,
+    ITenantContext tenant,
+    IClock clock,
+    IInboundMessageParkingSink parking)
 {
     public async Task<Guid> ParkReconciliationAsync(Guid resultId, Guid connectionId, string entity,
         string rawComparison, string failure, CancellationToken cancellationToken)
@@ -47,29 +51,9 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
     {
         var source = await db.InboundMessages.SingleAsync(x => x.TenantId == tenant.TenantId
             && x.InboundMessageId == inboundMessageId, cancellationToken);
-        var existing = await db.DeadLetterItems.Where(x => x.TenantId == tenant.TenantId
-                && x.SourceKind == DeadLetterSourceKind.InboundMessage && x.SourceId == inboundMessageId)
-            .Select(x => (Guid?)x.DeadLetterItemId).SingleOrDefaultAsync(cancellationToken);
-        if (existing is not null) return existing.Value;
-        var id = TimeOrderedId.New(clock.UtcNow);
-        db.DeadLetterItems.Add(new DeadLetterItem
-        {
-            TenantId = tenant.TenantId,
-            DeadLetterItemId = id,
-            ConnectionId = source.ConnectionId,
-            Direction = DeadLetterDirection.Inbound,
-            RecordType = source.MessageType,
-            SourceKind = DeadLetterSourceKind.InboundMessage,
-            SourceId = source.InboundMessageId,
-            ReasonCode = Required(reasonCode, "reason_code_required", "A dead-letter reason code is required."),
-            RawPayload = source.RawPayload,
-            CanonicalAttempt = source.CanonicalMessage,
-            Failure = Required(failure, "failure_required", "A dead-letter failure is required."),
-            Status = DeadLetterStatus.NeedsAttention,
-            CreatedAt = clock.UtcNow,
-            UpdatedAt = clock.UtcNow,
-        });
-        AddEvent(id, DeadLetterAction.Parked, $"system:connection:{source.ConnectionId:N}", failure, new { });
+        var id = await parking.ParkInboundAsync(source,
+            Required(reasonCode, "reason_code_required", "A dead-letter reason code is required."),
+            Required(failure, "failure_required", "A dead-letter failure is required."), cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         return id;
     }
@@ -231,7 +215,7 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         var command = await db.OutboundCommands.SingleAsync(x => x.TenantId == tenant.TenantId
             && x.OutboundCommandId == task.OutboundCommandId, cancellationToken);
         await AddMappingAsync(command.ConnectionId, "document", externalId, OutboundRelay.ModuleId(command),
-            ExternalMappingSource.Manual, actorRef, command.ModuleDocumentRef, cancellationToken);
+            ExternalIdMappingSource.Manual, actorRef, command.ModuleDocumentRef, cancellationToken);
         command.Status = OutboundCommandStatus.Done;
         command.ErpExternalId = externalId;
         command.ErpChangeMarker = request.ErpChangeMarker;
@@ -266,9 +250,9 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var item = await OpenItemAsync(itemId, cancellationToken);
         await AddMappingAsync(item.ConnectionId, entityType, externalId, moduleId,
-            provisional ? ExternalMappingSource.Provisional : ExternalMappingSource.Operator,
+            provisional ? ExternalIdMappingSource.Provisional : ExternalIdMappingSource.Operator,
             actorRef, externalId, cancellationToken);
-        await AddReferenceProjectionAsync(item.ConnectionId, entityType, externalId, moduleId, provisional,
+        await AddReferenceProjectionAsync(entityType, externalId, moduleId, provisional,
             cancellationToken);
         await ScheduleRetryAsync(item, cancellationToken);
         await CloseManualTaskAsync(itemId, actorRef, cancellationToken);
@@ -290,9 +274,12 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
             var command = await db.OutboundCommands.SingleAsync(x => x.TenantId == tenant.TenantId
                 && x.OutboundCommandId == item.SourceId, cancellationToken);
             command.Status = OutboundCommandStatus.Pending;
+            command.AttemptCount = 0;
             command.NextAttemptAt = clock.UtcNow;
+            command.LastAttemptAt = null;
             command.LockedUntil = null;
             command.CompletedAt = null;
+            command.Outcome = null;
             command.LastFailure = null;
             return;
         }
@@ -301,6 +288,11 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
             var inbound = await db.InboundMessages.SingleAsync(x => x.TenantId == tenant.TenantId
                 && x.InboundMessageId == item.SourceId, cancellationToken);
             inbound.TranslationStatus = InboundTranslationStatus.Pending;
+            inbound.TranslationAttemptCount = 0;
+            inbound.TranslationStartedAt = null;
+            inbound.NextTranslationAttemptAt = null;
+            inbound.LastTranslationError = null;
+            inbound.AttentionReasonCode = null;
             inbound.TranslatedAt = null;
             return;
         }
@@ -311,7 +303,8 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         string source, string actorRef, string naturalKey, CancellationToken cancellationToken)
     {
         var row = await db.ExternalIdMaps.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
-            && x.ConnectionId == connectionId && x.EntityType == entityType && x.ExternalId == externalId,
+            && x.ConnectionId == connectionId && x.EntityType == entityType && x.ExternalId == externalId
+            && x.ValidTo == null,
             cancellationToken);
         if (row is not null)
         {
@@ -323,6 +316,7 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         db.ExternalIdMaps.Add(new ExternalIdMap
         {
             TenantId = tenant.TenantId,
+            ExternalIdMapId = TimeOrderedId.New(clock.UtcNow),
             ConnectionId = connectionId,
             EntityType = entityType,
             ExternalId = externalId,
@@ -335,29 +329,22 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         });
     }
 
-    private async Task AddReferenceProjectionAsync(Guid connectionId, string entityType, string externalId,
+    private async Task AddReferenceProjectionAsync(string entityType, string externalId,
         Guid moduleId, bool provisional, CancellationToken cancellationToken)
     {
+        if (entityType is not ("item" or "party")) return;
         var row = await db.ReferenceProjections.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
-            && x.ConnectionId == connectionId && x.EntityType == entityType && x.ExternalId == externalId,
+            && x.EntityType == entityType && x.ModuleId == moduleId,
             cancellationToken);
-        if (row is not null)
-        {
-            if (row.ModuleId != moduleId)
-                throw new DeadLetterRuleException("reference_mapping_conflict",
-                    "The gateway reference is already mapped to another module record.");
-            return;
-        }
+        if (row is not null) return;
         db.ReferenceProjections.Add(new ReferenceProjection
         {
             TenantId = tenant.TenantId,
-            ConnectionId = connectionId,
             EntityType = entityType,
-            ExternalId = externalId,
             ModuleId = moduleId,
             Code = externalId,
             DisplayName = provisional ? "Provisional integration record" : null,
-            Provisional = provisional,
+            AttributesJson = "{}",
             UpdatedAt = clock.UtcNow,
         });
     }

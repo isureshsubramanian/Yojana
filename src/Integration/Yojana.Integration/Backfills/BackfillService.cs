@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Yojana.Integration.Connectors;
 using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
@@ -17,7 +18,7 @@ public sealed class BackfillService(
     IntegrationDbContext db,
     ITenantContext tenant,
     IClock clock,
-    IConnectorReconciliationSource source,
+    IConnectorAdapterResolver adapters,
     InboundMessageStore inbox,
     ConnectionThrottleProfiles profiles,
     IConnectionThrottleWorkerRegistry workers) : IReconciliationBackfillScheduler
@@ -78,6 +79,7 @@ public sealed class BackfillService(
         job.StartedAt ??= clock.UtcNow;
         job.LastFailure = null;
         await db.SaveChangesAsync(cancellationToken);
+        var source = await SourceAsync(job.ConnectionId, cancellationToken);
         var pagesThisRun = 0;
         try
         {
@@ -206,10 +208,12 @@ public sealed class BackfillService(
             throw new BackfillRuleException("backfill_range_invalid", "The backfill end date must not precede its start date.");
         if (request.PageSize is < 1 or > 1000)
             throw new BackfillRuleException("backfill_page_size_invalid", "Page size must be between 1 and 1,000.");
-        if (!await db.Connections.AnyAsync(row => row.TenantId == tenant.TenantId
-                && row.ConnectionId == request.ConnectionId && row.Status == ConnectionStatus.Active,
-                cancellationToken))
+        var connectorCode = await db.Connections.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && row.ConnectionId == request.ConnectionId && row.Status == ConnectionStatus.Active)
+            .Select(row => row.ConnectorCode).SingleOrDefaultAsync(cancellationToken);
+        if (connectorCode is null)
             throw new BackfillRuleException("connection_not_found", "The active connection was not found.");
+        var source = adapters.ReconciliationSource(connectorCode);
         if (!await source.SupportsRangedReadsAsync(request.ConnectionId, entity, cancellationToken))
             throw new BackfillRuleException("backfill_range_unsupported",
                 "The connector does not support ranged reads for this entity.");
@@ -267,6 +271,17 @@ public sealed class BackfillService(
         job.LastFailure = null;
         if (target == BackfillStatus.Cancelled) job.CompletedAt = clock.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<IConnectorReconciliationSource> SourceAsync(Guid connectionId,
+        CancellationToken cancellationToken)
+    {
+        var connectorCode = await db.Connections.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && row.ConnectionId == connectionId && row.Status == ConnectionStatus.Active)
+            .Select(row => row.ConnectorCode).SingleOrDefaultAsync(cancellationToken);
+        if (connectorCode is null)
+            throw new BackfillRuleException("connection_not_found", "The active connection was not found.");
+        return adapters.ReconciliationSource(connectorCode);
     }
 
     private async Task<BackfillCursor> JobAsync(Guid id, CancellationToken cancellationToken) =>

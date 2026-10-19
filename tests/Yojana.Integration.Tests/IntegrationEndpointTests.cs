@@ -21,7 +21,7 @@ public sealed class IntegrationEndpointTests
         builder.Services.AddScoped<ReconciliationService>();
         builder.Services.AddScoped<BackfillService>();
         var app = builder.Build();
-        app.MapIntegrationEndpoints();
+        app.MapIntegrationOperationsEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources
             .SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()
             .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api/integration/",

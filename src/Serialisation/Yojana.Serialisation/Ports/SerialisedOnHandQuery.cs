@@ -12,9 +12,14 @@ public sealed class SerialisedOnHandQuery(SerialisationDbContext db, ITenantCont
     public async Task<IReadOnlyList<SerialisedOnHandCount>> CountsAsync(
         CancellationToken cancellationToken)
     {
+        var includedCustody = SerialisedOnHandCustodyPolicy.IncludedLocationKinds;
+        var excludedLifecycle = SerialisedOnHandCustodyPolicy.ExcludedLifecycleStatuses;
         var rows = await db.Current.AsNoTracking()
             .Where(row => row.TenantId == tenant.TenantId && row.LocationId != null
-                && row.Disposition == UnitDisposition.Available)
+                && includedCustody.Contains(row.LocationKind!)
+                && !excludedLifecycle.Contains(row.LifecycleStatus)
+                && !db.AssemblyLinks.Any(link => link.TenantId == row.TenantId
+                    && link.ChildUnitId == row.UnitId && link.RemovedAt == null))
             .GroupBy(row => new { row.ItemId, row.LocationId })
             .Select(group => new CountProjection
             {

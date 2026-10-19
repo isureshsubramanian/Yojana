@@ -19,6 +19,10 @@ public sealed record ConnectorOnHandBalance(
     string? LocationName,
     decimal OnHand);
 
+public sealed record ConnectorOnHandRequest(
+    Guid ConnectionId,
+    IReadOnlyDictionary<string, bool> WarehouseStatusMapping);
+
 public sealed record ConnectorRangePage(
     IReadOnlyList<InboundAcceptance> Messages,
     string? NextCursor,
@@ -33,7 +37,7 @@ public interface IConnectorReconciliationSource
     Task<IReadOnlyList<ConnectorEntityDayDigest>> EntityDayDigestsAsync(Guid connectionId,
         DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<ConnectorOnHandBalance>> OnHandAsync(Guid connectionId,
+    Task<IReadOnlyList<ConnectorOnHandBalance>> OnHandAsync(ConnectorOnHandRequest request,
         CancellationToken cancellationToken);
 
     Task<bool> SupportsRangedReadsAsync(Guid connectionId, string entity,
@@ -53,7 +57,7 @@ public sealed class UnavailableConnectorReconciliationSource : IConnectorReconci
         DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken) =>
         Task.FromException<IReadOnlyList<ConnectorEntityDayDigest>>(Unavailable());
 
-    public Task<IReadOnlyList<ConnectorOnHandBalance>> OnHandAsync(Guid connectionId,
+    public Task<IReadOnlyList<ConnectorOnHandBalance>> OnHandAsync(ConnectorOnHandRequest request,
         CancellationToken cancellationToken) =>
         Task.FromException<IReadOnlyList<ConnectorOnHandBalance>>(Unavailable());
 

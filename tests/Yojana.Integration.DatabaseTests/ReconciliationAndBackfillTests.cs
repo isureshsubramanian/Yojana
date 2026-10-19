@@ -102,6 +102,48 @@ public sealed class ReconciliationAndBackfillTests(IntegrationHostFixture fixtur
     }
 
     [DatabaseFact]
+    public async Task Location_check_counts_a_quarantined_unit_as_warehouse_on_hand()
+    {
+        var tenant = await fixture.NewTenantAsync("quarantine");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var item = Guid.NewGuid();
+        var location = Guid.NewGuid();
+        fixture.ReconciliationSource.Reset(connection);
+        fixture.ReconciliationSource.SetOnHand(connection,
+            new ConnectorOnHandBalance(item, "FIC-ITEM-Q", "Fictional inspected unit", location,
+                "WH-Q", "Inspection store", 2));
+        using (var settingScope = fixture.ScopeFor(tenant))
+        {
+            var integration = settingScope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+            var setting = await integration.ConnectionGatewaySettings.SingleAsync(row =>
+                row.ConnectionId == connection);
+            setting.OnHandStatusMappingJson = """{"inspection":true,"supplier_hold":false}""";
+            await integration.SaveChangesAsync();
+        }
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var quarantined = Current(tenant, item, location);
+            quarantined.Disposition = UnitDisposition.Returned;
+            quarantined.LocationKind = LocationKind.Quarantine;
+            db.Current.AddRange(Current(tenant, item, location), quarantined);
+            await db.SaveChangesAsync();
+        }
+
+        using var checkScope = fixture.ScopeFor(tenant);
+        var service = checkScope.ServiceProvider.GetRequiredService<ReconciliationService>();
+        var runId = await service.RunLocationChecksAsync(connection, CancellationToken.None);
+        var detail = Assert.IsType<ReconciliationRunDetail>(
+            await service.DetailAsync(runId, CancellationToken.None));
+        var comparison = Assert.Single(detail.LocationChecks);
+        Assert.Equal(2, comparison.SourceOnHand);
+        Assert.Equal(2, comparison.ModuleUnitCount);
+        Assert.Equal(ReconciliationResultStatus.Clean, comparison.Status);
+        Assert.True(fixture.ReconciliationSource.LastOnHandRequest!.WarehouseStatusMapping["inspection"]);
+        Assert.False(fixture.ReconciliationSource.LastOnHandRequest.WarehouseStatusMapping["supplier_hold"]);
+    }
+
+    [DatabaseFact]
     public async Task Backfill_resumes_from_its_persisted_cursor_after_a_crash()
     {
         var tenant = await fixture.NewTenantAsync("resume");

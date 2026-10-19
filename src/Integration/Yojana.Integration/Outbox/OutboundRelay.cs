@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Security.Workers;
+using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 
@@ -143,7 +144,7 @@ public sealed class OutboundRelay(
         var moduleId = ModuleId(command);
         var existing = await db.ExternalIdMaps.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == command.ConnectionId && x.EntityType == "document"
-            && x.ExternalId == document.ErpExternalId, cancellationToken);
+            && x.ExternalId == document.ErpExternalId && x.ValidTo == null, cancellationToken);
         if (existing is not null && existing.ModuleId != moduleId)
             throw new ExternalMappingConflictException(document.ErpExternalId);
         if (existing is null)
@@ -151,13 +152,14 @@ public sealed class OutboundRelay(
             db.ExternalIdMaps.Add(new ExternalIdMap
             {
                 TenantId = tenant.TenantId,
+                ExternalIdMapId = TimeOrderedId.New(clock.UtcNow),
                 ConnectionId = command.ConnectionId,
                 EntityType = "document",
                 ExternalId = document.ErpExternalId,
                 ModuleId = moduleId,
                 ValidFrom = clock.UtcNow,
                 NaturalKeyHash = NaturalKeyHash(command.ModuleDocumentRef),
-                MappingSource = ExternalMappingSource.Outbound,
+                MappingSource = ExternalIdMappingSource.Outbound,
                 MappedBy = $"system:connection:{command.ConnectionId:N}",
                 MappedAt = clock.UtcNow,
             });

@@ -3,8 +3,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
 using Yojana.Integration;
+using Yojana.Integration.Connectors;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
+using Yojana.Integration.Notifications;
 using Yojana.Integration.Outbox;
 using Yojana.Integration.Reconciliation;
 using Yojana.Integration.Security.Workers;
@@ -24,6 +26,7 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
     public static string? ImportFilesConnectionString => WithDatabase("_files");
     public MutableTestClock Clock { get; } = new(new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc));
     public IHost Host { get; private set; } = null!;
+    public FakeReconciliationSource Poller => ReconciliationSource;
     public IServiceProvider Services => Host.Services;
     public FakeOutboundConnector Connector { get; } = new();
     public FakeReconciliationSource ReconciliationSource { get; } = new();
@@ -42,6 +45,7 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.Configuration["Platform:AutoBuildMessageStorage"] = "true";
         builder.Configuration["Platform:ServiceName"] = "yojana-integration-tests";
         builder.Configuration["Serialisation:Documents:ConfirmDeliverySeparately"] = "false";
+        ConfigureLocalKey(builder.Configuration);
         PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);
         PlatformSetup.IncludeHandlers(typeof(IntegrationModule).Assembly);
         builder.AddYojanaPlatform();
@@ -50,7 +54,7 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.Services.AddSingleton(Connector);
         builder.Services.AddSingleton<IOutboundConnector>(services => services.GetRequiredService<FakeOutboundConnector>());
         builder.Services.AddSingleton(ReconciliationSource);
-        builder.Services.AddSingleton<IConnectorReconciliationSource>(services =>
+        builder.Services.AddSingleton<IConnectorAdapter>(services =>
             services.GetRequiredService<FakeReconciliationSource>());
         builder.Services.AddSingleton<IClock>(Clock);
         Host = builder.Build();
@@ -109,6 +113,17 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         var builder = new SqlConnectionStringBuilder(ConnectionString);
         builder.InitialCatalog += suffix;
         return builder.ConnectionString;
+    }
+
+    public static void ConfigureLocalKey(Microsoft.Extensions.Configuration.IConfiguration configuration)
+    {
+        configuration["Integration:Security:KeyEncryption:Provider"] = "Local";
+        configuration["Integration:Security:LocalKeyEncryption:Current:KeyId"] = "integration-tests";
+        configuration["Integration:Security:LocalKeyEncryption:Current:KeyVersion"] = "1";
+        configuration["Integration:Security:LocalKeyEncryption:Current:KeyBase64"] =
+            Convert.ToBase64String(Enumerable.Range(1, 32).Select(x => (byte)x).ToArray());
+        configuration["Integration:Security:LocalKeyEncryption:AllowInProduction"] = "true";
+        configuration["Integration:Security:LocalKeyEncryption:ProductionOverrideReason"] = "isolated database test host";
     }
 }
 

@@ -12,6 +12,14 @@ namespace Yojana.Integration.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<string>(
+                name: "on_hand_status_mapping_json",
+                schema: "integration",
+                table: "connection_gateway_setting",
+                type: "nvarchar(max)",
+                nullable: false,
+                defaultValue: "{}");
+
             migrationBuilder.CreateTable(
                 name: "reconciliation_run",
                 schema: "integration",
@@ -157,6 +165,11 @@ namespace Yojana.Integration.Migrations
             migrationBuilder.DropTable(
                 name: "reconciliation_run",
                 schema: "integration");
+
+            migrationBuilder.DropColumn(
+                name: "on_hand_status_mapping_json",
+                schema: "integration",
+                table: "connection_gateway_setting");
         }
     }
 }

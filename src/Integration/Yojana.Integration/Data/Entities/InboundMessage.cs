@@ -24,15 +24,24 @@ public sealed class InboundMessage : ITenantScoped
     public bool IsLatest { get; set; }
     public Guid? SupersedesInboundMessageId { get; set; }
     public required string TranslationStatus { get; set; }
+    public int TranslationAttemptCount { get; set; }
+    public DateTime? TranslationStartedAt { get; set; }
+    public DateTime? NextTranslationAttemptAt { get; set; }
+    public string? LastTranslationError { get; set; }
+    public string? AttentionReasonCode { get; set; }
     public DateTime? TranslatedAt { get; set; }
 }
 
 public static class InboundTranslationStatus
 {
     public const string Pending = "pending";
+    public const string Processing = "processing";
+    public const string Held = "held";
+    public const string Failed = "failed";
     public const string Superseded = "superseded";
     public const string Completed = "completed";
     public const string Late = "late";
+    public const string NeedsAttention = "needs_attention";
 }
 
 public sealed class IdempotencyClaim : ITenantScoped
