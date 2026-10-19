@@ -4,4 +4,7 @@
     <ProjectReference Include="../../Platform/Yojana.Platform/Yojana.Platform.csproj" />
     <ProjectReference Include="../../Serialisation/Yojana.Serialisation.Contracts/Yojana.Serialisation.Contracts.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="Security/SOC2-CONTROL-MAPPING.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

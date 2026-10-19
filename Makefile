@@ -48,6 +48,7 @@ web-lcp: ## Measure largest contentful paint of the shell against a running host
 test: build ## Unit and architecture tests (no database)
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Demo.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Architecture.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
+	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Integration.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Platform.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Serialisation.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.RenderWorker.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
