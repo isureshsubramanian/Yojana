@@ -20,7 +20,8 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "reference_projection", "connection_capability", "connection_degradation_setting", "connection_gateway_setting",
             "outbound_command", "exception_task", "resequence_item", "external_id_map", "connector_catalogue",
             "tenant_data_key", "connection_credential", "tenant_data_key_rewrap_checkpoint", "connection_event",
-            "connection_throttle_profile", "connection_notification_source", "connection_poll_watermark");
+            "connection_throttle_profile", "connection_notification_source", "connection_poll_watermark",
+            "dead_letter_item", "dead_letter_event", "manual_outbound_task");
     }
 
     [DatabaseFact]

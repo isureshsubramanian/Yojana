@@ -16,27 +16,6 @@ public sealed class ReferenceProjection : ITenantScoped
     public DateTime UpdatedAt { get; set; }
 }
 
-public sealed class ExternalIdMap : ITenantScoped
-{
-    public TenantId TenantId { get; set; }
-    public Guid ExternalIdMapId { get; set; }
-    public Guid ConnectionId { get; set; }
-    public required string EntityType { get; set; }
-    public required string ExternalId { get; set; }
-    public Guid ModuleRef { get; set; }
-    public DateTime ValidFrom { get; set; }
-    public DateTime? ValidTo { get; set; }
-    public string? NaturalKeyHash { get; set; }
-    public required string MappingSource { get; set; }
-}
-
-public static class ExternalIdMappingSource
-{
-    public const string Manual = "manual";
-    public const string Auto = "auto";
-    public const string Migration = "migration";
-}
-
 public sealed class ConnectorCatalogueEntry : ITenantScoped
 {
     public TenantId TenantId { get; set; }
@@ -111,6 +90,25 @@ public sealed class OutboundCommandRow : ITenantScoped
     public required string Payload { get; set; }
     public required string Status { get; set; }
     public DateTime CreatedAt { get; set; }
+    public int AttemptCount { get; set; }
+    public DateTime? NextAttemptAt { get; set; }
+    public DateTime? LastAttemptAt { get; set; }
+    public DateTime? LockedUntil { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string? ErpExternalId { get; set; }
+    public string? ErpChangeMarker { get; set; }
+    public string? Outcome { get; set; }
+    public string? LastFailure { get; set; }
+    public byte[] RowVersion { get; set; } = [];
+}
+
+public static class OutboundCommandStatus
+{
+    public const string Pending = "pending";
+    public const string Processing = "processing";
+    public const string Retry = "retry";
+    public const string Done = "done";
+    public const string Parked = "parked";
 }
 
 public sealed class IntegrationExceptionTask : ITenantScoped

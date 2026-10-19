@@ -7,6 +7,7 @@ using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Gateway;
 using Yojana.Integration.Inbox;
+using Yojana.Integration.Outbox;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
@@ -120,6 +121,34 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
         Assert.Equal(OutboundCommandStager.Derive(eventId, nameof(CreateReplacementDelivery)), command.IdempotencyKey);
         Assert.False(string.IsNullOrWhiteSpace(command.ModuleDocumentRef));
         Assert.False(string.IsNullOrWhiteSpace(command.ErpReferenceText));
+    }
+
+    [DatabaseFact]
+    public async Task Unsupported_outbound_capability_raises_a_prefilled_manual_task()
+    {
+        fixture.Clock.UtcNow = new DateTime(2026, 9, 10, 9, 0, 0, DateTimeKind.Utc);
+        var tenant = await fixture.NewTenantAsync("unsupported");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var capability = await db.ConnectionCapabilities.SingleAsync(x => x.ConnectionId == connection
+            && x.CanonicalMessage == nameof(CreateServiceOrder));
+        capability.SupportLevel = CapabilitySupport.Unsupported;
+        await db.SaveChangesAsync();
+        var eventId = Guid.NewGuid();
+        var header = new PublishedEventHeader("test.unsupported", "1.0", eventId, Guid.NewGuid(),
+            fixture.Clock.UtcNow, fixture.Clock.UtcNow, 1, Guid.NewGuid(), "integration-test", null);
+        var moduleId = Guid.NewGuid();
+        var command = new CreateServiceOrder(Guid.NewGuid(), $"service/{moduleId:N}",
+            $"YOJ-{eventId:N}", "FIC-CUSTOMER", new(Guid.NewGuid(), "FIC-UNIT"), "approved",
+            "Fictional repair");
+
+        Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<OutboundCommandStager>()
+            .StageAsync(header, command, CancellationToken.None));
+        var row = await db.OutboundCommands.SingleAsync(x => x.ConnectionId == connection);
+        Assert.Equal(OutboundCommandStatus.Parked, row.Status);
+        var manual = await db.ManualOutboundTasks.SingleAsync(x => x.OutboundCommandId == row.OutboundCommandId);
+        Assert.Contains("Fictional repair", manual.Draft, StringComparison.Ordinal);
     }
 
     private async Task<GatewayTranslationResult> AcceptAndTranslate<T>(TenantId tenant, Guid connection, string entity,

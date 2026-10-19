@@ -47,8 +47,8 @@ namespace Yojana.Integration.Migrations
                     actor_ref = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     occurred_at = table.Column<DateTime>(type: "datetime2(3)", nullable: false),
                     details_json = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    previous_record_hash = table.Column<string>(type: "char(64)", fixedLength: true, maxLength: 64, nullable: false),
-                    record_hash = table.Column<string>(type: "char(64)", fixedLength: true, maxLength: 64, nullable: false)
+                    previous_record_hash = table.Column<string>(type: "char(64)", unicode: false, fixedLength: true, maxLength: 64, nullable: false),
+                    record_hash = table.Column<string>(type: "char(64)", unicode: false, fixedLength: true, maxLength: 64, nullable: false)
                 },
                 constraints: table =>
                 {

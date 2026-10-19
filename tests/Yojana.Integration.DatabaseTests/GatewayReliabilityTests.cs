@@ -260,8 +260,9 @@ public sealed class GatewayReliabilityTests(IntegrationHostFixture fixture)
         string external, Guid moduleRef) => db.ExternalIdMaps.Add(new()
         {
             TenantId = tenant, ExternalIdMapId = Guid.CreateVersion7(), ConnectionId = connection,
-            EntityType = type, ExternalId = external, ModuleRef = moduleRef, ValidFrom = At.UtcDateTime,
-            MappingSource = ExternalIdMappingSource.Manual,
+            EntityType = type, ExternalId = external, ModuleId = moduleRef, ValidFrom = At.UtcDateTime,
+            NaturalKeyHash = new string('0', 64),
+            MappingSource = ExternalIdMappingSource.Manual, MappedBy = "test", MappedAt = At.UtcDateTime,
         });
 
     private static InboundAcceptance Acceptance<T>(TenantId tenant, Guid connection, string entity,

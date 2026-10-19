@@ -85,7 +85,7 @@ public sealed class NotificationEndpointTests(IntegrationHostFixture fixture, IT
         });
         await db.SaveChangesAsync();
         var protector = scope.ServiceProvider.GetRequiredService<ConnectionCredentialProtector>();
-        var credential = await protector.EncryptAsync(tenant, connection, IntegrationEndpoints.SigningCredentialPurpose,
+        var credential = await protector.EncryptAsync(tenant, connection, IntegrationNotificationEndpoints.SigningCredentialPurpose,
             secret, null, fixture.Clock.UtcNow.AddDays(30), CancellationToken.None);
         await scope.ServiceProvider.GetRequiredService<IConnectionCredentialStore>()
             .SaveAsync(credential, CancellationToken.None);
@@ -118,10 +118,10 @@ public sealed class NotificationEndpointTests(IntegrationHostFixture fixture, IT
             Content = new ByteArrayContent(body),
         };
         request.Content.Headers.ContentType = new("application/json");
-        request.Headers.Add(IntegrationEndpoints.TenantHeader, tenant.ToString());
-        request.Headers.Add(IntegrationEndpoints.TimestampHeader, timestamp.ToString("O"));
-        request.Headers.Add(IntegrationEndpoints.SignatureHeader, Convert.ToHexString(
-            HmacSha256WebhookSignatureVerifier.Sign(IntegrationEndpoints.SignedContent(timestamp, body), secret)));
+        request.Headers.Add(IntegrationNotificationEndpoints.TenantHeader, tenant.ToString());
+        request.Headers.Add(IntegrationNotificationEndpoints.TimestampHeader, timestamp.ToString("O"));
+        request.Headers.Add(IntegrationNotificationEndpoints.SignatureHeader, Convert.ToHexString(
+            HmacSha256WebhookSignatureVerifier.Sign(IntegrationNotificationEndpoints.SignedContent(timestamp, body), secret)));
         return request;
     }
 

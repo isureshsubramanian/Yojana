@@ -12,8 +12,8 @@ using Yojana.Integration.Data;
 namespace Yojana.Integration.Migrations
 {
     [DbContext(typeof(IntegrationDbContext))]
-    [Migration("20261019082825_P8T12ExternalIds")]
-    partial class P8T12ExternalIds
+    [Migration("20261019082856_P8T08DeadLetters")]
+    partial class P8T08DeadLetters
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -22,102 +22,9 @@ namespace Yojana.Integration.Migrations
             modelBuilder
                 .HasDefaultSchema("integration")
                 .HasAnnotation("ProductVersion", "10.0.13")
-                .HasAnnotation("Relational:MaxIdentifierLength", 128)
-                .HasAnnotation("WolverineEnabled", "true");
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
-
-            modelBuilder.Entity("Wolverine.EntityFrameworkCore.Internals.IncomingMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("id");
-
-                    b.Property<int>("Attempts")
-                        .HasColumnType("int")
-                        .HasColumnName("attempts");
-
-                    b.Property<byte[]>("Body")
-                        .IsRequired()
-                        .HasColumnType("varbinary(max)")
-                        .HasColumnName("body");
-
-                    b.Property<DateTimeOffset?>("ExecutionTime")
-                        .HasColumnType("datetimeoffset")
-                        .HasColumnName("execution_time");
-
-                    b.Property<DateTimeOffset?>("KeepUntil")
-                        .HasColumnType("datetimeoffset")
-                        .HasColumnName("keep_until");
-
-                    b.Property<string>("MessageType")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("message_type");
-
-                    b.Property<int>("OwnerId")
-                        .HasColumnType("int")
-                        .HasColumnName("owner_id");
-
-                    b.Property<string>("ReceivedAt")
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("received_at");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("status");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("wolverine_incoming_envelopes", "wolverine", t =>
-                        {
-                            t.ExcludeFromMigrations();
-                        });
-                });
-
-            modelBuilder.Entity("Wolverine.EntityFrameworkCore.Internals.OutgoingMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("id");
-
-                    b.Property<int>("Attempts")
-                        .HasColumnType("int")
-                        .HasColumnName("attempts");
-
-                    b.Property<byte[]>("Body")
-                        .IsRequired()
-                        .HasColumnType("varbinary(max)")
-                        .HasColumnName("body");
-
-                    b.Property<DateTimeOffset?>("DeliverBy")
-                        .HasColumnType("datetimeoffset")
-                        .HasColumnName("deliver_by");
-
-                    b.Property<string>("Destination")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("destination");
-
-                    b.Property<string>("MessageType")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("message_type");
-
-                    b.Property<int>("OwnerId")
-                        .HasColumnType("int")
-                        .HasColumnName("owner_id");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("wolverine_outgoing_envelopes", "wolverine", t =>
-                        {
-                            t.ExcludeFromMigrations();
-                        });
-                });
 
             modelBuilder.Entity("Yojana.Integration.Data.Entities.CanonicalDocument", b =>
                 {
@@ -342,44 +249,157 @@ namespace Yojana.Integration.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Yojana.Integration.Data.Entities.ConnectorCatalogueEntry", b =>
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.DeadLetterEvent", b =>
                 {
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("tenant_id");
 
-                    b.Property<string>("ConnectorCode")
-                        .HasMaxLength(16)
-                        .HasColumnType("nvarchar(16)")
-                        .HasColumnName("connector_code");
+                    b.Property<Guid>("DeadLetterEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("dead_letter_event_id");
 
-                    b.Property<string>("CustomerCostDisclosure")
+                    b.Property<string>("Action")
                         .IsRequired()
+                        .HasMaxLength(48)
+                        .HasColumnType("nvarchar(48)")
+                        .HasColumnName("action");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<Guid>("DeadLetterItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("dead_letter_item_id");
+
+                    b.Property<string>("DetailsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("details_json");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("Reason")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)")
-                        .HasColumnName("customer_cost_disclosure");
+                        .HasColumnName("reason");
 
-                    b.Property<string>("DisplayName")
+                    b.HasKey("TenantId", "DeadLetterEventId")
+                        .HasName("pk_dead_letter_event");
+
+                    b.HasIndex("TenantId", "DeadLetterItemId", "OccurredAt", "DeadLetterEventId")
+                        .HasDatabaseName("ix_dead_letter_event_tenant_id_dead_letter_item_id_occurred_at_dead_letter_event_id");
+
+                    b.ToTable("dead_letter_event", "integration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.DeadLetterItem", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("DeadLetterItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("dead_letter_item_id");
+
+                    b.Property<string>("CanonicalAttempt")
                         .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("nvarchar(160)")
-                        .HasColumnName("display_name");
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("canonical_attempt");
 
-                    b.Property<bool>("Enabled")
-                        .HasColumnType("bit")
-                        .HasColumnName("enabled");
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("direction");
+
+                    b.Property<string>("Failure")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)")
+                        .HasColumnName("failure");
+
+                    b.Property<string>("RawPayload")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("raw_payload");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("reason_code");
+
+                    b.Property<string>("RecordType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("record_type");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_id");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("source_kind");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("status");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("updated_at");
 
-                    b.HasKey("TenantId", "ConnectorCode")
-                        .HasName("pk_connector_catalogue");
+                    b.HasKey("TenantId", "DeadLetterItemId")
+                        .HasName("pk_dead_letter_item");
 
-                    b.HasIndex("TenantId", "Enabled", "DisplayName", "ConnectorCode")
-                        .HasDatabaseName("ix_connector_catalogue_tenant_id_enabled_display_name_connector_code");
+                    b.HasIndex("TenantId", "SourceKind", "SourceId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_dead_letter_item_tenant_id_source_kind_source_id");
 
-                    b.ToTable("connector_catalogue", "integration");
+                    b.HasIndex("TenantId", "Status", "CreatedAt", "DeadLetterItemId")
+                        .HasDatabaseName("ix_dead_letter_item_tenant_id_status_created_at_dead_letter_item_id");
+
+                    b.HasIndex("TenantId", "ConnectionId", "ReasonCode", "RecordType", "CreatedAt", "DeadLetterItemId")
+                        .HasDatabaseName("ix_dead_letter_item_tenant_id_connection_id_reason_code_record_type_created_at_dead_letter_item_id");
+
+                    b.ToTable("dead_letter_item", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_dead_letter_direction", "direction IN ('inbound','outbound')");
+
+                            t.HasCheckConstraint("ck_dead_letter_status", "status IN ('needs_attention','retry_pending','resolved','discarded')");
+                        });
                 });
 
             modelBuilder.Entity("Yojana.Integration.Data.Entities.ExternalIdMap", b =>
@@ -388,41 +408,45 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("tenant_id");
 
-                    b.Property<Guid>("ExternalIdMapId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("external_id_map_id");
-
                     b.Property<Guid>("ConnectionId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("connection_id");
 
                     b.Property<string>("EntityType")
-                        .IsRequired()
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)")
                         .HasColumnName("entity_type");
 
                     b.Property<string>("ExternalId")
-                        .IsRequired()
                         .HasMaxLength(320)
                         .HasColumnType("nvarchar(320)")
                         .HasColumnName("external_id");
 
+                    b.Property<DateTime>("MappedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("mapped_at");
+
+                    b.Property<string>("MappedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("mapped_by");
+
                     b.Property<string>("MappingSource")
                         .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("nvarchar(16)")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
                         .HasColumnName("mapping_source");
 
-                    b.Property<Guid>("ModuleRef")
+                    b.Property<Guid>("ModuleId")
                         .HasColumnType("uniqueidentifier")
-                        .HasColumnName("module_ref");
+                        .HasColumnName("module_id");
 
                     b.Property<string>("NaturalKeyHash")
+                        .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("nchar(64)")
-                        .HasColumnName("natural_key_hash")
-                        .IsFixedLength();
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("natural_key_hash");
 
                     b.Property<DateTime>("ValidFrom")
                         .HasColumnType("datetime2(3)")
@@ -432,21 +456,13 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("valid_to");
 
-                    b.HasKey("TenantId", "ExternalIdMapId")
+                    b.HasKey("TenantId", "ConnectionId", "EntityType", "ExternalId")
                         .HasName("pk_external_id_map");
 
-                    b.HasIndex("TenantId", "ConnectionId", "EntityType", "ExternalId")
-                        .IsUnique()
-                        .HasDatabaseName("ux_external_id_map_tenant_id_connection_id_entity_type_external_id")
-                        .HasFilter("[valid_to] IS NULL");
+                    b.HasIndex("TenantId", "ModuleId", "EntityType", "ValidTo")
+                        .HasDatabaseName("ix_external_id_map_tenant_id_module_id_entity_type_valid_to");
 
-                    b.HasIndex("TenantId", "ModuleRef", "EntityType", "ValidTo")
-                        .HasDatabaseName("ix_external_id_map_tenant_id_module_ref_entity_type_valid_to");
-
-                    b.ToTable("external_id_map", "integration", t =>
-                        {
-                            t.HasCheckConstraint("ck_external_id_map_source", "mapping_source IN ('manual','auto','migration')");
-                        });
+                    b.ToTable("external_id_map", "integration");
                 });
 
             modelBuilder.Entity("Yojana.Integration.Data.Entities.IdempotencyClaim", b =>
@@ -506,11 +522,6 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("accepted_at");
 
-                    b.Property<string>("AttentionReasonCode")
-                        .HasMaxLength(80)
-                        .HasColumnType("nvarchar(80)")
-                        .HasColumnName("attention_reason_code");
-
                     b.Property<string>("CanonicalMessage")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
@@ -554,11 +565,6 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("bit")
                         .HasColumnName("is_latest");
 
-                    b.Property<string>("LastTranslationError")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)")
-                        .HasColumnName("last_translation_error");
-
                     b.Property<string>("MarkerKind")
                         .IsRequired()
                         .HasMaxLength(40)
@@ -574,10 +580,6 @@ namespace Yojana.Integration.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)")
                         .HasColumnName("message_type");
-
-                    b.Property<DateTime?>("NextTranslationAttemptAt")
-                        .HasColumnType("datetime2(3)")
-                        .HasColumnName("next_translation_attempt_at");
 
                     b.Property<DateTime>("ObservedAt")
                         .HasColumnType("datetime2(3)")
@@ -600,14 +602,6 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("translated_at");
 
-                    b.Property<int>("TranslationAttemptCount")
-                        .HasColumnType("int")
-                        .HasColumnName("translation_attempt_count");
-
-                    b.Property<DateTime?>("TranslationStartedAt")
-                        .HasColumnType("datetime2(3)")
-                        .HasColumnName("translation_started_at");
-
                     b.Property<string>("TranslationStatus")
                         .IsRequired()
                         .HasMaxLength(24)
@@ -617,17 +611,17 @@ namespace Yojana.Integration.Migrations
                     b.HasKey("TenantId", "InboundMessageId")
                         .HasName("pk_inbound_message");
 
+                    b.HasIndex("TenantId", "TranslationStatus", "AcceptedAt", "InboundMessageId")
+                        .HasDatabaseName("ix_inbound_message_tenant_id_translation_status_accepted_at_inbound_message_id");
+
                     b.HasIndex("TenantId", "ConnectionId", "ErpEntity", "ErpExternalId", "IsLatest")
                         .IsUnique()
                         .HasDatabaseName("ux_inbound_message_tenant_id_connection_id_erp_entity_erp_external_id_is_latest")
                         .HasFilter("[is_latest] = 1");
 
-                    b.HasIndex("TenantId", "TranslationStatus", "NextTranslationAttemptAt", "AcceptedAt", "InboundMessageId")
-                        .HasDatabaseName("ix_inbound_message_tenant_id_translation_status_next_translation_attempt_at_accepted_at_inbound_message_id");
-
                     b.ToTable("inbound_message", "integration", t =>
                         {
-                            t.HasCheckConstraint("ck_inbound_message_translation_status", "translation_status IN ('pending','processing','held','failed','superseded','completed','late','needs_attention')");
+                            t.HasCheckConstraint("ck_inbound_message_translation_status", "translation_status IN ('pending','superseded','completed','late')");
                         });
                 });
 
@@ -686,6 +680,88 @@ namespace Yojana.Integration.Migrations
                     b.ToTable("exception_task", "integration");
                 });
 
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ManualOutboundTask", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ManualOutboundTaskId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("manual_outbound_task_id");
+
+                    b.Property<string>("CommandType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("command_type");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("completed_at");
+
+                    b.Property<string>("CompletedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("completed_by");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("DeadLetterItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("dead_letter_item_id");
+
+                    b.Property<string>("Draft")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("draft");
+
+                    b.Property<string>("ErpChangeMarker")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("erp_change_marker");
+
+                    b.Property<string>("ErpExternalId")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("erp_external_id");
+
+                    b.Property<Guid>("OutboundCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("outbound_command_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("status");
+
+                    b.HasKey("TenantId", "ManualOutboundTaskId")
+                        .HasName("pk_manual_outbound_task");
+
+                    b.HasIndex("TenantId", "DeadLetterItemId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_manual_outbound_task_tenant_id_dead_letter_item_id");
+
+                    b.HasIndex("TenantId", "OutboundCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_manual_outbound_task_tenant_id_outbound_command_id");
+
+                    b.HasIndex("TenantId", "Status", "CreatedAt", "ManualOutboundTaskId")
+                        .HasDatabaseName("ix_manual_outbound_task_tenant_id_status_created_at_manual_outbound_task_id");
+
+                    b.ToTable("manual_outbound_task", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_manual_outbound_task_status", "status IN ('open','completed')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.OutboundCommandRow", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -696,11 +772,19 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("outbound_command_id");
 
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int")
+                        .HasColumnName("attempt_count");
+
                     b.Property<string>("CommandType")
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)")
                         .HasColumnName("command_type");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("completed_at");
 
                     b.Property<Guid>("ConnectionId")
                         .HasColumnType("uniqueidentifier")
@@ -709,6 +793,16 @@ namespace Yojana.Integration.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("created_at");
+
+                    b.Property<string>("ErpChangeMarker")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("erp_change_marker");
+
+                    b.Property<string>("ErpExternalId")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("erp_external_id");
 
                     b.Property<string>("ErpReferenceText")
                         .IsRequired()
@@ -720,16 +814,45 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("idempotency_key");
 
+                    b.Property<DateTime?>("LastAttemptAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_attempt_at");
+
+                    b.Property<string>("LastFailure")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("last_failure");
+
+                    b.Property<DateTime?>("LockedUntil")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("locked_until");
+
                     b.Property<string>("ModuleDocumentRef")
                         .IsRequired()
                         .HasMaxLength(320)
                         .HasColumnType("nvarchar(320)")
                         .HasColumnName("module_document_ref");
 
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<string>("Outcome")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("outcome");
+
                     b.Property<string>("Payload")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("payload");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -744,8 +867,8 @@ namespace Yojana.Integration.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_outbound_command_tenant_id_connection_id_idempotency_key");
 
-                    b.HasIndex("TenantId", "ConnectionId", "Status", "CreatedAt", "OutboundCommandId")
-                        .HasDatabaseName("ix_outbound_command_tenant_id_connection_id_status_created_at_outbound_command_id");
+                    b.HasIndex("TenantId", "ConnectionId", "Status", "NextAttemptAt", "CreatedAt", "OutboundCommandId")
+                        .HasDatabaseName("ix_outbound_command_tenant_id_connection_id_status_next_attempt_at_created_at_outbound_command_id");
 
                     b.ToTable("outbound_command", "integration");
                 });
@@ -756,21 +879,19 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("tenant_id");
 
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
                     b.Property<string>("EntityType")
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)")
                         .HasColumnName("entity_type");
 
-                    b.Property<Guid>("ModuleId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("module_id");
-
-                    b.Property<string>("AttributesJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("{}")
-                        .HasColumnName("attributes_json");
+                    b.Property<string>("ExternalId")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("external_id");
 
                     b.Property<string>("Code")
                         .HasMaxLength(160)
@@ -786,6 +907,14 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("nvarchar(320)")
                         .HasColumnName("display_name");
 
+                    b.Property<Guid>("ModuleId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("module_id");
+
+                    b.Property<bool>("Provisional")
+                        .HasColumnType("bit")
+                        .HasColumnName("provisional");
+
                     b.Property<string>("TrackingMode")
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)")
@@ -800,11 +929,11 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("updated_at");
 
-                    b.HasKey("TenantId", "EntityType", "ModuleId")
+                    b.HasKey("TenantId", "ConnectionId", "EntityType", "ExternalId")
                         .HasName("pk_reference_projection");
 
-                    b.HasIndex("TenantId", "EntityType", "Code")
-                        .HasDatabaseName("ix_reference_projection_tenant_id_entity_type_code");
+                    b.HasIndex("TenantId", "ModuleId", "EntityType")
+                        .HasDatabaseName("ix_reference_projection_tenant_id_module_id_entity_type");
 
                     b.ToTable("reference_projection", "integration");
                 });
@@ -878,6 +1007,16 @@ namespace Yojana.Integration.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.DeadLetterEvent", b =>
+                {
+                    b.HasOne("Yojana.Integration.Data.Entities.DeadLetterItem", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "DeadLetterItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_dead_letter_event_tenant_id_dead_letter_item_id");
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.IdempotencyClaim", b =>
                 {
                     b.HasOne("Yojana.Integration.Data.Entities.InboundMessage", null)
@@ -886,6 +1025,16 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_idempotency_index_tenant_id_inbound_message_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ManualOutboundTask", b =>
+                {
+                    b.HasOne("Yojana.Integration.Data.Entities.DeadLetterItem", null)
+                        .WithOne()
+                        .HasForeignKey("Yojana.Integration.Data.Entities.ManualOutboundTask", "TenantId", "DeadLetterItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_manual_outbound_task_tenant_id_dead_letter_item_id");
                 });
 #pragma warning restore 612, 618
         }

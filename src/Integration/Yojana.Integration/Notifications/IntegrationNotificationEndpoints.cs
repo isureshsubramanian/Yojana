@@ -31,7 +31,7 @@ public static class AcceptInboundNotificationBatchHandler
         _ = await inbox.AcceptMany(command.Acceptances, cancellationToken);
 }
 
-public static class IntegrationEndpoints
+public static class IntegrationNotificationEndpoints
 {
     public const string TenantHeader = "X-Yojana-Tenant-Id";
     public const string TimestampHeader = "X-Yojana-Webhook-Timestamp";
@@ -39,7 +39,7 @@ public static class IntegrationEndpoints
     public const string SigningCredentialPurpose = "webhook_signing";
     public const int MaximumBatchSize = 1_024;
 
-    public static IEndpointRouteBuilder MapIntegrationEndpoints(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder MapIntegrationNotificationEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/integration/connections/{connectionId:guid}/notifications", ReceiveAsync)
             .AllowAnonymous();

@@ -137,7 +137,7 @@ public sealed class IntegrationDocumentQueryPort(IntegrationDbContext db, ITenan
     private async Task<Guid> RefAsync(Guid connection, string type, string external, CancellationToken cancellationToken) =>
         await db.ExternalIdMaps.AsNoTracking().Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connection
             && x.EntityType == type && x.ExternalId == external && x.ValidTo == null)
-            .Select(x => x.ModuleRef).SingleAsync(cancellationToken);
+            .Select(x => x.ModuleId).SingleAsync(cancellationToken);
 
     private async Task<(Guid ModuleId, ItemReferenceAttributes Attributes)> ItemAsync(Guid connection,
         string external, CancellationToken cancellationToken)

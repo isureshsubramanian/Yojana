@@ -24,17 +24,18 @@ public sealed class GatewayReferenceStore(IntegrationDbContext db, ITenantContex
             && x.ConnectionId == connectionId && x.EntityType == entityType && x.ExternalId == externalId
             && x.ValidTo == null,
             cancellationToken);
-        if (row is not null) return row.ModuleRef;
+        if (row is not null) return row.ModuleId;
         var now = clock.UtcNow;
         row = new ExternalIdMap
         {
             TenantId = tenantId, ExternalIdMapId = TimeOrderedId.New(now), ConnectionId = connectionId,
-            EntityType = entityType, ExternalId = externalId, ModuleRef = TimeOrderedId.New(now),
+            EntityType = entityType, ExternalId = externalId, ModuleId = TimeOrderedId.New(now),
             ValidFrom = now, MappingSource = ExternalIdMappingSource.Auto,
             NaturalKeyHash = NaturalKey(entityType, externalId),
+            MappedBy = $"system:connection:{connectionId:N}", MappedAt = now,
         };
         db.ExternalIdMaps.Add(row);
-        return row.ModuleRef;
+        return row.ModuleId;
     }
 
     public async Task<Guid> UpsertItemAsync(Guid connectionId, ItemUpserted item,
@@ -95,7 +96,7 @@ public sealed class GatewayReferenceStore(IntegrationDbContext db, ITenantContex
         CancellationToken cancellationToken) => await db.ExternalIdMaps.AsNoTracking()
         .Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId
             && x.EntityType == entityType && x.ExternalId == externalId && x.ValidTo == null)
-        .Select(x => (Guid?)x.ModuleRef).SingleOrDefaultAsync(cancellationToken);
+        .Select(x => (Guid?)x.ModuleId).SingleOrDefaultAsync(cancellationToken);
 
     private static string NaturalKey(string entityType, string externalId) => Convert.ToHexString(
         System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(

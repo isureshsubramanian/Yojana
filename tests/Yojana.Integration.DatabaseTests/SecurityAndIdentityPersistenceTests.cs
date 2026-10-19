@@ -61,7 +61,7 @@ public sealed class SecurityAndIdentityPersistenceTests(IntegrationHostFixture f
         await scope.ServiceProvider.GetRequiredService<IntegrationDbContext>().SaveChangesAsync();
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
         Assert.Equal(moduleRef, await db.ExternalIdMaps.Where(x => x.ExternalId == "ITEM-EXT")
-            .Select(x => x.ModuleRef).SingleAsync());
+            .Select(x => x.ModuleId).SingleAsync());
         Assert.Empty(await db.ReferenceProjections.Where(x => x.ModuleId == moduleRef).ToListAsync());
         var checklist = await scope.ServiceProvider.GetRequiredService<ConnectorOnboardingChecklistGenerator>()
             .GenerateAsync(connection, CancellationToken.None);

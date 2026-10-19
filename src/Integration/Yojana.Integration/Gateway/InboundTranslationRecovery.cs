@@ -4,6 +4,7 @@ using Wolverine;
 using Wolverine.EntityFrameworkCore;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
+using Yojana.Integration.Outbox;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Scheduling;
@@ -27,7 +28,8 @@ public sealed class InboundTranslationRecovery(
     IDbContextOutbox<IntegrationDbContext> outbox,
     ITenantContext tenant,
     IClock clock,
-    InboundTranslationRecoveryOptions options)
+    InboundTranslationRecoveryOptions options,
+    IInboundMessageParkingSink parking)
 {
     public async Task<int> SweepAsync(CancellationToken cancellationToken)
     {
@@ -76,6 +78,8 @@ public sealed class InboundTranslationRecovery(
             row.TranslationStatus = InboundTranslationStatus.NeedsAttention;
             row.AttentionReasonCode = "translation_attempts_exhausted";
             row.NextTranslationAttemptAt = null;
+            await parking.ParkInboundAsync(row, row.AttentionReasonCode, row.LastTranslationError,
+                cancellationToken);
         }
         else
         {

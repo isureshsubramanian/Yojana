@@ -6,6 +6,7 @@ using Yojana.Integration;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Notifications;
+using Yojana.Integration.Outbox;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
@@ -24,6 +25,7 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
     public IHost Host { get; private set; } = null!;
     public FakeConnectorPoller Poller { get; } = new();
     public IServiceProvider Services => Host.Services;
+    public FakeOutboundConnector Connector { get; } = new();
 
     public async Task InitializeAsync()
     {
@@ -46,6 +48,8 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.AddSerialisationModule();
         builder.AddIntegrationModule();
         builder.Services.AddSingleton<IConnectorPoller>(Poller);
+        builder.Services.AddSingleton(Connector);
+        builder.Services.AddSingleton<IOutboundConnector>(services => services.GetRequiredService<FakeOutboundConnector>());
         builder.Services.AddSingleton<IClock>(Clock);
         Host = builder.Build();
         await Host.StartAsync();
