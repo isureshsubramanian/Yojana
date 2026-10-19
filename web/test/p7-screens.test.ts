@@ -27,7 +27,7 @@ test("upload history is server-paged, filterable and offers both downloads", () 
 test("import-file settings expose active storage, named archive store and calendar age", () => {
   const screen = readFileSync(new URL("../src/settings/ImportFileSettings.tsx", import.meta.url), "utf8");
   assert.match(screen, /Active storage/);
-  assert.match(screen, /Archive store/);
+  assert.match(screen, /Archive to/);
   assert.match(screen, /Months/);
   assert.match(screen, /Years/);
   assert.match(screen, /tenant_administrator/);
