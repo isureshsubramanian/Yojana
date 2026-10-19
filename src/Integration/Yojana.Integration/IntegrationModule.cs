@@ -20,6 +20,9 @@ using Yojana.Integration.Security.Persistence;
 using Yojana.Integration.Security.Webhooks;
 using Yojana.Integration.Security.Workers;
 using Yojana.Integration.Connectors.CX01;
+using Yojana.Integration.Reconciliation;
+using Yojana.Integration.Backfills;
+using Yojana.Integration.Connectors;
 
 namespace Yojana.Integration;
 
@@ -56,8 +59,7 @@ public static class IntegrationModule
         builder.Services.AddScoped<ICx01SerialHistory, EfCx01SerialHistory>();
         builder.Services.AddScoped<ICx01AttributionTaskSink, EfCx01AttributionTaskSink>();
         builder.Services.AddScoped<Cx01Adapter>();
-        builder.Services.AddScoped<IConnectorPoller>(services => services.GetRequiredService<Cx01Adapter>());
-        builder.Services.AddScoped<IConnectorReconciliationSource>(services =>
+        builder.Services.AddScoped<IConnectorAdapter>(services =>
             services.GetRequiredService<Cx01Adapter>());
         builder.Services.AddScoped<IOutboundConnector>(services => services.GetRequiredService<Cx01Adapter>());
         builder.Services.AddScoped<Cx01Onboarding>();
@@ -99,6 +101,18 @@ public static class IntegrationModule
             sp.GetRequiredService<IntegrationDbContext>(),
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>()));
         builder.Services.AddScoped<IItemQueryPort>(sp => sp.GetRequiredService<IntegrationItemQueryPort>());
+        builder.Services.TryAddScoped<IConnectorAdapterResolver, ConnectorAdapterResolver>();
+        builder.Services.TryAddScoped<IReconciliationBackfillScheduler, NullReconciliationBackfillScheduler>();
+        builder.Services.AddScoped(sp => new ReconciliationSettings(
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped<ReconciliationService>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<ReconciliationJob>(
+            ReconciliationJob.JobName, ReconciliationJob.Cron));
+        builder.Services.AddScoped<BackfillService>();
+        builder.Services.AddScoped<IReconciliationBackfillScheduler>(sp =>
+            sp.GetRequiredService<BackfillService>());
+        builder.Services.AddSingleton(RecurringTenantJob.For<BackfillJob>(
+            BackfillJob.JobName, BackfillJob.Cron));
 
         builder.AddIntegrationSecurity();
         builder.Services.AddScoped<EfTenantDataKeyStore>();

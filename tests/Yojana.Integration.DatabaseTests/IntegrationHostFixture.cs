@@ -1,13 +1,15 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Xunit;
 using Yojana.Integration;
+using Yojana.Integration.Connectors;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Notifications;
 using Yojana.Integration.Outbox;
+using Yojana.Integration.Reconciliation;
+using Yojana.Integration.Security.Workers;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
@@ -20,13 +22,15 @@ namespace Yojana.Integration.DatabaseTests;
 
 public sealed class IntegrationHostFixture : IAsyncLifetime
 {
+    public const string FakeConnectorCode = "FX01";
     public static readonly string? ConnectionString = Environment.GetEnvironmentVariable("YOJANA_TEST_SQL");
     public static string? ImportFilesConnectionString => WithDatabase("_files");
     public MutableTestClock Clock { get; } = new(new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc));
     public IHost Host { get; private set; } = null!;
-    public FakeConnectorPoller Poller { get; } = new();
+    public FakeReconciliationSource Poller => ReconciliationSource;
     public IServiceProvider Services => Host.Services;
     public FakeOutboundConnector Connector { get; } = new();
+    public FakeReconciliationSource ReconciliationSource { get; } = new();
 
     public async Task InitializeAsync()
     {
@@ -48,11 +52,11 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.AddYojanaPlatform();
         builder.AddSerialisationModule();
         builder.AddIntegrationModule();
-        builder.Services.RemoveAll<IConnectorPoller>();
-        builder.Services.RemoveAll<IOutboundConnector>();
-        builder.Services.AddSingleton<IConnectorPoller>(Poller);
         builder.Services.AddSingleton(Connector);
         builder.Services.AddSingleton<IOutboundConnector>(services => services.GetRequiredService<FakeOutboundConnector>());
+        builder.Services.AddSingleton(ReconciliationSource);
+        builder.Services.AddSingleton<IConnectorAdapter>(services =>
+            services.GetRequiredService<FakeReconciliationSource>());
         builder.Services.AddSingleton<IClock>(Clock);
         Host = builder.Build();
         await Host.StartAsync();
@@ -86,18 +90,22 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         return tenant;
     }
 
-    public async Task<Guid> AddConnectionAsync(TenantId tenant, Guid legalEntity)
+    public async Task<Guid> AddConnectionAsync(TenantId tenant, Guid legalEntity,
+        string connectorCode = "CX01")
     {
         var id = Guid.CreateVersion7();
         using var scope = ScopeFor(tenant);
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
-        db.Connections.Add(new Connection { TenantId = tenant, ConnectionId = id, ConnectorCode = "CX01", DisplayLabel = "Fictional ERP", Status = ConnectionStatus.Active, CreatedAt = Clock.UtcNow });
+        db.Connections.Add(new Connection { TenantId = tenant, ConnectionId = id, ConnectorCode = connectorCode, DisplayLabel = "Fictional ERP", Status = ConnectionStatus.Active, CreatedAt = Clock.UtcNow });
         db.ConnectionGatewaySettings.Add(new ConnectionGatewaySetting { TenantId = tenant, ConnectionId = id, LegalEntityId = legalEntity, OutboundMode = "reference_only", NativeWarrantyObjectMode = "frozen", OrderingWaitMinutes = 15 });
         foreach (var message in new[] { "ItemUpserted", "PartyUpserted", "GoodsReceiptPosted", "ProductionCompleted", "DeliveryPosted", "InvoicePosted", "ReturnReceived", "TransferPosted", "InventoryAdjusted", "WarrantyLineSold", "DocumentCancelled", "CreateReplacementDelivery", "CreateCreditMemo", "PostWarrantyExpense", "ChangeStockStatusOrLocation", "AttachDocument", "CreateServiceOrder" })
             db.ConnectionCapabilities.Add(new ConnectionCapability { TenantId = tenant, ConnectionId = id, CanonicalMessage = message, SupportLevel = CapabilitySupport.Native });
         for (var rule = 1; rule <= 7; rule++)
             db.ConnectionDegradationSettings.Add(new ConnectionDegradationSetting { TenantId = tenant, ConnectionId = id, RuleNumber = rule, Enabled = true, SettingsJson = "{}", UpdatedAt = Clock.UtcNow });
         await db.SaveChangesAsync();
+        await scope.ServiceProvider.GetRequiredService<ConnectionThrottleProfiles>().OnboardAsync(
+            new(tenant, id), new(connectorCode, new(null, null, null, 100, 1, TimeSpan.FromMinutes(5))),
+            CancellationToken.None);
         return id;
     }
 
@@ -124,19 +132,6 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
 public sealed class MutableTestClock(DateTime utcNow) : IClock
 {
     public DateTime UtcNow { get; set; } = utcNow;
-}
-
-public sealed class FakeConnectorPoller : IConnectorPoller
-{
-    public string ConnectorCode => "CX01";
-    public List<ConnectorPollRequest> Requests { get; } = [];
-    public ConnectorPollResult NextResult { get; set; } = new([], null);
-
-    public Task<ConnectorPollResult> PollAsync(ConnectorPollRequest request, CancellationToken cancellationToken)
-    {
-        Requests.Add(request);
-        return Task.FromResult(NextResult);
-    }
 }
 
 [CollectionDefinition("integration host")]

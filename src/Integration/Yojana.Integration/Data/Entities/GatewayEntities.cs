@@ -76,6 +76,7 @@ public sealed class ConnectionGatewaySetting : ITenantScoped
     public required string OutboundMode { get; set; }
     public required string NativeWarrantyObjectMode { get; set; }
     public int OrderingWaitMinutes { get; set; } = 15;
+    public string OnHandStatusMappingJson { get; set; } = "{}";
 }
 
 public sealed class OutboundCommandRow : ITenantScoped

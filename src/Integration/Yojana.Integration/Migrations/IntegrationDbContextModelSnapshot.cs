@@ -23,6 +23,128 @@ namespace Yojana.Integration.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.BackfillCursor", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("BackfillCursorId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("backfill_cursor_id");
+
+                    b.Property<DateTime?>("AwaitingReconciliationAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("awaiting_reconciliation_at");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("completed_at");
+
+                    b.Property<Guid?>("CompletionReconciliationRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("completion_reconciliation_run_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Cursor")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("cursor");
+
+                    b.Property<string>("Entity")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("entity");
+
+                    b.Property<string>("LastChangedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("last_changed_by");
+
+                    b.Property<string>("LastFailure")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)")
+                        .HasColumnName("last_failure");
+
+                    b.Property<DateTime?>("LastPageAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_page_at");
+
+                    b.Property<int>("PageSize")
+                        .HasColumnType("int")
+                        .HasColumnName("page_size");
+
+                    b.Property<long>("ProcessedMessages")
+                        .HasColumnType("bigint")
+                        .HasColumnName("processed_messages");
+
+                    b.Property<int>("ProcessedPages")
+                        .HasColumnType("int")
+                        .HasColumnName("processed_pages");
+
+                    b.Property<DateOnly>("RangeEnd")
+                        .HasColumnType("date")
+                        .HasColumnName("range_end");
+
+                    b.Property<DateOnly>("RangeStart")
+                        .HasColumnType("date")
+                        .HasColumnName("range_start");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("requested_by");
+
+                    b.Property<Guid?>("RequestedByReconciliationResultId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("requested_by_reconciliation_result_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("status");
+
+                    b.Property<long?>("TotalMessages")
+                        .HasColumnType("bigint")
+                        .HasColumnName("total_messages");
+
+                    b.HasKey("TenantId", "BackfillCursorId")
+                        .HasName("pk_backfill_cursor");
+
+                    b.HasIndex("TenantId", "CreatedAt", "BackfillCursorId")
+                        .HasDatabaseName("ix_backfill_cursor_tenant_id_created_at_backfill_cursor_id");
+
+                    b.HasIndex("TenantId", "ConnectionId", "Entity", "Status", "CreatedAt", "BackfillCursorId")
+                        .HasDatabaseName("ix_backfill_cursor_tenant_id_connection_id_entity_status_created_at_backfill_cursor_id");
+
+                    b.ToTable("backfill_cursor", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_backfill_cursor_status", "status IN ('queued','running','paused','awaiting_reconciliation','completed','cancelled')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.CanonicalDocument", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -352,6 +474,13 @@ namespace Yojana.Integration.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)")
                         .HasColumnName("native_warranty_object_mode");
+
+                    b.Property<string>("OnHandStatusMappingJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(max)")
+                        .HasDefaultValue("{}")
+                        .HasColumnName("on_hand_status_mapping_json");
 
                     b.Property<int>("OrderingWaitMinutes")
                         .ValueGeneratedOnAdd()
@@ -887,6 +1016,14 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("canonical_message");
 
+                    b.Property<string>("CaptureMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasDefaultValue("observed")
+                        .HasColumnName("capture_mode");
+
                     b.Property<Guid>("ConnectionId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("connection_id");
@@ -1250,6 +1387,250 @@ namespace Yojana.Integration.Migrations
                     b.ToTable("outbound_command", "integration");
                 });
 
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ReconciliationEntityDayResult", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ReconciliationEntityDayResultId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reconciliation_entity_day_result_id");
+
+                    b.Property<Guid?>("BackfillJobId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("backfill_job_id");
+
+                    b.Property<DateOnly>("BusinessDate")
+                        .HasColumnType("date")
+                        .HasColumnName("business_date");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<Guid?>("DeadLetterItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("dead_letter_item_id");
+
+                    b.Property<string>("Entity")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("entity");
+
+                    b.Property<long>("ModuleCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("module_count");
+
+                    b.Property<long>("ModuleDistinctSerials")
+                        .HasColumnType("bigint")
+                        .HasColumnName("module_distinct_serials");
+
+                    b.Property<string>("ModuleKeyFieldHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("module_key_field_hash");
+
+                    b.Property<decimal>("ModuleQuantity")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)")
+                        .HasColumnName("module_quantity");
+
+                    b.Property<bool>("RangedReadSupported")
+                        .HasColumnType("bit")
+                        .HasColumnName("ranged_read_supported");
+
+                    b.Property<Guid>("ReconciliationRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reconciliation_run_id");
+
+                    b.Property<long>("SourceCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("source_count");
+
+                    b.Property<long>("SourceDistinctSerials")
+                        .HasColumnType("bigint")
+                        .HasColumnName("source_distinct_serials");
+
+                    b.Property<string>("SourceKeyFieldHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("source_key_field_hash");
+
+                    b.Property<decimal>("SourceQuantity")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)")
+                        .HasColumnName("source_quantity");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("status");
+
+                    b.HasKey("TenantId", "ReconciliationEntityDayResultId")
+                        .HasName("pk_reconciliation_entity_day");
+
+                    b.HasIndex("TenantId", "ConnectionId", "Entity", "BusinessDate")
+                        .HasDatabaseName("ix_reconciliation_entity_day_tenant_id_connection_id_entity_business_date");
+
+                    b.HasIndex("TenantId", "ReconciliationRunId", "BusinessDate", "Entity", "ReconciliationEntityDayResultId")
+                        .HasDatabaseName("ix_reconciliation_entity_day_tenant_id_reconciliation_run_id_business_date_entity_reconciliation_entity_day_result_id");
+
+                    b.ToTable("reconciliation_entity_day", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_reconciliation_entity_day_status", "status IN ('clean','mismatch')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ReconciliationLocationResult", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ReconciliationLocationResultId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reconciliation_location_result_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<string>("ItemCode")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("item_code");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("item_id");
+
+                    b.Property<string>("ItemName")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("item_name");
+
+                    b.Property<string>("LocationCode")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("location_code");
+
+                    b.Property<Guid>("LocationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("location_id");
+
+                    b.Property<string>("LocationName")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("location_name");
+
+                    b.Property<long>("ModuleUnitCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("module_unit_count");
+
+                    b.Property<Guid>("ReconciliationRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reconciliation_run_id");
+
+                    b.Property<decimal>("SourceOnHand")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)")
+                        .HasColumnName("source_on_hand");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("status");
+
+                    b.HasKey("TenantId", "ReconciliationLocationResultId")
+                        .HasName("pk_reconciliation_location");
+
+                    b.HasIndex("TenantId", "ReconciliationRunId", "ItemId", "LocationId", "ReconciliationLocationResultId")
+                        .HasDatabaseName("ix_reconciliation_location_tenant_id_reconciliation_run_id_item_id_location_id_reconciliation_location_result_id");
+
+                    b.ToTable("reconciliation_location", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_reconciliation_location_status", "status IN ('clean','mismatch')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ReconciliationRun", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ReconciliationRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reconciliation_run_id");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("completed_at");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<string>("Failure")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)")
+                        .HasColumnName("failure");
+
+                    b.Property<int>("LocationMismatchCount")
+                        .HasColumnType("int")
+                        .HasColumnName("location_mismatch_count");
+
+                    b.Property<int>("MismatchCount")
+                        .HasColumnType("int")
+                        .HasColumnName("mismatch_count");
+
+                    b.Property<DateOnly>("RangeEnd")
+                        .HasColumnType("date")
+                        .HasColumnName("range_end");
+
+                    b.Property<DateOnly>("RangeStart")
+                        .HasColumnType("date")
+                        .HasColumnName("range_start");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("trigger");
+
+                    b.HasKey("TenantId", "ReconciliationRunId")
+                        .HasName("pk_reconciliation_run");
+
+                    b.HasIndex("TenantId", "StartedAt", "ReconciliationRunId")
+                        .HasDatabaseName("ix_reconciliation_run_tenant_id_started_at_reconciliation_run_id");
+
+                    b.HasIndex("TenantId", "ConnectionId", "StartedAt", "ReconciliationRunId")
+                        .HasDatabaseName("ix_reconciliation_run_tenant_id_connection_id_started_at_reconciliation_run_id");
+
+                    b.ToTable("reconciliation_run", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_reconciliation_run_status", "status IN ('running','clean','mismatch','failed')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.ReferenceProjection", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -1506,6 +1887,26 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_manual_outbound_task_tenant_id_dead_letter_item_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ReconciliationEntityDayResult", b =>
+                {
+                    b.HasOne("Yojana.Integration.Data.Entities.ReconciliationRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ReconciliationRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_reconciliation_entity_day_tenant_id_reconciliation_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ReconciliationLocationResult", b =>
+                {
+                    b.HasOne("Yojana.Integration.Data.Entities.ReconciliationRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ReconciliationRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_reconciliation_location_tenant_id_reconciliation_run_id");
                 });
 #pragma warning restore 612, 618
         }

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Quartz;
+using Yojana.Integration.Connectors;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Inbox;
@@ -33,7 +34,7 @@ public sealed class ConnectionPollingService(
     IntegrationDbContext db,
     ITenantContext tenant,
     IClock clock,
-    IEnumerable<IConnectorPoller> pollers,
+    IConnectorAdapterResolver adapters,
     InboundMessageStore inbox)
 {
     public const int BatchSize = 1_024;
@@ -52,15 +53,9 @@ public sealed class ConnectionPollingService(
         foreach (var state in due)
         {
             if (!connectorCodes.TryGetValue(state.ConnectionId, out var code)) continue;
-            var poller = pollers.SingleOrDefault(x => StringComparer.Ordinal.Equals(x.ConnectorCode, code));
-            if (poller is null)
-            {
-                state.LastError = "connector_poller_unavailable";
-                state.NextPollAt = now.AddSeconds(state.IntervalSeconds);
-                continue;
-            }
             try
             {
+                var poller = adapters.Poller(code);
                 var result = await poller.PollAsync(new(tenant.TenantId, state.ConnectionId, state.EntityType,
                     state.Watermark, TimeSpan.FromSeconds(state.OverlapSeconds), BatchSize), cancellationToken);
                 foreach (var item in result.Events)

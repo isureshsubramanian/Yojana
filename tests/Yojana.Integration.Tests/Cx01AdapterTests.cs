@@ -6,6 +6,7 @@ using Yojana.Integration.Connectors.CX01.Testing;
 using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
+using Yojana.Integration.Gateway;
 using Yojana.Integration.Notifications;
 using Yojana.Integration.Security.Cryptography;
 using Yojana.Integration.Security.Workers;
@@ -46,6 +47,28 @@ public sealed class Cx01AdapterTests
         Assert.Equal(2, result.Events.Count);
         Assert.All(result.Events, item => Assert.Equal(nameof(DeliveryPosted), item.MessageType));
         Assert.EndsWith("|4102", result.NextWatermark, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Ranged_reads_page_with_a_persisted_cursor_and_mark_messages_as_backfill()
+    {
+        await using var simulator = new Cx01Simulator();
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+        var day = new DateOnly(2026, 9, 1);
+
+        var first = await context.Adapter.ReadRangePageAsync(context.ConnectionId, "DeliveryNotes",
+            day, day, null, 1, CancellationToken.None);
+        var second = await context.Adapter.ReadRangePageAsync(context.ConnectionId, "DeliveryNotes",
+            day, day, first.NextCursor, 1, CancellationToken.None);
+
+        Assert.Single(first.Messages);
+        Assert.NotNull(first.NextCursor);
+        Assert.Single(second.Messages);
+        Assert.Null(second.NextCursor);
+        Assert.NotEqual(first.Messages[0].Envelope.ErpExternalId,
+            second.Messages[0].Envelope.ErpExternalId);
+        Assert.All(first.Messages.Concat(second.Messages), message =>
+            Assert.Equal("backfill", message.Envelope.CaptureMode.Value));
     }
 
     [Fact]
@@ -196,7 +219,8 @@ internal sealed class Cx01TestContext : IAsyncDisposable
         var db = new IntegrationDbContext(options, tenant);
         var history = new RememberingSerialHistory();
         var tasks = new CollectingAttributionTasks();
-        var adapter = new Cx01Adapter(tenant, clock, db, settings, client, history, tasks);
+        var adapter = new Cx01Adapter(tenant, clock, db, new GatewayReferenceStore(db, tenant, clock),
+            settings, client, history, tasks);
         return new(tenantId, connectionId, client, adapter, history, tasks, transport, db);
     }
 

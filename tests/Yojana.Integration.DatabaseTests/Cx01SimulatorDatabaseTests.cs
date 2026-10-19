@@ -49,6 +49,42 @@ public sealed class Cx01SimulatorDatabaseTests(IntegrationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Simulator_reconciliation_returns_gateway_digests_and_honours_warehouse_status_mapping()
+    {
+        await using var simulator = new Cx01Simulator();
+        var tenant = await fixture.NewTenantAsync("cxrecon");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.CreateVersion7());
+        using var scope = fixture.ScopeFor(tenant);
+        await scope.ServiceProvider.GetRequiredService<Cx01Settings>().SetAsync(connection,
+            new(simulator.BaseUri, "FICTIONAL_DEMO", "10.0 FP 2308"), CancellationToken.None);
+        var protector = scope.ServiceProvider.GetRequiredService<ConnectionCredentialProtector>();
+        var store = scope.ServiceProvider.GetRequiredService<IConnectionCredentialStore>();
+        var plaintext = JsonSerializer.SerializeToUtf8Bytes(new Cx01Credential("integration-user", "not-logged"),
+            IntegrationContracts.Json);
+        await store.SaveAsync(await protector.EncryptAsync(tenant, connection, Cx01Client.CredentialPurpose,
+            plaintext, null, fixture.Clock.UtcNow.AddDays(30), CancellationToken.None), CancellationToken.None);
+        await scope.ServiceProvider.GetRequiredService<ConnectionThrottleProfiles>().OnboardAsync(
+            new(tenant, connection), Cx01Capabilities.For("10.0 FP 2308", false).Throttle,
+            CancellationToken.None);
+        var adapter = scope.ServiceProvider.GetRequiredService<Cx01Adapter>();
+        var day = new DateOnly(2026, 9, 1);
+
+        var digests = await adapter.EntityDayDigestsAsync(connection, day, day, CancellationToken.None);
+        var delivery = Assert.Single(digests, value => value.Entity == "DeliveryNotes");
+        Assert.Equal(2, delivery.Count);
+        Assert.NotEmpty(delivery.KeyFieldHash);
+        Assert.Empty(await adapter.OnHandAsync(new(connection,
+            new Dictionary<string, bool> { ["WH-A"] = false }), CancellationToken.None));
+        var balance = Assert.Single(await adapter.OnHandAsync(new(connection,
+            new Dictionary<string, bool> { ["WH-A"] = true }), CancellationToken.None));
+        Assert.Equal("HW-EDGE-100", balance.ItemCode);
+        Assert.Equal("WH-A", balance.LocationCode);
+        Assert.Equal(2m, balance.OnHand);
+        Assert.NotEqual(Guid.Empty, balance.ItemId);
+        Assert.NotEqual(Guid.Empty, balance.LocationId);
+    }
+
+    [DatabaseFact]
     public async Task Webhook_subscription_and_failed_delivery_watchdog_use_the_simulator()
     {
         await using var simulator = new Cx01Simulator { FailedNotificationAvailable = true };

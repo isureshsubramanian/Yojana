@@ -105,6 +105,17 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 await RawJsonAsync(response, item);
                 return;
             }
+            if (path == Cx01Protocol.Root + "ItemWarehouseInfoCollection")
+            {
+                await JsonAsync(response, new
+                {
+                    value = new[]
+                    {
+                        new { ItemCode = "HW-EDGE-100", WarehouseCode = "WH-A", InStock = 2m },
+                    },
+                });
+                return;
+            }
             if (path is var deliveryPath && (deliveryPath == Cx01Protocol.Root + "DeliveryNotes(4101)"
                 || deliveryPath == Cx01Protocol.Root + "DeliveryNotes(4102)"))
             {
@@ -184,6 +195,15 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                         ? new[] { new { DocEntry = 9101, UpdateDate = "2026-09-01", UpdateTime = "084500" } }
                         : Array.Empty<object>(),
                 });
+                return;
+            }
+            if (new[]
+                {
+                    "Items", "BusinessPartners", "Invoices", "PurchaseDeliveryNotes",
+                    "InventoryGenEntries", "StockTransfers", "InventoryGenExits",
+                }.Any(collection => path == Cx01Protocol.Root + collection))
+            {
+                await JsonAsync(response, new { value = Array.Empty<object>() });
                 return;
             }
             if (path == Cx01Protocol.Root + "DocumentCancellationRequests(9101)")

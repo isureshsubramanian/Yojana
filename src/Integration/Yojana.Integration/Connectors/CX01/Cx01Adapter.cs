@@ -1,46 +1,30 @@
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Yojana.Integration.Connectors;
 using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
+using Yojana.Integration.Gateway;
 using Yojana.Integration.Inbox;
 using Yojana.Integration.Notifications;
 using Yojana.Integration.Outbox;
+using Yojana.Integration.Reconciliation;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 
 namespace Yojana.Integration.Connectors.CX01;
-
-public sealed record ConnectorReconciliationRangeRequest(TenantId TenantId, Guid ConnectionId, string EntityType,
-    DateTimeOffset FromInclusive, DateTimeOffset ToExclusive, string? Cursor, int MaximumEvents);
-
-public sealed record ConnectorReconciliationRange(IReadOnlyList<InboundAcceptance> Events, string? NextCursor);
-public sealed record ConnectorDailyFingerprint(DateOnly Date, string EntityType, long Count, string Sha256);
-public sealed record ConnectorOnHandBalance(string ItemExternalId, string LocationExternalId, decimal Quantity);
-
-public interface IConnectorReconciliationSource
-{
-    string ConnectorCode { get; }
-    Task<ConnectorReconciliationRange> ReadRangeAsync(ConnectorReconciliationRangeRequest request,
-        CancellationToken cancellationToken);
-    Task<IReadOnlyList<ConnectorDailyFingerprint>> DailyFingerprintsAsync(TenantId tenantId, Guid connectionId,
-        string entityType, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken);
-    Task<IReadOnlyList<ConnectorOnHandBalance>> OnHandByWarehouseAsync(TenantId tenantId, Guid connectionId,
-        CancellationToken cancellationToken);
-}
 
 /// <summary>One adapter owns the remote session, polling, sweep reads and reference-only outbound translation.</summary>
 public sealed class Cx01Adapter(
     ITenantContext tenant,
     IClock clock,
     IntegrationDbContext db,
+    GatewayReferenceStore references,
     Cx01Settings settings,
     Cx01Client client,
     ICx01SerialHistory serialHistory,
-    ICx01AttributionTaskSink attributionTasks) : IConnectorPoller, IConnectorReconciliationSource, IOutboundConnector
+    ICx01AttributionTaskSink attributionTasks) : IConnectorAdapter, IOutboundConnector
 {
     public string ConnectorCode => Cx01Capabilities.ConnectorCode;
     public OutboundConnectorCapabilities Capabilities { get; } = new(false, OwnsConnectionLane: true);
@@ -78,57 +62,91 @@ public sealed class Cx01Adapter(
         return new(acceptances, next == cursor ? request.Watermark : next.ToString());
     }
 
-    public async Task<ConnectorReconciliationRange> ReadRangeAsync(ConnectorReconciliationRangeRequest request,
-        CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<ConnectorEntityDayDigest>> EntityDayDigestsAsync(Guid connectionId,
+        DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken)
     {
-        EnsureTenant(request.TenantId);
-        var entity = Entity(request.EntityType);
-        var configured = await settings.GetAsync(request.ConnectionId, cancellationToken);
-        var after = Cx01Watermark.Parse(request.Cursor);
-        var keys = await ChangedKeysAsync(request.ConnectionId, entity, request.FromInclusive,
-            request.ToExclusive, request.MaximumEvents, cancellationToken);
-        var selected = keys.Where(x => after == Cx01Watermark.Empty || x.CompareTo(after) > 0)
-            .OrderBy(x => x.Timestamp).ThenBy(x => x.Key, StringComparer.Ordinal).Take(request.MaximumEvents).ToList();
-        var events = new List<InboundAcceptance>(selected.Count);
-        foreach (var changed in selected)
+        var messages = new List<InboundAcceptance>();
+        foreach (var entity in Cx01Protocol.Entities.Values.OrderBy(value => value.Collection,
+                     StringComparer.Ordinal))
         {
-            using var document = await client.GetAsync(request.ConnectionId,
-                Cx01Protocol.ByKey(entity, changed.Key), cancellationToken);
-            if (Cx01Mapper.IsOwnWrite(document.RootElement, configured)) continue;
-            events.Add((await MapWithSerialFallbackAsync(request.ConnectionId, entity, document.RootElement,
-                configured, "poll", cancellationToken)).Acceptance);
+            messages.AddRange(await ReadMappedRangeAsync(connectionId, entity, rangeStart, rangeEnd,
+                cursor: null, pageSize: int.MaxValue, captureMode: "replay", cancellationToken));
         }
-        return new(events, selected.Count == request.MaximumEvents ? selected[^1].ToString() : null);
+
+        return messages.Where(message =>
+                DateOnly.FromDateTime(message.Envelope.OccurredAt.UtcDateTime) >= rangeStart
+                && DateOnly.FromDateTime(message.Envelope.OccurredAt.UtcDateTime) <= rangeEnd)
+            .GroupBy(message => new
+            {
+                message.Envelope.ErpEntity,
+                Day = DateOnly.FromDateTime(message.Envelope.OccurredAt.UtcDateTime),
+            })
+            .Select(group =>
+            {
+                var metrics = ReconciliationHash.Metrics(group.Select(message => message.CanonicalMessage));
+                return new ConnectorEntityDayDigest(group.Key.ErpEntity, group.Key.Day, group.LongCount(),
+                    metrics.Quantity, metrics.DistinctSerials, ReconciliationHash.KeyFields(group.Select(message =>
+                        (message.Envelope.ErpExternalId, message.CanonicalMessage))));
+            }).ToList();
     }
 
-    public async Task<IReadOnlyList<ConnectorDailyFingerprint>> DailyFingerprintsAsync(TenantId tenantId,
-        Guid connectionId, string entityType, DateOnly fromDate, DateOnly toDate,
+    public async Task<IReadOnlyList<ConnectorOnHandBalance>> OnHandAsync(ConnectorOnHandRequest request,
         CancellationToken cancellationToken)
     {
-        EnsureTenant(tenantId);
-        var entity = Entity(entityType);
-        var result = new List<ConnectorDailyFingerprint>();
-        for (var date = fromDate; date <= toDate; date = date.AddDays(1))
+        using var response = await client.GetAsync(request.ConnectionId,
+            Cx01Protocol.Root + "ItemWarehouseInfoCollection?$select=ItemCode,WarehouseCode,InStock", cancellationToken);
+        var rows = Values(response.RootElement).Select(row => new
         {
-            var from = new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-            var keys = await ChangedKeysAsync(connectionId, entity, from, from.AddDays(1), int.MaxValue,
-                cancellationToken);
-            var canonical = string.Join('\n', keys.OrderBy(x => x.Timestamp).ThenBy(x => x.Key, StringComparer.Ordinal)
-                .Select(x => x.ToString()));
-            result.Add(new(date, entityType, keys.Count,
-                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant()));
+            ItemCode = RequiredText(row, "ItemCode"),
+            WarehouseCode = RequiredText(row, "WarehouseCode"),
+            Quantity = Number(row, "InStock"),
+        }).Where(row => !request.WarehouseStatusMapping.TryGetValue(row.WarehouseCode, out var included)
+            || included).ToList();
+        var result = new List<ConnectorOnHandBalance>(rows.Count);
+        foreach (var row in rows)
+        {
+            var itemId = await references.ResolveAsync(request.ConnectionId, "item", row.ItemCode,
+                provisional: false, cancellationToken);
+            var locationId = await references.ResolveAsync(request.ConnectionId, "location", row.WarehouseCode,
+                provisional: false, cancellationToken);
+            var itemName = await db.ReferenceProjections.AsNoTracking().Where(value =>
+                    value.TenantId == tenant.TenantId && value.EntityType == "item" && value.ModuleId == itemId)
+                .Select(value => value.DisplayName).SingleOrDefaultAsync(cancellationToken);
+            result.Add(new(itemId, row.ItemCode, itemName, locationId, row.WarehouseCode, null, row.Quantity));
         }
         return result;
     }
 
-    public async Task<IReadOnlyList<ConnectorOnHandBalance>> OnHandByWarehouseAsync(TenantId tenantId,
-        Guid connectionId, CancellationToken cancellationToken)
+    public Task<bool> SupportsRangedReadsAsync(Guid connectionId, string entity,
+        CancellationToken cancellationToken) => Task.FromResult(TryEntity(entity, out _));
+
+    public async Task<ConnectorRangePage> ReadRangePageAsync(Guid connectionId, string entity,
+        DateOnly rangeStart, DateOnly rangeEnd, string? cursor, int pageSize,
+        CancellationToken cancellationToken)
     {
-        EnsureTenant(tenantId);
-        using var response = await client.GetAsync(connectionId,
-            Cx01Protocol.Root + "ItemWarehouseInfoCollection?$select=ItemCode,WarehouseCode,InStock", cancellationToken);
-        return Values(response.RootElement).Select(row => new ConnectorOnHandBalance(
-            RequiredText(row, "ItemCode"), RequiredText(row, "WarehouseCode"), Number(row, "InStock"))).ToList();
+        var definition = Entity(entity);
+        var configured = await settings.GetAsync(connectionId, cancellationToken);
+        var from = new DateTimeOffset(rangeStart.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var to = new DateTimeOffset(rangeEnd.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var after = Cx01Watermark.Parse(cursor);
+        var allKeys = await RangeKeysAsync(connectionId, definition, from, to, cancellationToken);
+        var keys = allKeys.Where(key => after == Cx01Watermark.Empty || key.CompareTo(after) > 0)
+            .OrderBy(key => key.Timestamp).ThenBy(key => key.Key, StringComparer.Ordinal).ToList();
+        var messages = new List<InboundAcceptance>(Math.Min(keys.Count, pageSize));
+        var examined = 0;
+        Cx01Watermark? last = null;
+        foreach (var changed in keys)
+        {
+            examined++;
+            last = changed;
+            using var document = await client.GetAsync(connectionId,
+                Cx01Protocol.ByKey(definition, changed.Key), cancellationToken);
+            if (!Cx01Mapper.IsOwnWrite(document.RootElement, configured))
+                messages.Add((await MapWithSerialFallbackAsync(connectionId, definition, document.RootElement,
+                    configured, "backfill", cancellationToken)).Acceptance);
+            if (messages.Count == pageSize) break;
+        }
+        return new(messages, examined < keys.Count ? last?.ToString() : null, allKeys.Count);
     }
 
     public async Task<OutboundDocument?> FindByReferenceAsync(OutboundLookup lookup,
@@ -282,15 +300,56 @@ public sealed class Cx01Adapter(
         return result;
     }
 
+    private async Task<List<InboundAcceptance>> ReadMappedRangeAsync(Guid connectionId,
+        Cx01EntityDefinition entity, DateOnly rangeStart, DateOnly rangeEnd, string? cursor,
+        int pageSize, string captureMode, CancellationToken cancellationToken)
+    {
+        var configured = await settings.GetAsync(connectionId, cancellationToken);
+        var from = new DateTimeOffset(rangeStart.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var to = new DateTimeOffset(rangeEnd.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var after = Cx01Watermark.Parse(cursor);
+        var keys = await RangeKeysAsync(connectionId, entity, from, to, cancellationToken);
+        var messages = new List<InboundAcceptance>();
+        foreach (var changed in keys.Where(key => after == Cx01Watermark.Empty || key.CompareTo(after) > 0)
+                     .OrderBy(key => key.Timestamp).ThenBy(key => key.Key, StringComparer.Ordinal))
+        {
+            using var document = await client.GetAsync(connectionId,
+                Cx01Protocol.ByKey(entity, changed.Key), cancellationToken);
+            if (Cx01Mapper.IsOwnWrite(document.RootElement, configured)) continue;
+            messages.Add((await MapWithSerialFallbackAsync(connectionId, entity, document.RootElement,
+                configured, captureMode, cancellationToken)).Acceptance);
+            if (messages.Count == pageSize) break;
+        }
+        return messages;
+    }
+
     private async Task<List<Cx01Watermark>> ChangedKeysAsync(Guid connectionId, Cx01EntityDefinition entity,
         DateTimeOffset fromInclusive, DateTimeOffset? toExclusive, int maximum, CancellationToken cancellationToken)
+        => await QueryKeysAsync(connectionId, entity, "UpdateDate", fromInclusive, toExclusive,
+            maximum, restrictToWatermarkRange: true, cancellationToken);
+
+    private async Task<List<Cx01Watermark>> RangeKeysAsync(Guid connectionId, Cx01EntityDefinition entity,
+        DateTimeOffset fromInclusive, DateTimeOffset toExclusive, CancellationToken cancellationToken)
+    {
+        var businessDateField = entity.CanonicalMessage is "ItemUpserted" or "PartyUpserted"
+            ? "UpdateDate" : "DocDate";
+        return await QueryKeysAsync(connectionId, entity, businessDateField, fromInclusive, toExclusive,
+            int.MaxValue, restrictToWatermarkRange: false, cancellationToken);
+    }
+
+    private async Task<List<Cx01Watermark>> QueryKeysAsync(Guid connectionId, Cx01EntityDefinition entity,
+        string filterField, DateTimeOffset fromInclusive, DateTimeOffset? toExclusive, int maximum,
+        bool restrictToWatermarkRange, CancellationToken cancellationToken)
     {
         var result = new List<Cx01Watermark>();
-        var filter = "UpdateDate ge '" + fromInclusive.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "'";
+        var filter = filterField + " ge '"
+            + fromInclusive.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "'";
         if (toExclusive is { } until)
-            filter += " and UpdateDate lt '" + until.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "'";
+            filter += " and " + filterField + " lt '"
+                + until.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "'";
         var path = Cx01Protocol.Collection(entity) + "?$select=" + entity.KeyField
-            + ",UpdateDate,UpdateTime&$filter=" + Uri.EscapeDataString(filter)
+            + ",UpdateDate,UpdateTime" + (filterField == "UpdateDate" ? "" : "," + filterField)
+            + "&$filter=" + Uri.EscapeDataString(filter)
             + "&$orderby=UpdateDate,UpdateTime," + entity.KeyField + "&$top="
             + Math.Min(maximum, 1_000).ToString(CultureInfo.InvariantCulture);
         while (result.Count < maximum)
@@ -300,7 +359,8 @@ public sealed class Cx01Adapter(
             {
                 var key = RequiredText(row, entity.KeyField);
                 var marker = Cx01Watermark.From(row, key);
-                if (marker.Timestamp >= fromInclusive && (toExclusive is null || marker.Timestamp < toExclusive))
+                if (!restrictToWatermarkRange || marker.Timestamp >= fromInclusive
+                    && (toExclusive is null || marker.Timestamp < toExclusive))
                     result.Add(marker);
                 if (result.Count == maximum) break;
             }
@@ -322,7 +382,10 @@ public sealed class Cx01Adapter(
         if (requested != tenant.TenantId) throw new InvalidOperationException("CX01 tenant mismatch.");
     }
 
-    private static Cx01EntityDefinition Entity(string entityType)
+    private static Cx01EntityDefinition Entity(string entityType) => TryEntity(entityType, out var entity)
+        ? entity : throw new InvalidOperationException($"CX01 entity type '{entityType}' is not supported.");
+
+    private static bool TryEntity(string entityType, out Cx01EntityDefinition entity)
     {
         var key = entityType switch
         {
@@ -333,8 +396,15 @@ public sealed class Cx01Adapter(
             "invoice" => "invoices",
             _ => entityType,
         };
-        return Cx01Protocol.Entities.TryGetValue(key, out var entity) ? entity
-            : throw new InvalidOperationException($"CX01 entity type '{entityType}' is not supported.");
+        if (Cx01Protocol.Entities.TryGetValue(key, out var keyed))
+        {
+            entity = keyed;
+            return true;
+        }
+        var byCollection = Cx01Protocol.Entities.Values.FirstOrDefault(value =>
+            StringComparer.Ordinal.Equals(value.Collection, entityType));
+        entity = byCollection!;
+        return byCollection is not null;
     }
 
     private static List<JsonElement> Values(JsonElement root) =>
