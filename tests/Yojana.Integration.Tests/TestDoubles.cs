@@ -1,5 +1,6 @@
 using Yojana.Integration.Security.Audit;
 using Yojana.Integration.Security.Cryptography;
+using Yojana.Integration.Security.Workers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 
@@ -8,6 +9,31 @@ namespace Yojana.Integration.Tests;
 internal sealed class TestClock(DateTime utcNow) : IClock
 {
     public DateTime UtcNow { get; set; } = utcNow;
+}
+
+internal sealed class AdvancingThrottleDelay(TestClock clock) : IConnectionThrottleDelay
+{
+    public List<TimeSpan> Waits { get; } = [];
+
+    public Task WaitAsync(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Waits.Add(delay);
+        clock.UtcNow += delay;
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class CollectingBudgetAlerts : IConnectionCallBudgetAlertPublisher
+{
+    public List<ConnectionCallBudgetAlert> Published { get; } = [];
+
+    public Task PublishAsync(ConnectionCallBudgetAlert alert, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Published.Add(alert);
+        return Task.CompletedTask;
+    }
 }
 
 internal sealed class TestTenantSettings : ITenantSettings
