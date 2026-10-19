@@ -11,6 +11,10 @@
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.7" />
     <!-- Pinned above the vulnerable 9.0.x that Microsoft.Data.SqlClient pulls on its own (NU1902/NU1903); MIT (dotnet/dotnet) -->
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <!-- Integration security (MOD-14, P8-T14): MIT; package and transitive notices are generated from audited inputs. -->
+    <PackageVersion Include="Azure.Identity" Version="1.21.0" />
+    <PackageVersion Include="Azure.Security.KeyVault.Keys" Version="4.10.2" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.30.0" />
     <!-- Messaging: MIT (JasperFx/wolverine) -->
     <PackageVersion Include="WolverineFx" Version="6.50.2" />
     <PackageVersion Include="WolverineFx.SqlServer" Version="6.50.2" />

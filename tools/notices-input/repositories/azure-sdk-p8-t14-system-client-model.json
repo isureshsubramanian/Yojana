@@ -1,0 +1,8 @@
+{
+  "name": "System.ClientModel 1.14.0",
+  "matchRepositoryUrls": [],
+  "matchPackages": ["System.ClientModel/1.14.0"],
+  "licenceFile": "texts/azure-sdk-for-net-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/Azure/azure-sdk-for-net/3a58372182875061915cffce64f9b9d978a4ed6f/LICENSE.txt",
+  "takenOn": "2026-10-19"
+}

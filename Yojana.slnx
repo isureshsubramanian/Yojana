@@ -20,10 +20,10 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Yojana.Demo.Tests/Yojana.Demo.Tests.csproj" />
+    <Project Path="tests/Yojana.Integration.Tests/Yojana.Integration.Tests.csproj" />
     <Project Path="tests/Yojana.Architecture.Tests/Yojana.Architecture.Tests.csproj" />
     <Project Path="tests/Yojana.Platform.DatabaseTests/Yojana.Platform.DatabaseTests.csproj" />
     <Project Path="tests/Yojana.Platform.Tests/Yojana.Platform.Tests.csproj" />
-    <Project Path="tests/Yojana.Integration.Tests/Yojana.Integration.Tests.csproj" />
     <Project Path="tests/Yojana.Integration.DatabaseTests/Yojana.Integration.DatabaseTests.csproj" />
     <Project Path="tests/Yojana.RenderWorker.Tests/Yojana.RenderWorker.Tests.csproj" />
     <Project Path="tests/Yojana.Serialisation.DatabaseTests/Yojana.Serialisation.DatabaseTests.csproj" />

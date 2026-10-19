@@ -48,6 +48,7 @@ web-lcp: ## Measure largest contentful paint of the shell against a running host
 test: build ## Unit and architecture tests (no database)
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Demo.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Architecture.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
+	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Integration.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Platform.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Serialisation.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.RenderWorker.Tests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
@@ -55,6 +56,7 @@ test: build ## Unit and architecture tests (no database)
 test-db: build ## Database tests; need YOJANA_TEST_SQL (a SQL Server connection string to a disposable database)
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Platform.DatabaseTests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Serialisation.DatabaseTests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
+	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Integration.DatabaseTests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 
 licences: ## Gate 1: every package carries an allow-listed licence or an approved exception
 	$(GATES) licences

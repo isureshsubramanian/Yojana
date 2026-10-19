@@ -1,7 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Azure.Security.KeyVault.Keys" />
+    <PackageReference Include="Azure.Storage.Blobs" />
     <ProjectReference Include="../Yojana.Integration.Contracts/Yojana.Integration.Contracts.csproj" />
     <ProjectReference Include="../../Platform/Yojana.Platform/Yojana.Platform.csproj" />
     <ProjectReference Include="../../Serialisation/Yojana.Serialisation.Contracts/Yojana.Serialisation.Contracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Security/AZURE-DEPLOYMENT.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Security/SOC2-CONTROL-MAPPING.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -28,6 +28,13 @@
     }
   },
   "knownLicenceFiles": {
+    "Apache.Arrow/22.1.0": {
+      "file": "LICENSE.txt",
+      "sha256": "f49cc7be44c8d4b6efffed6ac00026f2ff2146310f040350b50be30ed3f9c570",
+      "spdx": "Apache-2.0",
+      "copyright": "Copyright 2016-2025 The Apache Software Foundation (package manifest); no NOTICE file in the package",
+      "readOn": "2026-10-19"
+    },
     "Solidsoft.Reply.Parsers.Gs1Ai/2.0.0": {
       "file": "LICENSE.txt",
       "sha256": "69890b9c25825b7fdbc0c3c4a74c04179d8f52e25284400616ee4d118bb709fd",
@@ -44,6 +51,16 @@
     }
   },
   "reviewedPackages": {
+    "Azure.Core/1.60.0": { "spdx": "MIT", "readOn": "2026-10-19", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },
+    "Azure.Identity/1.21.0": { "spdx": "MIT", "readOn": "2026-10-19", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },
+    "Azure.Security.KeyVault.Keys/4.10.2": { "spdx": "MIT", "readOn": "2026-10-19", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },
+    "Azure.Storage.Blobs/12.30.0": { "spdx": "MIT", "readOn": "2026-10-19", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },
+    "Azure.Storage.Common/12.29.0": { "spdx": "MIT", "readOn": "2026-10-19", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },
+    "Microsoft.Bcl.AsyncInterfaces/10.0.9": { "spdx": "MIT", "readOn": "2026-10-19", "bundledLicenceFiles": [], "bundledNoticeFiles": ["THIRD-PARTY-NOTICES.TXT"] },
+    "Microsoft.Extensions.Hosting.Abstractions/10.0.9": { "spdx": "MIT", "readOn": "2026-10-19", "bundledLicenceFiles": [], "bundledNoticeFiles": ["THIRD-PARTY-NOTICES.TXT"] },
+    "System.ClientModel/1.14.0": { "spdx": "MIT", "readOn": "2026-10-19", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },
+    "System.IO.Hashing/10.0.9": { "spdx": "MIT", "readOn": "2026-10-19", "bundledLicenceFiles": [], "bundledNoticeFiles": ["THIRD-PARTY-NOTICES.TXT"] },
+    "System.Memory.Data/10.0.9": { "spdx": "MIT", "readOn": "2026-10-19", "bundledLicenceFiles": [], "bundledNoticeFiles": ["THIRD-PARTY-NOTICES.TXT"] },
     "PuppeteerSharp/25.12.0": { "spdx": "MIT", "readOn": "2026-10-18", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },
     "ReactiveExtensionsSharp/0.3.0": { "spdx": "MIT", "readOn": "2026-10-18", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },
     "WebDriverBiDi/0.0.61": { "spdx": "MIT", "readOn": "2026-10-18", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },

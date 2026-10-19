@@ -1,0 +1,8 @@
+{
+  "name": "Azure.Identity 1.21.0",
+  "matchRepositoryUrls": [],
+  "matchPackages": ["Azure.Identity/1.21.0"],
+  "licenceFile": "texts/azure-sdk-for-net-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/Azure/azure-sdk-for-net/f7400e4471111bf7f2154834022786119acbdd77/LICENSE.txt",
+  "takenOn": "2026-10-19"
+}

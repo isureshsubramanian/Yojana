@@ -1,0 +1,8 @@
+{
+  "name": "Azure.Core 1.60.0",
+  "matchRepositoryUrls": [],
+  "matchPackages": ["Azure.Core/1.60.0"],
+  "licenceFile": "texts/azure-sdk-for-net-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/Azure/azure-sdk-for-net/84e76f0ebc1bb8ce92b5c28b2eddfa6016cfdc4a/LICENSE.txt",
+  "takenOn": "2026-10-19"
+}

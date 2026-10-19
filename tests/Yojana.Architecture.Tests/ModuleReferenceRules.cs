@@ -118,4 +118,12 @@ public sealed class ModuleReferenceRules
             .ToList();
         Assert.Empty(missing);
     }
+
+    [Fact]
+    public void Integration_references_serialisation_contracts_not_implementation()
+    {
+        var references = Graph()["Yojana.Integration"];
+        Assert.Contains("Yojana.Serialisation.Contracts", references);
+        Assert.DoesNotContain("Yojana.Serialisation", references);
+    }
 }

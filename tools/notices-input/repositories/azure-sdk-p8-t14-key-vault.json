@@ -1,0 +1,8 @@
+{
+  "name": "Azure.Security.KeyVault.Keys 4.10.2",
+  "matchRepositoryUrls": [],
+  "matchPackages": ["Azure.Security.KeyVault.Keys/4.10.2"],
+  "licenceFile": "texts/azure-sdk-for-net-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/Azure/azure-sdk-for-net/94d96d1ca05657c51326df85d11ec829a89b85fd/LICENSE.txt",
+  "takenOn": "2026-10-19"
+}

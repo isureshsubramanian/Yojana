@@ -1,5 +1,8 @@
-using Microsoft.Extensions.Hosting;
+using Azure.Identity;
+using Azure.Storage.Blobs;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Yojana.Integration.Inbox;
 using Yojana.Integration.Gateway;
 using Yojana.Serialisation.Contracts;
@@ -7,6 +10,11 @@ using Yojana.Integration.Ordering;
 using Yojana.Platform.Scheduling;
 using Yojana.Integration.Data;
 using Yojana.Platform;
+using Yojana.Integration.Security.Audit;
+using Yojana.Integration.Security.Credentials;
+using Yojana.Integration.Security.Cryptography;
+using Yojana.Integration.Security.Webhooks;
+using Yojana.Integration.Security.Workers;
 
 namespace Yojana.Integration;
 
@@ -48,6 +56,95 @@ public static class IntegrationModule
             sp.GetRequiredService<IntegrationDbContext>(),
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>()));
         builder.Services.AddScoped<IItemQueryPort>(sp => sp.GetRequiredService<IntegrationItemQueryPort>());
+
+        builder.AddIntegrationSecurity();
+        return builder;
+    }
+
+    /// <summary>Security services (P8-T14): key encryption, credential protection, audit trail, webhook verification and
+    /// per-connection worker lanes. Separate from the database registration so it can be composed and tested alone.</summary>
+    public static IHostApplicationBuilder AddIntegrationSecurity(this IHostApplicationBuilder builder)
+    {
+        var keyProvider = builder.Configuration["Integration:Security:KeyEncryption:Provider"];
+        if (StringComparer.OrdinalIgnoreCase.Equals(keyProvider, "Local"))
+        {
+            var options = LocalKeyEncryptionOptions.From(builder.Configuration, builder.Environment);
+            builder.Services.AddSingleton(options);
+            builder.Services.TryAddSingleton<IKeyEncryptionKeyProvider, LocalKeyEncryptionKeyProvider>();
+        }
+        else if (StringComparer.OrdinalIgnoreCase.Equals(keyProvider, "AzureKeyVault"))
+        {
+            var options = AzureKeyVaultKeyEncryptionOptions.From(builder.Configuration);
+            builder.Services.AddSingleton(options);
+            builder.Services.TryAddSingleton(AzureCredentialFactory.Create(options));
+            builder.Services.TryAddSingleton<IAzureKeyVaultCryptography>(services =>
+                new AzureSdkKeyVaultCryptography(options,
+                    services.GetRequiredService<Azure.Core.TokenCredential>()));
+            builder.Services.TryAddSingleton<IKeyEncryptionKeyProvider>(services =>
+                new AzureKeyVaultKeyEncryptionKeyProvider(options,
+                    services.GetRequiredService<IAzureKeyVaultCryptography>()));
+        }
+        else if (!string.IsNullOrWhiteSpace(keyProvider))
+            throw new InvalidOperationException(
+                "Integration:Security:KeyEncryption:Provider must be Local or AzureKeyVault.");
+
+        builder.Services.TryAddSingleton<InMemoryTenantDataKeyStore>();
+        builder.Services.TryAddSingleton<ITenantDataKeyStore>(services =>
+            services.GetRequiredService<InMemoryTenantDataKeyStore>());
+        builder.Services.TryAddSingleton<ITenantDataKeyRewrapStore>(services =>
+            services.GetRequiredService<InMemoryTenantDataKeyStore>());
+        builder.Services.TryAddSingleton<ITenantDataKeyRewrapCheckpointStore,
+            InMemoryTenantDataKeyRewrapCheckpointStore>();
+        builder.Services.TryAddSingleton<IConnectionCredentialStore, InMemoryConnectionCredentialStore>();
+        builder.Services.TryAddSingleton<IKeyEncryptionKeyProvider, MissingKeyEncryptionKeyProvider>();
+
+        var auditProvider = builder.Configuration["Integration:Security:Audit:Provider"];
+        if (StringComparer.OrdinalIgnoreCase.Equals(auditProvider, "LocalFile"))
+        {
+            var root = builder.Configuration["Integration:Security:Audit:LocalRoot"];
+            if (string.IsNullOrWhiteSpace(root))
+                throw new InvalidOperationException(
+                    "Integration:Security:Audit:LocalRoot is required when the LocalFile audit provider is selected.");
+            builder.Services.AddSingleton(new LocalConnectionAuditOptions(root));
+            builder.Services.TryAddSingleton<IConnectionAuditSink, LocalAppendOnlyConnectionAuditSink>();
+        }
+        else if (StringComparer.OrdinalIgnoreCase.Equals(auditProvider, "AzureBlob"))
+        {
+            var options = AzureBlobConnectionAuditOptions.From(builder.Configuration);
+            builder.Services.AddSingleton(options);
+            builder.Services.TryAddSingleton(services =>
+            {
+                if (!string.IsNullOrWhiteSpace(options.ConnectionString))
+                    return new BlobServiceClient(options.ConnectionString);
+                var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
+                {
+                    ManagedIdentityClientId = options.ManagedIdentityClientId,
+                    ExcludeInteractiveBrowserCredential = true,
+                    ExcludeVisualStudioCredential = true,
+                    ExcludeVisualStudioCodeCredential = true,
+                    ExcludeAzureCliCredential = true,
+                    ExcludeAzurePowerShellCredential = true,
+                    ExcludeAzureDeveloperCliCredential = true,
+                    ExcludeBrokerCredential = true,
+                });
+                return new BlobServiceClient(options.ServiceUri!, credential);
+            });
+            builder.Services.TryAddSingleton(services =>
+                services.GetRequiredService<BlobServiceClient>().GetBlobContainerClient(options.ContainerName));
+            builder.Services.TryAddSingleton<IAppendBlobStore, AzureAppendBlobStore>();
+            builder.Services.TryAddSingleton<IConnectionAuditSink>(services =>
+                new AzureBlobConnectionAuditSink(services.GetRequiredService<IAppendBlobStore>()));
+        }
+        else if (!string.IsNullOrWhiteSpace(auditProvider))
+            throw new InvalidOperationException(
+                "Integration:Security:Audit:Provider must be LocalFile or AzureBlob.");
+
+        builder.Services.TryAddScoped<TenantDataKeyService>();
+        builder.Services.TryAddScoped<TenantDataKeyRewrapService>();
+        builder.Services.TryAddScoped<ConnectionCredentialProtector>();
+        builder.Services.TryAddScoped<CredentialExpiryAlertEvaluator>();
+        builder.Services.TryAddSingleton<HmacSha256WebhookSignatureVerifier>();
+        builder.Services.TryAddSingleton<IConnectionWorkerIsolation, ConnectionWorkerIsolation>();
         return builder;
     }
 }
