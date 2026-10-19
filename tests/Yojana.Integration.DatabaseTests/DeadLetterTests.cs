@@ -108,7 +108,8 @@ public sealed class DeadLetterTests(IntegrationHostFixture fixture)
         ResetClock();
         fixture.Connector.Configure(FakeOutboundBehaviour.Reject);
         var tenant = await fixture.NewTenantAsync("desks");
-        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid(),
+            IntegrationHostFixture.FakeConnectorCode);
         await AddCommandAsync(tenant, connection, fixture.Clock.UtcNow.AddHours(-2));
         using var scope = fixture.ScopeFor(tenant);
         var settings = scope.ServiceProvider.GetRequiredService<ManualTaskDeskSettings>();

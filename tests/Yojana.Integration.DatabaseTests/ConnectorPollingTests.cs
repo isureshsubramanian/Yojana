@@ -88,8 +88,12 @@ public sealed class ConnectorPollingTests(IntegrationHostFixture fixture)
         Assert.Same(fixture.Connector, outbound.Resolve(IntegrationHostFixture.FakeConnectorCode));
         Assert.IsType<Cx01Adapter>(outbound.Resolve("CX01"));
 
-        Assert.Equal(2, await scope.ServiceProvider.GetRequiredService<ConnectionPollingService>()
-            .PollDueAsync(CancellationToken.None));
+        var accepted = await scope.ServiceProvider.GetRequiredService<ConnectionPollingService>()
+            .PollDueAsync(CancellationToken.None);
+        var pollStates = await db.ConnectionPollWatermarks.Where(row => row.ConnectionId == fakeConnection
+                || row.ConnectionId == cx01Connection).ToListAsync();
+        Assert.All(pollStates, state => Assert.Null(state.LastError));
+        Assert.Equal(2, accepted);
         Assert.Equal(fakeConnection, Assert.Single(fixture.Poller.Requests).ConnectionId);
         Assert.Equal(1, simulator.LoginCount);
         Assert.Equal(2, await db.InboundMessages.CountAsync(row => row.ConnectionId == cx01Connection));

@@ -48,6 +48,9 @@ public sealed class PlatformOptions
     /// <summary>Let Wolverine create or update its envelope tables at start (development default; off in production).</summary>
     public bool AutoBuildMessageStorage { get; set; } = true;
 
+    /// <summary>Start Quartz after the host is built. Tests may leave the scheduler stopped and invoke jobs explicitly.</summary>
+    public bool StartScheduler { get; set; } = true;
+
     public string WolverineSchema { get; set; } = "wolverine";
 
     public string QuartzSchema { get; set; } = "quartz";

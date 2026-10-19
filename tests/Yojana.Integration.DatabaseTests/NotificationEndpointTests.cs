@@ -171,6 +171,7 @@ public sealed class NotificationEndpointTests(IntegrationHostFixture fixture, IT
             start.Environment["Serialisation__ImportFiles__ArchiveStores__1__ConnectionString"] = archiveConnection.ConnectionString;
             start.Environment["Platform__MigrateOnStartup"] = "false";
             start.Environment["Platform__AutoBuildMessageStorage"] = "false";
+            start.Environment["Platform__StartScheduler"] = "false";
             start.Environment["Platform__ServiceName"] = "yojana-integration-notification-http-test";
             start.Environment["Integration__Security__KeyEncryption__Provider"] = "Local";
             start.Environment["Integration__Security__LocalKeyEncryption__Current__KeyId"] = "integration-tests";

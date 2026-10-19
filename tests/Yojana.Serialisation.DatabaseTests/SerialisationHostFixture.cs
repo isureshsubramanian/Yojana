@@ -69,6 +69,7 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:ArchiveStores:1:ConnectionString"] = ImportFilesArchiveConnectionString;
         builder.Configuration["Platform:MigrateOnStartup"] = "true";
         builder.Configuration["Platform:AutoBuildMessageStorage"] = "true";
+        builder.Configuration["Platform:StartScheduler"] = "false";
         builder.Configuration["Platform:ServiceName"] = "yojana-serialisation-tests";
         builder.Configuration[$"{CertificateRunOptions.SectionName}:MaximumSynchronousUnits"] = "120";
         builder.Configuration[$"{Yojana.Serialisation.Ledger.LedgerBaseOrderBackfillOptions.SectionName}:BatchSize"] = "1";

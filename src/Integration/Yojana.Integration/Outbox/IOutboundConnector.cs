@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+
 namespace Yojana.Integration.Outbox;
 
 public sealed record OutboundConnectorCapabilities(bool AcceptsIdempotencyKey, bool OwnsConnectionLane = false);
@@ -59,14 +61,10 @@ public interface IOutboundConnectorResolver
     IOutboundConnector Resolve(string connectorCode);
 }
 
-public sealed class OutboundConnectorResolver(IEnumerable<IOutboundConnector> connectors) : IOutboundConnectorResolver
+public sealed class OutboundConnectorResolver(IServiceProvider services) : IOutboundConnectorResolver
 {
-    private readonly Dictionary<string, IOutboundConnector> byCode = connectors.ToDictionary(
-        connector => connector.ConnectorCode, StringComparer.Ordinal);
-
-    public IOutboundConnector Resolve(string connectorCode) => byCode.TryGetValue(connectorCode, out var connector)
-        ? connector
-        : throw new InvalidOperationException($"No outbound connector is registered for code '{connectorCode}'.");
+    public IOutboundConnector Resolve(string connectorCode) =>
+        services.GetRequiredKeyedService<IOutboundConnector>(connectorCode);
 }
 
 public interface IOutboundCommandParkingSink

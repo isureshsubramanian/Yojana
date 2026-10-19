@@ -147,7 +147,8 @@ public static class PlatformSetup
                 store.UseClustering(cluster => cluster.Enabled = true);
             });
         });
-        builder.Services.AddQuartzHostedService(h => h.WaitForJobsToComplete = true);
+        if (options.StartScheduler)
+            builder.Services.AddQuartzHostedService(h => h.WaitForJobsToComplete = true);
         builder.Services.AddSingleton<RecurringTenantJobScheduler>();
         builder.Services.AddSingleton<RecurringJobReconciliationLock>();
         builder.Services.AddSingleton<RecurringTenantJobProvisioner>();

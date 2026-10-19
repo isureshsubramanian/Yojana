@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Yojana.Integration.Notifications;
 using Yojana.Integration.Reconciliation;
 
@@ -17,16 +18,12 @@ public interface IConnectorAdapterResolver
     IConnectorReconciliationSource ReconciliationSource(string connectorCode);
 }
 
-public sealed class ConnectorAdapterResolver(IEnumerable<IConnectorAdapter> adapters) : IConnectorAdapterResolver
+public sealed class ConnectorAdapterResolver(IServiceProvider services) : IConnectorAdapterResolver
 {
-    private readonly Dictionary<string, IConnectorAdapter> byCode = adapters.ToDictionary(
-        adapter => adapter.ConnectorCode, StringComparer.Ordinal);
-
     public IConnectorPoller Poller(string connectorCode) => Resolve(connectorCode);
 
     public IConnectorReconciliationSource ReconciliationSource(string connectorCode) => Resolve(connectorCode);
 
-    private IConnectorAdapter Resolve(string connectorCode) => byCode.TryGetValue(connectorCode, out var adapter)
-        ? adapter
-        : throw new InvalidOperationException($"No connector adapter is registered for code '{connectorCode}'.");
+    private IConnectorAdapter Resolve(string connectorCode) =>
+        services.GetRequiredKeyedService<IConnectorAdapter>(connectorCode);
 }

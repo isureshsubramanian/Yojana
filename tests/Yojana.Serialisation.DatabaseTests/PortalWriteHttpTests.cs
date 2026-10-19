@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
-using System.Net.Sockets;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
@@ -197,8 +196,8 @@ public sealed class PortalWriteHttpTests(SerialisationHostFixture fixture)
 
         public static async Task<WebProcess> StartAsync()
         {
-            var port = FreePort();
             var output = new List<string>();
+            var listening = new TaskCompletionSource<Uri>(TaskCreationOptions.RunContinuationsAsynchronously);
             var start = new ProcessStartInfo("dotnet", $"\"{typeof(WebHost).Assembly.Location}\"")
             {
                 UseShellExecute = false,
@@ -207,7 +206,7 @@ public sealed class PortalWriteHttpTests(SerialisationHostFixture fixture)
                 CreateNoWindow = true,
             };
             start.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
-            start.Environment["ASPNETCORE_URLS"] = $"http://127.0.0.1:{port}";
+            start.Environment["ASPNETCORE_URLS"] = "http://127.0.0.1:0";
             start.Environment["Platform__ConnectionString"] = SerialisationHostFixture.ConnectionString;
             start.Environment["Serialisation__ImportFiles__DatabaseConnectionString"] = SerialisationHostFixture.ImportFilesConnectionString;
             start.Environment["Serialisation__ImportFiles__FileRoot"] = SerialisationHostFixture.ImportFileRoot;
@@ -221,14 +220,26 @@ public sealed class PortalWriteHttpTests(SerialisationHostFixture fixture)
             // Serialisation handler resolves an Integration-backed document port.
             start.Environment["Platform__MigrateOnStartup"] = "true";
             start.Environment["Platform__AutoBuildMessageStorage"] = "false";
+            start.Environment["Platform__StartScheduler"] = "false";
             start.Environment["Platform__ServiceName"] = "yojana-portal-write-http-test";
             var process = new Process { StartInfo = start };
-            process.OutputDataReceived += (_, args) => { if (args.Data is { } line) lock (output) output.Add(line); };
-            process.ErrorDataReceived += (_, args) => { if (args.Data is { } line) lock (output) output.Add(line); };
+            process.OutputDataReceived += (_, args) => Capture(args.Data, output, listening);
+            process.ErrorDataReceived += (_, args) => Capture(args.Data, output, listening);
             Assert.True(process.Start());
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
-            var host = new WebProcess(process, output, new Uri($"http://127.0.0.1:{port}"));
+            var completed = await Task.WhenAny(listening.Task, process.WaitForExitAsync(),
+                Task.Delay(TimeSpan.FromSeconds(30)));
+            if (completed != listening.Task && !listening.Task.IsCompleted)
+            {
+                var details = Details(output);
+                if (!process.HasExited) process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync();
+                process.Dispose();
+                throw new Xunit.Sdk.XunitException("The portal HTTP test host did not bind a port."
+                    + Environment.NewLine + details);
+            }
+            var host = new WebProcess(process, output, await listening.Task);
             using var probe = new HttpClient { BaseAddress = host.BaseAddress, Timeout = TimeSpan.FromSeconds(2) };
             var deadline = DateTime.UtcNow.AddSeconds(30);
             while (DateTime.UtcNow < deadline && !process.HasExited)
@@ -243,9 +254,24 @@ public sealed class PortalWriteHttpTests(SerialisationHostFixture fixture)
                 await Task.Delay(100);
             }
             await host.DisposeAsync();
-            string details;
-            lock (output) details = string.Join(Environment.NewLine, output.TakeLast(80));
-            throw new Xunit.Sdk.XunitException("The portal HTTP test host did not start." + Environment.NewLine + details);
+            throw new Xunit.Sdk.XunitException("The portal HTTP test host did not start."
+                + Environment.NewLine + Details(output));
+        }
+
+        private static void Capture(string? line, List<string> output, TaskCompletionSource<Uri> listening)
+        {
+            if (line is null) return;
+            lock (output) output.Add(line);
+            const string marker = "Now listening on: ";
+            var markerAt = line.IndexOf(marker, StringComparison.Ordinal);
+            if (markerAt >= 0 && Uri.TryCreate(line[(markerAt + marker.Length)..].Trim(), UriKind.Absolute,
+                    out var address))
+                listening.TrySetResult(address);
+        }
+
+        private static string Details(List<string> output)
+        {
+            lock (output) return string.Join(Environment.NewLine, output.TakeLast(80));
         }
 
         public async ValueTask DisposeAsync()
@@ -258,11 +284,5 @@ public sealed class PortalWriteHttpTests(SerialisationHostFixture fixture)
             process.Dispose();
         }
 
-        private static int FreePort()
-        {
-            using var listener = new TcpListener(IPAddress.Loopback, 0);
-            listener.Start();
-            return ((IPEndPoint)listener.LocalEndpoint).Port;
-        }
     }
 }

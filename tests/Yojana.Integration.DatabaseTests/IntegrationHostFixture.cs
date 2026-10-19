@@ -44,6 +44,7 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:ArchiveStores:0:Path"] = Path.Combine(Path.GetTempPath(), "yojana-integration-imports-archive");
         builder.Configuration["Platform:MigrateOnStartup"] = "true";
         builder.Configuration["Platform:AutoBuildMessageStorage"] = "true";
+        builder.Configuration["Platform:StartScheduler"] = "false";
         builder.Configuration["Platform:ServiceName"] = "yojana-integration-tests";
         builder.Configuration["Serialisation:Documents:ConfirmDeliverySeparately"] = "false";
         ConfigureLocalKey(builder.Configuration);
@@ -53,9 +54,10 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.AddSerialisationModule();
         builder.AddIntegrationModule();
         builder.Services.AddSingleton(Connector);
-        builder.Services.AddSingleton<IOutboundConnector>(services => services.GetRequiredService<FakeOutboundConnector>());
+        builder.Services.AddKeyedSingleton<IOutboundConnector>(FakeConnectorCode, (services, _) =>
+            services.GetRequiredService<FakeOutboundConnector>());
         builder.Services.AddSingleton(ReconciliationSource);
-        builder.Services.AddSingleton<IConnectorAdapter>(services =>
+        builder.Services.AddKeyedSingleton<IConnectorAdapter>(FakeConnectorCode, (services, _) =>
             services.GetRequiredService<FakeReconciliationSource>());
         builder.Services.AddSingleton<IClock>(Clock);
         Host = builder.Build();

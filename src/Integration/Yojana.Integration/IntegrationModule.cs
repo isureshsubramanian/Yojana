@@ -59,9 +59,10 @@ public static class IntegrationModule
         builder.Services.AddScoped<ICx01SerialHistory, EfCx01SerialHistory>();
         builder.Services.AddScoped<ICx01AttributionTaskSink, EfCx01AttributionTaskSink>();
         builder.Services.AddScoped<Cx01Adapter>();
-        builder.Services.AddScoped<IConnectorAdapter>(services =>
+        builder.Services.AddKeyedScoped<IConnectorAdapter>(Cx01Capabilities.ConnectorCode, (services, _) =>
             services.GetRequiredService<Cx01Adapter>());
-        builder.Services.AddScoped<IOutboundConnector>(services => services.GetRequiredService<Cx01Adapter>());
+        builder.Services.AddKeyedScoped<IOutboundConnector>(Cx01Capabilities.ConnectorCode, (services, _) =>
+            services.GetRequiredService<Cx01Adapter>());
         builder.Services.AddScoped<Cx01Onboarding>();
         builder.Services.AddScoped<Cx01WebhookMaintenance>();
         builder.Services.AddSingleton(RecurringTenantJob.For<Cx01WebhookWatchdogJob>(
