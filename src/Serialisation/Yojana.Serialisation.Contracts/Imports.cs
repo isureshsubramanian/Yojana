@@ -131,6 +131,14 @@ public sealed record ImportJobSummary(Guid JobId, string Source, string FileName
 public sealed record ImportJobPage(IReadOnlyList<ImportJobSummary> Items, string? NextCursor);
 public sealed record ImportRowPage(IReadOnlyList<ImportRowView> Items, string? NextCursor);
 
+public sealed record ImportFileHistoryFilter(DateTime? From = null, DateTime? To = null, string? Source = null,
+    string? Status = null, string? Uploader = null, string? FileName = null, string? Hash = null);
+public sealed record ImportFileHistoryRow(Guid JobId, string FileName, string Format, long Size,
+    string OriginalHash, string? ConvertedHash, string UploaderName, string UploaderReference, DateTime UploadedAt,
+    string Source, string Status, int Applied, int Skipped, int Rejected, string StorageState,
+    bool OriginalAvailable, bool ConvertedAvailable, bool MayDownload = false);
+public sealed record ImportFileHistoryPage(IReadOnlyList<ImportFileHistoryRow> Items, string? NextCursor);
+
 /// <summary>Compare two already-intaken jobs, or one job against a stored selection set.</summary>
 public sealed record CompareImports(Guid CommandId, Guid JobAId, Guid? JobBId, Guid? SelectionId, string ActorRef);
 
@@ -171,12 +179,30 @@ public interface ISpreadsheetReader
     Task<SpreadsheetReadResult> ReadAsync(Stream input, CancellationToken cancellationToken);
 }
 
-/// <summary>Inbox/archive storage boundary. Implementations return opaque references only.</summary>
+public static class ImportFileCopyKind
+{
+    public const string Original = "original";
+    public const string Converted = "converted";
+}
+
+public sealed record StoredImportFile(string Reference, long ContentLength, string Sha256, bool Archived);
+
+public sealed record OpenImportFile(Stream Content, long ContentLength, string Sha256, bool Archived) : IAsyncDisposable
+{
+    public ValueTask DisposeAsync() => Content.DisposeAsync();
+}
+
+/// <summary>Storage boundary. References are opaque and identify their backend so setting changes affect new files only.</summary>
 public interface IImportFileStore
 {
-    Task<string> RetainInboxAsync(Guid jobId, string fileName, byte[] content, CancellationToken cancellationToken);
-    Task<string> ArchiveAsync(Guid jobId, string fileName, byte[] content, string copyKind, CancellationToken cancellationToken);
+    Task<StoredImportFile> PutAsync(Guid jobId, string fileName, string copyKind, Stream content,
+        DateTime storedAt, CancellationToken cancellationToken);
+    Task<OpenImportFile> OpenReadAsync(string reference, CancellationToken cancellationToken);
+    Task<StoredImportFile> ArchiveAsync(string reference, CancellationToken cancellationToken);
 }
+
+public sealed record ImportFileStorageSettings(string Storage, int ArchiveAfterDays, string Version);
+public sealed record UpdateImportFileStorageSettings(string Storage, int ArchiveAfterDays, string ExpectedVersion);
 
 public sealed record TabularExport(IReadOnlyList<string> Headers, IAsyncEnumerable<IReadOnlyList<string?>> Rows);
 

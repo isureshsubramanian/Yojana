@@ -7,6 +7,8 @@
 .p7-empty strong { color: var(--text-1); font-size: var(--fs-3); }
 .p7-drop { min-height: 126px; display: grid; place-items: center; text-align: center; padding: 20px; border: 1px dashed var(--border-strong); border-radius: var(--radius-s); background: var(--surface-2); cursor: pointer; }
 .p7-drop:hover { border-color: var(--accent); }
+.p7-history-filters { display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); gap: 12px; padding: 14px; margin-top: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-1); }
+.p7-history-filters label { display: grid; gap: 5px; color: var(--text-2); font-size: 12px; }
 .p7-drop input { position: absolute; opacity: 0; pointer-events: none; }
 .p7-drop strong, .p7-drop span { display: block; }
 .p7-drop span { color: var(--text-2); font-size: 12px; margin-top: 4px; }

@@ -15,6 +15,10 @@ if (!File.Exists(cataloguePath))
 var builder = Host.CreateApplicationBuilder(args);
 builder.Configuration["Platform:ConnectionString"] = builder.Configuration["Platform:ConnectionString"]
     ?? "Server=localhost,1433;Database=yojana;User Id=sa;Encrypt=True;TrustServerCertificate=True";
+var operationalConnection = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(builder.Configuration["Platform:ConnectionString"]);
+operationalConnection.InitialCatalog += "_files";
+builder.Configuration["Serialisation:ImportFiles:DatabaseConnectionString"] ??= operationalConnection.ConnectionString;
+builder.Configuration["Serialisation:ImportFiles:FileRoot"] ??= Path.Combine(Path.GetTempPath(), "yojana-import-files-demo");
 builder.Configuration["Platform:MigrateOnStartup"] = "false";
 builder.Configuration["Platform:AutoBuildMessageStorage"] =
     builder.Configuration["Platform:AutoBuildMessageStorage"] ?? "false";

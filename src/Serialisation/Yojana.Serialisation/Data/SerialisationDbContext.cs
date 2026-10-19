@@ -66,6 +66,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<ImportRowResult> ImportRowResults => Set<ImportRowResult>();
     public DbSet<ColumnMapping> ColumnMappings => Set<ColumnMapping>();
     public DbSet<ThreePlFeedMessage> ThreePlFeedMessages => Set<ThreePlFeedMessage>();
+    public DbSet<ImportFileDownloadAudit> ImportFileDownloadAudits => Set<ImportFileDownloadAudit>();
 
     public DbSet<BulkApprovalRequest> BulkApprovalRequests => Set<BulkApprovalRequest>();
 
@@ -1925,12 +1926,26 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(row => row.OriginalArchiveReference).HasMaxLength(500);
             b.Property(row => row.ConvertedArchiveReference).HasMaxLength(500);
             b.Property(row => row.InboxReference).HasMaxLength(500);
+            b.Property(row => row.OriginalFileReference).HasMaxLength(500);
+            b.Property(row => row.ConvertedFileReference).HasMaxLength(500);
             b.Property(row => row.ActorRef).HasMaxLength(200);
             b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
             b.HasIndex(row => new { row.TenantId, row.Source, row.OriginalHash, row.Mode, row.TargetType, row.TargetId, row.TargetLine })
                 .IsUnique().HasFilter(null).HasDatabaseName("ux_import_job_replay_key");
             b.HasIndex(row => new { row.TenantId, row.Status, row.RecordedTime });
+            b.HasIndex(row => new { row.TenantId, row.RecordedTime, row.JobId });
             b.HasIndex(row => new { row.TenantId, row.TargetType, row.TargetId, row.TargetLine });
+        });
+
+        modelBuilder.Entity<ImportFileDownloadAudit>(b =>
+        {
+            b.ToTable("import_file_download_audit", t =>
+                t.HasCheckConstraint("ck_import_file_download_audit_kind", "copy_kind IN ('original', 'converted')"));
+            b.HasKey(row => new { row.TenantId, row.AuditId });
+            b.Property(row => row.CopyKind).HasMaxLength(12).IsUnicode(false);
+            b.Property(row => row.ActorRef).HasMaxLength(200);
+            b.HasOne<ImportJob>().WithMany().HasForeignKey(row => new { row.TenantId, row.JobId }).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(row => new { row.TenantId, row.JobId, row.DownloadedAt });
         });
 
         modelBuilder.Entity<ImportRowResult>(b =>

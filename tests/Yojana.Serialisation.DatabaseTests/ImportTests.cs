@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
@@ -46,8 +48,7 @@ public sealed class ImportTests(SerialisationHostFixture fixture)
         Assert.Equal(ImportOutcome.Applied, row.Outcome);
         Assert.Equal(raw, row.RawValue);
         Assert.Equal(scheme.Format(0, 1).Replace("-", "", StringComparison.Ordinal), row.NormalisedValue);
-        Assert.NotNull(job.OriginalArchiveReference);
-        Assert.Null(job.InboxReference);
+        Assert.NotNull((await StoredJobAsync(tenant, job.JobId)).OriginalFileReference);
     }
 
     [DatabaseFact]
@@ -67,7 +68,7 @@ public sealed class ImportTests(SerialisationHostFixture fixture)
         var job = Assert.Single(result.Jobs);
         Assert.Equal("applied", job.Status);
         Assert.Equal(1, job.Applied);
-        Assert.NotNull(job.OriginalArchiveReference);
+        Assert.NotNull((await StoredJobAsync(tenant, job.JobId)).OriginalFileReference);
         Assert.Null(job.ConvertedHash);
         using var scope = fixture.ScopeFor(tenant);
         Assert.Contains(scope.ServiceProvider.GetServices<ISpreadsheetReader>(), reader => reader.CanRead(ImportFormat.Xls));
@@ -105,12 +106,100 @@ public sealed class ImportTests(SerialisationHostFixture fixture)
         Assert.Equal(1, job.Applied);
         Assert.NotNull(job.ConvertedHash);
         Assert.NotEqual(job.OriginalHash, job.ConvertedHash);
-        Assert.NotNull(job.OriginalArchiveReference);
-        Assert.NotNull(job.ConvertedArchiveReference);
-        Assert.Null(job.InboxReference);
         var stored = await services.GetRequiredService<SerialisationDbContext>().ImportJobs.SingleAsync(row => row.JobId == job.JobId);
-        Assert.Equal(converted, stored.ConvertedContent);
-        Assert.NotNull(stored.OriginalContent);
+        Assert.NotNull(stored.OriginalFileReference);
+        Assert.NotNull(stored.ConvertedFileReference);
+        await using var convertedCopy = await services.GetRequiredService<IImportFileStore>()
+            .OpenReadAsync(stored.ConvertedFileReference, CancellationToken.None);
+        using var convertedBytes = new MemoryStream();
+        await convertedCopy.Content.CopyToAsync(convertedBytes);
+        Assert.Equal(converted, convertedBytes.ToArray());
+        var download = await services.GetRequiredService<ImportFileDownloads>()
+            .OpenAsync(job.JobId, ImportFileCopyKind.Converted, "supervisor", [YojanaRole.SerialAdministrator], CancellationToken.None);
+        Assert.Equal("legacy.xlsx", download.FileName);
+        await download.Content.DisposeAsync();
+        Assert.True(await services.GetRequiredService<SerialisationDbContext>().ImportFileDownloadAudits
+            .AnyAsync(row => row.JobId == job.JobId && row.CopyKind == ImportFileCopyKind.Converted));
+        var history = await services.GetRequiredService<ImportQueries>().HistoryAsync(
+            new(FileName: "legacy", Hash: job.OriginalHash), null, 10, CancellationToken.None);
+        Assert.Equal(job.JobId, Assert.Single(history.Items).JobId);
+    }
+
+    [DatabaseFact]
+    public async Task Download_refuses_a_hash_mismatch_without_writing_an_audit_row()
+    {
+        var tenant = await fixture.NewTenantAsync("imphash");
+        var item = Guid.NewGuid();
+        var scheme = RegisterScheme(item);
+        var order = new DocumentRef("production_order", Guid.NewGuid());
+        await ProvisionalUnitsAsync(tenant, item, order, 1);
+        var result = await RunAsync(tenant, new RunImport(Guid.NewGuid(), ImportSource.UserUpload,
+            new("integrity.csv", ImportFormat.Csv, Encoding.UTF8.GetBytes($"Serial\r\n{scheme.Format(0, 1)}\r\n")),
+            At, Entity, "ignored", order, new("Serial"), CommittedBy: Committer()));
+        var jobId = Assert.Single(result.Jobs).JobId;
+        using var scope = fixture.ScopeFor(tenant);
+        var operational = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var job = await operational.ImportJobs.SingleAsync(x => x.JobId == jobId);
+        var fileId = Guid.ParseExact(job.OriginalFileReference![12..], "N");
+        var fileDb = scope.ServiceProvider.GetRequiredService<ImportFilesDbContext>();
+        var row = await fileDb.Files.SingleAsync(x => x.FileId == fileId);
+        row.Content = Encoding.UTF8.GetBytes("tampered");
+        row.ContentLength = row.Content.LongLength;
+        await fileDb.SaveChangesAsync();
+        var refusal = await Assert.ThrowsAsync<CommandRefusedException>(() => scope.ServiceProvider
+            .GetRequiredService<ImportFileDownloads>().OpenAsync(jobId, ImportFileCopyKind.Original, "supervisor", [YojanaRole.SerialAdministrator], CancellationToken.None));
+        Assert.Equal("import_file_hash_mismatch", refusal.Rule);
+        Assert.False(await operational.ImportFileDownloadAudits.AnyAsync(x => x.JobId == jobId));
+    }
+
+    [DatabaseFact]
+    public async Task Download_is_limited_to_the_uploader_and_the_administrator_and_service_manager_roles()
+    {
+        var tenant = await fixture.NewTenantAsync("impdownloadrole");
+        var item = Guid.NewGuid();
+        var scheme = RegisterScheme(item);
+        var order = new DocumentRef("production_order", Guid.NewGuid());
+        await ProvisionalUnitsAsync(tenant, item, order, 1);
+        var uploader = Guid.NewGuid();
+        RunImportResult result;
+        using (var importScope = fixture.ScopeFor(tenant))
+            result = await importScope.ServiceProvider.GetRequiredService<ImportService>().RunAsync(new RunImport(Guid.NewGuid(),
+                ImportSource.UserUpload, new("role-check.csv", ImportFormat.Csv,
+                    Encoding.UTF8.GetBytes($"Serial\r\n{scheme.Format(0, 1)}\r\n")),
+                At, Entity, uploader.ToString("D"), order, new("Serial"), CommittedBy: Committer()), CancellationToken.None);
+        var jobId = Assert.Single(result.Jobs).JobId;
+
+        // Another user with the uploader's own import role may see the history but not download the file.
+        using (var colleague = await fixture.AuthenticatedClientAsync(tenant, YojanaRole.Quality))
+        {
+            using (var response = await colleague.GetAsync($"/api/imports/{jobId:D}/files/original"))
+                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            var history = await colleague.GetFromJsonAsync<ImportFileHistoryPage>("/api/imports/history?fileName=role-check");
+            Assert.False(Assert.Single(history!.Items).MayDownload);
+        }
+        using (var outsider = await fixture.AuthenticatedClientAsync(tenant, YojanaRole.CustomerService))
+        using (var response = await outsider.GetAsync($"/api/imports/{jobId:D}/files/original"))
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        using (var own = await fixture.AuthenticatedClientAsync(tenant, YojanaRole.Quality, uploader))
+        {
+            using (var response = await own.GetAsync($"/api/imports/{jobId:D}/files/original"))
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var history = await own.GetFromJsonAsync<ImportFileHistoryPage>("/api/imports/history?fileName=role-check");
+            Assert.True(Assert.Single(history!.Items).MayDownload);
+        }
+        foreach (var role in new[] { YojanaRole.TenantAdministrator, YojanaRole.SerialAdministrator, YojanaRole.ServiceManager })
+        {
+            using var client = await fixture.AuthenticatedClientAsync(tenant, role);
+            using var response = await client.GetAsync($"/api/imports/{jobId:D}/files/original");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        using var scope = fixture.ScopeFor(tenant);
+        var audits = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>()
+            .ImportFileDownloadAudits.Where(row => row.JobId == jobId).ToListAsync();
+        Assert.Equal(4, audits.Count);
+        Assert.Contains(audits, row => row.ActorRef == uploader.ToString("D"));
     }
 
     [DatabaseFact]
@@ -273,7 +362,7 @@ public sealed class ImportTests(SerialisationHostFixture fixture)
         Assert.Equal(2, split.Jobs.Count);
         Assert.Contains(split.Jobs, job => job.Target == orderA && job.TargetName == numberA && job.Applied == 1);
         Assert.Contains(split.Jobs, job => job.Target == orderB && job.TargetName == numberB && job.Applied == 1);
-        Assert.All(split.Jobs, job => Assert.NotNull(job.OriginalArchiveReference));
+        foreach (var job in split.Jobs) Assert.NotNull((await StoredJobAsync(tenant, job.JobId)).OriginalFileReference);
         var splitReplay = await RunAsync(tenant, splitCommand);
         Assert.True(splitReplay.Replayed);
         Assert.Equal(split.Jobs.Select(job => job.JobId).Order(), splitReplay.Jobs.Select(job => job.JobId).Order());
@@ -388,12 +477,104 @@ public sealed class ImportTests(SerialisationHostFixture fixture)
         Assert.Single(firstJobs.Items);
         Assert.NotNull(firstJobs.NextCursor);
         Assert.Single((await queries.PageAsync(firstJobs.NextCursor, 1, CancellationToken.None)).Items);
+        // A compare result stores no file of its own, so upload history lists the uploaded inputs and not the result.
+        Assert.Empty((await queries.HistoryAsync(new(Status: ImportJobStatus.HandedOff), null, 10, CancellationToken.None)).Items);
+        var history = await queries.HistoryAsync(new(), null, 10, CancellationToken.None);
+        Assert.NotEmpty(history.Items);
+        Assert.DoesNotContain(history.Items, row => row.JobId == compared.ComparisonJobId);
+    }
+
+    [DatabaseFact]
+    public async Task Import_file_database_is_separate_tenant_scoped_and_round_trips()
+    {
+        var tenant = await fixture.NewTenantAsync("impfiles");
+        var otherTenant = await fixture.NewTenantAsync("impfiles2");
+        string reference;
+        var bytes = Encoding.UTF8.GetBytes("fictional import bytes");
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var backend = scope.ServiceProvider.GetServices<IImportFileBackend>().Single(x => x.Scheme == "database");
+            await using var input = new MemoryStream(bytes);
+            var stored = await backend.PutAsync(Guid.NewGuid(), "fictional.csv", ImportFileCopyKind.Original, input, At, CancellationToken.None);
+            reference = stored.Reference;
+            Assert.Equal(Hash(bytes), stored.Sha256);
+            await using var opened = await backend.OpenReadAsync(reference, CancellationToken.None);
+            using var copy = new MemoryStream();
+            await opened.Content.CopyToAsync(copy);
+            Assert.Equal(bytes, copy.ToArray());
+        }
+        using (var scope = fixture.ScopeFor(otherTenant))
+        {
+            var backend = scope.ServiceProvider.GetServices<IImportFileBackend>().Single(x => x.Scheme == "database");
+            var refusal = await Assert.ThrowsAsync<CommandRefusedException>(() => backend.OpenReadAsync(reference, CancellationToken.None));
+            Assert.Equal("import_file_missing", refusal.Rule);
+        }
+    }
+
+    [DatabaseFact]
+    public async Task Setting_change_affects_new_files_only_and_old_references_still_resolve()
+    {
+        var tenant = await fixture.NewTenantAsync("impset");
+        using var scope = fixture.ScopeFor(tenant);
+        var settings = scope.ServiceProvider.GetRequiredService<TenantImportFileSettings>();
+        var current = await settings.GetAsync(CancellationToken.None);
+        var store = scope.ServiceProvider.GetRequiredService<IImportFileStore>();
+        var bytes = Encoding.UTF8.GetBytes("first");
+        await using var first = new MemoryStream(bytes);
+        var database = await store.PutAsync(Guid.NewGuid(), "first.csv", ImportFileCopyKind.Original, first, At, CancellationToken.None);
+        Assert.StartsWith("database:", database.Reference);
+        await settings.SetAsync(new(TenantImportFileSettings.File, 90, current.Version), CancellationToken.None);
+        await using var second = new MemoryStream(Encoding.UTF8.GetBytes("second"));
+        var file = await store.PutAsync(Guid.NewGuid(), "second.csv", ImportFileCopyKind.Original, second, At, CancellationToken.None);
+        Assert.StartsWith("file:", file.Reference);
+        await using var old = await store.OpenReadAsync(database.Reference, CancellationToken.None);
+        Assert.Equal(bytes.Length, old.ContentLength);
+    }
+
+    [DatabaseFact]
+    public async Task Legacy_content_migration_verifies_nulls_archives_resumes_and_remains_downloadable()
+    {
+        var tenant = await fixture.NewTenantAsync("impmove");
+        var jobId = Guid.NewGuid();
+        var bytes = Encoding.UTF8.GetBytes("Serial\r\nFIC-001\r\n");
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            db.ImportJobs.Add(new ImportJob { TenantId = tenant, JobId = jobId, CommandId = jobId,
+                Source = ImportSource.UserUpload, FileName = "legacy.csv", OriginalHash = Hash(bytes), Format = ImportFormat.Csv,
+                Mode = ImportMode.Compare, Status = ImportJobStatus.Compared, ActorRef = "supervisor", RecordedTime = At,
+                OriginalContent = bytes });
+            await db.SaveChangesAsync();
+            var settings = scope.ServiceProvider.GetRequiredService<TenantImportFileSettings>();
+            var current = await settings.GetAsync(CancellationToken.None);
+            await settings.SetAsync(new(TenantImportFileSettings.Database, 1, current.Version), CancellationToken.None);
+            var maintenance = scope.ServiceProvider.GetRequiredService<ImportFileMaintenance>();
+            var first = await maintenance.RunBatchAsync(CancellationToken.None);
+            var second = await maintenance.RunBatchAsync(CancellationToken.None);
+            Assert.Equal(1, first.MigratedCopies);
+            Assert.Equal(1, first.ArchivedCopies);
+            Assert.Equal((0, 0), (second.MigratedCopies, second.ArchivedCopies));
+            var job = await db.ImportJobs.SingleAsync(x => x.JobId == jobId);
+            Assert.Null(job.OriginalContent);
+            Assert.True(job.OriginalArchived);
+            var download = await scope.ServiceProvider.GetRequiredService<ImportFileDownloads>()
+                .OpenAsync(jobId, ImportFileCopyKind.Original, "auditor", [YojanaRole.SerialAdministrator], CancellationToken.None);
+            await download.Content.DisposeAsync();
+            Assert.True(await db.ImportFileDownloadAudits.AnyAsync(x => x.JobId == jobId && x.ActorRef == "auditor"));
+        }
     }
 
     private async Task<RunImportResult> RunAsync(TenantId tenant, RunImport command)
     {
         using var scope = fixture.ScopeFor(tenant);
         return await scope.ServiceProvider.GetRequiredService<ImportService>().RunAsync(command with { ActorRef = "supervisor" }, CancellationToken.None);
+    }
+
+    private async Task<ImportJob> StoredJobAsync(TenantId tenant, Guid jobId)
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        return await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().ImportJobs.AsNoTracking()
+            .SingleAsync(row => row.JobId == jobId);
     }
 
     private RunImport CompareIntake(string fileName, IReadOnlyList<string> values, DocumentRef order) =>

@@ -5,7 +5,7 @@ import { useSession } from "../session/session";
 import { p7Api } from "./api";
 
 export function ExportButtons({ path, disabled = false }: { path: string; disabled?: boolean }) {
-  return <span className="export-pair" aria-label="Export"><a className={`btn${disabled ? " disabled" : ""}`} href={disabled ? undefined : `${path}${path.includes("?") ? "&" : "?"}format=csv`} aria-disabled={disabled}>CSV</a><a className={`btn${disabled ? " disabled" : ""}`} href={disabled ? undefined : `${path}${path.includes("?") ? "&" : "?"}format=xlsx`} aria-disabled={disabled}>Excel</a></span>;
+  return <>{path === "/api/imports/export" && <NavLink className="btn" to="/imports/history">Upload history</NavLink>}<span className="export-pair" aria-label="Export"><a className={`btn${disabled ? " disabled" : ""}`} href={disabled ? undefined : `${path}${path.includes("?") ? "&" : "?"}format=csv`} aria-disabled={disabled}>CSV</a><a className={`btn${disabled ? " disabled" : ""}`} href={disabled ? undefined : `${path}${path.includes("?") ? "&" : "?"}format=xlsx`} aria-disabled={disabled}>Excel</a></span></>;
 }
 
 export function PrimaryButton({ children, onClick, disabled, busy }: { children: React.ReactNode; onClick: () => void; disabled?: boolean; busy?: boolean }) {

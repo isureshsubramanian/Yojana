@@ -1168,6 +1168,20 @@ public static class SerialisationEndpoints
                     extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
             }
         }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        generalSettings.MapGet("/import-files", async (TenantImportFileSettings settings, CancellationToken ct) =>
+            Results.Ok(await settings.GetAsync(ct))).RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        generalSettings.MapPut("/import-files", async (UpdateImportFileStorageSettings update,
+            TenantImportFileSettings settings, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await settings.SetAsync(update, ct)); }
+            catch (TenantSettingVersionConflictException ex)
+            {
+                return Results.Problem(title: "document_changed", detail: "Import-file settings changed; reload before saving.",
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?> { ["rule"] = "document_changed", ["currentVersion"] = ex.CurrentVersion });
+            }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
 
         var certificates = app.MapGroup("/api/certificates").RequireAuthorization(YojanaPolicy.TenantMember);
         certificates.MapGet("/settings/release-record-issue-point", async (
@@ -1393,7 +1407,51 @@ public static class SerialisationEndpoints
         }).RequireAuthorization(templateEditor);
         // End P6 tenant image assets.
 
-        var importJobs = app.MapGroup("/api/imports").RequireAuthorization(YojanaPolicy.TenantMember);
+        var importJobs = app.MapGroup("/api/imports").RequireAuthorization(policy => policy.RequireClaim(YojanaClaim.Role,
+            YojanaRole.SerialAdministrator, YojanaRole.ProductionSupervisor, YojanaRole.Quality,
+            YojanaRole.InventoryController, YojanaRole.WarehouseLead));
+        importJobs.MapGet("/history", (DateTime? from, DateTime? to, string? source, string? status,
+            string? uploader, string? fileName, string? hash, string? cursor, int? take, ClaimsPrincipal user,
+            ImportQueries queries, CancellationToken ct) => ImportInvoke(async () =>
+            {
+                var page = await queries.HistoryAsync(new(from, to, source, status, uploader, fileName, hash), cursor, take ?? 50, ct);
+                var actor = Actor(user);
+                var roles = Roles(user);
+                return page with
+                {
+                    Items = page.Items.Select(row => row with
+                    {
+                        MayDownload = ImportFileDownloadPolicy.MayDownload(row.UploaderReference, actor, roles),
+                    }).ToList(),
+                };
+            }));
+        importJobs.MapGet("/history/export", (DateTime? from, DateTime? to, string? source, string? status,
+            string? uploader, string? fileName, string? hash, HttpContext http, ImportQueries queries,
+            ITabularExporter exporter, CancellationToken ct) =>
+        {
+            http.Response.Headers.ContentDisposition = "attachment; filename=import-file-history.csv";
+            return Results.Stream(stream => exporter.WriteAsync("csv", new TabularExport(
+                ["file_name", "format", "size", "original_hash", "converted_hash", "uploader", "uploaded_at", "source", "status", "applied", "skipped", "rejected", "storage_state"],
+                queries.ExportHistoryAsync(new(from, to, source, status, uploader, fileName, hash), ct)), stream, ct),
+                exporter.ContentType("csv"), "import-file-history.csv");
+        });
+        // Downloads sit outside the import-role group: the administrators and the service manager may download any file
+        // without running imports, and an uploader keeps access to their own file. ImportFileDownloadPolicy decides.
+        app.MapGet("/api/imports/{jobId:guid}/files/{copyKind}", async (Guid jobId, string copyKind, ClaimsPrincipal user,
+            HttpContext http, ImportFileDownloads downloads, CancellationToken ct) =>
+        {
+            try
+            {
+                var file = await downloads.OpenAsync(jobId, copyKind, Actor(user), Roles(user), ct);
+                http.Response.ContentLength = file.ContentLength;
+                return Results.Stream(file.Content, file.ContentType, file.FileName, enableRangeProcessing: false);
+            }
+            catch (CommandRefusedException ex) when (ex.Rule == "import_file_download_not_permitted")
+            {
+                return Refused(ex, StatusCodes.Status403Forbidden);
+            }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status409Conflict); }
+        }).RequireAuthorization(YojanaPolicy.TenantMember);
         importJobs.MapGet("/", (string? cursor, int? take, ImportQueries queries, CancellationToken ct) =>
             ImportInvoke(() => queries.PageAsync(cursor, take ?? 50, ct)));
         importJobs.MapGet("/export", (string? format, HttpContext http, ImportQueries queries,

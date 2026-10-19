@@ -196,6 +196,18 @@ public static class PlatformSetup
         return builder;
     }
 
+    /// <summary>Registers a module context whose data must live outside the operational database.</summary>
+    public static IHostApplicationBuilder AddModuleDbContext<TContext>(this IHostApplicationBuilder builder, string schema,
+        string connectionString) where TContext : YojanaDbContext
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new InvalidOperationException($"Database connection for {typeof(TContext).Name} is required.");
+        builder.Services.AddDbContext<TContext>(db => db.UseSqlServer(connectionString,
+            sql => SqlServerConventions(sql, schema)));
+        ModuleContexts.Add(typeof(TContext));
+        return builder;
+    }
+
     // Collections in LINQ (ids.Contains(x)) go to the server as ONE json parameter read with OPENJSON, not one
     // parameter per element. With one parameter per element a 500-serial document compiled 1–3 s per query on every run
     // (Query Store, bench run 2026-10-16 10:53) — more than the queries took to execute; one parameter gives one small

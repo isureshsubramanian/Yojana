@@ -9,6 +9,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Imports;
 
 namespace Yojana.Serialisation.DatabaseTests;
 
@@ -29,7 +30,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
         using var scope = fixture.ScopeFor(null);
         var db = Db(scope);
         var expected = db.Model.GetEntityTypes().Where(e => typeof(ITenantScoped).IsAssignableFrom(e.ClrType)).Select(e => e.GetTableName()!).ToHashSet();
-        Assert.Equal(96, expected.Count);
+        Assert.Equal(97, expected.Count);
         var covered = await db.Database.SqlQueryRaw<string>($"""
             SELECT OBJECT_NAME(p.target_object_id) AS [Value]
             FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
@@ -50,11 +51,27 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
             "ledger_base_order_backfill_checkpoint",
             "rma_stage_counter",
             "import_job", "import_row_result", "column_mapping", "three_pl_feed_message",
+            "import_file_download_audit",
             "customer_assertion", "disclosure_policy", "customer_reconciliation", "customer_reconciliation_row",
             "portal_registration",
         });
         var blocks = await db.Database.SqlQueryRaw<int>($"SELECT COUNT(*) AS [Value] FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id WHERE s.name = 'tenant_policy_{S}' AND p.predicate_type_desc = 'BLOCK'").SingleAsync();
         Assert.Equal(expected.Count * 2, blocks);
+        Assert.Empty(db.ValidateTenantKeyConventions());
+    }
+
+    [DatabaseFact]
+    public async Task Import_file_database_has_its_own_tenant_policy()
+    {
+        using var scope = fixture.ScopeFor(null);
+        var db = scope.ServiceProvider.GetRequiredService<ImportFilesDbContext>();
+        Assert.Single(db.Model.GetEntityTypes());
+        var covered = await db.Database.SqlQueryRaw<string>("""
+            SELECT OBJECT_NAME(p.target_object_id) AS [Value]
+            FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
+            WHERE s.name = 'tenant_policy_import_files' AND p.predicate_type_desc = 'FILTER'
+            """).ToListAsync();
+        Assert.Equal(["stored_file"], covered);
         Assert.Empty(db.ValidateTenantKeyConventions());
     }
 

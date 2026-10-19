@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text;
 using System.Text.Json;
+using System.Security.Cryptography;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using Wolverine;
@@ -186,15 +187,47 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
                 Encoding.UTF8.GetBytes("Serial\r\n" + string.Join("\r\n", vendorValues) + "\r\n")),
             eventTime.AddMinutes(10), LegalEntityId, actor, ProductionOrder, new ImportColumnMapping("Serial"),
             "p7-vendor", ImportMode.Compare), cancellationToken);
+        await CreateArchivedLegacySpreadsheetHistoryAsync(eventTime.AddMinutes(15), cancellationToken);
 
         var cleanJob = clean.Jobs.Single();
         var spreadsheetJob = spreadsheet.Jobs.Single();
         var vendorJob = vendor.Jobs.Single();
-        if (spreadsheetJob.Rejected == 0 || spreadsheetJob.InboxReference is null)
-            throw new InvalidOperationException("the spreadsheet demo must retain at least one rejected row in the inbox");
+        if (spreadsheetJob.Rejected == 0)
+            throw new InvalidOperationException("the spreadsheet demo must retain at least one rejected row");
         if (vendorJob.Rows.Count != 200 || vendorJob.Rows.Select(row => row.NormalisedValue).Distinct().Count() != 100)
             throw new InvalidOperationException("the vendor demo must contain 200 rows and 100 unique values");
         return new(cleanJob.JobId, spreadsheetJob.JobId, vendorJob.JobId);
+    }
+
+    private async Task CreateArchivedLegacySpreadsheetHistoryAsync(DateTime eventTime, CancellationToken cancellationToken)
+    {
+        using var scope = TenantScope();
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var jobId = DemoIds.FromName("p7:import:legacy-field-register");
+        if (await db.ImportJobs.AnyAsync(row => row.JobId == jobId, cancellationToken)) return;
+        var original = Encoding.UTF8.GetBytes("Fictional legacy spreadsheet bytes for download history");
+        var converted = await XlsxAsync(["Serial"], [[Units("RS-1100")[2].Serial], [Units("RS-1100")[3].Serial]], cancellationToken);
+        var files = scope.ServiceProvider.GetRequiredService<IImportFileStore>();
+        await using var originalStream = new MemoryStream(original, writable: false);
+        await using var convertedStream = new MemoryStream(converted, writable: false);
+        var storedOriginal = await files.PutAsync(jobId, "field-register.xls", ImportFileCopyKind.Original,
+            originalStream, eventTime, cancellationToken);
+        var storedConverted = await files.PutAsync(jobId, "field-register.xlsx", ImportFileCopyKind.Converted,
+            convertedStream, eventTime, cancellationToken);
+        storedOriginal = await files.ArchiveAsync(storedOriginal.Reference, cancellationToken);
+        storedConverted = await files.ArchiveAsync(storedConverted.Reference, cancellationToken);
+        db.ImportJobs.Add(new ImportJob
+        {
+            TenantId = tenant, JobId = jobId, CommandId = jobId, Source = ImportSource.UserUpload,
+            FileName = "field-register.xls", OriginalHash = Convert.ToHexString(SHA256.HashData(original)).ToLowerInvariant(),
+            ConvertedHash = Convert.ToHexString(SHA256.HashData(converted)).ToLowerInvariant(), Format = ImportFormat.Xls,
+            Mode = ImportMode.Compare, Status = ImportJobStatus.Compared, AppliedCount = 2, ActorRef = actor,
+            RecordedTime = eventTime, CompletedTime = eventTime.AddMinutes(1),
+            OriginalFileReference = storedOriginal.Reference, ConvertedFileReference = storedConverted.Reference,
+            OriginalLength = storedOriginal.ContentLength, ConvertedLength = storedConverted.ContentLength,
+            OriginalArchived = true, ConvertedArchived = true,
+        });
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task CreateCustomerReconciliationAsync(CancellationToken cancellationToken)

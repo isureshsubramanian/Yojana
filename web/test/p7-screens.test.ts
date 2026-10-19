@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { acceptedImportFormats, acceptsImportFile, actionOptions, coverageLabel, disclosureLocked, human, internalSections, portalUnitSections, publicLookupFields, reconciliationKpis, splitValues, xrefIndent } from "../src/p7/model.ts";
 import { countryName } from "../src/reference/countries.ts";
 
@@ -7,6 +8,16 @@ test("import job accepts every approved spreadsheet format and rejects unrelated
   assert.deepEqual(acceptedImportFormats, ["csv", "xlsx", "xls"]);
   assert.equal(acceptsImportFile("vendor.XLS"), true);
   assert.equal(acceptsImportFile("notes.pdf"), false);
+});
+
+test("upload history is server-paged, filterable and offers both downloads", () => {
+  const screen = readFileSync(new URL("../src/p7/ImportHistory.tsx", import.meta.url), "utf8");
+  assert.match(screen, /FindBar/);
+  assert.match(screen, /p7Api\.importHistory/);
+  assert.match(screen, /row\.mayDownload/);
+  assert.match(screen, /files\/original/);
+  assert.match(screen, /files\/converted/);
+  assert.match(screen, /Export CSV/);
 });
 
 test("compare mode never offers assign for an existing collision", () => {

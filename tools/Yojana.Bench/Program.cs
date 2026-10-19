@@ -83,6 +83,9 @@ builder.Configuration["Platform:ConnectionString"] = options.ConnectionString;
 builder.Configuration["Platform:MigrateOnStartup"] = "true";
 builder.Configuration["Platform:AutoBuildMessageStorage"] = "true";
 builder.Configuration["Platform:ServiceName"] = "yojana-bench";
+// Import files live in their own database (OD-33); the bench never stores files, but the module requires the connection.
+builder.Configuration["Serialisation:ImportFiles:DatabaseConnectionString"] =
+    new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(options.ConnectionString) { InitialCatalog = options.Database + "_files" }.ConnectionString;
 builder.Configuration["Serialisation:PartitionLifecycle:MonthsAhead"] = "12";
 builder.Logging.ClearProviders();
 builder.Logging.AddSimpleConsole(o => { o.SingleLine = true; o.TimestampFormat = "HH:mm:ss "; });

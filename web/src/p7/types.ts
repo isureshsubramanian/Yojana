@@ -9,6 +9,8 @@ export interface ImportRow {
 }
 export interface ImportSummary { jobId: string; source: string; fileName: string; format: string; mode: string; status: string; applied: number; skipped: number; rejected: number; recordedTime: string }
 export interface ImportPage { items: ImportSummary[]; nextCursor: string | null }
+export interface ImportFileHistoryRow { jobId: string; fileName: string; format: string; size: number; originalHash: string; convertedHash: string | null; uploaderName: string; uploaderReference: string; uploadedAt: string; source: string; status: string; applied: number; skipped: number; rejected: number; storageState: string; originalAvailable: boolean; convertedAvailable: boolean; mayDownload: boolean }
+export interface ImportFileHistoryPage { items: ImportFileHistoryRow[]; nextCursor: string | null }
 export interface ImportRowPage { items: ImportRow[]; nextCursor: string | null }
 export interface ImportJob extends ImportSummary { originalHash: string; convertedHash: string | null; target: DocumentRef | null; targetName: string | null; originalArchiveReference: string | null; convertedArchiveReference: string | null; inboxReference: string | null; rows: ImportRow[] }
 export interface ImportRunResult { jobs: ImportJob[]; replayed: boolean }

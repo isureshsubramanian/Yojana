@@ -230,15 +230,25 @@ public sealed class ImportService(
 
     private async Task StoreFileAsync(ImportJob job, ImportFile file, byte[]? converted, CancellationToken cancellationToken)
     {
-        if (job.RejectedCount > 0)
-        {
-            job.InboxReference = await files.RetainInboxAsync(job.JobId, file.FileName, file.Content, cancellationToken);
-            if (converted is not null) job.ConvertedContent = converted;
-            return;
-        }
-        job.OriginalArchiveReference = await files.ArchiveAsync(job.JobId, file.FileName, file.Content, "original", cancellationToken);
+        await using var original = new MemoryStream(file.Content, writable: false);
+        var storedOriginal = await files.PutAsync(job.JobId, file.FileName, ImportFileCopyKind.Original,
+            original, job.RecordedTime, cancellationToken);
+        if (!StringComparer.Ordinal.Equals(storedOriginal.Sha256, job.OriginalHash))
+            throw new CommandRefusedException("import_file_hash_mismatch", "The stored original file does not match its intake hash.");
+        job.OriginalFileReference = storedOriginal.Reference;
+        job.OriginalLength = storedOriginal.ContentLength;
+        job.OriginalArchived = storedOriginal.Archived;
         if (converted is not null)
-            job.ConvertedArchiveReference = await files.ArchiveAsync(job.JobId, Path.ChangeExtension(file.FileName, ".xlsx"), converted, "converted", cancellationToken);
+        {
+            await using var convertedStream = new MemoryStream(converted, writable: false);
+            var storedConverted = await files.PutAsync(job.JobId, Path.ChangeExtension(file.FileName, ".xlsx"),
+                ImportFileCopyKind.Converted, convertedStream, job.RecordedTime, cancellationToken);
+            if (!StringComparer.Ordinal.Equals(storedConverted.Sha256, job.ConvertedHash))
+                throw new CommandRefusedException("import_file_hash_mismatch", "The stored converted file does not match its intake hash.");
+            job.ConvertedFileReference = storedConverted.Reference;
+            job.ConvertedLength = storedConverted.ContentLength;
+            job.ConvertedArchived = storedConverted.Archived;
+        }
     }
 
     private async Task PublishCompletedAsync(ImportJob job, RunImport command, CancellationToken cancellationToken)

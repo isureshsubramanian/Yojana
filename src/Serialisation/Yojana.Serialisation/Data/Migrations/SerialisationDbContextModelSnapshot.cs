@@ -3436,6 +3436,49 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("finance_period", "serialisation");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ImportFileDownloadAudit", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("AuditId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("audit_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<string>("CopyKind")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(12)")
+                        .HasColumnName("copy_kind");
+
+                    b.Property<DateTime>("DownloadedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("downloaded_at");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("job_id");
+
+                    b.HasKey("TenantId", "AuditId")
+                        .HasName("pk_import_file_download_audit");
+
+                    b.HasIndex("TenantId", "JobId", "DownloadedAt")
+                        .HasDatabaseName("ix_import_file_download_audit_tenant_id_job_id_downloaded_at");
+
+                    b.ToTable("import_file_download_audit", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_import_file_download_audit_kind", "copy_kind IN ('original', 'converted')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ImportJob", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -3469,9 +3512,18 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("converted_archive_reference");
 
+                    b.Property<bool>("ConvertedArchived")
+                        .HasColumnType("bit")
+                        .HasColumnName("converted_archived");
+
                     b.Property<byte[]>("ConvertedContent")
                         .HasColumnType("varbinary(max)")
                         .HasColumnName("converted_content");
+
+                    b.Property<string>("ConvertedFileReference")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("converted_file_reference");
 
                     b.Property<string>("ConvertedHash")
                         .HasMaxLength(64)
@@ -3479,6 +3531,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("char(64)")
                         .HasColumnName("converted_hash")
                         .IsFixedLength();
+
+                    b.Property<long?>("ConvertedLength")
+                        .HasColumnType("bigint")
+                        .HasColumnName("converted_length");
 
                     b.Property<string>("FileName")
                         .IsRequired()
@@ -3510,9 +3566,18 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("original_archive_reference");
 
+                    b.Property<bool>("OriginalArchived")
+                        .HasColumnType("bit")
+                        .HasColumnName("original_archived");
+
                     b.Property<byte[]>("OriginalContent")
                         .HasColumnType("varbinary(max)")
                         .HasColumnName("original_content");
+
+                    b.Property<string>("OriginalFileReference")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("original_file_reference");
 
                     b.Property<string>("OriginalHash")
                         .IsRequired()
@@ -3521,6 +3586,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("char(64)")
                         .HasColumnName("original_hash")
                         .IsFixedLength();
+
+                    b.Property<long?>("OriginalLength")
+                        .HasColumnType("bigint")
+                        .HasColumnName("original_length");
 
                     b.Property<Guid?>("ParentJobId")
                         .HasColumnType("uniqueidentifier")
@@ -3572,6 +3641,9 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "CommandId")
                         .IsUnique()
                         .HasDatabaseName("ux_import_job_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "RecordedTime", "JobId")
+                        .HasDatabaseName("ix_import_job_tenant_id_recorded_time_job_id");
 
                     b.HasIndex("TenantId", "Status", "RecordedTime")
                         .HasDatabaseName("ix_import_job_tenant_id_status_recorded_time");
@@ -9880,6 +9952,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_customer_reconciliation_row_tenant_id_reconciliation_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ImportFileDownloadAudit", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.ImportJob", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "JobId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_import_file_download_audit_tenant_id_job_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ImportRowResult", b =>

@@ -50,6 +50,7 @@ export const router = createBrowserRouter([
           { path: "search", lazy: () => import("./pages/Search") },
           { path: "lookup", lazy: () => import("./p7/InternalLookup") },
           { path: "imports", lazy: () => import("./p7/ImportJob") },
+          { path: "imports/history", lazy: () => import("./p7/ImportHistory") },
           { path: "imports/compare", lazy: () => import("./p7/CompareMode") },
           { path: "reconcile", lazy: () => import("./p7/Reconcile") },
           { path: "reports/identifier-cross-reference", lazy: () => import("./p7/Xref") },

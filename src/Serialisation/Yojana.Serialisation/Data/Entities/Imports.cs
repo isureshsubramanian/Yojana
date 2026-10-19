@@ -24,11 +24,27 @@ public sealed class ImportJob : ITenantScoped
     public string? OriginalArchiveReference { get; set; }
     public string? ConvertedArchiveReference { get; set; }
     public string? InboxReference { get; set; }
+    public string? OriginalFileReference { get; set; }
+    public string? ConvertedFileReference { get; set; }
+    public long? OriginalLength { get; set; }
+    public long? ConvertedLength { get; set; }
+    public bool OriginalArchived { get; set; }
+    public bool ConvertedArchived { get; set; }
     public byte[]? OriginalContent { get; set; }
     public byte[]? ConvertedContent { get; set; }
     public required string ActorRef { get; set; }
     public DateTime RecordedTime { get; set; }
     public DateTime? CompletedTime { get; set; }
+}
+
+public sealed class ImportFileDownloadAudit : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid AuditId { get; set; }
+    public Guid JobId { get; set; }
+    public required string CopyKind { get; set; }
+    public required string ActorRef { get; set; }
+    public DateTime DownloadedAt { get; set; }
 }
 
 public sealed class ImportRowResult : ITenantScoped

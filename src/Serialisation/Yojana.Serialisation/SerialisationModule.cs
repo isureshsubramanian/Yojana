@@ -40,6 +40,14 @@ public static class SerialisationModule
     public static IHostApplicationBuilder AddSerialisationModule(this IHostApplicationBuilder builder)
     {
         builder.AddModuleDbContext<SerialisationDbContext>(Schema);
+        var importFiles = builder.Configuration.GetSection(ImportFileStorageOptions.SectionName)
+            .Get<ImportFileStorageOptions>() ?? new ImportFileStorageOptions();
+        if (string.IsNullOrWhiteSpace(importFiles.DatabaseConnectionString))
+            throw new InvalidOperationException("import_file_database_connection_not_configured: Serialisation:ImportFiles:DatabaseConnectionString is required because database storage is the tenant default.");
+        importFiles.DatabaseConnectionString = PlatformOptions.Resolve(importFiles.DatabaseConnectionString,
+            Environment.GetEnvironmentVariable);
+        builder.AddModuleDbContext<ImportFilesDbContext>(ImportFilesDbContext.SchemaName, importFiles.DatabaseConnectionString);
+        builder.Services.AddSingleton(importFiles);
         var interactiveReadTimeout = builder.Configuration.GetValue<int?>("Serialisation:InteractiveReadCommandTimeoutSeconds") ?? 10;
         builder.Services.AddSingleton(new InteractiveReadOptions(interactiveReadTimeout));
 
@@ -84,7 +92,13 @@ public static class SerialisationModule
         builder.Services.TryAddScoped<IImportJobSource>(sp => sp.GetRequiredService<ImportJobSource>());
         builder.Services.AddScoped<Portal.CustomerListSourceResolver>();
         builder.Services.AddScoped<Portal.CustomerListReconciliationService>();
-        builder.Services.TryAddScoped<IImportFileStore, DatabaseImportFileStore>();
+        // Factory registration keeps PlatformDbContext (behind tenant settings) out of Wolverine handler graphs.
+        builder.Services.AddScoped(sp => new TenantImportFileSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped<IImportFileBackend, FileImportFileBackend>();
+        builder.Services.AddScoped<IImportFileBackend, DatabaseImportFileBackend>();
+        builder.Services.TryAddScoped<IImportFileStore, ImportFileStore>();
+        builder.Services.AddScoped<ImportFileMaintenance>();
+        builder.Services.AddScoped<ImportFileDownloads>();
         builder.Services.AddScoped<ISpreadsheetReader, OpenXmlSpreadsheetReader>();
         builder.Services.AddScoped<ISpreadsheetReader, LegacyXlsSpreadsheetReader>();
         builder.Services.TryAddSingleton<ITabularExporter, TabularExporter>();
@@ -439,6 +453,7 @@ public static class SerialisationModule
         builder.Services.AddSingleton(RecurringTenantJob.For<Entitlements.EntitlementRequirementJob>(Entitlements.EntitlementRequirementJob.JobName, Entitlements.EntitlementRequirementJob.Cron));
         // P5 advance-replacement block: one tenant-local nightly sweep, with publication through Wolverine's outbox.
         builder.Services.AddSingleton(RecurringTenantJob.For<Replacements.ReplacementOverdueJob>(Replacements.ReplacementOverdueJob.JobName, Replacements.ReplacementOverdueJob.Cron));
+        builder.Services.AddSingleton(RecurringTenantJob.For<ImportFileMaintenanceJob>(ImportFileMaintenanceJob.JobName, ImportFileMaintenanceJob.Cron));
 
         // Ledger partition lifecycle (MOD-04, P1-T03): options from configuration, the service per scope, one
         // database-wide Quartz job scheduled after the platform has migrated and started its scheduler.

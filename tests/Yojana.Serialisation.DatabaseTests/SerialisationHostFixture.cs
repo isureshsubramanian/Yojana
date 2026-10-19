@@ -32,6 +32,10 @@ namespace Yojana.Serialisation.DatabaseTests;
 public sealed class SerialisationHostFixture : IAsyncLifetime
 {
     public static readonly string? ConnectionString = Environment.GetEnvironmentVariable("YOJANA_TEST_SQL");
+    public static string? ImportFilesConnectionString => ConnectionString is null ? null : new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(ConnectionString)
+    {
+        InitialCatalog = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(ConnectionString).InitialCatalog + "_files"
+    }.ConnectionString;
 
     public IHost Host { get; private set; } = null!;
 
@@ -47,6 +51,9 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = Environments.Development });
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Configuration["Platform:ConnectionString"] = ConnectionString;
+        builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:DatabaseConnectionString"] = ImportFilesConnectionString;
+        builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:FileRoot"] =
+            Path.Combine(Path.GetTempPath(), "yojana-import-files-tests");
         builder.Configuration["Platform:MigrateOnStartup"] = "true";
         builder.Configuration["Platform:AutoBuildMessageStorage"] = "true";
         builder.Configuration["Platform:ServiceName"] = "yojana-serialisation-tests";
@@ -78,9 +85,9 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         app.UseYojanaPlatform();
         app.UseSerialisationInteractiveReads();
         app.MapSerialisationEndpoints();
-        app.MapGet("/test/sign-in/{tenantId:guid}", async (Guid tenantId, HttpContext http) =>
+        app.MapGet("/test/sign-in/{tenantId:guid}", async (Guid tenantId, string? role, Guid? asUser, HttpContext http) =>
         {
-            var userId = Guid.NewGuid();
+            var userId = asUser ?? Guid.NewGuid();
             var claims = new List<Claim>
             {
                 new(YojanaClaim.UserId, userId.ToString("D")),
@@ -90,7 +97,8 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
                 new(YojanaClaim.TenantId, tenantId.ToString("D")),
                 new(YojanaClaim.TenantCode, "http-test"),
             };
-            claims.AddRange(YojanaRole.All.Select(role => new Claim(YojanaClaim.Role, role)));
+            claims.AddRange((role is null ? YojanaRole.All : [role])
+                .Select(grantedRole => new Claim(YojanaClaim.Role, grantedRole)));
             var principal = new ClaimsPrincipal(new ClaimsIdentity(claims,
                 CookieAuthenticationDefaults.AuthenticationScheme, ClaimTypes.Name, YojanaClaim.Role));
             await http.SignInAsync(principal);
@@ -103,11 +111,15 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         await app.StartAsync();
     }
 
-    public async Task<HttpClient> AuthenticatedClientAsync(TenantId tenant)
+    public async Task<HttpClient> AuthenticatedClientAsync(TenantId tenant, string? role = null, Guid? userId = null)
     {
         var handler = new HttpClientHandler { CookieContainer = new CookieContainer(), UseCookies = true };
         var client = new HttpClient(handler) { BaseAddress = Address() };
-        using var response = await client.GetAsync($"/test/sign-in/{tenant.Value:D}");
+        var query = new List<string>();
+        if (role is not null) query.Add($"role={Uri.EscapeDataString(role)}");
+        if (userId is not null) query.Add($"asUser={userId.Value:D}");
+        var queryText = query.Count == 0 ? string.Empty : "?" + string.Join('&', query);
+        using var response = await client.GetAsync($"/test/sign-in/{tenant.Value:D}{queryText}");
         response.EnsureSuccessStatusCode();
         return client;
     }
