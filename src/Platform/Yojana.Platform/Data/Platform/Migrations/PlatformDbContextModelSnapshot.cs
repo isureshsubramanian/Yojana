@@ -239,6 +239,10 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("tenant_id");
 
+                    b.Property<Guid?>("CustomerPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("customer_party_ref");
+
                     b.PrimitiveCollection<string>("Roles")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")

@@ -55,6 +55,8 @@ public sealed class UserTenantMembership
 
     public TenantId TenantId { get; set; }
 
+    public Guid? CustomerPartyRef { get; set; }
+
     public List<string> Roles { get; set; } = [];
 
     public AppUser? User { get; set; }

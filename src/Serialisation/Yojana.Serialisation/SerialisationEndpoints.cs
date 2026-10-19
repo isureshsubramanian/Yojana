@@ -91,11 +91,46 @@ public static class SerialisationEndpoints
                     });
             }
         });
+        portalAdmin.MapGet("/registration-settings", async (PortalRegistrationSettings settings,
+            CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
+        portalAdmin.MapPut("/registration-settings", async (UpdatePortalRegistrationSettings update,
+            PortalRegistrationSettings settings, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await settings.SetAsync(update, ct)); }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message,
+                    statusCode: StatusCodes.Status422UnprocessableEntity,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+            }
+            catch (TenantSettingVersionConflictException ex)
+            {
+                return Results.Problem(title: "document_changed",
+                    detail: "The registration setting changed after this view was loaded; reload and try again.",
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["rule"] = "document_changed", ["expectedVersion"] = ex.ExpectedVersion,
+                        ["currentVersion"] = ex.CurrentVersion,
+                    });
+            }
+        });
+        var portalReviews = app.MapGroup("/api/admin/portal/registrations")
+            .RequireAuthorization(YojanaPolicy.ServiceDesk);
+        portalReviews.MapGet("/", (string? status, string? cursor, int? take, PortalWriteService service,
+            CancellationToken ct) => PortalWriteInvoke(() => service.ReviewsAsync(status, cursor, take ?? 50, ct)));
+        portalReviews.MapPost("/{registrationId:guid}/approve", (Guid registrationId,
+            ApprovePortalRegistrationRequest request, ClaimsPrincipal user, PortalWriteService service,
+            CancellationToken ct) => PortalWriteInvoke(() => service.ApproveAsync(registrationId, request,
+                Actor(user), ct)));
 
         // COUPLING (SQL portal RLS): TenantResolutionMiddleware recognises this policy metadata and sets the
         // read-only portal_party_ref session key before a DbContext opens. Changing this policy marker without
         // changing that middleware leaves these routes protected only by PortalOwnershipScope.
         var portal = app.MapGroup("/api/portal").RequireAuthorization(YojanaPolicy.CustomerPortal);
+        portal.MapGet("/context", async (ClaimsPrincipal user, ITenantContext currentTenant,
+            PortalQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.ContextAsync(PortalActor(user, currentTenant), ct)));
         portal.MapGet("/lookup", async (string q, string? type, ClaimsPrincipal user, ITenantContext currentTenant,
             PortalQueries queries, CancellationToken ct) =>
             string.IsNullOrWhiteSpace(q)
@@ -106,33 +141,22 @@ public static class SerialisationEndpoints
             CancellationToken ct) => Results.Ok(await queries.InstalledBaseAsync(PortalActor(user, currentTenant),
                 includeComponents ?? false, take ?? 50, afterDeliveryDate, afterUnitId, ct)));
         portal.MapGet("/installed-base/export", async (string? format, bool? includeComponents, ClaimsPrincipal user,
-            ITenantContext currentTenant, PortalQueries queries, CancellationToken ct) =>
+            ITenantContext currentTenant, PortalQueries queries, ITabularExporter exporter, CancellationToken ct) =>
         {
             var requested = string.IsNullOrWhiteSpace(format) ? PortalExportFormat.Csv : format.ToLowerInvariant();
-            if (requested == PortalExportFormat.Xlsx)
-                return Results.Problem(title: PortalExportFormat.SpreadsheetUnavailableReason,
-                    detail: "Excel export is unavailable until the approved spreadsheet reader/writer is added with its notices.",
-                    statusCode: StatusCodes.Status422UnprocessableEntity,
-                    extensions: new Dictionary<string, object?> { ["reason"] = PortalExportFormat.SpreadsheetUnavailableReason });
-            if (requested != PortalExportFormat.Csv)
+            if (requested is not PortalExportFormat.Csv and not PortalExportFormat.Xlsx)
                 return Results.Problem(title: "export_format_unsupported", detail: $"Unsupported export format '{requested}'.",
                     statusCode: StatusCodes.Status400BadRequest);
             var principal = PortalActor(user, currentTenant);
-            return Results.Stream(async stream =>
-            {
-                await using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false), leaveOpen: true);
-                await writer.WriteLineAsync("serial,item_code,item_name,customer_po_ref,customer_item_ref,delivery_date,is_component,coverage");
-                await foreach (var row in queries.ExportInstalledBaseAsync(principal, includeComponents ?? false, ct))
-                {
-                    var coverage = string.Join(';', row.Coverage.Select(item =>
-                        $"{item.CoverageFamily}:{item.Status}:{item.Expiry?.ToString("yyyy-MM-dd") ?? ""}"));
-                    await writer.WriteLineAsync(string.Join(',', Csv(row.Serial), Csv(row.ItemCode), Csv(row.ItemName),
-                        Csv(row.CustomerPoRef), Csv(row.CustomerItemRef), row.DeliveryDate.ToString("O"),
-                        row.IsComponent ? "true" : "false", Csv(coverage)));
-                }
-                await writer.FlushAsync(ct);
-            }, "text/csv; charset=utf-8", "installed-base.csv");
+            return Results.Stream(stream => exporter.WriteAsync(requested, new TabularExport(
+                ["serial", "item_code", "item_name", "customer_po_ref", "customer_item_ref", "delivery_date", "is_component", "coverage"],
+                PortalInstalledBaseRows(queries.ExportInstalledBaseAsync(principal, includeComponents ?? false, ct), ct)),
+                stream, ct), exporter.ContentType(requested), "installed-base" + exporter.Extension(requested));
         });
+        portal.MapGet("/units/{unitId:guid}", async (Guid unitId, ClaimsPrincipal user,
+            ITenantContext currentTenant, PortalQueries queries, CancellationToken ct) =>
+            await queries.UnitAsync(PortalActor(user, currentTenant), unitId, ct) is { } unit
+                ? Results.Ok(unit) : Results.NotFound());
         portal.MapGet("/units/{unitId:guid}/service-history", async (Guid unitId, int? take, DateTime? beforeAt,
             long? beforeSequence, ClaimsPrincipal user, ITenantContext currentTenant, PortalQueries queries,
             CancellationToken ct) => await queries.ServiceHistoryAsync(PortalActor(user, currentTenant), unitId,
@@ -155,6 +179,40 @@ public static class SerialisationEndpoints
             ITenantContext currentTenant, PortalQueries queries, CancellationToken ct) =>
             await queries.CertificatesAsync(PortalActor(user, currentTenant), unitId, take ?? 50,
                 beforeIssuedAt, beforeCertificateId, ct) is { } page ? Results.Ok(page) : Results.NotFound());
+        portal.MapPost("/units/{unitId:guid}/registrations", async (Guid unitId,
+            PortalRegistrationRequest request, ClaimsPrincipal user, ITenantContext currentTenant,
+            PortalWriteService service, CancellationToken ct) =>
+        {
+            try
+            {
+                return await service.RegisterAsync(PortalActor(user, currentTenant), unitId, request,
+                    Actor(user), ct) is { } result ? Results.Ok(result) : Results.NotFound();
+            }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message,
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?>
+                    { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+            }
+        });
+        portal.MapPost("/units/{unitId:guid}/rmas", async (Guid unitId, PortalRmaRequest request,
+            ClaimsPrincipal user, ITenantContext currentTenant, PortalWriteService service,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                return await service.RequestRmaAsync(PortalActor(user, currentTenant), unitId, request,
+                    Actor(user), ct) is { } result ? Results.Ok(result) : Results.NotFound();
+            }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message,
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?>
+                    { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+            }
+        });
 
         app.MapGet("/api/admin/ledger-base-order-backfill", async (LedgerBaseOrderBackfill backfill, CancellationToken ct) =>
             Results.Ok(await backfill.GetProgressAsync(ct)))
@@ -1550,6 +1608,18 @@ public static class SerialisationEndpoints
         }
     }
 
+    private static async Task<IResult> PortalWriteInvoke<TResult>(Func<Task<TResult>> action)
+    {
+        try { return Results.Ok(await action()); }
+        catch (CommandRefusedException ex)
+        {
+            return Results.Problem(title: ex.Rule, detail: ex.Message,
+                statusCode: StatusCodes.Status409Conflict,
+                extensions: new Dictionary<string, object?>
+                { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+        }
+    }
+
     private static PortalPrincipal PortalActor(ClaimsPrincipal user, ITenantContext tenant)
     {
         var value = user.FindFirst(YojanaClaim.CustomerPartyRef)?.Value;
@@ -1652,6 +1722,20 @@ public static class SerialisationEndpoints
         return Results.Stream(stream => exporter.WriteAsync(selected,
                 new TabularExport(headers, rows), stream, http.RequestAborted),
             exporter.ContentType(selected), fileName + exporter.Extension(selected));
+    }
+
+    private static async IAsyncEnumerable<IReadOnlyList<string?>> PortalInstalledBaseRows(
+        IAsyncEnumerable<PortalInstalledBaseRow> rows,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var row in rows.WithCancellation(cancellationToken))
+        {
+            var coverage = string.Join(';', row.Coverage.Select(item =>
+                $"{item.CoverageFamily}:{item.Status}:{item.Expiry?.ToString("yyyy-MM-dd") ?? ""}"));
+            yield return [row.Serial, row.ItemCode, row.ItemName, row.CustomerPoRef, row.CustomerItemRef,
+                row.DeliveryDate.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+                row.IsComponent ? "true" : "false", coverage];
+        }
     }
 
     private static async IAsyncEnumerable<IReadOnlyList<string?>> RecoveryClaimRows(string? status, Guid? vendor,

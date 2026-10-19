@@ -2,17 +2,23 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text;
 using System.Text.Json;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
 using Wolverine;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Data.Platform;
+using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Seeding;
+using Yojana.Platform.Security;
 using Yojana.Platform.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Jurisdictions;
+using Yojana.Serialisation.Imports;
+using Yojana.Serialisation.Portal;
 using Yojana.Serialisation.Ports;
 using Yojana.Serialisation.Queries;
 using Yojana.Serialisation.Refurbishments;
@@ -87,7 +93,202 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         await StepAsync("load RMA, replacement and refurbishment stories", CreatePhaseFiveScenariosAsync, cancellationToken);
         await StepAsync("finish automatic release and warranty certificates", WaitForAutomaticCertificatesAndReportAsync, cancellationToken);
         await StepAsync("load certificate and label stories", CreatePhaseSixScenariosAsync, cancellationToken);
+        await StepAsync("load import, reconciliation and portal stories", CreatePhaseSevenScenariosAsync, cancellationToken);
         await PrintSummaryAsync(cancellationToken);
+    }
+
+    private async Task CreatePhaseSevenScenariosAsync(CancellationToken cancellationToken)
+    {
+        await CreatePortalUserAsync(cancellationToken);
+        var importJobs = await CreateImportScenariosAsync(cancellationToken);
+        await InvokeAsync<CompareImportsResult>(new CompareImports(
+            DemoIds.FromName("p7:compare:vendor-clean"), importJobs.Vendor, importJobs.Clean, null, actor),
+            cancellationToken);
+        await CreateCustomerReconciliationAsync(cancellationToken);
+        await CreateThreePlFeedAsync(cancellationToken);
+        await ConfigureDisclosurePolicyAsync(cancellationToken);
+    }
+
+    private async Task CreatePortalUserAsync(CancellationToken cancellationToken)
+    {
+        using var scope = TenantScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var admin = await db.Users.AsNoTracking().SingleAsync(
+            user => user.Email == $"admin@{DevelopmentSeeder.EmailDomain}", cancellationToken);
+        const string email = "portal.nandira@dev.yojana.local";
+        var user = await db.Users.Include(row => row.Memberships)
+            .SingleOrDefaultAsync(row => row.Email == email, cancellationToken);
+        if (user is null)
+        {
+            user = new AppUser
+            {
+                Id = DemoIds.FromName("user:portal:nandira"),
+                Email = email,
+                DisplayName = "Asha Mehra",
+                PasswordHash = admin.PasswordHash,
+                CreatedAt = DateTime.UtcNow,
+            };
+            db.Users.Add(user);
+        }
+        else
+        {
+            user.DisplayName = "Asha Mehra";
+            user.PasswordHash = admin.PasswordHash;
+            user.IsActive = true;
+        }
+
+        var membership = user.Memberships.SingleOrDefault(row => row.TenantId == tenant);
+        if (membership is null)
+            user.Memberships.Add(new UserTenantMembership
+            {
+                UserId = user.Id,
+                TenantId = tenant,
+                CustomerPartyRef = Party("C-NANDIRA").Id,
+            });
+        else
+        {
+            membership.CustomerPartyRef = Party("C-NANDIRA").Id;
+            membership.Roles = [];
+        }
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<P7ImportJobs> CreateImportScenariosAsync(CancellationToken cancellationToken)
+    {
+        var eventTime = DemoDates.At(today.AddDays(-6), 9);
+        var cleanValues = new[] { Units("RS-1100")[0].Serial, Units("DW-300")[0].Serial, "P7CLEAN0001" };
+        var clean = await InvokeAsync<RunImportResult>(new RunImport(
+            DemoIds.FromName("p7:import:clean"), ImportSource.UserUpload,
+            new ImportFile("clean-customer-list.csv", ImportFormat.Csv,
+                Encoding.UTF8.GetBytes("Serial\r\n" + string.Join("\r\n", cleanValues) + "\r\n")),
+            eventTime, LegalEntityId, actor, ProductionOrder, new ImportColumnMapping("Serial"),
+            "p7-clean", ImportMode.Compare), cancellationToken);
+
+        var rejectedXlsx = await XlsxWithNumericIdentifierAsync(Units("RS-1100")[1].Serial,
+            cancellationToken);
+        var spreadsheet = await InvokeAsync<RunImportResult>(new RunImport(
+            DemoIds.FromName("p7:import:xlsx-rejected"), ImportSource.UserUpload,
+            new ImportFile("installation-register.xlsx", ImportFormat.Xlsx, rejectedXlsx),
+            eventTime.AddMinutes(5), LegalEntityId, actor, ProductionOrder, new ImportColumnMapping("Serial"),
+            "p7-spreadsheet", ImportMode.Compare), cancellationToken);
+
+        var unique = new List<string>
+        {
+            Units("RS-1100")[0].Serial,
+            Units("DW-300")[0].Serial,
+            Units("DW-300")[6].Serial,
+        };
+        unique.AddRange(Enumerable.Range(1, 97).Select(index => $"P7VENDOR{index:D4}"));
+        var vendorValues = unique.Concat(unique).ToList();
+        var vendor = await InvokeAsync<RunImportResult>(new RunImport(
+            DemoIds.FromName("p7:import:vendor-200"), ImportSource.VendorAsn,
+            new ImportFile("vendor-serials-200.csv", ImportFormat.Csv,
+                Encoding.UTF8.GetBytes("Serial\r\n" + string.Join("\r\n", vendorValues) + "\r\n")),
+            eventTime.AddMinutes(10), LegalEntityId, actor, ProductionOrder, new ImportColumnMapping("Serial"),
+            "p7-vendor", ImportMode.Compare), cancellationToken);
+
+        var cleanJob = clean.Jobs.Single();
+        var spreadsheetJob = spreadsheet.Jobs.Single();
+        var vendorJob = vendor.Jobs.Single();
+        if (spreadsheetJob.Rejected == 0 || spreadsheetJob.InboxReference is null)
+            throw new InvalidOperationException("the spreadsheet demo must retain at least one rejected row in the inbox");
+        if (vendorJob.Rows.Count != 200 || vendorJob.Rows.Select(row => row.NormalisedValue).Distinct().Count() != 100)
+            throw new InvalidOperationException("the vendor demo must contain 200 rows and 100 unique values");
+        return new(cleanJob.JobId, spreadsheetJob.JobId, vendorJob.JobId);
+    }
+
+    private async Task CreateCustomerReconciliationAsync(CancellationToken cancellationToken)
+    {
+        var customer = Party("C-NANDIRA");
+        var owned = Units("RS-1100")[0];
+        var verify = Units("DW-300")[0];
+        var reject = Units("DW-300")[6];
+        var reconciliation = await InvokeAsync<CustomerListReconciliationPage>(new ReconcileCustomerList(
+            DemoIds.FromName("p7:reconciliation:nandira"), customer.Id,
+            new CustomerListSource(Pasted:
+            [
+                new CustomerListInput(owned.Serial, IdentifierType.InternalSerial, "PO-NANDIRA-2026", "SYSTEM-01"),
+                new CustomerListInput(verify.Serial, IdentifierType.InternalSerial, "PO-NANDIRA-USED", "DESKTOP-USED-01"),
+                new CustomerListInput(reject.Serial, IdentifierType.InternalSerial, "PO-NANDIRA-QUERY", "DESKTOP-QUERY-01"),
+                new CustomerListInput("P7-NOT-RECORDED", IdentifierType.InternalSerial),
+            ]), DemoDates.At(today.AddDays(-4), 9), actor, 20), cancellationToken);
+        if (reconciliation.Owned != 1 || reconciliation.OwnedByAnotherParty != 2 || reconciliation.NotFound != 1)
+            throw new InvalidOperationException("the reconciliation demo must show owned, other-owner and not-found outcomes");
+
+        var verifiedAssertion = reconciliation.Items.Single(row => row.Input == verify.Serial).AssertionId!.Value;
+        var rejectedAssertion = reconciliation.Items.Single(row => row.Input == reject.Serial).AssertionId!.Value;
+        await InvokeAsync<CustomerAssertionDecision>(new VerifyCustomerAssertion(
+            DemoIds.FromName("p7:assertion:verify"), verifiedAssertion, "used-equipment-delivery:NAN-2026-014",
+            DemoDates.At(today.AddDays(-3), 11), LegalEntityId, actor, [YojanaRole.SerialAdministrator]), cancellationToken);
+        await InvokeAsync<CustomerAssertionDecision>(new RejectCustomerAssertion(
+            DemoIds.FromName("p7:assertion:reject"), rejectedAssertion,
+            "The supplied delivery schedule names a different asset.", actor,
+            [YojanaRole.OrderDeskSupervisor]), cancellationToken);
+    }
+
+    private async Task CreateThreePlFeedAsync(CancellationToken cancellationToken)
+    {
+        var unit = Units("DW-300")[40];
+        var postedAt = DemoDates.At(today.AddDays(-2), 8);
+        var shipmentRef = new DocumentRef("shipment", DemoIds.FromName("p7:shipment:3pl"));
+        var shipment = new ShipmentDocument(shipmentRef, Party("C-NANDIRA").Id, postedAt,
+            [new DocumentLine(1, Item("DW-300").Id, 1, [])], DemoIds.FromName("site:C-NANDIRA"),
+            Party("L-PARCELORA").Id, CustomerPoRef: "PO-NANDIRA-3PL-01");
+        documents.Add(shipment);
+        await InvokeAsync<ConsumedEventResult>(new SalesShipmentPosted(
+            Envelope("p7:shipment:3pl", postedAt), shipmentRef), cancellationToken);
+        var result = await InvokeAsync<ReceiveThreePlFeedResult>(new ReceiveThreePlFeed(
+            DemoIds.FromName("p7:feed:3pl"), "PCL-3PL-2026-0042", shipmentRef, 1,
+            postedAt.AddHours(3), [new ThreePlFeedUnit(unit.Serial, CustomerAssetTag: "NAN-ASSET-0042")],
+            actor, LegalEntityId), cancellationToken);
+        if (result.Shipped != 1 || result.AssetTagsAssigned != 1 || result.Rejected != 0)
+            throw new InvalidOperationException("the 3PL demo must ship one unit and capture its customer asset tag");
+    }
+
+    private async Task ConfigureDisclosurePolicyAsync(CancellationToken cancellationToken)
+    {
+        using var scope = TenantScope();
+        var policy = scope.ServiceProvider.GetRequiredService<DisclosurePolicyService>();
+        var current = await policy.GetAsync(cancellationToken);
+        var changed = current.Fields.Select(row => row.Field == PortalDisclosureField.ItemName
+            ? row with { Tier = DisclosureTier.Owner }
+            : row).ToList();
+        await policy.SetFieldsAsync(new UpdateDisclosureFields(changed), actor, cancellationToken);
+    }
+
+    private static async Task<byte[]> XlsxAsync(IReadOnlyList<string> headers,
+        IReadOnlyList<IReadOnlyList<string?>> rows, CancellationToken cancellationToken)
+    {
+        await using var output = new MemoryStream();
+        await new TabularExporter().WriteAsync(ImportFormat.Xlsx,
+            new TabularExport(headers, Rows(rows)), output, cancellationToken);
+        return output.ToArray();
+    }
+
+    private static async Task<byte[]> XlsxWithNumericIdentifierAsync(string validSerial,
+        CancellationToken cancellationToken)
+    {
+        var bytes = await XlsxAsync(["Serial"], [[validSerial], ["42"]], cancellationToken);
+        using var stream = new MemoryStream();
+        await stream.WriteAsync(bytes, cancellationToken);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var sheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet
+                ?? throw new InvalidOperationException("the generated spreadsheet has no worksheet");
+            var cell = sheet.Descendants<Row>().ElementAt(2).Elements<Cell>().First();
+            cell.DataType = CellValues.Number;
+            cell.CellValue = new CellValue("42");
+            sheet.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static async IAsyncEnumerable<IReadOnlyList<string?>> Rows(
+        IReadOnlyList<IReadOnlyList<string?>> rows)
+    {
+        foreach (var row in rows) yield return row;
+        await Task.CompletedTask;
     }
 
     private async Task ImportJurisdictionStarterAsync(CancellationToken cancellationToken)
@@ -1768,6 +1969,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
     private sealed record RmaScenario(Guid RmaId, Guid RmaLineId, Guid? EntitlementId);
     private sealed record ApprovedClaim(Guid ClaimId, Guid EntitlementId);
     private sealed record ComponentFact(Guid LinkId, Guid ParentUnitId, Guid UnitId, string Serial);
+    private sealed record P7ImportJobs(Guid Clean, Guid Spreadsheet, Guid Vendor);
     private sealed record SalePlan(string Key, string ShipmentNumber, string InvoiceNumber, DemoCatalogue.CatalogueParty InvoiceParty,
         DemoCatalogue.CatalogueParty EndOwner, IReadOnlyList<DemoUnit> Units, string Country, string Currency, string Channel, int DaysAgo);
     private sealed record ClaimPlan(string Key, DemoUnit? Unit, DemoCatalogue.CatalogueParty Customer, string Currency, string Country,

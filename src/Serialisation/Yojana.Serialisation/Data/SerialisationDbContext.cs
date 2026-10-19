@@ -178,6 +178,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     // End P6 jurisdiction-rules block.
     // P7 portal block. Customer assertions are intake evidence only; PortalQueries always authorises through ownership episodes.
     public DbSet<DisclosurePolicy> DisclosurePolicies => Set<DisclosurePolicy>();
+    public DbSet<PortalRegistration> PortalRegistrations => Set<PortalRegistration>();
     public DbSet<CustomerAssertion> CustomerAssertions => Set<CustomerAssertion>();
     public DbSet<CustomerReconciliation> CustomerReconciliations => Set<CustomerReconciliation>();
     public DbSet<CustomerReconciliationRow> CustomerReconciliationRows => Set<CustomerReconciliationRow>();
@@ -322,6 +323,30 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(row => row.UpdatedAt).HasPrecision(3);
             b.Property(row => row.UpdatedBy).HasMaxLength(200);
             b.HasIndex(row => new { row.TenantId, row.Tier, row.Enabled });
+        });
+
+        modelBuilder.Entity<PortalRegistration>(b =>
+        {
+            b.ToTable("portal_registration", t =>
+            {
+                t.HasCheckConstraint("ck_portal_registration_evidence_kind", "evidence_kind IN ('delivery', 'installation')");
+                t.HasCheckConstraint("ck_portal_registration_status", "status IN ('recorded', 'pending_review', 'approved')");
+            });
+            b.HasKey(row => new { row.TenantId, row.RegistrationId });
+            b.Property(row => row.EvidenceKind).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.EvidenceReference).HasMaxLength(500);
+            b.Property(row => row.AttachmentFileName).HasMaxLength(260);
+            b.Property(row => row.AttachmentContentType).HasMaxLength(100).IsUnicode(false);
+            b.Property(row => row.Status).HasMaxLength(30).IsUnicode(false);
+            b.Property(row => row.SubmittedBy).HasMaxLength(200);
+            b.Property(row => row.ApprovedBy).HasMaxLength(200);
+            b.HasOne<Unit>().WithMany().HasForeignKey(row => new { row.TenantId, row.UnitId }).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<Entitlement>().WithMany().HasForeignKey(row => new { row.TenantId, row.EntitlementId }).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.ApprovalCommandId }).IsUnique().HasFilter("[approval_command_id] IS NOT NULL");
+            b.HasIndex(row => new { row.TenantId, row.Status, row.SubmittedAt, row.RegistrationId });
+            b.HasIndex(row => new { row.TenantId, row.UnitId, row.SubmittedAt });
+            b.HasIndex(row => new { row.TenantId, row.PartyRef, row.SubmittedAt });
         });
 
         modelBuilder.Entity<CustomerAssertion>(b =>

@@ -22,6 +22,14 @@ public sealed class PortalQueries(SerialisationDbContext db, ITenantContext tena
         IdentifierType.CustomerAssetTag, IdentifierType.ChannelOrderRef, IdentifierType.SoftwareLicense,
     ];
 
+    public async Task<PortalContext> ContextAsync(PortalPrincipal principal, CancellationToken cancellationToken)
+    {
+        ownership.EnsureTenant(principal);
+        var names = await partyNames.NamesAsync([principal.PartyRef], cancellationToken);
+        var label = names.GetValueOrDefault(principal.PartyRef);
+        return new(label?.Name ?? label?.Code ?? "Customer");
+    }
+
     public async Task<PortalLookupResponse> LookupAsync(PortalPrincipal principal, string value, string? type,
         CancellationToken cancellationToken)
     {
@@ -34,6 +42,16 @@ public sealed class PortalQueries(SerialisationDbContext db, ITenantContext tena
         if (ids.Count > 1) return new(PortalQueryOutcome.Ambiguous, []);
         var summaries = await SummariesAsync(principal, ids, includeClosedCoverage: true, cancellationToken);
         return new(PortalQueryOutcome.Found, summaries);
+    }
+
+    /// <summary>The unit-page read boundary: ownership is checked before the same summary projection used by lookup.</summary>
+    public async Task<PortalUnitSummary?> UnitAsync(PortalPrincipal principal, Guid unitId,
+        CancellationToken cancellationToken)
+    {
+        ownership.EnsureTenant(principal);
+        if ((await ownership.WindowsAsync(principal, unitId, cancellationToken)).Count == 0) return null;
+        return (await SummariesAsync(principal, [unitId], includeClosedCoverage: true, cancellationToken))
+            .SingleOrDefault();
     }
 
     public async Task<PortalInstalledBasePage> InstalledBaseAsync(PortalPrincipal principal, bool includeComponents,
