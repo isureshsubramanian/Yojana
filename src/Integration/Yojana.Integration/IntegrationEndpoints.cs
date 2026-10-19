@@ -1,3 +1,4 @@
+using Yojana.Integration.Connections;
 using System.Security.Claims;
 using Yojana.Integration.Transport;
 using Microsoft.AspNetCore.Builder;
@@ -10,6 +11,7 @@ using Yojana.Platform.Contracts.Security;
 using Yojana.Integration.Connectors.CX01;
 using Yojana.Integration.Reconciliation;
 using Yojana.Integration.Backfills;
+using Yojana.Integration.Gateway;
 
 namespace Yojana.Integration;
 
@@ -19,6 +21,7 @@ public static class IntegrationEndpoints
     {
         app.MapIntegrationTransportEndpoints();
         app.MapIntegrationNotificationEndpoints();
+        app.MapConnectionEndpoints();
         app.MapIntegrationAttentionEndpoint();
         app.MapCx01WebhookEndpoints();
         return app.MapIntegrationOperationsEndpoints();
@@ -81,6 +84,22 @@ public static class IntegrationEndpoints
             _ = await survey.RunAsync(connectionId, request, ct);
             return Results.Ok(await survey.LatestPageAsync(connectionId, null, 100, ct));
         });
+        integration.MapGet("/connections/{connectionId:guid}/cx01/field-map", (Guid connectionId,
+            [FromServices] Cx01FieldMapService fieldMap, CancellationToken ct) =>
+            Invoke(() => fieldMap.GetAsync(connectionId, ct)));
+        integration.MapPut("/connections/{connectionId:guid}/cx01/field-map", (Guid connectionId,
+                [FromBody] UpdateCx01FieldMap request, [FromServices] Cx01FieldMapService fieldMap,
+                CancellationToken ct) => Invoke(() => fieldMap.SetAsync(connectionId, request, ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        integration.MapGet("/connections/{connectionId:guid}/onboarding-checklist", (Guid connectionId,
+            [FromServices] ConnectorOnboardingChecklistGenerator checklists, CancellationToken ct) =>
+            Invoke(() => checklists.GenerateAsync(connectionId, ct)));
+        integration.MapPost("/connections/{connectionId:guid}/onboarding-checklist/{itemCode}/confirm", (
+                Guid connectionId, string itemCode, [FromBody] ConfirmOnboardingItemRequest request,
+                ClaimsPrincipal user, [FromServices] ConnectorOnboardingConfirmations confirmations,
+                CancellationToken ct) =>
+            Invoke(() => confirmations.ConfirmAsync(connectionId, itemCode, request, Actor(user), ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         integration.MapGet("/reconciliation/runs", (Guid? connectionId, string? status, string? cursor,
             int? take, ReconciliationService service, CancellationToken ct) => Invoke(() =>
             service.ListAsync(new(connectionId, status, cursor, take ?? 50), ct)));
@@ -142,6 +161,19 @@ public static class IntegrationEndpoints
                 extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
         }
         catch (ReconciliationRuleException ex)
+        {
+            var status = ex.Rule.EndsWith("not_found", StringComparison.Ordinal)
+                ? StatusCodes.Status404NotFound : StatusCodes.Status422UnprocessableEntity;
+            return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: status,
+                extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+        }
+        catch (Cx01FieldMapRuleException ex)
+        {
+            return Results.Problem(title: ex.Rule, detail: ex.Message,
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+        }
+        catch (OnboardingRuleException ex)
         {
             var status = ex.Rule.EndsWith("not_found", StringComparison.Ordinal)
                 ? StatusCodes.Status404NotFound : StatusCodes.Status422UnprocessableEntity;

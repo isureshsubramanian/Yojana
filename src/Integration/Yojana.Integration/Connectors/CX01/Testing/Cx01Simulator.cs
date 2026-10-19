@@ -45,6 +45,8 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public bool RateLimitNextRequest { get; set; }
     public bool SameWarehouseReturnPosted { get; set; }
     public bool DeliveryCancelled { get; set; }
+    public bool SubscriptionStopped { get; set; }
+    public List<string> DeletedSubscriptionPaths { get; } = [];
     public bool WebhookSubscriptionCreated { get; private set; }
     public bool WebhookSubscriptionPaused { get; private set; }
     public bool WebhookSubscriptionDeleted { get; private set; }
@@ -60,6 +62,8 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public int RequestCount { get; private set; }
     public string? LastHandlerFailure { get; private set; }
     public int ServiceUnavailableResponses { get; set; }
+    public bool FailMetadataRead { get; set; }
+    public bool FailUnsubscribe { get; set; }
     public bool TrackingTablesAllowed { get; set; } = true;
     public bool SerialQueryCreated => serialQueryCreated;
     public int SerialQueryCreateCount { get; private set; }
@@ -70,6 +74,15 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public void SimulateLaterDeliveryEdit(string updateTime) => deliveryUpdateTime = updateTime;
     public int PageSize { get; set; } = 1;
     public List<string> ReceivedCookieHeaders { get; } = [];
+
+    public string OwnSubscriptionId(Guid tenantId, Guid connectionId) => Cx01Protocol.WebhookId(tenantId, connectionId);
+
+    public Yojana.Integration.Connections.RegisterConnection RegistrationRequest(Guid? requestId = null) =>
+        new(requestId ?? Guid.CreateVersion7(), Cx01Capabilities.ConnectorCode, "Fictional main connection", Guid.CreateVersion7(),
+            JsonSerializer.SerializeToElement(new Cx01ConnectionSettings(BaseUri, "FICTIONAL_DEMO", "test"),
+                Yojana.Integration.Contracts.IntegrationContracts.Json),
+            [new(Cx01Client.CredentialPurpose, JsonSerializer.Serialize(new Cx01Credential("fictional-user", "not-logged"),
+                Yojana.Integration.Contracts.IntegrationContracts.Json))]);
 
     public async ValueTask DisposeAsync()
     {
@@ -143,6 +156,12 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             var path = request.Url?.AbsolutePath ?? "";
             if (path == Cx01Protocol.Metadata)
             {
+                if (FailMetadataRead)
+                {
+                    response.StatusCode = (int)HttpStatusCode.Forbidden;
+                    await ErrorAsync(response, "403", "Fictional permission denial");
+                    return;
+                }
                 await TextAsync(response,
                     "<edmx:Edmx><EntitySet Name=\"EventSubscriptions\"/><EntitySet Name=\"EventNotifications\"/></edmx:Edmx>",
                     "application/xml");
@@ -357,8 +376,30 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 return;
             }
             if (path.Contains(Cx01Protocol.EventSubscriptions + "('", StringComparison.Ordinal)
+                && request.HttpMethod == "GET")
+            {
+                if (LastSubscriptionBody is null) { await NotFoundAsync(response); return; }
+                await JsonAsync(response, new { State = SubscriptionStopped ? "Stopped" : "Active" });
+                return;
+            }
+            if (path.Contains(Cx01Protocol.EventSubscriptions + "('", StringComparison.Ordinal)
+                && path.EndsWith("/Resume", StringComparison.Ordinal) && request.HttpMethod == "POST")
+            {
+                SubscriptionStopped = false;
+                subscriptionActive = true;
+                response.StatusCode = (int)HttpStatusCode.NoContent;
+                response.Close();
+                return;
+            }
+            if (path.Contains(Cx01Protocol.EventSubscriptions + "('", StringComparison.Ordinal)
                 && path.EndsWith("/Pause", StringComparison.Ordinal) && request.HttpMethod == "POST")
             {
+                if (FailUnsubscribe)
+                {
+                    response.StatusCode = (int)HttpStatusCode.Forbidden;
+                    await ErrorAsync(response, "fictional_denial", "Fictional remote detail must not reach audit or tasks");
+                    return;
+                }
                 if (!subscriptionActive) { await NotFoundAsync(response); return; }
                 subscriptionActive = false;
                 WebhookSubscriptionPaused = true;
@@ -375,6 +416,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                     await ErrorAsync(response, "-5002", "Not allowed to delete one active webhook subscription");
                     return;
                 }
+                DeletedSubscriptionPaths.Add(path);
                 WebhookSubscriptionDeleted = true;
                 response.StatusCode = (int)HttpStatusCode.NoContent;
                 response.Close();

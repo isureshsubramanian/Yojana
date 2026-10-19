@@ -38,8 +38,9 @@ public sealed class ManualOutboundTask : ITenantScoped
 {
     public TenantId TenantId { get; set; }
     public Guid ManualOutboundTaskId { get; set; }
-    public Guid DeadLetterItemId { get; set; }
-    public Guid OutboundCommandId { get; set; }
+    // Connection cleanup tasks have no failed message or outbound document to map.
+    public Guid? DeadLetterItemId { get; set; }
+    public Guid? OutboundCommandId { get; set; }
     public Guid ConnectionId { get; set; }
     public required string CommandType { get; set; }
     public required string Desk { get; set; }
@@ -86,4 +87,9 @@ public static class ManualTaskStatus
 {
     public const string Open = "open";
     public const string Completed = "completed";
+}
+
+public static class ManualTaskCommandType
+{
+    public const string RemoveRemoteSubscription = "RemoveRemoteSubscription";
 }

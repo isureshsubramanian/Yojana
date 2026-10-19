@@ -16,6 +16,7 @@ public sealed class ConnectionPollWatermark : ITenantScoped
     public TenantId TenantId { get; set; }
     public Guid ConnectionId { get; set; }
     public required string EntityType { get; set; }
+    public string? CanonicalMessage { get; set; }
     public string? Watermark { get; set; }
     public int OverlapSeconds { get; set; }
     public int IntervalSeconds { get; set; }
@@ -40,6 +41,7 @@ public sealed class ConnectionNotificationWatchdog : ITenantScoped
 {
     public TenantId TenantId { get; set; }
     public Guid ConnectionId { get; set; }
+    public string StreamState { get; set; } = "not_subscribed";
     public DateOnly? WatermarkDate { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

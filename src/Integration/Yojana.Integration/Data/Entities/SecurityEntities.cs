@@ -30,6 +30,7 @@ public sealed class ConnectionCredentialEntity : ITenantScoped
     public DateTime CreatedAt { get; set; }
     public DateTime? RotatedAt { get; set; }
     public DateTime? ExpiresAt { get; set; }
+    public DateTime? RetiredAt { get; set; }
     public DateTime RotationDueAt { get; set; }
 }
 

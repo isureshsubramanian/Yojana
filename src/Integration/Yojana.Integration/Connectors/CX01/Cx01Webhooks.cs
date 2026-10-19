@@ -1,3 +1,5 @@
+using Yojana.Integration.Connections;
+using Yojana.Integration.Security.Audit;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -29,6 +31,8 @@ public static class Cx01WebhookHintHandler
     public static async Task Handle(Cx01WebhookHint hint, Cx01Adapter adapter, InboundMessageStore inbox,
         Cx01WebhookEventTracker events, CancellationToken cancellationToken)
     {
+        await using var activity = await events.EnterAsync(hint.ConnectionId, cancellationToken);
+        if (!await events.IsActiveAsync(hint.ConnectionId, cancellationToken)) return;
         if (await events.IsProcessedAsync(hint.ConnectionId, hint.EventId, cancellationToken)) return;
         var mapped = await adapter.CaptureKeyAsync(hint.ConnectionId, hint.Collection, hint.Key,
             cancellationToken);
@@ -192,6 +196,12 @@ public sealed class Cx01WebhookEventTracker(
 {
     private static readonly TimeSpan Retention = TimeSpan.FromDays(31);
 
+    public async Task<IAsyncDisposable> EnterAsync(Guid connectionId, CancellationToken ct) =>
+        await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, connectionId, ct);
+
+    public Task<bool> IsActiveAsync(Guid connectionId, CancellationToken ct) => db.Connections.AsNoTracking()
+        .AnyAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId && x.Status == ConnectionStatus.Active, ct);
+
     public Task<bool> IsProcessedAsync(Guid connectionId, string eventId, CancellationToken cancellationToken) =>
         db.ConnectionNotificationReceipts.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == connectionId && x.EventId == eventId && x.ProcessedAt != null,
@@ -288,7 +298,8 @@ public sealed class Cx01WebhookMaintenance(
     Cx01WebhookEventTracker events,
     IConnectionCredentialStore credentials,
     ConnectionCredentialProtector protector,
-    Yojana.Platform.Contracts.Time.IClock clock)
+    Yojana.Platform.Contracts.Time.IClock clock,
+    IConnectionAuditSink audit)
 {
     internal const int WatchdogPageSize = 200;
     internal const int WatchdogRunCap = 2_000;
@@ -336,6 +347,20 @@ public sealed class Cx01WebhookMaintenance(
             };
             using var ignored = await client.SendJsonAsync(connectionId, HttpMethod.Post,
                 Cx01Protocol.Root + Cx01Protocol.EventSubscriptions, body, false, cancellationToken);
+            var sources = await db.ConnectionNotificationSources.Where(x => x.TenantId == tenant.TenantId
+                && x.ConnectionId == connectionId).ToListAsync(cancellationToken);
+            foreach (var entity in Cx01Protocol.Entities)
+            {
+                var source = sources.SingleOrDefault(x => x.Source == entity.Key);
+                if (source is null)
+                {
+                    source = new() { TenantId = tenant.TenantId, ConnectionId = connectionId, Source = entity.Key };
+                    db.ConnectionNotificationSources.Add(source);
+                }
+                source.Enabled = true;
+                source.UpdatedAt = clock.UtcNow;
+            }
+            await db.SaveChangesAsync(cancellationToken);
         }
         finally
         {
@@ -363,8 +388,12 @@ public sealed class Cx01WebhookMaintenance(
 
     public async Task<int> WatchdogConnectionAsync(Guid connectionId, CancellationToken cancellationToken)
     {
+        await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, connectionId, cancellationToken);
+        if (!await db.Connections.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
+            && x.ConnectionId == connectionId && x.Status == ConnectionStatus.Active, cancellationToken)) return 0;
         var configured = await settings.GetAsync(connectionId, cancellationToken);
         if (!configured.WebhooksAvailable) return 0;
+        await ObserveStreamAsync(connectionId, cancellationToken);
         await events.PurgeAsync(connectionId, cancellationToken);
         var runId = Guid.CreateVersion7(clock.UtcNow);
         var watermark = await events.WatermarkAsync(connectionId, cancellationToken);
@@ -425,6 +454,43 @@ public sealed class Cx01WebhookMaintenance(
         if (newestCreateDate is { } observedDate)
             await events.SetWatermarkAsync(connectionId, observedDate, cancellationToken);
         return accepted;
+    }
+
+    private async Task ObserveStreamAsync(Guid connectionId, CancellationToken ct)
+    {
+        var ownId = Cx01Protocol.WebhookId(tenant.TenantId.Value, connectionId);
+        var resource = Cx01Protocol.Root + Cx01Protocol.EventSubscriptions + "(" + Cx01Protocol.KeyLiteral(ownId) + ")";
+        var state = "not_subscribed";
+        try
+        {
+            using var subscription = await client.GetAsync(connectionId, resource, ct);
+            state = Text(subscription.RootElement, "State") == "Active" ? "active" : "stopped";
+        }
+        catch (Cx01RemoteException ex) when (ex.IsRecordGone) { }
+        var row = await db.ConnectionNotificationWatchdogs.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
+            && x.ConnectionId == connectionId, ct);
+        if (row is null)
+        {
+            row = new() { TenantId = tenant.TenantId, ConnectionId = connectionId };
+            db.ConnectionNotificationWatchdogs.Add(row);
+        }
+        if (state == "stopped")
+        {
+            var wasStopped = row.StreamState == "stopped";
+            row.StreamState = "stopped";
+            row.UpdatedAt = clock.UtcNow;
+            await db.SaveChangesAsync(ct);
+            if (!wasStopped)
+                await audit.AppendAsync(new(tenant.TenantId, Guid.CreateVersion7(clock.UtcNow), connectionId,
+                    ConnectionAuditEventType.StreamStopped, "system:notification-watchdog", clock.UtcNow, "{}"), ct);
+            using var resumed = await client.SendJsonAsync(connectionId, HttpMethod.Post, resource + "/Resume", new { }, true, ct);
+            state = "resumed_by_watchdog";
+            await audit.AppendAsync(new(tenant.TenantId, Guid.CreateVersion7(clock.UtcNow), connectionId,
+                ConnectionAuditEventType.StreamResumedByWatchdog, "system:notification-watchdog", clock.UtcNow, "{}"), ct);
+        }
+        row.StreamState = state;
+        row.UpdatedAt = clock.UtcNow;
+        await db.SaveChangesAsync(ct);
     }
 
     private static string? Key(JsonElement row)

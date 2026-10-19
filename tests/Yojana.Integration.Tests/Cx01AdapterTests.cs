@@ -386,7 +386,7 @@ internal sealed class Cx01TestContext : IAsyncDisposable
         var rejections = new CollectingInboundRejections();
         var adapter = new Cx01Adapter(tenant, clock, db, new GatewayReferenceStore(db, tenant, clock),
             settings, client, history, new NoCapturedDocuments(), tasks, new NoOwnWrites(), rejections,
-            new EmptySurveyReader());
+            new EmptySurveyReader(), new EmptyTrackingPermissions());
         return new(tenantId, connectionId, client, settings, adapter, history, tasks, rejections, transport, db);
     }
 
@@ -463,4 +463,9 @@ internal sealed class EmptySurveyReader : ICx01SurveyReader
 {
     public Task<IReadOnlyList<string>> MandatoryWithoutDefaultFieldsAsync(Guid connectionId, string table,
         CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<string>>([]);
+}
+
+internal sealed class EmptyTrackingPermissions : ICx01TrackingPermissionSink
+{
+    public Task RecordDeniedAsync(Guid connectionId, string remoteMessage, CancellationToken ct) => Task.CompletedTask;
 }

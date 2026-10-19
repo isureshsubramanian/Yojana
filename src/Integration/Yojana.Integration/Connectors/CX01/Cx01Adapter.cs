@@ -28,7 +28,8 @@ public sealed class Cx01Adapter(
     ICx01AttributionTaskSink attributionTasks,
     ICx01OwnWriteStore ownWrites,
     ICx01InboundRejectionSink inboundRejections,
-    ICx01SurveyReader surveyReader) : IConnectorAdapter, IOutboundConnector
+    ICx01SurveyReader surveyReader,
+    ICx01TrackingPermissionSink trackingPermissions) : IConnectorAdapter, IOutboundConnector
 {
     public string ConnectorCode => Cx01Capabilities.ConnectorCode;
     public OutboundConnectorCapabilities Capabilities { get; } = new(false, OwnsConnectionLane: true);
@@ -309,7 +310,8 @@ public sealed class Cx01Adapter(
             : await RecoverSerialsAsync(connectionId, entity, key, candidates.Where(x => managed.Contains(x.LineNo)),
                 configured, cancellationToken);
         return Cx01Mapper.Map(tenant.TenantId, connectionId, entity, raw, previous, recovered, managed, captureMode,
-            clock.UtcNow, Cx01Mapper.IsCancelledOriginal(raw));
+            clock.UtcNow, Cx01Mapper.IsCancelledOriginal(raw),
+            new Cx01FieldReader(Cx01FieldMap.Effective(configured.FieldMap)));
     }
 
     private async Task<Dictionary<int, IReadOnlyList<CanonicalSerial>>> RecoverSerialsAsync(Guid connectionId,
@@ -328,7 +330,8 @@ public sealed class Cx01Adapter(
             if (result.Count > 0) return result;
         }
 
-        var permitted = configured.AllowlistedTrackingTables?.ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
+        var permitted = Cx01TrackingPermissions.Declared(configured).Where(pair => pair.Value.State == "allowed")
+            .Select(pair => pair.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (permitted.IsSupersetOf(["OITL", "ITL1", "OSRN"]))
         {
             try
@@ -342,6 +345,7 @@ public sealed class Cx01Adapter(
             }
             catch (Cx01RemoteException exception) when (exception.RemoteCode == "702")
             {
+                await trackingPermissions.RecordDeniedAsync(connectionId, exception.BusinessMessage(), cancellationToken);
                 await settings.SetAsync(connectionId, configured with { AllowlistedTrackingTables = [] },
                     cancellationToken);
                 await attributionTasks.RaiseQueryPermissionAsync(connectionId, exception.BusinessMessage(),

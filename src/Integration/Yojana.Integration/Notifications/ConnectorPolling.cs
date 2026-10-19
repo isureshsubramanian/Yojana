@@ -1,3 +1,4 @@
+using Yojana.Integration.Connections;
 using Microsoft.EntityFrameworkCore;
 using Quartz;
 using Yojana.Integration.Connectors;
@@ -43,7 +44,8 @@ public sealed class ConnectionPollingService(
     {
         var now = clock.UtcNow;
         var due = await db.ConnectionPollWatermarks.Where(x => x.TenantId == tenant.TenantId
-                && x.NextPollAt <= now)
+                && x.NextPollAt <= now && db.Connections.Any(connection => connection.TenantId == x.TenantId
+                    && connection.ConnectionId == x.ConnectionId && connection.Status == ConnectionStatus.Active))
             .OrderBy(x => x.NextPollAt).ThenBy(x => x.ConnectionId).ThenBy(x => x.EntityType)
             .Take(100).ToListAsync(cancellationToken);
         var connectorCodes = await db.Connections.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
@@ -52,7 +54,10 @@ public sealed class ConnectionPollingService(
         var accepted = 0;
         foreach (var state in due)
         {
+            await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, state.ConnectionId, cancellationToken);
             if (!connectorCodes.TryGetValue(state.ConnectionId, out var code)) continue;
+            if (!await db.Connections.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
+                && x.ConnectionId == state.ConnectionId && x.Status == ConnectionStatus.Active, cancellationToken)) continue;
             try
             {
                 var poller = adapters.Poller(code);

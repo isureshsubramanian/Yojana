@@ -64,7 +64,9 @@ public sealed class BoundedWaitResequencer(IntegrationDbContext db, ITenantConte
     {
         var now = clock.UtcNow;
         var expired = await db.ResequenceItems.Where(x => x.TenantId == tenant.TenantId
-            && x.Status == ResequenceStatus.Held && x.HoldUntil <= now)
+            && x.Status == ResequenceStatus.Held && x.HoldUntil <= now
+            && db.Connections.Any(connection => connection.TenantId == x.TenantId
+                && connection.ConnectionId == x.ConnectionId && connection.Status == ConnectionStatus.Active))
             .OrderBy(x => x.EventTime).ThenBy(x => x.ResequenceItemId).ToListAsync(cancellationToken);
         return await ReleaseAsync(expired, late: true, cancellationToken);
     }
