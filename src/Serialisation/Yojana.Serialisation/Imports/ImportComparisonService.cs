@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Wolverine;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
@@ -25,16 +27,17 @@ public sealed class ImportComparisonService(
         if ((command.JobBId is null) == (command.SelectionId is null))
             throw new CommandRefusedException("comparison_source_invalid", "Supply either job B or a selection set, but not both.");
         var existing = await db.ImportJobs.AsNoTracking().SingleOrDefaultAsync(row => row.TenantId == tenant.TenantId && row.JobId == command.CommandId, cancellationToken);
-        if (existing is not null) return await ResultAsync(existing.JobId, cancellationToken);
+        if (existing is not null) return await ResultAsync(existing.JobId, true, cancellationToken);
 
         var jobA = await JobAsync(command.JobAId, cancellationToken);
         var aRows = await SourceRowsAsync(jobA.JobId, cancellationToken);
+        ImportJob? jobB = null;
         List<ComparisonValue> bRows;
         string secondName;
         string secondHash;
         if (command.JobBId is { } jobBId)
         {
-            var jobB = await JobAsync(jobBId, cancellationToken);
+            jobB = await JobAsync(jobBId, cancellationToken);
             bRows = await SourceRowsAsync(jobBId, cancellationToken);
             secondName = jobB.FileName;
             secondHash = jobB.OriginalHash;
@@ -47,6 +50,10 @@ public sealed class ImportComparisonService(
             secondName = "selection";
             secondHash = selectionId.ToString("N");
         }
+
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(jobA.OriginalHash + ":" + secondHash))).ToLowerInvariant();
+        var replay = await FindReplayAsync(jobA, hash, cancellationToken);
+        if (replay is not null) return await ResultAsync(replay.JobId, true, cancellationToken);
 
         var allValues = aRows.Concat(bRows).Select(row => row.Normalised).Distinct(StringComparer.Ordinal).ToList();
         var collisions = new Dictionary<string, Collision>(StringComparer.Ordinal);
@@ -97,17 +104,60 @@ public sealed class ImportComparisonService(
         foreach (var row in aRows) Add(row, true);
         foreach (var row in bRows) Add(row, false);
 
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(jobA.OriginalHash + ":" + secondHash))).ToLowerInvariant();
-        db.ImportJobs.Add(new ImportJob
+        // ParentJobId is comparison provenance here, not a split-import command child. ImportService's command replay
+        // distinguishes the two by file identity; removing that distinction makes a source upload replay two jobs.
+        var comparison = new ImportJob
         {
             TenantId = tenant.TenantId, JobId = command.CommandId, CommandId = command.CommandId, ParentJobId = jobA.JobId,
             Source = jobA.Source, FileName = $"{jobA.FileName} versus {secondName}", OriginalHash = hash, Format = jobA.Format,
             Mode = ImportMode.Compare, TargetType = jobA.TargetType, TargetId = jobA.TargetId, TargetLine = jobA.TargetLine,
-            Status = "compared", SkippedCount = resultRows.Count, ActorRef = command.ActorRef, RecordedTime = clock.UtcNow, CompletedTime = clock.UtcNow,
-        });
-        db.ImportRowResults.AddRange(resultRows);
-        await db.SaveChangesAsync(cancellationToken);
-        return await ResultAsync(command.CommandId, cancellationToken);
+            Status = ImportJobStatus.Compared, SkippedCount = resultRows.Count, ActorRef = command.ActorRef,
+            RecordedTime = clock.UtcNow, CompletedTime = clock.UtcNow,
+        };
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        IDbContextTransaction? transaction = ownsTransaction ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
+        try
+        {
+            db.ImportJobs.Add(comparison);
+            // Claim the logical comparison before persisting its rows. The unique replay key blocks a concurrent
+            // comparer until this transaction has committed the complete result.
+            await db.SaveChangesAsync(cancellationToken);
+            jobA.Status = ImportJobStatus.Compared;
+            if (jobB is not null) jobB.Status = ImportJobStatus.Compared;
+            db.ImportRowResults.AddRange(resultRows);
+            await db.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                await transaction.DisposeAsync();
+                transaction = null;
+            }
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                await transaction.DisposeAsync();
+                transaction = null;
+            }
+
+            db.ChangeTracker.Clear();
+            var winner = await FindReplayAsync(jobA, hash, cancellationToken);
+            if (winner is not null) return await ResultAsync(winner.JobId, true, cancellationToken);
+            throw;
+        }
+        catch
+        {
+            if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null) await transaction.DisposeAsync();
+        }
+
+        return await ResultAsync(command.CommandId, false, cancellationToken);
     }
 
     public async Task<ApplyImportReviewResult> ApplyAsync(ApplyImportReview command, CancellationToken cancellationToken)
@@ -116,9 +166,11 @@ public sealed class ImportComparisonService(
         if (job.Mode != ImportMode.Compare) throw new CommandRefusedException("comparison_job_required", "Only a compare-mode job has a review result.");
         var rows = await db.ImportRowResults.Where(row => row.TenantId == tenant.TenantId && row.JobId == job.JobId)
             .OrderBy(row => row.RowNumber).ThenBy(row => row.RowResultId).ToListAsync(cancellationToken);
-        if (job.Status == "applied")
+        if (job.Status is ImportJobStatus.Reviewed or ImportJobStatus.HandedOff or ImportJobStatus.Applied or ImportJobStatus.Partial)
             return new(job.JobId, job.AppliedCount, job.SkippedCount, rows.Count(row => row.ReviewedAction == ImportReviewAction.Flag),
                 ImportService.View(job, rows).Rows, true);
+        if (job.Status != ImportJobStatus.Compared)
+            throw new CommandRefusedException("comparison_not_ready", "The compare job has not produced a result ready for review.");
         var overrides = command.Overrides.ToDictionary(row => row.RowResultId, row => row.Action);
         foreach (var row in rows)
         {
@@ -155,7 +207,7 @@ public sealed class ImportComparisonService(
         job.AppliedCount = rows.Count(row => row.Outcome == ImportOutcome.Applied);
         job.SkippedCount = rows.Count(row => row.Outcome == ImportOutcome.Skipped);
         job.RejectedCount = rows.Count(row => row.Outcome == ImportOutcome.Rejected);
-        job.Status = job.RejectedCount == 0 ? "applied" : "partial";
+        job.Status = selected.Count == 0 ? ImportJobStatus.Reviewed : ImportJobStatus.HandedOff;
         job.CompletedTime = clock.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
         var recorded = clock.UtcNow;
@@ -168,15 +220,24 @@ public sealed class ImportComparisonService(
             ImportService.View(job, rows).Rows, false);
     }
 
-    private async Task<CompareImportsResult> ResultAsync(Guid jobId, CancellationToken cancellationToken)
+    private async Task<CompareImportsResult> ResultAsync(Guid jobId, bool replayed, CancellationToken cancellationToken)
     {
         var view = (await imports.ViewsAsync([jobId], cancellationToken)).Single();
         return new(jobId, view.Rows.Count(row => row.ComparisonPartition == ImportComparisonPartition.OnlyA),
             view.Rows.Count(row => row.ComparisonPartition == ImportComparisonPartition.OnlyB),
             view.Rows.Count(row => row.ComparisonPartition == ImportComparisonPartition.Both),
             view.Rows.Count(row => row.ComparisonPartition == ImportComparisonPartition.DuplicateInFile),
-            view.Rows.Count(row => row.ComparisonPartition == ImportComparisonPartition.ExistingCollision), view.Rows);
+            view.Rows.Count(row => row.ComparisonPartition == ImportComparisonPartition.ExistingCollision), view.Rows, replayed);
     }
+
+    private Task<ImportJob?> FindReplayAsync(ImportJob source, string hash, CancellationToken cancellationToken) =>
+        db.ImportJobs.AsNoTracking().FirstOrDefaultAsync(row => row.TenantId == tenant.TenantId
+            && row.Source == source.Source && row.OriginalHash == hash && row.Mode == ImportMode.Compare
+            && row.TargetType == source.TargetType && row.TargetId == source.TargetId && row.TargetLine == source.TargetLine,
+            cancellationToken);
+
+    private static bool IsUniqueViolation(DbUpdateException exception) =>
+        exception.InnerException is SqlException { Number: 2601 or 2627 };
 
     private async Task<ImportJob> JobAsync(Guid jobId, CancellationToken cancellationToken) =>
         await db.ImportJobs.FirstOrDefaultAsync(row => row.TenantId == tenant.TenantId && row.JobId == jobId, cancellationToken)

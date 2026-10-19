@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,6 +11,7 @@ using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Imports;
 using Yojana.Serialisation.Ports;
@@ -140,6 +142,111 @@ public sealed class ImportTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Compare_mode_file_replay_returns_the_intake_job_and_original_rows()
+    {
+        var tenant = await fixture.NewTenantAsync("impcmpreplay");
+        var target = new DocumentRef("production_order", Guid.NewGuid());
+        var content = Encoding.UTF8.GetBytes("Serial\r\nCMP-0001\r\nCMP-0002\r\n");
+        var command = new RunImport(Guid.NewGuid(), ImportSource.UserUpload,
+            new("compare.csv", ImportFormat.Csv, content), At, Entity, "ignored", target,
+            Mode: ImportMode.Compare);
+
+        var first = await RunAsync(tenant, command);
+        var firstJob = Assert.Single(first.Jobs);
+        Assert.False(first.Replayed);
+        Assert.Equal(ImportJobStatus.Intake, firstJob.Status);
+
+        var commandReplay = await RunAsync(tenant, command with
+        {
+            File = new("compare.csv", ImportFormat.Csv, Encoding.UTF8.GetBytes("Serial\r\nREGENERATED-0001\r\n")),
+        });
+        Assert.True(commandReplay.Replayed);
+        Assert.Equal(firstJob.JobId, Assert.Single(commandReplay.Jobs).JobId);
+
+        var replay = await RunAsync(tenant, command with { CommandId = Guid.NewGuid() });
+        var replayedJob = Assert.Single(replay.Jobs);
+        Assert.True(replay.Replayed);
+        Assert.Equal(firstJob.JobId, replayedJob.JobId);
+        Assert.Equal(firstJob.Rows.Select(row => row.RowResultId), replayedJob.Rows.Select(row => row.RowResultId));
+    }
+
+    [DatabaseFact]
+    public async Task Replay_returns_a_matching_job_left_in_intake_by_a_crashed_worker()
+    {
+        var tenant = await fixture.NewTenantAsync("impcrash");
+        var target = new DocumentRef("production_order", Guid.NewGuid(), 3);
+        var content = Encoding.UTF8.GetBytes("Serial\r\nCRASH-0001\r\n");
+        var jobId = Guid.NewGuid();
+        var rowId = Guid.NewGuid();
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            db.ImportJobs.Add(new ImportJob
+            {
+                TenantId = tenant,
+                JobId = jobId,
+                CommandId = jobId,
+                Source = ImportSource.UserUpload,
+                FileName = "crashed.csv",
+                OriginalHash = Hash(content),
+                Format = ImportFormat.Csv,
+                Mode = ImportMode.Compare,
+                TargetType = target.Type,
+                TargetId = target.Id,
+                TargetLine = target.Line,
+                Status = ImportJobStatus.Intake,
+                ActorRef = "worker",
+                RecordedTime = At,
+            });
+            db.ImportRowResults.Add(new ImportRowResult
+            {
+                TenantId = tenant,
+                RowResultId = rowId,
+                JobId = jobId,
+                RowNumber = 2,
+                Sheet = "CSV",
+                RawValue = "CRASH-0001",
+                NormalisedValue = "CRASH0001",
+                Outcome = ImportOutcome.Skipped,
+                RecordedTime = At,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var replay = await RunAsync(tenant, new RunImport(Guid.NewGuid(), ImportSource.UserUpload,
+            new("crashed.csv", ImportFormat.Csv, content), At.AddMinutes(1), Entity, "ignored", target,
+            Mode: ImportMode.Compare));
+
+        var job = Assert.Single(replay.Jobs);
+        Assert.True(replay.Replayed);
+        Assert.Equal(jobId, job.JobId);
+        Assert.Equal(rowId, Assert.Single(job.Rows).RowResultId);
+    }
+
+    [DatabaseFact]
+    public async Task Parallel_duplicate_uploads_return_one_compare_intake_job()
+    {
+        var tenant = await fixture.NewTenantAsync("impparallel");
+        var target = new DocumentRef("production_order", Guid.NewGuid());
+        var content = Encoding.UTF8.GetBytes("Serial\r\nPAR-0001\r\nPAR-0002\r\n");
+        var firstCommand = new RunImport(Guid.NewGuid(), ImportSource.VendorAsn,
+            new("parallel.csv", ImportFormat.Csv, content), At, Entity, "ignored", target,
+            Mode: ImportMode.Compare);
+        var secondCommand = firstCommand with { CommandId = Guid.NewGuid() };
+
+        var results = await Task.WhenAll(RunAsync(tenant, firstCommand), RunAsync(tenant, secondCommand));
+
+        Assert.Single(results, result => !result.Replayed);
+        Assert.Single(results, result => result.Replayed);
+        Assert.Single(results.SelectMany(result => result.Jobs).Select(job => job.JobId).Distinct());
+        Assert.All(results, result => Assert.Equal(2, Assert.Single(result.Jobs).Rows.Count));
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        Assert.Equal(1, await db.ImportJobs.CountAsync(row => row.TenantId == tenant));
+        Assert.Equal(2, await db.ImportRowResults.CountAsync(row => row.TenantId == tenant));
+    }
+
+    [DatabaseFact]
     public async Task Case_138_utf8_bom_tab_file_splits_by_order_and_file_name_matching_supplies_a_target()
     {
         var tenant = await fixture.NewTenantAsync("imp138");
@@ -159,13 +266,17 @@ public sealed class ImportTests(SerialisationHostFixture fixture)
             + $"{scheme.Format(0, 11)}\t{numberA}\t\"first line\nsecond line\"\r\n"
             + $"{scheme.Format(0, 12)}\t{numberB}\tplain\r\n");
 
-        var split = await RunAsync(tenant, new RunImport(Guid.NewGuid(), ImportSource.VendorAsn,
+        var splitCommand = new RunImport(Guid.NewGuid(), ImportSource.VendorAsn,
             new("multi-order.tsv", ImportFormat.Csv, splitContent), At.AddHours(1), Entity, "ignored",
-            Mapping: new("Serial", "Order Number"), MappingName: "vendor-tab", CommittedBy: Committer()));
+            Mapping: new("Serial", "Order Number"), MappingName: "vendor-tab", CommittedBy: Committer());
+        var split = await RunAsync(tenant, splitCommand);
         Assert.Equal(2, split.Jobs.Count);
         Assert.Contains(split.Jobs, job => job.Target == orderA && job.TargetName == numberA && job.Applied == 1);
         Assert.Contains(split.Jobs, job => job.Target == orderB && job.TargetName == numberB && job.Applied == 1);
         Assert.All(split.Jobs, job => Assert.NotNull(job.OriginalArchiveReference));
+        var splitReplay = await RunAsync(tenant, splitCommand);
+        Assert.True(splitReplay.Replayed);
+        Assert.Equal(split.Jobs.Select(job => job.JobId).Order(), splitReplay.Jobs.Select(job => job.JobId).Order());
 
         var fileMatched = await RunAsync(tenant, new RunImport(Guid.NewGuid(), ImportSource.UserUpload,
             new($"{numberA}-serials.csv", ImportFormat.Csv,
@@ -227,6 +338,7 @@ public sealed class ImportTests(SerialisationHostFixture fixture)
 
         var compared = await InvokeAsync<CompareImportsResult>(tenant,
             new CompareImports(Guid.NewGuid(), jobA.JobId, jobB.JobId, null, "reviewer"));
+        Assert.False(compared.Replayed);
         Assert.Equal(1, compared.OnlyInA);
         Assert.Equal(1, compared.OnlyInB);
         Assert.Equal(2, compared.Both);
@@ -236,11 +348,26 @@ public sealed class ImportTests(SerialisationHostFixture fixture)
         Assert.Equal("Harbour Repair Cooperative", collided.CollisionOwnerName);
         Assert.NotNull(collided.CollisionUnitName);
 
+        var comparisonReplay = await InvokeAsync<CompareImportsResult>(tenant,
+            new CompareImports(Guid.NewGuid(), jobA.JobId, jobB.JobId, null, "reviewer"));
+        Assert.True(comparisonReplay.Replayed);
+        Assert.Equal(compared.ComparisonJobId, comparisonReplay.ComparisonJobId);
+        Assert.Equal(compared.Rows.Select(row => row.RowResultId), comparisonReplay.Rows.Select(row => row.RowResultId));
+
         var commonFromA = Assert.Single(compared.Rows, row => row.RawValue == scheme.Format(0, 2) && row.Rule == "comparison_a");
         var applied = await InvokeAsync<ApplyImportReviewResult>(tenant, new ApplyImportReview(Guid.NewGuid(), compared.ComparisonJobId,
             [new(commonFromA.RowResultId, ImportReviewAction.Assign)], At.AddHours(2), Entity, "reviewer", Committer()));
         Assert.Equal(2, applied.Assigned);
         Assert.Equal(5, applied.Skipped);
+        using (var lifecycleScope = fixture.ScopeFor(tenant))
+        {
+            var lifecycleDb = lifecycleScope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            Assert.Equal(ImportJobStatus.HandedOff, (await lifecycleDb.ImportJobs.SingleAsync(
+                row => row.TenantId == tenant && row.JobId == compared.ComparisonJobId)).Status);
+            Assert.All(await lifecycleDb.ImportJobs.Where(row => row.TenantId == tenant
+                    && (row.JobId == jobA.JobId || row.JobId == jobB.JobId)).ToListAsync(),
+                row => Assert.Equal(ImportJobStatus.Compared, row.Status));
+        }
 
         var selection = await InvokeAsync<ResolveSelectionSetResult>(tenant,
             new ResolveSelectionSet(Guid.NewGuid(), SelectionSource.ByImportJob(compared.ComparisonJobId), "reviewer"));
@@ -314,6 +441,8 @@ public sealed class ImportTests(SerialisationHostFixture fixture)
     }
 
     private static CorrectionCommitter Committer() => new("supervisor", [YojanaRole.ProductionSupervisor]);
+
+    private static string Hash(byte[] content) => Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
 
     private sealed class FakeLegacySpreadsheetReader(string serial, byte[] converted) : ISpreadsheetReader
     {

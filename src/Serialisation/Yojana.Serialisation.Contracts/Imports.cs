@@ -23,6 +23,17 @@ public static class ImportMode
     public const string Compare = "compare";
 }
 
+public static class ImportJobStatus
+{
+    public const string Intake = "intake";
+    public const string Compared = "compared";
+    public const string Reviewed = "reviewed";
+    public const string HandedOff = "handed_off";
+    public const string Applied = "applied";
+    public const string Partial = "partial";
+    public const string Rejected = "rejected";
+}
+
 public static class ImportOutcome
 {
     public const string Applied = "applied";
@@ -123,7 +134,8 @@ public sealed record ImportRowPage(IReadOnlyList<ImportRowView> Items, string? N
 /// <summary>Compare two already-intaken jobs, or one job against a stored selection set.</summary>
 public sealed record CompareImports(Guid CommandId, Guid JobAId, Guid? JobBId, Guid? SelectionId, string ActorRef);
 
-public sealed record CompareImportsResult(Guid ComparisonJobId, int OnlyInA, int OnlyInB, int Both, int Duplicates, int ExistingCollisions, IReadOnlyList<ImportRowView> Rows);
+public sealed record CompareImportsResult(Guid ComparisonJobId, int OnlyInA, int OnlyInB, int Both, int Duplicates,
+    int ExistingCollisions, IReadOnlyList<ImportRowView> Rows, bool Replayed = false);
 
 public sealed record ImportReviewOverride(Guid RowResultId, string Action);
 

@@ -3573,20 +3573,21 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_import_job_tenant_id_command_id");
 
-                    b.HasIndex("TenantId", "Source", "OriginalHash")
-                        .HasDatabaseName("ix_import_job_tenant_id_source_original_hash");
-
                     b.HasIndex("TenantId", "Status", "RecordedTime")
                         .HasDatabaseName("ix_import_job_tenant_id_status_recorded_time");
 
                     b.HasIndex("TenantId", "TargetType", "TargetId", "TargetLine")
                         .HasDatabaseName("ix_import_job_tenant_id_target_type_target_id_target_line");
 
+                    b.HasIndex("TenantId", "Source", "OriginalHash", "Mode", "TargetType", "TargetId", "TargetLine")
+                        .IsUnique()
+                        .HasDatabaseName("ux_import_job_tenant_id_source_original_hash_mode_target_type_target_id_target_line");
+
                     b.ToTable("import_job", "serialisation", t =>
                         {
                             t.HasCheckConstraint("ck_import_job_mode", "mode IN ('apply', 'compare')");
 
-                            t.HasCheckConstraint("ck_import_job_status", "status IN ('intake', 'applied', 'partial', 'rejected', 'compared')");
+                            t.HasCheckConstraint("ck_import_job_status", "status IN ('intake', 'compared', 'reviewed', 'handed_off', 'applied', 'partial', 'rejected')");
                         });
                 });
 

@@ -1910,7 +1910,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
         {
             b.ToTable("import_job", t =>
             {
-                t.HasCheckConstraint("ck_import_job_status", "status IN ('intake', 'applied', 'partial', 'rejected', 'compared')");
+                t.HasCheckConstraint("ck_import_job_status", "status IN ('intake', 'compared', 'reviewed', 'handed_off', 'applied', 'partial', 'rejected')");
                 t.HasCheckConstraint("ck_import_job_mode", "mode IN ('apply', 'compare')");
             });
             b.HasKey(row => new { row.TenantId, row.JobId });
@@ -1927,7 +1927,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(row => row.InboxReference).HasMaxLength(500);
             b.Property(row => row.ActorRef).HasMaxLength(200);
             b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
-            b.HasIndex(row => new { row.TenantId, row.Source, row.OriginalHash });
+            b.HasIndex(row => new { row.TenantId, row.Source, row.OriginalHash, row.Mode, row.TargetType, row.TargetId, row.TargetLine })
+                .IsUnique().HasFilter(null).HasDatabaseName("ux_import_job_replay_key");
             b.HasIndex(row => new { row.TenantId, row.Status, row.RecordedTime });
             b.HasIndex(row => new { row.TenantId, row.TargetType, row.TargetId, row.TargetLine });
         });

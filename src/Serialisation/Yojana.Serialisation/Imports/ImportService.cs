@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Wolverine;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
@@ -34,14 +36,11 @@ public sealed class ImportService(
     public async Task<RunImportResult> RunAsync(RunImport command, CancellationToken cancellationToken)
     {
         Validate(command);
-        var hash = Hash(command.File.Content);
-        var replayJobs = await db.ImportJobs.AsNoTracking()
-            .Where(row => row.TenantId == tenant.TenantId && row.Source == command.Source && row.OriginalHash == hash
-                && row.Status != "intake")
-            .OrderBy(row => row.RecordedTime).ThenBy(row => row.JobId).ToListAsync(cancellationToken);
-        if (replayJobs.Count > 0)
-            return new(await ViewsAsync(replayJobs.Select(row => row.JobId).ToList(), cancellationToken), true);
+        var commandJobs = await CommandJobsAsync(command.CommandId, cancellationToken);
+        if (commandJobs.Count > 0)
+            return new(await ViewsAsync(commandJobs.Select(row => row.JobId).ToList(), cancellationToken), true);
 
+        var hash = Hash(command.File.Content);
         var parsed = await ParseAsync(command.File, cancellationToken);
         if (parsed.Rows.Count > MaximumRows)
             throw new CommandRefusedException("import_row_limit_exceeded", $"An import may contain at most {MaximumRows:N0} data rows.");
@@ -86,45 +85,103 @@ public sealed class ImportService(
         }
 
         var groups = prepared.GroupBy(row => row.Target, DocumentRefComparer.Instance).ToList();
-        var jobIds = new List<Guid>(groups.Count);
-        for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
+        var targets = groups.Select(group => ReplayTarget.From(group.Key)).ToHashSet();
+        var replayJobs = await ReplayJobsAsync(command.Source, hash, command.Mode, targets, cancellationToken);
+        if (replayJobs.Count == groups.Count)
+            return new(await ViewsAsync(replayJobs.Select(row => row.JobId).ToList(), cancellationToken), true);
+
+        var jobsByTarget = replayJobs.ToDictionary(row => ReplayTarget.From(row), row => row);
+        var jobIds = replayJobs.Select(row => row.JobId).ToList();
+        var replayed = replayJobs.Count > 0;
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        IDbContextTransaction? transaction = ownsTransaction ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
+        try
         {
-            var group = groups[groupIndex];
-            var jobId = groupIndex == 0 ? command.CommandId : TimeOrderedId.New(command.EventTime.AddMilliseconds(groupIndex));
-            var job = NewJob(command, jobId, hash, parsed.ConvertedHash, group.Key);
-            db.ImportJobs.Add(job);
-            jobIds.Add(jobId);
-            await db.SaveChangesAsync(cancellationToken);
-
-            var sourceRows = group.ToList();
-            var resultRows = sourceRows.Select(row => NewResult(jobId, row, clock.UtcNow)).ToList();
-            foreach (var batch in resultRows.Chunk(WriteBatchSize))
+            var mappingPersisted = false;
+            for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
             {
-                db.ImportRowResults.AddRange(batch);
+                var group = groups[groupIndex];
+                if (jobsByTarget.ContainsKey(ReplayTarget.From(group.Key))) continue;
+
+                var jobId = groupIndex == 0 ? command.CommandId : TimeOrderedId.New(command.EventTime.AddMilliseconds(groupIndex));
+                var job = NewJob(command, jobId, hash, parsed.ConvertedHash, group.Key);
+                db.ImportJobs.Add(job);
+                jobIds.Add(jobId);
+
+                // Claim the replay key before assignments, archive writes or row persistence. The unique index is the
+                // cross-process arbiter; keeping this transaction open means a loser only sees a fully committed winner.
                 await db.SaveChangesAsync(cancellationToken);
+
+                if (!mappingPersisted)
+                {
+                    await PersistMappingAsync(command, cancellationToken);
+                    mappingPersisted = true;
+                }
+
+                var sourceRows = group.ToList();
+                var resultRows = sourceRows.Select(row => NewResult(jobId, row, clock.UtcNow)).ToList();
+                foreach (var batch in resultRows.Chunk(WriteBatchSize))
+                {
+                    db.ImportRowResults.AddRange(batch);
+                    await db.SaveChangesAsync(cancellationToken);
+                }
+
+                if (command.Mode == ImportMode.Apply && group.Key is not null)
+                    await ApplyAsync(command, job, sourceRows, resultRows, cancellationToken);
+                else if (command.Mode == ImportMode.Compare)
+                {
+                    job.Status = ImportJobStatus.Intake;
+                    job.SkippedCount = resultRows.Count(row => row.Outcome == ImportOutcome.Skipped);
+                    job.RejectedCount = resultRows.Count(row => row.Outcome == ImportOutcome.Rejected);
+                }
+                else
+                {
+                    job.Status = ImportJobStatus.Rejected;
+                    job.RejectedCount = resultRows.Count;
+                }
+
+                await StoreFileAsync(job, command.File, parsed.ConvertedContent, cancellationToken);
+                job.CompletedTime = clock.UtcNow;
+                await db.SaveChangesAsync(cancellationToken);
+                if (job.Status != ImportJobStatus.Intake) await PublishCompletedAsync(job, command, cancellationToken);
             }
 
-            if (command.Mode == ImportMode.Apply && group.Key is not null)
-                await ApplyAsync(command, job, sourceRows, resultRows, cancellationToken);
-            else if (command.Mode == ImportMode.Compare)
+            if (transaction is not null)
             {
-                job.Status = "intake";
-                job.SkippedCount = resultRows.Count(row => row.Outcome == ImportOutcome.Skipped);
-                job.RejectedCount = resultRows.Count(row => row.Outcome == ImportOutcome.Rejected);
+                await transaction.CommitAsync(cancellationToken);
+                await transaction.DisposeAsync();
+                transaction = null;
             }
-            else
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            if (transaction is not null)
             {
-                job.Status = "rejected";
-                job.RejectedCount = resultRows.Count;
+                await transaction.RollbackAsync(cancellationToken);
+                await transaction.DisposeAsync();
+                transaction = null;
             }
 
-            await StoreFileAsync(job, command.File, parsed.ConvertedContent, cancellationToken);
-            job.CompletedTime = clock.UtcNow;
-            await db.SaveChangesAsync(cancellationToken);
-            if (job.Status != "intake") await PublishCompletedAsync(job, command, cancellationToken);
+            db.ChangeTracker.Clear();
+            var winners = await ReplayJobsAsync(command.Source, hash, command.Mode, targets, cancellationToken);
+            if (winners.Count == groups.Count)
+                return new(await ViewsAsync(winners.Select(row => row.JobId).ToList(), cancellationToken), true);
+            commandJobs = await CommandJobsAsync(command.CommandId, cancellationToken);
+            if (commandJobs.Count > 0)
+                return new(await ViewsAsync(commandJobs.Select(row => row.JobId).ToList(), cancellationToken), true);
+            throw;
+        }
+        catch
+        {
+            if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null) await transaction.DisposeAsync();
         }
 
-        return new(await ViewsAsync(jobIds, cancellationToken), false);
+        return new(await ViewsAsync(jobIds, cancellationToken), replayed);
     }
 
     private async Task ApplyAsync(RunImport command, ImportJob job, IReadOnlyList<PreparedRow> sourceRows,
@@ -167,7 +224,8 @@ public sealed class ImportService(
         job.AppliedCount = resultRows.Count(row => row.Outcome == ImportOutcome.Applied);
         job.SkippedCount = resultRows.Count(row => row.Outcome == ImportOutcome.Skipped);
         job.RejectedCount = resultRows.Count(row => row.Outcome == ImportOutcome.Rejected);
-        job.Status = job.RejectedCount == 0 ? "applied" : job.AppliedCount + job.SkippedCount > 0 ? "partial" : "rejected";
+        job.Status = job.RejectedCount == 0 ? ImportJobStatus.Applied
+            : job.AppliedCount + job.SkippedCount > 0 ? ImportJobStatus.Partial : ImportJobStatus.Rejected;
     }
 
     private async Task StoreFileAsync(ImportJob job, ImportFile file, byte[]? converted, CancellationToken cancellationToken)
@@ -247,18 +305,6 @@ public sealed class ImportService(
         if (command.Mapping is { } explicitMapping)
         {
             RequireHeader(headers, explicitMapping.Serial, "serial");
-            var existing = await db.ColumnMappings.FirstOrDefaultAsync(row => row.TenantId == tenant.TenantId
-                && row.Source == command.Source && row.Name == command.MappingName, cancellationToken);
-            if (existing is null)
-                db.ColumnMappings.Add(new ColumnMapping { TenantId = tenant.TenantId, MappingId = TimeOrderedId.New(clock.UtcNow), Source = command.Source,
-                    Name = command.MappingName, MappingJson = JsonSerializer.Serialize(explicitMapping, LedgerJson.Options), IsDefault = true,
-                    ActorRef = command.ActorRef, RecordedTime = clock.UtcNow });
-            else
-            {
-                existing.MappingJson = JsonSerializer.Serialize(explicitMapping, LedgerJson.Options);
-                existing.ActorRef = command.ActorRef;
-                existing.RecordedTime = clock.UtcNow;
-            }
             return explicitMapping;
         }
         var saved = await db.ColumnMappings.AsNoTracking().Where(row => row.TenantId == tenant.TenantId && row.Source == command.Source)
@@ -274,6 +320,32 @@ public sealed class ImportService(
             ?? throw new CommandRefusedException("column_mapping_required", "No serial column was recognised; supply and save a column mapping.");
         return new(serial, Find("ordernumber", "order", "productionorder", "workorder", "workordernumber"),
             Find("unitid"), Find("lot", "lotnumber"), Find("customerassettag", "assettag"), Find("item", "itemcode"));
+    }
+
+    private async Task PersistMappingAsync(RunImport command, CancellationToken cancellationToken)
+    {
+        if (command.Mapping is not { } mapping) return;
+        var existing = await db.ColumnMappings.FirstOrDefaultAsync(row => row.TenantId == tenant.TenantId
+            && row.Source == command.Source && row.Name == command.MappingName, cancellationToken);
+        if (existing is null)
+        {
+            db.ColumnMappings.Add(new ColumnMapping
+            {
+                TenantId = tenant.TenantId,
+                MappingId = TimeOrderedId.New(clock.UtcNow),
+                Source = command.Source,
+                Name = command.MappingName,
+                MappingJson = JsonSerializer.Serialize(mapping, LedgerJson.Options),
+                IsDefault = true,
+                ActorRef = command.ActorRef,
+                RecordedTime = clock.UtcNow,
+            });
+            return;
+        }
+
+        existing.MappingJson = JsonSerializer.Serialize(mapping, LedgerJson.Options);
+        existing.ActorRef = command.ActorRef;
+        existing.RecordedTime = clock.UtcNow;
     }
 
     private async Task<DocumentRef?> MatchOrderAsync(string? number, CancellationToken cancellationToken)
@@ -378,11 +450,39 @@ public sealed class ImportService(
             row.CollisionUnitId is { } collision && unitNames.TryGetValue(collision, out var unitName) ? unitName : null,
             row.CollisionOwnerPartyRef is { } owner && parties.TryGetValue(owner, out var party) ? party.Name ?? party.Code : null);
 
+    private async Task<List<ImportJob>> ReplayJobsAsync(string source, string hash, string mode,
+        IReadOnlySet<ReplayTarget> targets, CancellationToken cancellationToken)
+    {
+        var candidates = await db.ImportJobs.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && row.Source == source && row.OriginalHash == hash && row.Mode == mode)
+            .OrderBy(row => row.RecordedTime).ThenBy(row => row.JobId).ToListAsync(cancellationToken);
+        return candidates.Where(row => targets.Contains(ReplayTarget.From(row)))
+            .DistinctBy(row => ReplayTarget.From(row)).ToList();
+    }
+
+    private async Task<List<ImportJob>> CommandJobsAsync(Guid commandId, CancellationToken cancellationToken)
+    {
+        var root = await db.ImportJobs.AsNoTracking().FirstOrDefaultAsync(row => row.TenantId == tenant.TenantId
+            && row.CommandId == commandId, cancellationToken);
+        if (root is null) return [];
+        // ParentJobId also records comparison provenance. Split children are only the rows that retain the root
+        // command's file identity; a later comparison has its own derived hash and must not join this replay.
+        return await db.ImportJobs.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && (row.JobId == root.JobId || (row.ParentJobId == commandId && row.Source == root.Source
+                    && row.OriginalHash == root.OriginalHash && row.Mode == root.Mode && row.FileName == root.FileName)))
+            .OrderBy(row => row.RecordedTime).ThenBy(row => row.JobId).ToListAsync(cancellationToken);
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException exception) =>
+        exception.InnerException is SqlException { Number: 2601 or 2627 };
+
     private ImportJob NewJob(RunImport command, Guid id, string hash, string? convertedHash, DocumentRef? target) => new()
     {
         TenantId = tenant.TenantId,
         JobId = id,
         CommandId = id,
+        // ParentJobId groups jobs split from one command. Comparison jobs also use it for provenance, so
+        // CommandJobsAsync must retain its matching file-identity guard or command replay returns comparisons too.
         ParentJobId = command.CommandId == id ? null : command.CommandId,
         Source = command.Source,
         FileName = command.File.FileName,
@@ -393,7 +493,7 @@ public sealed class ImportService(
         TargetType = target?.Type,
         TargetId = target?.Id,
         TargetLine = target?.Line,
-        Status = "intake",
+        Status = ImportJobStatus.Intake,
         ActorRef = command.ActorRef,
         RecordedTime = command.EventTime,
     };
@@ -449,6 +549,11 @@ public sealed class ImportService(
     private sealed record PreparedRow(SourceRow Source, string? RawValue, string? NormalisedValue, string? OrderNumber,
         string? Lot, string? CustomerAssetTag, DocumentRef? Target, string? Rule);
     private sealed record ParsedFile(IReadOnlyList<string> Headers, IReadOnlyList<SourceRow> Rows, byte[]? ConvertedContent, string? ConvertedHash);
+    private readonly record struct ReplayTarget(string? Type, Guid? Id, int? Line)
+    {
+        public static ReplayTarget From(DocumentRef? target) => new(target?.Type, target?.Id, target?.Line);
+        public static ReplayTarget From(ImportJob job) => new(job.TargetType, job.TargetId, job.TargetLine);
+    }
 
     private sealed class DocumentRefComparer : IEqualityComparer<DocumentRef?>
     {
