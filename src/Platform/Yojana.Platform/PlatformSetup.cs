@@ -249,6 +249,11 @@ public static class PlatformSetup
             db.Database.SetCommandTimeout(TimeSpan.FromHours(4));
             await db.Database.MigrateAsync(cancellationToken);
         }
+        foreach (var migration in scope.ServiceProvider.GetServices<IAdditionalDatabaseMigration>())
+        {
+            logger.LogInformation("Migrating {Database}", migration.Name);
+            await migration.MigrateAsync(cancellationToken);
+        }
     }
 
     public static IReadOnlyList<Type> RegisteredContexts => ModuleContexts;
@@ -277,6 +282,17 @@ public static class PlatformSetup
 
         public IHostBuilder UseServiceProviderFactory<TContainerBuilder>(Func<HostBuilderContext, IServiceProviderFactory<TContainerBuilder>> factory) where TContainerBuilder : notnull => throw new NotSupportedException();
     }
+}
+
+/// <summary>
+/// A database outside the module contexts that a module still has to migrate (for example one of several configured
+/// archive databases sharing one model). Runs in <see cref="PlatformSetup.MigrateAsync"/> after the module contexts,
+/// so it follows the same switch as everything else: MigrateOnStartup in development and tests, --migrate on deploy.
+/// </summary>
+public interface IAdditionalDatabaseMigration
+{
+    string Name { get; }
+    Task MigrateAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>First hosted service: applies migrations when <see cref="PlatformOptions.MigrateOnStartup"/> is set (development and tests).</summary>

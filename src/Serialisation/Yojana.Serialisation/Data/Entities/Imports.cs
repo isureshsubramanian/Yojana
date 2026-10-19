@@ -26,6 +26,8 @@ public sealed class ImportJob : ITenantScoped
     public string? InboxReference { get; set; }
     public string? OriginalFileReference { get; set; }
     public string? ConvertedFileReference { get; set; }
+    public string? OriginalFileCleanupReference { get; set; }
+    public string? ConvertedFileCleanupReference { get; set; }
     public long? OriginalLength { get; set; }
     public long? ConvertedLength { get; set; }
     public bool OriginalArchived { get; set; }

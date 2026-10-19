@@ -205,29 +205,32 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var jobId = DemoIds.FromName("p7:import:legacy-field-register");
         if (await db.ImportJobs.AnyAsync(row => row.JobId == jobId, cancellationToken)) return;
+        var archiveTime = eventTime.AddYears(-1);
         var original = Encoding.UTF8.GetBytes("Fictional legacy spreadsheet bytes for download history");
         var converted = await XlsxAsync(["Serial"], [[Units("RS-1100")[2].Serial], [Units("RS-1100")[3].Serial]], cancellationToken);
         var files = scope.ServiceProvider.GetRequiredService<IImportFileStore>();
         await using var originalStream = new MemoryStream(original, writable: false);
         await using var convertedStream = new MemoryStream(converted, writable: false);
         var storedOriginal = await files.PutAsync(jobId, "field-register.xls", ImportFileCopyKind.Original,
-            originalStream, eventTime, cancellationToken);
+            originalStream, archiveTime, cancellationToken);
         var storedConverted = await files.PutAsync(jobId, "field-register.xlsx", ImportFileCopyKind.Converted,
-            convertedStream, eventTime, cancellationToken);
-        storedOriginal = await files.ArchiveAsync(storedOriginal.Reference, cancellationToken);
-        storedConverted = await files.ArchiveAsync(storedConverted.Reference, cancellationToken);
+            convertedStream, archiveTime, cancellationToken);
         db.ImportJobs.Add(new ImportJob
         {
             TenantId = tenant, JobId = jobId, CommandId = jobId, Source = ImportSource.UserUpload,
             FileName = "field-register.xls", OriginalHash = Convert.ToHexString(SHA256.HashData(original)).ToLowerInvariant(),
             ConvertedHash = Convert.ToHexString(SHA256.HashData(converted)).ToLowerInvariant(), Format = ImportFormat.Xls,
             Mode = ImportMode.Compare, Status = ImportJobStatus.Compared, AppliedCount = 2, ActorRef = actor,
-            RecordedTime = eventTime, CompletedTime = eventTime.AddMinutes(1),
+            RecordedTime = archiveTime, CompletedTime = archiveTime.AddMinutes(1),
             OriginalFileReference = storedOriginal.Reference, ConvertedFileReference = storedConverted.Reference,
             OriginalLength = storedOriginal.ContentLength, ConvertedLength = storedConverted.ContentLength,
-            OriginalArchived = true, ConvertedArchived = true,
+            OriginalArchived = false, ConvertedArchived = false,
         });
         await db.SaveChangesAsync(cancellationToken);
+        await scope.ServiceProvider.GetRequiredService<ImportFileMaintenance>().RunBatchAsync(cancellationToken);
+        var archived = await db.ImportJobs.AsNoTracking().SingleAsync(row => row.JobId == jobId, cancellationToken);
+        if (!archived.OriginalArchived || !archived.OriginalFileReference!.StartsWith("archive:", StringComparison.Ordinal))
+            throw new InvalidOperationException("the legacy spreadsheet demo must be moved into the configured archive store");
     }
 
     private async Task CreateCustomerReconciliationAsync(CancellationToken cancellationToken)

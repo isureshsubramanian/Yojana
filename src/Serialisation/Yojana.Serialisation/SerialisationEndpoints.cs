@@ -1409,7 +1409,7 @@ public static class SerialisationEndpoints
 
         var importJobs = app.MapGroup("/api/imports").RequireAuthorization(policy => policy.RequireClaim(YojanaClaim.Role,
             YojanaRole.SerialAdministrator, YojanaRole.ProductionSupervisor, YojanaRole.Quality,
-            YojanaRole.InventoryController, YojanaRole.WarehouseLead));
+            YojanaRole.InventoryController, YojanaRole.WarehouseLead, YojanaRole.TenantAdministrator));
         importJobs.MapGet("/history", (DateTime? from, DateTime? to, string? source, string? status,
             string? uploader, string? fileName, string? hash, string? cursor, int? take, ClaimsPrincipal user,
             ImportQueries queries, CancellationToken ct) => ImportInvoke(async () =>
@@ -1422,6 +1422,8 @@ public static class SerialisationEndpoints
                     Items = page.Items.Select(row => row with
                     {
                         MayDownload = ImportFileDownloadPolicy.MayDownload(row.UploaderReference, actor, roles),
+                        ArchiveStoreName = roles.Contains(YojanaRole.TenantAdministrator, StringComparer.Ordinal)
+                            ? row.ArchiveStoreName : null,
                     }).ToList(),
                 };
             }));

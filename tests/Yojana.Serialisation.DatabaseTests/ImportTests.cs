@@ -523,7 +523,8 @@ public sealed class ImportTests(SerialisationHostFixture fixture)
         await using var first = new MemoryStream(bytes);
         var database = await store.PutAsync(Guid.NewGuid(), "first.csv", ImportFileCopyKind.Original, first, At, CancellationToken.None);
         Assert.StartsWith("database:", database.Reference);
-        await settings.SetAsync(new(TenantImportFileSettings.File, 90, current.Version), CancellationToken.None);
+        await settings.SetAsync(new(TenantImportFileSettings.File, current.ArchiveStore, 90,
+            ImportFileArchiveAgeUnit.Days, current.Version), CancellationToken.None);
         await using var second = new MemoryStream(Encoding.UTF8.GetBytes("second"));
         var file = await store.PutAsync(Guid.NewGuid(), "second.csv", ImportFileCopyKind.Original, second, At, CancellationToken.None);
         Assert.StartsWith("file:", file.Reference);
@@ -547,7 +548,8 @@ public sealed class ImportTests(SerialisationHostFixture fixture)
             await db.SaveChangesAsync();
             var settings = scope.ServiceProvider.GetRequiredService<TenantImportFileSettings>();
             var current = await settings.GetAsync(CancellationToken.None);
-            await settings.SetAsync(new(TenantImportFileSettings.Database, 1, current.Version), CancellationToken.None);
+            await settings.SetAsync(new(TenantImportFileSettings.Database, current.ArchiveStore, 1,
+                ImportFileArchiveAgeUnit.Days, current.Version), CancellationToken.None);
             var maintenance = scope.ServiceProvider.GetRequiredService<ImportFileMaintenance>();
             var first = await maintenance.RunBatchAsync(CancellationToken.None);
             var second = await maintenance.RunBatchAsync(CancellationToken.None);
@@ -562,6 +564,253 @@ public sealed class ImportTests(SerialisationHostFixture fixture)
             await download.Content.DisposeAsync();
             Assert.True(await db.ImportFileDownloadAudits.AnyAsync(x => x.JobId == jobId && x.ActorRef == "auditor"));
         }
+    }
+
+    [DatabaseFact]
+    public async Task Archive_move_covers_every_active_and_archive_backend_combination()
+    {
+        foreach (var active in new[] { TenantImportFileSettings.File, TenantImportFileSettings.Database })
+        foreach (var archive in new[] { "folder-archive", "database-archive" })
+        {
+            var tenant = await fixture.NewTenantAsync("arcmatrix");
+            var jobId = Guid.NewGuid();
+            var bytes = Encoding.UTF8.GetBytes($"{active} to {archive}");
+            using var scope = fixture.ScopeFor(tenant);
+            await ConfigureAsync(scope, active, archive);
+            var store = scope.ServiceProvider.GetRequiredService<IImportFileStore>();
+            await using var input = new MemoryStream(bytes);
+            var stored = await store.PutAsync(jobId, "matrix.csv", ImportFileCopyKind.Original, input, At, CancellationToken.None);
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            db.ImportJobs.Add(Job(tenant, jobId, bytes, stored.Reference, stored.ContentLength));
+            await db.SaveChangesAsync();
+            var clock = scope.ServiceProvider.GetRequiredService<IClock>();
+            Assert.True(At <= clock.UtcNow.AddDays(-1), $"test import time {At:O} must precede archive cutoff {clock.UtcNow.AddDays(-1):O}");
+            Assert.True(await db.ImportJobs.AnyAsync(x => x.JobId == jobId && x.OriginalFileReference != null));
+
+            var result = await scope.ServiceProvider.GetRequiredService<ImportFileMaintenance>().RunBatchAsync(CancellationToken.None);
+            Assert.Equal(1, result.ArchivedCopies);
+            var job = await db.ImportJobs.AsNoTracking().SingleAsync(x => x.JobId == jobId);
+            Assert.StartsWith($"archive:{archive}:", job.OriginalFileReference);
+            Assert.True(job.OriginalArchived);
+            Assert.Null(job.OriginalFileCleanupReference);
+            await AssertActiveGoneAsync(scope, active, jobId);
+            var download = await scope.ServiceProvider.GetRequiredService<ImportFileDownloads>().OpenAsync(jobId,
+                ImportFileCopyKind.Original, "supervisor", [], CancellationToken.None);
+            await using (download.Content)
+            using (var output = new MemoryStream())
+            {
+                await download.Content.CopyToAsync(output);
+                Assert.Equal(bytes, output.ToArray());
+            }
+        }
+    }
+
+    [DatabaseFact]
+    public async Task Archive_resume_is_safe_after_copy_and_after_repoint()
+    {
+        foreach (var stage in new[] { "copied", "repointed" })
+        {
+            var tenant = await fixture.NewTenantAsync("arcresume");
+            var jobId = Guid.NewGuid();
+            var bytes = Encoding.UTF8.GetBytes("resumable archive " + stage);
+            using var scope = fixture.ScopeFor(tenant);
+            await ConfigureAsync(scope, TenantImportFileSettings.Database, "database-archive");
+            var store = scope.ServiceProvider.GetRequiredService<IImportFileStore>();
+            await using var input = new MemoryStream(bytes);
+            var stored = await store.PutAsync(jobId, "resume.csv", ImportFileCopyKind.Original, input, At, CancellationToken.None);
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            db.ImportJobs.Add(Job(tenant, jobId, bytes, stored.Reference, stored.ContentLength));
+            await db.SaveChangesAsync();
+            fixture.Services.GetRequiredService<TestImportFileArchiveObserver>().FailOnce(jobId, stage);
+            var maintenance = scope.ServiceProvider.GetRequiredService<ImportFileMaintenance>();
+            await Assert.ThrowsAsync<InvalidOperationException>(() => maintenance.RunBatchAsync(CancellationToken.None));
+            await maintenance.RunBatchAsync(CancellationToken.None);
+
+            var job = await db.ImportJobs.AsNoTracking().SingleAsync(x => x.JobId == jobId);
+            Assert.StartsWith("archive:database-archive:database:", job.OriginalFileReference);
+            Assert.Null(job.OriginalFileCleanupReference);
+            await AssertActiveGoneAsync(scope, TenantImportFileSettings.Database, jobId);
+            Assert.Equal(1, await ArchiveDatabaseCountAsync(scope, jobId));
+        }
+    }
+
+    [DatabaseFact]
+    public async Task Switching_archive_store_keeps_old_reference_and_missing_store_is_named()
+    {
+        var tenant = await fixture.NewTenantAsync("arcswitch");
+        var jobId = Guid.NewGuid();
+        var bytes = Encoding.UTF8.GetBytes("old archive remains readable");
+        using var scope = fixture.ScopeFor(tenant);
+        await ConfigureAsync(scope, TenantImportFileSettings.Database, "folder-archive");
+        var store = scope.ServiceProvider.GetRequiredService<IImportFileStore>();
+        await using var input = new MemoryStream(bytes);
+        var stored = await store.PutAsync(jobId, "switch.csv", ImportFileCopyKind.Original, input, At, CancellationToken.None);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        db.ImportJobs.Add(Job(tenant, jobId, bytes, stored.Reference, stored.ContentLength));
+        await db.SaveChangesAsync();
+        await scope.ServiceProvider.GetRequiredService<ImportFileMaintenance>().RunBatchAsync(CancellationToken.None);
+        var settings = scope.ServiceProvider.GetRequiredService<TenantImportFileSettings>();
+        var current = await settings.GetAsync(CancellationToken.None);
+        await settings.SetAsync(new(current.Storage, "database-archive", current.ArchiveAge,
+            current.ArchiveAgeUnit, current.Version), CancellationToken.None);
+        await using var old = await store.OpenReadAsync((await db.ImportJobs.AsNoTracking().SingleAsync(x => x.JobId == jobId)).OriginalFileReference!, CancellationToken.None);
+        Assert.Equal(bytes.Length, old.ContentLength);
+
+        var missing = await Assert.ThrowsAsync<CommandRefusedException>(() =>
+            store.OpenReadAsync("archive:retired-store:file:v1:AA==", CancellationToken.None));
+        Assert.Equal("import_file_archive_store_unavailable", missing.Rule);
+        var missingJobId = Guid.NewGuid();
+        var missingBytes = Encoding.UTF8.GetBytes("reference in a retired archive store");
+        db.ImportJobs.Add(Job(tenant, missingJobId, missingBytes, "archive:retired-store:file:v1:AA==", missingBytes.LongLength));
+        await db.SaveChangesAsync();
+        var downloadRefusal = await Assert.ThrowsAsync<CommandRefusedException>(() =>
+            scope.ServiceProvider.GetRequiredService<ImportFileDownloads>().OpenAsync(missingJobId,
+                ImportFileCopyKind.Original, "supervisor", [], CancellationToken.None));
+        Assert.Equal("import_file_archive_store_unavailable", downloadRefusal.Rule);
+        Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<ImportFileMaintenance>()
+            .UnavailableArchiveReferencesAsync(CancellationToken.None));
+    }
+
+    [DatabaseFact]
+    public async Task One_file_that_fails_verification_is_skipped_and_the_rest_still_archive()
+    {
+        var tenant = await fixture.NewTenantAsync("arcpoison");
+        using var scope = fixture.ScopeFor(tenant);
+        await ConfigureAsync(scope, TenantImportFileSettings.Database, "database-archive");
+        var store = scope.ServiceProvider.GetRequiredService<IImportFileStore>();
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var poisonId = Guid.NewGuid();
+        var goodId = Guid.NewGuid();
+        var poisonBytes = Encoding.UTF8.GetBytes("stored bytes that no longer match the job hash");
+        var goodBytes = Encoding.UTF8.GetBytes("healthy file archives normally");
+        await using (var input = new MemoryStream(poisonBytes))
+        {
+            var stored = await store.PutAsync(poisonId, "poison.csv", ImportFileCopyKind.Original, input, At, CancellationToken.None);
+            // The job records the hash of different bytes, so archive verification refuses this copy.
+            db.ImportJobs.Add(Job(tenant, poisonId, Encoding.UTF8.GetBytes("what was really uploaded"), stored.Reference, stored.ContentLength));
+        }
+        await using (var input = new MemoryStream(goodBytes))
+        {
+            var stored = await store.PutAsync(goodId, "good.csv", ImportFileCopyKind.Original, input, At.AddMinutes(1), CancellationToken.None);
+            var good = Job(tenant, goodId, goodBytes, stored.Reference, stored.ContentLength);
+            good.RecordedTime = At.AddMinutes(1);
+            db.ImportJobs.Add(good);
+        }
+        await db.SaveChangesAsync();
+
+        var result = await scope.ServiceProvider.GetRequiredService<ImportFileMaintenance>().RunBatchAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.ArchivedCopies);
+        Assert.Equal(1, result.FailedCopies);
+        var jobs = await db.ImportJobs.AsNoTracking().Where(x => x.JobId == poisonId || x.JobId == goodId).ToListAsync();
+        Assert.StartsWith("archive:database-archive:", jobs.Single(x => x.JobId == goodId).OriginalFileReference);
+        var poison = jobs.Single(x => x.JobId == poisonId);
+        Assert.StartsWith("database:v1:", poison.OriginalFileReference);
+        Assert.Null(poison.OriginalFileCleanupReference);
+    }
+
+    [DatabaseFact]
+    public async Task Old_style_folder_and_flagged_database_archives_move_to_named_store()
+    {
+        var tenant = await fixture.NewTenantAsync("arclegacy");
+        using var scope = fixture.ScopeFor(tenant);
+        await ConfigureAsync(scope, TenantImportFileSettings.Database, "folder-archive");
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var tenantPart = tenant.Value.ToString("N");
+        var folderJob = Guid.NewGuid();
+        var folderBytes = Encoding.UTF8.GetBytes("old in-root archive");
+        var relative = Path.Combine(tenantPart, "archive", "2026", "09", $"{folderJob:N}-original.csv");
+        var path = Path.Combine(SerialisationHostFixture.ImportFileRoot, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllBytesAsync(path, folderBytes);
+        var folderReference = "file:v1:" + Convert.ToBase64String(Encoding.UTF8.GetBytes(relative));
+        var oldFolderJob = Job(tenant, folderJob, folderBytes, folderReference, folderBytes.LongLength);
+        oldFolderJob.OriginalArchived = true;
+        db.ImportJobs.Add(oldFolderJob);
+
+        var databaseJob = Guid.NewGuid();
+        var databaseBytes = Encoding.UTF8.GetBytes("old flagged database archive");
+        var fileDb = scope.ServiceProvider.GetRequiredService<ImportFilesDbContext>();
+        var fileId = Guid.NewGuid();
+        fileDb.Files.Add(new StoredImportFileRow { TenantId = tenant, FileId = fileId, JobId = databaseJob,
+            CopyKind = ImportFileCopyKind.Original, FileName = "flagged.csv", Content = databaseBytes,
+            ContentLength = databaseBytes.LongLength, Sha256 = Hash(databaseBytes), StoredAt = At, ArchivedAt = At.AddDays(1) });
+        var oldDatabaseJob = Job(tenant, databaseJob, databaseBytes, $"database:v1:{fileId:N}", databaseBytes.LongLength);
+        oldDatabaseJob.OriginalArchived = true;
+        db.ImportJobs.Add(oldDatabaseJob);
+        await fileDb.SaveChangesAsync(); await db.SaveChangesAsync();
+
+        var result = await scope.ServiceProvider.GetRequiredService<ImportFileMaintenance>().RunBatchAsync(CancellationToken.None);
+        Assert.Equal(2, result.ArchivedCopies);
+        Assert.False(File.Exists(path));
+        Assert.False(await fileDb.Files.AnyAsync(x => x.JobId == databaseJob));
+        Assert.All(await db.ImportJobs.AsNoTracking().Where(x => x.JobId == folderJob || x.JobId == databaseJob).ToListAsync(),
+            row => Assert.StartsWith("archive:folder-archive:file:", row.OriginalFileReference));
+    }
+
+    [DatabaseFact]
+    public async Task Archive_database_is_tenant_isolated()
+    {
+        var tenant = await fixture.NewTenantAsync("arciso");
+        var other = await fixture.NewTenantAsync("arciso2");
+        var jobId = Guid.NewGuid();
+        var bytes = Encoding.UTF8.GetBytes("tenant owned archive");
+        string reference;
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            await ConfigureAsync(scope, TenantImportFileSettings.Database, "database-archive");
+            var store = scope.ServiceProvider.GetRequiredService<IImportFileStore>();
+            await using var input = new MemoryStream(bytes);
+            var stored = await store.PutAsync(jobId, "tenant.csv", ImportFileCopyKind.Original, input, At, CancellationToken.None);
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            db.ImportJobs.Add(Job(tenant, jobId, bytes, stored.Reference, stored.ContentLength)); await db.SaveChangesAsync();
+            await scope.ServiceProvider.GetRequiredService<ImportFileMaintenance>().RunBatchAsync(CancellationToken.None);
+            reference = (await db.ImportJobs.AsNoTracking().SingleAsync(x => x.JobId == jobId)).OriginalFileReference!;
+        }
+        using (var scope = fixture.ScopeFor(other))
+        {
+            var refusal = await Assert.ThrowsAsync<CommandRefusedException>(() =>
+                scope.ServiceProvider.GetRequiredService<IImportFileStore>().OpenReadAsync(reference, CancellationToken.None));
+            Assert.Equal("import_file_missing", refusal.Rule);
+        }
+    }
+
+    private static ImportJob Job(TenantId tenant, Guid jobId, byte[] bytes, string reference, long length) => new()
+    {
+        TenantId = tenant, JobId = jobId, CommandId = jobId, Source = ImportSource.UserUpload,
+        FileName = "archive.csv", OriginalHash = Hash(bytes), Format = ImportFormat.Csv, Mode = ImportMode.Compare,
+        Status = ImportJobStatus.Compared, ActorRef = "supervisor", RecordedTime = At,
+        OriginalFileReference = reference, OriginalLength = length,
+    };
+
+    private static async Task ConfigureAsync(IServiceScope scope, string active, string archive)
+    {
+        var settings = scope.ServiceProvider.GetRequiredService<TenantImportFileSettings>();
+        var current = await settings.GetAsync(CancellationToken.None);
+        await settings.SetAsync(new(active, archive, 1, ImportFileArchiveAgeUnit.Days, current.Version), CancellationToken.None);
+        var saved = await settings.GetAsync(CancellationToken.None);
+        Assert.Equal((active, archive, 1, ImportFileArchiveAgeUnit.Days),
+            (saved.Storage, saved.ArchiveStore, saved.ArchiveAge, saved.ArchiveAgeUnit));
+    }
+
+    private static async Task AssertActiveGoneAsync(IServiceScope scope, string active, Guid jobId)
+    {
+        if (active == TenantImportFileSettings.Database)
+            Assert.False(await scope.ServiceProvider.GetRequiredService<ImportFilesDbContext>().Files.AnyAsync(x => x.JobId == jobId));
+        else
+            Assert.Empty(Directory.Exists(SerialisationHostFixture.ImportFileRoot)
+                ? Directory.EnumerateFiles(SerialisationHostFixture.ImportFileRoot, $"{jobId:N}-*", SearchOption.AllDirectories)
+                : Enumerable.Empty<string>());
+    }
+
+    private static async Task<int> ArchiveDatabaseCountAsync(IServiceScope scope, Guid jobId)
+    {
+        var options = scope.ServiceProvider.GetRequiredService<ImportFileStorageOptions>();
+        var store = options.ArchiveStores.Single(x => x.Name == "database-archive");
+        var dbOptions = new DbContextOptionsBuilder<ImportFilesDbContext>().UseSqlServer(store.ConnectionString!, sql =>
+            sql.MigrationsHistoryTable("__migrations", ImportFilesDbContext.SchemaName)).Options;
+        await using var db = new ImportFilesDbContext(dbOptions, scope.ServiceProvider.GetRequiredService<ITenantContext>());
+        return await db.Files.CountAsync(x => x.JobId == jobId);
     }
 
     private async Task<RunImportResult> RunAsync(TenantId tenant, RunImport command)

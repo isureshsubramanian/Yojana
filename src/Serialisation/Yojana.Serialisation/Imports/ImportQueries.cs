@@ -59,6 +59,7 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
                 Applied = row.AppliedCount, Skipped = row.SkippedCount, Rejected = row.RejectedCount,
                 Archived = row.OriginalArchived, OriginalAvailable = row.OriginalFileReference != null || row.OriginalContent != null,
                 ConvertedAvailable = row.ConvertedFileReference != null || row.ConvertedContent != null,
+                OriginalReference = row.OriginalFileReference,
             }).ToListAsync(cancellationToken);
         var more = rows.Count > take;
         if (more) rows.RemoveAt(rows.Count - 1);
@@ -66,7 +67,8 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
         var items = rows.Select(row => new ImportFileHistoryRow(row.JobId, row.FileName, row.Format, row.Size,
             row.OriginalHash, row.ConvertedHash, names.GetValueOrDefault(row.ActorRef, "Former user"), row.ActorRef,
             row.RecordedTime, row.Source, row.Status, row.Applied, row.Skipped, row.Rejected,
-            row.Archived ? "archived" : "active", row.OriginalAvailable, row.ConvertedAvailable)).ToList();
+            row.Archived ? "archived" : "active", row.OriginalAvailable, row.ConvertedAvailable,
+            ImportFileStore.ArchiveStoreName(row.OriginalReference))).ToList();
         var last = more ? rows[^1] : null;
         return new(items, last is null ? null : $"{last.RecordedTime.Ticks.ToString(CultureInfo.InvariantCulture)}.{last.JobId:N}");
     }
@@ -160,5 +162,6 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
         public bool Archived { get; init; }
         public bool OriginalAvailable { get; init; }
         public bool ConvertedAvailable { get; init; }
+        public string? OriginalReference { get; init; }
     }
 }

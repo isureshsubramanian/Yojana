@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Xunit;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Serialisation.DatabaseTests;
@@ -29,5 +30,27 @@ public sealed class TenantSettingsHttpTests(SerialisationHostFixture fixture)
         Assert.NotNull(second);
         Assert.Equal("Europe/Paris", second.TenantTimeZone);
         Assert.NotEqual(first.Version, second.Version);
+    }
+
+    [DatabaseFact]
+    public async Task Import_file_settings_list_named_stores_and_are_tenant_administrator_only()
+    {
+        var tenant = await fixture.NewTenantAsync("import-setting-http");
+        using var administrator = await fixture.AuthenticatedClientAsync(tenant, YojanaRole.TenantAdministrator);
+        var initial = await administrator.GetFromJsonAsync<ImportFileStorageSettings>("/api/settings/import-files");
+        Assert.NotNull(initial);
+        Assert.Equal(["folder-archive", "database-archive"], initial.ArchiveStores.Select(x => x.Name));
+        using var savedResponse = await administrator.PutAsJsonAsync("/api/settings/import-files",
+            new UpdateImportFileStorageSettings("file", "database-archive", 2, ImportFileArchiveAgeUnit.Years,
+                initial.Version));
+        Assert.Equal(HttpStatusCode.OK, savedResponse.StatusCode);
+        var saved = await savedResponse.Content.ReadFromJsonAsync<ImportFileStorageSettings>();
+        Assert.NotNull(saved);
+        Assert.Equal(("file", "database-archive", 2, "years"),
+            (saved.Storage, saved.ArchiveStore, saved.ArchiveAge, saved.ArchiveAgeUnit));
+
+        using var nonAdministrator = await fixture.AuthenticatedClientAsync(tenant, YojanaRole.SerialAdministrator);
+        using var forbidden = await nonAdministrator.GetAsync("/api/settings/import-files");
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
     }
 }

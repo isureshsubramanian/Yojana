@@ -31,10 +31,16 @@ namespace Yojana.Serialisation.DatabaseTests;
 /// </summary>
 public sealed class SerialisationHostFixture : IAsyncLifetime
 {
+    public static readonly string ImportFileRoot = Path.Combine(Path.GetTempPath(), "yojana-import-files-tests");
+    public static readonly string ImportFileArchiveRoot = Path.Combine(Path.GetTempPath(), "yojana-import-files-tests-archive");
     public static readonly string? ConnectionString = Environment.GetEnvironmentVariable("YOJANA_TEST_SQL");
     public static string? ImportFilesConnectionString => ConnectionString is null ? null : new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(ConnectionString)
     {
         InitialCatalog = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(ConnectionString).InitialCatalog + "_files"
+    }.ConnectionString;
+    public static string? ImportFilesArchiveConnectionString => ConnectionString is null ? null : new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(ConnectionString)
+    {
+        InitialCatalog = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(ConnectionString).InitialCatalog + "_files_archive"
     }.ConnectionString;
 
     public IHost Host { get; private set; } = null!;
@@ -53,7 +59,14 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         builder.Configuration["Platform:ConnectionString"] = ConnectionString;
         builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:DatabaseConnectionString"] = ImportFilesConnectionString;
         builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:FileRoot"] =
-            Path.Combine(Path.GetTempPath(), "yojana-import-files-tests");
+            ImportFileRoot;
+        builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:ArchiveStores:0:Name"] = "folder-archive";
+        builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:ArchiveStores:0:Kind"] = "folder";
+        builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:ArchiveStores:0:Path"] =
+            ImportFileArchiveRoot;
+        builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:ArchiveStores:1:Name"] = "database-archive";
+        builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:ArchiveStores:1:Kind"] = "database";
+        builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:ArchiveStores:1:ConnectionString"] = ImportFilesArchiveConnectionString;
         builder.Configuration["Platform:MigrateOnStartup"] = "true";
         builder.Configuration["Platform:AutoBuildMessageStorage"] = "true";
         builder.Configuration["Platform:ServiceName"] = "yojana-serialisation-tests";
@@ -63,6 +76,9 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);
         PlatformSetup.IncludeHandlers(typeof(SerialisationHostFixture).Assembly); // the published-event sink
         builder.AddYojanaPlatform();
+        builder.Services.AddSingleton<TestImportFileArchiveObserver>();
+        builder.Services.AddSingleton<Yojana.Serialisation.Imports.IImportFileArchiveObserver>(sp =>
+            sp.GetRequiredService<TestImportFileArchiveObserver>());
         builder.Services.AddSingleton<TestCertificateRunChunkObserver>();
         builder.Services.AddSingleton<ICertificateRunChunkObserver>(sp => sp.GetRequiredService<TestCertificateRunChunkObserver>());
         builder.AddSerialisationModule();

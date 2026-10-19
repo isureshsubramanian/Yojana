@@ -34,7 +34,7 @@ export function Component() {
     { key: "status", label: "Status", width: 9, render: (row) => <StatusBadge tone={tone(row.status)}>{human(row.status)}</StatusBadge> },
     { key: "rows", label: "Rows", width: 12, render: (row) => <><span className="primary">{row.applied} applied</span><span className="sub">{row.skipped} skipped · {row.rejected} rejected</span></> },
     { key: "hash", label: "SHA-256", width: 13, render: (row) => <><span className="serial" title={row.originalHash}>{row.originalHash.slice(0, 12)}…</span>{row.convertedHash && <span className="sub" title={row.convertedHash}>Converted {row.convertedHash.slice(0, 8)}…</span>}</> },
-    { key: "storage", label: "Storage", width: 8, render: (row) => <StatusBadge tone={row.storageState === "archived" ? "neutral" : "ok"}>{human(row.storageState)}</StatusBadge> },
+    { key: "storage", label: "Storage", width: 8, render: (row) => <><StatusBadge tone={row.storageState === "archived" ? "neutral" : "ok"}>{human(row.storageState)}</StatusBadge>{row.archiveStoreName && <span className="sub">{row.archiveStoreName}</span>}</> },
     { key: "download", label: "Download", width: 16, render: (row) => !row.mayDownload ? <span className="muted">Uploader or administrator only</span> : <span className="actions">{row.originalAvailable && <a className="btn sm" href={`/api/imports/${row.jobId}/files/original`}>Original</a>}{row.convertedAvailable && <a className="btn sm" href={`/api/imports/${row.jobId}/files/converted`}>Converted</a>}</span> },
   ];
   const exportPath = `/api/imports/history/export${query(filters)}`;
