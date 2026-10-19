@@ -43,7 +43,7 @@ public sealed record RequestRma(
     DateTime EventTime,
     string ActorRef = "");
 
-public sealed record RequestRmaResult(Guid RmaId, string Stage, IReadOnlyList<Guid> LineIds, Guid EventId, bool Replayed);
+public sealed record RequestRmaResult(Guid RmaId, string RmaNumber, string Stage, IReadOnlyList<Guid> LineIds, Guid EventId, bool Replayed);
 
 /// <summary>Administrator repair for the derived RMA pipeline counters. The server always supplies ActorRef.</summary>
 public sealed record RebuildRmaStageCounters(Guid CommandId, string ActorRef = "");

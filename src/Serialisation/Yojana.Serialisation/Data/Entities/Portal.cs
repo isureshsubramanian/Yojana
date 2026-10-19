@@ -78,3 +78,29 @@ public sealed class CustomerReconciliationRow : ITenantScoped
     public string? CustomerPoRef { get; set; }
     public string? CustomerItemRef { get; set; }
 }
+
+/// <summary>Customer registration evidence and the optional back-office decision that applies it.</summary>
+public sealed class PortalRegistration : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid RegistrationId { get; set; }
+    public Guid CommandId { get; set; }
+    public Guid UnitId { get; set; }
+    public Guid EntitlementId { get; set; }
+    public Guid PartyRef { get; set; }
+    public required string EvidenceKind { get; set; }
+    public DateTime DeliveryAt { get; set; }
+    public DateTime EvidenceAt { get; set; }
+    public string? EvidenceReference { get; set; }
+    public string? AttachmentFileName { get; set; }
+    public string? AttachmentContentType { get; set; }
+    public byte[]? AttachmentContent { get; set; }
+    public int GraceDays { get; set; }
+    public required string Status { get; set; }
+    public DateTime SubmittedAt { get; set; }
+    public required string SubmittedBy { get; set; }
+    public Guid? ApprovalCommandId { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public string? ApprovedBy { get; set; }
+    public Guid? RebaseEventId { get; set; }
+}

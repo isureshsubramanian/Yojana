@@ -91,6 +91,38 @@ public static class SerialisationEndpoints
                     });
             }
         });
+        portalAdmin.MapGet("/registration-settings", async (PortalRegistrationSettings settings,
+            CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
+        portalAdmin.MapPut("/registration-settings", async (UpdatePortalRegistrationSettings update,
+            PortalRegistrationSettings settings, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await settings.SetAsync(update, ct)); }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message,
+                    statusCode: StatusCodes.Status422UnprocessableEntity,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+            }
+            catch (TenantSettingVersionConflictException ex)
+            {
+                return Results.Problem(title: "document_changed",
+                    detail: "The registration setting changed after this view was loaded; reload and try again.",
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["rule"] = "document_changed", ["expectedVersion"] = ex.ExpectedVersion,
+                        ["currentVersion"] = ex.CurrentVersion,
+                    });
+            }
+        });
+        var portalReviews = app.MapGroup("/api/admin/portal/registrations")
+            .RequireAuthorization(YojanaPolicy.ServiceDesk);
+        portalReviews.MapGet("/", (string? status, string? cursor, int? take, PortalWriteService service,
+            CancellationToken ct) => PortalWriteInvoke(() => service.ReviewsAsync(status, cursor, take ?? 50, ct)));
+        portalReviews.MapPost("/{registrationId:guid}/approve", (Guid registrationId,
+            ApprovePortalRegistrationRequest request, ClaimsPrincipal user, PortalWriteService service,
+            CancellationToken ct) => PortalWriteInvoke(() => service.ApproveAsync(registrationId, request,
+                Actor(user), ct)));
 
         // COUPLING (SQL portal RLS): TenantResolutionMiddleware recognises this policy metadata and sets the
         // read-only portal_party_ref session key before a DbContext opens. Changing this policy marker without
@@ -147,6 +179,40 @@ public static class SerialisationEndpoints
             ITenantContext currentTenant, PortalQueries queries, CancellationToken ct) =>
             await queries.CertificatesAsync(PortalActor(user, currentTenant), unitId, take ?? 50,
                 beforeIssuedAt, beforeCertificateId, ct) is { } page ? Results.Ok(page) : Results.NotFound());
+        portal.MapPost("/units/{unitId:guid}/registrations", async (Guid unitId,
+            PortalRegistrationRequest request, ClaimsPrincipal user, ITenantContext currentTenant,
+            PortalWriteService service, CancellationToken ct) =>
+        {
+            try
+            {
+                return await service.RegisterAsync(PortalActor(user, currentTenant), unitId, request,
+                    Actor(user), ct) is { } result ? Results.Ok(result) : Results.NotFound();
+            }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message,
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?>
+                    { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+            }
+        });
+        portal.MapPost("/units/{unitId:guid}/rmas", async (Guid unitId, PortalRmaRequest request,
+            ClaimsPrincipal user, ITenantContext currentTenant, PortalWriteService service,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                return await service.RequestRmaAsync(PortalActor(user, currentTenant), unitId, request,
+                    Actor(user), ct) is { } result ? Results.Ok(result) : Results.NotFound();
+            }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message,
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?>
+                    { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+            }
+        });
 
         app.MapGet("/api/admin/ledger-base-order-backfill", async (LedgerBaseOrderBackfill backfill, CancellationToken ct) =>
             Results.Ok(await backfill.GetProgressAsync(ct)))
@@ -1533,6 +1599,18 @@ public static class SerialisationEndpoints
         {
             return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict,
                 extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+        }
+    }
+
+    private static async Task<IResult> PortalWriteInvoke<TResult>(Func<Task<TResult>> action)
+    {
+        try { return Results.Ok(await action()); }
+        catch (CommandRefusedException ex)
+        {
+            return Results.Problem(title: ex.Rule, detail: ex.Message,
+                statusCode: StatusCodes.Status409Conflict,
+                extensions: new Dictionary<string, object?>
+                { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
         }
     }
 

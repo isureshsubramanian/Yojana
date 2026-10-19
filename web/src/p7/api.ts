@@ -1,6 +1,6 @@
 import { api } from "../api/client";
 import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
-import type { CompareResult, DisclosurePolicy, ImportJob, ImportPage, ImportRowPage, ImportRunResult, InstalledBasePage, InternalLookup, PortalContext, PortalLookup, PortalUnit, PublicLookup, ReconciliationPage, ReferenceOption, SerialListResult, ServiceHistoryPage, CertificatePage, WhereUsedResult, XrefPage } from "./types";
+import type { CompareResult, DisclosurePolicy, ImportJob, ImportPage, ImportRowPage, ImportRunResult, InstalledBasePage, InternalLookup, PortalContext, PortalLookup, PortalUnit, PublicLookup, ReconciliationPage, ReferenceOption, SerialListResult, ServiceHistoryPage, CertificatePage, WhereUsedResult, XrefPage, PortalRegistrationResult, PortalRmaResult } from "./types";
 
 export function query(values: Record<string, string | number | boolean | null | undefined>): string { const params = new URLSearchParams(); for (const [key, value] of Object.entries(values)) if (value !== null && value !== undefined && value !== "") params.set(key, String(value)); const text = params.toString(); return text ? `?${text}` : ""; }
 export function exportUrl(path: string, format: "csv" | "xlsx"): string { return `${path}${path.includes("?") ? "&" : "?"}format=${format}`; }
@@ -31,10 +31,12 @@ export const p7Api = {
   installedBase: (includeComponents: boolean, afterDeliveryDate?: string, afterUnitId?: string, signal?: AbortSignal) => api<InstalledBasePage>(`/api/portal/installed-base${query({ includeComponents, take: 50, afterDeliveryDate, afterUnitId })}`, { signal }),
   serviceHistory: (unitId: string, signal?: AbortSignal) => api<ServiceHistoryPage>(`/api/portal/units/${unitId}/service-history?take=50`, { signal }),
   certificates: (unitId: string, signal?: AbortSignal) => api<CertificatePage>(`/api/portal/units/${unitId}/certificates?take=50`, { signal }),
+  registerUnit: async (unitId: string, evidenceAt: string, evidenceReference: string, attachment: File | null) => api<PortalRegistrationResult>(`/api/portal/units/${unitId}/registrations`, { method: "POST", body: { commandId: newCommandId(), evidenceKind: "installation", evidenceAt: new Date(`${evidenceAt}T12:00:00Z`).toISOString(), evidenceReference: evidenceReference.trim() || null, attachment: attachment ? { fileName: attachment.name, contentType: attachment.type || "application/octet-stream", content: await fileBytes(attachment) } : null } }),
+  requestRma: (unitId: string, requestDate: string, serviceCountry: string, coverageFamily: string, description: string) => api<PortalRmaResult>(`/api/portal/units/${unitId}/rmas`, { method: "POST", body: { commandId: newCommandId(), requestDate, serviceCountry, coverageFamily, claimLineKind: "parts", description } }),
   whereUsed: (value: string) => api<WhereUsedResult>("/api/portal/where-used", { method: "POST", body: { value, identifierType: null } }),
   serialList: (values: string[]) => api<SerialListResult>("/api/portal/serial-list", { method: "POST", body: { serials: values.map((value) => ({ value, identifierType: null })) } }),
   internalLookup: (identifier: string, signal?: AbortSignal) => api<InternalLookup>(`/api/reports/internal-lookup${query({ identifier })}`, { signal }),
-  selectionFromSerials: (serials: string[]) => api<{ selectionId: string; resolved: number; unknown: string[]; rejected: string[] }>("/api/selections", { method: "POST", body: { commandId: newCommandId(), source: { kind: "pasted_serials", serials } } }),
+  selectionFromSerials: (serials: string[]) => api<{ selectionId: string; resolved: number; unknown: string[]; rejected: string[] }>("/api/selections", { method: "POST", body: { commandId: newCommandId(), source: { kind: "pasted_list", serials } } }),
   xref: (selectionId: string, after?: string, signal?: AbortSignal) => api<XrefPage>(`/api/reports/identifier-cross-reference${query({ selectionId, after, take: 100 })}`, { signal }),
   disclosure: (signal?: AbortSignal) => api<DisclosurePolicy>("/api/admin/portal/disclosure-policy", { signal }),
   saveDisclosure: (fields: DisclosurePolicy["fields"]) => api<DisclosurePolicy>("/api/admin/portal/disclosure-policy/fields", { method: "PUT", body: { fields } }),

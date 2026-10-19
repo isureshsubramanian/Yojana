@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router";
+import { NavLink, Outlet, useLocation } from "react-router";
 import { ModeMenuItems } from "../theme/ModeMenuItems";
 import { useSession } from "../session/session";
 import { p7Api } from "./api";
@@ -16,12 +16,14 @@ export function EmptyState({ title, children }: { title: string; children: React
 
 export function PortalFrame() {
   const session = useSession();
+  const location = useLocation();
+  const claimsSelected = new URLSearchParams(location.search).get("focus") === "claims";
   const [organisation, setOrganisation] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
   useEffect(() => { const controller = new AbortController(); void p7Api.portalContext(controller.signal).then((context) => setOrganisation(context.organisationName)).catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setDenied(true); }); return () => controller.abort(); }, []);
   if (denied) return <div className="portal-frame"><main className="portal-content"><EmptyState title="Portal access unavailable">Sign in with your organisation's portal account.</EmptyState></main></div>;
   if (!organisation) return <div className="portal-frame"><main className="portal-content"><div className="p7-empty">Loading portal…</div></main></div>;
-  return <div className="portal-frame"><header className="portal-top"><NavLink className="portal-brand" to="/portal/lookup"><span className="mark">Y</span><span><strong>{organisation} Service portal</strong><small>Serials, cover and service</small></span></NavLink><nav aria-label="Portal"><NavLink to="/portal/lookup">Lookup</NavLink><NavLink to="/portal/installed-base">Installed base</NavLink><NavLink to="/portal/where-used">Where-used</NavLink><NavLink to="/portal/lookup?focus=claims">Claims</NavLink></nav><div className="portal-account"><span>{organisation}</span><small>{session.user.displayName}</small></div><details className="portal-mode"><summary>Appearance</summary><div className="menu"><ModeMenuItems /></div></details></header><Outlet /></div>;
+  return <div className="portal-frame"><header className="portal-top"><NavLink className="portal-brand" to="/portal/lookup"><span className="mark">Y</span><span><strong>{organisation} Service portal</strong><small>Serials, cover and service</small></span></NavLink><nav aria-label="Portal"><NavLink className={() => location.pathname === "/portal/lookup" && !claimsSelected ? "active" : ""} to="/portal/lookup">Lookup</NavLink><NavLink to="/portal/installed-base">Installed base</NavLink><NavLink to="/portal/where-used">Where-used</NavLink><NavLink className={() => claimsSelected ? "active" : ""} to="/portal/lookup?focus=claims">Claims</NavLink></nav><div className="portal-account"><span>{organisation}</span><small>{session.user.displayName}</small></div><details className="portal-mode"><summary>Appearance</summary><div className="menu"><ModeMenuItems /></div></details></header><Outlet /></div>;
 }
 
 export function PortalPage({ eyebrow, title, sub, actions, children }: { eyebrow: string; title: React.ReactNode; sub?: React.ReactNode; actions?: React.ReactNode; children: React.ReactNode }) {

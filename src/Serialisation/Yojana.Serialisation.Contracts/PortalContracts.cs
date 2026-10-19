@@ -125,6 +125,86 @@ public sealed record PortalCertificateRow(Guid CertificateId, string Kind, strin
 public sealed record PortalCertificatePage(IReadOnlyList<PortalCertificateRow> Rows, bool HasMore,
     DateTime? NextIssuedAt, Guid? NextCertificateId);
 
+public static class PortalRegistrationEvidenceKind
+{
+    public const string Delivery = "delivery";
+    public const string Installation = "installation";
+    public static readonly IReadOnlySet<string> All = new HashSet<string>([Delivery, Installation], StringComparer.Ordinal);
+}
+
+public static class PortalRegistrationStatus
+{
+    public const string Recorded = "recorded";
+    public const string PendingReview = "pending_review";
+    public const string Approved = "approved";
+}
+
+public static class PortalRegistrationOutcome
+{
+    public const string RegistrationRecorded = "registration_recorded";
+    public const string ReviewPending = "review_pending";
+    public const string EntitlementRebased = "entitlement_rebased";
+}
+
+public sealed record PortalEvidenceAttachment(string FileName, string ContentType, byte[] Content);
+
+/// <summary>Portal request shape. The unit and actor come from the route and authenticated claims.</summary>
+public sealed record PortalRegistrationRequest(
+    Guid CommandId,
+    string EvidenceKind,
+    DateTime EvidenceAt,
+    string? EvidenceReference = null,
+    PortalEvidenceAttachment? Attachment = null);
+
+public sealed record PortalRegistrationResult(
+    Guid RegistrationId,
+    Guid UnitId,
+    Guid EntitlementId,
+    string Outcome,
+    string Status,
+    DateTime DeliveryAt,
+    DateTime EvidenceAt,
+    int GraceDays,
+    DateOnly? StartDate,
+    bool Replayed = false);
+
+public sealed record PortalRegistrationReviewRow(
+    Guid RegistrationId,
+    Guid UnitId,
+    Guid EntitlementId,
+    string EvidenceKind,
+    DateTime DeliveryAt,
+    DateTime EvidenceAt,
+    string? EvidenceReference,
+    string? AttachmentFileName,
+    string Status,
+    DateTime SubmittedAt,
+    string SubmittedBy);
+
+public sealed record PortalRegistrationReviewPage(
+    IReadOnlyList<PortalRegistrationReviewRow> Items,
+    string? NextCursor);
+
+public sealed record ApprovePortalRegistrationRequest(Guid CommandId, DateTime EventTime);
+
+public sealed record PortalRegistrationSettingsView(int GraceDays, string Version);
+public sealed record UpdatePortalRegistrationSettings(int GraceDays, string ExpectedVersion);
+
+/// <summary>Stage-one portal intake. Ownership parties, entity, currency and actor are resolved server-side.</summary>
+public sealed record PortalRmaRequest(
+    Guid CommandId,
+    DateOnly RequestDate,
+    string ServiceCountry,
+    string CoverageFamily,
+    string ClaimLineKind,
+    string Description);
+
+public sealed record PortalRmaResult(
+    Guid RmaId,
+    string RmaNumber,
+    string Stage,
+    bool Replayed);
+
 public static class PortalQueryOutcome
 {
     public const string Found = "found";

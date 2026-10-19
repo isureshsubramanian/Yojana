@@ -29,6 +29,8 @@ export interface CertificatePage { rows: CertificateRow[]; hasMore: boolean; nex
 export interface WhereUsedParent { unitId: string; serial: string; current: boolean; installedAt: string; removedAt: string | null; liveEntitlements: Coverage[] }
 export interface WhereUsedResult { outcome: string; validationReasons: string[]; componentUnitId: string | null; parents: WhereUsedParent[]; componentEntitlements: Coverage[] }
 export interface SerialListResult { matched: { input: string; unit: PortalUnit }[]; unmatched: string[]; invalid: { input: string; identifierType: string | null; reasons: string[] }[] }
+export interface PortalRegistrationResult { registrationId: string; unitId: string; entitlementId: string; outcome: string; status: string; deliveryAt: string; evidenceAt: string; graceDays: number; startDate: string | null; replayed: boolean }
+export interface PortalRmaResult { rmaId: string; rmaNumber: string; stage: string; replayed: boolean }
 
 export interface ReconciliationRow { ordinal: number; input: string; identifierType: string | null; normalisedIdentifier: string | null; outcome: string; validationReasons: string[]; unit: string | null; item: string | null; otherOwner: string | null; assertionId: string | null; assertionStatus: string | null; customerPoRef: string | null; customerItemRef: string | null }
 export interface ReconciliationPage { reconciliationId: string; sourceKind: string; customer: string; total: number; owned: number; ownedByAnotherParty: number; notFound: number; invalid: number; items: ReconciliationRow[]; nextCursor: string | null; replayed: boolean }

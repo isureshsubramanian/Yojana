@@ -426,6 +426,9 @@ public static class SerialisationModule
         builder.Services.AddScoped<Portal.PortalQueries>();
         builder.Services.AddScoped<Portal.DisclosurePolicyService>();
         builder.Services.AddScoped<Portal.PublicPortalResolver>();
+        builder.Services.AddScoped(sp => new Portal.PortalRegistrationSettings(
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped<Portal.PortalWriteService>();
         // End P7 customer portal.
 
         // Replay-and-diff healer (P1-T05): per tenant, nightly, through the platform's recurring tenant jobs.

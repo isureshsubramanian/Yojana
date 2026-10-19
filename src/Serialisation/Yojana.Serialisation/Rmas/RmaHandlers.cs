@@ -67,7 +67,7 @@ public static class RequestRmaHandler
 {
     public static async Task<RequestRmaResult> Handle(RequestRma command, SerialisationDbContext db, UnitResolver units,
         ISalesDocumentQueryPort sales, RmaSaleFactsResolver saleFacts, RmaStageCounterWriter counters,
-        IUnitEventWriter writer, ITenantContext tenant, IClock clock,
+        IUnitEventWriter writer, DocumentNumbers numbers, ITenantContext tenant, IClock clock,
         CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -75,7 +75,7 @@ public static class RequestRmaHandler
                 .SingleOrDefaultAsync(r => r.TenantId == tenantId && r.CommandId == command.CommandId, cancellationToken) is { } replay)
         {
             var replayLines = await db.RmaLines.AsNoTracking().Where(l => l.TenantId == tenantId && l.RmaId == replay.RmaId).OrderBy(l => l.Sequence).Select(l => l.RmaLineId).ToListAsync(cancellationToken);
-            return new(replay.RmaId, replay.Stage, replayLines, replay.LastEventId, true);
+            return new(replay.RmaId, replay.RmaNumber!, replay.Stage, replayLines, replay.LastEventId, true);
         }
 
         if (command.Lines.Count == 0) throw new CommandRefusedException("rma_lines_required", "An RMA needs at least one line.");
@@ -112,6 +112,7 @@ public static class RequestRmaHandler
         var rma = new Rma
         {
             TenantId = tenantId, RmaId = rmaId, CommandId = command.CommandId, Stage = RmaStage.Requested,
+            RmaNumber = await numbers.NextAsync(DocumentNumbers.Rma, command.EventTime, cancellationToken),
             RequestDate = command.RequestDate, ReturningPartyRef = command.ReturningPartyRef, SettlementPartyRef = command.SettlementPartyRef,
             ServiceEntityId = command.ServiceEntityId, ObligorEntityId = command.ObligorEntityId, ServiceCountry = command.ServiceCountry.Trim().ToUpperInvariant(),
             Currency = command.Currency.Trim().ToUpperInvariant(), RequestedAt = command.EventTime, RequestedBy = command.ActorRef,
@@ -145,7 +146,7 @@ public static class RequestRmaHandler
         db.RmaLines.AddRange(linesToWrite);
         await writer.AppendAsync(drafts, cancellationToken);
         await counters.AddRequestedAsync(rmaId, cancellationToken);
-        return new(rmaId, rma.Stage, linesToWrite.Select(l => l.RmaLineId).ToList(), eventId, false);
+        return new(rmaId, rma.RmaNumber, rma.Stage, linesToWrite.Select(l => l.RmaLineId).ToList(), eventId, false);
     }
 }
 

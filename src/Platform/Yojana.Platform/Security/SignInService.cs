@@ -8,7 +8,20 @@ using Yojana.Platform.Data.Platform.Entities;
 
 namespace Yojana.Platform.Security;
 
-public sealed record TenantChoice(TenantId TenantId, string Code, string Name, IReadOnlyList<string> Roles);
+public sealed record TenantChoice(TenantId TenantId, string Code, string Name, IReadOnlyList<string> Roles,
+    Guid? CustomerPartyRef = null);
+
+public static class PortalMembershipClaim
+{
+    // COUPLING (membership role marker): DemoLoader writes this exact prefix into the existing Roles JSON because the
+    // platform schema has no external-party column yet. SignInService is the sole reader. Renaming either side removes
+    // the portal party claim and makes an otherwise valid demo account receive 403 on every portal route.
+    public const string Prefix = "customer_party:";
+    public static string For(Guid partyRef) => Prefix + partyRef.ToString("D");
+    public static Guid? Read(IEnumerable<string> values) => values.Select(value => value.StartsWith(Prefix,
+            StringComparison.Ordinal) && Guid.TryParse(value[Prefix.Length..], out var parsed) ? parsed : (Guid?)null)
+        .FirstOrDefault(value => value is not null);
+}
 
 /// <summary>Local sign-in and tenant selection. Runs before any tenant is set, against the registry tables.</summary>
 public sealed class SignInService(PlatformDbContext db)
@@ -26,7 +39,9 @@ public sealed class SignInService(PlatformDbContext db)
             .Where(m => m.UserId == userId && m.Tenant!.IsActive)
             .Select(m => new { m.TenantId, m.Tenant!.Code, m.Tenant.Name, m.Roles })
             .ToListAsync(cancellationToken);
-        return rows.Select(r => new TenantChoice(r.TenantId, r.Code, r.Name, r.Roles)).OrderBy(r => r.Code).ToList();
+        return rows.Select(r => new TenantChoice(r.TenantId, r.Code, r.Name,
+            r.Roles.Where(YojanaRole.IsKnown).ToList(), PortalMembershipClaim.Read(r.Roles)))
+            .OrderBy(r => r.Code).ToList();
     }
 
     public static ClaimsPrincipal PrincipalFor(AppUser user, TenantChoice? tenant)
@@ -43,6 +58,8 @@ public sealed class SignInService(PlatformDbContext db)
             claims.Add(new Claim(YojanaClaim.TenantId, tenant.TenantId.ToString()));
             claims.Add(new Claim(YojanaClaim.TenantCode, tenant.Code));
             claims.AddRange(tenant.Roles.Where(YojanaRole.IsKnown).Select(r => new Claim(YojanaClaim.Role, r)));
+            if (tenant.CustomerPartyRef is { } partyRef)
+                claims.Add(new Claim(YojanaClaim.CustomerPartyRef, partyRef.ToString("D")));
         }
 
         return new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme, ClaimTypes.Name, YojanaClaim.Role));

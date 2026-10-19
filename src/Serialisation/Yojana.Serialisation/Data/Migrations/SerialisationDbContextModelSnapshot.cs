@@ -4744,6 +4744,137 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("pending_shipment_line", "serialisation");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PortalRegistration", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RegistrationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("registration_id");
+
+                    b.Property<Guid?>("ApprovalCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("approval_command_id");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("approved_at");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("approved_by");
+
+                    b.Property<byte[]>("AttachmentContent")
+                        .HasColumnType("varbinary(max)")
+                        .HasColumnName("attachment_content");
+
+                    b.Property<string>("AttachmentContentType")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("attachment_content_type");
+
+                    b.Property<string>("AttachmentFileName")
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)")
+                        .HasColumnName("attachment_file_name");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<DateTime>("DeliveryAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("delivery_at");
+
+                    b.Property<Guid>("EntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entitlement_id");
+
+                    b.Property<DateTime>("EvidenceAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("evidence_at");
+
+                    b.Property<string>("EvidenceKind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("evidence_kind");
+
+                    b.Property<string>("EvidenceReference")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("evidence_reference");
+
+                    b.Property<int>("GraceDays")
+                        .HasColumnType("int")
+                        .HasColumnName("grace_days");
+
+                    b.Property<Guid>("PartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("party_ref");
+
+                    b.Property<Guid?>("RebaseEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("rebase_event_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime>("SubmittedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("submitted_at");
+
+                    b.Property<string>("SubmittedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("submitted_by");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("TenantId", "RegistrationId")
+                        .HasName("pk_portal_registration");
+
+                    b.HasIndex("TenantId", "ApprovalCommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_portal_registration_tenant_id_approval_command_id")
+                        .HasFilter("[approval_command_id] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_portal_registration_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "EntitlementId")
+                        .HasDatabaseName("ix_portal_registration_tenant_id_entitlement_id");
+
+                    b.HasIndex("TenantId", "PartyRef", "SubmittedAt")
+                        .HasDatabaseName("ix_portal_registration_tenant_id_party_ref_submitted_at");
+
+                    b.HasIndex("TenantId", "UnitId", "SubmittedAt")
+                        .HasDatabaseName("ix_portal_registration_tenant_id_unit_id_submitted_at");
+
+                    b.HasIndex("TenantId", "Status", "SubmittedAt", "RegistrationId")
+                        .HasDatabaseName("ix_portal_registration_tenant_id_status_submitted_at_registration_id");
+
+                    b.ToTable("portal_registration", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_portal_registration_evidence_kind", "evidence_kind IN ('delivery', 'installation')");
+
+                            t.HasCheckConstraint("ck_portal_registration_status", "status IN ('recorded', 'pending_review', 'approved')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PrintJob", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -9777,6 +9908,23 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_label_template_version_tenant_id_template_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PortalRegistration", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.Entitlement", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EntitlementId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_portal_registration_tenant_id_entitlement_id");
+
+                    b.HasOne("Yojana.Serialisation.Data.Entities.Unit", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "UnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_portal_registration_tenant_id_unit_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PrintJob", b =>

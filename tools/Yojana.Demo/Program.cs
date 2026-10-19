@@ -16,7 +16,8 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Configuration["Platform:ConnectionString"] = builder.Configuration["Platform:ConnectionString"]
     ?? "Server=localhost,1433;Database=yojana;User Id=sa;Encrypt=True;TrustServerCertificate=True";
 builder.Configuration["Platform:MigrateOnStartup"] = "false";
-builder.Configuration["Platform:AutoBuildMessageStorage"] = "false";
+builder.Configuration["Platform:AutoBuildMessageStorage"] =
+    builder.Configuration["Platform:AutoBuildMessageStorage"] ?? "false";
 builder.Configuration["Platform:ServiceName"] = "yojana-demo";
 builder.Logging.ClearProviders();
 builder.Logging.AddSimpleConsole(options => options.SingleLine = true);

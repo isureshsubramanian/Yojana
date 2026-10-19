@@ -17,6 +17,23 @@ export function human(value: string): string {
   return words.map((word, index) => acronyms.has(word.toLowerCase()) ? word.toUpperCase()
     : index === 0 ? word[0]!.toUpperCase() + word.slice(1) : word).join(" ");
 }
+const reasonLabels: Record<string, string> = {
+  comparison_a: "From source A",
+  comparison_b: "From source B",
+  serial_required: "Serial is required",
+  lot_required: "Lot is required",
+  serial_unknown: "Serial is not recorded",
+  shipment_not_applied: "Shipment could not be recorded",
+  reviewer_flagged: "Flagged for review",
+  reviewer_skipped: "Skipped by reviewer",
+  ambiguous_identifier: "Matches more than one unit",
+  invalid_for_all_identifier_types: "Not valid as a supported identifier",
+  identifier_type_unknown: "Identifier type is not supported",
+  empty: "No value supplied",
+};
+export function reasonLabel(value: string | null | undefined, fallback = "Passed validation"): string {
+  return value ? reasonLabels[value] ?? human(value) : fallback;
+}
 export function date(value: string | null): string { return value ? new Date(value).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }) : "—"; }
 export const publicLookupFields = ["itemCode", "itemName", "condition", "manufactureMonth", "warrantyStatus"] as const;
 export const portalUnitSections = ["coverage", "service history", "certificates", "registration", "fault report"] as const;
