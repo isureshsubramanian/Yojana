@@ -23,6 +23,12 @@ namespace Yojana.Integration.Inbox;
 //        together, on both sides.
 // Engine: SQL Server / Azure SQL; the pairing relies on a single local transaction, never on a
 //        distributed one.
+// The TranslateInboundMessage envelope is also persisted through Wolverine's IntegrationDbContext outbox before this
+// transaction commits. That durable hand-off extends the atomic acceptance boundary, but the downstream translation
+// handler is still deliberately outside this tight coupling and may lag or retry independently.
+// HIDDEN COUPLING (connection acceptance lock): InboundMessageStore.AcceptMany and this index share the SQL
+// application-lock name `integration:accept:{tenant}:{connection}`. It serialises only the absent-key claim window for
+// one connection. If the scope or name diverges, parallel first deliveries can deadlock or race the unique index.
 
 public sealed class IdempotencyIndex(IntegrationDbContext db)
 {

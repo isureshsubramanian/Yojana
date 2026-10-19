@@ -5,6 +5,7 @@ using Xunit;
 using Yojana.Integration;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
+using Yojana.Integration.Notifications;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
@@ -21,6 +22,7 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
     public static string? ImportFilesConnectionString => WithDatabase("_files");
     public MutableTestClock Clock { get; } = new(new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc));
     public IHost Host { get; private set; } = null!;
+    public FakeConnectorPoller Poller { get; } = new();
     public IServiceProvider Services => Host.Services;
 
     public async Task InitializeAsync()
@@ -37,11 +39,13 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.Configuration["Platform:AutoBuildMessageStorage"] = "true";
         builder.Configuration["Platform:ServiceName"] = "yojana-integration-tests";
         builder.Configuration["Serialisation:Documents:ConfirmDeliverySeparately"] = "false";
+        ConfigureLocalKey(builder.Configuration);
         PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);
         PlatformSetup.IncludeHandlers(typeof(IntegrationModule).Assembly);
         builder.AddYojanaPlatform();
         builder.AddSerialisationModule();
         builder.AddIntegrationModule();
+        builder.Services.AddSingleton<IConnectorPoller>(Poller);
         builder.Services.AddSingleton<IClock>(Clock);
         Host = builder.Build();
         await Host.StartAsync();
@@ -97,11 +101,35 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.InitialCatalog += suffix;
         return builder.ConnectionString;
     }
+
+    public static void ConfigureLocalKey(Microsoft.Extensions.Configuration.IConfiguration configuration)
+    {
+        configuration["Integration:Security:KeyEncryption:Provider"] = "Local";
+        configuration["Integration:Security:LocalKeyEncryption:Current:KeyId"] = "integration-tests";
+        configuration["Integration:Security:LocalKeyEncryption:Current:KeyVersion"] = "1";
+        configuration["Integration:Security:LocalKeyEncryption:Current:KeyBase64"] =
+            Convert.ToBase64String(Enumerable.Range(1, 32).Select(x => (byte)x).ToArray());
+        configuration["Integration:Security:LocalKeyEncryption:AllowInProduction"] = "true";
+        configuration["Integration:Security:LocalKeyEncryption:ProductionOverrideReason"] = "isolated database test host";
+    }
 }
 
 public sealed class MutableTestClock(DateTime utcNow) : IClock
 {
     public DateTime UtcNow { get; set; } = utcNow;
+}
+
+public sealed class FakeConnectorPoller : IConnectorPoller
+{
+    public string ConnectorCode => "CX01";
+    public List<ConnectorPollRequest> Requests { get; } = [];
+    public ConnectorPollResult NextResult { get; set; } = new([], null);
+
+    public Task<ConnectorPollResult> PollAsync(ConnectorPollRequest request, CancellationToken cancellationToken)
+    {
+        Requests.Add(request);
+        return Task.FromResult(NextResult);
+    }
 }
 
 [CollectionDefinition("integration host")]

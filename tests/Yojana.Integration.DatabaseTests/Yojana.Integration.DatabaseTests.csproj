@@ -10,5 +10,6 @@
     <ProjectReference Include="../../src/Platform/Yojana.Platform/Yojana.Platform.csproj" />
     <ProjectReference Include="../../src/Integration/Yojana.Integration/Yojana.Integration.csproj" />
     <ProjectReference Include="../../src/Serialisation/Yojana.Serialisation/Yojana.Serialisation.csproj" />
+    <ProjectReference Include="../../src/Web/Yojana.Web/Yojana.Web.csproj" />
   </ItemGroup>
 </Project>

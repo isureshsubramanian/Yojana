@@ -88,21 +88,31 @@ public sealed class IntegrationDocumentQueryPort(IntegrationDbContext db, ITenan
             var customer = await RefAsync(row.ConnectionId, "party", payload.CustomerPartyExternalId, cancellationToken);
             var lines = new List<InvoiceLine>();
             foreach (var line in payload.Lines)
-                lines.Add(new(line.LineNo, await RefAsync(row.ConnectionId, "item", line.ItemExternalId, cancellationToken), line.Quantity,
-                    line.Price ?? 0, line.Currency ?? payload.Totals.Currency));
+            {
+                var invoiceItem = await ItemAsync(row.ConnectionId, line.ItemExternalId, cancellationToken);
+                var targetReference = line.BaseDocumentRef ?? (payload.BaseDeliveryRefs.Count > 0 ? payload.BaseDeliveryRefs[0] : null);
+                var invoiceTarget = invoiceItem.Attributes.IsWarrantyProduct && targetReference is not null
+                    ? new WarrantyLineTarget(WarrantyTargetRule.ReferencedDocument,
+                        await DocumentRefAsync(row.ConnectionId, targetReference, cancellationToken))
+                    : null;
+                lines.Add(new(line.LineNo, invoiceItem.ModuleId, line.Quantity,
+                    line.Price ?? 0, line.Currency ?? payload.Totals.Currency,
+                    invoiceItem.Attributes.IsWarrantyProduct ? "warranty_service" : "goods",
+                    invoiceItem.Attributes.WarrantyTemplateRef, Target: invoiceTarget));
+            }
             return new(document, document, customer, await LegalEntityAsync(row.ConnectionId, cancellationToken), row.OccurredAt, lines);
         }
         if (row.MessageType != nameof(WarrantyLineSold)) return null;
         var warranty = JsonSerializer.Deserialize<WarrantyLineSold>(row.Payload, IntegrationContracts.Json)!;
         var party = await RefAsync(row.ConnectionId, "party", warranty.CustomerPartyExternalId, cancellationToken);
-        var item = await RefAsync(row.ConnectionId, "item", warranty.WarrantyProductExternalId, cancellationToken);
+        var item = await ItemAsync(row.ConnectionId, warranty.WarrantyProductExternalId, cancellationToken);
         var targetDoc = await DocumentRefAsync(row.ConnectionId, warranty.CoveredDeliveryRef, cancellationToken);
         var target = warranty.CoveredUnitSerials.Count > 0
             ? new WarrantyLineTarget(WarrantyTargetRule.AttachedList, Serials: warranty.CoveredUnitSerials)
             : new WarrantyLineTarget(WarrantyTargetRule.ReferencedDocument, targetDoc);
         return new(document, document, party, await LegalEntityAsync(row.ConnectionId, cancellationToken), row.OccurredAt,
-            [new InvoiceLine(warranty.Line.LineNo, item, warranty.Line.Quantity, warranty.Price.Amount,
-                warranty.Price.Currency, "warranty_service", Target: target)]);
+            [new InvoiceLine(warranty.Line.LineNo, item.ModuleId, warranty.Line.Quantity, warranty.Price.Amount,
+                warranty.Price.Currency, "warranty_service", item.Attributes.WarrantyTemplateRef, Target: target)]);
     }
 
     public Task<WarrantyTargetDocument?> GetWarrantyTargetAsync(SerialDocumentRef document, CancellationToken cancellationToken) => Task.FromResult<WarrantyTargetDocument?>(null);
@@ -125,8 +135,21 @@ public sealed class IntegrationDocumentQueryPort(IntegrationDbContext db, ITenan
         db.CanonicalDocuments.AsNoTracking().SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId && x.DocumentId == id, cancellationToken);
 
     private async Task<Guid> RefAsync(Guid connection, string type, string external, CancellationToken cancellationToken) =>
-        await db.ReferenceProjections.AsNoTracking().Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connection
-            && x.EntityType == type && x.ExternalId == external).Select(x => x.ModuleId).SingleAsync(cancellationToken);
+        await db.ExternalIdMaps.AsNoTracking().Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connection
+            && x.EntityType == type && x.ExternalId == external && x.ValidTo == null)
+            .Select(x => x.ModuleRef).SingleAsync(cancellationToken);
+
+    private async Task<(Guid ModuleId, ItemReferenceAttributes Attributes)> ItemAsync(Guid connection,
+        string external, CancellationToken cancellationToken)
+    {
+        var moduleId = await RefAsync(connection, "item", external, cancellationToken);
+        var json = await db.ReferenceProjections.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && x.EntityType == "item" && x.ModuleId == moduleId)
+            .Select(x => x.AttributesJson).SingleAsync(cancellationToken);
+        var attributes = JsonSerializer.Deserialize<ItemReferenceAttributes>(json, IntegrationContracts.Json)
+            ?? new(false, null);
+        return (moduleId, attributes);
+    }
 
     private async Task<Guid> LegalEntityAsync(Guid connection, CancellationToken cancellationToken) =>
         await db.ConnectionGatewaySettings.AsNoTracking().Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connection)

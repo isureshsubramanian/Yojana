@@ -18,7 +18,9 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
         var tables = await db.Database.SqlQueryRaw<string>("SELECT TABLE_NAME AS Value FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'integration'").ToListAsync();
         AssertSuperset(tables, "connection", "inbound_message", "idempotency_index", "canonical_document",
             "reference_projection", "connection_capability", "connection_degradation_setting", "connection_gateway_setting",
-            "outbound_command", "exception_task", "resequence_item");
+            "outbound_command", "exception_task", "resequence_item", "external_id_map", "connector_catalogue",
+            "tenant_data_key", "connection_credential", "tenant_data_key_rewrap_checkpoint", "connection_event",
+            "connection_throttle_profile", "connection_notification_source", "connection_poll_watermark");
     }
 
     [DatabaseFact]

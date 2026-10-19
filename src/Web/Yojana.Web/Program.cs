@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Wolverine;
 using Wolverine.EntityFrameworkCore;
 using Yojana.Integration;
+using Yojana.Integration.Notifications;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Security;
@@ -112,6 +113,7 @@ app.UseYojanaPlatform();
 app.UseSerialisationInteractiveReads();
 app.MapPresenceEndpoints();
 app.MapSerialisationEndpoints();
+app.MapIntegrationEndpoints();
 
 app.MapGet("/health", async (PlatformDbContext db, CancellationToken ct) =>
 {

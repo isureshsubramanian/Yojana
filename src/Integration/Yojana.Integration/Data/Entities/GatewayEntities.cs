@@ -5,16 +5,45 @@ namespace Yojana.Integration.Data.Entities;
 public sealed class ReferenceProjection : ITenantScoped
 {
     public TenantId TenantId { get; set; }
-    public Guid ConnectionId { get; set; }
     public required string EntityType { get; set; }
-    public required string ExternalId { get; set; }
     public Guid ModuleId { get; set; }
     public string? Code { get; set; }
     public string? DisplayName { get; set; }
     public string? TrackingMode { get; set; }
     public string? Uom { get; set; }
     public bool Deleted { get; set; }
-    public bool Provisional { get; set; }
+    public required string AttributesJson { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public sealed class ExternalIdMap : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ExternalIdMapId { get; set; }
+    public Guid ConnectionId { get; set; }
+    public required string EntityType { get; set; }
+    public required string ExternalId { get; set; }
+    public Guid ModuleRef { get; set; }
+    public DateTime ValidFrom { get; set; }
+    public DateTime? ValidTo { get; set; }
+    public string? NaturalKeyHash { get; set; }
+    public required string MappingSource { get; set; }
+}
+
+public static class ExternalIdMappingSource
+{
+    public const string Manual = "manual";
+    public const string Auto = "auto";
+    public const string Migration = "migration";
+}
+
+public sealed class ConnectorCatalogueEntry : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public required string ConnectorCode { get; set; }
+    public required string DisplayName { get; set; }
+    public required string CustomerCostDisclosure { get; set; }
+    public bool Enabled { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
 

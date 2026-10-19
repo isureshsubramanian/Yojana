@@ -34,7 +34,7 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
         var delivery = new DeliveryPosted(Doc("delivery", "D-1"), "CUSTOMER-1", "SITE-1",
             [Line(itemExternal, serial, "WH-1")]);
         var first = await AcceptAndTranslate(tenant, connection, "delivery", "D-1", "001", delivery);
-        Assert.Equal(1, first.UnitsAffected);
+        Assert.True(first.Translated || await TranslationStatusAsync(tenant, "delivery", "D-1") == InboundTranslationStatus.Completed);
 
         var duplicate = await Accept(tenant, connection, "delivery", "D-1", "001", delivery);
         Assert.Equal(InboundAcceptanceResult.AlreadyProcessed, duplicate.Outcome);
@@ -71,6 +71,8 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
             new DeliveryPosted(Doc("delivery", "D-LATE"), "CUSTOMER-LATE", "SITE-LATE",
                 [Line(itemExternal, serial, "WH-LATE")]));
 
+        await WaitForStatusAsync(tenant, accepted.InboundMessageId, InboundTranslationStatus.Held);
+
         using (var markLate = fixture.ScopeFor(tenant))
         {
             var integration = markLate.ServiceProvider.GetRequiredService<IntegrationDbContext>();
@@ -82,7 +84,8 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
         {
             var result = await translate.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<GatewayTranslationResult>(
                 new TranslateInboundMessage(accepted.InboundMessageId), new DeliveryOptions { TenantId = tenant.ToString() });
-            Assert.True(result.Translated);
+            if (!result.Translated)
+                await WaitForStatusAsync(tenant, accepted.InboundMessageId, InboundTranslationStatus.Completed);
         }
         using var check = fixture.ScopeFor(tenant);
         var serialisation = check.ServiceProvider.GetRequiredService<SerialisationDbContext>();
@@ -124,8 +127,11 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
     {
         var accepted = await Accept(tenant, connection, entity, external, marker, payload, at);
         using var scope = fixture.ScopeFor(tenant);
-        return await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<GatewayTranslationResult>(
+        var result = await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<GatewayTranslationResult>(
             new TranslateInboundMessage(accepted.InboundMessageId), new DeliveryOptions { TenantId = tenant.ToString() });
+        if (!result.Translated)
+            await WaitForStatusAsync(tenant, accepted.InboundMessageId, InboundTranslationStatus.Completed);
+        return result;
     }
 
     private async Task<InboundAcceptanceResult> Accept<T>(TenantId tenant, Guid connection, string entity,
@@ -144,4 +150,28 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
     private static ExternalDocumentRef Doc(string type, string number) => new(type, number, DateOnly.FromDateTime(At.UtcDateTime), number);
     private static CanonicalLine Line(string item, string serial, string location) => new(1, "1", item, 1, "EA",
         [new(serial)], [], location);
+
+    private async Task<string> TranslationStatusAsync(TenantId tenant, string entity, string external)
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        return await scope.ServiceProvider.GetRequiredService<IntegrationDbContext>().InboundMessages.AsNoTracking()
+            .Where(x => x.ErpEntity == entity && x.ErpExternalId == external && x.IsLatest)
+            .Select(x => x.TranslationStatus).SingleAsync();
+    }
+
+    private async Task WaitForStatusAsync(TenantId tenant, Guid inboundId, string expected)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            using var scope = fixture.ScopeFor(tenant);
+            var status = await scope.ServiceProvider.GetRequiredService<IntegrationDbContext>().InboundMessages.AsNoTracking()
+                .Where(x => x.InboundMessageId == inboundId).Select(x => x.TranslationStatus).SingleAsync();
+            if (status == expected) return;
+            await Task.Delay(20);
+        }
+        using var final = fixture.ScopeFor(tenant);
+        var row = await final.ServiceProvider.GetRequiredService<IntegrationDbContext>().InboundMessages.AsNoTracking()
+            .SingleAsync(x => x.InboundMessageId == inboundId);
+        throw new TimeoutException($"Inbound message {inboundId:N} did not reach {expected}; status={row.TranslationStatus}; error={row.LastTranslationError}.");
+    }
 }
