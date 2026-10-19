@@ -74,4 +74,4 @@ html[data-mode="dark"] .portal-frame { color-scheme: dark; }
 a.p7-file-btn:hover { background: var(--surface-3); border-color: var(--accent); color: var(--accent); }
 a.p7-file-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .p7-file-btn.disabled { color: var(--text-3); opacity: 0.45; cursor: not-allowed; }
-.p7-file-btn.empty { border-color: transparent; background: transparent; }
+.p7-file-btn.p7-file-slot { border-color: transparent; background: transparent; }

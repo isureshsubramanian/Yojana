@@ -19,7 +19,7 @@ function convertedName(fileName: string) { return fileName.replace(/\.[^.]+$/, "
 
 /** One download icon; disabled (still showing why in its tooltip) when the viewer may not download, empty slot when there is no such copy. */
 function FileDownload({ row, copy, available }: { row: ImportFileHistoryRow; copy: "original" | "converted"; available: boolean }) {
-  if (!available) return <span className="p7-file-btn empty" aria-hidden="true" />;
+  if (!available) return <span className="p7-file-btn p7-file-slot" aria-hidden="true" />;
   const icon = copy === "original" ? "import" : "converted";
   const what = copy === "original" ? `Download original file (${row.fileName})` : `Download converted copy (${convertedName(row.fileName)})`;
   if (!row.mayDownload) {
