@@ -7,6 +7,8 @@ using Yojana.Integration.Inbox;
 using Yojana.Integration.Gateway;
 using Yojana.Serialisation.Contracts;
 using Yojana.Integration.Ordering;
+using Yojana.Integration.Outbox;
+using Yojana.Integration.DeadLetters;
 using Yojana.Platform.Scheduling;
 using Yojana.Integration.Data;
 using Yojana.Platform;
@@ -39,9 +41,16 @@ public static class IntegrationModule
             sp.GetRequiredService<IntegrationDbContext>(),
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>(),
             sp.GetRequiredService<Yojana.Platform.Contracts.Time.IClock>(),
-            sp.GetRequiredService<ConnectionCapabilityReader>()));
+            sp.GetRequiredService<ConnectionCapabilityReader>(),
+            sp.GetRequiredService<IOutboundCommandParkingSink>()));
         builder.Services.AddScoped<BoundedWaitResequencer>();
         builder.Services.AddSingleton(RecurringTenantJob.For<ResequencerJob>(ResequencerJob.JobName, ResequencerJob.Cron));
+        builder.Services.AddScoped<OutboxRelaySettings>();
+        builder.Services.AddScoped<IOutboundConnectorResolver, OutboundConnectorResolver>();
+        builder.Services.AddScoped<IOutboundCommandParkingSink, DeadLetterParkingSink>();
+        builder.Services.AddScoped<OutboundRelay>();
+        builder.Services.AddScoped<DeadLetterService>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<OutboxRelayJob>(OutboxRelayJob.JobName, OutboxRelayJob.Cron));
         // Factories deliberately hide IntegrationDbContext from Wolverine's SerialisationDbContext handler graphs.
         // The document and item ports are module contracts, but exposing both contexts as constructor-discoverable
         // dependencies makes Wolverine reject the otherwise loosely coupled handler at startup.

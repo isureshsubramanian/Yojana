@@ -9,12 +9,13 @@ using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Integration.Outbox;
 
 namespace Yojana.Integration.Gateway;
 
 /// <summary>Stages canonical commands only. Delivery is owned by P8-T07's later relay.</summary>
 public sealed class OutboundCommandStager(IntegrationDbContext db, ITenantContext tenant, IClock clock,
-    ConnectionCapabilityReader declarations)
+    ConnectionCapabilityReader declarations, IOutboundCommandParkingSink parking)
 {
     public async Task<int> StageAsync(PublishedEventHeader header, IOutboundCommand command,
         CancellationToken cancellationToken)
@@ -27,31 +28,27 @@ public sealed class OutboundCommandStager(IntegrationDbContext db, ITenantContex
         {
             var declaration = await declarations.ReadAsync(originalConnection, cancellationToken);
             var capability = declaration.For(type);
-            if (capability.SupportLevel == CapabilitySupport.Unsupported) continue;
             var connection = IsFinancial(type) && declaration.DegradationRules.GetValueOrDefault(DegradationRule.DownstreamLedger)?.Enabled == true
                 ? declaration.LedgerConnectionId ?? originalConnection : originalConnection;
             var idempotency = Derive(header.EventId, type);
-            if (capability.SupportLevel == CapabilitySupport.Manual)
-            {
-                db.ExceptionTasks.Add(new IntegrationExceptionTask
-                {
-                    TenantId = tenant.TenantId, ExceptionTaskId = TimeOrderedId.New(clock.UtcNow), ConnectionId = connection,
-                    Kind = "manual_outbound", SubjectRef = command.ModuleDocumentRef,
-                    Detail = JsonSerializer.Serialize(command, command.GetType(), IntegrationContracts.Json),
-                    Status = "open", CreatedAt = clock.UtcNow,
-                });
-                continue;
-            }
             if (await db.OutboundCommands.AnyAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == connection
                 && x.IdempotencyKey == idempotency, cancellationToken)) continue;
-            db.OutboundCommands.Add(new OutboundCommandRow
+            var manual = capability.SupportLevel is CapabilitySupport.Manual or CapabilitySupport.Unsupported;
+            var row = new OutboundCommandRow
             {
                 TenantId = tenant.TenantId, OutboundCommandId = TimeOrderedId.New(clock.UtcNow), ConnectionId = connection,
                 CommandType = type, IdempotencyKey = idempotency, ModuleDocumentRef = command.ModuleDocumentRef,
                 ErpReferenceText = command.ErpReferenceText,
                 Payload = JsonSerializer.Serialize(command, command.GetType(), IntegrationContracts.Json),
-                Status = "pending", CreatedAt = clock.UtcNow,
-            });
+                Status = manual ? OutboundCommandStatus.Parked : OutboundCommandStatus.Pending,
+                Outcome = manual ? OutboundConnectorOutcome.Unsupported : null,
+                LastFailure = manual ? "The connection capability requires manual processing for this command." : null,
+                CompletedAt = manual ? clock.UtcNow : null,
+                CreatedAt = clock.UtcNow,
+            };
+            db.OutboundCommands.Add(row);
+            if (manual)
+                await parking.ParkAsync(row, OutboundConnectorOutcome.Unsupported, row.LastFailure!, cancellationToken);
             count++;
         }
         await db.SaveChangesAsync(cancellationToken);
