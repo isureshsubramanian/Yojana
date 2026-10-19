@@ -23,6 +23,8 @@ public sealed class PortalWriteHttpTests(SerialisationHostFixture fixture)
 {
     private static readonly Guid Entity = Guid.Parse("f601a1c3-838b-4876-95ea-aebd95938969");
     private static readonly DateTime At = new(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc);
+    // Unique per run so the test can run again against a reused test database.
+    private readonly string email = $"portal.writer.{Guid.NewGuid():N}@tests.local";
 
     [DatabaseFact]
     public async Task Registration_and_RMA_are_claim_stamped_replayable_and_hide_another_owners_unit()
@@ -42,7 +44,7 @@ public sealed class PortalWriteHttpTests(SerialisationHostFixture fixture)
         using var cookies = new HttpClientHandler { CookieContainer = new CookieContainer() };
         using var client = new HttpClient(cookies) { BaseAddress = host.BaseAddress };
         using (var signIn = await client.PostAsJsonAsync("/api/auth/sign-in",
-                   new { email = "portal.writer@tests.local", password = "Portal-test-password-42" }))
+                   new { email, password = "Portal-test-password-42" }))
             Assert.Equal(HttpStatusCode.OK, signIn.StatusCode);
 
         var registrationCommand = Guid.NewGuid();
@@ -68,7 +70,10 @@ public sealed class PortalWriteHttpTests(SerialisationHostFixture fixture)
             $"/api/portal/units/{hiddenUnit:D}/registrations",
             registrationRequest with { CommandId = Guid.NewGuid() });
         Assert.Equal(HttpStatusCode.NotFound, hidden.StatusCode);
-        Assert.Equal(string.Empty, await hidden.Content.ReadAsStringAsync());
+        // The API boundary answers every error with a generic problem body; it must not reveal the other owner's unit.
+        var hiddenBody = await hidden.Content.ReadAsStringAsync();
+        Assert.Contains("\"title\":\"Not found\"", hiddenBody);
+        Assert.DoesNotContain(hiddenUnit.ToString("D"), hiddenBody, StringComparison.OrdinalIgnoreCase);
 
         var rmaCommand = Guid.NewGuid();
         var rmaRequest = new PortalRmaRequest(rmaCommand, new DateOnly(2026, 9, 12), "GB",
@@ -154,7 +159,7 @@ public sealed class PortalWriteHttpTests(SerialisationHostFixture fixture)
         var user = new AppUser
         {
             Id = Guid.NewGuid(),
-            Email = "portal.writer@tests.local",
+            Email = email,
             DisplayName = "Fictional Portal Writer",
             PasswordHash = PasswordHasher.Hash("Portal-test-password-42"),
             CreatedAt = DateTime.UtcNow,
