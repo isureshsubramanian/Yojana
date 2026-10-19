@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { DataGrid, FindBar, StatusBadge, type GridColumn, type PageResult } from "../components";
+import { Icon } from "../shell/Icons";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { ErrorNote } from "../units/common";
 import { p7Api, query } from "./api";
@@ -11,6 +12,22 @@ function pageOf(rows: ImportFileHistoryRow[], page: number, hasMore: boolean): P
   return { rows, total: rows.length + (hasMore ? 1 : 0), page, pageSize: Math.max(rows.length, 1), continuation: null, totalIsExact: !hasMore, hasMore };
 }
 function bytes(value: number) { if (value < 1024) return `${value} B`; if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`; return `${(value / 1024 ** 2).toFixed(1)} MB`; }
+
+const notPermitted = "only the uploader, an administrator or the service manager can download it";
+
+function convertedName(fileName: string) { return fileName.replace(/\.[^.]+$/, "") + ".xlsx"; }
+
+/** One download icon; disabled (still showing why in its tooltip) when the viewer may not download, empty slot when there is no such copy. */
+function FileDownload({ row, copy, available }: { row: ImportFileHistoryRow; copy: "original" | "converted"; available: boolean }) {
+  if (!available) return <span className="p7-file-btn empty" aria-hidden="true" />;
+  const icon = copy === "original" ? "import" : "converted";
+  const what = copy === "original" ? `Download original file (${row.fileName})` : `Download converted copy (${convertedName(row.fileName)})`;
+  if (!row.mayDownload) {
+    const label = `${what}: ${notPermitted}`;
+    return <span className="p7-file-btn disabled" role="img" aria-label={label} title={label}><Icon name={icon} /></span>;
+  }
+  return <a className="p7-file-btn" href={`/api/imports/${row.jobId}/files/${copy}`} aria-label={what} title={what}><Icon name={icon} /></a>;
+}
 
 const sources: Record<string, string> = { user_upload: "User upload", three_pl_feed: "3PL feed", vendor_asn: "Vendor ASN", edi: "EDI" };
 const sourceLabel = (source: string) => sources[source] ?? human(source);
@@ -35,7 +52,10 @@ export function Component() {
     { key: "rows", label: "Rows", width: 12, render: (row) => <><span className="primary">{row.applied} applied</span><span className="sub">{row.skipped} skipped · {row.rejected} rejected</span></> },
     { key: "hash", label: "SHA-256", width: 13, render: (row) => <><span className="serial" title={row.originalHash}>{row.originalHash.slice(0, 12)}…</span>{row.convertedHash && <span className="sub" title={row.convertedHash}>Converted {row.convertedHash.slice(0, 8)}…</span>}</> },
     { key: "storage", label: "Storage", width: 8, render: (row) => <StatusBadge tone={row.storageState === "archived" ? "neutral" : "ok"}>{human(row.storageState)}</StatusBadge> },
-    { key: "download", label: "Download", width: 16, render: (row) => !row.mayDownload ? <span className="muted">Uploader or administrator only</span> : <span className="actions">{row.originalAvailable && <a className="btn sm" href={`/api/imports/${row.jobId}/files/original`}>Original</a>}{row.convertedAvailable && <a className="btn sm" href={`/api/imports/${row.jobId}/files/converted`}>Converted</a>}</span> },
+    { key: "download", label: "Files", width: 7, render: (row) => <span className="p7-file-actions">
+      <FileDownload row={row} copy="original" available={row.originalAvailable} />
+      <FileDownload row={row} copy="converted" available={row.convertedAvailable} />
+    </span> },
   ];
   const exportPath = `/api/imports/history/export${query(filters)}`;
   return <main className="content" id="main" tabIndex={-1}><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Imports", to: "/imports" }, { label: "Upload history" }]} />

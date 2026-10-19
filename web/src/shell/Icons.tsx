@@ -4,7 +4,7 @@ export type IconName =
   | "home" | "plus" | "filter" | "print" | "x" | "down" | "search" | "range" | "tree" | "check" | "panel"
   | "campaign" | "recover" | "policy" | "layers" | "upload" | "coins" | "sliders" | "list" | "grid" | "returns"
   | "swap" | "refurb" | "cycle" | "label" | "sun" | "moon" | "templates" | "globe"
-  | "lookup" | "reconcile" | "report" | "disclosure";
+  | "lookup" | "reconcile" | "report" | "disclosure" | "converted";
 
 export function IconSprite() {
   return (
@@ -57,6 +57,9 @@ export function IconSprite() {
       <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7" /></symbol>
       <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></symbol>
       <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" /></symbol>
+      {/* P7 upload history icon block: the converted copy of an uploaded spreadsheet. */}
+      <symbol id="i-converted" viewBox="0 0 24 24"><path d="M6 3h9l5 5v13H6z" /><path d="M15 3v5h5" /><path d="M9 13a3 3 0 0 1 5.2-2" /><path d="M14.5 9v2.2h-2.2" /><path d="M15 15a3 3 0 0 1-5.2 2" /><path d="M9.5 19v-2.2h2.2" /></symbol>
+      {/* End P7 upload history icon block. */}
       <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></symbol>
     </svg>
   );

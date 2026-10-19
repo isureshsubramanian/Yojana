@@ -15,8 +15,12 @@ test("upload history is server-paged, filterable and offers both downloads", () 
   assert.match(screen, /FindBar/);
   assert.match(screen, /p7Api\.importHistory/);
   assert.match(screen, /row\.mayDownload/);
-  assert.match(screen, /files\/original/);
-  assert.match(screen, /files\/converted/);
+  assert.match(screen, /p7-file-btn disabled/, "a download the viewer may not take stays visible but disabled");
+  assert.match(screen, /title=\{label\}/, "the disabled icon explains who may download in its tooltip");
+  assert.doesNotMatch(screen, />Original<\/a>/, "downloads are icons, not text buttons");
+  assert.match(screen, /files\/\$\{copy\}/);
+  assert.match(screen, /copy="original"/);
+  assert.match(screen, /copy="converted"/);
   assert.match(screen, /Export CSV/);
 });
 

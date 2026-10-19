@@ -66,3 +66,12 @@ html[data-mode="dark"] .portal-frame { color-scheme: dark; }
 .coverage-card strong, .coverage-card span { display: block; }
 .coverage-card span { color: var(--text-2); font-size: 12px; margin-top: 3px; }
 @media (max-width: 980px) { .portal-top { grid-template-columns: 1fr auto; height: auto; min-height: 68px; padding-block: 10px; } .portal-top nav { grid-column: 1 / -1; order: 3; overflow-x: auto; } .portal-account { display: none; } .portal-content { padding: 22px 18px 48px; } .p7-steps, .p7-result-notices { grid-template-columns: 1fr; } .p7-step { border-right: 0; border-bottom: 1px solid var(--border); } }
+
+/* Upload history download icons: enabled links, disabled spans that keep their tooltip, empty slots keep the column aligned. */
+.p7-file-actions { display: inline-flex; gap: 4px; }
+.p7-file-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-s); border: 1px solid var(--border); color: var(--text-1); background: var(--surface-1); }
+.p7-file-btn svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+a.p7-file-btn:hover { background: var(--surface-3); border-color: var(--accent); color: var(--accent); }
+a.p7-file-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.p7-file-btn.disabled { color: var(--text-3); opacity: 0.45; cursor: not-allowed; }
+.p7-file-btn.empty { border-color: transparent; background: transparent; }
