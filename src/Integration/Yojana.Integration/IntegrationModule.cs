@@ -7,6 +7,7 @@ using Yojana.Integration.Inbox;
 using Yojana.Integration.Gateway;
 using Yojana.Serialisation.Contracts;
 using Yojana.Integration.Ordering;
+using Yojana.Integration.Notifications;
 using Yojana.Integration.Outbox;
 using Yojana.Integration.DeadLetters;
 using Yojana.Platform.Scheduling;
@@ -15,6 +16,7 @@ using Yojana.Platform;
 using Yojana.Integration.Security.Audit;
 using Yojana.Integration.Security.Credentials;
 using Yojana.Integration.Security.Cryptography;
+using Yojana.Integration.Security.Persistence;
 using Yojana.Integration.Security.Webhooks;
 using Yojana.Integration.Security.Workers;
 
@@ -33,7 +35,16 @@ public static class IntegrationModule
         builder.Services.AddSingleton<IChangeMarkerComparer, ChangeMarkerComparer>();
         builder.Services.AddScoped<GatewayReferenceStore>();
         builder.Services.AddScoped<ConnectionCapabilityReader>();
+        builder.Services.AddScoped<ConnectorCatalogue>();
+        builder.Services.AddScoped<ConnectorOnboardingChecklistGenerator>();
         builder.Services.AddScoped<InboundGateway>();
+        builder.Services.AddSingleton(InboundTranslationRecoveryOptions.Default);
+        builder.Services.AddScoped<InboundTranslationRecovery>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<InboundTranslationRecoveryJob>(
+            InboundTranslationRecoveryJob.JobName, InboundTranslationRecoveryJob.Cron));
+        builder.Services.AddScoped<ConnectionPollingService>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<ConnectionPollingJob>(
+            ConnectionPollingJob.JobName, ConnectionPollingJob.Cron));
         // The published-event chains already contain Serialisation handlers with their own EF transaction. Resolve the
         // staging service through a factory so Wolverine does not infer IntegrationDbContext as a second transaction
         // owner for that same public message. The stager owns and saves its narrow staging unit of work explicitly.
@@ -47,7 +58,11 @@ public static class IntegrationModule
         builder.Services.AddSingleton(RecurringTenantJob.For<ResequencerJob>(ResequencerJob.JobName, ResequencerJob.Cron));
         builder.Services.AddScoped<OutboxRelaySettings>();
         builder.Services.AddScoped<IOutboundConnectorResolver, OutboundConnectorResolver>();
-        builder.Services.AddScoped<IOutboundCommandParkingSink, DeadLetterParkingSink>();
+        builder.Services.AddScoped<DeadLetterParkingSink>();
+        builder.Services.AddScoped<IOutboundCommandParkingSink>(services =>
+            services.GetRequiredService<DeadLetterParkingSink>());
+        builder.Services.AddScoped<IInboundMessageParkingSink>(services =>
+            services.GetRequiredService<DeadLetterParkingSink>());
         builder.Services.AddScoped<OutboundRelay>();
         builder.Services.AddScoped<DeadLetterService>();
         builder.Services.AddSingleton(RecurringTenantJob.For<OutboxRelayJob>(OutboxRelayJob.JobName, OutboxRelayJob.Cron));
@@ -67,6 +82,22 @@ public static class IntegrationModule
         builder.Services.AddScoped<IItemQueryPort>(sp => sp.GetRequiredService<IntegrationItemQueryPort>());
 
         builder.AddIntegrationSecurity();
+        builder.Services.AddScoped<EfTenantDataKeyStore>();
+        builder.Services.Replace(ServiceDescriptor.Scoped<ITenantDataKeyStore>(services =>
+            services.GetRequiredService<EfTenantDataKeyStore>()));
+        builder.Services.Replace(ServiceDescriptor.Scoped<ITenantDataKeyRewrapStore>(services =>
+            services.GetRequiredService<EfTenantDataKeyStore>()));
+        builder.Services.Replace(ServiceDescriptor.Scoped<ITenantDataKeyRewrapCheckpointStore,
+            EfTenantDataKeyRewrapCheckpointStore>());
+        builder.Services.Replace(ServiceDescriptor.Scoped<IConnectionCredentialStore,
+            EfConnectionCredentialStore>());
+        builder.Services.AddScoped<EfConnectionThrottleStore>();
+        builder.Services.Replace(ServiceDescriptor.Scoped<IConnectionThrottleProfileStore>(services =>
+            services.GetRequiredService<EfConnectionThrottleStore>()));
+        builder.Services.Replace(ServiceDescriptor.Singleton<IConnectionDailyBudgetStore,
+            ScopedEfConnectionDailyBudgetStore>());
+        if (string.IsNullOrWhiteSpace(builder.Configuration["Integration:Security:Audit:Provider"]))
+            builder.Services.Replace(ServiceDescriptor.Scoped<IConnectionAuditSink, EfConnectionAuditSink>());
         return builder;
     }
 

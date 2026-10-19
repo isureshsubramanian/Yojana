@@ -5,6 +5,7 @@ namespace Yojana.Integration.Data.Entities;
 public sealed class ExternalIdMap : ITenantScoped
 {
     public TenantId TenantId { get; set; }
+    public Guid ExternalIdMapId { get; set; }
     public Guid ConnectionId { get; set; }
     public required string EntityType { get; set; }
     public required string ExternalId { get; set; }
@@ -17,8 +18,10 @@ public sealed class ExternalIdMap : ITenantScoped
     public DateTime MappedAt { get; set; }
 }
 
-public static class ExternalMappingSource
+public static class ExternalIdMappingSource
 {
+    public const string Auto = "auto";
+    public const string Migration = "migration";
     public const string Outbound = "outbound";
     public const string Operator = "operator";
     public const string Provisional = "provisional";

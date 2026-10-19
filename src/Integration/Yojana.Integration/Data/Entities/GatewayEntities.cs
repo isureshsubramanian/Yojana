@@ -5,16 +5,24 @@ namespace Yojana.Integration.Data.Entities;
 public sealed class ReferenceProjection : ITenantScoped
 {
     public TenantId TenantId { get; set; }
-    public Guid ConnectionId { get; set; }
     public required string EntityType { get; set; }
-    public required string ExternalId { get; set; }
     public Guid ModuleId { get; set; }
     public string? Code { get; set; }
     public string? DisplayName { get; set; }
     public string? TrackingMode { get; set; }
     public string? Uom { get; set; }
     public bool Deleted { get; set; }
-    public bool Provisional { get; set; }
+    public required string AttributesJson { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public sealed class ConnectorCatalogueEntry : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public required string ConnectorCode { get; set; }
+    public required string DisplayName { get; set; }
+    public required string CustomerCostDisclosure { get; set; }
+    public bool Enabled { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
 

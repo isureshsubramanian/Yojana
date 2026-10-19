@@ -17,7 +17,7 @@ public sealed class IntegrationEndpointTests
             policy => policy.RequireAuthenticatedUser()));
         builder.Services.AddScoped<DeadLetterService>();
         var app = builder.Build();
-        app.MapIntegrationEndpoints();
+        app.MapIntegrationOperationsEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources
             .SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()
             .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api/integration/",

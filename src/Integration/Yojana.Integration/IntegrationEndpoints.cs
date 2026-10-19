@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Integration.DeadLetters;
+using Yojana.Integration.Notifications;
 using Yojana.Platform.Contracts.Security;
 
 namespace Yojana.Integration;
@@ -10,6 +11,12 @@ namespace Yojana.Integration;
 public static class IntegrationEndpoints
 {
     public static IEndpointRouteBuilder MapIntegrationEndpoints(this IEndpointRouteBuilder app)
+    {
+        app.MapIntegrationNotificationEndpoints();
+        return app.MapIntegrationOperationsEndpoints();
+    }
+
+    internal static IEndpointRouteBuilder MapIntegrationOperationsEndpoints(this IEndpointRouteBuilder app)
     {
         var integration = app.MapGroup("/api/integration")
             .RequireAuthorization(YojanaPolicy.IntegrationOperations);

@@ -8,9 +8,9 @@ using Yojana.Platform.Contracts.Time;
 
 namespace Yojana.Integration.DeadLetters;
 
-/// <summary>Persistence adapter used by the relay; it has no connector or retry policy.</summary>
+/// <summary>Persistence adapter used by relay and inbound recovery; it has no connector or retry policy.</summary>
 public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContext tenant, IClock clock)
-    : IOutboundCommandParkingSink
+    : IOutboundCommandParkingSink, IInboundMessageParkingSink
 {
     public async Task ParkAsync(OutboundCommandRow command, string reasonCode, string failure,
         CancellationToken cancellationToken)
@@ -59,6 +59,39 @@ public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContex
                 CreatedAt = clock.UtcNow,
             });
         }
+    }
+
+    public async Task<Guid> ParkInboundAsync(InboundMessage message, string reasonCode, string failure,
+        CancellationToken cancellationToken)
+    {
+        var existing = db.DeadLetterItems.Local.FirstOrDefault(x => x.TenantId == tenant.TenantId
+                && x.SourceKind == DeadLetterSourceKind.InboundMessage && x.SourceId == message.InboundMessageId)
+            ?? await db.DeadLetterItems.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
+                && x.SourceKind == DeadLetterSourceKind.InboundMessage
+                && x.SourceId == message.InboundMessageId, cancellationToken);
+        if (existing is not null) return existing.DeadLetterItemId;
+
+        var id = TimeOrderedId.New(clock.UtcNow);
+        db.DeadLetterItems.Add(new DeadLetterItem
+        {
+            TenantId = tenant.TenantId,
+            DeadLetterItemId = id,
+            ConnectionId = message.ConnectionId,
+            Direction = DeadLetterDirection.Inbound,
+            RecordType = message.MessageType,
+            SourceKind = DeadLetterSourceKind.InboundMessage,
+            SourceId = message.InboundMessageId,
+            ReasonCode = reasonCode,
+            RawPayload = message.RawPayload,
+            CanonicalAttempt = message.CanonicalMessage,
+            Failure = failure,
+            Status = DeadLetterStatus.NeedsAttention,
+            CreatedAt = clock.UtcNow,
+            UpdatedAt = clock.UtcNow,
+        });
+        db.DeadLetterEvents.Add(Event(id, DeadLetterAction.Parked,
+            $"system:connection:{message.ConnectionId:N}", failure, "{}"));
+        return id;
     }
 
     private DeadLetterEvent Event(Guid itemId, string action, string actor, string? reason, string details) => new()

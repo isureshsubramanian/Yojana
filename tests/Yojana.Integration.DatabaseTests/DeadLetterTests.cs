@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.DeadLetters;
+using Yojana.Integration.Gateway;
 using Yojana.Integration.Outbox;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
@@ -37,7 +38,7 @@ public sealed class DeadLetterTests(IntegrationHostFixture fixture)
         Assert.Equal(OutboundConnectorOutcome.Manual, command.Outcome);
         var mapping = await db.ExternalIdMaps.SingleAsync(x => x.ExternalId == "ERP-MANUAL-1");
         Assert.Equal(moduleId, mapping.ModuleId);
-        Assert.Equal(ExternalMappingSource.Manual, mapping.MappingSource);
+        Assert.Equal(ExternalIdMappingSource.Manual, mapping.MappingSource);
         Assert.Equal(actor, mapping.MappedBy);
         Assert.True(await db.DeadLetterEvents.AnyAsync(x => x.DeadLetterItemId == task.DeadLetterItemId
             && x.Action == DeadLetterAction.ManualMapping && x.ActorRef == actor));
@@ -118,15 +119,56 @@ public sealed class DeadLetterTests(IntegrationHostFixture fixture)
             (await db.DeadLetterItems.SingleAsync(x => x.DeadLetterItemId == mappedItem)).Status);
         Assert.Equal(moduleId, (await db.ExternalIdMaps.SingleAsync(x => x.ConnectionId == mappedConnection
             && x.ExternalId == "ITEM-FIC-1")).ModuleId);
-        var provisionalReference = await db.ReferenceProjections.SingleAsync(x =>
-            x.ConnectionId == provisionalConnection && x.ExternalId == "PARTY-FIC-2");
-        Assert.True(provisionalReference.Provisional);
-        Assert.Equal(provisional.ModuleId, provisionalReference.ModuleId);
+        var provisionalMapping = await db.ExternalIdMaps.SingleAsync(x =>
+            x.ConnectionId == provisionalConnection && x.ExternalId == "PARTY-FIC-2" && x.ValidTo == null);
+        Assert.Equal(ExternalIdMappingSource.Provisional, provisionalMapping.MappingSource);
+        Assert.Equal(provisional.ModuleId, provisionalMapping.ModuleId);
+        Assert.Equal("Provisional integration record", await db.ReferenceProjections
+            .Where(x => x.EntityType == "party" && x.ModuleId == provisional.ModuleId)
+            .Select(x => x.DisplayName).SingleAsync());
         Assert.Equal(2, await db.DeadLetterEvents.CountAsync(x =>
             (x.DeadLetterItemId == mappedItem || x.DeadLetterItemId == provisionalItem)
             && x.ActorRef == actor
             && (x.Action == DeadLetterAction.MapAndRetry
                 || x.Action == DeadLetterAction.CreateProvisionalAndRetry)));
+    }
+
+    [DatabaseFact]
+    public async Task Exhausted_inbound_translation_is_parked_and_operator_retry_resets_attempts()
+    {
+        ResetClock();
+        var tenant = await fixture.NewTenantAsync("inbound-dlq");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var inboundId = await AddInboundAsync(tenant, connection);
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var inbound = await db.InboundMessages.SingleAsync(x => x.InboundMessageId == inboundId);
+        inbound.TranslationStatus = InboundTranslationStatus.Processing;
+        inbound.TranslationAttemptCount = InboundTranslationRecoveryOptions.Default.MaximumAttempts;
+        inbound.TranslationStartedAt = fixture.Clock.UtcNow.AddMinutes(-5);
+        await db.SaveChangesAsync();
+
+        await scope.ServiceProvider.GetRequiredService<InboundTranslationRecovery>()
+            .RecordFailureAsync(inboundId, new InvalidOperationException("Fictional mapping failure"),
+                CancellationToken.None);
+
+        inbound = await db.InboundMessages.SingleAsync(x => x.InboundMessageId == inboundId);
+        Assert.Equal(InboundTranslationStatus.NeedsAttention, inbound.TranslationStatus);
+        Assert.Equal("translation_attempts_exhausted", inbound.AttentionReasonCode);
+        var deadLetter = await db.DeadLetterItems.SingleAsync(x => x.SourceId == inboundId);
+        Assert.Equal(DeadLetterStatus.NeedsAttention, deadLetter.Status);
+
+        await scope.ServiceProvider.GetRequiredService<DeadLetterService>().MapAndRetryAsync(
+            deadLetter.DeadLetterItemId, new("party", "PARTY-FIC-1", Guid.NewGuid()), "test-operator",
+            CancellationToken.None);
+
+        await db.Entry(inbound).ReloadAsync();
+        Assert.Equal(InboundTranslationStatus.Pending, inbound.TranslationStatus);
+        Assert.Equal(0, inbound.TranslationAttemptCount);
+        Assert.Null(inbound.TranslationStartedAt);
+        Assert.Null(inbound.NextTranslationAttemptAt);
+        Assert.Null(inbound.LastTranslationError);
+        Assert.Null(inbound.AttentionReasonCode);
     }
 
     private async Task<(Guid CommandId, Guid ModuleId)> AddCommandAsync(TenantId tenant, Guid connection,
