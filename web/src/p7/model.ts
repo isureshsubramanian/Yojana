@@ -11,7 +11,7 @@ export function reconciliationKpis(result: ReconciliationPage | null) { return r
 export function xrefIndent(row: Pick<XrefRow, "depth">): number { return Math.max(0, row.depth) * 18; }
 export const fixedDisclosureFields = new Set(["party.data:public", "document.references:public", "service.history:public", "service.internal_notes:public", "service.cost:public", "party.data:owner", "service.internal_notes:owner", "service.cost:owner"]);
 export function disclosureLocked(row: DisclosureRow): boolean { return fixedDisclosureFields.has(`${row.field}:${row.tier}`) || row.tier === "internal"; }
-const acronyms = new Set(["csv", "id", "imei", "mac", "po", "qr", "rma", "sla", "udi", "uii", "vin", "xls", "xlsx"]);
+const acronyms = new Set(["a", "b", "csv", "id", "imei", "mac", "po", "qr", "rma", "sla", "udi", "uii", "vin", "xls", "xlsx"]);
 export function human(value: string): string {
   const words = value.replace(/[._]/g, " ").split(" ").filter(Boolean);
   return words.map((word, index) => acronyms.has(word.toLowerCase()) ? word.toUpperCase()

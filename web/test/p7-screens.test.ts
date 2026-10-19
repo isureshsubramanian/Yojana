@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { acceptedImportFormats, acceptsImportFile, actionOptions, coverageLabel, disclosureLocked, internalSections, portalUnitSections, publicLookupFields, reconciliationKpis, splitValues, xrefIndent } from "../src/p7/model.ts";
+import { acceptedImportFormats, acceptsImportFile, actionOptions, coverageLabel, disclosureLocked, human, internalSections, portalUnitSections, publicLookupFields, reconciliationKpis, splitValues, xrefIndent } from "../src/p7/model.ts";
+import { countryName } from "../src/reference/countries.ts";
 
 test("import job accepts every approved spreadsheet format and rejects unrelated files", () => {
   assert.deepEqual(acceptedImportFormats, ["csv", "xlsx", "xls"]);
@@ -11,6 +12,12 @@ test("import job accepts every approved spreadsheet format and rejects unrelated
 test("compare mode never offers assign for an existing collision", () => {
   assert.deepEqual(actionOptions({ comparisonPartition: "existing_collision" }), ["skip", "flag"]);
   assert.deepEqual(actionOptions({ comparisonPartition: "only_in_a" }), ["assign", "skip", "flag"]);
+  assert.equal(human("only_in_a"), "Only in A");
+  assert.equal(human("only_in_b"), "Only in B");
+});
+
+test("the country catalogue displays names while preserving ISO values", () => {
+  assert.notEqual(countryName("IN"), "IN");
 });
 
 test("reconcile customer list preserves all five server totals", () => {

@@ -11,7 +11,8 @@ import { openDrawer } from "../shell/drawerStore";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { claimsApi } from "./api";
-import { COUNTRY_CODES, LINE_KINDS, REMEDIES, campaignCoverTerms, campaignOptionHint, countryName, humanise, money, overlayFlagsText } from "./format";
+import { COUNTRY_CODES, countryName } from "../reference/countries";
+import { LINE_KINDS, REMEDIES, campaignCoverTerms, campaignOptionHint, humanise, money, overlayFlagsText } from "./format";
 import type { CampaignCoverageSource, ClaimCampaignOption, ClaimEvidenceInput, CoverageFamily, CurrencyInfo, SubmitClaim, TenantCurrency } from "./types";
 import "./claims.css";
 

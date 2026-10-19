@@ -163,7 +163,7 @@ public sealed class PortalWriteHttpTests(SerialisationHostFixture fixture)
         {
             UserId = user.Id,
             TenantId = tenant,
-            Roles = [PortalMembershipClaim.For(partyRef)],
+            CustomerPartyRef = partyRef,
         });
         db.Users.Add(user);
         await db.SaveChangesAsync();

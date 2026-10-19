@@ -138,13 +138,18 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         }
 
         var membership = user.Memberships.SingleOrDefault(row => row.TenantId == tenant);
-        // COUPLING (membership role marker): SignInService is the sole reader of this prefix. The existing membership
-        // schema has no customer-party column; changing this writer without its reader removes the portal claim.
-        var roles = new List<string> { PortalMembershipClaim.For(Party("C-NANDIRA").Id) };
         if (membership is null)
-            user.Memberships.Add(new UserTenantMembership { UserId = user.Id, TenantId = tenant, Roles = roles });
+            user.Memberships.Add(new UserTenantMembership
+            {
+                UserId = user.Id,
+                TenantId = tenant,
+                CustomerPartyRef = Party("C-NANDIRA").Id,
+            });
         else
-            membership.Roles = roles;
+        {
+            membership.CustomerPartyRef = Party("C-NANDIRA").Id;
+            membership.Roles = [];
+        }
         await db.SaveChangesAsync(cancellationToken);
     }
 

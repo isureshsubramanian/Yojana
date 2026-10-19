@@ -5,6 +5,7 @@ using Wolverine;
 using Wolverine.EntityFrameworkCore;
 using Xunit;
 using Yojana.Platform.Contracts.Identifiers;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
@@ -107,5 +108,66 @@ public sealed class MessagingAndSchedulingTests(PlatformHostFixture fixture)
         Assert.Equal(DevelopmentSeeder.DevTenantId.ToString(), principal.FindFirst(Contracts.Security.YojanaClaim.TenantId)!.Value);
         Assert.Contains(principal.FindAll(Contracts.Security.YojanaClaim.Role), c => c.Value == Contracts.Security.YojanaRole.ServiceManager);
         Assert.True(principal.IsInRole(Contracts.Security.YojanaRole.ServiceManager));
+    }
+
+    [DatabaseFact]
+    public async Task Membership_party_reference_is_the_only_source_of_the_portal_party_claim()
+    {
+        var withParty = new TenantId(Guid.NewGuid());
+        var withoutParty = new TenantId(Guid.NewGuid());
+        var prefixedRole = new TenantId(Guid.NewGuid());
+        var partyRef = Guid.NewGuid();
+        var user = new AppUser
+        {
+            Id = Guid.NewGuid(),
+            Email = $"portal-{Guid.NewGuid():N}@tests.local",
+            DisplayName = "Fictional Portal Member",
+            CreatedAt = new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc),
+        };
+        using (var scope = fixture.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            db.Tenants.AddRange(
+                new Tenant { Id = withParty, Code = ("p" + Guid.NewGuid().ToString("N"))[..20], Name = "Party membership", CreatedAt = user.CreatedAt },
+                new Tenant { Id = withoutParty, Code = ("n" + Guid.NewGuid().ToString("N"))[..20], Name = "No party membership", CreatedAt = user.CreatedAt },
+                new Tenant { Id = prefixedRole, Code = ("r" + Guid.NewGuid().ToString("N"))[..20], Name = "Role marker membership", CreatedAt = user.CreatedAt });
+            user.Memberships.Add(new UserTenantMembership
+            {
+                UserId = user.Id,
+                TenantId = withParty,
+                CustomerPartyRef = partyRef,
+                Roles = [YojanaRole.ServiceDesk],
+            });
+            user.Memberships.Add(new UserTenantMembership
+            {
+                UserId = user.Id,
+                TenantId = withoutParty,
+                Roles = [YojanaRole.ServiceDesk],
+            });
+            user.Memberships.Add(new UserTenantMembership
+            {
+                UserId = user.Id,
+                TenantId = prefixedRole,
+                Roles = [$"customer_party:{Guid.NewGuid():D}"],
+            });
+            db.Users.Add(user);
+            await db.SaveChangesAsync();
+        }
+
+        using var signInScope = fixture.Services.CreateScope();
+        var signIn = signInScope.ServiceProvider.GetRequiredService<SignInService>();
+        var choices = await signIn.TenantsForAsync(user.Id, CancellationToken.None);
+
+        var partyPrincipal = SignInService.PrincipalFor(user, choices.Single(choice => choice.TenantId == withParty));
+        Assert.Equal(partyRef.ToString("D"), partyPrincipal.FindFirst(YojanaClaim.CustomerPartyRef)?.Value);
+        Assert.Equal(YojanaRole.ServiceDesk, partyPrincipal.FindFirst(YojanaClaim.Role)?.Value);
+
+        var noPartyPrincipal = SignInService.PrincipalFor(user, choices.Single(choice => choice.TenantId == withoutParty));
+        Assert.Null(noPartyPrincipal.FindFirst(YojanaClaim.CustomerPartyRef));
+
+        var prefixedRolePrincipal = SignInService.PrincipalFor(user, choices.Single(choice => choice.TenantId == prefixedRole));
+        Assert.Null(prefixedRolePrincipal.FindFirst(YojanaClaim.CustomerPartyRef));
+        Assert.DoesNotContain(prefixedRolePrincipal.FindAll(YojanaClaim.Role),
+            claim => claim.Value.StartsWith("customer_party:", StringComparison.Ordinal));
     }
 }
