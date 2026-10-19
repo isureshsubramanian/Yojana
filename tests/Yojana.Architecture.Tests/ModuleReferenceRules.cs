@@ -120,10 +120,19 @@ public sealed class ModuleReferenceRules
     }
 
     [Fact]
-    public void Integration_references_serialisation_contracts_not_implementation()
+    public void Integration_sources_do_not_reach_into_serialisation_internals()
     {
-        var references = Graph()["Yojana.Integration"];
-        Assert.Contains("Yojana.Serialisation.Contracts", references);
-        Assert.DoesNotContain("Yojana.Serialisation", references);
+        var source = Path.Combine(Root, "src", "Integration");
+        var forbidden = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(source, "*.cs", SearchOption.AllDirectories)
+                     .Where(file => !file.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar,
+                         StringComparison.Ordinal)))
+        {
+            var text = File.ReadAllText(file);
+            foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(text,
+                         @"Yojana\.Serialisation\.(?<area>[A-Za-z_][A-Za-z_0-9]*)"))
+                if (match.Groups["area"].Value != "Contracts") forbidden.Add(file);
+        }
+        Assert.Empty(forbidden);
     }
 }

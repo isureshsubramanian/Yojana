@@ -38,6 +38,8 @@ public sealed class InboundTranslationRecovery(
         var stale = now - options.GracePeriod;
         var ids = await db.InboundMessages.AsNoTracking()
             .Where(x => x.TenantId == tenant.TenantId && x.IsLatest
+                && db.Connections.Any(connection => connection.TenantId == x.TenantId
+                    && connection.ConnectionId == x.ConnectionId && connection.Status == ConnectionStatus.Active)
                 && ((x.TranslationStatus == InboundTranslationStatus.Pending && x.AcceptedAt <= stale
                         && (x.NextTranslationAttemptAt == null || x.NextTranslationAttemptAt <= now))
                     || (x.TranslationStatus == InboundTranslationStatus.Failed

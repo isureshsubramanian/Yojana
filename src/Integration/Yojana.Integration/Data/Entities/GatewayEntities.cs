@@ -75,6 +75,7 @@ public sealed class ConnectionGatewaySetting : ITenantScoped
     public Guid? LedgerConnectionId { get; set; }
     public required string OutboundMode { get; set; }
     public required string NativeWarrantyObjectMode { get; set; }
+    public bool ReadOnly { get; set; }
     public int OrderingWaitMinutes { get; set; } = 15;
     public string OnHandStatusMappingJson { get; set; } = "{}";
 }

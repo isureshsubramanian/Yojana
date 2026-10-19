@@ -21,6 +21,7 @@ public sealed record Cx01ConnectionSettings(
     string OwnReferencePrefix = "YOJANA:",
     int PollPageSize = 100,
     int KeepAliveMinutes = 20,
+    IReadOnlyDictionary<string, bool>? TrackingTableDeclarations = null,
     IReadOnlyDictionary<string, Cx01FieldSource>? FieldMap = null)
 {
     public Cx01ConnectionSettings Validate()

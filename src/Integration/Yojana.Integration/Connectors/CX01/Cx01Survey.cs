@@ -27,13 +27,37 @@ public sealed record Cx01SurveyWebhook(
     int SubscriptionCount,
     string EnablementFailureExplanation);
 
+public sealed record Cx01TrackingTablePermission(string State, string Source, DateTime? ObservedAt = null);
+
+public interface ICx01TrackingPermissionSink
+{
+    Task RecordDeniedAsync(Guid connectionId, string remoteMessage, CancellationToken ct);
+}
+
+public static class Cx01TrackingPermissions
+{
+    public static IReadOnlyList<string> Tables { get; } = ["OITL", "ITL1", "OSRN"];
+    public static IReadOnlyDictionary<string, Cx01TrackingTablePermission> Declared(Cx01ConnectionSettings settings) =>
+        Tables.ToDictionary(table => table, table =>
+            settings.TrackingTableDeclarations?.FirstOrDefault(pair =>
+                StringComparer.OrdinalIgnoreCase.Equals(pair.Key, table)) is { Key: not null } declared
+                ? new Cx01TrackingTablePermission(declared.Value ? "allowed" : "not_allowed", "owner_declared")
+                : settings.AllowlistedTrackingTables?.Contains(table, StringComparer.OrdinalIgnoreCase) == true
+                    ? new("allowed", "owner_declared") : new("unknown", "unknown"), StringComparer.Ordinal);
+
+    public static IReadOnlyList<string> DeniedTables(string message) => Tables.Where(table =>
+        System.Text.RegularExpressions.Regex.IsMatch(message, @"(?<![A-Za-z0-9_])" + table + @"(?![A-Za-z0-9_])",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+        .ToList();
+}
+
 public sealed record Cx01SurveyResult(
     Guid ConnectionId,
     DateTime ObservedAt,
     string Release,
     Cx01SurveyWebhook Webhooks,
     IReadOnlyList<Cx01SurveyUserField> UserFields,
-    IReadOnlyDictionary<string, bool> TrackingTableAllowlist,
+    IReadOnlyDictionary<string, Cx01TrackingTablePermission> TrackingTableAllowlist,
     Cx01SurveyOwnerAnswers OwnerAnswers);
 
 public sealed record Cx01SurveyPage(
@@ -41,7 +65,7 @@ public sealed record Cx01SurveyPage(
     DateTime ObservedAt,
     string Release,
     Cx01SurveyWebhook Webhooks,
-    IReadOnlyDictionary<string, bool> TrackingTableAllowlist,
+    IReadOnlyDictionary<string, Cx01TrackingTablePermission> TrackingTableAllowlist,
     Cx01SurveyOwnerAnswers OwnerAnswers,
     IReadOnlyList<Cx01SurveyUserField> UserFields,
     string? NextCursor);
@@ -92,13 +116,7 @@ public sealed class Cx01SurveyProbe(ICx01SurveyRemotePort remote, IClock clock)
         var subscriptionCount = releaseSupports
             ? await SubscriptionCountAsync(connectionId, cancellationToken) : 0;
         var userFields = await UserFieldsAsync(connectionId, cancellationToken);
-        var observed = configured.AllowlistedTrackingTables?.ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
-        var allowlist = new Dictionary<string, bool>(StringComparer.Ordinal)
-        {
-            ["OITL"] = observed.Contains("OITL"),
-            ["ITL1"] = observed.Contains("ITL1"),
-            ["OSRN"] = observed.Contains("OSRN"),
-        };
+        var allowlist = Cx01TrackingPermissions.Declared(configured);
         return new(connectionId, clock.UtcNow, release,
             new(releaseSupports, webhookEnabled, Int(adminRoot, "WebhookRetryTimes"),
                 Int(adminRoot, "WebhookRetryInterval"), Int(adminRoot, "WebhookRequestTimeout"),
@@ -173,7 +191,8 @@ public sealed class Cx01SurveyService(
     IntegrationDbContext db,
     ITenantContext tenant,
     Cx01Settings settings,
-    Cx01SurveyProbe probe) : ICx01SurveyReader
+    Cx01SurveyProbe probe,
+    IClock clock) : ICx01SurveyReader, ICx01TrackingPermissionSink
 {
     public async Task<Cx01SurveyResult> RunAsync(Guid connectionId, Cx01SurveyOwnerAnswers answers,
         CancellationToken cancellationToken)
@@ -194,6 +213,14 @@ public sealed class Cx01SurveyService(
             };
             db.Cx01SurveyRecords.Add(row);
         }
+        var previous = row.ResultJson == "{}" ? null : ReadResult(row.ResultJson);
+        if (previous is not null)
+        {
+            var merged = result.TrackingTableAllowlist.ToDictionary(pair => pair.Key, pair => pair.Value);
+            foreach (var pair in previous.TrackingTableAllowlist.Where(pair => pair.Value.Source == "remote_table_denied"))
+                merged[pair.Key] = pair.Value;
+            result = result with { TrackingTableAllowlist = merged };
+        }
         row.ObservedAt = result.ObservedAt;
         row.ResultJson = JsonSerializer.Serialize(result, IntegrationContracts.Json);
         await db.SaveChangesAsync(cancellationToken);
@@ -204,7 +231,37 @@ public sealed class Cx01SurveyService(
     {
         var json = await db.Cx01SurveyRecords.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == connectionId).Select(x => x.ResultJson).SingleOrDefaultAsync(cancellationToken);
-        return json is null ? null : JsonSerializer.Deserialize<Cx01SurveyResult>(json, IntegrationContracts.Json);
+        return json is null ? null : ReadResult(json);
+    }
+
+    public async Task RecordDeniedAsync(Guid connectionId, string remoteMessage, CancellationToken ct)
+    {
+        var denied = Cx01TrackingPermissions.DeniedTables(remoteMessage);
+        if (denied.Count == 0) return;
+        var row = await db.Cx01SurveyRecords.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
+            && x.ConnectionId == connectionId, ct);
+        if (row is null) return;
+        var result = ReadResult(row.ResultJson);
+        var merged = result.TrackingTableAllowlist.ToDictionary(pair => pair.Key, pair => pair.Value);
+        foreach (var table in denied)
+            merged[table] = new("not_allowed", "remote_table_denied", clock.UtcNow);
+        row.ResultJson = JsonSerializer.Serialize(result with { TrackingTableAllowlist = merged }, IntegrationContracts.Json);
+        await db.SaveChangesAsync(ct);
+    }
+
+    // Earlier survey records stored false for absence, so false can only be migrated to unknown.
+    // A legacy true retains its owner-declared evidence; no remote conclusion is invented during this upgrade.
+    private static Cx01SurveyResult ReadResult(string json)
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!;
+        if (node["tracking_table_allowlist"] is System.Text.Json.Nodes.JsonObject values)
+            foreach (var pair in values.ToList())
+                if (pair.Value is System.Text.Json.Nodes.JsonValue value && value.TryGetValue<bool>(out var allowed))
+                    values[pair.Key] = JsonSerializer.SerializeToNode(new Cx01TrackingTablePermission(
+                        allowed ? "allowed" : "unknown", allowed ? "owner_declared" : "unknown"), IntegrationContracts.Json);
+        var result = node.Deserialize<Cx01SurveyResult>(IntegrationContracts.Json)!;
+        return result with { TrackingTableAllowlist = result.TrackingTableAllowlist
+            .ToDictionary(pair => pair.Key.ToUpperInvariant(), pair => pair.Value, StringComparer.OrdinalIgnoreCase) };
     }
 
     public async Task<Cx01SurveyPage?> LatestPageAsync(Guid connectionId, string? cursor, int take,

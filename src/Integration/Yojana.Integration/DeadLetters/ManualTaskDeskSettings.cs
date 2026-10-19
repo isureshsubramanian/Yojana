@@ -22,7 +22,7 @@ public sealed class ManualTaskDeskSettings(ITenantSettings settings)
 {
     public const string Key = "integration.manual_task_desks";
     public static readonly ManualTaskDeskPolicy Default = new(
-        [new("finance", "Finance"), new("warehouse", "Warehouse"), new("service", "Service")],
+        [new("finance", "Finance"), new("warehouse", "Warehouse"), new("service", "Service"), new("integration", "Integration")],
         [
             new("CreateCreditMemo", "finance"),
             new("PostWarrantyExpense", "finance"),

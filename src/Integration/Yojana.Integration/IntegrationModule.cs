@@ -1,3 +1,4 @@
+using Yojana.Integration.Connections;
 using Azure.Identity;
 using Azure.Storage.Blobs;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,6 +35,13 @@ public static class IntegrationModule
     public static IHostApplicationBuilder AddIntegrationModule(this IHostApplicationBuilder builder)
     {
         builder.AddModuleDbContext<IntegrationDbContext>(Schema);
+        builder.Services.AddScoped<IConnectionBusyObserver, ConnectionBusyAuditObserver>();
+        builder.Services.AddScoped<ConnectionCommands>();
+        builder.Services.AddScoped<ConnectionQueries>();
+        builder.Services.AddScoped<ConnectionHealthSettings>();
+        builder.Services.AddScoped<ConnectionHealthProjection>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<ConnectionHealthJob>(ConnectionHealthJob.JobName, ConnectionHealthJob.Cron));
+        builder.Services.AddKeyedScoped<IConnectionLifecycleAdapter, Cx01ConnectionLifecycleAdapter>(Cx01Capabilities.ConnectorCode);
         builder.Services.AddScoped<IdempotencyIndex>();
         builder.Services.AddScoped<InboundMessageStore>();
         builder.Services.AddSingleton<IChangeMarkerComparer, ChangeMarkerComparer>();
@@ -41,6 +49,10 @@ public static class IntegrationModule
         builder.Services.AddScoped<ConnectionCapabilityReader>();
         builder.Services.AddScoped<ConnectorCatalogue>();
         builder.Services.AddScoped<ConnectorOnboardingChecklistGenerator>();
+        builder.Services.AddScoped<ConnectorOnboardingConfirmations>();
+        builder.Services.AddSingleton<IConnectorOnboardingProfiles, ConnectorOnboardingProfiles>();
+        builder.Services.AddKeyedSingleton<IConnectorOnboardingProfile, Cx01OnboardingProfile>(
+            Cx01Capabilities.ConnectorCode);
         builder.Services.AddScoped<InboundGateway>();
         builder.Services.AddSingleton(InboundTranslationRecoveryOptions.Default);
         builder.Services.AddScoped<InboundTranslationRecovery>();
@@ -71,6 +83,7 @@ public static class IntegrationModule
         builder.Services.AddScoped<Cx01SurveyProbe>();
         builder.Services.AddScoped<Cx01SurveyService>();
         builder.Services.AddScoped<Cx01FieldMapService>();
+        builder.Services.AddScoped<ICx01TrackingPermissionSink>(services => services.GetRequiredService<Cx01SurveyService>());
         builder.Services.AddScoped<ICx01SurveyReader>(services =>
             services.GetRequiredService<Cx01SurveyService>());
         builder.Services.AddScoped<Cx01WebhookMaintenance>();
@@ -142,8 +155,25 @@ public static class IntegrationModule
             services.GetRequiredService<EfConnectionThrottleStore>()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IConnectionDailyBudgetStore,
             ScopedEfConnectionDailyBudgetStore>());
+        builder.Services.AddScoped<EfConnectionAuditSink>();
         if (string.IsNullOrWhiteSpace(builder.Configuration["Integration:Security:Audit:Provider"]))
-            builder.Services.Replace(ServiceDescriptor.Scoped<IConnectionAuditSink, EfConnectionAuditSink>());
+            builder.Services.Replace(ServiceDescriptor.Scoped<IConnectionAuditSink>(services =>
+                services.GetRequiredService<EfConnectionAuditSink>()));
+        else
+        {
+            var configured = builder.Services.Last(descriptor => descriptor.ServiceType == typeof(IConnectionAuditSink));
+            builder.Services.Remove(configured);
+            builder.Services.Add(ServiceDescriptor.Describe(typeof(ConfiguredConnectionAuditSink), services =>
+                new ConfiguredConnectionAuditSink((IConnectionAuditSink)(configured.ImplementationInstance
+                    ?? configured.ImplementationFactory?.Invoke(services)
+                    ?? ActivatorUtilities.CreateInstance(services, configured.ImplementationType!))), configured.Lifetime));
+            // TIGHT COUPLING (audit journal composition): JournalledConnectionAuditSink must pair the configured
+            // immutable sink with EfConnectionAuditSink. Storage APIs offer no shared transaction; removing either
+            // side loses the immutable record or the paged connection_event feed. The sink documents write ordering.
+            builder.Services.AddScoped<IConnectionAuditSink>(services => new JournalledConnectionAuditSink(
+                services.GetRequiredService<EfConnectionAuditSink>(),
+                services.GetRequiredService<ConfiguredConnectionAuditSink>().Sink));
+        }
         return builder;
     }
 

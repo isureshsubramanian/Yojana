@@ -1,3 +1,4 @@
+using Yojana.Integration.Connections;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
@@ -30,7 +31,8 @@ public sealed class Cx01Transport(
     IConnectionThrottleWorkerRegistry workers,
     IClock clock,
     IConnectionThrottleDelay delay,
-    IConnectionRetryJitter jitter) : ICx01Transport, IDisposable
+    IConnectionRetryJitter jitter,
+    IConnectionBusyObserver? busy = null) : ICx01Transport, IDisposable
 {
     private readonly ConcurrentDictionary<ConnectionWorkerKey, HttpMessageInvoker> clients = new();
 
@@ -45,7 +47,7 @@ public sealed class Cx01Transport(
 
     private HttpMessageInvoker Client(ConnectionWorkerKey key) => clients.GetOrAdd(key, workerKey =>
     {
-        var rateLimited = new ConnectionRateLimitedHandler(workerKey, profiles, workers, clock, delay, jitter)
+        var rateLimited = new ConnectionRateLimitedHandler(workerKey, profiles, workers, clock, delay, jitter, busy: busy)
         {
             InnerHandler = new SocketsHttpHandler
             {
@@ -344,6 +346,9 @@ public sealed class Cx01SessionMaintenance(
         {
             try
             {
+                await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, connection, cancellationToken);
+                if (!await db.Connections.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
+                    && x.ConnectionId == connection && x.Status == ConnectionStatus.Active, cancellationToken)) continue;
                 _ = await settings.GetAsync(connection, cancellationToken);
                 await client.KeepAliveAsync(connection, cancellationToken);
             }
