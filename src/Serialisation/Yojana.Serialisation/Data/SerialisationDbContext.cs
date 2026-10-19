@@ -1928,6 +1928,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(row => row.InboxReference).HasMaxLength(500);
             b.Property(row => row.OriginalFileReference).HasMaxLength(500);
             b.Property(row => row.ConvertedFileReference).HasMaxLength(500);
+            b.Property(row => row.OriginalFileCleanupReference).HasMaxLength(500);
+            b.Property(row => row.ConvertedFileCleanupReference).HasMaxLength(500);
             b.Property(row => row.ActorRef).HasMaxLength(200);
             b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
             b.HasIndex(row => new { row.TenantId, row.Source, row.OriginalHash, row.Mode, row.TargetType, row.TargetId, row.TargetLine })

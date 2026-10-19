@@ -3520,6 +3520,11 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("varbinary(max)")
                         .HasColumnName("converted_content");
 
+                    b.Property<string>("ConvertedFileCleanupReference")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("converted_file_cleanup_reference");
+
                     b.Property<string>("ConvertedFileReference")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)")
@@ -3573,6 +3578,11 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<byte[]>("OriginalContent")
                         .HasColumnType("varbinary(max)")
                         .HasColumnName("original_content");
+
+                    b.Property<string>("OriginalFileCleanupReference")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("original_file_cleanup_reference");
 
                     b.Property<string>("OriginalFileReference")
                         .HasMaxLength(500)

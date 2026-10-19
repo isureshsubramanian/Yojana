@@ -24,6 +24,15 @@ test("upload history is server-paged, filterable and offers both downloads", () 
   assert.match(screen, /Export CSV/);
 });
 
+test("import-file settings expose active storage, named archive store and calendar age", () => {
+  const screen = readFileSync(new URL("../src/settings/ImportFileSettings.tsx", import.meta.url), "utf8");
+  assert.match(screen, /Active storage/);
+  assert.match(screen, /Archive store/);
+  assert.match(screen, /Months/);
+  assert.match(screen, /Years/);
+  assert.match(screen, /tenant_administrator/);
+});
+
 test("compare mode never offers assign for an existing collision", () => {
   assert.deepEqual(actionOptions({ comparisonPartition: "existing_collision" }), ["skip", "flag"]);
   assert.deepEqual(actionOptions({ comparisonPartition: "only_in_a" }), ["assign", "skip", "flag"]);

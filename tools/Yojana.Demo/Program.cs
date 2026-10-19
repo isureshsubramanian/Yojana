@@ -19,6 +19,10 @@ var operationalConnection = new Microsoft.Data.SqlClient.SqlConnectionStringBuil
 operationalConnection.InitialCatalog += "_files";
 builder.Configuration["Serialisation:ImportFiles:DatabaseConnectionString"] ??= operationalConnection.ConnectionString;
 builder.Configuration["Serialisation:ImportFiles:FileRoot"] ??= Path.Combine(Path.GetTempPath(), "yojana-import-files-demo");
+operationalConnection.InitialCatalog = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(builder.Configuration["Platform:ConnectionString"]).InitialCatalog + "_files_archive";
+builder.Configuration["Serialisation:ImportFiles:ArchiveStores:0:Name"] ??= "long-term";
+builder.Configuration["Serialisation:ImportFiles:ArchiveStores:0:Kind"] ??= "database";
+builder.Configuration["Serialisation:ImportFiles:ArchiveStores:0:ConnectionString"] ??= operationalConnection.ConnectionString;
 builder.Configuration["Platform:MigrateOnStartup"] = "false";
 builder.Configuration["Platform:AutoBuildMessageStorage"] =
     builder.Configuration["Platform:AutoBuildMessageStorage"] ?? "false";

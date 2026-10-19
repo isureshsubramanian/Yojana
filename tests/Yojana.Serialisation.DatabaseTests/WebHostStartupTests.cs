@@ -35,6 +35,13 @@ public sealed class WebHostStartupTests(SerialisationHostFixture fixture, ITestO
         start.Environment["ASPNETCORE_URLS"] = $"http://127.0.0.1:{port}";
         start.Environment["Platform__ConnectionString"] = SerialisationHostFixture.ConnectionString;
         start.Environment["Serialisation__ImportFiles__DatabaseConnectionString"] = SerialisationHostFixture.ImportFilesConnectionString;
+        start.Environment["Serialisation__ImportFiles__FileRoot"] = SerialisationHostFixture.ImportFileRoot;
+        start.Environment["Serialisation__ImportFiles__ArchiveStores__0__Name"] = "folder-archive";
+        start.Environment["Serialisation__ImportFiles__ArchiveStores__0__Kind"] = "folder";
+        start.Environment["Serialisation__ImportFiles__ArchiveStores__0__Path"] = SerialisationHostFixture.ImportFileArchiveRoot;
+        start.Environment["Serialisation__ImportFiles__ArchiveStores__1__Name"] = "database-archive";
+        start.Environment["Serialisation__ImportFiles__ArchiveStores__1__Kind"] = "database";
+        start.Environment["Serialisation__ImportFiles__ArchiveStores__1__ConnectionString"] = SerialisationHostFixture.ImportFilesArchiveConnectionString;
         start.Environment["Platform__MigrateOnStartup"] = "false";
         start.Environment["Platform__AutoBuildMessageStorage"] = "false";
         start.Environment["Platform__ServiceName"] = "yojana-serialisation-tests";

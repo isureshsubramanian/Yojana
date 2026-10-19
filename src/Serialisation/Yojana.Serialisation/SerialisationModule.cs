@@ -46,8 +46,16 @@ public static class SerialisationModule
             throw new InvalidOperationException("import_file_database_connection_not_configured: Serialisation:ImportFiles:DatabaseConnectionString is required because database storage is the tenant default.");
         importFiles.DatabaseConnectionString = PlatformOptions.Resolve(importFiles.DatabaseConnectionString,
             Environment.GetEnvironmentVariable);
+        foreach (var archiveStore in importFiles.ArchiveStores.Where(x => x.Kind == "database"))
+            archiveStore.ConnectionString = PlatformOptions.Resolve(archiveStore.ConnectionString
+                ?? throw new InvalidOperationException($"import_file_archive_database_not_configured: Archive store '{archiveStore.Name}' needs a connection string."),
+                Environment.GetEnvironmentVariable);
+        var operationalConnection = PlatformOptions.Resolve(builder.Configuration["Platform:ConnectionString"]
+            ?? throw new InvalidOperationException("Platform:ConnectionString is required."), Environment.GetEnvironmentVariable);
+        ImportFileArchiveConfiguration.Validate(importFiles, operationalConnection);
         builder.AddModuleDbContext<ImportFilesDbContext>(ImportFilesDbContext.SchemaName, importFiles.DatabaseConnectionString);
         builder.Services.AddSingleton(importFiles);
+        builder.Services.AddSingleton<Yojana.Platform.IAdditionalDatabaseMigration, ImportFileArchiveMigrator>();
         var interactiveReadTimeout = builder.Configuration.GetValue<int?>("Serialisation:InteractiveReadCommandTimeoutSeconds") ?? 10;
         builder.Services.AddSingleton(new InteractiveReadOptions(interactiveReadTimeout));
 
@@ -93,10 +101,12 @@ public static class SerialisationModule
         builder.Services.AddScoped<Portal.CustomerListSourceResolver>();
         builder.Services.AddScoped<Portal.CustomerListReconciliationService>();
         // Factory registration keeps PlatformDbContext (behind tenant settings) out of Wolverine handler graphs.
-        builder.Services.AddScoped(sp => new TenantImportFileSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped<TenantImportFileSettings>();
         builder.Services.AddScoped<IImportFileBackend, FileImportFileBackend>();
         builder.Services.AddScoped<IImportFileBackend, DatabaseImportFileBackend>();
-        builder.Services.TryAddScoped<IImportFileStore, ImportFileStore>();
+        builder.Services.AddScoped<ImportFileStore>();
+        builder.Services.TryAddScoped<IImportFileStore>(sp => sp.GetRequiredService<ImportFileStore>());
+        builder.Services.TryAddSingleton<IImportFileArchiveObserver, NoOpImportFileArchiveObserver>();
         builder.Services.AddScoped<ImportFileMaintenance>();
         builder.Services.AddScoped<ImportFileDownloads>();
         builder.Services.AddScoped<ISpreadsheetReader, OpenXmlSpreadsheetReader>();

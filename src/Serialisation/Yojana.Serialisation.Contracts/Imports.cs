@@ -136,7 +136,7 @@ public sealed record ImportFileHistoryFilter(DateTime? From = null, DateTime? To
 public sealed record ImportFileHistoryRow(Guid JobId, string FileName, string Format, long Size,
     string OriginalHash, string? ConvertedHash, string UploaderName, string UploaderReference, DateTime UploadedAt,
     string Source, string Status, int Applied, int Skipped, int Rejected, string StorageState,
-    bool OriginalAvailable, bool ConvertedAvailable, bool MayDownload = false);
+    bool OriginalAvailable, bool ConvertedAvailable, string? ArchiveStoreName = null, bool MayDownload = false);
 public sealed record ImportFileHistoryPage(IReadOnlyList<ImportFileHistoryRow> Items, string? NextCursor);
 
 /// <summary>Compare two already-intaken jobs, or one job against a stored selection set.</summary>
@@ -198,11 +198,20 @@ public interface IImportFileStore
     Task<StoredImportFile> PutAsync(Guid jobId, string fileName, string copyKind, Stream content,
         DateTime storedAt, CancellationToken cancellationToken);
     Task<OpenImportFile> OpenReadAsync(string reference, CancellationToken cancellationToken);
-    Task<StoredImportFile> ArchiveAsync(string reference, CancellationToken cancellationToken);
 }
 
-public sealed record ImportFileStorageSettings(string Storage, int ArchiveAfterDays, string Version);
-public sealed record UpdateImportFileStorageSettings(string Storage, int ArchiveAfterDays, string ExpectedVersion);
+public static class ImportFileArchiveAgeUnit
+{
+    public const string Days = "days";
+    public const string Months = "months";
+    public const string Years = "years";
+}
+
+public sealed record ImportFileArchiveStoreOption(string Name, string Kind);
+public sealed record ImportFileStorageSettings(string Storage, string ArchiveStore, int ArchiveAge,
+    string ArchiveAgeUnit, IReadOnlyList<ImportFileArchiveStoreOption> ArchiveStores, string Version);
+public sealed record UpdateImportFileStorageSettings(string Storage, string ArchiveStore, int ArchiveAge,
+    string ArchiveAgeUnit, string ExpectedVersion);
 
 public sealed record TabularExport(IReadOnlyList<string> Headers, IAsyncEnumerable<IReadOnlyList<string?>> Rows);
 
