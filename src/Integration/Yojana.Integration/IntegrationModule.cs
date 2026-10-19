@@ -70,6 +70,7 @@ public static class IntegrationModule
         builder.Services.AddScoped<ICx01SurveyRemotePort, Cx01SurveyRemotePort>();
         builder.Services.AddScoped<Cx01SurveyProbe>();
         builder.Services.AddScoped<Cx01SurveyService>();
+        builder.Services.AddScoped<Cx01FieldMapService>();
         builder.Services.AddScoped<ICx01SurveyReader>(services =>
             services.GetRequiredService<Cx01SurveyService>());
         builder.Services.AddScoped<Cx01WebhookMaintenance>();

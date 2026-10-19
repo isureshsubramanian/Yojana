@@ -20,10 +20,12 @@ public sealed record Cx01ConnectionSettings(
     IReadOnlyDictionary<string, string>? MandatoryUserFieldDefaults = null,
     string OwnReferencePrefix = "YOJANA:",
     int PollPageSize = 100,
-    int KeepAliveMinutes = 20)
+    int KeepAliveMinutes = 20,
+    IReadOnlyDictionary<string, Cx01FieldSource>? FieldMap = null)
 {
     public Cx01ConnectionSettings Validate()
     {
+        Cx01FieldMap.Validate(FieldMap);
         if (!ServiceUri.IsAbsoluteUri || ServiceUri.Scheme is not ("http" or "https"))
             throw new InvalidOperationException("The CX01 service URL must be an absolute HTTP or HTTPS URL.");
         if (string.IsNullOrWhiteSpace(CompanyDatabase))
@@ -61,18 +63,23 @@ public sealed record Cx01WebhookEventSetting(string BusinessObject, string Trans
 
 public sealed class Cx01Settings(ITenantSettings settings)
 {
+    // Dictionary keys in these settings are the customer's own field names and values (mandatory-field defaults,
+    // field-map value translations). The contract options rewrite dictionary keys to snake case, which turned
+    // "ORDN.U_RetCause" into "ordn.u_ret_cause" so it never matched again; keys must round-trip exactly.
+    private static readonly JsonSerializerOptions Json = new(IntegrationContracts.Json) { DictionaryKeyPolicy = null };
+
     public static string Key(Guid connectionId) => $"integration.cx01.connection.{connectionId:N}";
 
     public async Task<Cx01ConnectionSettings> GetAsync(Guid connectionId, CancellationToken cancellationToken)
     {
         var value = await settings.GetAsync(Key(connectionId), cancellationToken)
             ?? throw new InvalidOperationException("CX01 connection settings are not configured.");
-        return (JsonSerializer.Deserialize<Cx01ConnectionSettings>(value, IntegrationContracts.Json)
+        return (JsonSerializer.Deserialize<Cx01ConnectionSettings>(value, Json)
             ?? throw new InvalidOperationException("CX01 connection settings are invalid.")).Validate();
     }
 
     public Task SetAsync(Guid connectionId, Cx01ConnectionSettings value, CancellationToken cancellationToken) =>
-        settings.SetAsync(Key(connectionId), JsonSerializer.Serialize(value.Validate(), IntegrationContracts.Json),
+        settings.SetAsync(Key(connectionId), JsonSerializer.Serialize(value.Validate(), Json),
             cancellationToken);
 }
 

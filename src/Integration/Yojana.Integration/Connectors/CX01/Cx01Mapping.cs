@@ -187,8 +187,9 @@ internal static class Cx01Mapper
         JsonElement raw, IReadOnlyDictionary<int, IReadOnlyList<CanonicalSerial>> previousSerials,
         IReadOnlyDictionary<int, IReadOnlyList<CanonicalSerial>> recoveredSerials,
         IReadOnlySet<int> serialManagedLines, string captureMode, DateTime observedUtc,
-        bool mapCancelledOriginal = false)
+        bool mapCancelledOriginal = false, Cx01FieldReader? fields = null)
     {
+        fields ??= Cx01FieldReader.Defaults;
         var key = Text(raw, entity.KeyField) ?? throw new InvalidOperationException("CX01 response has no key.");
         var changed = ChangeMarker(raw, key);
         var occurred = Date(raw, "DocDate") ?? Date(raw, "CreateDate") ?? Date(raw, "UpdateDate")
@@ -209,7 +210,8 @@ internal static class Cx01Mapper
                 payload = new ItemUpserted(key, Text(raw, "ItemName") ?? key,
                     OpenEnum.Known(Flag(raw, "ManageSerialNumbers") ? "serial"
                         : Flag(raw, "ManageBatchNumbers") ? "lot" : "none"),
-                    Text(raw, "InventoryUOM") ?? "EA", Flag(raw, "U_YojanaWarrantyProduct"), null,
+                    Text(raw, "InventoryUOM") ?? "EA", fields.YesNo(raw, Cx01FieldMap.ItemWarrantyProduct),
+                    fields.Text(raw, Cx01FieldMap.ItemWarrantyTemplate),
                     Flag(raw, "Frozen"));
                 break;
             case "PartyUpserted":
@@ -227,10 +229,10 @@ internal static class Cx01Mapper
                 payload = entity.CanonicalMessage switch
                 {
                     "DeliveryPosted" => new DeliveryPosted(DocumentRef(raw, key), Text(raw, "CardCode") ?? "",
-                        Text(raw, "ShipToCode") ?? "", lines, null, Flag(raw, "U_YojanaDropShip")),
+                        Text(raw, "ShipToCode") ?? "", lines, null, fields.YesNo(raw, Cx01FieldMap.DeliveryDropShip)),
                     "ReturnReceived" => new ReturnReceived(DocumentRef(raw, key), Text(raw, "CardCode") ?? "",
-                        lines, BaseDocument(lines), Text(raw, "U_YojanaReturnReason"),
-                        Text(raw, "U_YojanaRmaNumber")),
+                        lines, BaseDocument(lines), fields.Text(raw, Cx01FieldMap.ReturnReason),
+                        fields.Text(raw, Cx01FieldMap.ReturnRmaReference)),
                     "InvoicePosted" => new InvoicePosted(DocumentRef(raw, key), Text(raw, "CardCode") ?? "",
                         lines.Select(x => x.BaseDocumentRef).Where(x => x is not null).Cast<ExternalDocumentRef>()
                             .Distinct().ToList(), lines,
@@ -244,7 +246,7 @@ internal static class Cx01Mapper
                         Text(raw, "FromWarehouse") ?? (lines.Count == 0 ? null : lines[0].LocationExternalId) ?? "",
                         Text(raw, "ToWarehouse") ?? "", lines),
                     "InventoryAdjusted" => new InventoryAdjusted(DocumentRef(raw, key),
-                        OpenEnum.Known(Flag(raw, "U_YojanaCount") ? "count" : "out"), lines,
+                        OpenEnum.Known(fields.YesNo(raw, Cx01FieldMap.AdjustmentIsCount) ? "count" : "out"), lines,
                         Text(raw, "Comments")),
                     _ => throw new InvalidOperationException("Unsupported CX01 entity mapping."),
                 };
