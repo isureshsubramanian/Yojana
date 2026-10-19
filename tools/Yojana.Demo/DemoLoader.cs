@@ -205,7 +205,8 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var jobId = DemoIds.FromName("p7:import:legacy-field-register");
         if (await db.ImportJobs.AnyAsync(row => row.JobId == jobId, cancellationToken)) return;
-        var archiveTime = eventTime.AddYears(-1);
+        // Older than the two-year default archive age, so the demo shows a file already moved to the archive.
+        var archiveTime = eventTime.AddYears(-3);
         var original = Encoding.UTF8.GetBytes("Fictional legacy spreadsheet bytes for download history");
         var converted = await XlsxAsync(["Serial"], [[Units("RS-1100")[2].Serial], [Units("RS-1100")[3].Serial]], cancellationToken);
         var files = scope.ServiceProvider.GetRequiredService<IImportFileStore>();

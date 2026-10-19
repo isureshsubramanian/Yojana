@@ -10,7 +10,9 @@ public sealed class TenantImportFileSettings(ITenantSettings settings, ImportFil
     public const string Key = "imports.file_storage";
     public const string Database = "database";
     public const string File = "file";
-    public const int DefaultArchiveAfterDays = 90;
+    // Owner 2026-10-19: files move to the archive after two years unless the tenant chooses otherwise.
+    public const int DefaultArchiveAge = 2;
+    public const string DefaultArchiveAgeUnit = ImportFileArchiveAgeUnit.Years;
 
     public async Task<ImportFileStorageSettings> GetAsync(CancellationToken cancellationToken)
     {
@@ -41,11 +43,12 @@ public sealed class TenantImportFileSettings(ITenantSettings settings, ImportFil
         var storage = root.GetProperty("storage").GetString() ?? string.Empty;
         // P7-T17 stored only a day count. Reading it as the new day-based shape is the tenant-data migration;
         // the next settings save persists the expanded representation without changing its meaning.
-        var age = root.TryGetProperty("archive_age", out var ageValue)
-            ? ageValue.GetInt32()
-            : root.TryGetProperty("archive_after_days", out var daysValue) ? daysValue.GetInt32() : DefaultArchiveAfterDays;
-        var unit = root.TryGetProperty("archive_age_unit", out var unitValue)
-            ? unitValue.GetString() ?? ImportFileArchiveAgeUnit.Days : ImportFileArchiveAgeUnit.Days;
+        var (age, unit) = root.TryGetProperty("archive_age", out var ageValue)
+            ? (ageValue.GetInt32(), root.TryGetProperty("archive_age_unit", out var unitValue)
+                ? unitValue.GetString() ?? ImportFileArchiveAgeUnit.Days : ImportFileArchiveAgeUnit.Days)
+            : root.TryGetProperty("archive_after_days", out var daysValue)
+                ? (daysValue.GetInt32(), ImportFileArchiveAgeUnit.Days)
+                : (DefaultArchiveAge, DefaultArchiveAgeUnit);
         var store = root.TryGetProperty("archive_store", out var storeValue)
             ? storeValue.GetString() ?? string.Empty : options.ArchiveStores.FirstOrDefault()?.Name ?? string.Empty;
         Validate(storage, store, age, unit);
@@ -76,5 +79,5 @@ public sealed class TenantImportFileSettings(ITenantSettings settings, ImportFil
     }
 
     private Policy Default() => new(Database, options.ArchiveStores.FirstOrDefault()?.Name ?? string.Empty,
-        DefaultArchiveAfterDays, ImportFileArchiveAgeUnit.Days);
+        DefaultArchiveAge, DefaultArchiveAgeUnit);
 }

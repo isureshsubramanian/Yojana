@@ -97,17 +97,29 @@ public sealed class ImportFileStoreTests
             (settings.Storage, settings.ArchiveStore, settings.ArchiveAge, settings.ArchiveAgeUnit));
     }
 
+    [Fact]
+    public async Task A_tenant_that_never_chose_archives_after_two_years()
+    {
+        var options = new ImportFileStorageOptions
+        {
+            ArchiveStores = [new() { Name = "long-term", Kind = "folder", Path = "/fictional/archive" }],
+        };
+        var settings = await new TenantImportFileSettings(new LegacySettings(null), options).GetAsync(CancellationToken.None);
+        Assert.Equal(("database", "long-term", 2, "years"),
+            (settings.Storage, settings.ArchiveStore, settings.ArchiveAge, settings.ArchiveAgeUnit));
+    }
+
     private sealed class TestTenant(TenantId id) : ITenantContext
     {
         public bool HasTenant => true;
         public TenantId TenantId { get; } = id;
     }
 
-    private sealed class LegacySettings(string value) : ITenantSettings
+    private sealed class LegacySettings(string? value) : ITenantSettings
     {
         public Task<string?> GetAsync(string key, CancellationToken cancellationToken) => Task.FromResult<string?>(value);
         public Task SetAsync(string key, string next, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<VersionedTenantSetting?> GetVersionedAsync(string key, CancellationToken cancellationToken) =>
-            Task.FromResult<VersionedTenantSetting?>(new(value, "1", DateTime.UtcNow));
+            Task.FromResult(value is null ? null : new VersionedTenantSetting(value, "1", DateTime.UtcNow));
     }
 }
