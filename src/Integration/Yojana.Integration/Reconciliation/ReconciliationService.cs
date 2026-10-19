@@ -1,3 +1,4 @@
+using Yojana.Integration.Connections;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -55,6 +56,7 @@ public sealed class ReconciliationService(
         if (rangeEnd < rangeStart)
             throw new ReconciliationRuleException("reconciliation_range_invalid",
                 "The reconciliation end date must not precede its start date.");
+        await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, connectionId, cancellationToken);
         var connectorCode = await db.Connections.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
                 && row.ConnectionId == connectionId && row.Status == ConnectionStatus.Active)
             .Select(row => row.ConnectorCode).SingleOrDefaultAsync(cancellationToken);

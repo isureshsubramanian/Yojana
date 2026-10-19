@@ -14,6 +14,14 @@ public enum ConnectionAuditEventType
     WebhookSignatureFailed,
     PermissionsChanged,
     ConnectionWrite,
+    StreamStopped,
+    StreamResumedByWatchdog,
+    CallRateSlowedOnBusy,
+    OutOfHoursReplayBooked,
+    PasswordDue,
+    ConnectionPaused,
+    HealthStatusChanged,
+    RemoteSubscriptionLeft,
 }
 
 public sealed record ConnectionAuditEvent(

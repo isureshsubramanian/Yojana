@@ -24,12 +24,14 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "tenant_data_key", "connection_credential", "tenant_data_key_rewrap_checkpoint", "connection_event",
             "connection_throttle_profile", "connection_notification_source", "connection_poll_watermark",
             "dead_letter_item", "dead_letter_event", "manual_outbound_task");
-        AssertSuperset(tables, "cx01_survey", "connection_notification_receipt",
+        AssertSuperset(tables, "connection_health", "cx01_survey", "connection_notification_receipt",
             "connection_notification_watchdog");
         AssertSuperset(tables, "reconciliation_run", "reconciliation_entity_day",
             "reconciliation_location", "backfill_cursor");
         var columns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'manual_outbound_task'").ToListAsync();
         Assert.Contains("desk", columns);
+        var healthColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'connection_health'").ToListAsync();
+        AssertSuperset(healthColumns, "tenant_id", "inbound_count_date_utc", "completed_inbound_days_json");
     }
 
     [DatabaseFact]

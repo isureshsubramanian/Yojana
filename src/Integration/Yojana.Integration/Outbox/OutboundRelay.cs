@@ -1,3 +1,4 @@
+using Yojana.Integration.Connections;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
@@ -29,13 +30,13 @@ public sealed class OutboundRelay(
     public async Task<OutboundRelayResult> RelayConnectionAsync(Guid connectionId,
         CancellationToken cancellationToken)
     {
-        var connection = await db.Connections.AsNoTracking().SingleAsync(x => x.TenantId == tenant.TenantId
+        var connection = await db.Connections.AsNoTracking().SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == connectionId && x.Status == ConnectionStatus.Active, cancellationToken);
+        if (connection is null) return new(0, 0, 0);
+        var gateway = await db.ConnectionGatewaySettings.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.TenantId == tenant.TenantId && x.ConnectionId == connectionId, cancellationToken);
+        if (gateway?.ReadOnly == true || gateway?.OutboundMode == "none") return new(0, 0, 0);
         var connector = connectors.Resolve(connection.ConnectorCode);
-        // A connector whose HTTP pipeline owns the shared rate-limited lane must not be wrapped in the same
-        // non-reentrant lane here. Connectors without that pipeline retain the relay's connection-wide serialisation.
-        await using IConnectionWorkerLease? lane = connector.Capabilities.OwnsConnectionLane
-            ? null : await isolation.AcquireAsync(new(tenant.TenantId, connectionId), cancellationToken);
         var maxAge = await settings.MaxAgeAsync(connectionId, cancellationToken);
         var completed = 0;
         var retrying = 0;
@@ -43,6 +44,13 @@ public sealed class OutboundRelay(
 
         for (var processed = 0; processed < 100; processed++)
         {
+            await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, connectionId, cancellationToken);
+            if (!await db.Connections.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
+                && x.ConnectionId == connectionId && x.Status == ConnectionStatus.Active, cancellationToken)) break;
+            // A connector whose HTTP pipeline owns the shared rate-limited lane must not be wrapped in the same
+            // non-reentrant lane here. Connectors without that pipeline retain the relay's connection-wide serialisation.
+            await using IConnectionWorkerLease? lane = connector.Capabilities.OwnsConnectionLane
+                ? null : await isolation.AcquireAsync(new(tenant.TenantId, connectionId), cancellationToken);
             var command = await ClaimNextAsync(connectionId, cancellationToken);
             if (command is null) break;
             if (command.CreatedAt + maxAge <= clock.UtcNow)

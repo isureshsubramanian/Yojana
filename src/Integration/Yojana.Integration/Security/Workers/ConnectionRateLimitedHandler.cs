@@ -31,6 +31,7 @@ public sealed class ConnectionRateLimitedHandler : DelegatingHandler
     private readonly IConnectionThrottleDelay delay;
     private readonly IConnectionRetryJitter jitter;
     private readonly int maximumRetries;
+    private readonly IConnectionBusyObserver? busy;
 
     public ConnectionRateLimitedHandler(ConnectionWorkerKey workerKey,
         ConnectionThrottleProfiles profiles,
@@ -38,7 +39,8 @@ public sealed class ConnectionRateLimitedHandler : DelegatingHandler
         IClock clock,
         IConnectionThrottleDelay delay,
         IConnectionRetryJitter jitter,
-        int maximumRetries = 3)
+        int maximumRetries = 3,
+        IConnectionBusyObserver? busy = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(maximumRetries);
         this.workerKey = workerKey;
@@ -48,6 +50,7 @@ public sealed class ConnectionRateLimitedHandler : DelegatingHandler
         this.delay = delay;
         this.jitter = jitter;
         this.maximumRetries = maximumRetries;
+        this.busy = busy;
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
@@ -82,6 +85,8 @@ public sealed class ConnectionRateLimitedHandler : DelegatingHandler
                 stored.Profile.RetryAfterCeiling)
                 ?? jitter.Backoff(attempt + 1, stored.Profile.RetryAfterCeiling);
             worker.PauseUntil(clock.UtcNow + retryDelay);
+            if (busy is not null && response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable)
+                await busy.PausedAsync(workerKey, retryDelay, cancellationToken);
             if (!mayRetry || attempt >= maximumRetries) return response;
 
             response.Dispose();

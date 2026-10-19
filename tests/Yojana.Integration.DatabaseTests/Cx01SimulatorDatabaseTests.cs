@@ -308,7 +308,7 @@ public sealed class Cx01SimulatorDatabaseTests(IntegrationHostFixture fixture)
         Assert.True(survey.Webhooks.Enabled);
         Assert.Equal(3, survey.Webhooks.RetryTimes);
         Assert.Contains(survey.UserFields, field => field.MandatoryWithoutDefault && field.WrittenObject);
-        Assert.All(Cx01Simulator.TrackingTables, table => Assert.True(survey.TrackingTableAllowlist[table]));
+        Assert.All(Cx01Simulator.TrackingTables, table => Assert.Equal("allowed", survey.TrackingTableAllowlist[table].State));
         Assert.True(simulator.SerialQueryCreated);
         Assert.Equal(1, simulator.SerialQueryCreateCount);
         Assert.True(survey.OwnerAnswers.ValidationProcedureReviewed);

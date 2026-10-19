@@ -20,7 +20,8 @@ public sealed record Cx01ConnectionSettings(
     IReadOnlyDictionary<string, string>? MandatoryUserFieldDefaults = null,
     string OwnReferencePrefix = "YOJANA:",
     int PollPageSize = 100,
-    int KeepAliveMinutes = 20)
+    int KeepAliveMinutes = 20,
+    IReadOnlyDictionary<string, bool>? TrackingTableDeclarations = null)
 {
     public Cx01ConnectionSettings Validate()
     {
