@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Mvc;
 using Yojana.Integration.DeadLetters;
 using Yojana.Integration.Notifications;
 using Yojana.Platform.Contracts.Security;
@@ -66,6 +67,18 @@ public static class IntegrationEndpoints
         integration.MapPut("/manual-task-desks", async (UpdateManualTaskDeskSettings request,
             ManualTaskDeskSettings settings, CancellationToken ct) => await Invoke(() => settings.SetAsync(request, ct)))
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        integration.MapGet("/connections/{connectionId:guid}/cx01/survey", async (Guid connectionId,
+            string? cursor, int? take,
+            [FromServices] Cx01SurveyService survey, CancellationToken ct) =>
+            await survey.LatestPageAsync(connectionId, cursor, take ?? 100, ct) is { } result
+                ? Results.Ok(result) : Results.NotFound());
+        integration.MapPost("/connections/{connectionId:guid}/cx01/survey", async (Guid connectionId,
+            [FromBody] Cx01SurveyOwnerAnswers request, [FromServices] Cx01SurveyService survey,
+            CancellationToken ct) =>
+        {
+            _ = await survey.RunAsync(connectionId, request, ct);
+            return Results.Ok(await survey.LatestPageAsync(connectionId, null, 100, ct));
+        });
         integration.MapGet("/reconciliation/runs", (Guid? connectionId, string? status, string? cursor,
             int? take, ReconciliationService service, CancellationToken ct) => Invoke(() =>
             service.ListAsync(new(connectionId, status, cursor, take ?? 50), ct)));

@@ -503,6 +503,49 @@ namespace Yojana.Integration.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ConnectionNotificationReceipt", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<string>("EventId")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("event_id");
+
+                    b.Property<DateTime?>("FirstSeenPendingAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("first_seen_pending_at");
+
+                    b.Property<Guid?>("FirstSeenPendingRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_seen_pending_run_id");
+
+                    b.Property<DateTime>("LastObservedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_observed_at");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("processed_at");
+
+                    b.HasKey("TenantId", "ConnectionId", "EventId")
+                        .HasName("pk_connection_notification_receipt");
+
+                    b.HasIndex("TenantId", "ConnectionId", "FirstSeenPendingAt", "EventId")
+                        .HasDatabaseName("ix_connection_notification_receipt_tenant_id_connection_id_first_seen_pending_at_event_id");
+
+                    b.HasIndex("TenantId", "ProcessedAt", "ConnectionId", "EventId")
+                        .HasDatabaseName("ix_connection_notification_receipt_tenant_id_processed_at_connection_id_event_id");
+
+                    b.ToTable("connection_notification_receipt", "integration");
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.ConnectionNotificationSource", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -533,6 +576,33 @@ namespace Yojana.Integration.Migrations
                         .HasDatabaseName("ix_connection_notification_source_tenant_id_connection_id_enabled_source");
 
                     b.ToTable("connection_notification_source", "integration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ConnectionNotificationWatchdog", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.Property<DateOnly?>("WatermarkDate")
+                        .HasColumnType("date")
+                        .HasColumnName("watermark_date");
+
+                    b.HasKey("TenantId", "ConnectionId")
+                        .HasName("pk_connection_notification_watchdog");
+
+                    b.HasIndex("TenantId", "UpdatedAt", "ConnectionId")
+                        .HasDatabaseName("ix_connection_notification_watchdog_tenant_id_updated_at_connection_id");
+
+                    b.ToTable("connection_notification_watchdog", "integration");
                 });
 
             modelBuilder.Entity("Yojana.Integration.Data.Entities.ConnectionPollWatermark", b =>
@@ -716,6 +786,34 @@ namespace Yojana.Integration.Migrations
                         .HasDatabaseName("ix_connector_catalogue_tenant_id_enabled_display_name_connector_code");
 
                     b.ToTable("connector_catalogue", "integration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.Cx01SurveyRecord", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<DateTime>("ObservedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("observed_at");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("result_json");
+
+                    b.HasKey("TenantId", "ConnectionId")
+                        .HasName("pk_cx01_survey");
+
+                    b.HasIndex("TenantId", "ObservedAt", "ConnectionId")
+                        .HasDatabaseName("ix_cx01_survey_tenant_id_observed_at_connection_id");
+
+                    b.ToTable("cx01_survey", "integration");
                 });
 
             modelBuilder.Entity("Yojana.Integration.Data.Entities.DeadLetterEvent", b =>

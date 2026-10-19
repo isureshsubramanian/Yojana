@@ -1,6 +1,7 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
 using Yojana.Integration;
 using Yojana.Integration.Connectors;
@@ -60,6 +61,8 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.Services.AddKeyedSingleton<IConnectorAdapter>(FakeConnectorCode, (services, _) =>
             services.GetRequiredService<FakeReconciliationSource>());
         builder.Services.AddSingleton<IClock>(Clock);
+        builder.Services.Replace(ServiceDescriptor.Singleton<IConnectionThrottleDelay>(
+            new AdvancingDatabaseThrottleDelay(Clock)));
         Host = builder.Build();
         await Host.StartAsync();
     }
@@ -134,6 +137,16 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
 public sealed class MutableTestClock(DateTime utcNow) : IClock
 {
     public DateTime UtcNow { get; set; } = utcNow;
+}
+
+internal sealed class AdvancingDatabaseThrottleDelay(MutableTestClock clock) : IConnectionThrottleDelay
+{
+    public Task WaitAsync(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        clock.UtcNow += delay;
+        return Task.CompletedTask;
+    }
 }
 
 [CollectionDefinition("integration host")]

@@ -71,6 +71,7 @@ internal sealed class Cx01SessionState
     public string? SessionCookie { get; set; }
     public string? RouteCookie { get; set; }
     public DateTime ExpiresAtUtc { get; set; }
+    public string? Release { get; set; }
 
     public void Invalidate()
     {
@@ -80,10 +81,32 @@ internal sealed class Cx01SessionState
     }
 }
 
-public sealed class Cx01RemoteException(HttpStatusCode statusCode, string operation)
-    : Exception($"CX01 {operation} failed with HTTP status {(int)statusCode}.")
+public sealed class Cx01RemoteException(
+    HttpStatusCode statusCode,
+    string operation,
+    string? remoteCode = null,
+    string? remoteMessage = null,
+    IReadOnlyList<string>? details = null)
+    : Exception(remoteMessage is null
+        ? $"CX01 {operation} failed with HTTP status {(int)statusCode}."
+        : $"CX01 {operation} failed: {remoteMessage}")
 {
     public HttpStatusCode StatusCode { get; } = statusCode;
+    public string? RemoteCode { get; } = remoteCode;
+    public string? RemoteMessage { get; } = remoteMessage;
+    public IReadOnlyList<string> Details { get; } = details ?? [];
+    public bool IsRecordGone => StatusCode == HttpStatusCode.NotFound;
+    public bool IsBusinessRejection => (int)StatusCode is >= 400 and < 500
+        && StatusCode is not (HttpStatusCode.Unauthorized or HttpStatusCode.RequestTimeout
+            or HttpStatusCode.TooManyRequests);
+    public bool IsTransient => StatusCode == HttpStatusCode.RequestTimeout
+        || StatusCode == HttpStatusCode.TooManyRequests || (int)StatusCode >= 500;
+
+    public string BusinessMessage(int maximumLength = 2_000)
+    {
+        var value = RemoteMessage ?? Message;
+        return value.Length <= maximumLength ? value : value[..maximumLength];
+    }
 }
 
 public sealed class Cx01Client(
@@ -105,6 +128,15 @@ public sealed class Cx01Client(
         await EnsureSuccessAsync(response, "read", cancellationToken);
         return await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken),
             cancellationToken: cancellationToken);
+    }
+
+    public async Task<string> GetTextAsync(Guid connectionId, string relativePath,
+        CancellationToken cancellationToken)
+    {
+        using var response = await SendAuthenticatedAsync(connectionId, HttpMethod.Get, relativePath, null,
+            true, cancellationToken);
+        await EnsureSuccessAsync(response, "read", cancellationToken);
+        return await response.Content.ReadAsStringAsync(cancellationToken);
     }
 
     public async Task<JsonDocument?> SendJsonAsync(Guid connectionId, HttpMethod method, string relativePath,
@@ -132,26 +164,31 @@ public sealed class Cx01Client(
     public async Task<Cx01ReleaseProbe> ProbeReleaseAsync(Guid connectionId,
         CancellationToken cancellationToken)
     {
-        var configured = await settings.GetAsync(connectionId, cancellationToken);
-        using var metadata = await GetAsync(connectionId, Cx01Protocol.Root, cancellationToken);
-        var release = metadata.RootElement.TryGetProperty("Version", out var value)
-            ? value.GetString() ?? configured.Release : configured.Release;
+        var release = await ReleaseAsync(connectionId, cancellationToken);
+        var metadata = await GetTextAsync(connectionId, Cx01Protocol.Metadata, cancellationToken);
+        var supported = metadata.Contains(Cx01Protocol.EventSubscriptions, StringComparison.Ordinal);
         var webhooks = false;
-        if (Cx01Capabilities.ReleaseFeaturePack(release) >= 2602)
-        {
+        if (supported)
             try
             {
-                using var probe = await GetAsync(connectionId,
-                    Cx01Protocol.Root + Cx01Protocol.EventSubscriptions + "?$top=1", cancellationToken);
-                webhooks = probe.RootElement.ValueKind == JsonValueKind.Object;
+                using var admin = await SendJsonAsync(connectionId, HttpMethod.Post,
+                    Cx01Protocol.Root + Cx01Protocol.AdminInfo, new { }, true, cancellationToken);
+                webhooks = admin is not null && Text(admin.RootElement, "EnableWebhook") is "tYES" or "Y";
             }
             catch (Cx01RemoteException exception) when (exception.StatusCode is HttpStatusCode.NotFound
                 or HttpStatusCode.Forbidden)
             {
                 webhooks = false;
             }
-        }
         return new(release, webhooks);
+    }
+
+    public async Task<string> ReleaseAsync(Guid connectionId, CancellationToken cancellationToken)
+    {
+        var configured = await settings.GetAsync(connectionId, cancellationToken);
+        var key = new ConnectionWorkerKey(tenant.TenantId, connectionId);
+        await EnsureSessionAsync(key, configured, cancellationToken);
+        return sessions.For(key).Release ?? configured.Release;
     }
 
     private async Task<HttpResponseMessage> SendAuthenticatedAsync(Guid connectionId, HttpMethod method,
@@ -180,7 +217,7 @@ public sealed class Cx01Client(
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Options.Set(ConnectionRateLimitedHandler.IdempotentRequest, idempotent);
         if (body is not null)
-            request.Content = new StringContent(JsonSerializer.Serialize(body, IntegrationContracts.Json),
+            request.Content = new StringContent(JsonSerializer.Serialize(body, Cx01Protocol.Json),
                 Encoding.UTF8, "application/json");
         var response = await transport.SendAsync(key, request, cancellationToken);
         if (response.IsSuccessStatusCode)
@@ -214,11 +251,10 @@ public sealed class Cx01Client(
                         CompanyDB = configured.CompanyDatabase,
                         secret.UserName,
                         secret.Password,
-                    }), Encoding.UTF8, "application/json"),
+                    }, Cx01Protocol.Json), Encoding.UTF8, "application/json"),
                 };
                 using var response = await transport.SendAsync(key, request, cancellationToken);
-                if (!response.IsSuccessStatusCode)
-                    throw new Cx01RemoteException(response.StatusCode, "login");
+                await EnsureSuccessAsync(response, "login", cancellationToken);
                 state.SessionCookie = Cookie(response, Cx01Protocol.SessionCookie);
                 state.RouteCookie = Cookie(response, Cx01Protocol.RouteCookie);
                 if (state.SessionCookie is null || state.RouteCookie is null)
@@ -231,6 +267,7 @@ public sealed class Cx01Client(
                     await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
                 if (document.RootElement.TryGetProperty("SessionTimeout", out var timeoutValue)
                     && timeoutValue.TryGetInt32(out var readTimeout)) timeout = readTimeout;
+                state.Release = Text(document.RootElement, "Version");
                 state.ExpiresAtUtc = clock.UtcNow.AddMinutes(Math.Max(1, timeout));
             }
             finally
@@ -262,9 +299,34 @@ public sealed class Cx01Client(
         CancellationToken cancellationToken)
     {
         if (response.IsSuccessStatusCode) return;
-        _ = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-        throw new Cx01RemoteException(response.StatusCode, operation);
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        string? code = null;
+        string? message = null;
+        var details = new List<string>();
+        try
+        {
+            using var body = JsonDocument.Parse(bytes);
+            if (body.RootElement.TryGetProperty("error", out var error))
+            {
+                code = Text(error, "code");
+                message = Text(error, "message");
+                if (error.TryGetProperty("details", out var remoteDetails)
+                    && remoteDetails.ValueKind == JsonValueKind.Array)
+                    foreach (var detail in remoteDetails.EnumerateArray())
+                        if (Text(detail, "message") is { Length: > 0 } value)
+                            details.Add(value.Length <= 1_000 ? value : value[..1_000]);
+            }
+        }
+        catch (JsonException) { }
+        throw new Cx01RemoteException(response.StatusCode, operation, Cap(code, 120), Cap(message, 2_000), details);
     }
+
+    private static string? Text(JsonElement value, string property) =>
+        value.TryGetProperty(property, out var found) && found.ValueKind != JsonValueKind.Null
+            ? found.ValueKind == JsonValueKind.String ? found.GetString() : found.ToString() : null;
+
+    private static string? Cap(string? value, int length) => value is null || value.Length <= length
+        ? value : value[..length];
 }
 
 public sealed class Cx01SessionMaintenance(

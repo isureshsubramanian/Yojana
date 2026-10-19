@@ -20,17 +20,20 @@ using Yojana.Platform.Tenancy;
 
 namespace Yojana.Integration.Connectors.CX01;
 
-public sealed record Cx01WebhookHint(Guid ConnectionId, string Collection, string Key, string EventId);
+public sealed record Cx01WebhookHint(Guid ConnectionId, string Collection, string Operation, string Key,
+    string EventId);
 
 [NonTransactional]
 public static class Cx01WebhookHintHandler
 {
     public static async Task Handle(Cx01WebhookHint hint, Cx01Adapter adapter, InboundMessageStore inbox,
-        CancellationToken cancellationToken)
+        Cx01WebhookEventTracker events, CancellationToken cancellationToken)
     {
+        if (await events.IsProcessedAsync(hint.ConnectionId, hint.EventId, cancellationToken)) return;
         var mapped = await adapter.CaptureKeyAsync(hint.ConnectionId, hint.Collection, hint.Key,
             cancellationToken);
         if (mapped is not null) _ = await inbox.Accept(mapped.Acceptance, cancellationToken);
+        await events.MarkProcessedAsync(hint.ConnectionId, hint.EventId, cancellationToken);
     }
 }
 
@@ -40,8 +43,9 @@ public static class Cx01WebhookEndpoints
 
     public static IEndpointRouteBuilder MapCx01WebhookEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/api/integration/connections/{connectionId:guid}/notifications/cx01", ReceiveAsync)
-            .AllowAnonymous();
+        var path = "/api/integration/connections/{connectionId:guid}/notifications/cx01";
+        app.MapGet(path, ReceiveAsync).AllowAnonymous();
+        app.MapPost(path, ReceiveAsync).AllowAnonymous();
         return app;
     }
 
@@ -50,7 +54,9 @@ public static class Cx01WebhookEndpoints
         IConnectionCredentialStore credentials, ConnectionCredentialProtector protector, IMessageBus bus,
         CancellationToken cancellationToken)
     {
-        if (!TenantId.TryParse(request.Headers[IntegrationNotificationEndpoints.TenantHeader].FirstOrDefault(),
+        var tenantValue = request.Headers[IntegrationNotificationEndpoints.TenantHeader].FirstOrDefault()
+            ?? request.Query["tenant"].FirstOrDefault();
+        if (!TenantId.TryParse(tenantValue,
                 out var tenantId)) return Results.BadRequest(new { error = "tenant_header_required" });
         tenantSetter.Set(tenantId);
         var active = await db.Connections.AsNoTracking().AnyAsync(x => x.TenantId == tenantId
@@ -60,9 +66,19 @@ public static class Cx01WebhookEndpoints
         var configured = await settings.GetAsync(connectionId, cancellationToken);
         if (!configured.WebhooksAvailable) return Results.NotFound();
 
-        using var body = new MemoryStream();
-        await request.Body.CopyToAsync(body, cancellationToken);
-        var bytes = body.ToArray();
+        byte[] bytes;
+        var handshake = request.Headers[Cx01Protocol.HandshakeTokenHeader].FirstOrDefault();
+        if (HttpMethods.IsGet(request.Method))
+        {
+            if (string.IsNullOrWhiteSpace(handshake)) return Results.Unauthorized();
+            bytes = Encoding.UTF8.GetBytes(handshake);
+        }
+        else
+        {
+            using var body = new MemoryStream();
+            await request.Body.CopyToAsync(body, cancellationToken);
+            bytes = body.ToArray();
+        }
         var credential = await credentials.GetCurrentAsync(tenantId, connectionId, SigningCredentialPurpose,
             cancellationToken);
         if (credential is null) return Results.Unauthorized();
@@ -78,12 +94,9 @@ public static class Cx01WebhookEndpoints
             CryptographicOperations.ZeroMemory(secret);
         }
 
-        var handshake = request.Headers[Cx01Protocol.HandshakeTokenHeader].FirstOrDefault();
-        if (!string.IsNullOrWhiteSpace(handshake))
-        {
-            response.Headers[Cx01Protocol.HandshakeTokenHeader] = handshake;
-            return Results.Ok();
-        }
+        if (HttpMethods.IsGet(request.Method))
+            return Results.Content(HandshakeResponse(handshake!),
+                "application/json", Encoding.UTF8, StatusCodes.Status200OK);
 
         JsonDocument document;
         try { document = JsonDocument.Parse(bytes); }
@@ -96,26 +109,44 @@ public static class Cx01WebhookEndpoints
                 return Results.BadRequest(new { error = "notification_batch_size_invalid" });
             foreach (var item in events)
             {
+                if (!StringComparer.Ordinal.Equals(Text(item, "source"),
+                        "/default/sap.b1/" + configured.CompanyDatabase))
+                    return Results.Unauthorized();
                 var hint = Hint(item, connectionId);
                 if (hint is not null)
-                    await bus.PublishAsync(hint, new DeliveryOptions { TenantId = tenantId.ToString() });
+                    try { await bus.PublishAsync(hint, new DeliveryOptions { TenantId = tenantId.ToString() }); }
+                    catch
+                    {
+                        // The durable delivery log is the recovery source. A busy receiver must still acknowledge
+                        // promptly so the remote dispatcher is not turned into a load amplifier.
+                    }
             }
         }
         return Results.Accepted();
     }
 
-    private static Cx01WebhookHint? Hint(JsonElement item, Guid connectionId)
+    internal static Cx01WebhookHint? Hint(JsonElement item, Guid connectionId)
     {
-        var id = Text(item, "id") ?? Guid.CreateVersion7().ToString("D");
+        var id = Text(item, "id");
+        if (string.IsNullOrWhiteSpace(id)) return null;
         var type = Text(item, "type") ?? "";
+        const string prefix = "sap.b1.";
+        const string suffix = ".v1";
+        if (!type.StartsWith(prefix, StringComparison.Ordinal)
+            || !type.EndsWith(suffix, StringComparison.Ordinal)) return null;
+        var name = type[prefix.Length..^suffix.Length];
+        var separator = name.LastIndexOf('.');
+        if (separator <= 0 || separator == name.Length - 1) return null;
+        var businessObject = name[..separator];
+        var operation = name[(separator + 1)..];
         var collection = Cx01Protocol.Entities.Values.Select(x => x.Collection)
-            .FirstOrDefault(x => type.Contains(x, StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(x => StringComparer.Ordinal.Equals(x, businessObject));
         if (item.TryGetProperty("data", out var data))
         {
-            collection ??= Text(data, "ObjectType");
             var key = Text(data, "DocEntry") ?? Text(data, "ObjectKey") ?? Text(data, "ItemCode")
-                ?? Text(data, "CardCode");
-            if (collection is not null && key is not null) return new(connectionId, collection, key, id);
+                ?? Text(data, "CardCode") ?? Text(data, "EquipmentCardNum") ?? Text(item, "subject");
+            if (collection is not null && key is not null)
+                return new(connectionId, collection, operation, key, id);
         }
         return null;
     }
@@ -132,14 +163,11 @@ public static class Cx01WebhookEndpoints
         return expected.Length == presented.Length && CryptographicOperations.FixedTimeEquals(expected, presented);
     }
 
+    internal static string HandshakeResponse(string token) =>
+        "{\"Challenge\":" + JsonSerializer.Serialize(token) + "}";
+
     private static bool TrySignature(string? value, out byte[] signature)
     {
-        try
-        {
-            signature = Convert.FromHexString(value ?? "");
-            if (signature.Length > 0) return true;
-        }
-        catch (FormatException) { }
         try
         {
             signature = Convert.FromBase64String(value ?? "");
@@ -157,6 +185,99 @@ public static class Cx01WebhookEndpoints
             ? found.ValueKind == JsonValueKind.String ? found.GetString() : found.ToString() : null;
 }
 
+public sealed class Cx01WebhookEventTracker(
+    ITenantContext tenant,
+    IntegrationDbContext db,
+    Yojana.Platform.Contracts.Time.IClock clock)
+{
+    private static readonly TimeSpan Retention = TimeSpan.FromDays(31);
+
+    public Task<bool> IsProcessedAsync(Guid connectionId, string eventId, CancellationToken cancellationToken) =>
+        db.ConnectionNotificationReceipts.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
+            && x.ConnectionId == connectionId && x.EventId == eventId && x.ProcessedAt != null,
+            cancellationToken);
+
+    public async Task<IReadOnlyDictionary<string, ConnectionNotificationReceipt>> ReadAsync(Guid connectionId,
+        IReadOnlyCollection<string> eventIds, CancellationToken cancellationToken)
+    {
+        if (eventIds.Count == 0) return new Dictionary<string, ConnectionNotificationReceipt>();
+        return await db.ConnectionNotificationReceipts.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && x.ConnectionId == connectionId && eventIds.Contains(x.EventId))
+            .ToDictionaryAsync(x => x.EventId, StringComparer.Ordinal, cancellationToken);
+    }
+
+    public async Task RememberPendingAsync(Guid connectionId, IEnumerable<string> eventIds, Guid runId,
+        DateTime observedAt, CancellationToken cancellationToken)
+    {
+        foreach (var eventId in eventIds.Distinct(StringComparer.Ordinal))
+            db.ConnectionNotificationReceipts.Add(new ConnectionNotificationReceipt
+            {
+                TenantId = tenant.TenantId,
+                ConnectionId = connectionId,
+                EventId = eventId,
+                FirstSeenPendingAt = observedAt,
+                FirstSeenPendingRunId = runId,
+                LastObservedAt = observedAt,
+            });
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task MarkProcessedAsync(Guid connectionId, string eventId,
+        CancellationToken cancellationToken)
+    {
+        var row = await db.ConnectionNotificationReceipts.SingleOrDefaultAsync(x =>
+            x.TenantId == tenant.TenantId && x.ConnectionId == connectionId && x.EventId == eventId,
+            cancellationToken);
+        if (row is null)
+        {
+            row = new ConnectionNotificationReceipt
+            {
+                TenantId = tenant.TenantId,
+                ConnectionId = connectionId,
+                EventId = eventId,
+                LastObservedAt = clock.UtcNow,
+            };
+            db.ConnectionNotificationReceipts.Add(row);
+        }
+        row.LastObservedAt = clock.UtcNow;
+        row.ProcessedAt ??= clock.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task PurgeAsync(Guid connectionId, CancellationToken cancellationToken)
+    {
+        var before = clock.UtcNow - Retention;
+        await db.ConnectionNotificationReceipts.Where(x => x.TenantId == tenant.TenantId
+                && x.ConnectionId == connectionId && x.LastObservedAt < before)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+
+    public Task<DateOnly?> WatermarkAsync(Guid connectionId, CancellationToken cancellationToken) =>
+        db.ConnectionNotificationWatchdogs.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && x.ConnectionId == connectionId).Select(x => x.WatermarkDate)
+            .SingleOrDefaultAsync(cancellationToken);
+
+    public async Task SetWatermarkAsync(Guid connectionId, DateOnly watermark,
+        CancellationToken cancellationToken)
+    {
+        var row = await db.ConnectionNotificationWatchdogs.SingleOrDefaultAsync(x =>
+            x.TenantId == tenant.TenantId && x.ConnectionId == connectionId, cancellationToken);
+        if (row is null)
+        {
+            row = new ConnectionNotificationWatchdog
+            {
+                TenantId = tenant.TenantId,
+                ConnectionId = connectionId,
+                UpdatedAt = clock.UtcNow,
+            };
+            db.ConnectionNotificationWatchdogs.Add(row);
+        }
+        if (row.WatermarkDate is null || watermark > row.WatermarkDate) row.WatermarkDate = watermark;
+        row.UpdatedAt = clock.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+}
+
 public sealed class Cx01WebhookMaintenance(
     ITenantContext tenant,
     IntegrationDbContext db,
@@ -164,9 +285,14 @@ public sealed class Cx01WebhookMaintenance(
     Cx01Client client,
     Cx01Adapter adapter,
     InboundMessageStore inbox,
+    Cx01WebhookEventTracker events,
     IConnectionCredentialStore credentials,
-    ConnectionCredentialProtector protector)
+    ConnectionCredentialProtector protector,
+    Yojana.Platform.Contracts.Time.IClock clock)
 {
+    internal const int WatchdogPageSize = 200;
+    internal const int WatchdogRunCap = 2_000;
+
     public async Task SubscribeAsync(Guid connectionId, Uri callback, CancellationToken cancellationToken)
     {
         var configured = await settings.GetAsync(connectionId, cancellationToken);
@@ -178,15 +304,35 @@ public sealed class Cx01WebhookMaintenance(
         var secret = await protector.DecryptAsync(credential, cancellationToken);
         try
         {
+            await UnsubscribeAsync(connectionId, cancellationToken);
+            var callbackBuilder = new UriBuilder(callback);
+            var tenantParameter = "tenant=" + Uri.EscapeDataString(tenant.TenantId.ToString());
+            callbackBuilder.Query = string.IsNullOrWhiteSpace(callbackBuilder.Query)
+                ? tenantParameter : callbackBuilder.Query.TrimStart('?') + "&" + tenantParameter;
+            var authentication = JsonSerializer.Serialize(new
+            {
+                Algorithm = Cx01Protocol.WebhookAlgorithm(configured.WebhookHmacAlgorithm),
+                Key = Encoding.UTF8.GetString(secret),
+            });
             var body = new
             {
-                Name = $"Yojana-{connectionId:N}",
-                CallbackUrl = callback.ToString(),
+                WebhookID = Cx01Protocol.WebhookId(tenant.TenantId.Value, connectionId),
+                WebhookURL = callbackBuilder.Uri.ToString(),
                 AuthenticationType = "HMAC",
-                HMACAlgorithm = configured.WebhookHmacAlgorithm,
-                Secret = Encoding.UTF8.GetString(secret),
+                AuthenticationCred = authentication,
                 Handshake = "tYES",
-                Active = "tYES",
+                VerifyCertificate = configured.WebhookVerifyCertificate ? "tYES" : "tNO",
+                State = "Active",
+                EventCollection = configured.EffectiveWebhookEvents().Select(value =>
+                {
+                    var item = new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["BusinessObject"] = value.BusinessObject,
+                        ["TransactionType"] = value.TransactionType,
+                    };
+                    if (value.BizObjProps is { Count: > 0 }) item["BizObjProps"] = value.BizObjProps;
+                    return item;
+                }).ToList(),
             };
             using var ignored = await client.SendJsonAsync(connectionId, HttpMethod.Post,
                 Cx01Protocol.Root + Cx01Protocol.EventSubscriptions, body, false, cancellationToken);
@@ -197,25 +343,107 @@ public sealed class Cx01WebhookMaintenance(
         }
     }
 
+    public async Task UnsubscribeAsync(Guid connectionId, CancellationToken cancellationToken)
+    {
+        var id = Cx01Protocol.WebhookId(tenant.TenantId.Value, connectionId);
+        var resource = Cx01Protocol.Root + Cx01Protocol.EventSubscriptions + "("
+            + Cx01Protocol.KeyLiteral(id) + ")";
+        try
+        {
+            using var paused = await client.SendJsonAsync(connectionId, HttpMethod.Post, resource + "/Pause",
+                new { }, true, cancellationToken);
+            using var deleted = await client.SendJsonAsync(connectionId, HttpMethod.Delete, resource,
+                null, true, cancellationToken);
+        }
+        catch (Cx01RemoteException exception) when (exception.IsRecordGone)
+        {
+            // Idempotent replacement: a missing prior subscription is already in the desired state.
+        }
+    }
+
     public async Task<int> WatchdogConnectionAsync(Guid connectionId, CancellationToken cancellationToken)
     {
         var configured = await settings.GetAsync(connectionId, cancellationToken);
         if (!configured.WebhooksAvailable) return 0;
-        using var log = await client.GetAsync(connectionId, Cx01Protocol.Root + Cx01Protocol.EventNotifications
-            + "?$filter=Status%20eq%20'Failed'&$orderby=CreateDate,CreateTime&$top=1024", cancellationToken);
-        if (!log.RootElement.TryGetProperty("value", out var values)) return 0;
+        await events.PurgeAsync(connectionId, cancellationToken);
+        var runId = Guid.CreateVersion7(clock.UtcNow);
+        var watermark = await events.WatermarkAsync(connectionId, cancellationToken);
+        var filter = "(Status eq 'Failed' or Status eq 'New')";
+        if (watermark is { } date)
+            filter += " and CreateDate ge '" + date.AddDays(-1).ToString("yyyy-MM-dd") + "'";
+        var path = Cx01Protocol.Root + Cx01Protocol.EventNotifications
+            + "?$filter=" + Uri.EscapeDataString(filter)
+            + "&$orderby=CreateDate desc,CreateTime desc,EventID desc&$top=" + WatchdogPageSize;
         var accepted = 0;
-        foreach (var row in values.EnumerateArray())
+        var examined = 0;
+        DateOnly? newestCreateDate = watermark;
+        while (examined < WatchdogRunCap)
         {
-            var collection = Text(row, "ObjectType");
-            var key = Text(row, "ObjectKey");
-            if (collection is null || key is null) continue;
-            var mapped = await adapter.CaptureKeyAsync(connectionId, collection, key, cancellationToken);
-            if (mapped is null) continue;
-            var outcome = await inbox.Accept(mapped.Acceptance, cancellationToken);
-            if (outcome.Outcome == InboundAcceptanceResult.Accepted) accepted++;
+            using var log = await client.GetAsync(connectionId, path, cancellationToken);
+            var rows = log.RootElement.TryGetProperty("value", out var values)
+                ? values.EnumerateArray().Take(WatchdogRunCap - examined).ToList() : [];
+            examined += rows.Count;
+            var eventIds = rows.Select(row => Text(row, "EventID")).Where(value => !string.IsNullOrWhiteSpace(value))
+                .Cast<string>().Distinct(StringComparer.Ordinal).ToList();
+            var known = await events.ReadAsync(connectionId, eventIds, cancellationToken);
+            var newlyPending = rows.Where(row => Text(row, "Status") == "New")
+                .Select(row => Text(row, "EventID")).Where(value => !string.IsNullOrWhiteSpace(value))
+                .Cast<string>().Where(eventId => !known.ContainsKey(eventId)).Distinct(StringComparer.Ordinal).ToList();
+            if (newlyPending.Count > 0)
+                await events.RememberPendingAsync(connectionId, newlyPending, runId, clock.UtcNow, cancellationToken);
+
+            foreach (var row in rows)
+            {
+                var eventId = Text(row, "EventID");
+                if (string.IsNullOrWhiteSpace(eventId)) continue;
+                var status = Text(row, "Status");
+                known.TryGetValue(eventId, out var state);
+                if (state?.ProcessedAt is not null) continue;
+                if (status == "New" && (state?.FirstSeenPendingRunId is null
+                    || state.FirstSeenPendingRunId == runId)) continue;
+                if (status is not ("New" or "Failed")) continue;
+                var collection = Text(row, "BusinessObject");
+                var key = Key(row);
+                if (collection is null || key is null) continue;
+                var mapped = await adapter.CaptureKeyAsync(connectionId, collection, key, cancellationToken);
+                if (mapped is not null)
+                {
+                    var outcome = await inbox.Accept(mapped.Acceptance, cancellationToken);
+                    if (outcome.Outcome == InboundAcceptanceResult.Accepted) accepted++;
+                }
+                await events.MarkProcessedAsync(connectionId, eventId, cancellationToken);
+            }
+            foreach (var row in rows)
+                if (Date(row, "CreateDate") is { } created
+                    && (newestCreateDate is null || created > newestCreateDate)) newestCreateDate = created;
+            if (examined >= WatchdogRunCap || rows.Count == 0
+                || !log.RootElement.TryGetProperty("@odata.nextLink", out var next)
+                || string.IsNullOrWhiteSpace(next.GetString())) break;
+            path = new Uri(next.GetString()!, UriKind.RelativeOrAbsolute).IsAbsoluteUri
+                ? new Uri(next.GetString()!).PathAndQuery : next.GetString()!;
         }
+        if (newestCreateDate is { } observedDate)
+            await events.SetWatermarkAsync(connectionId, observedDate, cancellationToken);
         return accepted;
+    }
+
+    private static string? Key(JsonElement row)
+    {
+        var keyData = Text(row, "KeyData");
+        if (string.IsNullOrWhiteSpace(keyData)) return null;
+        try
+        {
+            using var parsed = JsonDocument.Parse(keyData);
+            return Text(parsed.RootElement, "DocEntry") ?? Text(parsed.RootElement, "ItemCode")
+                ?? Text(parsed.RootElement, "CardCode") ?? Text(parsed.RootElement, "ObjectKey");
+        }
+        catch (JsonException) { return null; }
+    }
+
+    private static DateOnly? Date(JsonElement row, string property)
+    {
+        var value = Text(row, property);
+        return value is not null && value.Length >= 10 && DateOnly.TryParse(value[..10], out var date) ? date : null;
     }
 
     public async Task<int> WatchdogTenantAsync(CancellationToken cancellationToken)

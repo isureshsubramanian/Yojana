@@ -5,6 +5,7 @@ using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Inbox;
+using Yojana.Integration.Outbox;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
@@ -21,6 +22,21 @@ public interface ICx01SerialHistory
 {
     Task<IReadOnlyDictionary<int, IReadOnlyList<CanonicalSerial>>> ForDocumentAsync(Guid connectionId,
         string entity, string externalId, CancellationToken cancellationToken);
+}
+
+public interface ICx01DocumentCaptureStore
+{
+    Task<bool> WasCapturedAsync(Guid connectionId, string entity, string externalId,
+        CancellationToken cancellationToken);
+}
+
+public sealed class EfCx01DocumentCaptureStore(IntegrationDbContext db, ITenantContext tenant)
+    : ICx01DocumentCaptureStore
+{
+    public Task<bool> WasCapturedAsync(Guid connectionId, string entity, string externalId,
+        CancellationToken cancellationToken) => db.InboundMessages.AsNoTracking().AnyAsync(x =>
+        x.TenantId == tenant.TenantId && x.ConnectionId == connectionId
+        && x.ErpEntity == entity && x.ErpExternalId == externalId, cancellationToken);
 }
 
 public sealed class EfCx01SerialHistory(IntegrationDbContext db, ITenantContext tenant) : ICx01SerialHistory
@@ -48,6 +64,8 @@ public interface ICx01AttributionTaskSink
 {
     Task RaiseAsync(Guid connectionId, string entity, string externalId,
         IReadOnlyList<Cx01MissingSerialLine> lines, CancellationToken cancellationToken);
+    Task RaiseQueryPermissionAsync(Guid connectionId, string remoteMessage,
+        CancellationToken cancellationToken);
 }
 
 public sealed class EfCx01AttributionTaskSink(
@@ -75,6 +93,92 @@ public sealed class EfCx01AttributionTaskSink(
         });
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task RaiseQueryPermissionAsync(Guid connectionId, string remoteMessage,
+        CancellationToken cancellationToken)
+    {
+        const string subject = "serial-link-query";
+        if (await db.ExceptionTasks.AnyAsync(x => x.TenantId == tenant.TenantId
+            && x.ConnectionId == connectionId && x.Kind == "serial_attribution"
+            && x.SubjectRef == subject && x.Status == "open", cancellationToken)) return;
+        db.ExceptionTasks.Add(new IntegrationExceptionTask
+        {
+            TenantId = tenant.TenantId,
+            ExceptionTaskId = TimeOrderedId.New(clock.UtcNow),
+            ConnectionId = connectionId,
+            Kind = "serial_attribution",
+            SubjectRef = subject,
+            Detail = remoteMessage.Length <= 2_000 ? remoteMessage : remoteMessage[..2_000],
+            Status = "open",
+            CreatedAt = clock.UtcNow,
+        });
+        await db.SaveChangesAsync(cancellationToken);
+    }
+}
+
+public interface ICx01OwnWriteStore
+{
+    Task<bool> MatchesAsync(Guid connectionId, string externalId, string changeMarker,
+        CancellationToken cancellationToken);
+}
+
+public sealed class EfCx01OwnWriteStore(IntegrationDbContext db, ITenantContext tenant) : ICx01OwnWriteStore
+{
+    // TIGHT COUPLING (own-write recognition): this exact-marker lookup and OutboundRelay.CompleteAsync's persisted
+    // ErpChangeMarker are one durable acknowledgement invariant. A process-local marker would be lost on restart;
+    // separating either side makes immediate remote post-write changes look foreign. Later markers must not match.
+    public Task<bool> MatchesAsync(Guid connectionId, string externalId, string changeMarker,
+        CancellationToken cancellationToken) => db.OutboundCommands.AsNoTracking().AnyAsync(x =>
+            x.TenantId == tenant.TenantId && x.ConnectionId == connectionId
+            && x.ErpExternalId == externalId && x.ErpChangeMarker == changeMarker
+            && x.Status == OutboundCommandStatus.Done, cancellationToken);
+}
+
+public interface ICx01InboundRejectionSink
+{
+    Task ParkAsync(Guid connectionId, string entity, string externalId, Cx01RemoteException exception,
+        CancellationToken cancellationToken);
+}
+
+public sealed class EfCx01InboundRejectionSink(
+    IntegrationDbContext db,
+    ITenantContext tenant,
+    IClock clock,
+    IInboundMessageParkingSink parking) : ICx01InboundRejectionSink
+{
+    public async Task ParkAsync(Guid connectionId, string entity, string externalId,
+        Cx01RemoteException exception, CancellationToken cancellationToken)
+    {
+        var message = new InboundMessage
+        {
+            TenantId = tenant.TenantId,
+            InboundMessageId = TimeOrderedId.New(clock.UtcNow),
+            MessageId = Guid.CreateVersion7(),
+            ConnectionId = connectionId,
+            ConnectorCode = Cx01Capabilities.ConnectorCode,
+            ErpEntity = entity,
+            ErpExternalId = externalId,
+            ErpChangeMarker = $"business-rejection:{exception.RemoteCode ?? (int)exception.StatusCode + ""}:"
+                + clock.UtcNow.Ticks,
+            MarkerKind = "remote_error",
+            ContractVersion = IntegrationContracts.CurrentVersion,
+            MessageType = "RemoteReadRejected",
+            CaptureMode = "observed",
+            RawPayload = "{}",
+            CanonicalMessage = "{}",
+            OccurredAt = clock.UtcNow,
+            ObservedAt = clock.UtcNow,
+            AcceptedAt = clock.UtcNow,
+            IsLatest = false,
+            TranslationStatus = InboundTranslationStatus.NeedsAttention,
+            LastTranslationError = exception.BusinessMessage(),
+            AttentionReasonCode = "business_rejection",
+        };
+        db.InboundMessages.Add(message);
+        _ = await parking.ParkInboundAsync(message, "business_rejection", exception.BusinessMessage(),
+            cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+    }
 }
 
 internal static class Cx01Mapper
@@ -82,7 +186,8 @@ internal static class Cx01Mapper
     public static Cx01MappedAcceptance Map(TenantId tenantId, Guid connectionId, Cx01EntityDefinition entity,
         JsonElement raw, IReadOnlyDictionary<int, IReadOnlyList<CanonicalSerial>> previousSerials,
         IReadOnlyDictionary<int, IReadOnlyList<CanonicalSerial>> recoveredSerials,
-        IReadOnlySet<int> serialManagedLines, string captureMode, DateTime observedUtc)
+        IReadOnlySet<int> serialManagedLines, string captureMode, DateTime observedUtc,
+        bool mapCancelledOriginal = false)
     {
         var key = Text(raw, entity.KeyField) ?? throw new InvalidOperationException("CX01 response has no key.");
         var changed = ChangeMarker(raw, key);
@@ -92,11 +197,11 @@ internal static class Cx01Mapper
         object payload;
         var completeness = "complete";
         var messageType = entity.CanonicalMessage;
-        if (messageType is not ("ItemUpserted" or "PartyUpserted" or "DocumentCancelled")
-            && Flag(raw, "Cancelled"))
+        if (!mapCancelledOriginal && messageType is not ("ItemUpserted" or "PartyUpserted")
+            && Text(raw, "CancelStatus") == "csCancellation")
         {
             messageType = "DocumentCancelled";
-            payload = new DocumentCancelled(DocumentRef(raw, key), OpenEnum.Known("cancelled"));
+            payload = new DocumentCancelled(CancelledDocumentRef(raw, entity, key), OpenEnum.Known("cancelled"));
         }
         else switch (messageType)
         {
@@ -156,7 +261,7 @@ internal static class Cx01Mapper
         var canonical = Activator.CreateInstance(canonicalType, envelope, messageType, payload)
             ?? throw new InvalidOperationException("Could not create the canonical CX01 message.");
         return new(new InboundAcceptance(envelope, messageType,
-            JsonSerializer.Serialize(canonical, canonicalType, IntegrationContracts.Json), raw.GetRawText()), missing);
+            JsonSerializer.Serialize(canonical, canonicalType, IntegrationContracts.Json), RetainedRaw(raw)), missing);
     }
 
     public static string ChangeMarker(JsonElement value, string key)
@@ -166,13 +271,7 @@ internal static class Cx01Mapper
         return $"{date}T{NormaliseTime(time)}|{key}";
     }
 
-    public static bool IsOwnWrite(JsonElement value, Cx01ConnectionSettings settings)
-    {
-        if (StartsWith(value, settings.RmaReferenceField, settings.OwnReferencePrefix)
-            || StartsWith(value, settings.CertificateUrlField, settings.OwnReferencePrefix)) return true;
-        return LineElements(value).SelectMany(SerialElements).Any(serial =>
-            StringComparer.Ordinal.Equals(Text(serial, "DataSource"), settings.OwnSerialDataSourceMarker));
-    }
+    public static bool IsCancelledOriginal(JsonElement value) => Text(value, "CancelStatus") == "csYes";
 
     public static IReadOnlyList<Cx01MissingSerialLine> MissingSerialLines(JsonElement value)
     {
@@ -224,13 +323,67 @@ internal static class Cx01Mapper
                 foreach (var line in lines.EnumerateArray()) yield return line;
     }
 
-    private static IEnumerable<JsonElement> SerialElements(JsonElement line) =>
+    private static JsonElement.ArrayEnumerator SerialElements(JsonElement line) =>
         line.TryGetProperty("SerialNumbers", out var serials) && serials.ValueKind == JsonValueKind.Array
-            ? serials.EnumerateArray() : [];
+            ? serials.EnumerateArray() : default;
 
     private static ExternalDocumentRef DocumentRef(JsonElement value, string key) => new(
         Text(value, "DocObjectCode") ?? "document", Text(value, "DocNum") ?? key,
         DateOnly.FromDateTime((Date(value, "DocDate") ?? DateTimeOffset.UnixEpoch).Date), key);
+
+    private static ExternalDocumentRef CancelledDocumentRef(JsonElement value, Cx01EntityDefinition entity,
+        string cancellationKey)
+    {
+        var baseLine = LineElements(value).FirstOrDefault(line => Text(line, "BaseEntry") is not null);
+        var original = baseLine.ValueKind == JsonValueKind.Undefined ? null : Text(baseLine, "BaseEntry");
+        return new(entity.Collection, original ?? cancellationKey,
+            DateOnly.FromDateTime((Date(value, "DocDate") ?? DateTimeOffset.UnixEpoch).Date),
+            original ?? cancellationKey,
+            baseLine.ValueKind == JsonValueKind.Undefined ? null : Int(baseLine, "BaseLine"));
+    }
+
+    private static string RetainedRaw(JsonElement raw)
+    {
+        const int maximumChars = 262_144;
+        var complete = raw.GetRawText();
+        if (complete.Length <= maximumChars) return complete;
+        var fields = new Dictionary<string, string>(StringComparer.Ordinal);
+        var retainedCharacters = 0;
+        CollectUserFields(raw, "$", fields, ref retainedCharacters);
+        return JsonSerializer.Serialize(new
+        {
+            raw_payload_truncated = true,
+            user_defined_fields = fields,
+        }, IntegrationContracts.Json);
+    }
+
+    private static void CollectUserFields(JsonElement value, string path, IDictionary<string, string> fields,
+        ref int retainedCharacters)
+    {
+        if (fields.Count >= 256 || retainedCharacters >= 200_000) return;
+        if (value.ValueKind == JsonValueKind.Object)
+            foreach (var property in value.EnumerateObject())
+            {
+                var propertyPath = path + "." + property.Name;
+                if (property.Name.StartsWith("U_", StringComparison.Ordinal))
+                {
+                    var text = property.Value.GetRawText();
+                    if (text.Length > 4_096) text = text[..4_096];
+                    if (retainedCharacters + text.Length <= 200_000)
+                    {
+                        fields[propertyPath] = text;
+                        retainedCharacters += text.Length;
+                    }
+                }
+                else CollectUserFields(property.Value, propertyPath, fields, ref retainedCharacters);
+            }
+        else if (value.ValueKind == JsonValueKind.Array)
+        {
+            var index = 0;
+            foreach (var item in value.EnumerateArray())
+                CollectUserFields(item, path + "[" + index++ + "]", fields, ref retainedCharacters);
+        }
+    }
 
     private static ExternalDocumentRef? BaseDocument(IEnumerable<CanonicalLine> lines) =>
         lines.Select(x => x.BaseDocumentRef).FirstOrDefault(x => x is not null);
@@ -247,11 +400,6 @@ internal static class Cx01Mapper
         var digits = new string(value.Where(char.IsAsciiDigit).ToArray()).PadLeft(6, '0');
         return digits.Length > 6 ? digits[^6..] : digits;
     }
-
-    private static bool StartsWith(JsonElement value, string? property, string prefix) =>
-        property is not null && value.TryGetProperty(property, out var found)
-            && found.ValueKind == JsonValueKind.String
-            && (found.GetString() ?? "").StartsWith(prefix, StringComparison.Ordinal);
 
     private static string? Text(JsonElement value, string property)
     {

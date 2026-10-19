@@ -1,0 +1,30 @@
+[
+  {
+    "id": "2af02d84-65d8-4b1f-9d69-49b123d5bd01",
+    "specversion": "1.0",
+    "source": "/default/sap.b1/FICTIONAL_DEMO",
+    "type": "sap.b1.DeliveryNotes.Created.v1",
+    "subject": "4101",
+    "time": "2026-09-01T08:15:00.000Z",
+    "datacontenttype": "application/json",
+    "data": {
+      "DocEntry": 4101,
+      "CardCode": "C-FICTIONAL-01",
+      "DocNum": 810041
+    }
+  },
+  {
+    "id": "40fd4e66-dfd4-4962-b195-da14316539bf",
+    "specversion": "1.0",
+    "source": "/default/sap.b1/FICTIONAL_DEMO",
+    "type": "sap.b1.DeliveryNotes.Created.v1",
+    "subject": "4102",
+    "time": "2026-09-01T08:15:00.700Z",
+    "datacontenttype": "application/json",
+    "data": {
+      "DocEntry": 4102,
+      "CardCode": "C-FICTIONAL-01",
+      "DocNum": 810042
+    }
+  }
+]

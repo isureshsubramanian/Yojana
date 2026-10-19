@@ -57,14 +57,23 @@ public static class IntegrationModule
         builder.Services.AddSingleton(RecurringTenantJob.For<Cx01SessionKeepAliveJob>(
             Cx01SessionKeepAliveJob.JobName, Cx01SessionKeepAliveJob.Cron));
         builder.Services.AddScoped<ICx01SerialHistory, EfCx01SerialHistory>();
+        builder.Services.AddScoped<ICx01DocumentCaptureStore, EfCx01DocumentCaptureStore>();
         builder.Services.AddScoped<ICx01AttributionTaskSink, EfCx01AttributionTaskSink>();
+        builder.Services.AddScoped<ICx01OwnWriteStore, EfCx01OwnWriteStore>();
+        builder.Services.AddScoped<ICx01InboundRejectionSink, EfCx01InboundRejectionSink>();
         builder.Services.AddScoped<Cx01Adapter>();
         builder.Services.AddKeyedScoped<IConnectorAdapter>(Cx01Capabilities.ConnectorCode, (services, _) =>
             services.GetRequiredService<Cx01Adapter>());
         builder.Services.AddKeyedScoped<IOutboundConnector>(Cx01Capabilities.ConnectorCode, (services, _) =>
             services.GetRequiredService<Cx01Adapter>());
         builder.Services.AddScoped<Cx01Onboarding>();
+        builder.Services.AddScoped<ICx01SurveyRemotePort, Cx01SurveyRemotePort>();
+        builder.Services.AddScoped<Cx01SurveyProbe>();
+        builder.Services.AddScoped<Cx01SurveyService>();
+        builder.Services.AddScoped<ICx01SurveyReader>(services =>
+            services.GetRequiredService<Cx01SurveyService>());
         builder.Services.AddScoped<Cx01WebhookMaintenance>();
+        builder.Services.AddScoped<Cx01WebhookEventTracker>();
         builder.Services.AddSingleton(RecurringTenantJob.For<Cx01WebhookWatchdogJob>(
             Cx01WebhookWatchdogJob.JobName, Cx01WebhookWatchdogJob.Cron));
         // The published-event chains already contain Serialisation handlers with their own EF transaction. Resolve the

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Security.Cryptography;
+using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.Connectors.CX01;
 using Yojana.Integration.Connectors.CX01.Testing;
@@ -47,6 +48,9 @@ public sealed class Cx01AdapterTests
         Assert.Equal(2, result.Events.Count);
         Assert.All(result.Events, item => Assert.Equal(nameof(DeliveryPosted), item.MessageType));
         Assert.EndsWith("|4102", result.NextWatermark, StringComparison.Ordinal);
+        Assert.All(simulator.CaptureReadPaths, path => Assert.DoesNotContain("$select", path,
+            StringComparison.OrdinalIgnoreCase));
+        Assert.False(simulator.SelectEmptiedSerials);
     }
 
     [Fact]
@@ -108,6 +112,47 @@ public sealed class Cx01AdapterTests
     }
 
     [Fact]
+    public async Task Governed_query_recovers_negative_delivery_movement_without_netting_the_return()
+    {
+        await using var simulator = new Cx01Simulator { SameWarehouseReturnPosted = true };
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+        await context.Settings.SetAsync(context.ConnectionId,
+            new(simulator.BaseUri, "FICTIONAL_DEMO", "1000340",
+                AllowlistedTrackingTables: Cx01Simulator.TrackingTables), CancellationToken.None);
+
+        var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId, "deliveries",
+            null, TimeSpan.FromMinutes(2), 1), CancellationToken.None);
+
+        using var canonical = JsonDocument.Parse(result.Events.Single().CanonicalMessage);
+        var serials = canonical.RootElement.GetProperty("payload").GetProperty("lines")[0].GetProperty("serials");
+        Assert.Equal("SN-FICTIONAL-001", Assert.Single(serials.EnumerateArray()).GetProperty("value").GetString());
+        Assert.Equal("complete", canonical.RootElement.GetProperty("envelope")
+            .GetProperty("attribution_completeness").GetString());
+    }
+
+    [Fact]
+    public async Task Governed_query_code_702_disables_allowlist_and_raises_one_attribution_task()
+    {
+        await using var simulator = new Cx01Simulator
+        {
+            SameWarehouseReturnPosted = true,
+            TrackingTablesAllowed = false,
+        };
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+        await context.Settings.SetAsync(context.ConnectionId,
+            new(simulator.BaseUri, "FICTIONAL_DEMO", "1000340",
+                AllowlistedTrackingTables: Cx01Simulator.TrackingTables), CancellationToken.None);
+
+        var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId, "deliveries",
+            null, TimeSpan.FromMinutes(2), 1), CancellationToken.None);
+
+        Assert.Single(result.Events);
+        Assert.Single(context.Tasks.QueryPermissionMessages);
+        Assert.Empty((await context.Settings.GetAsync(context.ConnectionId, CancellationToken.None))
+            .AllowlistedTrackingTables!);
+    }
+
+    [Fact]
     public async Task Cancellation_is_emitted_as_a_canonical_reversal_message()
     {
         await using var simulator = new Cx01Simulator();
@@ -116,18 +161,21 @@ public sealed class Cx01AdapterTests
             Cx01Protocol.Root + "DeliveryNotes(4101)/Cancel", new { }, true, CancellationToken.None)) { }
 
         var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId, "deliveries",
-            null, TimeSpan.FromMinutes(2), 1), CancellationToken.None);
+            null, TimeSpan.FromMinutes(2), 3), CancellationToken.None);
 
-        Assert.Equal(nameof(DocumentCancelled), result.Events.Single().MessageType);
+        var cancellation = Assert.Single(result.Events, value => value.MessageType == nameof(DocumentCancelled));
+        using var canonical = JsonDocument.Parse(cancellation.CanonicalMessage);
+        Assert.Equal("4101", canonical.RootElement.GetProperty("payload").GetProperty("document_ref")
+            .GetProperty("external_id").GetString());
     }
 
     [Fact]
-    public void Capability_probe_keeps_the_first_round_release_polling_only()
+    public void Capability_probe_uses_the_metadata_and_company_setting_result()
     {
         var declaration = Cx01Capabilities.For("10.0 FP 2308", true);
 
-        Assert.False(declaration.WebhooksAvailable);
-        Assert.Equal(["poll"], declaration.CaptureModes);
+        Assert.True(declaration.WebhooksAvailable);
+        Assert.Equal(["poll", "webhook"], declaration.CaptureModes);
         Assert.Equal(CapabilitySupport.Manual, declaration.Messages[nameof(CreateReplacementDelivery)]);
         Assert.Equal(CapabilitySupport.Unsupported,
             declaration.Messages[nameof(ChangeStockStatusOrLocation)]);
@@ -152,6 +200,117 @@ public sealed class Cx01AdapterTests
         signature[0] ^= 1;
         Assert.False(Cx01WebhookEndpoints.VerifySignature(body, signature, secret, algorithm));
     }
+
+    [Fact]
+    public void Live_shape_fixture_parses_cloud_events_and_uses_base64_hmac()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Connectors", "CX01", "Fixtures",
+            "webhook-notification.json");
+        var bytes = File.ReadAllBytes(path);
+        var secret = "fixture-test-secret"u8.ToArray();
+        var presented = Convert.FromBase64String(Convert.ToBase64String(HMACSHA256.HashData(secret, bytes)));
+        Assert.True(Cx01WebhookEndpoints.VerifySignature(bytes, presented, secret, "HMACSHA256"));
+        using var payload = JsonDocument.Parse(bytes);
+        var connection = Guid.CreateVersion7();
+        var hints = payload.RootElement.EnumerateArray()
+            .Select(value => Cx01WebhookEndpoints.Hint(value, connection)).ToList();
+        Assert.All(hints, hint =>
+        {
+            Assert.NotNull(hint);
+            Assert.Equal("DeliveryNotes", hint.Collection);
+            Assert.Equal("Created", hint.Operation);
+        });
+        Assert.Equal(["4101", "4102"], hints.Select(value => value!.Key));
+    }
+
+    [Fact]
+    public void Repeated_handshakes_are_stateless_and_keep_returning_the_case_sensitive_challenge_shape()
+    {
+        var secret = "fixture-test-secret"u8.ToArray();
+        foreach (var token in new[] { "9f5d0d6a-fictional-token", "c46bc63b-repeated-token" })
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(token);
+            var signature = HMACSHA256.HashData(secret, bytes);
+            Assert.True(Cx01WebhookEndpoints.VerifySignature(bytes, signature, secret, "HMACSHA256"));
+            Assert.Equal("{\"Challenge\":" + JsonSerializer.Serialize(token) + "}",
+                Cx01WebhookEndpoints.HandshakeResponse(token));
+        }
+    }
+
+    [Fact]
+    public async Task Remote_business_rejection_preserves_message_and_is_not_retried()
+    {
+        await using var simulator = new Cx01Simulator { RejectNextPatchWith = HttpStatusCode.BadRequest };
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+
+        var exception = await Assert.ThrowsAsync<Cx01RemoteException>(() => context.Client.SendJsonAsync(
+            context.ConnectionId, HttpMethod.Patch, Cx01Protocol.Root + "Returns(5101)",
+            new { U_FICTIONAL_REASON = "" }, true, CancellationToken.None));
+
+        Assert.Equal("-5002", exception.RemoteCode);
+        Assert.Equal("(custom) Return needs a reason code", exception.RemoteMessage);
+        Assert.True(exception.IsBusinessRejection);
+        Assert.True(simulator.LastHandlerFailure is null, simulator.LastHandlerFailure);
+        Assert.Equal(1, simulator.PatchAttempts);
+    }
+
+    [Fact]
+    public async Task Service_unavailable_is_retried_for_an_idempotent_patch()
+    {
+        await using var simulator = new Cx01Simulator { ServiceUnavailableResponses = 1 };
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        JsonDocument? response;
+        try
+        {
+            response = await context.Client.SendJsonAsync(context.ConnectionId, HttpMethod.Patch,
+                Cx01Protocol.Root + "Returns(5101)", new { U_FICTIONAL_REASON = "reason" }, true, timeout.Token);
+        }
+        catch (OperationCanceledException exception)
+        {
+            throw new InvalidOperationException($"Retry stalled after {simulator.RequestCount} requests; "
+                + $"remaining simulated failures: {simulator.ServiceUnavailableResponses}.", exception);
+        }
+        catch (Cx01RemoteException exception) when (simulator.LastHandlerFailure is not null)
+        {
+            throw new InvalidOperationException(simulator.LastHandlerFailure, exception);
+        }
+        using (response) { }
+
+        Assert.Equal(1, simulator.PatchAttempts);
+        Assert.Equal(0, simulator.ServiceUnavailableResponses);
+    }
+
+    [Fact]
+    public async Task Missing_key_is_classified_as_record_gone_with_remote_message()
+    {
+        await using var simulator = new Cx01Simulator();
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+
+        var exception = await Assert.ThrowsAsync<Cx01RemoteException>(() => context.Client.GetAsync(
+            context.ConnectionId, Cx01Protocol.Root + "DeliveryNotes(999999)", CancellationToken.None));
+
+        Assert.True(exception.IsRecordGone);
+        Assert.Equal("-2028", exception.RemoteCode);
+        Assert.Contains("does not exist", exception.RemoteMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inbound_business_rejection_is_parked_and_not_retried()
+    {
+        await using var simulator = new Cx01Simulator { RejectNextDeliveryReadWithBusinessError = true };
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+
+        var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId, "deliveries",
+            null, TimeSpan.FromMinutes(2), 1), CancellationToken.None);
+
+        Assert.Empty(result.Events);
+        var rejection = Assert.Single(context.Rejections.Parked);
+        Assert.Equal("24001", rejection.Exception.RemoteCode);
+        Assert.Equal("(custom) Read blocked by a fictional validation", rejection.Exception.RemoteMessage);
+        Assert.Equal(3, simulator.RequestCount); // login, key list, one rejected key read.
+    }
 }
 
 internal sealed class Cx01TestContext : IAsyncDisposable
@@ -159,16 +318,19 @@ internal sealed class Cx01TestContext : IAsyncDisposable
     private readonly Cx01Transport transport;
     private readonly IntegrationDbContext db;
 
-    private Cx01TestContext(TenantId tenantId, Guid connectionId, Cx01Client client,
+    private Cx01TestContext(TenantId tenantId, Guid connectionId, Cx01Client client, Cx01Settings settings,
         Cx01Adapter adapter, RememberingSerialHistory history, CollectingAttributionTasks tasks,
+        CollectingInboundRejections rejections,
         Cx01Transport transport, IntegrationDbContext db)
     {
         TenantId = tenantId;
         ConnectionId = connectionId;
         Client = client;
+        Settings = settings;
         Adapter = adapter;
         History = history;
         Tasks = tasks;
+        Rejections = rejections;
         this.transport = transport;
         this.db = db;
     }
@@ -176,9 +338,11 @@ internal sealed class Cx01TestContext : IAsyncDisposable
     public TenantId TenantId { get; }
     public Guid ConnectionId { get; }
     public Cx01Client Client { get; }
+    public Cx01Settings Settings { get; }
     public Cx01Adapter Adapter { get; }
     public RememberingSerialHistory History { get; }
     public CollectingAttributionTasks Tasks { get; }
+    public CollectingInboundRejections Rejections { get; }
 
     public static async Task<Cx01TestContext> CreateAsync(Cx01Simulator simulator)
     {
@@ -207,7 +371,7 @@ internal sealed class Cx01TestContext : IAsyncDisposable
         var profiles = new ConnectionThrottleProfiles(profileStore, clock);
         await profiles.OnboardAsync(new(tenantId, connectionId), Cx01Capabilities.For("10.0 FP 2308", false).Throttle,
             CancellationToken.None);
-        var delay = new SystemConnectionThrottleDelay();
+        var delay = new AdvancingThrottleDelay(clock);
         var isolation = new ConnectionWorkerIsolation();
         var workers = new ConnectionThrottleWorkerRegistry(isolation, new InMemoryConnectionDailyBudgetStore(),
             new NullConnectionCallBudgetAlertPublisher(), clock, delay);
@@ -219,9 +383,11 @@ internal sealed class Cx01TestContext : IAsyncDisposable
         var db = new IntegrationDbContext(options, tenant);
         var history = new RememberingSerialHistory();
         var tasks = new CollectingAttributionTasks();
+        var rejections = new CollectingInboundRejections();
         var adapter = new Cx01Adapter(tenant, clock, db, new GatewayReferenceStore(db, tenant, clock),
-            settings, client, history, tasks);
-        return new(tenantId, connectionId, client, adapter, history, tasks, transport, db);
+            settings, client, history, new NoCapturedDocuments(), tasks, new NoOwnWrites(), rejections,
+            new EmptySurveyReader());
+        return new(tenantId, connectionId, client, settings, adapter, history, tasks, rejections, transport, db);
     }
 
     public ValueTask DisposeAsync()
@@ -230,6 +396,12 @@ internal sealed class Cx01TestContext : IAsyncDisposable
         db.Dispose();
         return ValueTask.CompletedTask;
     }
+}
+
+internal sealed class NoCapturedDocuments : ICx01DocumentCaptureStore
+{
+    public Task<bool> WasCapturedAsync(Guid connectionId, string entity, string externalId,
+        CancellationToken cancellationToken) => Task.FromResult(false);
 }
 
 internal sealed class RememberingSerialHistory : ICx01SerialHistory
@@ -252,6 +424,7 @@ internal sealed class RememberingSerialHistory : ICx01SerialHistory
 internal sealed class CollectingAttributionTasks : ICx01AttributionTaskSink
 {
     public List<(string Entity, string ExternalId)> Raised { get; } = [];
+    public List<string> QueryPermissionMessages { get; } = [];
 
     public Task RaiseAsync(Guid connectionId, string entity, string externalId,
         IReadOnlyList<Cx01MissingSerialLine> lines, CancellationToken cancellationToken)
@@ -259,4 +432,35 @@ internal sealed class CollectingAttributionTasks : ICx01AttributionTaskSink
         Raised.Add((entity, externalId));
         return Task.CompletedTask;
     }
+
+    public Task RaiseQueryPermissionAsync(Guid connectionId, string remoteMessage,
+        CancellationToken cancellationToken)
+    {
+        QueryPermissionMessages.Add(remoteMessage);
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class NoOwnWrites : ICx01OwnWriteStore
+{
+    public Task<bool> MatchesAsync(Guid connectionId, string externalId, string changeMarker,
+        CancellationToken cancellationToken) => Task.FromResult(false);
+}
+
+internal sealed class CollectingInboundRejections : ICx01InboundRejectionSink
+{
+    public List<(string Entity, string ExternalId, Cx01RemoteException Exception)> Parked { get; } = [];
+
+    public Task ParkAsync(Guid connectionId, string entity, string externalId, Cx01RemoteException exception,
+        CancellationToken cancellationToken)
+    {
+        Parked.Add((entity, externalId, exception));
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class EmptySurveyReader : ICx01SurveyReader
+{
+    public Task<IReadOnlyList<string>> MandatoryWithoutDefaultFieldsAsync(Guid connectionId, string table,
+        CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<string>>([]);
 }

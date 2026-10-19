@@ -34,6 +34,8 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<ConnectionThrottleProfileEntity> ConnectionThrottleProfiles => Set<ConnectionThrottleProfileEntity>();
     public DbSet<ConnectionNotificationSource> ConnectionNotificationSources => Set<ConnectionNotificationSource>();
     public DbSet<ConnectionPollWatermark> ConnectionPollWatermarks => Set<ConnectionPollWatermark>();
+    public DbSet<ConnectionNotificationReceipt> ConnectionNotificationReceipts => Set<ConnectionNotificationReceipt>();
+    public DbSet<ConnectionNotificationWatchdog> ConnectionNotificationWatchdogs => Set<ConnectionNotificationWatchdog>();
     public DbSet<DeadLetterItem> DeadLetterItems => Set<DeadLetterItem>();
     public DbSet<DeadLetterEvent> DeadLetterEvents => Set<DeadLetterEvent>();
     public DbSet<ManualOutboundTask> ManualOutboundTasks => Set<ManualOutboundTask>();
@@ -41,6 +43,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<ReconciliationEntityDayResult> ReconciliationEntityDayResults => Set<ReconciliationEntityDayResult>();
     public DbSet<ReconciliationLocationResult> ReconciliationLocationResults => Set<ReconciliationLocationResult>();
     public DbSet<BackfillCursor> BackfillCursors => Set<BackfillCursor>();
+    public DbSet<Cx01SurveyRecord> Cx01SurveyRecords => Set<Cx01SurveyRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -53,6 +56,13 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.Status).HasMaxLength(24);
             b.HasIndex(x => new { x.TenantId, x.Status, x.CreatedAt, x.ConnectionId });
             b.HasIndex(x => new { x.TenantId, x.ConnectorCode, x.ConnectionId });
+        });
+        modelBuilder.Entity<Cx01SurveyRecord>(b =>
+        {
+            b.ToTable("cx01_survey");
+            b.HasKey(x => new { x.TenantId, x.ConnectionId });
+            b.Property(x => x.ResultJson).HasColumnType("nvarchar(max)");
+            b.HasIndex(x => new { x.TenantId, x.ObservedAt, x.ConnectionId });
         });
         modelBuilder.Entity<InboundMessage>(b =>
         {
@@ -274,6 +284,20 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.Watermark).HasMaxLength(320);
             b.Property(x => x.LastError).HasMaxLength(2000);
             b.HasIndex(x => new { x.TenantId, x.NextPollAt, x.ConnectionId, x.EntityType });
+        });
+        modelBuilder.Entity<ConnectionNotificationReceipt>(b =>
+        {
+            b.ToTable("connection_notification_receipt");
+            b.HasKey(x => new { x.TenantId, x.ConnectionId, x.EventId });
+            b.Property(x => x.EventId).HasMaxLength(200);
+            b.HasIndex(x => new { x.TenantId, x.ProcessedAt, x.ConnectionId, x.EventId });
+            b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.FirstSeenPendingAt, x.EventId });
+        });
+        modelBuilder.Entity<ConnectionNotificationWatchdog>(b =>
+        {
+            b.ToTable("connection_notification_watchdog");
+            b.HasKey(x => new { x.TenantId, x.ConnectionId });
+            b.HasIndex(x => new { x.TenantId, x.UpdatedAt, x.ConnectionId });
         });
         modelBuilder.Entity<DeadLetterItem>(b =>
         {

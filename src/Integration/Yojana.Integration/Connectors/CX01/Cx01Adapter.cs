@@ -24,7 +24,11 @@ public sealed class Cx01Adapter(
     Cx01Settings settings,
     Cx01Client client,
     ICx01SerialHistory serialHistory,
-    ICx01AttributionTaskSink attributionTasks) : IConnectorAdapter, IOutboundConnector
+    ICx01DocumentCaptureStore capturedDocuments,
+    ICx01AttributionTaskSink attributionTasks,
+    ICx01OwnWriteStore ownWrites,
+    ICx01InboundRejectionSink inboundRejections,
+    ICx01SurveyReader surveyReader) : IConnectorAdapter, IOutboundConnector
 {
     public string ConnectorCode => Cx01Capabilities.ConnectorCode;
     public OutboundConnectorCapabilities Capabilities { get; } = new(false, OwnsConnectionLane: true);
@@ -44,19 +48,44 @@ public sealed class Cx01Adapter(
         var next = cursor;
         foreach (var changed in keys.OrderBy(x => x.Timestamp).ThenBy(x => x.Key, StringComparer.Ordinal))
         {
-            using var document = await client.GetAsync(request.ConnectionId,
-                Cx01Protocol.ByKey(entity, changed.Key), cancellationToken);
-            if (Cx01Mapper.IsOwnWrite(document.RootElement, configured))
+            JsonDocument document;
+            try
+            {
+                document = await client.GetAsync(request.ConnectionId,
+                    Cx01Protocol.ByKey(entity, changed.Key), cancellationToken);
+            }
+            catch (Cx01RemoteException exception) when (exception.IsRecordGone)
             {
                 next = Cx01Watermark.Max(next, changed);
                 continue;
             }
-            var mapped = await MapWithSerialFallbackAsync(request.ConnectionId, entity, document.RootElement,
-                configured, "poll", cancellationToken);
-            acceptances.Add(mapped.Acceptance);
-            if (mapped.MissingSerialLines.Count > 0)
-                await attributionTasks.RaiseAsync(request.ConnectionId, entity.Collection, changed.Key,
-                    mapped.MissingSerialLines, cancellationToken);
+            catch (Cx01RemoteException exception) when (exception.IsBusinessRejection)
+            {
+                await inboundRejections.ParkAsync(request.ConnectionId, entity.Collection, changed.Key, exception,
+                    cancellationToken);
+                next = Cx01Watermark.Max(next, changed);
+                continue;
+            }
+            using (document)
+            {
+                if (Cx01Mapper.IsCancelledOriginal(document.RootElement)
+                    && await WasCapturedAsync(request.ConnectionId, entity, changed.Key, cancellationToken))
+                {
+                    next = Cx01Watermark.Max(next, changed);
+                    continue;
+                }
+                if (await IsOwnWriteAsync(request.ConnectionId, entity, document.RootElement, cancellationToken))
+                {
+                    next = Cx01Watermark.Max(next, changed);
+                    continue;
+                }
+                var mapped = await MapWithSerialFallbackAsync(request.ConnectionId, entity, document.RootElement,
+                    configured, "poll", cancellationToken);
+                acceptances.Add(mapped.Acceptance);
+                if (mapped.MissingSerialLines.Count > 0)
+                    await attributionTasks.RaiseAsync(request.ConnectionId, entity.Collection, changed.Key,
+                        mapped.MissingSerialLines, cancellationToken);
+            }
             next = Cx01Watermark.Max(next, changed);
         }
         return new(acceptances, next == cursor ? request.Watermark : next.ToString());
@@ -141,7 +170,9 @@ public sealed class Cx01Adapter(
             last = changed;
             using var document = await client.GetAsync(connectionId,
                 Cx01Protocol.ByKey(definition, changed.Key), cancellationToken);
-            if (!Cx01Mapper.IsOwnWrite(document.RootElement, configured))
+            if (Cx01Mapper.IsCancelledOriginal(document.RootElement)
+                && await WasCapturedAsync(connectionId, definition, changed.Key, cancellationToken)) continue;
+            if (!await IsOwnWriteAsync(connectionId, definition, document.RootElement, cancellationToken))
                 messages.Add((await MapWithSerialFallbackAsync(connectionId, definition, document.RootElement,
                     configured, "backfill", cancellationToken)).Acceptance);
             if (messages.Count == pageSize) break;
@@ -211,11 +242,20 @@ public sealed class Cx01Adapter(
         {
             [field] = configured.OwnReferencePrefix + value,
         };
-        using var response = await client.SendJsonAsync(request.ConnectionId, HttpMethod.Patch,
-            Cx01Protocol.Root + collection + "(" + Cx01Protocol.KeyLiteral(key) + ")", body, true,
-            cancellationToken);
-        var marker = response is null ? null : Cx01Mapper.ChangeMarker(response.RootElement, key);
-        return OutboundCreateResult.Created(key, marker);
+        await ApplyMandatoryDefaultsAsync(request.ConnectionId, collection, body, configured, cancellationToken);
+        try
+        {
+            using var response = await client.SendJsonAsync(request.ConnectionId, HttpMethod.Patch,
+                Cx01Protocol.Root + collection + "(" + Cx01Protocol.KeyLiteral(key) + ")", body, true,
+                cancellationToken);
+            using var observed = await client.GetAsync(request.ConnectionId,
+                Cx01Protocol.Root + collection + "(" + Cx01Protocol.KeyLiteral(key) + ")", cancellationToken);
+            return OutboundCreateResult.Created(key, Cx01Mapper.ChangeMarker(observed.RootElement, key));
+        }
+        catch (Cx01RemoteException exception) when (exception.IsBusinessRejection)
+        {
+            return OutboundCreateResult.Rejected(exception.BusinessMessage());
+        }
     }
 
     internal async Task<Cx01MappedAcceptance?> CaptureKeyAsync(Guid connectionId, string collection, string key,
@@ -225,14 +265,26 @@ public sealed class Cx01Adapter(
             StringComparer.Ordinal.Equals(x.Collection, collection));
         if (entity is null) return null;
         var configured = await settings.GetAsync(connectionId, cancellationToken);
-        using var document = await client.GetAsync(connectionId, Cx01Protocol.ByKey(entity, key), cancellationToken);
-        if (Cx01Mapper.IsOwnWrite(document.RootElement, configured)) return null;
-        var mapped = await MapWithSerialFallbackAsync(connectionId, entity, document.RootElement, configured,
-            "webhook", cancellationToken);
-        if (mapped.MissingSerialLines.Count > 0)
-            await attributionTasks.RaiseAsync(connectionId, entity.Collection, key, mapped.MissingSerialLines,
-                cancellationToken);
-        return mapped;
+        JsonDocument document;
+        try { document = await client.GetAsync(connectionId, Cx01Protocol.ByKey(entity, key), cancellationToken); }
+        catch (Cx01RemoteException exception) when (exception.IsRecordGone) { return null; }
+        catch (Cx01RemoteException exception) when (exception.IsBusinessRejection)
+        {
+            await inboundRejections.ParkAsync(connectionId, entity.Collection, key, exception, cancellationToken);
+            return null;
+        }
+        using (document)
+        {
+            if (Cx01Mapper.IsCancelledOriginal(document.RootElement)
+                && await WasCapturedAsync(connectionId, entity, key, cancellationToken)) return null;
+            if (await IsOwnWriteAsync(connectionId, entity, document.RootElement, cancellationToken)) return null;
+            var mapped = await MapWithSerialFallbackAsync(connectionId, entity, document.RootElement, configured,
+                "webhook", cancellationToken);
+            if (mapped.MissingSerialLines.Count > 0)
+                await attributionTasks.RaiseAsync(connectionId, entity.Collection, key, mapped.MissingSerialLines,
+                    cancellationToken);
+            return mapped;
+        }
     }
 
     private async Task<Cx01MappedAcceptance> MapWithSerialFallbackAsync(Guid connectionId,
@@ -257,7 +309,7 @@ public sealed class Cx01Adapter(
             : await RecoverSerialsAsync(connectionId, entity, key, candidates.Where(x => managed.Contains(x.LineNo)),
                 configured, cancellationToken);
         return Cx01Mapper.Map(tenant.TenantId, connectionId, entity, raw, previous, recovered, managed, captureMode,
-            clock.UtcNow);
+            clock.UtcNow, Cx01Mapper.IsCancelledOriginal(raw));
     }
 
     private async Task<Dictionary<int, IReadOnlyList<CanonicalSerial>>> RecoverSerialsAsync(Guid connectionId,
@@ -279,23 +331,22 @@ public sealed class Cx01Adapter(
         var permitted = configured.AllowlistedTrackingTables?.ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
         if (permitted.IsSupersetOf(["OITL", "ITL1", "OSRN"]))
         {
-            using var governed = await client.GetAsync(connectionId,
-                Cx01Protocol.Root + Cx01Protocol.SqlQueries + "('YOJANA_SERIAL_LINK')/List?document="
-                + Uri.EscapeDataString(externalId), cancellationToken);
-            AddLinkedSerials(result, Values(governed.RootElement));
-            if (result.Count > 0) return result;
-        }
-
-        foreach (var line in lines)
-        {
-            var filter = Uri.EscapeDataString("ItemCode eq '" + line.ItemCode.Replace("'", "''",
-                StringComparison.Ordinal) + "'");
-            using var master = await client.GetAsync(connectionId,
-                Cx01Protocol.Root + Cx01Protocol.SerialNumberDetails + "?$filter=" + filter, cancellationToken);
-            var linked = Values(master.RootElement).Where(row =>
-                StringComparer.Ordinal.Equals(Text(row, "DocumentEntry"), externalId)
-                && Int(row, "DocumentLine") == line.LineNo).ToList();
-            AddLinkedSerials(result, linked);
+            try
+            {
+                using var governed = await client.GetAsync(connectionId,
+                    Cx01Protocol.Root + Cx01Protocol.SqlQueries + "('" + Cx01Protocol.SerialLinkQueryCode
+                    + "')/List?documentType=" + Uri.EscapeDataString(Cx01Protocol.ObjectType(entity))
+                    + "&documentEntry=" + Uri.EscapeDataString(externalId), cancellationToken);
+                AddLinkedSerials(result, Values(governed.RootElement), entity.CanonicalMessage == "DeliveryPosted");
+                if (result.Count > 0) return result;
+            }
+            catch (Cx01RemoteException exception) when (exception.RemoteCode == "702")
+            {
+                await settings.SetAsync(connectionId, configured with { AllowlistedTrackingTables = [] },
+                    cancellationToken);
+                await attributionTasks.RaiseQueryPermissionAsync(connectionId, exception.BusinessMessage(),
+                    cancellationToken);
+            }
         }
         return result;
     }
@@ -315,7 +366,9 @@ public sealed class Cx01Adapter(
         {
             using var document = await client.GetAsync(connectionId,
                 Cx01Protocol.ByKey(entity, changed.Key), cancellationToken);
-            if (Cx01Mapper.IsOwnWrite(document.RootElement, configured)) continue;
+            if (Cx01Mapper.IsCancelledOriginal(document.RootElement)
+                && await WasCapturedAsync(connectionId, entity, changed.Key, cancellationToken)) continue;
+            if (await IsOwnWriteAsync(connectionId, entity, document.RootElement, cancellationToken)) continue;
             messages.Add((await MapWithSerialFallbackAsync(connectionId, entity, document.RootElement,
                 configured, captureMode, cancellationToken)).Acceptance);
             if (messages.Count == pageSize) break;
@@ -412,13 +465,44 @@ public sealed class Cx01Adapter(
             ? values.EnumerateArray().ToList() : [];
 
     private static void AddLinkedSerials(Dictionary<int, IReadOnlyList<CanonicalSerial>> target,
-        IEnumerable<JsonElement> rows)
+        IEnumerable<JsonElement> rows, bool deliveryOnly = false)
     {
-        foreach (var group in rows.GroupBy(row => Int(row, "DocumentLine")))
+        var eligible = rows.Where(row => !deliveryOnly || Number(row, "Quantity") < 0);
+        foreach (var group in eligible.GroupBy(row => Int(row, "DocLine") != 0
+                     ? Int(row, "DocLine") : Int(row, "DocumentLine")))
         {
-            var serials = group.Select(row => new CanonicalSerial(RequiredText(row, "SerialNumber"), null,
-                Text(row, "SystemSerialNumber"))).ToList();
+            var serials = group.Select(row => new CanonicalSerial(
+                    Text(row, "DistNumber") ?? RequiredText(row, "SerialNumber"), null,
+                    Text(row, "SysNumber") ?? Text(row, "SystemSerialNumber")))
+                .DistinctBy(serial => serial.Value).ToList();
             if (serials.Count > 0) target[group.Key] = serials;
+        }
+    }
+
+    private async Task<bool> IsOwnWriteAsync(Guid connectionId, Cx01EntityDefinition entity, JsonElement document,
+        CancellationToken cancellationToken)
+    {
+        var key = RequiredText(document, entity.KeyField);
+        return await ownWrites.MatchesAsync(connectionId, key, Cx01Mapper.ChangeMarker(document, key),
+            cancellationToken);
+    }
+
+    private Task<bool> WasCapturedAsync(Guid connectionId, Cx01EntityDefinition entity, string key,
+        CancellationToken cancellationToken) => capturedDocuments.WasCapturedAsync(connectionId,
+        entity.Collection, key, cancellationToken);
+
+    private async Task ApplyMandatoryDefaultsAsync(Guid connectionId, string collection,
+        IDictionary<string, string> body, Cx01ConnectionSettings configured, CancellationToken cancellationToken)
+    {
+        if (configured.MandatoryUserFieldDefaults is not { Count: > 0 }
+            || !Cx01Protocol.TableByCollection.TryGetValue(collection, out var table)) return;
+        var fields = await surveyReader.MandatoryWithoutDefaultFieldsAsync(connectionId, table, cancellationToken);
+        foreach (var name in fields)
+        {
+            var wireName = name.StartsWith("U_", StringComparison.Ordinal) ? name : "U_" + name;
+            var configuredDefault = configured.MandatoryUserFieldDefaults.FirstOrDefault(pair =>
+                StringComparer.OrdinalIgnoreCase.Equals(pair.Key, table + "." + wireName));
+            if (!string.IsNullOrWhiteSpace(configuredDefault.Key)) body.TryAdd(wireName, configuredDefault.Value);
         }
     }
 

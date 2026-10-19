@@ -31,7 +31,7 @@ public sealed class IntegrationEndpointTests
             .SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()
             .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api/integration/",
                 StringComparison.Ordinal) == true).ToList();
-        Assert.Equal(19, endpoints.Count);
+        Assert.Equal(21, endpoints.Count);
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             metadata => metadata.Policy == YojanaPolicy.IntegrationOperations));
     }

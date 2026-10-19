@@ -24,3 +24,22 @@ public sealed class ConnectionPollWatermark : ITenantScoped
     public string? LastError { get; set; }
     public long Revision { get; set; }
 }
+
+public sealed class ConnectionNotificationReceipt : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ConnectionId { get; set; }
+    public required string EventId { get; set; }
+    public DateTime? FirstSeenPendingAt { get; set; }
+    public Guid? FirstSeenPendingRunId { get; set; }
+    public DateTime LastObservedAt { get; set; }
+    public DateTime? ProcessedAt { get; set; }
+}
+
+public sealed class ConnectionNotificationWatchdog : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ConnectionId { get; set; }
+    public DateOnly? WatermarkDate { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}

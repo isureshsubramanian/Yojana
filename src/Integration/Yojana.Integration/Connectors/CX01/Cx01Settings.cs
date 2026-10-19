@@ -15,8 +15,10 @@ public sealed record Cx01ConnectionSettings(
     string? RmaReferenceField = null,
     string? CertificateUrlField = null,
     string WebhookHmacAlgorithm = "HMACSHA256",
+    bool WebhookVerifyCertificate = true,
+    IReadOnlyList<Cx01WebhookEventSetting>? WebhookEvents = null,
+    IReadOnlyDictionary<string, string>? MandatoryUserFieldDefaults = null,
     string OwnReferencePrefix = "YOJANA:",
-    string OwnSerialDataSourceMarker = "S",
     int PollPageSize = 100,
     int KeepAliveMinutes = 20)
 {
@@ -32,9 +34,30 @@ public sealed record Cx01ConnectionSettings(
             throw new InvalidOperationException("The CX01 keep-alive interval must be between 1 and 29 minutes.");
         if (SerialLinkViewEnabled && string.IsNullOrWhiteSpace(SerialLinkViewName))
             throw new InvalidOperationException("The enabled CX01 serial-link view needs its configured name.");
+        if (WebhookHmacAlgorithm.ToUpperInvariant() is not ("HMACSHA256" or "HMACSHA384" or "HMACSHA512"))
+            throw new InvalidOperationException("The CX01 webhook HMAC algorithm is not supported.");
         return this;
     }
+
+    public IReadOnlyList<Cx01WebhookEventSetting> EffectiveWebhookEvents() => WebhookEvents is { Count: > 0 }
+        ? WebhookEvents
+        : Cx01Protocol.Entities.Values.SelectMany(entity => new[]
+        {
+            new Cx01WebhookEventSetting(entity.Collection, "Created", DefaultProperties(entity)),
+            new Cx01WebhookEventSetting(entity.Collection, "Updated", DefaultProperties(entity)),
+        }).ToList();
+
+    private static IReadOnlyList<string> DefaultProperties(Cx01EntityDefinition entity) => entity.KeyField switch
+    {
+        "DocEntry" => ["DocEntry", "DocNum", "CardCode"],
+        "ItemCode" => ["ItemCode"],
+        "CardCode" => ["CardCode"],
+        _ => [entity.KeyField],
+    };
 }
+
+public sealed record Cx01WebhookEventSetting(string BusinessObject, string TransactionType,
+    IReadOnlyList<string>? BizObjProps = null);
 
 public sealed class Cx01Settings(ITenantSettings settings)
 {

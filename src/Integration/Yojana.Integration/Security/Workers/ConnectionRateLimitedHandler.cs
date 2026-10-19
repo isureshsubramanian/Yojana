@@ -59,14 +59,24 @@ public sealed class ConnectionRateLimitedHandler : DelegatingHandler
         {
             var stored = await profiles.GetAsync(workerKey, cancellationToken);
             HttpResponseMessage response;
-            await using (await worker.AcquireAsync(stored.Profile, cancellationToken))
+            try
             {
-                using var outbound = buffered.Create();
-                response = await base.SendAsync(outbound, cancellationToken);
+                await using (await worker.AcquireAsync(stored.Profile, cancellationToken))
+                {
+                    using var outbound = buffered.Create();
+                    response = await base.SendAsync(outbound, cancellationToken);
+                }
+            }
+            catch (HttpRequestException) when (mayRetry && attempt < maximumRetries)
+            {
+                await delay.WaitAsync(jitter.Backoff(attempt + 1, stored.Profile.RetryAfterCeiling),
+                    cancellationToken);
+                continue;
             }
 
-            if (response.StatusCode is not (HttpStatusCode.TooManyRequests
-                or HttpStatusCode.ServiceUnavailable)) return response;
+            if (response.StatusCode != HttpStatusCode.RequestTimeout
+                && response.StatusCode != HttpStatusCode.TooManyRequests
+                && (int)response.StatusCode < 500) return response;
 
             var retryDelay = RetryDelay(response.Headers.RetryAfter, clock.UtcNow,
                 stored.Profile.RetryAfterCeiling)

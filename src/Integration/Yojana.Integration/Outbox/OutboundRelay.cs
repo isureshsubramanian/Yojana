@@ -170,6 +170,9 @@ public sealed class OutboundRelay(
 
         command.Status = OutboundCommandStatus.Done;
         command.ErpExternalId = document.ErpExternalId;
+        // TIGHT COUPLING (own-write recognition): this persisted connector marker and EfCx01OwnWriteStore's exact
+        // lookup are one durable acknowledgement invariant. A process-local marker would be lost on restart;
+        // separating either side makes immediate remote post-write changes look foreign. Later markers must not match.
         command.ErpChangeMarker = document.ErpChangeMarker;
         command.Outcome = outcome;
         command.LastFailure = null;
