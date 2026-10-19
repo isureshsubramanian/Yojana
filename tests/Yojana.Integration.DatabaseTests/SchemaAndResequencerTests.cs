@@ -4,6 +4,8 @@ using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Ordering;
 using Yojana.Platform.Contracts.Identifiers;
+using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Data;
 
 namespace Yojana.Integration.DatabaseTests;
 
@@ -20,6 +22,33 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "reference_projection", "connection_capability", "connection_degradation_setting", "connection_gateway_setting",
             "outbound_command", "external_id_map", "exception_task", "resequence_item", "dead_letter_item",
             "dead_letter_event", "manual_outbound_task");
+        AssertSuperset(tables, "reconciliation_run", "reconciliation_entity_day",
+            "reconciliation_location", "backfill_cursor");
+    }
+
+    [DatabaseFact]
+    public async Task Every_integration_tenant_table_is_under_the_tenant_policy()
+    {
+        using var scope = fixture.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var expected = db.Model.GetEntityTypes()
+            .Where(entity => typeof(ITenantScoped).IsAssignableFrom(entity.ClrType))
+            .Select(entity => entity.GetTableName()!).ToHashSet();
+        var covered = await db.Database.SqlQueryRaw<string>($"""
+            SELECT OBJECT_NAME(p.target_object_id) AS [Value]
+            FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
+            WHERE s.name = 'tenant_policy_{IntegrationDbContext.SchemaName}'
+              AND p.predicate_type_desc = 'FILTER'
+            """).ToListAsync();
+        Assert.Equal(expected.OrderBy(value => value), covered.OrderBy(value => value));
+        var blocks = await db.Database.SqlQueryRaw<int>($"""
+            SELECT COUNT(*) AS [Value]
+            FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
+            WHERE s.name = 'tenant_policy_{IntegrationDbContext.SchemaName}'
+              AND p.predicate_type_desc = 'BLOCK'
+            """).SingleAsync();
+        Assert.Equal(expected.Count * 2, blocks);
+        Assert.Empty(db.ValidateTenantKeyConventions());
     }
 
     [DatabaseFact]

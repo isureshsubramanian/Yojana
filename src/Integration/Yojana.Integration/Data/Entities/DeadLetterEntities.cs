@@ -69,6 +69,7 @@ public static class DeadLetterSourceKind
 {
     public const string InboundMessage = "inbound_message";
     public const string OutboundCommand = "outbound_command";
+    public const string ReconciliationResult = "reconciliation_result";
 }
 
 public static class DeadLetterAction

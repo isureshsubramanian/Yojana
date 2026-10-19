@@ -15,6 +15,7 @@ public sealed class InboundMessage : ITenantScoped
     public required string MarkerKind { get; set; }
     public required string ContractVersion { get; set; }
     public required string MessageType { get; set; }
+    public string CaptureMode { get; set; } = "observed";
     public required string RawPayload { get; set; }
     public required string CanonicalMessage { get; set; }
     public DateTime OccurredAt { get; set; }

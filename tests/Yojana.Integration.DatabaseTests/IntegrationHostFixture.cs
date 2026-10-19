@@ -6,6 +6,8 @@ using Yojana.Integration;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Outbox;
+using Yojana.Integration.Reconciliation;
+using Yojana.Integration.Security.Workers;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
@@ -24,6 +26,7 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
     public IHost Host { get; private set; } = null!;
     public IServiceProvider Services => Host.Services;
     public FakeOutboundConnector Connector { get; } = new();
+    public FakeReconciliationSource ReconciliationSource { get; } = new();
 
     public async Task InitializeAsync()
     {
@@ -46,6 +49,9 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.AddIntegrationModule();
         builder.Services.AddSingleton(Connector);
         builder.Services.AddSingleton<IOutboundConnector>(services => services.GetRequiredService<FakeOutboundConnector>());
+        builder.Services.AddSingleton(ReconciliationSource);
+        builder.Services.AddSingleton<IConnectorReconciliationSource>(services =>
+            services.GetRequiredService<FakeReconciliationSource>());
         builder.Services.AddSingleton<IClock>(Clock);
         Host = builder.Build();
         await Host.StartAsync();
@@ -91,6 +97,9 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         for (var rule = 1; rule <= 7; rule++)
             db.ConnectionDegradationSettings.Add(new ConnectionDegradationSetting { TenantId = tenant, ConnectionId = id, RuleNumber = rule, Enabled = true, SettingsJson = "{}", UpdatedAt = Clock.UtcNow });
         await db.SaveChangesAsync();
+        await scope.ServiceProvider.GetRequiredService<ConnectionThrottleProfiles>().OnboardAsync(
+            new(tenant, id), new("CX01", new(null, null, null, 100, 1, TimeSpan.FromMinutes(5))),
+            CancellationToken.None);
         return id;
     }
 

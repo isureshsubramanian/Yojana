@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Yojana.Integration.DeadLetters;
+using Yojana.Integration.Backfills;
+using Yojana.Integration.Reconciliation;
 using Yojana.Platform.Contracts.Security;
 
 namespace Yojana.Integration.Tests;
@@ -16,13 +18,15 @@ public sealed class IntegrationEndpointTests
         builder.Services.AddAuthorization(options => options.AddPolicy(YojanaPolicy.IntegrationOperations,
             policy => policy.RequireAuthenticatedUser()));
         builder.Services.AddScoped<DeadLetterService>();
+        builder.Services.AddScoped<ReconciliationService>();
+        builder.Services.AddScoped<BackfillService>();
         var app = builder.Build();
         app.MapIntegrationEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources
             .SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()
             .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api/integration/",
                 StringComparison.Ordinal) == true).ToList();
-        Assert.Equal(8, endpoints.Count);
+        Assert.Equal(17, endpoints.Count);
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             metadata => metadata.Policy == YojanaPolicy.IntegrationOperations));
     }
@@ -32,7 +36,7 @@ public sealed class IntegrationEndpointTests
     {
         foreach (var type in new[] { typeof(MapAndRetryDeadLetterRequest),
                      typeof(CreateProvisionalAndRetryDeadLetterRequest), typeof(DiscardDeadLetterRequest),
-                     typeof(CompleteManualTaskRequest) })
+                     typeof(CompleteManualTaskRequest), typeof(StartBackfillRequest) })
             Assert.DoesNotContain(type.GetProperties(), property => property.Name.Contains("Actor",
                 StringComparison.OrdinalIgnoreCase));
         Assert.True(YojanaRole.IsKnown(YojanaRole.IntegrationOperator));

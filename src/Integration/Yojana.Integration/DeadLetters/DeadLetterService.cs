@@ -12,6 +12,36 @@ namespace Yojana.Integration.DeadLetters;
 
 public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext tenant, IClock clock)
 {
+    public async Task<Guid> ParkReconciliationAsync(Guid resultId, Guid connectionId, string entity,
+        string rawComparison, string failure, CancellationToken cancellationToken)
+    {
+        var existing = await db.DeadLetterItems.Where(x => x.TenantId == tenant.TenantId
+                && x.SourceKind == DeadLetterSourceKind.ReconciliationResult && x.SourceId == resultId)
+            .Select(x => (Guid?)x.DeadLetterItemId).SingleOrDefaultAsync(cancellationToken);
+        if (existing is not null) return existing.Value;
+        var id = TimeOrderedId.New(clock.UtcNow);
+        db.DeadLetterItems.Add(new DeadLetterItem
+        {
+            TenantId = tenant.TenantId,
+            DeadLetterItemId = id,
+            ConnectionId = connectionId,
+            Direction = DeadLetterDirection.Inbound,
+            RecordType = entity,
+            SourceKind = DeadLetterSourceKind.ReconciliationResult,
+            SourceId = resultId,
+            ReasonCode = "reconciliation_range_unavailable",
+            RawPayload = rawComparison,
+            CanonicalAttempt = "{}",
+            Failure = failure,
+            Status = DeadLetterStatus.NeedsAttention,
+            CreatedAt = clock.UtcNow,
+            UpdatedAt = clock.UtcNow,
+        });
+        AddEvent(id, DeadLetterAction.Parked, $"system:connection:{connectionId:N}", failure, new { entity });
+        await db.SaveChangesAsync(cancellationToken);
+        return id;
+    }
+
     public async Task<Guid> ParkInboundAsync(Guid inboundMessageId, string reasonCode, string failure,
         CancellationToken cancellationToken)
     {

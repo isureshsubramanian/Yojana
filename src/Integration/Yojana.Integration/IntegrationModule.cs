@@ -17,6 +17,8 @@ using Yojana.Integration.Security.Credentials;
 using Yojana.Integration.Security.Cryptography;
 using Yojana.Integration.Security.Webhooks;
 using Yojana.Integration.Security.Workers;
+using Yojana.Integration.Reconciliation;
+using Yojana.Integration.Backfills;
 
 namespace Yojana.Integration;
 
@@ -65,6 +67,18 @@ public static class IntegrationModule
             sp.GetRequiredService<IntegrationDbContext>(),
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>()));
         builder.Services.AddScoped<IItemQueryPort>(sp => sp.GetRequiredService<IntegrationItemQueryPort>());
+        builder.Services.TryAddScoped<IConnectorReconciliationSource, UnavailableConnectorReconciliationSource>();
+        builder.Services.TryAddScoped<IReconciliationBackfillScheduler, NullReconciliationBackfillScheduler>();
+        builder.Services.AddScoped(sp => new ReconciliationSettings(
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped<ReconciliationService>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<ReconciliationJob>(
+            ReconciliationJob.JobName, ReconciliationJob.Cron));
+        builder.Services.AddScoped<BackfillService>();
+        builder.Services.AddScoped<IReconciliationBackfillScheduler>(sp =>
+            sp.GetRequiredService<BackfillService>());
+        builder.Services.AddSingleton(RecurringTenantJob.For<BackfillJob>(
+            BackfillJob.JobName, BackfillJob.Cron));
 
         builder.AddIntegrationSecurity();
         return builder;

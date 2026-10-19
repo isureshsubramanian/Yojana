@@ -65,6 +65,18 @@ public interface IStockQuantityPort
     Task<IReadOnlyList<OpenStockQuantity>> GetOpenStockAsync(Guid itemId, DateTime effectiveAt, CancellationToken cancellationToken);
 }
 
+/// <summary>Serialised units currently represented in one ERP on-hand bucket.</summary>
+public sealed record SerialisedOnHandCount(Guid ItemId, Guid LocationId, long UnitCount);
+
+/// <summary>
+/// Narrow companion-mode query used by Integration's case-34 reconciliation. It exposes grouped counts only;
+/// Integration never references Serialisation persistence or its current-state projection.
+/// </summary>
+public interface ISerialisedOnHandQuery
+{
+    Task<IReadOnlyList<SerialisedOnHandCount>> CountsAsync(CancellationToken cancellationToken);
+}
+
 /// <summary>One serialised component the BOM expects inside a parent (Identity rule 12).</summary>
 public sealed record ExpectedComponent(string Slot, Guid ComponentItemId, string ComponentItemCode, int Quantity, Guid? ThroughPhantomItemId = null);
 

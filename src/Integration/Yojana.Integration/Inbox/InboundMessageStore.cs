@@ -103,6 +103,7 @@ public sealed class InboundMessageStore(IntegrationDbContext db, IdempotencyInde
             ErpChangeMarker = envelope.ErpChangeMarker.Value,
             MarkerKind = envelope.ErpChangeMarker.MarkerKind.RawValue ?? envelope.ErpChangeMarker.MarkerKind.Value,
             ContractVersion = envelope.ContractVersion, MessageType = acceptance.MessageType,
+            CaptureMode = envelope.CaptureMode.RawValue ?? envelope.CaptureMode.Value,
             RawPayload = acceptance.RawPayload, CanonicalMessage = acceptance.CanonicalMessage,
             OccurredAt = envelope.OccurredAt.UtcDateTime, ObservedAt = envelope.ObservedAt.UtcDateTime,
             AcceptedAt = now, IsLatest = newer,

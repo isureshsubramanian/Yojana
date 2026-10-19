@@ -29,6 +29,10 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<DeadLetterItem> DeadLetterItems => Set<DeadLetterItem>();
     public DbSet<DeadLetterEvent> DeadLetterEvents => Set<DeadLetterEvent>();
     public DbSet<ManualOutboundTask> ManualOutboundTasks => Set<ManualOutboundTask>();
+    public DbSet<ReconciliationRun> ReconciliationRuns => Set<ReconciliationRun>();
+    public DbSet<ReconciliationEntityDayResult> ReconciliationEntityDayResults => Set<ReconciliationEntityDayResult>();
+    public DbSet<ReconciliationLocationResult> ReconciliationLocationResults => Set<ReconciliationLocationResult>();
+    public DbSet<BackfillCursor> BackfillCursors => Set<BackfillCursor>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -54,6 +58,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.MarkerKind).HasMaxLength(40);
             b.Property(x => x.ContractVersion).HasMaxLength(20);
             b.Property(x => x.MessageType).HasMaxLength(80);
+            b.Property(x => x.CaptureMode).HasMaxLength(24).HasDefaultValue("observed");
             b.Property(x => x.RawPayload).HasColumnType("nvarchar(max)");
             b.Property(x => x.CanonicalMessage).HasColumnType("nvarchar(max)");
             b.Property(x => x.TranslationStatus).HasMaxLength(24);
@@ -212,7 +217,70 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.HasOne<DeadLetterItem>().WithOne().HasForeignKey<ManualOutboundTask>(x =>
                 new { x.TenantId, x.DeadLetterItemId }).OnDelete(DeleteBehavior.Restrict);
         });
-
+        modelBuilder.Entity<ReconciliationRun>(b =>
+        {
+            b.ToTable("reconciliation_run", table =>
+                table.HasCheckConstraint("ck_reconciliation_run_status",
+                    "status IN ('running','clean','mismatch','failed')"));
+            b.HasKey(x => new { x.TenantId, x.ReconciliationRunId });
+            b.Property(x => x.Trigger).HasMaxLength(24);
+            b.Property(x => x.Status).HasMaxLength(24);
+            b.Property(x => x.Failure).HasMaxLength(4000);
+            b.HasIndex(x => new { x.TenantId, x.StartedAt, x.ReconciliationRunId });
+            b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.StartedAt, x.ReconciliationRunId });
+        });
+        modelBuilder.Entity<ReconciliationEntityDayResult>(b =>
+        {
+            b.ToTable("reconciliation_entity_day", table =>
+                table.HasCheckConstraint("ck_reconciliation_entity_day_status",
+                    "status IN ('clean','mismatch')"));
+            b.HasKey(x => new { x.TenantId, x.ReconciliationEntityDayResultId });
+            b.Property(x => x.Entity).HasMaxLength(120);
+            b.Property(x => x.SourceQuantity).HasPrecision(28, 8);
+            b.Property(x => x.ModuleQuantity).HasPrecision(28, 8);
+            b.Property(x => x.SourceKeyFieldHash).HasMaxLength(64);
+            b.Property(x => x.ModuleKeyFieldHash).HasMaxLength(64);
+            b.Property(x => x.Status).HasMaxLength(24);
+            b.HasIndex(x => new { x.TenantId, x.ReconciliationRunId, x.BusinessDate,
+                x.Entity, x.ReconciliationEntityDayResultId });
+            b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.Entity, x.BusinessDate });
+            b.HasOne<ReconciliationRun>().WithMany().HasForeignKey(x =>
+                new { x.TenantId, x.ReconciliationRunId }).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<ReconciliationLocationResult>(b =>
+        {
+            b.ToTable("reconciliation_location", table =>
+                table.HasCheckConstraint("ck_reconciliation_location_status",
+                    "status IN ('clean','mismatch')"));
+            b.HasKey(x => new { x.TenantId, x.ReconciliationLocationResultId });
+            b.Property(x => x.ItemCode).HasMaxLength(160);
+            b.Property(x => x.ItemName).HasMaxLength(320);
+            b.Property(x => x.LocationCode).HasMaxLength(160);
+            b.Property(x => x.LocationName).HasMaxLength(320);
+            b.Property(x => x.SourceOnHand).HasPrecision(28, 8);
+            b.Property(x => x.Status).HasMaxLength(24);
+            b.HasIndex(x => new { x.TenantId, x.ReconciliationRunId, x.ItemId,
+                x.LocationId, x.ReconciliationLocationResultId });
+            b.HasOne<ReconciliationRun>().WithMany().HasForeignKey(x =>
+                new { x.TenantId, x.ReconciliationRunId }).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<BackfillCursor>(b =>
+        {
+            b.ToTable("backfill_cursor", table =>
+                table.HasCheckConstraint("ck_backfill_cursor_status",
+                    "status IN ('queued','running','paused','awaiting_reconciliation','completed','cancelled')"));
+            b.HasKey(x => new { x.TenantId, x.BackfillCursorId });
+            b.Property(x => x.Entity).HasMaxLength(120);
+            b.Property(x => x.Cursor).HasMaxLength(2000);
+            b.Property(x => x.Status).HasMaxLength(32);
+            b.Property(x => x.RequestedBy).HasMaxLength(320);
+            b.Property(x => x.LastChangedBy).HasMaxLength(320);
+            b.Property(x => x.LastFailure).HasMaxLength(4000);
+            b.Property(x => x.RowVersion).IsRowVersion();
+            b.HasIndex(x => new { x.TenantId, x.CreatedAt, x.BackfillCursorId });
+            b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.Entity, x.Status,
+                x.CreatedAt, x.BackfillCursorId });
+        });
         base.OnModelCreating(modelBuilder);
     }
 
