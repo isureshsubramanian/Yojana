@@ -1,4 +1,5 @@
 using Azure.Identity;
+using Yojana.Integration.Transport;
 using Azure.Storage.Blobs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -125,6 +126,8 @@ public static class IntegrationModule
             sp.GetRequiredService<BackfillService>());
         builder.Services.AddSingleton(RecurringTenantJob.For<BackfillJob>(
             BackfillJob.JobName, BackfillJob.Cron));
+
+        builder.AddIntegrationTransport();
 
         builder.AddIntegrationSecurity();
         builder.Services.AddScoped<EfTenantDataKeyStore>();

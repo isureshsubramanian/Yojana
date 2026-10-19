@@ -1,0 +1,9 @@
+{
+  "name": "azure-sdk-p8-t15-servicebus",
+  "matchPackages": [
+    "Azure.Messaging.ServiceBus/7.20.1"
+  ],
+  "licenceFile": "texts/azure-sdk-p8-t15-servicebus-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/Azure/azure-sdk-for-net/11598634ace84b3bfdbed33231cf048dac70eb8b/LICENSE.txt",
+  "takenOn": "2026-10-20"
+}

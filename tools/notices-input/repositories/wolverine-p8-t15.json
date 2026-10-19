@@ -1,0 +1,10 @@
+{
+  "name": "wolverine-p8-t15",
+  "matchPackages": [
+    "WolverineFx.AzureServiceBus/6.50.2",
+    "WolverineFx.Newtonsoft/6.50.2"
+  ],
+  "licenceFile": "texts/wolverine-p8-t15-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/JasperFx/wolverine/274a909d1fb4566a72bce33b477b2528f9ba5283/LICENSE",
+  "takenOn": "2026-10-20"
+}

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Quartz;
 using Yojana.Integration.Data;
+using Yojana.Integration.Transport;
 using Yojana.Integration.Data.Entities;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Scheduling;
@@ -10,7 +11,7 @@ namespace Yojana.Integration.Outbox;
 
 [DisallowConcurrentExecution]
 public sealed class OutboxRelayJob(ITenantContextSetter setter, ITenantContext tenant, IntegrationDbContext db,
-    OutboundRelay relay) : TenantJob(setter)
+    IntegrationRelayDispatcher relay) : TenantJob(setter)
 {
     public const string JobName = "integration.outbox-relay";
     public const string Cron = "0 * * * * ?";
@@ -22,6 +23,6 @@ public sealed class OutboxRelayJob(ITenantContextSetter setter, ITenantContext t
                 && x.Status == ConnectionStatus.Active)
             .OrderBy(x => x.ConnectionId).Select(x => x.ConnectionId).ToListAsync(cancellationToken);
         foreach (var connectionId in connections)
-            await relay.RelayConnectionAsync(connectionId, cancellationToken);
+            await relay.DispatchAsync(connectionId, cancellationToken);
     }
 }

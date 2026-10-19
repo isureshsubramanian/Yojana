@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Yojana.Integration.Transport;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -16,6 +17,7 @@ public static class IntegrationEndpoints
 {
     public static IEndpointRouteBuilder MapIntegrationEndpoints(this IEndpointRouteBuilder app)
     {
+        app.MapIntegrationTransportEndpoints();
         app.MapIntegrationNotificationEndpoints();
         app.MapIntegrationAttentionEndpoint();
         app.MapCx01WebhookEndpoints();

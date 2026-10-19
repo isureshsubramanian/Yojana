@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
 using Yojana.Integration;
+using Yojana.Integration.Transport;
 using Yojana.Integration.Connectors;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
@@ -31,6 +32,7 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
     public FakeReconciliationSource Poller => ReconciliationSource;
     public IServiceProvider Services => Host.Services;
     public FakeOutboundConnector Connector { get; } = new();
+    public FakeIntegrationTransport Transport { get; } = new();
     public FakeReconciliationSource ReconciliationSource { get; } = new();
 
     public async Task InitializeAsync()
@@ -54,6 +56,7 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.AddYojanaPlatform();
         builder.AddSerialisationModule();
         builder.AddIntegrationModule();
+        builder.Services.Replace(ServiceDescriptor.Singleton<IIntegrationTransport>(Transport));
         builder.Services.AddSingleton(Connector);
         builder.Services.AddKeyedSingleton<IOutboundConnector>(FakeConnectorCode, (services, _) =>
             services.GetRequiredService<FakeOutboundConnector>());

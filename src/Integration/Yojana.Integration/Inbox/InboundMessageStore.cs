@@ -1,8 +1,10 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Wolverine;
+using Wolverine.Runtime;
 using Wolverine.EntityFrameworkCore;
 using Yojana.Integration.Contracts;
+using Yojana.Integration.Transport;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Platform.Contracts.Identifiers;
@@ -68,14 +70,14 @@ public sealed class ChangeMarkerComparer : IChangeMarkerComparer
 }
 
 public sealed class InboundMessageStore(IDbContextOutbox<IntegrationDbContext> outbox, IdempotencyIndex index,
-    ITenantContext tenant, IClock clock, IChangeMarkerComparer markers)
+    ITenantContext tenant, IClock clock, IChangeMarkerComparer markers, IIntegrationRouteResolver routes)
 {
     public async Task<InboundAcceptanceResult> Accept(InboundAcceptance acceptance,
-        CancellationToken cancellationToken) =>
-        (await AcceptMany([acceptance], cancellationToken))[0];
+        CancellationToken cancellationToken, bool useLocalTransport = false) =>
+        (await AcceptMany([acceptance], cancellationToken, useLocalTransport))[0];
 
     public async Task<IReadOnlyList<InboundAcceptanceResult>> AcceptMany(
-        IReadOnlyList<InboundAcceptance> acceptances, CancellationToken cancellationToken)
+        IReadOnlyList<InboundAcceptance> acceptances, CancellationToken cancellationToken, bool useLocalTransport = false)
     {
         if (acceptances.Count == 0) return [];
         var db = outbox.DbContext;
@@ -87,11 +89,17 @@ public sealed class InboundMessageStore(IDbContextOutbox<IntegrationDbContext> o
                 throw new InvalidOperationException($"contract_major_unsupported: {acceptance.Envelope.ContractVersion}");
         }
 
+        var route = useLocalTransport ? IntegrationTransportRoute.Local : await routes.ResolveAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var tenantId = tenant.TenantId;
         var connections = acceptances.Select(x => x.Envelope.ConnectionId).Distinct().ToList();
         foreach (var connection in connections.Order())
             await db.Database.ExecuteSqlInterpolatedAsync($"EXEC sys.sp_getapplock @Resource={LockName(tenantId, connection)}, @LockMode='Exclusive', @LockOwner='Transaction', @LockTimeout=10000", cancellationToken);
+        var messageIds = acceptances.Select(x => x.Envelope.MessageId).Distinct().ToList();
+        var deliveredMessages = await db.InboundMessages.AsNoTracking().Where(x => x.TenantId == tenantId
+                && connections.Contains(x.ConnectionId) && messageIds.Contains(x.MessageId))
+            .Select(x => new { x.ConnectionId, x.MessageId, x.InboundMessageId }).ToListAsync(cancellationToken);
+        var identities = deliveredMessages.ToDictionary(x => (x.ConnectionId, x.MessageId), x => x.InboundMessageId);
         var entities = acceptances.Select(x => x.Envelope.ErpEntity).Distinct().ToList();
         var externalIds = acceptances.Select(x => x.Envelope.ErpExternalId).Distinct().ToList();
         var changeMarkers = acceptances.Select(x => x.Envelope.ErpChangeMarker.Value).Distinct().ToList();
@@ -111,7 +119,8 @@ public sealed class InboundMessageStore(IDbContextOutbox<IntegrationDbContext> o
             var envelope = acceptance.Envelope;
             var claimKey = new InboundKey(envelope.ConnectionId, envelope.ErpEntity,
                 envelope.ErpExternalId, envelope.ErpChangeMarker.Value);
-            if (claims.TryGetValue(claimKey, out var existingId))
+            if (identities.TryGetValue((envelope.ConnectionId, envelope.MessageId), out var existingId)
+                || claims.TryGetValue(claimKey, out existingId))
             {
                 results.Add(new(InboundAcceptanceResult.AlreadyProcessed, existingId, false));
                 continue;
@@ -150,15 +159,22 @@ public sealed class InboundMessageStore(IDbContextOutbox<IntegrationDbContext> o
             index.Claim(tenantId, envelope.ConnectionId, envelope.ErpEntity, envelope.ErpExternalId,
                 envelope.ErpChangeMarker.Value, id, now);
             claims[claimKey] = id;
+            identities[(envelope.ConnectionId, envelope.MessageId)] = id;
             if (newer)
             {
                 current[currentKey] = row;
-                await outbox.PublishAsync(new Gateway.TranslateInboundMessage(id),
-                    new DeliveryOptions { TenantId = tenantId.ToString() });
+                if (route.Mode == IntegrationTransportRoute.InProcess)
+                    await outbox.PublishAsync(new Gateway.TranslateInboundMessage(id),
+                        new DeliveryOptions { TenantId = tenantId.ToString() });
+                else
+                    await outbox.PublishAsync(new DispatchIntegrationTransport(route,
+                        new(tenantId.Value, envelope.MessageId, Inbound: new(acceptance.Envelope, acceptance.MessageType,
+                            acceptance.CanonicalMessage, acceptance.RawPayload))),
+                        new DeliveryOptions { TenantId = tenantId.ToString() });
             }
             results.Add(new(newer ? InboundAcceptanceResult.Accepted : InboundAcceptanceResult.Superseded, id, newer));
         }
-        await outbox.SaveChangesAndFlushMessagesAsync(cancellationToken);
+        await outbox.SaveChangesAndFlushMessagesAsync(MultiFlushMode.AllowMultiples, cancellationToken);
         if (db.Database.CurrentTransaction is not null)
             await transaction.CommitAsync(cancellationToken);
         return results;

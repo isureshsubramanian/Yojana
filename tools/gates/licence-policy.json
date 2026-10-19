@@ -51,6 +51,11 @@
     }
   },
   "reviewedPackages": {
+    "WolverineFx.AzureServiceBus/6.50.2": {"spdx": "MIT", "readOn": "2026-10-20", "bundledLicenceFiles": [], "bundledNoticeFiles": []},
+    "WolverineFx.Newtonsoft/6.50.2": {"spdx": "MIT", "readOn": "2026-10-20", "bundledLicenceFiles": [], "bundledNoticeFiles": []},
+    "Azure.Messaging.ServiceBus/7.20.1": {"spdx": "MIT", "readOn": "2026-10-20", "bundledLicenceFiles": [], "bundledNoticeFiles": []},
+    "Azure.Core.Amqp/1.3.1": {"spdx": "MIT", "readOn": "2026-10-20", "bundledLicenceFiles": [], "bundledNoticeFiles": []},
+    "Microsoft.Azure.Amqp/2.7.0": {"spdx": "MIT", "readOn": "2026-10-20", "bundledLicenceFiles": [], "bundledNoticeFiles": []},
     "Azure.Core/1.60.0": { "spdx": "MIT", "readOn": "2026-10-19", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },
     "Azure.Identity/1.21.0": { "spdx": "MIT", "readOn": "2026-10-19", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },
     "Azure.Security.KeyVault.Keys/4.10.2": { "spdx": "MIT", "readOn": "2026-10-19", "bundledLicenceFiles": [], "bundledNoticeFiles": [] },

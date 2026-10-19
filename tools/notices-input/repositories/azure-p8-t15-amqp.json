@@ -1,0 +1,9 @@
+{
+  "name": "azure-p8-t15-amqp",
+  "matchPackages": [
+    "Microsoft.Azure.Amqp/2.7.0"
+  ],
+  "licenceFile": "texts/azure-p8-t15-amqp-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/Azure/azure-amqp/master/LICENSE.txt",
+  "takenOn": "2026-10-20"
+}
