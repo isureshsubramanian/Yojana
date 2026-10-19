@@ -31,6 +31,8 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<ConnectionCredentialEntity> ConnectionCredentials => Set<ConnectionCredentialEntity>();
     public DbSet<TenantDataKeyRewrapCheckpointEntity> TenantDataKeyRewrapCheckpoints => Set<TenantDataKeyRewrapCheckpointEntity>();
     public DbSet<ConnectionEventEntity> ConnectionEvents => Set<ConnectionEventEntity>();
+    public DbSet<ConnectionOnboardingConfirmation> ConnectionOnboardingConfirmations =>
+        Set<ConnectionOnboardingConfirmation>();
     public DbSet<ConnectionThrottleProfileEntity> ConnectionThrottleProfiles => Set<ConnectionThrottleProfileEntity>();
     public DbSet<ConnectionNotificationSource> ConnectionNotificationSources => Set<ConnectionNotificationSource>();
     public DbSet<ConnectionPollWatermark> ConnectionPollWatermarks => Set<ConnectionPollWatermark>();
@@ -250,6 +252,15 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             // tenant's latest row under SERIALIZABLE isolation. A database sequence would not preserve per-tenant hash
             // ordering; a non-transactional read can fork the hash chain.
             b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.OccurredAt, x.SequenceNo });
+        });
+        modelBuilder.Entity<ConnectionOnboardingConfirmation>(b =>
+        {
+            b.ToTable("connection_onboarding_confirmation");
+            b.HasKey(x => new { x.TenantId, x.ConnectionId, x.ItemCode });
+            b.Property(x => x.ItemCode).HasMaxLength(160);
+            b.Property(x => x.TextHash).HasMaxLength(64).IsFixedLength().IsUnicode(false);
+            b.Property(x => x.Evidence).HasMaxLength(500);
+            b.Property(x => x.ConfirmedBy).HasMaxLength(200);
         });
         modelBuilder.Entity<ConnectionThrottleProfileEntity>(b =>
         {

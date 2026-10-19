@@ -23,7 +23,7 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "outbound_command", "exception_task", "resequence_item", "external_id_map", "connector_catalogue",
             "tenant_data_key", "connection_credential", "tenant_data_key_rewrap_checkpoint", "connection_event",
             "connection_throttle_profile", "connection_notification_source", "connection_poll_watermark",
-            "dead_letter_item", "dead_letter_event", "manual_outbound_task");
+            "dead_letter_item", "dead_letter_event", "manual_outbound_task", "connection_onboarding_confirmation");
         AssertSuperset(tables, "cx01_survey", "connection_notification_receipt",
             "connection_notification_watchdog");
         AssertSuperset(tables, "reconciliation_run", "reconciliation_entity_day",

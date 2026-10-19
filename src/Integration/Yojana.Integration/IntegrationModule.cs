@@ -41,6 +41,10 @@ public static class IntegrationModule
         builder.Services.AddScoped<ConnectionCapabilityReader>();
         builder.Services.AddScoped<ConnectorCatalogue>();
         builder.Services.AddScoped<ConnectorOnboardingChecklistGenerator>();
+        builder.Services.AddScoped<ConnectorOnboardingConfirmations>();
+        builder.Services.AddSingleton<IConnectorOnboardingProfiles, ConnectorOnboardingProfiles>();
+        builder.Services.AddKeyedSingleton<IConnectorOnboardingProfile, Cx01OnboardingProfile>(
+            Cx01Capabilities.ConnectorCode);
         builder.Services.AddScoped<InboundGateway>();
         builder.Services.AddSingleton(InboundTranslationRecoveryOptions.Default);
         builder.Services.AddScoped<InboundTranslationRecovery>();

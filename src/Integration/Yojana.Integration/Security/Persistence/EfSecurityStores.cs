@@ -138,6 +138,9 @@ public sealed class EfConnectionAuditSink(IntegrationDbContext db) : IConnection
 {
     // TIGHT COUPLING (tenant audit sequence): the last-row lock, sequence allocation, hash seal and insert are one
     // SERIALIZABLE transaction. Splitting them permits two writers to fork the append-only tenant hash chain.
+    // COUPLING (shared unit of work): SaveChanges here also commits any changes the caller left pending on the same
+    // scoped context; ConnectorOnboardingConfirmations relies on that to store a confirmation atomically with its
+    // audit record. Giving this sink its own context would silently break that atomicity.
     public async Task<ConnectionAuditEvent> AppendAsync(NewConnectionAuditEvent auditEvent, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);

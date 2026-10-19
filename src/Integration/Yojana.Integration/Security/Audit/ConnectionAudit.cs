@@ -14,6 +14,7 @@ public enum ConnectionAuditEventType
     WebhookSignatureFailed,
     PermissionsChanged,
     ConnectionWrite,
+    OnboardingItemConfirmed,
 }
 
 public sealed record ConnectionAuditEvent(

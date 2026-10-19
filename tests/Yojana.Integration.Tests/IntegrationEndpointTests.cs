@@ -31,9 +31,13 @@ public sealed class IntegrationEndpointTests
             .SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()
             .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api/integration/",
                 StringComparison.Ordinal) == true).ToList();
-        Assert.Equal(21, endpoints.Count);
+        Assert.Equal(23, endpoints.Count);
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             metadata => metadata.Policy == YojanaPolicy.IntegrationOperations));
+        var confirm = endpoints.Single(endpoint => endpoint.RoutePattern.RawText ==
+            "/api/integration/connections/{connectionId:guid}/onboarding-checklist/{itemCode}/confirm");
+        Assert.Contains(confirm.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+            metadata => metadata.Policy == YojanaPolicy.TenantAdministrator);
     }
 
     [Fact]
