@@ -5,7 +5,7 @@ export interface DeadLetterRow {
 }
 
 export interface DeadLetterSummary {
-  open: number; unknownItem: number; serialNotFound: number; partyNotLinked: number; couldNotSend: number;
+  open: number; retried: number; discarded: number; unknownItem: number; serialNotFound: number; partyNotLinked: number; couldNotSend: number;
   resolvedLast30Days: number; retriedLast30Days: number; discardedLast30Days: number;
 }
 

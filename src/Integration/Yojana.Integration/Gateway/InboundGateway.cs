@@ -27,16 +27,54 @@ public sealed record GatewayTranslationResult(Guid InboundMessageId, string Mess
 [NonTransactional]
 public sealed class TranslateInboundMessageHandler
 {
-    public static Task<GatewayTranslationResult> Handle(TranslateInboundMessage command, InboundGateway gateway,
-        CancellationToken cancellationToken) => gateway.TranslateAsync(command.InboundMessageId, cancellationToken);
+    public static async Task<GatewayTranslationResult> Handle(TranslateInboundMessage command, InboundGateway gateway,
+        InboundTranslationRecovery recovery, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await gateway.TranslateAsync(command.InboundMessageId, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            await recovery.RecordFailureAsync(command.InboundMessageId, exception, cancellationToken);
+            throw;
+        }
+    }
 }
 
 public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenant, IClock clock,
     GatewayReferenceStore references, ConnectionCapabilityReader capabilities, BoundedWaitResequencer resequencer,
-    IMessageBus bus)
+    IMessageBus bus, InboundTranslationRecoveryOptions recoveryOptions)
 {
     public async Task<GatewayTranslationResult> TranslateAsync(Guid inboundMessageId, CancellationToken cancellationToken)
     {
+        var now = clock.UtcNow;
+        var stale = now - recoveryOptions.GracePeriod;
+        var wasReleasedLate = await db.InboundMessages.AsNoTracking()
+            .Where(x => x.TenantId == tenant.TenantId && x.InboundMessageId == inboundMessageId)
+            .Select(x => x.TranslationStatus == InboundTranslationStatus.Late)
+            .SingleAsync(cancellationToken);
+        var claimed = await db.InboundMessages.Where(x => x.TenantId == tenant.TenantId
+                && x.InboundMessageId == inboundMessageId && x.IsLatest
+                && x.TranslationStatus != InboundTranslationStatus.Completed
+                && x.TranslationStatus != InboundTranslationStatus.Superseded
+                && x.TranslationStatus != InboundTranslationStatus.NeedsAttention
+                && x.TranslationStatus != InboundTranslationStatus.Held
+                && (x.TranslationStatus != InboundTranslationStatus.Processing
+                    || x.TranslationStartedAt == null || x.TranslationStartedAt <= stale)
+                && (x.NextTranslationAttemptAt == null || x.NextTranslationAttemptAt <= now))
+            .ExecuteUpdateAsync(update => update
+                .SetProperty(x => x.TranslationStatus, InboundTranslationStatus.Processing)
+                .SetProperty(x => x.TranslationStartedAt, now)
+                .SetProperty(x => x.NextTranslationAttemptAt, (DateTime?)null)
+                .SetProperty(x => x.LastTranslationError, (string?)null)
+                .SetProperty(x => x.TranslationAttemptCount, x => x.TranslationAttemptCount + 1), cancellationToken);
+        if (claimed == 0)
+        {
+            var skipped = await db.InboundMessages.AsNoTracking().SingleAsync(x => x.TenantId == tenant.TenantId
+                && x.InboundMessageId == inboundMessageId, cancellationToken);
+            return new(skipped.InboundMessageId, skipped.MessageType, false, 0, []);
+        }
         var row = await db.InboundMessages.SingleAsync(x => x.TenantId == tenant.TenantId
             && x.InboundMessageId == inboundMessageId, cancellationToken);
         if (!row.IsLatest || row.TranslationStatus == InboundTranslationStatus.Superseded)
@@ -62,7 +100,7 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
             nameof(GoodsReceiptPosted) => await TranslateReceiptAsync(row, cancellationToken),
             nameof(ProductionCompleted) => await TranslateDocumentAsync<ProductionCompleted>(row, p => p.DocumentRef,
                 (env, doc) => new ManufacturingProductionReceiptPosted(env, doc), cancellationToken),
-            nameof(DeliveryPosted) => await TranslateDeliveryAsync(row, cancellationToken),
+            nameof(DeliveryPosted) => await TranslateDeliveryAsync(row, wasReleasedLate, cancellationToken),
             nameof(InvoicePosted) => await TranslateDocumentAsync<InvoicePosted>(row, p => p.DocumentRef,
                 (env, doc) => new SalesInvoicePosted(env, doc), cancellationToken),
             nameof(ReturnReceived) => await TranslateDocumentAsync<ReturnReceived>(row, p => p.DocumentRef,
@@ -79,9 +117,24 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
         };
         if (result.Translated)
         {
-            row.TranslationStatus = InboundTranslationStatus.Completed;
-            row.TranslatedAt = clock.UtcNow;
-            await db.SaveChangesAsync(cancellationToken);
+            db.Entry(row).State = EntityState.Detached;
+            await db.InboundMessages.Where(x => x.TenantId == tenant.TenantId
+                    && x.InboundMessageId == inboundMessageId && x.IsLatest
+                    && x.TranslationStatus == InboundTranslationStatus.Processing)
+                .ExecuteUpdateAsync(update => update
+                    .SetProperty(x => x.TranslationStatus, InboundTranslationStatus.Completed)
+                    .SetProperty(x => x.TranslatedAt, clock.UtcNow)
+                    .SetProperty(x => x.TranslationStartedAt, (DateTime?)null), cancellationToken);
+        }
+        else if (result.Exceptions.Contains("bounded_wait"))
+        {
+            db.Entry(row).State = EntityState.Detached;
+            await db.InboundMessages.Where(x => x.TenantId == tenant.TenantId
+                    && x.InboundMessageId == inboundMessageId && x.IsLatest
+                    && x.TranslationStatus == InboundTranslationStatus.Processing)
+                .ExecuteUpdateAsync(update => update
+                    .SetProperty(x => x.TranslationStatus, InboundTranslationStatus.Held)
+                    .SetProperty(x => x.TranslationStartedAt, (DateTime?)null), cancellationToken);
         }
         return result;
     }
@@ -102,10 +155,11 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
         return Done(row, 0, []);
     }
 
-    private async Task<GatewayTranslationResult> TranslateDeliveryAsync(InboundMessage row, CancellationToken cancellationToken)
+    private async Task<GatewayTranslationResult> TranslateDeliveryAsync(InboundMessage row, bool wasReleasedLate,
+        CancellationToken cancellationToken)
     {
         var message = Message<DeliveryPosted>(row);
-        if (row.TranslationStatus != InboundTranslationStatus.Late)
+        if (!wasReleasedLate)
         {
             var serials = message.Payload.Lines.SelectMany(x => x.Serials).Select(x => x.Value)
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -136,7 +190,7 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
             var item = await references.FindAsync(row.ConnectionId, "item", line.ItemExternalId, cancellationToken)
                 ?? throw new InvalidOperationException("item_reference_missing");
             var result = await bus.InvokeAsync<CommissionUnitsResult>(new CommissionUnits(
-                Derive(row.InboundMessageId, line.LineNo), item, UnitOrigin.LegacyUnknown,
+                DeterministicId.Create(row.MessageId, line.LineNo.ToString(System.Globalization.CultureInfo.InvariantCulture)), item, UnitOrigin.LegacyUnknown,
                 line.Serials.Select(serial => new CommissionLine([new IdentifierInput(IdentifierType.Provisional, serial.Value)], serial.Value)).ToList(),
                 row.OccurredAt.AddMilliseconds(-1), Source(row), await LegalEntityAsync(row.ConnectionId, cancellationToken),
                 Document: doc, LocationId: line.LocationExternalId is null ? null
@@ -283,13 +337,6 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
         ?? throw new InvalidOperationException("canonical_message_invalid");
     private static GatewayTranslationResult Done(InboundMessage row, int affected, IReadOnlyList<string> exceptions) =>
         new(row.InboundMessageId, row.MessageType, true, affected, exceptions);
-    private static Guid Derive(Guid value, int salt)
-    {
-        var bytes = value.ToByteArray();
-        BitConverter.GetBytes(salt).CopyTo(bytes, 0);
-        return new Guid(bytes);
-    }
-
     private async Task RaiseAsync(InboundMessage row, string kind, string detail, CancellationToken cancellationToken)
     {
         if (await db.ExceptionTasks.AnyAsync(x => x.TenantId == tenant.TenantId && x.InboundMessageId == row.InboundMessageId

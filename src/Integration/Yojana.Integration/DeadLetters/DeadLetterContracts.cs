@@ -29,6 +29,8 @@ public sealed record DeadLetterListRow(
 
 public sealed record DeadLetterSummary(
     int Open,
+    int Retried,
+    int Discarded,
     int UnknownItem,
     int SerialNotFound,
     int PartyNotLinked,

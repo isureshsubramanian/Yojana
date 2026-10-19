@@ -1797,13 +1797,13 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
 
         var tasks = new[]
         {
-            new DemoManualTask("credit-4412", "CreateCreditMemo", "finance", "Credit note · CLM-2026-04412", "Ashvane Cooperative Bank · 2 lines", "This connection writes references only.", "YJ-CLM-2026-04412-CN1", 0, 9, 20, 5170m),
-            new DemoManualTask("replacement-1877", "CreateReplacementDelivery", "warehouse", "Replacement delivery · RMA-2026-01877", "ERP refused: period 2026-09 closed", "The ERP refused the automatic entry because the posting period is closed.", "YJ-RMA-2026-01877-DN1", 2, 10, 0, 4850m),
-            new DemoManualTask("expense-4398", "PostWarrantyExpense", "finance", "Warranty expense · CLM-2026-04398", "Nandira Institute HPC Centre", "This connection writes references only.", "YJ-CLM-2026-04398-JE1", 0, 7, 15, 920m),
-            new DemoManualTask("service-1902", "CreateServiceOrder", "service", "Service order · RMA-2026-01902", "Ashvane Cooperative Bank · on-site", "Service orders are entered by the service desk for this connection.", "YJ-RMA-2026-01902-SO1", 0, 6, 10, 320m),
-            new DemoManualTask("credit-4371", "CreateCreditMemo", "finance", "Credit note · CLM-2026-04371", "Torrenfold Engineering GmbH · 1 line", "This connection writes references only.", "YJ-CLM-2026-04371-CN1", 1, 15, 30, 1180m),
-            new DemoManualTask("attach-118204", "AttachDocument", "service", "Attach document · WC-2026-118204", "ERP refused: file is larger than the connection limit", "The file must be attached by hand after compression.", "YJ-WC-2026-118204-AT1", 1, 12, 0, 0m),
-            new DemoManualTask("stock-1851", "ChangeStockStatusOrLocation", "warehouse", "Stock change · RMA-2026-01851", "Velmora University Hospital · quarantine release", "Stock changes are entered by the warehouse for this connection.", "YJ-RMA-2026-01851-ST1", 1, 9, 0, 0m),
+            new DemoManualTask("credit-4412", "CreateCreditMemo", "finance", "Credit note · CLM-2026-04412", "Ashvane Cooperative Bank · 2 lines", "Ashvane Cooperative Bank", "This connection writes references only.", "YJ-CLM-2026-04412-CN1", 0, 9, 20, 5170m),
+            new DemoManualTask("replacement-1877", "CreateReplacementDelivery", "warehouse", "Replacement delivery · RMA-2026-01877", "ERP refused: period 2026-09 closed", "Ashvane Cooperative Bank", "The ERP refused the automatic entry because the posting period is closed.", "YJ-RMA-2026-01877-DN1", 2, 10, 0, 4850m),
+            new DemoManualTask("expense-4398", "PostWarrantyExpense", "finance", "Warranty expense · CLM-2026-04398", "Nandira Institute HPC Centre", "Nandira Institute HPC Centre", "This connection writes references only.", "YJ-CLM-2026-04398-JE1", 0, 7, 15, 920m),
+            new DemoManualTask("service-1902", "CreateServiceOrder", "service", "Service order · RMA-2026-01902", "Ashvane Cooperative Bank · on-site", "Ashvane Cooperative Bank", "Service orders are entered by the service desk for this connection.", "YJ-RMA-2026-01902-SO1", 0, 6, 10, 320m),
+            new DemoManualTask("credit-4371", "CreateCreditMemo", "finance", "Credit note · CLM-2026-04371", "Torrenfold Engineering GmbH · 1 line", "Torrenfold Engineering GmbH", "This connection writes references only.", "YJ-CLM-2026-04371-CN1", 1, 15, 30, 1180m),
+            new DemoManualTask("attach-118204", "AttachDocument", "service", "Attach document · WC-2026-118204", "ERP refused: file is larger than the connection limit", "Ashvane Cooperative Bank", "The file must be attached by hand after compression.", "YJ-WC-2026-118204-AT1", 1, 12, 0, 0m),
+            new DemoManualTask("stock-1851", "ChangeStockStatusOrLocation", "warehouse", "Stock change · RMA-2026-01851", "Velmora University Hospital · quarantine release", "Velmora University Hospital", "Stock changes are entered by the warehouse for this connection.", "YJ-RMA-2026-01851-ST1", 1, 9, 0, 0m),
         };
         foreach (var story in tasks)
         {
@@ -1811,13 +1811,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             var itemId = DemoIds.FromName("integration:manual-attention:" + story.Key);
             var taskId = DemoIds.FromName("integration:manual-task:" + story.Key);
             var createdAt = DemoDates.At(today.AddDays(-story.DaysAgo), story.Hour, story.Minute);
-            var draft = JsonSerializer.Serialize(new
-            {
-                title = story.Title, subtitle = story.Subtitle, reason = story.Reason, reference = story.Reference,
-                fields = new Dictionary<string, object?> { ["document type"] = ManualDocumentType(story.CommandType), ["customer code"] = "C-10488", ["customer"] = story.Subtitle.Split('·')[0].Trim(), ["posting date"] = today.ToString("yyyy-MM-dd"), ["reference (paste exactly)"] = story.Reference, ["remarks"] = "Warranty service entry · " + story.Title },
-                lines = new[] { new { line = 1, itemCode = "NX-4850", description = "NX-4850 48-port network switch", quantity = 1, unitPrice = story.Total, amount = story.Total, serial = "08260077" }, new { line = 2, itemCode = "SVC-ONSITE-H", description = "On-site labour, hours", quantity = 2, unitPrice = 160m, amount = story.Total == 0 ? 0 : 320m, serial = "—" } },
-                currency = "EUR", total = story.Total,
-            });
+            var draft = BuildManualTaskDraft(story, today);
             if (!await db.OutboundCommands.AnyAsync(row => row.OutboundCommandId == commandId, cancellationToken))
                 db.OutboundCommands.Add(new OutboundCommandRow
                 {
@@ -1861,6 +1855,15 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         "AttachDocument" => "Document attachment",
         _ => "Stock status or location change",
     };
+
+    internal static string BuildManualTaskDraft(DemoManualTask story, DateOnly postingDate) =>
+        JsonSerializer.Serialize(new
+        {
+            title = story.Title, subtitle = story.Subtitle, reason = story.Reason, reference = story.Reference,
+            fields = new Dictionary<string, object?> { ["document type"] = ManualDocumentType(story.CommandType), ["customer code"] = "C-10488", ["customer"] = story.Customer, ["posting date"] = postingDate.ToString("yyyy-MM-dd"), ["reference (paste exactly)"] = story.Reference, ["remarks"] = "Warranty service entry · " + story.Title },
+            lines = new[] { new { line = 1, itemCode = "NX-4850", description = "NX-4850 48-port network switch", quantity = 1, unitPrice = story.Total, amount = story.Total, serial = "08260077" }, new { line = 2, itemCode = "SVC-ONSITE-H", description = "On-site labour, hours", quantity = 2, unitPrice = 160m, amount = story.Total == 0 ? 0 : 320m, serial = "—" } },
+            currency = "EUR", total = story.Total,
+        });
 
     private async Task PrintSummaryAsync(CancellationToken cancellationToken)
     {
@@ -2142,8 +2145,9 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
     private sealed record DemoAttention(string Key, string RecordType, string Reason, string Failure,
         string DocumentNumber, string ExternalId, string EntityType, Guid ModuleId, string ModuleName,
         int DaysAgo, int Hour, int Minute);
-    private sealed record DemoManualTask(string Key, string CommandType, string Desk, string Title,
-        string Subtitle, string Reason, string Reference, int DaysAgo, int Hour, int Minute, decimal Total);
+    internal sealed record DemoManualTask(string Key, string CommandType, string Desk, string Title,
+        string Subtitle, string Customer, string Reason, string Reference, int DaysAgo, int Hour, int Minute,
+        decimal Total);
     private sealed record RmaScenario(Guid RmaId, Guid RmaLineId, Guid? EntitlementId);
     private sealed record ApprovedClaim(Guid ClaimId, Guid EntitlementId);
     private sealed record ComponentFact(Guid LinkId, Guid ParentUnitId, Guid UnitId, string Serial);

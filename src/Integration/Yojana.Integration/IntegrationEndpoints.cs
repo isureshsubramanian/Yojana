@@ -3,7 +3,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Integration.DeadLetters;
+using Yojana.Integration.Notifications;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Integration.Reconciliation;
+using Yojana.Integration.Backfills;
 
 namespace Yojana.Integration;
 
@@ -11,9 +14,21 @@ public static class IntegrationEndpoints
 {
     public static IEndpointRouteBuilder MapIntegrationEndpoints(this IEndpointRouteBuilder app)
     {
+        app.MapIntegrationNotificationEndpoints();
+        app.MapIntegrationAttentionEndpoint();
+        return app.MapIntegrationOperationsEndpoints();
+    }
+
+    internal static IEndpointRouteBuilder MapIntegrationAttentionEndpoint(this IEndpointRouteBuilder app)
+    {
         app.MapGet("/api/integration/attention-count", async (DeadLetterService service,
                 CancellationToken ct) => Results.Ok(await service.AttentionAsync(ct)))
             .RequireAuthorization(YojanaPolicy.IntegrationIndicator);
+        return app;
+    }
+
+    internal static IEndpointRouteBuilder MapIntegrationOperationsEndpoints(this IEndpointRouteBuilder app)
+    {
         var integration = app.MapGroup("/api/integration")
             .RequireAuthorization(YojanaPolicy.IntegrationOperations);
         integration.MapGet("/dead-letters", async (Guid? connectionId, string? reason, string? recordType,
@@ -49,6 +64,53 @@ public static class IntegrationEndpoints
         integration.MapPut("/manual-task-desks", async (UpdateManualTaskDeskSettings request,
             ManualTaskDeskSettings settings, CancellationToken ct) => await Invoke(() => settings.SetAsync(request, ct)))
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        integration.MapGet("/reconciliation/runs", (Guid? connectionId, string? status, string? cursor,
+            int? take, ReconciliationService service, CancellationToken ct) => Invoke(() =>
+            service.ListAsync(new(connectionId, status, cursor, take ?? 50), ct)));
+        integration.MapGet("/reconciliation/runs/{runId:guid}", async (Guid runId,
+            ReconciliationService service, CancellationToken ct) =>
+            await service.DetailAsync(runId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
+        integration.MapPost("/reconciliation/location-checks", (RunLocationReconciliationRequest request,
+            ReconciliationService service, CancellationToken ct) => Invoke(async () =>
+        {
+            var runId = await service.RunLocationChecksAsync(request.ConnectionId, ct);
+            return await service.DetailAsync(runId, ct)
+                ?? throw new InvalidOperationException("The completed reconciliation run was not found.");
+        }));
+        integration.MapGet("/backfills", (Guid? connectionId, string? entity, string? status,
+            string? cursor, int? take, BackfillService service, CancellationToken ct) => Invoke(() =>
+            service.ListAsync(new(connectionId, entity, status, cursor, take ?? 50), ct)));
+        integration.MapGet("/backfills/{backfillId:guid}", async (Guid backfillId,
+            BackfillService service, CancellationToken ct) =>
+            await service.DetailAsync(backfillId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
+        integration.MapPost("/backfills", (StartBackfillRequest request, ClaimsPrincipal user,
+            BackfillService service, CancellationToken ct) => Invoke(async () =>
+        {
+            var id = await service.StartAsync(request, Actor(user), ct);
+            return await service.DetailAsync(id, ct)
+                ?? throw new InvalidOperationException("The created backfill was not found.");
+        }));
+        integration.MapPost("/backfills/{backfillId:guid}/pause", (Guid backfillId,
+            ClaimsPrincipal user, BackfillService service, CancellationToken ct) => Invoke(async () =>
+        {
+            await service.PauseAsync(backfillId, Actor(user), ct);
+            return await service.DetailAsync(backfillId, ct)
+                ?? throw new InvalidOperationException("The paused backfill was not found.");
+        }));
+        integration.MapPost("/backfills/{backfillId:guid}/resume", (Guid backfillId,
+            ClaimsPrincipal user, BackfillService service, CancellationToken ct) => Invoke(async () =>
+        {
+            await service.ResumeAsync(backfillId, Actor(user), ct);
+            return await service.DetailAsync(backfillId, ct)
+                ?? throw new InvalidOperationException("The resumed backfill was not found.");
+        }));
+        integration.MapPost("/backfills/{backfillId:guid}/cancel", (Guid backfillId,
+            ClaimsPrincipal user, BackfillService service, CancellationToken ct) => Invoke(async () =>
+        {
+            await service.CancelAsync(backfillId, Actor(user), ct);
+            return await service.DetailAsync(backfillId, ct)
+                ?? throw new InvalidOperationException("The cancelled backfill was not found.");
+        }));
         return app;
     }
 
@@ -56,6 +118,20 @@ public static class IntegrationEndpoints
     {
         try { return Results.Ok(await action()); }
         catch (DeadLetterRuleException ex)
+        {
+            var status = ex.Rule.EndsWith("not_found", StringComparison.Ordinal)
+                ? StatusCodes.Status404NotFound : StatusCodes.Status422UnprocessableEntity;
+            return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: status,
+                extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+        }
+        catch (ReconciliationRuleException ex)
+        {
+            var status = ex.Rule.EndsWith("not_found", StringComparison.Ordinal)
+                ? StatusCodes.Status404NotFound : StatusCodes.Status422UnprocessableEntity;
+            return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: status,
+                extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+        }
+        catch (BackfillRuleException ex)
         {
             var status = ex.Rule.EndsWith("not_found", StringComparison.Ordinal)
                 ? StatusCodes.Status404NotFound : StatusCodes.Status422UnprocessableEntity;

@@ -69,6 +69,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<IUnitEventAppendObserver, LedgerBaseOrderReferenceObserver>();
         builder.Services.AddScoped<UnitHistoryQuery>();
         builder.Services.AddScoped<BulkIngestion>();
+        builder.Services.AddScoped<ISerialisedOnHandQuery, Ports.SerialisedOnHandQuery>();
         var baseOrderBackfill = builder.Configuration.GetSection(LedgerBaseOrderBackfillOptions.SectionName)
             .Get<LedgerBaseOrderBackfillOptions>() ?? new LedgerBaseOrderBackfillOptions();
         builder.Services.AddSingleton(baseOrderBackfill);

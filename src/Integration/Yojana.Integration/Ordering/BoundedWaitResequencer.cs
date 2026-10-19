@@ -78,12 +78,10 @@ public sealed class BoundedWaitResequencer(IntegrationDbContext db, ITenantConte
             row.Status = ResequenceStatus.Released;
             row.ReleasedAt = now;
             row.Late = late;
-            if (late)
-            {
-                var message = await db.InboundMessages.SingleAsync(x => x.TenantId == tenant.TenantId
-                    && x.InboundMessageId == row.InboundMessageId, cancellationToken);
-                message.TranslationStatus = InboundTranslationStatus.Late;
-            }
+            var message = await db.InboundMessages.SingleAsync(x => x.TenantId == tenant.TenantId
+                && x.InboundMessageId == row.InboundMessageId, cancellationToken);
+            message.TranslationStatus = late ? InboundTranslationStatus.Late : InboundTranslationStatus.Pending;
+            message.NextTranslationAttemptAt = null;
         }
         await db.SaveChangesAsync(cancellationToken);
         foreach (var row in rows)

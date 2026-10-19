@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { mayOperateIntegration, maySeeIntegrationIndicator, reasonLabel } from "../src/integration/model.ts";
+import { draftValueIsMono, mayOperateIntegration, maySeeIntegrationIndicator, reasonLabel } from "../src/integration/model.ts";
 
 const messages = readFileSync(new URL("../src/integration/MessagesAttention.tsx", import.meta.url), "utf8");
 const manual = readFileSync(new URL("../src/integration/ManualTasks.tsx", import.meta.url), "utf8");
@@ -49,4 +49,20 @@ test("integration indicator and operations use their approved role gates", () =>
 
 test("operator-facing screen copy does not expose internal transport terms", () => {
   for (const screen of [messages, manual]) assert.doesNotMatch(screen, /["'`](?:[^"'`]*\b(?:DLQ|outbox|canonical|idempotency)\b[^"'`]*)["'`]/i);
+});
+
+test("the serial face is limited to copy-exact identifiers", () => {
+  for (const key of ["serial", "serialNumber", "itemCode", "ERP key", "document number", "reference (paste exactly)"])
+    assert.equal(draftValueIsMono(key), true, key);
+  for (const key of ["posting date", "customer code", "customer", "remarks", "description", "document type", "unit price"])
+    assert.equal(draftValueIsMono(key), false, key);
+  assert.doesNotMatch(messages, /key: "received"[^\n]*mono: true/);
+  assert.match(manual, /className="input mono"/);
+  assert.match(manual, /placeholder="for example 30552"/);
+});
+
+test("every message state chip renders its server-side count", () => {
+  assert.match(messages, /result\.summary\.retried/);
+  assert.match(messages, /result\.summary\.discarded/);
+  assert.match(messages, /count\.toLocaleString\(\)/);
 });

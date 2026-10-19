@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.Contracts;
@@ -57,11 +55,7 @@ public sealed class OutboundCommandStager(IntegrationDbContext db, ITenantContex
 
     private static bool IsFinancial(string type) => type is nameof(CreateCreditMemo) or nameof(PostWarrantyExpense);
 
-    public static Guid Derive(Guid eventId, string purpose)
-    {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(eventId.ToString("N") + "|" + purpose));
-        return new Guid(hash.AsSpan(0, 16));
-    }
+    public static Guid Derive(Guid eventId, string purpose) => DeterministicId.Create(eventId, purpose);
 
     public static string ModuleRef(PublishedEventHeader header, string kind, Guid id) =>
         header.Document is { } document ? $"{document.Type}/{document.Id:N}" : $"{kind}/{id:N}";

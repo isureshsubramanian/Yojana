@@ -4,6 +4,8 @@ using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Ordering;
 using Yojana.Platform.Contracts.Identifiers;
+using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Data;
 
 namespace Yojana.Integration.DatabaseTests;
 
@@ -18,10 +20,39 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
         var tables = await db.Database.SqlQueryRaw<string>("SELECT TABLE_NAME AS Value FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'integration'").ToListAsync();
         AssertSuperset(tables, "connection", "inbound_message", "idempotency_index", "canonical_document",
             "reference_projection", "connection_capability", "connection_degradation_setting", "connection_gateway_setting",
-            "outbound_command", "external_id_map", "exception_task", "resequence_item", "dead_letter_item",
-            "dead_letter_event", "manual_outbound_task");
+            "outbound_command", "exception_task", "resequence_item", "external_id_map", "connector_catalogue",
+            "tenant_data_key", "connection_credential", "tenant_data_key_rewrap_checkpoint", "connection_event",
+            "connection_throttle_profile", "connection_notification_source", "connection_poll_watermark",
+            "dead_letter_item", "dead_letter_event", "manual_outbound_task");
+        AssertSuperset(tables, "reconciliation_run", "reconciliation_entity_day",
+            "reconciliation_location", "backfill_cursor");
         var columns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'manual_outbound_task'").ToListAsync();
         Assert.Contains("desk", columns);
+    }
+
+    [DatabaseFact]
+    public async Task Every_integration_tenant_table_is_under_the_tenant_policy()
+    {
+        using var scope = fixture.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var expected = db.Model.GetEntityTypes()
+            .Where(entity => typeof(ITenantScoped).IsAssignableFrom(entity.ClrType))
+            .Select(entity => entity.GetTableName()!).ToHashSet();
+        var covered = await db.Database.SqlQueryRaw<string>($"""
+            SELECT OBJECT_NAME(p.target_object_id) AS [Value]
+            FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
+            WHERE s.name = 'tenant_policy_{IntegrationDbContext.SchemaName}'
+              AND p.predicate_type_desc = 'FILTER'
+            """).ToListAsync();
+        Assert.Equal(expected.OrderBy(value => value), covered.OrderBy(value => value));
+        var blocks = await db.Database.SqlQueryRaw<int>($"""
+            SELECT COUNT(*) AS [Value]
+            FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
+            WHERE s.name = 'tenant_policy_{IntegrationDbContext.SchemaName}'
+              AND p.predicate_type_desc = 'BLOCK'
+            """).SingleAsync();
+        Assert.Equal(expected.Count * 2, blocks);
+        Assert.Empty(db.ValidateTenantKeyConventions());
     }
 
     [DatabaseFact]

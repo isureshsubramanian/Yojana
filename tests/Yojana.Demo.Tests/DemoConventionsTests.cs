@@ -1,4 +1,5 @@
 using Xunit;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Yojana.Serialisation.Contracts;
@@ -8,6 +9,23 @@ namespace Yojana.Demo.Tests;
 
 public sealed class DemoConventionsTests
 {
+    [Fact]
+    public void Manual_task_draft_keeps_customer_separate_from_the_refusal_summary()
+    {
+        var story = new DemoLoader.DemoManualTask("replacement", "CreateReplacementDelivery", "warehouse",
+            "Replacement delivery · RMA-2026-01877", "ERP refused: period 2026-09 closed",
+            "Ashvane Cooperative Bank", "The ERP refused the automatic entry because the posting period is closed.",
+            "YJ-RMA-2026-01877-DN1", 2, 10, 0, 4850m);
+
+        using var draft = JsonDocument.Parse(DemoLoader.BuildManualTaskDraft(story, new(2026, 10, 19)));
+        var fields = draft.RootElement.GetProperty("fields");
+
+        Assert.Equal("Ashvane Cooperative Bank", fields.GetProperty("customer").GetString());
+        Assert.Equal("ERP refused: period 2026-09 closed", draft.RootElement.GetProperty("subtitle").GetString());
+        Assert.NotEqual(draft.RootElement.GetProperty("subtitle").GetString(),
+            fields.GetProperty("customer").GetString());
+    }
+
     [Fact]
     public void Stable_names_produce_repeatable_version_five_style_ids()
     {

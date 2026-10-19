@@ -74,3 +74,9 @@ public interface IOutboundCommandParkingSink
     Task ParkAsync(Yojana.Integration.Data.Entities.OutboundCommandRow command, string reasonCode,
         string failure, CancellationToken cancellationToken);
 }
+
+public interface IInboundMessageParkingSink
+{
+    Task<Guid> ParkInboundAsync(Yojana.Integration.Data.Entities.InboundMessage message, string reasonCode,
+        string failure, CancellationToken cancellationToken);
+}

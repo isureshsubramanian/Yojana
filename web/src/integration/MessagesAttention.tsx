@@ -9,7 +9,7 @@ import { actionSeed, age, localDate, payload, reasonLabel, recordTitle, statusLa
 import type { DeadLetterDetail, DeadLetterPage, DeadLetterRow } from "./types";
 import "./integration.css";
 
-const emptySummary = { open: 0, unknownItem: 0, serialNotFound: 0, partyNotLinked: 0, couldNotSend: 0, resolvedLast30Days: 0, retriedLast30Days: 0, discardedLast30Days: 0 };
+const emptySummary = { open: 0, retried: 0, discarded: 0, unknownItem: 0, serialNotFound: 0, partyNotLinked: 0, couldNotSend: 0, resolvedLast30Days: 0, retriedLast30Days: 0, discardedLast30Days: 0 };
 const empty: DeadLetterPage = { items: [], nextCursor: null, total: 0, summary: emptySummary };
 const statusValues = [["needs_attention", "Open"], ["retry_pending", "Retried"], ["discarded", "Discarded"]] as const;
 
@@ -63,7 +63,7 @@ export function Component() {
   const connections = useMemo(() => Array.from(new Map(result.items.map((row) => [row.connectionId, row.connectionLabel])).entries()).sort((a, b) => a[1].localeCompare(b[1])), [result.items]);
   const recordTypes = useMemo(() => Array.from(new Set(result.items.map((row) => row.recordType))).sort(), [result.items]);
   const columns: GridColumn<DeadLetterRow>[] = [
-    { key: "received", label: "Received", width: 11, mono: true, render: (row) => localDate(row.createdAt) },
+    { key: "received", label: "Received", width: 11, render: (row) => localDate(row.createdAt) },
     { key: "connection", label: "Connection", width: 17, render: (row) => row.connectionLabel },
     { key: "record", label: "Record", width: 22, render: (row) => <><span className="primary">{recordTitle(row)}</span><span className="sub">{row.direction === "inbound" ? "Received from the ERP" : "Sending to the ERP"}</span></> },
     { key: "reason", label: "Reason", width: 32, render: (row) => <><StatusBadge tone={tone(row)}>{reasonLabel(row.reasonCode)}</StatusBadge><span className="integration-failure">{row.failure}</span></> },
@@ -85,7 +85,7 @@ export function Component() {
       actions={<button type="button" className="btn primary" disabled={!detail || busy || !actionSeed(detail).moduleId} onClick={() => void map()}>Map and retry <Shortcut keys="mod+enter" /></button>} />
     <IntegrationTabs attention={result.summary.open} manual={tabCounts.manual} />
     <IntegrationAccess><div className="stack integration-stack"><ErrorNote error={error} /><KpiStrip kpis={kpis} />
-      <section className="card" aria-labelledby="attention-list"><div className="card-header"><h2 id="attention-list">{statusLabel(status)} messages</h2><div className="segmented plain" role="group" aria-label="State">{statusValues.map(([value, label]) => <button type="button" key={value} aria-pressed={status === value} onClick={() => setStatus(value)}>{label}{value === "needs_attention" && <span className="n">{result.summary.open}</span>}</button>)}</div></div>
+      <section className="card" aria-labelledby="attention-list"><div className="card-header"><h2 id="attention-list">{statusLabel(status)} messages</h2><div className="segmented plain" role="group" aria-label="State">{statusValues.map(([value, label]) => { const count = value === "needs_attention" ? result.summary.open : value === "retry_pending" ? result.summary.retried : result.summary.discarded; return <button type="button" key={value} aria-pressed={status === value} onClick={() => setStatus(value)}>{label}<span className="n">{count.toLocaleString()}</span></button>; })}</div></div>
         <FindBar query={find} onQuery={setFind} facets={[]} activeFacet={null} onFacet={() => undefined} compact ariaLabel="Find a document, serial, item code or ERP key" placeholder="Document, serial, item code or ERP key" />
         <div className="toolbar integration-filters">
           <select className="select sm" aria-label="Connection" value={connectionId} onChange={(event) => setConnectionId(event.target.value)}><option value="">All connections</option>{connections.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
