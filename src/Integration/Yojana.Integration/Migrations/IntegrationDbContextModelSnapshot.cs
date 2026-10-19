@@ -714,6 +714,12 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("dead_letter_item_id");
 
+                    b.Property<string>("Desk")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("desk");
+
                     b.Property<string>("Draft")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
@@ -752,6 +758,9 @@ namespace Yojana.Integration.Migrations
 
                     b.HasIndex("TenantId", "Status", "CreatedAt", "ManualOutboundTaskId")
                         .HasDatabaseName("ix_manual_outbound_task_tenant_id_status_created_at_manual_outbound_task_id");
+
+                    b.HasIndex("TenantId", "Status", "Desk", "CreatedAt", "ManualOutboundTaskId")
+                        .HasDatabaseName("ix_manual_outbound_task_tenant_id_status_desk_created_at_manual_outbound_task_id");
 
                     b.ToTable("manual_outbound_task", "integration", t =>
                         {

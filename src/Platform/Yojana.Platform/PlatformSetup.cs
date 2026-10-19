@@ -107,6 +107,10 @@ public static class PlatformSetup
             auth.AddPolicy(YojanaPolicy.IntegrationOperations, p => p.RequireAuthenticatedUser()
                 .RequireClaim(YojanaClaim.TenantId)
                 .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator, YojanaRole.IntegrationOperator));
+            auth.AddPolicy(YojanaPolicy.IntegrationIndicator, p => p.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId)
+                .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator, YojanaRole.ServiceManager,
+                    YojanaRole.IntegrationOperator));
             auth.AddPolicy(YojanaPolicy.LabelPrinter, p => p.RequireAuthenticatedUser()
                 .RequireClaim(YojanaClaim.TenantId)
                 .RequireClaim(YojanaClaim.Role,

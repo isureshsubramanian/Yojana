@@ -202,6 +202,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
                 "status IN ('open','completed')"));
             b.HasKey(x => new { x.TenantId, x.ManualOutboundTaskId });
             b.Property(x => x.CommandType).HasMaxLength(80);
+            b.Property(x => x.Desk).HasMaxLength(80);
             b.Property(x => x.Draft).HasColumnType("nvarchar(max)");
             b.Property(x => x.Status).HasMaxLength(24);
             b.Property(x => x.ErpExternalId).HasMaxLength(320);
@@ -209,6 +210,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.CompletedBy).HasMaxLength(320);
             b.HasIndex(x => new { x.TenantId, x.OutboundCommandId }).IsUnique();
             b.HasIndex(x => new { x.TenantId, x.Status, x.CreatedAt, x.ManualOutboundTaskId });
+            b.HasIndex(x => new { x.TenantId, x.Status, x.Desk, x.CreatedAt, x.ManualOutboundTaskId });
             b.HasOne<DeadLetterItem>().WithOne().HasForeignKey<ManualOutboundTask>(x =>
                 new { x.TenantId, x.DeadLetterItemId }).OnDelete(DeleteBehavior.Restrict);
         });

@@ -50,6 +50,8 @@ public static class IntegrationModule
         builder.Services.AddScoped<IOutboundCommandParkingSink, DeadLetterParkingSink>();
         builder.Services.AddScoped<OutboundRelay>();
         builder.Services.AddScoped<DeadLetterService>();
+        builder.Services.AddScoped<ManualTaskDeskSettings>();
+        builder.Services.TryAddScoped<IManualTaskReferenceVerifier, UnavailableManualTaskReferenceVerifier>();
         builder.Services.AddSingleton(RecurringTenantJob.For<OutboxRelayJob>(OutboxRelayJob.JobName, OutboxRelayJob.Cron));
         // Factories deliberately hide IntegrationDbContext from Wolverine's SerialisationDbContext handler graphs.
         // The document and item ports are module contracts, but exposing both contexts as constructor-discoverable

@@ -20,6 +20,8 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "reference_projection", "connection_capability", "connection_degradation_setting", "connection_gateway_setting",
             "outbound_command", "external_id_map", "exception_task", "resequence_item", "dead_letter_item",
             "dead_letter_event", "manual_outbound_task");
+        var columns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'manual_outbound_task'").ToListAsync();
+        Assert.Contains("desk", columns);
     }
 
     [DatabaseFact]

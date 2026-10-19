@@ -10,7 +10,8 @@ using Yojana.Platform.Contracts.Time;
 
 namespace Yojana.Integration.DeadLetters;
 
-public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext tenant, IClock clock)
+public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext tenant, IClock clock,
+    IManualTaskReferenceVerifier referenceVerifier, ManualTaskDeskSettings deskSettings)
 {
     public async Task<Guid> ParkInboundAsync(Guid inboundMessageId, string reasonCode, string failure,
         CancellationToken cancellationToken)
@@ -53,13 +54,20 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         if (!string.IsNullOrWhiteSpace(request.Reason)) query = query.Where(x => x.ReasonCode == request.Reason);
         if (!string.IsNullOrWhiteSpace(request.RecordType)) query = query.Where(x => x.RecordType == request.RecordType);
         if (!string.IsNullOrWhiteSpace(request.Status)) query = query.Where(x => x.Status == request.Status);
+        if (!string.IsNullOrWhiteSpace(request.Query))
+        {
+            var find = request.Query.Trim();
+            query = query.Where(x => x.RecordType.Contains(find) || x.ReasonCode.Contains(find)
+                || x.Failure.Contains(find) || x.RawPayload.Contains(find) || x.CanonicalAttempt.Contains(find));
+        }
         if (request.MinimumAgeHours is { } minimum)
             query = query.Where(x => x.CreatedAt <= clock.UtcNow.AddHours(-Math.Max(0, minimum)));
         if (request.MaximumAgeHours is { } maximum)
             query = query.Where(x => x.CreatedAt >= clock.UtcNow.AddHours(-Math.Max(0, maximum)));
+        var total = await query.CountAsync(cancellationToken);
         if (Decode(request.Cursor) is { } cursor)
-            query = query.Where(x => x.CreatedAt < cursor.CreatedAt
-                || (x.CreatedAt == cursor.CreatedAt && x.DeadLetterItemId.CompareTo(cursor.DeadLetterItemId) < 0));
+            query = query.Where(x => x.CreatedAt > cursor.CreatedAt
+                || (x.CreatedAt == cursor.CreatedAt && x.DeadLetterItemId.CompareTo(cursor.DeadLetterItemId) > 0));
 
         // Member-init projection is intentional: positional record construction inside this EF query does not translate.
         var rows = await query.Join(db.Connections.AsNoTracking(), item => new { item.TenantId, item.ConnectionId },
@@ -71,20 +79,33 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
                 ConnectionLabel = connection.DisplayLabel,
                 Direction = item.Direction,
                 RecordType = item.RecordType,
+                RecordReference = item.SourceKind == DeadLetterSourceKind.InboundMessage
+                    ? db.InboundMessages.Where(source => source.TenantId == item.TenantId
+                            && source.InboundMessageId == item.SourceId)
+                        .Select(source => source.ErpExternalId).FirstOrDefault()
+                    : db.OutboundCommands.Where(source => source.TenantId == item.TenantId
+                            && source.OutboundCommandId == item.SourceId)
+                        .Select(source => source.ErpReferenceText).FirstOrDefault(),
                 ReasonCode = item.ReasonCode,
                 Failure = item.Failure,
                 Status = item.Status,
+                AttemptCount = db.DeadLetterEvents.Count(evt => evt.TenantId == item.TenantId
+                    && evt.DeadLetterItemId == item.DeadLetterItemId),
                 CreatedAt = item.CreatedAt,
                 UpdatedAt = item.UpdatedAt,
-            }).OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.DeadLetterItemId)
+            }).OrderBy(x => x.CreatedAt).ThenBy(x => x.DeadLetterItemId)
             .Take(take + 1).ToListAsync(cancellationToken);
         var more = rows.Count > take;
         var page = rows.Take(take).Select(x => new DeadLetterListRow(x.DeadLetterItemId, x.ConnectionId,
-            x.ConnectionLabel, x.Direction, x.RecordType, x.ReasonCode, x.Failure, x.Status, x.CreatedAt,
-            x.UpdatedAt)).ToList();
+            x.ConnectionLabel, x.Direction, x.RecordType, x.RecordReference, x.ReasonCode, x.Failure, x.Status, x.AttemptCount,
+            x.CreatedAt, x.UpdatedAt)).ToList();
         var next = more && page.Count != 0 ? Encode(new(page[^1].CreatedAt, page[^1].DeadLetterItemId)) : null;
-        return new(page, next);
+        return new(page, next, total, await SummaryAsync(cancellationToken));
     }
+
+    public async Task<IntegrationAttention> AttentionAsync(CancellationToken cancellationToken) => new(
+        await db.DeadLetterItems.AsNoTracking().CountAsync(x => x.TenantId == tenant.TenantId
+            && x.Status == DeadLetterStatus.NeedsAttention, cancellationToken));
 
     public async Task<DeadLetterDetail?> DetailAsync(Guid itemId, CancellationToken cancellationToken)
     {
@@ -139,16 +160,18 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         return new(itemId, item.Status);
     }
 
-    public async Task<ManualOutboundTaskPage> ManualTasksAsync(string? status, string? cursor,
+    public async Task<ManualOutboundTaskPage> ManualTasksAsync(string? status, string? desk, string? cursor,
         int take, CancellationToken cancellationToken)
     {
         var query = db.ManualOutboundTasks.AsNoTracking().Where(x => x.TenantId == tenant.TenantId);
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(x => x.Status == status);
+        if (!string.IsNullOrWhiteSpace(desk)) query = query.Where(x => x.Desk == desk);
+        var total = await query.CountAsync(cancellationToken);
         if (Decode(cursor) is { } key)
-            query = query.Where(x => x.CreatedAt < key.CreatedAt
-                || (x.CreatedAt == key.CreatedAt && x.ManualOutboundTaskId.CompareTo(key.DeadLetterItemId) < 0));
+            query = query.Where(x => x.CreatedAt > key.CreatedAt
+                || (x.CreatedAt == key.CreatedAt && x.ManualOutboundTaskId.CompareTo(key.DeadLetterItemId) > 0));
         var pageSize = Math.Clamp(take, 1, 200);
-        var rows = await query.OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.ManualOutboundTaskId)
+        var rows = await query.OrderBy(x => x.CreatedAt).ThenBy(x => x.ManualOutboundTaskId)
             .Take(pageSize + 1).ToListAsync(cancellationToken);
         var more = rows.Count > pageSize;
         var labels = await ConnectionLabelsAsync(rows.Select(x => x.ConnectionId).Distinct().ToList(),
@@ -156,7 +179,15 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         var page = rows.Take(pageSize).Select(row => View(row, labels[row.ConnectionId])).ToList();
         var next = more && page.Count != 0
             ? Encode(new(page[^1].CreatedAt, page[^1].ManualOutboundTaskId)) : null;
-        return new(page, next);
+        var deskCounts = await db.ManualOutboundTasks.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && x.Status == ManualTaskStatus.Open)
+            .GroupBy(x => x.Desk).Select(group => new { Desk = group.Key, Count = group.Count() })
+            .OrderBy(row => row.Desk).ToListAsync(cancellationToken);
+        var configured = (await deskSettings.GetAsync(cancellationToken)).Desks
+            .ToDictionary(row => row.Code, row => row.Label, StringComparer.Ordinal);
+        var desks = deskCounts.Select(row => new ManualTaskDeskCount(row.Desk,
+            configured.GetValueOrDefault(row.Desk) ?? row.Desk, row.Count)).ToList();
+        return new(page, next, total, desks);
     }
 
     public async Task<ManualOutboundTaskView?> ManualTaskAsync(Guid taskId,
@@ -171,6 +202,7 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
                 OutboundCommandId = x.OutboundCommandId,
                 ConnectionId = x.ConnectionId,
                 CommandType = x.CommandType,
+                Desk = x.Desk,
                 Draft = x.Draft,
                 Status = x.Status,
                 CreatedAt = x.CreatedAt,
@@ -182,7 +214,7 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         if (row is null) return null;
         var connectionLabel = await ConnectionLabelAsync(row.ConnectionId, cancellationToken);
         return new(row.ManualOutboundTaskId, row.DeadLetterItemId,
-            row.OutboundCommandId, row.ConnectionId, connectionLabel, row.CommandType, row.Draft, row.Status, row.CreatedAt,
+            row.OutboundCommandId, row.ConnectionId, connectionLabel, row.CommandType, row.Desk, row.Draft, row.Status, row.CreatedAt,
             row.ErpExternalId, row.ErpChangeMarker, row.CompletedBy, row.CompletedAt);
     }
 
@@ -192,12 +224,19 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         var externalId = Required(request.ErpExternalId, "erp_external_id_required",
             "The ERP document id is required.");
         actorRef = RequiredActor(actorRef);
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var task = await db.ManualOutboundTasks.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
             && x.ManualOutboundTaskId == taskId, cancellationToken)
             ?? throw new DeadLetterRuleException("manual_task_not_found", "The manual task was not found.");
         if (task.Status != ManualTaskStatus.Open)
             throw new DeadLetterRuleException("manual_task_closed", "The manual task is already completed.");
+        var match = await referenceVerifier.VerifyAsync(task.ConnectionId, task.CommandType, externalId, task.Draft,
+            cancellationToken);
+        if (match != ManualTaskReferenceMatch.Found && !request.AllowUnverified)
+            throw new DeadLetterRuleException("manual_task_external_id_unverified",
+                match == ManualTaskReferenceMatch.NotFound
+                    ? "The ERP number was not found. Check it, or record it anyway with the warning acknowledged."
+                    : "This connection could not verify the ERP number. Check it, or record it anyway with the warning acknowledged.");
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var command = await db.OutboundCommands.SingleAsync(x => x.TenantId == tenant.TenantId
             && x.OutboundCommandId == task.OutboundCommandId, cancellationToken);
         await AddMappingAsync(command.ConnectionId, "document", externalId, OutboundRelay.ModuleId(command),
@@ -384,8 +423,34 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         .Where(x => x.TenantId == tenant.TenantId && connectionIds.Contains(x.ConnectionId))
         .ToDictionaryAsync(x => x.ConnectionId, x => x.DisplayLabel, cancellationToken);
 
+    private async Task<DeadLetterSummary> SummaryAsync(CancellationToken cancellationToken)
+    {
+        var cutoff = clock.UtcNow.AddDays(-30);
+        var rows = await db.DeadLetterItems.AsNoTracking().Where(x => x.TenantId == tenant.TenantId)
+            .GroupBy(_ => 1).Select(group => new DeadLetterSummaryProjection
+            {
+                Open = group.Count(x => x.Status == DeadLetterStatus.NeedsAttention),
+                UnknownItem = group.Count(x => x.Status == DeadLetterStatus.NeedsAttention
+                    && (x.ReasonCode == "item_not_mapped" || x.ReasonCode == "unknown_item")),
+                SerialNotFound = group.Count(x => x.Status == DeadLetterStatus.NeedsAttention
+                    && x.ReasonCode == "serial_not_found"),
+                PartyNotLinked = group.Count(x => x.Status == DeadLetterStatus.NeedsAttention
+                    && (x.ReasonCode == "party_not_mapped" || x.ReasonCode == "party_not_linked")),
+                CouldNotSend = group.Count(x => x.Status == DeadLetterStatus.NeedsAttention
+                    && x.Direction == DeadLetterDirection.Outbound),
+                ResolvedLast30Days = group.Count(x => x.ResolvedAt >= cutoff),
+                RetriedLast30Days = group.Count(x => x.ResolvedAt >= cutoff
+                    && x.Status == DeadLetterStatus.RetryPending),
+                DiscardedLast30Days = group.Count(x => x.ResolvedAt >= cutoff
+                    && x.Status == DeadLetterStatus.Discarded),
+            }).SingleOrDefaultAsync(cancellationToken);
+        return rows is null ? new(0, 0, 0, 0, 0, 0, 0, 0) : new(rows.Open, rows.UnknownItem,
+            rows.SerialNotFound, rows.PartyNotLinked, rows.CouldNotSend, rows.ResolvedLast30Days,
+            rows.RetriedLast30Days, rows.DiscardedLast30Days);
+    }
+
     private static ManualOutboundTaskView View(ManualOutboundTask row, string connectionLabel) => new(row.ManualOutboundTaskId,
-        row.DeadLetterItemId, row.OutboundCommandId, row.ConnectionId, connectionLabel, row.CommandType, row.Draft, row.Status,
+        row.DeadLetterItemId, row.OutboundCommandId, row.ConnectionId, connectionLabel, row.CommandType, row.Desk, row.Draft, row.Status,
         row.CreatedAt, row.ErpExternalId, row.ErpChangeMarker, row.CompletedBy, row.CompletedAt);
 
     private static string Encode(DeadLetterCursor cursor) => Convert.ToBase64String(Encoding.UTF8.GetBytes(
@@ -414,11 +479,25 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         public required string ConnectionLabel { get; init; }
         public required string Direction { get; init; }
         public required string RecordType { get; init; }
+        public string? RecordReference { get; init; }
         public required string ReasonCode { get; init; }
         public required string Failure { get; init; }
         public required string Status { get; init; }
+        public int AttemptCount { get; init; }
         public DateTime CreatedAt { get; init; }
         public DateTime UpdatedAt { get; init; }
+    }
+
+    private sealed class DeadLetterSummaryProjection
+    {
+        public int Open { get; init; }
+        public int UnknownItem { get; init; }
+        public int SerialNotFound { get; init; }
+        public int PartyNotLinked { get; init; }
+        public int CouldNotSend { get; init; }
+        public int ResolvedLast30Days { get; init; }
+        public int RetriedLast30Days { get; init; }
+        public int DiscardedLast30Days { get; init; }
     }
 
     private sealed class ManualTaskProjection
@@ -428,6 +507,7 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         public Guid OutboundCommandId { get; init; }
         public Guid ConnectionId { get; init; }
         public required string CommandType { get; init; }
+        public required string Desk { get; init; }
         public required string Draft { get; init; }
         public required string Status { get; init; }
         public DateTime CreatedAt { get; init; }

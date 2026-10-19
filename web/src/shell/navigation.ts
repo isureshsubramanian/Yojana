@@ -42,7 +42,7 @@ export const navigation: NavEntry[] = [
   { path: "/imports/history", label: "Upload history", icon: "scan", section: "Data", roles: ["serial_administrator", "production_supervisor", "quality", "inventory_controller", "warehouse_lead"] },
   { path: "/reconcile", label: "Reconcile", icon: "reconcile", section: "Data", roles: ["serial_administrator", "order_desk_supervisor"] },
   { path: "/reports/identifier-cross-reference", label: "Reports", icon: "report", section: "Data" },
-  { path: "/integration", label: "Integration", icon: "int", section: "Data", placeholder: "Connections and the integration gateway" },
+  { path: "/integration", label: "Integration", icon: "int", section: "Data", roles: ["tenant_administrator", "integration_operator"] },
   // P6 OD-26 numbering settings navigation block.
   { path: "/settings", label: "Settings", icon: "set", section: "Data", roles: ["tenant_administrator"] },
   { path: "/settings/disclosure", label: "Disclosure tiers", icon: "disclosure", section: "Data", roles: ["tenant_administrator"] },

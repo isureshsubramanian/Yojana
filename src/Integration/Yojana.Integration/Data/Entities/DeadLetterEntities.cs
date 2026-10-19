@@ -42,6 +42,7 @@ public sealed class ManualOutboundTask : ITenantScoped
     public Guid OutboundCommandId { get; set; }
     public Guid ConnectionId { get; set; }
     public required string CommandType { get; set; }
+    public required string Desk { get; set; }
     public required string Draft { get; set; }
     public required string Status { get; set; }
     public DateTime CreatedAt { get; set; }

@@ -27,9 +27,15 @@ public sealed class DeadLetterTests(IntegrationHostFixture fixture)
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
         var task = await db.ManualOutboundTasks.SingleAsync(x => x.OutboundCommandId == commandId);
         Assert.Contains("Fictional repair", task.Draft, StringComparison.Ordinal);
+        Assert.Equal("service", task.Desk);
         var actor = Guid.NewGuid().ToString("D");
-        var completed = await scope.ServiceProvider.GetRequiredService<DeadLetterService>()
+        var service = scope.ServiceProvider.GetRequiredService<DeadLetterService>();
+        var warning = await Assert.ThrowsAsync<DeadLetterRuleException>(() => service
             .CompleteManualTaskAsync(task.ManualOutboundTaskId, new("ERP-MANUAL-1", "v9"), actor,
+                CancellationToken.None));
+        Assert.Equal("manual_task_external_id_unverified", warning.Rule);
+        var completed = await service
+            .CompleteManualTaskAsync(task.ManualOutboundTaskId, new("ERP-MANUAL-1", "v9", true), actor,
                 CancellationToken.None);
         Assert.Equal(ManualTaskStatus.Completed, completed.Status);
         var command = await db.OutboundCommands.SingleAsync(x => x.OutboundCommandId == commandId);
@@ -86,9 +92,33 @@ public sealed class DeadLetterTests(IntegrationHostFixture fixture)
         Assert.Equal(0, fixture.Connector.CreateCallsFor(connection));
         var page = await scope.ServiceProvider.GetRequiredService<DeadLetterService>().ListAsync(
             new(connection, "max_outbox_age", "CreateServiceOrder", null, 1,
-                DeadLetterStatus.NeedsAttention, null, 1), CancellationToken.None);
+                DeadLetterStatus.NeedsAttention, null, null, 1), CancellationToken.None);
         Assert.Single(page.Items);
         Assert.Equal("max_outbox_age", page.Items[0].ReasonCode);
+        Assert.Equal(1, page.Summary.CouldNotSend);
+        Assert.Equal(1, page.Total);
+    }
+
+    [DatabaseFact]
+    public async Task Tenant_defined_desks_route_new_tasks_and_are_returned_with_labels()
+    {
+        ResetClock();
+        fixture.Connector.Configure(FakeOutboundBehaviour.Reject);
+        var tenant = await fixture.NewTenantAsync("desks");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        await AddCommandAsync(tenant, connection, fixture.Clock.UtcNow.AddHours(-2));
+        using var scope = fixture.ScopeFor(tenant);
+        var settings = scope.ServiceProvider.GetRequiredService<ManualTaskDeskSettings>();
+        await settings.SetAsync(new([new("operations", "Operations desk")],
+            [new("CreateServiceOrder", "operations")], ITenantSettings.MissingVersion), CancellationToken.None);
+        await scope.ServiceProvider.GetRequiredService<OutboundRelay>()
+            .RelayConnectionAsync(connection, CancellationToken.None);
+        var page = await scope.ServiceProvider.GetRequiredService<DeadLetterService>()
+            .ManualTasksAsync(ManualTaskStatus.Open, "operations", null, 10, CancellationToken.None);
+        var task = Assert.Single(page.Items);
+        Assert.Equal("operations", task.Desk);
+        var desk = Assert.Single(page.Desks);
+        Assert.Equal("Operations desk", desk.Label);
     }
 
     [DatabaseFact]

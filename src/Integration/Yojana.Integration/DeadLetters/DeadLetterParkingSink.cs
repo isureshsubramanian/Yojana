@@ -9,7 +9,8 @@ using Yojana.Platform.Contracts.Time;
 namespace Yojana.Integration.DeadLetters;
 
 /// <summary>Persistence adapter used by the relay; it has no connector or retry policy.</summary>
-public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContext tenant, IClock clock)
+public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContext tenant, IClock clock,
+    ManualTaskDeskSettings deskSettings)
     : IOutboundCommandParkingSink
 {
     public async Task ParkAsync(OutboundCommandRow command, string reasonCode, string failure,
@@ -46,6 +47,7 @@ public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContex
         if (reasonCode is OutboundConnectorOutcome.Unsupported or OutboundConnectorOutcome.Rejected
             || command.Outcome is OutboundConnectorOutcome.Unsupported or OutboundConnectorOutcome.Rejected)
         {
+            var desk = await deskSettings.ResolveAsync(command.CommandType, cancellationToken);
             db.ManualOutboundTasks.Add(new ManualOutboundTask
             {
                 TenantId = tenant.TenantId,
@@ -54,6 +56,7 @@ public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContex
                 OutboundCommandId = command.OutboundCommandId,
                 ConnectionId = command.ConnectionId,
                 CommandType = command.CommandType,
+                Desk = desk,
                 Draft = command.Payload,
                 Status = ManualTaskStatus.Open,
                 CreatedAt = clock.UtcNow,

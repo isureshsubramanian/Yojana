@@ -13,17 +13,27 @@ public sealed class IntegrationEndpointTests
     public void Dead_letter_and_manual_task_endpoints_share_the_operator_policy()
     {
         var builder = WebApplication.CreateBuilder();
-        builder.Services.AddAuthorization(options => options.AddPolicy(YojanaPolicy.IntegrationOperations,
-            policy => policy.RequireAuthenticatedUser()));
+        builder.Services.AddAuthorization(options =>
+        {
+            options.AddPolicy(YojanaPolicy.IntegrationOperations, policy => policy.RequireAuthenticatedUser());
+            options.AddPolicy(YojanaPolicy.IntegrationIndicator, policy => policy.RequireAuthenticatedUser());
+            options.AddPolicy(YojanaPolicy.TenantAdministrator, policy => policy.RequireAuthenticatedUser());
+        });
         builder.Services.AddScoped<DeadLetterService>();
+        builder.Services.AddScoped<ManualTaskDeskSettings>();
         var app = builder.Build();
         app.MapIntegrationEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources
             .SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()
             .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api/integration/",
                 StringComparison.Ordinal) == true).ToList();
-        Assert.Equal(8, endpoints.Count);
-        Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+        Assert.Equal(11, endpoints.Count);
+        var indicator = Assert.Single(endpoints, endpoint => endpoint.RoutePattern.RawText ==
+            "/api/integration/attention-count");
+        Assert.Contains(indicator.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+            metadata => metadata.Policy == YojanaPolicy.IntegrationIndicator);
+        Assert.All(endpoints.Except([indicator]), endpoint => Assert.Contains(
+            endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             metadata => metadata.Policy == YojanaPolicy.IntegrationOperations));
     }
 

@@ -69,6 +69,9 @@ public static class YojanaPolicy
     /// <summary>Tenant administrators and integration operators may work integration exceptions.</summary>
     public const string IntegrationOperations = "integration_operations";
 
+    /// <summary>Read-only top-bar integration state for administrators, operators and service managers.</summary>
+    public const string IntegrationIndicator = "integration_indicator";
+
     /// <summary>Operational label printing across service, warehouse, shipping and production roles.</summary>
     public const string LabelPrinter = "label_printer";
 

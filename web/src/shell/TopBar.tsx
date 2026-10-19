@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useRouteLoaderData } from "react-router";
 import { api } from "../api/client";
-import type { Health, Session } from "../api/types";
+import type { Session } from "../api/types";
 import { ROOT_ROUTE_ID, initials, roleLabel } from "../session/session";
 import { ModeMenuItems } from "../theme/ModeMenuItems";
 import { setMode, useEffectiveMode } from "../theme/mode";
@@ -9,6 +9,8 @@ import { openSearch } from "../components/search/searchStore";
 import { Shortcut } from "../components/Shortcut";
 import { Icon } from "./Icons";
 import { toggleDrawer, useDrawer } from "./drawerStore";
+import { integrationApi } from "../integration/api";
+import { maySeeIntegrationIndicator } from "../integration/model";
 
 const HEALTH_REFRESH_MS = 60_000;
 
@@ -22,7 +24,7 @@ export function TopBar({ bare = false }: { bare?: boolean }) {
         <>
           <span className="sep" />
           <Link className="pill link" to="/tenants" title="Switch tenant">{session.tenant.name}<Icon name="chev" /></Link>
-          <HealthPill />
+          <IntegrationPill roles={session.roles} />
         </>
       )}
       {!bare && (
@@ -44,6 +46,20 @@ export function TopBar({ bare = false }: { bare?: boolean }) {
   );
 }
 
+function IntegrationPill({ roles }: { roles: string[] }) {
+  const permitted = maySeeIntegrationIndicator(roles);
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!permitted) return;
+    const controller = new AbortController();
+    const load = () => integrationApi.attention(controller.signal).then((value) => setCount(value.needsAttention)).catch(() => undefined);
+    load(); const timer = window.setInterval(load, HEALTH_REFRESH_MS);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [permitted]);
+  if (!permitted || count === null) return null;
+  return <Link className="pill quiet link" to="/integration" aria-live="polite"><span className={`dot ${count > 0 ? "warn" : "ok"}`} aria-hidden="true" />Integration: {count > 0 ? `${count.toLocaleString()} need attention` : "ready"}</Link>;
+}
+
 /** One-click light/dark flip from what is on screen now; "Match system" stays in the user menu. */
 function ModeToggle() {
   const effective = useEffectiveMode();
@@ -53,25 +69,6 @@ function ModeToggle() {
     <button type="button" className="icon-btn" onClick={() => setMode(next)} aria-label={label} title={label}>
       <Icon name={next === "dark" ? "moon" : "sun"} />
     </button>
-  );
-}
-
-/** Connection health for the header. The platform answers "none" until a connector module reports (MOD-14, P8). */
-function HealthPill() {
-  const [health, setHealth] = useState<Health | null>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    const load = () => api<Health>("/api/shell/health", { signal: controller.signal }).then(setHealth).catch(() => undefined);
-    load();
-    const timer = window.setInterval(load, HEALTH_REFRESH_MS);
-    return () => { controller.abort(); window.clearInterval(timer); };
-  }, []);
-  if (!health) return null;
-  const dot = health.status === "ok" ? "dot ok" : health.status === "warn" ? "dot warn" : health.status === "bad" ? "dot bad" : "dot";
-  return (
-    <span className="pill quiet" aria-live="polite" title={health.detail ?? undefined}>
-      <span className={dot} aria-hidden="true" />{health.label}
-    </span>
   );
 }
 

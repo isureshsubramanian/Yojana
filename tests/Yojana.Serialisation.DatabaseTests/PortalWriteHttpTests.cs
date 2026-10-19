@@ -217,7 +217,9 @@ public sealed class PortalWriteHttpTests(SerialisationHostFixture fixture)
             start.Environment["Serialisation__ImportFiles__ArchiveStores__1__Name"] = "database-archive";
             start.Environment["Serialisation__ImportFiles__ArchiveStores__1__Kind"] = "database";
             start.Environment["Serialisation__ImportFiles__ArchiveStores__1__ConnectionString"] = SerialisationHostFixture.ImportFilesArchiveConnectionString;
-            start.Environment["Platform__MigrateOnStartup"] = "false";
+            // The production host composes both module databases, so this process must migrate both before a
+            // Serialisation handler resolves an Integration-backed document port.
+            start.Environment["Platform__MigrateOnStartup"] = "true";
             start.Environment["Platform__AutoBuildMessageStorage"] = "false";
             start.Environment["Platform__ServiceName"] = "yojana-portal-write-http-test";
             var process = new Process { StartInfo = start };

@@ -13,6 +13,9 @@ using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Seeding;
 using Yojana.Platform.Security;
 using Yojana.Platform.Tenancy;
+using Yojana.Integration.Data;
+using Yojana.Integration.Data.Entities;
+using Yojana.Integration.DeadLetters;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Data;
@@ -95,6 +98,8 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         await StepAsync("finish automatic release and warranty certificates", WaitForAutomaticCertificatesAndReportAsync, cancellationToken);
         await StepAsync("load certificate and label stories", CreatePhaseSixScenariosAsync, cancellationToken);
         await StepAsync("load import, reconciliation and portal stories", CreatePhaseSevenScenariosAsync, cancellationToken);
+        await StepAsync("load integration attention and hand-entry stories", CreatePhaseEightScreenScenariosAsync,
+            cancellationToken);
         await PrintSummaryAsync(cancellationToken);
     }
 
@@ -1726,6 +1731,137 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
         }
     }
 
+    private async Task CreatePhaseEightScreenScenariosAsync(CancellationToken cancellationToken)
+    {
+        using var scope = TenantScope();
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var connectionId = DemoIds.FromName("integration:connection:business-erp-cx01");
+        var connection = await db.Connections.SingleOrDefaultAsync(row => row.ConnectionId == connectionId,
+            cancellationToken);
+        if (connection is null)
+        {
+            connection = new Yojana.Integration.Data.Entities.Connection
+            {
+                TenantId = tenant, ConnectionId = connectionId, ConnectorCode = "CX01",
+                DisplayLabel = "Business ERP (CX01)", Status = ConnectionStatus.Archived,
+                CreatedAt = DemoDates.At(today.AddDays(-120)),
+            };
+            db.Connections.Add(connection);
+        }
+        else
+        {
+            // This worktree supplies screen data but no connector implementation. Keeping the fixture out of the
+            // relay prevents a recurring job from treating deliberately hand-entered drafts as transport work.
+            connection.Status = ConnectionStatus.Archived;
+        }
+
+        var attention = new[]
+        {
+            new DemoAttention("unknown-switch", "DeliveryPosted", "item_not_mapped", "Unknown item code HX-220-ACK.", "DN-2026-1207", "HX-220-ACK", "item", Item("NX-4850").Id, "NX-4850 accelerator-ready network switch", 0, 9, 58),
+            new DemoAttention("unknown-adapter", "GoodsReceiptPosted", "item_not_mapped", "Unknown item code AC-90-PRO.", "GR-2026-07790", "AC-90-PRO", "item", Item("AC-65").Id, "AC-65 power adapter", 0, 9, 52),
+            new DemoAttention("serial-delivery", "DeliveryPosted", "serial_not_found", "Serial NX48-2604-00921 was not found.", "DN-2026-1188", "NX48-2604-00921", "item", Item("NX-4850").Id, "NX-4850 network switch", 1, 17, 20),
+            new DemoAttention("party-invoice", "InvoicePosted", "party_not_mapped", "Customer C-10488 is not linked.", "INV-2026-30418", "C-10488", "party", Party("C-ASHVANE").Id, "Ashvane Cooperative Bank", 0, 8, 41),
+            new DemoAttention("serial-production", "ProductionCompleted", "serial_not_found", "Serial RS11-2610-00077 was not found.", "PRD-2026-0918", "RS11-2610-00077", "item", Item("RS-1100").Id, "RS-1100 rack server", 3, 14, 30),
+        };
+        foreach (var story in attention)
+        {
+            var sourceId = DemoIds.FromName("integration:inbound:" + story.Key);
+            var itemId = DemoIds.FromName("integration:attention:" + story.Key);
+            var createdAt = DemoDates.At(today.AddDays(-story.DaysAgo), story.Hour, story.Minute);
+            var raw = JsonSerializer.Serialize(new { documentNumber = story.DocumentNumber, documentKey = 80000 + story.Hour * 100 + story.Minute, itemCode = story.ExternalId, customerCode = "C-10211", quantity = story.RecordType == "DeliveryPosted" ? 4 : 1, warehouse = "DC-01" });
+            var attempted = JsonSerializer.Serialize(new { entityType = story.EntityType, externalId = story.ExternalId, suggestedModuleId = story.ModuleId, suggestedModuleName = story.ModuleName, documentNumber = story.DocumentNumber });
+            if (!await db.InboundMessages.AnyAsync(row => row.InboundMessageId == sourceId, cancellationToken))
+                db.InboundMessages.Add(new InboundMessage
+                {
+                    TenantId = tenant, InboundMessageId = sourceId, MessageId = DemoIds.FromName("integration:message:" + story.Key), ConnectionId = connectionId,
+                    ConnectorCode = "CX01", ErpEntity = story.RecordType, ErpExternalId = story.DocumentNumber, ErpChangeMarker = "1", MarkerKind = "sequence",
+                    ContractVersion = "1.0", MessageType = story.RecordType, RawPayload = raw, CanonicalMessage = attempted,
+                    OccurredAt = createdAt.AddMinutes(-1), ObservedAt = createdAt, AcceptedAt = createdAt, IsLatest = true, TranslationStatus = InboundTranslationStatus.Pending,
+                });
+            if (!await db.DeadLetterItems.AnyAsync(row => row.DeadLetterItemId == itemId, cancellationToken))
+            {
+                db.DeadLetterItems.Add(new DeadLetterItem
+                {
+                    TenantId = tenant, DeadLetterItemId = itemId, ConnectionId = connectionId, Direction = DeadLetterDirection.Inbound,
+                    RecordType = story.RecordType, SourceKind = DeadLetterSourceKind.InboundMessage, SourceId = sourceId, ReasonCode = story.Reason,
+                    RawPayload = raw, CanonicalAttempt = attempted, Failure = story.Failure, Status = DeadLetterStatus.NeedsAttention,
+                    CreatedAt = createdAt, UpdatedAt = createdAt,
+                });
+                db.DeadLetterEvents.Add(new DeadLetterEvent
+                {
+                    TenantId = tenant, DeadLetterEventId = DemoIds.FromName("integration:event:" + story.Key), DeadLetterItemId = itemId,
+                    Action = DeadLetterAction.Parked, ActorRef = "system:demo-connection", Reason = story.Failure, DetailsJson = "{}", OccurredAt = createdAt,
+                });
+            }
+        }
+
+        var tasks = new[]
+        {
+            new DemoManualTask("credit-4412", "CreateCreditMemo", "finance", "Credit note · CLM-2026-04412", "Ashvane Cooperative Bank · 2 lines", "This connection writes references only.", "YJ-CLM-2026-04412-CN1", 0, 9, 20, 5170m),
+            new DemoManualTask("replacement-1877", "CreateReplacementDelivery", "warehouse", "Replacement delivery · RMA-2026-01877", "ERP refused: period 2026-09 closed", "The ERP refused the automatic entry because the posting period is closed.", "YJ-RMA-2026-01877-DN1", 2, 10, 0, 4850m),
+            new DemoManualTask("expense-4398", "PostWarrantyExpense", "finance", "Warranty expense · CLM-2026-04398", "Nandira Institute HPC Centre", "This connection writes references only.", "YJ-CLM-2026-04398-JE1", 0, 7, 15, 920m),
+            new DemoManualTask("service-1902", "CreateServiceOrder", "service", "Service order · RMA-2026-01902", "Ashvane Cooperative Bank · on-site", "Service orders are entered by the service desk for this connection.", "YJ-RMA-2026-01902-SO1", 0, 6, 10, 320m),
+            new DemoManualTask("credit-4371", "CreateCreditMemo", "finance", "Credit note · CLM-2026-04371", "Torrenfold Engineering GmbH · 1 line", "This connection writes references only.", "YJ-CLM-2026-04371-CN1", 1, 15, 30, 1180m),
+            new DemoManualTask("attach-118204", "AttachDocument", "service", "Attach document · WC-2026-118204", "ERP refused: file is larger than the connection limit", "The file must be attached by hand after compression.", "YJ-WC-2026-118204-AT1", 1, 12, 0, 0m),
+            new DemoManualTask("stock-1851", "ChangeStockStatusOrLocation", "warehouse", "Stock change · RMA-2026-01851", "Velmora University Hospital · quarantine release", "Stock changes are entered by the warehouse for this connection.", "YJ-RMA-2026-01851-ST1", 1, 9, 0, 0m),
+        };
+        foreach (var story in tasks)
+        {
+            var commandId = DemoIds.FromName("integration:command:" + story.Key);
+            var itemId = DemoIds.FromName("integration:manual-attention:" + story.Key);
+            var taskId = DemoIds.FromName("integration:manual-task:" + story.Key);
+            var createdAt = DemoDates.At(today.AddDays(-story.DaysAgo), story.Hour, story.Minute);
+            var draft = JsonSerializer.Serialize(new
+            {
+                title = story.Title, subtitle = story.Subtitle, reason = story.Reason, reference = story.Reference,
+                fields = new Dictionary<string, object?> { ["document type"] = ManualDocumentType(story.CommandType), ["customer code"] = "C-10488", ["customer"] = story.Subtitle.Split('·')[0].Trim(), ["posting date"] = today.ToString("yyyy-MM-dd"), ["reference (paste exactly)"] = story.Reference, ["remarks"] = "Warranty service entry · " + story.Title },
+                lines = new[] { new { line = 1, itemCode = "NX-4850", description = "NX-4850 48-port network switch", quantity = 1, unitPrice = story.Total, amount = story.Total, serial = "08260077" }, new { line = 2, itemCode = "SVC-ONSITE-H", description = "On-site labour, hours", quantity = 2, unitPrice = 160m, amount = story.Total == 0 ? 0 : 320m, serial = "—" } },
+                currency = "EUR", total = story.Total,
+            });
+            if (!await db.OutboundCommands.AnyAsync(row => row.OutboundCommandId == commandId, cancellationToken))
+                db.OutboundCommands.Add(new OutboundCommandRow
+                {
+                    TenantId = tenant, OutboundCommandId = commandId, ConnectionId = connectionId, CommandType = story.CommandType,
+                    IdempotencyKey = DemoIds.FromName("integration:idempotency:" + story.Key), ModuleDocumentRef = "demo/" + story.Key,
+                    ErpReferenceText = story.Reference, Payload = draft, Status = OutboundCommandStatus.Parked, CreatedAt = createdAt,
+                    AttemptCount = 7, LastAttemptAt = createdAt, Outcome = "rejected", LastFailure = story.Reason,
+                });
+            if (!await db.DeadLetterItems.AnyAsync(row => row.DeadLetterItemId == itemId, cancellationToken))
+            {
+                db.DeadLetterItems.Add(new DeadLetterItem
+                {
+                    TenantId = tenant, DeadLetterItemId = itemId, ConnectionId = connectionId, Direction = DeadLetterDirection.Outbound,
+                    RecordType = story.CommandType, SourceKind = DeadLetterSourceKind.OutboundCommand, SourceId = commandId, ReasonCode = "rejected",
+                    RawPayload = draft, CanonicalAttempt = draft, Failure = story.Reason, Status = DeadLetterStatus.NeedsAttention,
+                    CreatedAt = createdAt, UpdatedAt = createdAt,
+                });
+                db.DeadLetterEvents.Add(new DeadLetterEvent
+                {
+                    TenantId = tenant, DeadLetterEventId = DemoIds.FromName("integration:manual-event:" + story.Key), DeadLetterItemId = itemId,
+                    Action = DeadLetterAction.Parked, ActorRef = "system:demo-connection", Reason = story.Reason, DetailsJson = "{}", OccurredAt = createdAt,
+                });
+            }
+            if (!await db.ManualOutboundTasks.AnyAsync(row => row.ManualOutboundTaskId == taskId, cancellationToken))
+                db.ManualOutboundTasks.Add(new ManualOutboundTask
+                {
+                    TenantId = tenant, ManualOutboundTaskId = taskId, DeadLetterItemId = itemId, OutboundCommandId = commandId,
+                    ConnectionId = connectionId, CommandType = story.CommandType, Desk = story.Desk, Draft = draft,
+                    Status = ManualTaskStatus.Open, CreatedAt = createdAt,
+                });
+        }
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static string ManualDocumentType(string commandType) => commandType switch
+    {
+        "CreateCreditMemo" => "Customer credit note, based on the invoice",
+        "CreateReplacementDelivery" => "Replacement delivery",
+        "PostWarrantyExpense" => "Warranty expense journal",
+        "CreateServiceOrder" => "Service order",
+        "AttachDocument" => "Document attachment",
+        _ => "Stock status or location change",
+    };
+
     private async Task PrintSummaryAsync(CancellationToken cancellationToken)
     {
         using var scope = TenantScope();
@@ -2003,6 +2139,11 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
     private sealed record PolicyDefinition(string Code, string Name, string Family, string Type, PolicyTerms Terms);
     private sealed record DemoUnit(Guid UnitId, string Code, string Serial, Guid? LotId);
     private sealed record LiveEntitlementFact(Guid EntitlementId, string? StartBasis);
+    private sealed record DemoAttention(string Key, string RecordType, string Reason, string Failure,
+        string DocumentNumber, string ExternalId, string EntityType, Guid ModuleId, string ModuleName,
+        int DaysAgo, int Hour, int Minute);
+    private sealed record DemoManualTask(string Key, string CommandType, string Desk, string Title,
+        string Subtitle, string Reason, string Reference, int DaysAgo, int Hour, int Minute, decimal Total);
     private sealed record RmaScenario(Guid RmaId, Guid RmaLineId, Guid? EntitlementId);
     private sealed record ApprovedClaim(Guid ClaimId, Guid EntitlementId);
     private sealed record ComponentFact(Guid LinkId, Guid ParentUnitId, Guid UnitId, string Serial);

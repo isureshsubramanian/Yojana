@@ -11,12 +11,15 @@ public static class IntegrationEndpoints
 {
     public static IEndpointRouteBuilder MapIntegrationEndpoints(this IEndpointRouteBuilder app)
     {
+        app.MapGet("/api/integration/attention-count", async (DeadLetterService service,
+                CancellationToken ct) => Results.Ok(await service.AttentionAsync(ct)))
+            .RequireAuthorization(YojanaPolicy.IntegrationIndicator);
         var integration = app.MapGroup("/api/integration")
             .RequireAuthorization(YojanaPolicy.IntegrationOperations);
         integration.MapGet("/dead-letters", async (Guid? connectionId, string? reason, string? recordType,
-            double? minimumAgeHours, double? maximumAgeHours, string? status, string? cursor, int? take,
-            DeadLetterService service, CancellationToken ct) => Invoke(() => service.ListAsync(new(connectionId,
-                reason, recordType, minimumAgeHours, maximumAgeHours, status, cursor, take ?? 50), ct)));
+            double? minimumAgeHours, double? maximumAgeHours, string? status, string? query, string? cursor, int? take,
+            DeadLetterService service, CancellationToken ct) => await Invoke(() => service.ListAsync(new(connectionId,
+                reason, recordType, minimumAgeHours, maximumAgeHours, status, query, cursor, take ?? 50), ct)));
         integration.MapGet("/dead-letters/{itemId:guid}", async (Guid itemId, DeadLetterService service,
             CancellationToken ct) => await service.DetailAsync(itemId, ct) is { } detail
                 ? Results.Ok(detail) : Results.NotFound());
@@ -31,9 +34,9 @@ public static class IntegrationEndpoints
             DiscardDeadLetterRequest request, ClaimsPrincipal user, DeadLetterService service,
             CancellationToken ct) => Invoke(() => service.DiscardAsync(itemId, request.Reason, Actor(user), ct)));
 
-        integration.MapGet("/manual-tasks", async (string? status, string? cursor, int? take,
+        integration.MapGet("/manual-tasks", async (string? status, string? desk, string? cursor, int? take,
             DeadLetterService service, CancellationToken ct) => Results.Ok(await service.ManualTasksAsync(status,
-                cursor, take ?? 50, ct)));
+                desk, cursor, take ?? 50, ct)));
         integration.MapGet("/manual-tasks/{taskId:guid}", async (Guid taskId, DeadLetterService service,
             CancellationToken ct) => await service.ManualTaskAsync(taskId, ct) is { } detail
                 ? Results.Ok(detail) : Results.NotFound());
@@ -41,6 +44,11 @@ public static class IntegrationEndpoints
             CompleteManualTaskRequest request, ClaimsPrincipal user, DeadLetterService service,
             CancellationToken ct) => Invoke(() => service.CompleteManualTaskAsync(taskId, request,
                 Actor(user), ct)));
+        integration.MapGet("/manual-task-desks", async (ManualTaskDeskSettings settings,
+            CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
+        integration.MapPut("/manual-task-desks", async (UpdateManualTaskDeskSettings request,
+            ManualTaskDeskSettings settings, CancellationToken ct) => await Invoke(() => settings.SetAsync(request, ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         return app;
     }
 
