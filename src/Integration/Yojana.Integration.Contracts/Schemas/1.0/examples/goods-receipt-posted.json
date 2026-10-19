@@ -1,0 +1,56 @@
+{
+  "envelope": {
+    "contract_version": "1.0",
+    "message_id": "0199f3d0-7d7f-7000-8000-000000000001",
+    "tenant_id": "0199f3d0-7d7f-7000-8000-000000000002",
+    "connection_id": "0199f3d0-7d7f-7000-8000-000000000003",
+    "connector_code": "CX01",
+    "erp_entity": "goods-receipt-posted",
+    "erp_external_id": "GOODS-RECEIPT-POSTED-1001",
+    "erp_change_marker": {
+      "value": "2026-09-01T08:00:00Z",
+      "marker_kind": "timestamp"
+    },
+    "occurred_at": "2026-09-01T08:00:00+00:00",
+    "observed_at": "2026-09-01T08:00:01+00:00",
+    "capture_mode": "poll",
+    "attribution_completeness": "complete",
+    "payload_ref": "raw/goods-receipt-posted/1001",
+    "correlation_id": null
+  },
+  "message_type": "GoodsReceiptPosted",
+  "payload": {
+    "document_ref": {
+      "type": "receipt",
+      "number": "GR-1001",
+      "date": "2026-09-01",
+      "external_id": "DOC-1001",
+      "line": null
+    },
+    "vendor_party_external_id": "VENDOR-10",
+    "lines": [
+      {
+        "line_no": 1,
+        "erp_line_id": "1",
+        "item_external_id": "ITEM-100",
+        "quantity": 1,
+        "uom": "EA",
+        "serials": [
+          {
+            "value": "FIC-0001",
+            "issuer": null,
+            "erp_serial_id": "S-1"
+          }
+        ],
+        "lots": [],
+        "location_external_id": "WH-1",
+        "base_document_ref": null,
+        "party_external_id": null,
+        "price": null,
+        "currency": null
+      }
+    ],
+    "base_order_ref": null,
+    "is_asn": false
+  }
+}

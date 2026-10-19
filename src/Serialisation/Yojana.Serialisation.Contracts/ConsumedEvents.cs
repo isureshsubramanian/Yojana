@@ -57,6 +57,9 @@ public sealed record SalesInvoicePosted(ThinEnvelope Envelope, DocumentRef Docum
 /// <summary>Custody to quarantine only in P1; RMA matching and ownership effects arrive with P5.</summary>
 public sealed record SalesReturnPosted(ThinEnvelope Envelope, DocumentRef Document);
 
+/// <summary>A foreign document cancellation reverses its posted unit facts; it never deletes history.</summary>
+public sealed record DocumentCancellationPosted(ThinEnvelope Envelope, DocumentRef Document);
+
 public sealed record ServiceLoanerIssued(ThinEnvelope Envelope, DocumentRef Document);
 
 /// <summary>Finance closed a period (<c>yyyy-MM</c>): later facts dated inside it post to the first open period (case 33).</summary>

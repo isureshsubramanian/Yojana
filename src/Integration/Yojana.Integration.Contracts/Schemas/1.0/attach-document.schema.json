@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sw.integration/1.0/attach-document",
+  "title": "AttachDocument",
+  "type": "object",
+  "required": [
+    "envelope",
+    "message_type",
+    "payload"
+  ],
+  "properties": {
+    "envelope": {
+      "$ref": "envelope.schema.json"
+    },
+    "message_type": {
+      "const": "AttachDocument"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "idempotency_key",
+        "module_document_ref",
+        "erp_reference_text",
+        "target_record_ref",
+        "display_name",
+        "content_ref",
+        "url"
+      ],
+      "properties": {
+        "idempotency_key": {
+          "type": "string"
+        },
+        "module_document_ref": {
+          "type": "string"
+        },
+        "erp_reference_text": {
+          "type": "string"
+        },
+        "target_record_ref": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "content_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "command_reply": {
+      "type": "object",
+      "required": [
+        "idempotency_key",
+        "erp_external_id",
+        "erp_change_marker",
+        "outcome"
+      ],
+      "properties": {
+        "idempotency_key": {
+          "type": "string"
+        },
+        "erp_external_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "erp_change_marker": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "outcome": {
+          "type": [
+            "string",
+            "object"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

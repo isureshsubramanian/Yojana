@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sw.integration/1.0/item-upserted",
+  "title": "ItemUpserted",
+  "type": "object",
+  "required": [
+    "envelope",
+    "message_type",
+    "payload"
+  ],
+  "properties": {
+    "envelope": {
+      "$ref": "envelope.schema.json"
+    },
+    "message_type": {
+      "const": "ItemUpserted"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "item_external_id",
+        "description",
+        "tracking_mode",
+        "uom",
+        "is_warranty_product",
+        "warranty_template_ref",
+        "deleted"
+      ],
+      "properties": {
+        "item_external_id": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "tracking_mode": {
+          "type": "string"
+        },
+        "uom": {
+          "type": "string"
+        },
+        "is_warranty_product": {
+          "type": "boolean"
+        },
+        "warranty_template_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deleted": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

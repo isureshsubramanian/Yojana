@@ -1,0 +1,64 @@
+{
+  "envelope": {
+    "contract_version": "1.0",
+    "message_id": "0199f3d0-7d7f-7000-8000-000000000001",
+    "tenant_id": "0199f3d0-7d7f-7000-8000-000000000002",
+    "connection_id": "0199f3d0-7d7f-7000-8000-000000000003",
+    "connector_code": "CX01",
+    "erp_entity": "warranty-line-sold",
+    "erp_external_id": "WARRANTY-LINE-SOLD-1001",
+    "erp_change_marker": {
+      "value": "2026-09-01T08:00:00Z",
+      "marker_kind": "timestamp"
+    },
+    "occurred_at": "2026-09-01T08:00:00+00:00",
+    "observed_at": "2026-09-01T08:00:01+00:00",
+    "capture_mode": "poll",
+    "attribution_completeness": "complete",
+    "payload_ref": "raw/warranty-line-sold/1001",
+    "correlation_id": null
+  },
+  "message_type": "WarrantyLineSold",
+  "payload": {
+    "document_ref": {
+      "type": "invoice",
+      "number": "INV-1001",
+      "date": "2026-09-01",
+      "external_id": "DOC-1001",
+      "line": null
+    },
+    "customer_party_external_id": "PARTY-10",
+    "covered_unit_serials": [
+      "FIC-0001"
+    ],
+    "covered_delivery_ref": {
+      "type": "delivery",
+      "number": "D-1001",
+      "date": "2026-09-01",
+      "external_id": "DOC-1001",
+      "line": null
+    },
+    "warranty_product_external_id": "PLAN-24",
+    "term": {
+      "months": 24
+    },
+    "price": {
+      "amount": 25,
+      "currency": "GBP"
+    },
+    "line": {
+      "line_no": 1,
+      "erp_line_id": "1",
+      "item_external_id": "PLAN-24",
+      "quantity": 1,
+      "uom": "EA",
+      "serials": [],
+      "lots": [],
+      "location_external_id": "WH-1",
+      "base_document_ref": null,
+      "party_external_id": null,
+      "price": 25,
+      "currency": "GBP"
+    }
+  }
+}

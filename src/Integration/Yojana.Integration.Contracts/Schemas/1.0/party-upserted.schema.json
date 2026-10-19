@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sw.integration/1.0/party-upserted",
+  "title": "PartyUpserted",
+  "type": "object",
+  "required": [
+    "envelope",
+    "message_type",
+    "payload"
+  ],
+  "properties": {
+    "envelope": {
+      "$ref": "envelope.schema.json"
+    },
+    "message_type": {
+      "const": "PartyUpserted"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "party_external_id",
+        "party_kind",
+        "legal_name",
+        "tax_id",
+        "country",
+        "merged_from_external_id",
+        "deleted"
+      ],
+      "properties": {
+        "party_external_id": {
+          "type": "string"
+        },
+        "party_kind": {
+          "type": "string"
+        },
+        "legal_name": {
+          "type": "string"
+        },
+        "tax_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "country": {
+          "type": "string"
+        },
+        "merged_from_external_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deleted": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

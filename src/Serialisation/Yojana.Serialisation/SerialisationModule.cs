@@ -340,7 +340,9 @@ public static class SerialisationModule
         builder.Services.AddSingleton<InMemoryItemPorts>();
         builder.Services.TryAddSingleton<IItemQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());
         builder.Services.TryAddSingleton<IBomQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());
-        builder.Services.AddSingleton<InMemoryItemNamePort>();
+        // Bind the in-memory name fallback to its in-memory fact store. A later module may replace IItemQueryPort with
+        // a scoped database adapter without turning this development catalogue into a captive scoped dependency.
+        builder.Services.AddSingleton(sp => new InMemoryItemNamePort(sp.GetRequiredService<InMemoryItemPorts>()));
         builder.Services.TryAddSingleton<IItemNamePort>(sp => sp.GetRequiredService<InMemoryItemNamePort>());
         builder.Services.AddSingleton<InMemoryItemFamilyNamePort>();
         builder.Services.TryAddSingleton<IItemFamilyNamePort>(sp => sp.GetRequiredService<InMemoryItemFamilyNamePort>());

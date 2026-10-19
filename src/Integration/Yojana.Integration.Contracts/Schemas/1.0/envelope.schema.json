@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sw.integration/1.0/envelope",
+  "title": "Canonical envelope",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "message_id",
+    "tenant_id",
+    "connection_id",
+    "connector_code",
+    "erp_entity",
+    "erp_external_id",
+    "erp_change_marker",
+    "occurred_at",
+    "observed_at",
+    "capture_mode",
+    "attribution_completeness",
+    "payload_ref",
+    "correlation_id"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string"
+    },
+    "message_id": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "type": "string"
+    },
+    "connection_id": {
+      "type": "string"
+    },
+    "connector_code": {
+      "type": "string"
+    },
+    "erp_entity": {
+      "type": "string"
+    },
+    "erp_external_id": {
+      "type": "string"
+    },
+    "erp_change_marker": {
+      "type": "object",
+      "required": [
+        "value",
+        "marker_kind"
+      ],
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "marker_kind": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "occurred_at": {
+      "type": "string"
+    },
+    "observed_at": {
+      "type": "string"
+    },
+    "capture_mode": {
+      "type": "string"
+    },
+    "attribution_completeness": {
+      "type": "string"
+    },
+    "payload_ref": {
+      "type": "string"
+    },
+    "correlation_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

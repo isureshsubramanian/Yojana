@@ -34,6 +34,7 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 });
 // Handler assemblies must be known before the platform configures the bus (PlatformSetup.IncludeHandlers).
 PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);
+PlatformSetup.IncludeHandlers(typeof(IntegrationModule).Assembly);
 builder.AddYojanaPlatform();
 builder.AddSerialisationModule();
 builder.AddIntegrationModule();
