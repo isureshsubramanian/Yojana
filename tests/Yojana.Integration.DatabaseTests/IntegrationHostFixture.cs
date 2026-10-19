@@ -1,5 +1,6 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Xunit;
 using Yojana.Integration;
@@ -47,6 +48,8 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.AddYojanaPlatform();
         builder.AddSerialisationModule();
         builder.AddIntegrationModule();
+        builder.Services.RemoveAll<IConnectorPoller>();
+        builder.Services.RemoveAll<IOutboundConnector>();
         builder.Services.AddSingleton<IConnectorPoller>(Poller);
         builder.Services.AddSingleton(Connector);
         builder.Services.AddSingleton<IOutboundConnector>(services => services.GetRequiredService<FakeOutboundConnector>());

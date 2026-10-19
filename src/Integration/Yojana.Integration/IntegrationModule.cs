@@ -19,6 +19,7 @@ using Yojana.Integration.Security.Cryptography;
 using Yojana.Integration.Security.Persistence;
 using Yojana.Integration.Security.Webhooks;
 using Yojana.Integration.Security.Workers;
+using Yojana.Integration.Connectors.CX01;
 
 namespace Yojana.Integration;
 
@@ -45,6 +46,24 @@ public static class IntegrationModule
         builder.Services.AddScoped<ConnectionPollingService>();
         builder.Services.AddSingleton(RecurringTenantJob.For<ConnectionPollingJob>(
             ConnectionPollingJob.JobName, ConnectionPollingJob.Cron));
+        builder.Services.AddSingleton<Cx01SessionRegistry>();
+        builder.Services.AddScoped<Cx01Settings>();
+        builder.Services.AddScoped<ICx01Transport, Cx01Transport>();
+        builder.Services.AddScoped<Cx01Client>();
+        builder.Services.AddScoped<Cx01SessionMaintenance>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<Cx01SessionKeepAliveJob>(
+            Cx01SessionKeepAliveJob.JobName, Cx01SessionKeepAliveJob.Cron));
+        builder.Services.AddScoped<ICx01SerialHistory, EfCx01SerialHistory>();
+        builder.Services.AddScoped<ICx01AttributionTaskSink, EfCx01AttributionTaskSink>();
+        builder.Services.AddScoped<Cx01Adapter>();
+        builder.Services.AddScoped<IConnectorPoller>(services => services.GetRequiredService<Cx01Adapter>());
+        builder.Services.AddScoped<IConnectorReconciliationSource>(services =>
+            services.GetRequiredService<Cx01Adapter>());
+        builder.Services.AddScoped<IOutboundConnector>(services => services.GetRequiredService<Cx01Adapter>());
+        builder.Services.AddScoped<Cx01Onboarding>();
+        builder.Services.AddScoped<Cx01WebhookMaintenance>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<Cx01WebhookWatchdogJob>(
+            Cx01WebhookWatchdogJob.JobName, Cx01WebhookWatchdogJob.Cron));
         // The published-event chains already contain Serialisation handlers with their own EF transaction. Resolve the
         // staging service through a factory so Wolverine does not infer IntegrationDbContext as a second transaction
         // owner for that same public message. The stager owns and saves its narrow staging unit of work explicitly.

@@ -11,5 +11,10 @@
     <ProjectReference Include="../../src/Integration/Yojana.Integration/Yojana.Integration.csproj" />
     <ProjectReference Include="../../src/Serialisation/Yojana.Serialisation/Yojana.Serialisation.csproj" />
     <ProjectReference Include="../../src/Web/Yojana.Web/Yojana.Web.csproj" />
+    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01Simulator.cs"
+             Link="Connectors/CX01/Cx01Simulator.cs" />
+    <Content Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Fixtures/**/*.json"
+             Link="Connectors/CX01/Fixtures/%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

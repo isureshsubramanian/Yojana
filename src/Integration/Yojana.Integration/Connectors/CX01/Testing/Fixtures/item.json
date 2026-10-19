@@ -1,0 +1,9 @@
+{
+  "ItemCode": "HW-EDGE-100",
+  "ItemName": "Fictional edge appliance",
+  "ManageSerialNumbers": "tYES",
+  "ManageBatchNumbers": "tNO",
+  "InventoryUOM": "EA",
+  "UpdateDate": "2026-09-01",
+  "UpdateTime": "081500"
+}

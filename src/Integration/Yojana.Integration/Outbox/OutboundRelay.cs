@@ -29,10 +29,13 @@ public sealed class OutboundRelay(
     public async Task<OutboundRelayResult> RelayConnectionAsync(Guid connectionId,
         CancellationToken cancellationToken)
     {
-        await using var lane = await isolation.AcquireAsync(new(tenant.TenantId, connectionId), cancellationToken);
         var connection = await db.Connections.AsNoTracking().SingleAsync(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == connectionId && x.Status == ConnectionStatus.Active, cancellationToken);
         var connector = connectors.Resolve(connection.ConnectorCode);
+        // A connector whose HTTP pipeline owns the shared rate-limited lane must not be wrapped in the same
+        // non-reentrant lane here. Connectors without that pipeline retain the relay's connection-wide serialisation.
+        await using IConnectionWorkerLease? lane = connector.Capabilities.OwnsConnectionLane
+            ? null : await isolation.AcquireAsync(new(tenant.TenantId, connectionId), cancellationToken);
         var maxAge = await settings.MaxAgeAsync(connectionId, cancellationToken);
         var completed = 0;
         var retrying = 0;
