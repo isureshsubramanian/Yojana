@@ -8,5 +8,10 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="../../src/Integration/Yojana.Integration/Yojana.Integration.csproj" />
+    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/**/*.cs"
+             Link="Connectors/CX01/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Fixtures/**/*.json"
+             Link="Connectors/CX01/Fixtures/%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,56 @@
+{
+  "delivery": {
+    "CardCode": "C-FICTIONAL-01",
+    "DocumentLines": [
+      {
+        "ItemCode": "HW-EDGE-100",
+        "Quantity": 2,
+        "WarehouseCode": "WH-DEMO",
+        "SerialNumbers": [
+          { "InternalSerialNumber": "FICTIONAL-SN-1001", "Quantity": 1, "BaseLineNumber": 0 },
+          { "InternalSerialNumber": "FICTIONAL-SN-1002", "Quantity": 1, "BaseLineNumber": 0 }
+        ]
+      }
+    ]
+  },
+  "return": {
+    "CardCode": "C-FICTIONAL-01",
+    "DocumentLines": [
+      {
+        "BaseType": 15,
+        "BaseEntry": "${DELIVERY_KEY}",
+        "BaseLine": 0,
+        "Quantity": 1,
+        "WarehouseCode": "WH-DEMO",
+        "SerialNumbers": [
+          { "InternalSerialNumber": "FICTIONAL-SN-1001", "Quantity": 1, "BaseLineNumber": 0 }
+        ]
+      }
+    ]
+  },
+  "invoice_after_return": {
+    "CardCode": "C-FICTIONAL-01",
+    "DocumentLines": [
+      { "BaseType": 15, "BaseEntry": "${DELIVERY_KEY}", "BaseLine": 0, "Quantity": 1 }
+    ]
+  },
+  "cancellation_delivery": {
+    "CardCode": "C-FICTIONAL-01",
+    "DocumentLines": [
+      {
+        "ItemCode": "HW-EDGE-100",
+        "Quantity": 1,
+        "WarehouseCode": "WH-DEMO",
+        "SerialNumbers": [
+          { "InternalSerialNumber": "FICTIONAL-SN-1003", "Quantity": 1, "BaseLineNumber": 0 }
+        ]
+      }
+    ]
+  },
+  "zero_quantity_delivery": {
+    "CardCode": "C-FICTIONAL-01",
+    "DocumentLines": [
+      { "ItemCode": "HW-EDGE-100", "Quantity": 0, "WarehouseCode": "WH-DEMO" }
+    ]
+  }
+}

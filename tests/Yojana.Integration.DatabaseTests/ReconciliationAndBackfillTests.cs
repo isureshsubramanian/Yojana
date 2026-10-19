@@ -22,7 +22,8 @@ public sealed class ReconciliationAndBackfillTests(IntegrationHostFixture fixtur
     public async Task Missing_range_is_detected_backfilled_and_confirmed_by_the_next_clean_sweep()
     {
         var tenant = await fixture.NewTenantAsync("sweep");
-        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid(),
+            IntegrationHostFixture.FakeConnectorCode);
         fixture.ReconciliationSource.Reset(connection);
         fixture.ReconciliationSource.Seed(connection, "delivery", Day,
             Message(tenant, connection, "delivery", "D-001", "S-001"),
@@ -74,7 +75,8 @@ public sealed class ReconciliationAndBackfillTests(IntegrationHostFixture fixtur
     public async Task Location_mismatch_reports_source_on_hand_and_module_unit_count()
     {
         var tenant = await fixture.NewTenantAsync("location");
-        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid(),
+            IntegrationHostFixture.FakeConnectorCode);
         var item = Guid.NewGuid();
         var location = Guid.NewGuid();
         fixture.ReconciliationSource.Reset(connection);
@@ -105,7 +107,8 @@ public sealed class ReconciliationAndBackfillTests(IntegrationHostFixture fixtur
     public async Task Location_check_counts_a_quarantined_unit_as_warehouse_on_hand()
     {
         var tenant = await fixture.NewTenantAsync("quarantine");
-        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid(),
+            IntegrationHostFixture.FakeConnectorCode);
         var item = Guid.NewGuid();
         var location = Guid.NewGuid();
         fixture.ReconciliationSource.Reset(connection);
@@ -147,7 +150,8 @@ public sealed class ReconciliationAndBackfillTests(IntegrationHostFixture fixtur
     public async Task Backfill_resumes_from_its_persisted_cursor_after_a_crash()
     {
         var tenant = await fixture.NewTenantAsync("resume");
-        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid(),
+            IntegrationHostFixture.FakeConnectorCode);
         fixture.ReconciliationSource.Reset(connection);
         fixture.ReconciliationSource.Seed(connection, "invoice", Day,
             Message(tenant, connection, "invoice", "I-001", "S-101"),
@@ -187,8 +191,10 @@ public sealed class ReconciliationAndBackfillTests(IntegrationHostFixture fixtur
     {
         var slowTenant = await fixture.NewTenantAsync("slow");
         var fastTenant = await fixture.NewTenantAsync("fast");
-        var slowConnection = await fixture.AddConnectionAsync(slowTenant, Guid.NewGuid());
-        var fastConnection = await fixture.AddConnectionAsync(fastTenant, Guid.NewGuid());
+        var slowConnection = await fixture.AddConnectionAsync(slowTenant, Guid.NewGuid(),
+            IntegrationHostFixture.FakeConnectorCode);
+        var fastConnection = await fixture.AddConnectionAsync(fastTenant, Guid.NewGuid(),
+            IntegrationHostFixture.FakeConnectorCode);
         fixture.ReconciliationSource.Reset(slowConnection);
         fixture.ReconciliationSource.Reset(fastConnection);
         fixture.ReconciliationSource.Seed(slowConnection, "item", Day,

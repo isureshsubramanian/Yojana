@@ -10,5 +10,7 @@
   <ItemGroup>
     <Content Include="Security/AZURE-DEPLOYMENT.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Security/SOC2-CONTROL-MAPPING.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Compile Remove="Connectors/CX01/Testing/**/*.cs" />
+    <None Remove="Connectors/CX01/Testing/Fixtures/**/*" />
   </ItemGroup>
 </Project>

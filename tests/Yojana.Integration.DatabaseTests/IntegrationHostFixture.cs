@@ -22,6 +22,7 @@ namespace Yojana.Integration.DatabaseTests;
 
 public sealed class IntegrationHostFixture : IAsyncLifetime
 {
+    public const string FakeConnectorCode = "FX01";
     public static readonly string? ConnectionString = Environment.GetEnvironmentVariable("YOJANA_TEST_SQL");
     public static string? ImportFilesConnectionString => WithDatabase("_files");
     public MutableTestClock Clock { get; } = new(new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc));
@@ -89,12 +90,13 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         return tenant;
     }
 
-    public async Task<Guid> AddConnectionAsync(TenantId tenant, Guid legalEntity)
+    public async Task<Guid> AddConnectionAsync(TenantId tenant, Guid legalEntity,
+        string connectorCode = "CX01")
     {
         var id = Guid.CreateVersion7();
         using var scope = ScopeFor(tenant);
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
-        db.Connections.Add(new Connection { TenantId = tenant, ConnectionId = id, ConnectorCode = "CX01", DisplayLabel = "Fictional ERP", Status = ConnectionStatus.Active, CreatedAt = Clock.UtcNow });
+        db.Connections.Add(new Connection { TenantId = tenant, ConnectionId = id, ConnectorCode = connectorCode, DisplayLabel = "Fictional ERP", Status = ConnectionStatus.Active, CreatedAt = Clock.UtcNow });
         db.ConnectionGatewaySettings.Add(new ConnectionGatewaySetting { TenantId = tenant, ConnectionId = id, LegalEntityId = legalEntity, OutboundMode = "reference_only", NativeWarrantyObjectMode = "frozen", OrderingWaitMinutes = 15 });
         foreach (var message in new[] { "ItemUpserted", "PartyUpserted", "GoodsReceiptPosted", "ProductionCompleted", "DeliveryPosted", "InvoicePosted", "ReturnReceived", "TransferPosted", "InventoryAdjusted", "WarrantyLineSold", "DocumentCancelled", "CreateReplacementDelivery", "CreateCreditMemo", "PostWarrantyExpense", "ChangeStockStatusOrLocation", "AttachDocument", "CreateServiceOrder" })
             db.ConnectionCapabilities.Add(new ConnectionCapability { TenantId = tenant, ConnectionId = id, CanonicalMessage = message, SupportLevel = CapabilitySupport.Native });
@@ -102,7 +104,7 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
             db.ConnectionDegradationSettings.Add(new ConnectionDegradationSetting { TenantId = tenant, ConnectionId = id, RuleNumber = rule, Enabled = true, SettingsJson = "{}", UpdatedAt = Clock.UtcNow });
         await db.SaveChangesAsync();
         await scope.ServiceProvider.GetRequiredService<ConnectionThrottleProfiles>().OnboardAsync(
-            new(tenant, id), new("CX01", new(null, null, null, 100, 1, TimeSpan.FromMinutes(5))),
+            new(tenant, id), new(connectorCode, new(null, null, null, 100, 1, TimeSpan.FromMinutes(5))),
             CancellationToken.None);
         return id;
     }

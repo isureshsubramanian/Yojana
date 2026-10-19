@@ -14,7 +14,7 @@ public sealed class FakeReconciliationSource : IConnectorAdapter
     private readonly Dictionary<Guid, TaskCompletionSource> readGates = [];
     private readonly Dictionary<Guid, int> readCalls = [];
 
-    public string ConnectorCode => "CX01";
+    public string ConnectorCode => IntegrationHostFixture.FakeConnectorCode;
     public List<ConnectorPollRequest> Requests { get; } = [];
     public ConnectorPollResult NextResult { get; set; } = new([], null);
     public ConnectorOnHandRequest? LastOnHandRequest { get; private set; }

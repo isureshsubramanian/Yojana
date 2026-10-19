@@ -20,7 +20,7 @@ public sealed class FakeOutboundConnector : IOutboundConnector
     private readonly ConcurrentDictionary<Guid, int> createCalls = new();
     private readonly ConcurrentDictionary<Guid, Guid?> lastIdempotencyKeys = new();
 
-    public string ConnectorCode => "CX01";
+    public string ConnectorCode => IntegrationHostFixture.FakeConnectorCode;
     public OutboundConnectorCapabilities Capabilities { get; private set; } = new(true);
     public FakeOutboundBehaviour Behaviour { get; private set; }
     public int FindCallsFor(Guid connectionId) => findCalls.GetValueOrDefault(connectionId);

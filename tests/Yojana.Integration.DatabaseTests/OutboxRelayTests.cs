@@ -17,7 +17,8 @@ public sealed class OutboxRelayTests(IntegrationHostFixture fixture)
         fixture.Clock.UtcNow = new DateTime(2026, 9, 10, 9, 0, 0, DateTimeKind.Utc);
         fixture.Connector.Configure(FakeOutboundBehaviour.TimeoutAfterCreate);
         var tenant = await fixture.NewTenantAsync("lost-reply");
-        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid(),
+            IntegrationHostFixture.FakeConnectorCode);
         var commandId = await AddCommandAsync(tenant, connection);
 
         using var scope = fixture.ScopeFor(tenant);
@@ -48,7 +49,8 @@ public sealed class OutboxRelayTests(IntegrationHostFixture fixture)
         fixture.Clock.UtcNow = new DateTime(2026, 9, 10, 9, 0, 0, DateTimeKind.Utc);
         fixture.Connector.Configure(FakeOutboundBehaviour.Succeed, acceptsIdempotencyKey: false);
         var tenant = await fixture.NewTenantAsync("no-key");
-        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid(),
+            IntegrationHostFixture.FakeConnectorCode);
         await AddCommandAsync(tenant, connection);
         using var scope = fixture.ScopeFor(tenant);
         var result = await scope.ServiceProvider.GetRequiredService<OutboundRelay>()

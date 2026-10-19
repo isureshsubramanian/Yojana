@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Routing;
 using Yojana.Integration.DeadLetters;
 using Yojana.Integration.Notifications;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Integration.Connectors.CX01;
 using Yojana.Integration.Reconciliation;
 using Yojana.Integration.Backfills;
 
@@ -16,6 +17,7 @@ public static class IntegrationEndpoints
     {
         app.MapIntegrationNotificationEndpoints();
         app.MapIntegrationAttentionEndpoint();
+        app.MapCx01WebhookEndpoints();
         return app.MapIntegrationOperationsEndpoints();
     }
 

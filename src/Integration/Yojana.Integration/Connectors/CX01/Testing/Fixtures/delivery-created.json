@@ -1,0 +1,24 @@
+{
+  "DocEntry": 4101,
+  "DocNum": 810041,
+  "DocDate": "2026-09-01",
+  "UpdateDate": "2026-09-01",
+  "UpdateTime": "081500",
+  "DocObjectCode": "oDeliveryNotes",
+  "CardCode": "C-FICTIONAL-01",
+  "ShipToCode": "North Campus",
+  "DocCurrency": "USD",
+  "DocumentLines": [
+    {
+      "LineNum": 0,
+      "ItemCode": "HW-EDGE-100",
+      "Quantity": 2,
+      "UoMCode": "EA",
+      "WarehouseCode": "WH-DEMO",
+      "SerialNumbers": [
+        { "InternalSerialNumber": "FICTIONAL-SN-1001", "SystemSerialNumber": 7001, "Quantity": 1 },
+        { "InternalSerialNumber": "FICTIONAL-SN-1002", "SystemSerialNumber": 7002, "Quantity": 1 }
+      ]
+    }
+  ]
+}

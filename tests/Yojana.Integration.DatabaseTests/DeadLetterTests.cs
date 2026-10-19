@@ -19,7 +19,8 @@ public sealed class DeadLetterTests(IntegrationHostFixture fixture)
         ResetClock();
         fixture.Connector.Configure(FakeOutboundBehaviour.Reject);
         var tenant = await fixture.NewTenantAsync("manual");
-        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid(),
+            IntegrationHostFixture.FakeConnectorCode);
         var (commandId, moduleId) = await AddCommandAsync(tenant, connection, fixture.Clock.UtcNow.AddHours(-1));
         using var scope = fixture.ScopeFor(tenant);
         var relay = scope.ServiceProvider.GetRequiredService<OutboundRelay>();
@@ -81,7 +82,8 @@ public sealed class DeadLetterTests(IntegrationHostFixture fixture)
         ResetClock();
         fixture.Connector.Configure(FakeOutboundBehaviour.Succeed);
         var tenant = await fixture.NewTenantAsync("age");
-        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid(),
+            IntegrationHostFixture.FakeConnectorCode);
         await AddCommandAsync(tenant, connection, fixture.Clock.UtcNow.AddDays(-2));
         using (var settingsScope = fixture.ScopeFor(tenant))
             await settingsScope.ServiceProvider.GetRequiredService<ITenantSettings>()

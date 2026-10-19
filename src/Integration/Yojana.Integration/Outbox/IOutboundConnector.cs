@@ -1,6 +1,6 @@
 namespace Yojana.Integration.Outbox;
 
-public sealed record OutboundConnectorCapabilities(bool AcceptsIdempotencyKey);
+public sealed record OutboundConnectorCapabilities(bool AcceptsIdempotencyKey, bool OwnsConnectionLane = false);
 
 public sealed record OutboundLookup(
     Guid ConnectionId,
