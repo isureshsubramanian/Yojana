@@ -91,8 +91,7 @@ public sealed class EnvelopeEncryptionTests
 
     private static LocalKeyEncryptionKeyProvider Provider() => new(new LocalKeyEncryptionOptions
     {
-        KeyId = "local-test",
-        KeyVersion = "1",
-        Key = Enumerable.Range(1, 32).Select(x => (byte)x).ToArray(),
+        CurrentKey = new LocalKeyEncryptionKey("local-test", "1",
+            Enumerable.Range(1, 32).Select(x => (byte)x).ToArray()),
     });
 }

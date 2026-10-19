@@ -9,6 +9,7 @@ public sealed record TenantDataKeyRecord(
     int Version,
     string KeyEncryptionKeyId,
     string KeyEncryptionKeyVersion,
+    string KeyEncryptionAlgorithm,
     byte[] WrappedKeyNonce,
     byte[] WrappedKeyCiphertext,
     byte[] WrappedKeyTag,
@@ -27,7 +28,15 @@ public interface ITenantDataKeyStore
         DateTime rotatedAt, CancellationToken cancellationToken);
 }
 
-public sealed class InMemoryTenantDataKeyStore : ITenantDataKeyStore
+public interface ITenantDataKeyRewrapStore
+{
+    Task<IReadOnlyList<TenantDataKeyRecord>> ListForRewrapAsync(
+        TenantDataKeyRewrapPosition? after, int take, CancellationToken cancellationToken);
+    Task ReplaceWrappingAsync(TenantDataKeyRecord expected, WrappedDataKey replacement,
+        CancellationToken cancellationToken);
+}
+
+public sealed class InMemoryTenantDataKeyStore : ITenantDataKeyStore, ITenantDataKeyRewrapStore
 {
     private readonly object sync = new();
     private readonly List<TenantDataKeyRecord> keys = [];
@@ -77,6 +86,46 @@ public sealed class InMemoryTenantDataKeyStore : ITenantDataKeyStore
                 throw new InvalidOperationException("The replacement tenant data key is invalid.");
             keys[index] = keys[index] with { IsActive = false, RotatedAt = rotatedAt };
             keys.Add(Clone(replacement));
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<TenantDataKeyRecord>> ListForRewrapAsync(TenantDataKeyRewrapPosition? after,
+        int take, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentOutOfRangeException.ThrowIfLessThan(take, 1);
+        lock (sync)
+        {
+            var query = keys.OrderBy(item => item.TenantId.Value).ThenBy(item => item.Version).AsEnumerable();
+            if (after is not null)
+                query = query.Where(item => item.TenantId.Value.CompareTo(after.TenantId.Value) > 0 ||
+                    item.TenantId == after.TenantId && item.Version > after.DataKeyVersion);
+            return Task.FromResult<IReadOnlyList<TenantDataKeyRecord>>(query.Take(take).Select(Clone).ToList());
+        }
+    }
+
+    public Task ReplaceWrappingAsync(TenantDataKeyRecord expected, WrappedDataKey replacement,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (sync)
+        {
+            var index = keys.FindIndex(item => item.TenantId == expected.TenantId &&
+                item.Version == expected.Version &&
+                StringComparer.Ordinal.Equals(item.KeyEncryptionKeyId, expected.KeyEncryptionKeyId) &&
+                StringComparer.Ordinal.Equals(item.KeyEncryptionKeyVersion, expected.KeyEncryptionKeyVersion));
+            if (index < 0)
+                throw new InvalidOperationException("The tenant data key changed while it was being rewrapped.");
+            keys[index] = keys[index] with
+            {
+                KeyEncryptionKeyId = replacement.KeyId,
+                KeyEncryptionKeyVersion = replacement.KeyVersion,
+                KeyEncryptionAlgorithm = replacement.Algorithm,
+                WrappedKeyNonce = replacement.Nonce.ToArray(),
+                WrappedKeyCiphertext = replacement.Ciphertext.ToArray(),
+                WrappedKeyTag = replacement.Tag.ToArray(),
+            };
         }
         return Task.CompletedTask;
     }
@@ -137,7 +186,7 @@ public sealed class TenantDataKeyService(
         {
             var wrapped = await keyEncryption.WrapAsync(plaintext, cancellationToken);
             return new TenantDataKeyRecord(tenantId, version, wrapped.KeyId, wrapped.KeyVersion,
-                wrapped.Nonce, wrapped.Ciphertext, wrapped.Tag, clock.UtcNow, null, expiresAt, true);
+                wrapped.Algorithm, wrapped.Nonce, wrapped.Ciphertext, wrapped.Tag, clock.UtcNow, null, expiresAt, true);
         }
         finally
         {
@@ -146,5 +195,6 @@ public sealed class TenantDataKeyService(
     }
 
     private static WrappedDataKey ToWrapped(TenantDataKeyRecord record) => new(record.KeyEncryptionKeyId,
-        record.KeyEncryptionKeyVersion, record.WrappedKeyNonce, record.WrappedKeyCiphertext, record.WrappedKeyTag);
+        record.KeyEncryptionKeyVersion, record.KeyEncryptionAlgorithm, record.WrappedKeyNonce,
+        record.WrappedKeyCiphertext, record.WrappedKeyTag);
 }

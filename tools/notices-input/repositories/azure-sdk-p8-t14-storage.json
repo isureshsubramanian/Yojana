@@ -1,0 +1,8 @@
+{
+  "name": "Azure.Storage packages for P8-T14",
+  "matchRepositoryUrls": [],
+  "matchPackages": ["Azure.Storage.Blobs/12.30.0", "Azure.Storage.Common/12.29.0"],
+  "licenceFile": "texts/azure-sdk-for-net-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/Azure/azure-sdk-for-net/ee03a772f5ed0c3561ce7e66cbf9855a8ffbd98a/LICENSE.txt",
+  "takenOn": "2026-10-19"
+}

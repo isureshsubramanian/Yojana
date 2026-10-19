@@ -1,0 +1,13 @@
+{
+  "name": ".NET packages upgraded or added transitively by P8-T14",
+  "matchRepositoryUrls": [],
+  "matchPackages": [
+    "Microsoft.Bcl.AsyncInterfaces/10.0.9",
+    "Microsoft.Extensions.Hosting.Abstractions/10.0.9",
+    "System.IO.Hashing/10.0.9",
+    "System.Memory.Data/10.0.9"
+  ],
+  "licenceFile": "texts/dotnet-dotnet-LICENSE.TXT",
+  "sourceUrl": "https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT",
+  "takenOn": "2026-10-19"
+}

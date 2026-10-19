@@ -1,0 +1,10 @@
+{
+  "name": "Apache Arrow .NET NOTICE (the package ships LICENSE.txt but omits the repository NOTICE)",
+  "matchRepositoryUrls": [],
+  "matchPackages": [ "Apache.Arrow/22.1.0" ],
+  "licenceFile": "texts/apache-arrow-dotnet-NOTICE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/apache/arrow-dotnet/fcc16d879fe3618b2a6806851922c51beb1a3fd2/NOTICE.txt",
+  "noticeFile": "texts/apache-arrow-dotnet-NOTICE.txt",
+  "noticeSourceUrl": "https://raw.githubusercontent.com/apache/arrow-dotnet/fcc16d879fe3618b2a6806851922c51beb1a3fd2/NOTICE.txt",
+  "takenOn": "2026-10-19"
+}

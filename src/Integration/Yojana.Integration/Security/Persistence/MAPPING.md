@@ -21,12 +21,20 @@ Suggested key: `(tenant_id, connection_id, purpose, created_at)`. Current-row lo
 Wrapped per-tenant data-key versions; old versions remain readable after rotation. Expected columns:
 
 - `tenant_id uniqueidentifier`, `version int`
-- `key_encryption_key_id nvarchar(200)`, `key_encryption_key_version nvarchar(100)`
+- `key_encryption_key_id nvarchar(500)`, `key_encryption_key_version nvarchar(100)`,
+  `key_encryption_algorithm nvarchar(32)`
 - `wrapped_key_nonce varbinary(12)`, `wrapped_key_ciphertext varbinary(max)`, `wrapped_key_tag varbinary(16)`
 - `created_at datetime2(3)`, `rotated_at datetime2(3) null`, `expires_at datetime2(3) null`, `is_active bit`
 
 Primary key: `(tenant_id, version)`. Enforce one active key per tenant with a filtered unique index on
 `(tenant_id, is_active)` where `is_active = 1`.
+
+## `tenant_data_key_rewrap_checkpoint`
+
+One durable cursor per maintenance operation: `operation_id nvarchar(100)` primary key, `tenant_id uniqueidentifier`,
+`data_key_version int`, and `updated_at datetime2(3)`. `TenantDataKeyRewrapService` saves the cursor after each successful
+conditional rewrap. The cursor and data-key replacement do not need one transaction: a crash after replacement but
+before the cursor update safely sees the already-current version and advances on retry.
 
 ## `connection_event`
 

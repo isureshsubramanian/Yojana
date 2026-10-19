@@ -13,6 +13,10 @@ public sealed class RepositoryInput
     [JsonPropertyName("matchRepositoryUrls")]
     public List<string> MatchRepositoryUrls { get; set; } = [];
 
+    /// <summary>Optional exact package keys for a licence read at that package's repository commit.</summary>
+    [JsonPropertyName("matchPackages")]
+    public List<string> MatchPackages { get; set; } = [];
+
     [JsonPropertyName("licenceFile")]
     public string LicenceFile { get; set; } = "";
 
@@ -259,10 +263,19 @@ public static class NoticesGate
                     body.AppendLine();
                     body.Append(Repo.Normalise(File.ReadAllText(Path.Combine(package.Folder, file))));
                 }
+                // Apache-2.0 §4(d): a project may publish a NOTICE in its repository that the package itself omits.
+                // An audited repository input supplies it; the bundled licence above still stands.
+                if (FindRepositoryInput(repositories, package) is { NoticeFile: not null } noticeOnly)
+                {
+                    body.AppendLine();
+                    body.AppendLine($"NOTICE text taken from {noticeOnly.NoticeSourceUrl} on {noticeOnly.TakenOn}:");
+                    body.AppendLine();
+                    body.Append(ReadInput(inputsFolder, noticeOnly.NoticeFile, problems, package.Key));
+                }
             }
             // Older packages sometimes put their repository only in projectUrl. It is still an explicit manifest
             // source, so allow the same audited repository input to match either field.
-            else if (repositories.FirstOrDefault(r => Matches(r, package.RepositoryUrl) || Matches(r, package.ProjectUrl)) is { } repo)
+            else if (FindRepositoryInput(repositories, package) is { } repo)
             {
                 if (repo.CopyrightStatement is not null)
                 {
@@ -352,6 +365,12 @@ public static class NoticesGate
         var normalised = Canonical(repositoryUrl);
         return input.MatchRepositoryUrls.Any(u => Canonical(u) == normalised);
     }
+
+    private static RepositoryInput? FindRepositoryInput(IEnumerable<RepositoryInput> repositories,
+        PackageInfo package) =>
+        repositories.FirstOrDefault(input => input.MatchPackages.Contains(package.Key, StringComparer.OrdinalIgnoreCase))
+        ?? repositories.FirstOrDefault(input => input.MatchPackages.Count == 0 &&
+            (Matches(input, package.RepositoryUrl) || Matches(input, package.ProjectUrl)));
 
     private static string Canonical(string url)
     {
