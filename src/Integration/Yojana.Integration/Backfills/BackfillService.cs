@@ -1,3 +1,4 @@
+using Yojana.Integration.Connections;
 using System.Data;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
@@ -57,7 +58,9 @@ public sealed class BackfillService(
     public async Task<int> RunPendingAsync(CancellationToken cancellationToken)
     {
         var ids = await db.BackfillCursors.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
-                && (row.Status == BackfillStatus.Queued || row.Status == BackfillStatus.Running))
+                && (row.Status == BackfillStatus.Queued || row.Status == BackfillStatus.Running)
+                && db.Connections.Any(connection => connection.TenantId == row.TenantId
+                    && connection.ConnectionId == row.ConnectionId && connection.Status == ConnectionStatus.Active))
             .OrderBy(row => row.CreatedAt).ThenBy(row => row.BackfillCursorId)
             .Select(row => row.BackfillCursorId).Take(25).ToListAsync(cancellationToken);
         foreach (var id in ids)
@@ -73,20 +76,30 @@ public sealed class BackfillService(
         CancellationToken cancellationToken)
     {
         var job = await JobAsync(backfillId, cancellationToken);
-        if (job.Status is BackfillStatus.Paused or BackfillStatus.Cancelled
-            or BackfillStatus.Completed or BackfillStatus.AwaitingReconciliation) return;
-        job.Status = BackfillStatus.Running;
-        job.StartedAt ??= clock.UtcNow;
-        job.LastFailure = null;
-        await db.SaveChangesAsync(cancellationToken);
-        var source = await SourceAsync(job.ConnectionId, cancellationToken);
+        IConnectorReconciliationSource source;
+        await using (await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, job.ConnectionId, cancellationToken))
+        {
+            if (job.Status is BackfillStatus.Paused or BackfillStatus.Cancelled
+                or BackfillStatus.Completed or BackfillStatus.AwaitingReconciliation) return;
+            if (!await db.Connections.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
+                && x.ConnectionId == job.ConnectionId && x.Status == ConnectionStatus.Active, cancellationToken)) return;
+            job.Status = BackfillStatus.Running;
+            job.StartedAt ??= clock.UtcNow;
+            job.LastFailure = null;
+            await db.SaveChangesAsync(cancellationToken);
+            source = await SourceAsync(job.ConnectionId, cancellationToken);
+        }
         var pagesThisRun = 0;
         try
         {
             while (maximumPages is null || pagesThisRun < maximumPages.Value)
             {
+                await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId,
+                    job.ConnectionId, cancellationToken);
                 await db.Entry(job).ReloadAsync(cancellationToken);
                 if (job.Status is BackfillStatus.Paused or BackfillStatus.Cancelled) return;
+                if (!await db.Connections.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
+                    && x.ConnectionId == job.ConnectionId && x.Status == ConnectionStatus.Active, cancellationToken)) return;
                 var key = new ConnectionWorkerKey(tenant.TenantId, job.ConnectionId);
                 var profile = await profiles.GetAsync(key, cancellationToken);
                 ConnectorRangePage page;
@@ -208,6 +221,7 @@ public sealed class BackfillService(
             throw new BackfillRuleException("backfill_range_invalid", "The backfill end date must not precede its start date.");
         if (request.PageSize is < 1 or > 1000)
             throw new BackfillRuleException("backfill_page_size_invalid", "Page size must be between 1 and 1,000.");
+        await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, request.ConnectionId, cancellationToken);
         var connectorCode = await db.Connections.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
                 && row.ConnectionId == request.ConnectionId && row.Status == ConnectionStatus.Active)
             .Select(row => row.ConnectorCode).SingleOrDefaultAsync(cancellationToken);

@@ -779,6 +779,51 @@ namespace Yojana.Integration.Migrations
                     b.ToTable("connection_notification_watchdog", "integration");
                 });
 
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ConnectionOnboardingConfirmation", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("item_code");
+
+                    b.Property<DateTime>("ConfirmedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("confirmed_at");
+
+                    b.Property<string>("ConfirmedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("confirmed_by");
+
+                    b.Property<string>("Evidence")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("evidence");
+
+                    b.Property<string>("TextHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("text_hash")
+                        .IsFixedLength();
+
+                    b.HasKey("TenantId", "ConnectionId", "ItemCode")
+                        .HasName("pk_connection_onboarding_confirmation");
+
+                    b.ToTable("connection_onboarding_confirmation", "integration");
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.ConnectionPollWatermark", b =>
                 {
                     b.Property<Guid>("TenantId")

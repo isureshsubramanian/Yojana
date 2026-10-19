@@ -154,7 +154,7 @@ public sealed class Cx01LiveTests
             Console.WriteLine("UDF {0}: count={1}; mandatory_without_default=[{2}]", table.Key, table.Count(),
                 string.Join(',', table.Where(field => field.MandatoryWithoutDefault).Select(field => field.Name)));
         Console.WriteLine("Tracking allowlist: {0}", string.Join(", ", survey.TrackingTableAllowlist
-            .OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => pair.Key + "=" + pair.Value)));
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => pair.Key + "=" + pair.Value.State + " (" + pair.Value.Source + ")")));
     }
 
     [Cx01LiveFact]

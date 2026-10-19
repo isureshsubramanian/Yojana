@@ -1,3 +1,4 @@
+using Yojana.Integration.Connections;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.Contracts;
@@ -24,10 +25,19 @@ public sealed class OutboundCommandStager(IntegrationDbContext db, ITenantContex
         var count = 0;
         foreach (var originalConnection in connections)
         {
+            var configured = await db.ConnectionGatewaySettings.AsNoTracking().SingleOrDefaultAsync(x =>
+                x.TenantId == tenant.TenantId && x.ConnectionId == originalConnection, cancellationToken);
+            if (configured?.ReadOnly == true || configured?.OutboundMode == "none") continue;
             var declaration = await declarations.ReadAsync(originalConnection, cancellationToken);
             var capability = declaration.For(type);
             var connection = IsFinancial(type) && declaration.DegradationRules.GetValueOrDefault(DegradationRule.DownstreamLedger)?.Enabled == true
                 ? declaration.LedgerConnectionId ?? originalConnection : originalConnection;
+            await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, connection, cancellationToken);
+            if (!await db.Connections.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
+                && x.ConnectionId == connection && x.Status == ConnectionStatus.Active, cancellationToken)) continue;
+            var targetSettings = await db.ConnectionGatewaySettings.AsNoTracking().SingleOrDefaultAsync(x =>
+                x.TenantId == tenant.TenantId && x.ConnectionId == connection, cancellationToken);
+            if (targetSettings?.ReadOnly == true || targetSettings?.OutboundMode == "none") continue;
             var idempotency = Derive(header.EventId, type);
             if (await db.OutboundCommands.AnyAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == connection
                 && x.IdempotencyKey == idempotency, cancellationToken)) continue;
@@ -47,9 +57,9 @@ public sealed class OutboundCommandStager(IntegrationDbContext db, ITenantContex
             db.OutboundCommands.Add(row);
             if (manual)
                 await parking.ParkAsync(row, OutboundConnectorOutcome.Unsupported, row.LastFailure!, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
             count++;
         }
-        await db.SaveChangesAsync(cancellationToken);
         return count;
     }
 

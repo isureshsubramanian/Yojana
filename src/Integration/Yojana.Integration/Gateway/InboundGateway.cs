@@ -56,6 +56,8 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
             .SingleAsync(cancellationToken);
         var claimed = await db.InboundMessages.Where(x => x.TenantId == tenant.TenantId
                 && x.InboundMessageId == inboundMessageId && x.IsLatest
+                && db.Connections.Any(connection => connection.TenantId == x.TenantId
+                    && connection.ConnectionId == x.ConnectionId && connection.Status == ConnectionStatus.Active)
                 && x.TranslationStatus != InboundTranslationStatus.Completed
                 && x.TranslationStatus != InboundTranslationStatus.Superseded
                 && x.TranslationStatus != InboundTranslationStatus.NeedsAttention

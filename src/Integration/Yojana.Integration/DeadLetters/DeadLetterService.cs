@@ -116,7 +116,9 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
 
     public async Task<IntegrationAttention> AttentionAsync(CancellationToken cancellationToken) => new(
         await db.DeadLetterItems.AsNoTracking().CountAsync(x => x.TenantId == tenant.TenantId
-            && x.Status == DeadLetterStatus.NeedsAttention, cancellationToken));
+            && x.Status == DeadLetterStatus.NeedsAttention, cancellationToken)
+        + await db.ConnectionHealth.AsNoTracking().CountAsync(x => x.TenantId == tenant.TenantId
+            && (x.Status == "down" || x.Status == "degraded"), cancellationToken));
 
     public async Task<DeadLetterDetail?> DetailAsync(Guid itemId, CancellationToken cancellationToken)
     {
@@ -232,14 +234,23 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
     public async Task<ManualOutboundTaskView> CompleteManualTaskAsync(Guid taskId,
         CompleteManualTaskRequest request, string actorRef, CancellationToken cancellationToken)
     {
-        var externalId = Required(request.ErpExternalId, "erp_external_id_required",
-            "The ERP document id is required.");
         actorRef = RequiredActor(actorRef);
         var task = await db.ManualOutboundTasks.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
             && x.ManualOutboundTaskId == taskId, cancellationToken)
             ?? throw new DeadLetterRuleException("manual_task_not_found", "The manual task was not found.");
         if (task.Status != ManualTaskStatus.Open)
             throw new DeadLetterRuleException("manual_task_closed", "The manual task is already completed.");
+        // A cleanup acknowledgement has no remote document id and must never create a document mapping.
+        if (task.CommandType == ManualTaskCommandType.RemoveRemoteSubscription)
+        {
+            task.Status = ManualTaskStatus.Completed;
+            task.CompletedBy = actorRef;
+            task.CompletedAt = clock.UtcNow;
+            await db.SaveChangesAsync(cancellationToken);
+            return View(task, await ConnectionLabelAsync(task.ConnectionId, cancellationToken));
+        }
+        var externalId = Required(request.ErpExternalId ?? "", "erp_external_id_required",
+            "The ERP document id is required.");
         var match = await referenceVerifier.VerifyAsync(task.ConnectionId, task.CommandType, externalId, task.Draft,
             cancellationToken);
         if (match != ManualTaskReferenceMatch.Found && !request.AllowUnverified)
@@ -521,8 +532,8 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
     private sealed class ManualTaskProjection
     {
         public Guid ManualOutboundTaskId { get; init; }
-        public Guid DeadLetterItemId { get; init; }
-        public Guid OutboundCommandId { get; init; }
+        public Guid? DeadLetterItemId { get; init; }
+        public Guid? OutboundCommandId { get; init; }
         public Guid ConnectionId { get; init; }
         public required string CommandType { get; init; }
         public required string Desk { get; init; }

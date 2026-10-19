@@ -195,11 +195,11 @@ public sealed class ConnectorOnboardingConfirmations(
             row.ConfirmedBy = actor;
             row.ConfirmedAt = now;
         }
-        // COUPLING (shared unit of work): the persistent audit sink, EfConnectionAuditSink, saves this scoped
+        // COUPLING (shared unit of work): the SQL audit sink, EfConnectionAuditSink, saves this scoped
         // IntegrationDbContext inside its SERIALIZABLE transaction, so the pending confirmation commits atomically with
-        // its audit record. Only that sink gives atomicity; with a file or blob sink the audit record is written first
-        // and the SaveChanges below stores the confirmation. Resolving the sink with its own context would let a
-        // confirmation exist without its audit record.
+        // its connection_event row. The sink is used directly or as the journal behind JournalledConnectionAuditSink;
+        // with the journalled sink the immutable copy is written first. Resolving the SQL sink with its own context
+        // would let a confirmation exist without its audit record.
         await audit.AppendAsync(new(tenant.TenantId, Guid.NewGuid(), connectionId,
             ConnectionAuditEventType.OnboardingItemConfirmed, actor, now,
             JsonSerializer.Serialize(new { item = itemCode, text_hash = hash, evidence })), cancellationToken);

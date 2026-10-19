@@ -57,8 +57,8 @@ public sealed record DeadLetterEventView(
 
 public sealed record ManualOutboundTaskView(
     Guid ManualOutboundTaskId,
-    Guid DeadLetterItemId,
-    Guid OutboundCommandId,
+    Guid? DeadLetterItemId,
+    Guid? OutboundCommandId,
     Guid ConnectionId,
     string ConnectionLabel,
     string CommandType,
@@ -101,8 +101,8 @@ public sealed record MapAndRetryDeadLetterRequest(string EntityType, string Exte
 public sealed record CreateProvisionalAndRetryDeadLetterRequest(string EntityType, string ExternalId);
 public sealed record DiscardDeadLetterRequest(string Reason);
 public sealed record CompleteManualTaskRequest(
-    string ErpExternalId,
-    string? ErpChangeMarker,
+    string? ErpExternalId = null,
+    string? ErpChangeMarker = null,
     bool AllowUnverified = false);
 public sealed record DeadLetterActionResult(Guid DeadLetterItemId, string Status, Guid? ModuleId = null);
 

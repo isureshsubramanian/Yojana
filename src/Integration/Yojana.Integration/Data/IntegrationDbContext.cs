@@ -14,6 +14,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public const string SchemaName = "integration";
     public override string Schema => SchemaName;
 
+    public DbSet<ConnectionHealth> ConnectionHealth => Set<ConnectionHealth>();
     public DbSet<Connection> Connections => Set<Connection>();
     public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
     public DbSet<IdempotencyClaim> IdempotencyIndex => Set<IdempotencyClaim>();
@@ -51,13 +52,29 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     {
         modelBuilder.Entity<Connection>(b =>
         {
-            b.ToTable("connection", table => table.HasCheckConstraint("ck_connection_status", "status IN ('active','archived')"));
+            b.ToTable("connection", table => table.HasCheckConstraint("ck_connection_status", "status IN ('active','paused','registering','archived')"));
             b.HasKey(x => new { x.TenantId, x.ConnectionId }).IsClustered(false);
             b.Property(x => x.ConnectorCode).HasMaxLength(16);
             b.Property(x => x.DisplayLabel).HasMaxLength(160);
             b.Property(x => x.Status).HasMaxLength(24);
             b.HasIndex(x => new { x.TenantId, x.Status, x.CreatedAt, x.ConnectionId });
             b.HasIndex(x => new { x.TenantId, x.ConnectorCode, x.ConnectionId });
+            b.HasIndex(x => new { x.TenantId, x.RegistrationRequestId }).IsUnique()
+                .HasFilter("[registration_request_id] IS NOT NULL");
+        });
+        modelBuilder.Entity<ConnectionHealth>(b =>
+        {
+            b.ToTable("connection_health", table => table.HasCheckConstraint("ck_connection_health_status",
+                "status IN ('healthy','degraded','down','paused','archived')"));
+            b.HasKey(x => new { x.TenantId, x.ConnectionId });
+            b.Property(x => x.Status).HasMaxLength(24);
+            b.Property(x => x.NotificationState).HasMaxLength(40);
+            b.Property(x => x.LastDailyCheckResult).HasMaxLength(24);
+            b.Property(x => x.LastErrorCode).HasMaxLength(80);
+            b.Property(x => x.LastErrorMessage).HasMaxLength(320);
+            b.Property(x => x.RecordTypesJson).HasColumnType("nvarchar(max)");
+            b.Property(x => x.CompletedInboundDaysJson).HasColumnType("nvarchar(max)");
+            b.HasIndex(x => new { x.TenantId, x.Status, x.ConnectionId });
         });
         modelBuilder.Entity<Cx01SurveyRecord>(b =>
         {
@@ -79,6 +96,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.ContractVersion).HasMaxLength(20);
             b.Property(x => x.MessageType).HasMaxLength(80);
             b.Property(x => x.CaptureMode).HasMaxLength(24).HasDefaultValue("observed");
+            b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.AcceptedAt, x.MessageType });
             b.Property(x => x.RawPayload).HasColumnType("nvarchar(max)");
             b.Property(x => x.CanonicalMessage).HasColumnType("nvarchar(max)");
             b.Property(x => x.TranslationStatus).HasMaxLength(24);
@@ -292,6 +310,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             });
             b.HasKey(x => new { x.TenantId, x.ConnectionId, x.EntityType });
             b.Property(x => x.EntityType).HasMaxLength(120);
+            b.Property(x => x.CanonicalMessage).HasMaxLength(80);
             b.Property(x => x.Watermark).HasMaxLength(320);
             b.Property(x => x.LastError).HasMaxLength(2000);
             b.HasIndex(x => new { x.TenantId, x.NextPollAt, x.ConnectionId, x.EntityType });
@@ -308,6 +327,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
         {
             b.ToTable("connection_notification_watchdog");
             b.HasKey(x => new { x.TenantId, x.ConnectionId });
+            b.Property(x => x.StreamState).HasMaxLength(40);
             b.HasIndex(x => new { x.TenantId, x.UpdatedAt, x.ConnectionId });
         });
         modelBuilder.Entity<DeadLetterItem>(b =>

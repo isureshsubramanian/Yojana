@@ -1,5 +1,6 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
@@ -78,7 +79,7 @@ public sealed class EfConnectionCredentialStore(IntegrationDbContext db) : IConn
     public async Task<ConnectionCredentialRecord?> GetCurrentAsync(TenantId tenantId, Guid connectionId,
         string purpose, CancellationToken cancellationToken) => (await db.ConnectionCredentials.AsNoTracking()
         .SingleOrDefaultAsync(x => x.TenantId == tenantId && x.ConnectionId == connectionId
-            && x.Purpose == purpose && x.RotatedAt == null, cancellationToken))?.ToRecord();
+            && x.Purpose == purpose && x.RotatedAt == null && x.RetiredAt == null, cancellationToken))?.ToRecord();
 
     public async Task<IReadOnlyList<ConnectionCredentialRecord>> ListVersionsAsync(TenantId tenantId,
         Guid connectionId, string purpose, CancellationToken cancellationToken) => (await db.ConnectionCredentials.AsNoTracking()
@@ -91,7 +92,7 @@ public sealed class EfConnectionCredentialStore(IntegrationDbContext db) : IConn
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         await db.ConnectionCredentials.Where(x => x.TenantId == credential.TenantId
-                && x.ConnectionId == credential.ConnectionId && x.Purpose == credential.Purpose && x.RotatedAt == null)
+                && x.ConnectionId == credential.ConnectionId && x.Purpose == credential.Purpose && x.RotatedAt == null && x.RetiredAt == null)
             .ExecuteUpdateAsync(update => update.SetProperty(x => x.RotatedAt, credential.CreatedAt), cancellationToken);
         db.ConnectionCredentials.Add(credential.ToEntity());
         await db.SaveChangesAsync(cancellationToken);
@@ -143,14 +144,21 @@ public sealed class EfConnectionAuditSink(IntegrationDbContext db) : IConnection
     // audit record. Giving this sink its own context would silently break that atomicity.
     public async Task<ConnectionAuditEvent> AppendAsync(NewConnectionAuditEvent auditEvent, CancellationToken cancellationToken)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        // TIGHT COUPLING (archive audit transaction): ConnectionCommands and this sink share the scoped
+        // IntegrationDbContext transaction. No distributed transaction spans archive and audit storage; opening
+        // a second SQL transaction would fail, and committing independently could lose the cleanup audit.
+        // The caller must use SERIALIZABLE to preserve the audit chain's last-row lock.
+        if (db.Database.CurrentTransaction is { } current && current.GetDbTransaction().IsolationLevel != IsolationLevel.Serializable)
+            throw new InvalidOperationException("Connection audit requires a serialisable transaction.");
+        await using var transaction = db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken) : null;
         var last = await db.ConnectionEvents.Where(x => x.TenantId == auditEvent.TenantId)
             .OrderByDescending(x => x.SequenceNo).FirstOrDefaultAsync(cancellationToken);
         var sealedEvent = ConnectionAuditChain.Seal(auditEvent, (last?.SequenceNo ?? 0) + 1,
             last?.RecordHash ?? ConnectionAuditChain.InitialHash);
         db.ConnectionEvents.Add(sealedEvent.ToEntity());
         await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         return sealedEvent;
     }
 
