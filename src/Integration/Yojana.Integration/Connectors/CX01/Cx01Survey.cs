@@ -58,7 +58,9 @@ public sealed record Cx01SurveyResult(
     Cx01SurveyWebhook Webhooks,
     IReadOnlyList<Cx01SurveyUserField> UserFields,
     IReadOnlyDictionary<string, Cx01TrackingTablePermission> TrackingTableAllowlist,
-    Cx01SurveyOwnerAnswers OwnerAnswers);
+    Cx01SurveyOwnerAnswers OwnerAnswers,
+    // Null when not read (older survey, or the integration user may not read approval templates).
+    IReadOnlyList<Cx01SurveyApprovalTemplate>? ApprovalTemplates = null);
 
 public sealed record Cx01SurveyPage(
     Guid ConnectionId,
@@ -117,13 +119,49 @@ public sealed class Cx01SurveyProbe(ICx01SurveyRemotePort remote, IClock clock)
             ? await SubscriptionCountAsync(connectionId, cancellationToken) : 0;
         var userFields = await UserFieldsAsync(connectionId, cancellationToken);
         var allowlist = Cx01TrackingPermissions.Declared(configured);
+        var approvalTemplates = await ApprovalTemplatesAsync(connectionId, cancellationToken);
         return new(connectionId, clock.UtcNow, release,
             new(releaseSupports, webhookEnabled, Int(adminRoot, "WebhookRetryTimes"),
                 Int(adminRoot, "WebhookRetryInterval"), Int(adminRoot, "WebhookRequestTimeout"),
                 Int(adminRoot, "MaxNumberOfWebHooks"), subscriptionCount,
                 "Error 10001237 while enabling webhooks means a configured company folder path is invalid; "
                 + "the customer's administrator must correct it. The adapter does not change company settings."),
-            userFields, allowlist, answers);
+            userFields, allowlist, answers, approvalTemplates);
+    }
+
+    private async Task<IReadOnlyList<Cx01SurveyApprovalTemplate>?> ApprovalTemplatesAsync(Guid connectionId,
+        CancellationToken cancellationToken)
+    {
+        var result = new List<Cx01SurveyApprovalTemplate>();
+        var path = Cx01Protocol.Root + Cx01Protocol.ApprovalTemplates
+            + "?$select=Code,Name,IsActive,ApprovalTemplateDocuments&$top=1000";
+        try
+        {
+            while (path is not null)
+            {
+                using var response = await remote.GetAsync(connectionId, path, cancellationToken);
+                foreach (var row in Values(response.RootElement))
+                {
+                    var documents = row.TryGetProperty("ApprovalTemplateDocuments", out var list)
+                        && list.ValueKind == JsonValueKind.Array
+                        ? list.EnumerateArray().Select(x => Text(x, "DocumentType")).OfType<string>().ToList()
+                        : [];
+                    result.Add(new(Int(row, "Code") ?? 0, Text(row, "Name") ?? "",
+                        Text(row, "IsActive") is "tYES" or "Y", documents));
+                }
+                path = response.RootElement.TryGetProperty("@odata.nextLink", out var next)
+                    && !string.IsNullOrWhiteSpace(next.GetString())
+                    ? new Uri(next.GetString()!, UriKind.RelativeOrAbsolute).IsAbsoluteUri
+                        ? new Uri(next.GetString()!).PathAndQuery : next.GetString()
+                    : null;
+            }
+        }
+        catch (Cx01RemoteException exception) when (exception.IsBusinessRejection)
+        {
+            // A restricted integration user may not read approval templates; policy then treats them as unknown.
+            return null;
+        }
+        return result;
     }
 
     private async Task<int> SubscriptionCountAsync(Guid connectionId,

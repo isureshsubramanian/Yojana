@@ -1577,6 +1577,11 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("nvarchar(320)")
                         .HasColumnName("erp_external_id");
 
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("note");
+
                     b.Property<Guid?>("OutboundCommandId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("outbound_command_id");
@@ -1696,6 +1701,11 @@ namespace Yojana.Integration.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("payload");
+
+                    b.Property<string>("PendingRemoteKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("pending_remote_key");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()

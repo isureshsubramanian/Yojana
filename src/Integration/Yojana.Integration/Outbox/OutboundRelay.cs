@@ -11,7 +11,7 @@ using Yojana.Platform.Contracts.Time;
 
 namespace Yojana.Integration.Outbox;
 
-public sealed record OutboundRelayResult(int Completed, int Retrying, int Parked);
+public sealed record OutboundRelayResult(int Completed, int Retrying, int Parked, int AwaitingReview = 0);
 
 /// <summary>Relays one connection at a time. The connector never sees persistence or another connector's lane.</summary>
 public sealed class OutboundRelay(
@@ -22,10 +22,13 @@ public sealed class OutboundRelay(
     IOutboundConnectorResolver connectors,
     IConnectionWorkerIsolation isolation,
     IConnectionRetryJitter jitter,
-    IOutboundCommandParkingSink parking)
+    IOutboundCommandParkingSink parking,
+    IOutboundReviewTaskSink reviewTasks)
 {
     private static readonly TimeSpan ClaimLease = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan RetryCeiling = TimeSpan.FromHours(6);
+    // A person reviews the remote record; minutes are the right resolution and keep remote reads modest.
+    internal static readonly TimeSpan ReviewCheckInterval = TimeSpan.FromMinutes(5);
 
     public async Task<OutboundRelayResult> RelayConnectionAsync(Guid connectionId,
         CancellationToken cancellationToken)
@@ -37,10 +40,12 @@ public sealed class OutboundRelay(
             x.TenantId == tenant.TenantId && x.ConnectionId == connectionId, cancellationToken);
         if (gateway?.ReadOnly == true || gateway?.OutboundMode == "none") return new(0, 0, 0);
         var connector = connectors.Resolve(connection.ConnectorCode);
+        var tracker = connectors.ResolveReviewTracker(connection.ConnectorCode);
         var maxAge = await settings.MaxAgeAsync(connectionId, cancellationToken);
         var completed = 0;
         var retrying = 0;
         var parked = 0;
+        var awaiting = 0;
 
         for (var processed = 0; processed < 100; processed++)
         {
@@ -98,6 +103,23 @@ public sealed class OutboundRelay(
                     await CompleteAsync(command, created.Document, created.Outcome, cancellationToken);
                     completed++;
                 }
+                else if (created?.Outcome == OutboundConnectorOutcome.AwaitingReview
+                    && !string.IsNullOrWhiteSpace(created.PendingRemoteKey))
+                {
+                    if (tracker is null)
+                    {
+                        // Without a tracker nothing would ever release the command; a person must finish it instead.
+                        await ParkAsync(command, OutboundConnectorOutcome.Unsupported,
+                            "The connector holds the record for review but cannot report its outcome.",
+                            OutboundConnectorOutcome.Unsupported, cancellationToken);
+                        parked++;
+                    }
+                    else
+                    {
+                        await AwaitReviewAsync(command, created, cancellationToken);
+                        awaiting++;
+                    }
+                }
                 else if (created?.Outcome is OutboundConnectorOutcome.Rejected or OutboundConnectorOutcome.Unsupported)
                 {
                     await ParkAsync(command, created.Outcome, RequiredReason(created), created.Outcome, cancellationToken);
@@ -117,7 +139,130 @@ public sealed class OutboundRelay(
             }
         }
 
-        return new(completed, retrying, parked);
+        if (tracker is not null)
+        {
+            var reviewed = await CheckReviewsAsync(connectionId, connector, tracker, cancellationToken);
+            completed += reviewed.Completed;
+            parked += reviewed.Parked;
+        }
+        return new(completed, retrying, parked, awaiting);
+    }
+
+    // Commands held for review are never claimed for create again (query-before-create cannot see a remote draft).
+    // Each due one is pushed out by one interval BEFORE the remote read, so a crash or a remote failure simply
+    // means the next sweep looks again; two workers cannot both act on the same check.
+    private async Task<(int Completed, int Parked)> CheckReviewsAsync(Guid connectionId,
+        IOutboundConnector connector, IOutboundReviewTracker tracker, CancellationToken cancellationToken)
+    {
+        var completed = 0;
+        var parked = 0;
+        for (var processed = 0; processed < 100; processed++)
+        {
+            await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId,
+                connectionId, cancellationToken);
+            if (!await db.Connections.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
+                && x.ConnectionId == connectionId && x.Status == ConnectionStatus.Active, cancellationToken)) break;
+            await using IConnectionWorkerLease? lane = connector.Capabilities.OwnsConnectionLane
+                ? null : await isolation.AcquireAsync(new(tenant.TenantId, connectionId), cancellationToken);
+            var command = await ClaimDueReviewAsync(connectionId, cancellationToken);
+            if (command is null) break;
+
+            OutboundReviewState state;
+            try
+            {
+                state = await tracker.CheckAsync(new(connectionId, command.CommandType, command.ErpReferenceText,
+                    command.PendingRemoteKey!), cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                command.LastFailure = Failure(ex);
+                await db.SaveChangesAsync(cancellationToken);
+                continue;
+            }
+
+            try
+            {
+                switch (state.State)
+                {
+                    case OutboundReviewStates.Posted when state.Document is not null:
+                        await reviewTasks.CloseAsync(command, state.Document, cancellationToken);
+                        await CompleteAsync(command, state.Document, OutboundConnectorOutcome.PostedAfterReview,
+                            cancellationToken);
+                        completed++;
+                        break;
+                    case OutboundReviewStates.Rejected:
+                        await ParkAsync(command, "rejected_in_remote_review", state.Reason
+                            ?? "The record was rejected in the remote system's review.",
+                            OutboundConnectorOutcome.Rejected, cancellationToken);
+                        parked++;
+                        break;
+                    case OutboundReviewStates.Withdrawn:
+                        await ParkAsync(command, "withdrawn_in_remote_review", state.Reason
+                            ?? "The record held for review was removed in the remote system without being posted.",
+                            OutboundConnectorOutcome.Rejected, cancellationToken);
+                        parked++;
+                        break;
+                    default:
+                        command.LastFailure = null;
+                        await db.SaveChangesAsync(cancellationToken);
+                        break;
+                }
+            }
+            catch (ExternalMappingConflictException ex)
+            {
+                db.ChangeTracker.Clear();
+                var reloaded = await db.OutboundCommands.SingleAsync(x => x.TenantId == tenant.TenantId
+                    && x.OutboundCommandId == command.OutboundCommandId, cancellationToken);
+                await ParkAsync(reloaded, "external_mapping_conflict", ex.Message,
+                    OutboundConnectorOutcome.Rejected, cancellationToken);
+                parked++;
+            }
+        }
+        return (completed, parked);
+    }
+
+    private async Task<OutboundCommandRow?> ClaimDueReviewAsync(Guid connectionId,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var now = clock.UtcNow;
+            var row = await db.OutboundCommands.Where(x => x.TenantId == tenant.TenantId
+                    && x.ConnectionId == connectionId && x.Status == OutboundCommandStatus.AwaitingReview
+                    && x.PendingRemoteKey != null && (x.NextAttemptAt == null || x.NextAttemptAt <= now))
+                .OrderBy(x => x.NextAttemptAt).ThenBy(x => x.OutboundCommandId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (row is null) return null;
+            row.NextAttemptAt = now + ReviewCheckInterval;
+            row.LastAttemptAt = now;
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+                return row;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                db.ChangeTracker.Clear();
+            }
+        }
+    }
+
+    private async Task AwaitReviewAsync(OutboundCommandRow command, OutboundCreateResult created,
+        CancellationToken cancellationToken)
+    {
+        command.Status = OutboundCommandStatus.AwaitingReview;
+        command.PendingRemoteKey = created.PendingRemoteKey;
+        command.Outcome = OutboundConnectorOutcome.AwaitingReview;
+        command.LastFailure = null;
+        command.LockedUntil = null;
+        command.NextAttemptAt = clock.UtcNow + ReviewCheckInterval;
+        await reviewTasks.OpenAsync(command, RequiredReason(created), cancellationToken);
+        // One SQL transaction: the held status and its task appear together or not at all.
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task<OutboundCommandRow?> ClaimNextAsync(Guid connectionId, CancellationToken cancellationToken)

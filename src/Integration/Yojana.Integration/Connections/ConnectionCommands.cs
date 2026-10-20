@@ -180,7 +180,8 @@ public sealed class ConnectionCommands(IntegrationDbContext db, ITenantContext t
         var connection = await ConnectionAsync(id, ct);
         var preconditions = new ArchivePreconditions(
             await db.OutboundCommands.CountAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == id
-                && (x.Status == "pending" || x.Status == "retry" || x.Status == "processing"), ct),
+                && (x.Status == "pending" || x.Status == "retry" || x.Status == "processing"
+                    || x.Status == "awaiting_review"), ct),
             await db.DeadLetterItems.CountAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == id
                 && (x.Status == "needs_attention" || x.Status == "retry_pending"), ct),
             await db.BackfillCursors.CountAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == id

@@ -84,6 +84,9 @@ public static class IntegrationModule
         builder.Services.AddScoped<Cx01SurveyProbe>();
         builder.Services.AddScoped<Cx01SurveyService>();
         builder.Services.AddScoped<Cx01FieldMapService>();
+        builder.Services.AddScoped<Cx01ApprovalService>();
+        builder.Services.AddScoped<Cx01DocumentPoster>();
+        builder.Services.AddKeyedScoped<IOutboundReviewTracker, Cx01ReviewTracker>(Cx01Capabilities.ConnectorCode);
         builder.Services.AddScoped<ICx01TrackingPermissionSink>(services => services.GetRequiredService<Cx01SurveyService>());
         builder.Services.AddScoped<ICx01SurveyReader>(services =>
             services.GetRequiredService<Cx01SurveyService>());
@@ -108,6 +111,8 @@ public static class IntegrationModule
         builder.Services.AddScoped<IOutboundCommandParkingSink>(services =>
             services.GetRequiredService<DeadLetterParkingSink>());
         builder.Services.AddScoped<IInboundMessageParkingSink>(services =>
+            services.GetRequiredService<DeadLetterParkingSink>());
+        builder.Services.AddScoped<IOutboundReviewTaskSink>(services =>
             services.GetRequiredService<DeadLetterParkingSink>());
         builder.Services.AddScoped<OutboundRelay>();
         builder.Services.AddScoped<DeadLetterService>();

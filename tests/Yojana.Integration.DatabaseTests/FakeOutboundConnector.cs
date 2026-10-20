@@ -10,10 +10,18 @@ public enum FakeOutboundBehaviour
     TimeoutAfterCreate,
     Reject,
     Unsupported,
+    HoldForReview,
 }
 
-public sealed class FakeOutboundConnector : IOutboundConnector
+public sealed class FakeOutboundConnector : IOutboundConnector, IOutboundReviewTracker
 {
+    private readonly ConcurrentDictionary<string, OutboundReviewState> reviews = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<Guid, int> reviewChecks = new();
+    public int ReviewChecksFor(Guid connectionId) => reviewChecks.GetValueOrDefault(connectionId);
+    public bool FailReviewCheck { get; set; }
+
+    /// <summary>What the remote reviewer did with the held record named by its pending key.</summary>
+    public void Review(string pendingRemoteKey, OutboundReviewState state) => reviews[pendingRemoteKey] = state;
     private readonly ConcurrentDictionary<string, OutboundDocument> documents = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<Guid, byte> timedOutConnections = new();
     private readonly ConcurrentDictionary<Guid, int> findCalls = new();
@@ -36,6 +44,9 @@ public sealed class FakeOutboundConnector : IOutboundConnector
         createCalls.Clear();
         lastIdempotencyKeys.Clear();
         timedOutConnections.Clear();
+        reviews.Clear();
+        reviewChecks.Clear();
+        FailReviewCheck = false;
     }
 
     public Task<OutboundDocument?> FindByReferenceAsync(OutboundLookup lookup,
@@ -57,11 +68,22 @@ public sealed class FakeOutboundConnector : IOutboundConnector
             return Task.FromResult(OutboundCreateResult.Rejected("The fictional posting period is closed."));
         if (Behaviour == FakeOutboundBehaviour.Unsupported)
             return Task.FromResult(OutboundCreateResult.Unsupported("This connection does not support the document."));
+        if (Behaviour == FakeOutboundBehaviour.HoldForReview)
+            return Task.FromResult(OutboundCreateResult.AwaitingReview("HELD-" + request.ErpReferenceText,
+                "A fictional reviewer must add the held record."));
         var document = documents.GetOrAdd(request.ErpReferenceText,
             _ => new($"ERP-{documents.Count + 1}", $"v{documents.Count + 1}"));
         if (Behaviour == FakeOutboundBehaviour.TimeoutAfterCreate
             && timedOutConnections.TryAdd(request.ConnectionId, 0))
             throw new TimeoutException("The reply was lost after creation.");
         return Task.FromResult(OutboundCreateResult.Created(document.ErpExternalId, document.ErpChangeMarker));
+    }
+
+    public Task<OutboundReviewState> CheckAsync(OutboundReviewLookup lookup, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        reviewChecks.AddOrUpdate(lookup.ConnectionId, 1, (_, count) => count + 1);
+        if (FailReviewCheck) throw new HttpRequestException("Fictional ERP unavailable.");
+        return Task.FromResult(reviews.GetValueOrDefault(lookup.PendingRemoteKey) ?? OutboundReviewState.Pending);
     }
 }

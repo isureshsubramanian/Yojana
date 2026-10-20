@@ -91,6 +91,14 @@ public static class IntegrationEndpoints
                 [FromBody] UpdateCx01FieldMap request, [FromServices] Cx01FieldMapService fieldMap,
                 CancellationToken ct) => Invoke(() => fieldMap.SetAsync(connectionId, request, ct)))
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        integration.MapGet("/connections/{connectionId:guid}/cx01/approval-handling", (Guid connectionId,
+            [FromServices] Cx01ApprovalService approvals, CancellationToken ct) =>
+            Invoke(() => approvals.GetAsync(connectionId, ct)));
+        integration.MapPut("/connections/{connectionId:guid}/cx01/approval-handling", (Guid connectionId,
+                [FromBody] UpdateCx01ApprovalHandling request, ClaimsPrincipal user,
+                [FromServices] Cx01ApprovalService approvals, CancellationToken ct) =>
+            Invoke(() => approvals.SetAsync(connectionId, request, Actor(user), ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         integration.MapGet("/connections/{connectionId:guid}/onboarding-checklist", (Guid connectionId,
             [FromServices] ConnectorOnboardingChecklistGenerator checklists, CancellationToken ct) =>
             Invoke(() => checklists.GenerateAsync(connectionId, ct)));
@@ -168,6 +176,12 @@ public static class IntegrationEndpoints
                 extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
         }
         catch (Cx01FieldMapRuleException ex)
+        {
+            return Results.Problem(title: ex.Rule, detail: ex.Message,
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+        }
+        catch (Cx01ApprovalRuleException ex)
         {
             return Results.Problem(title: ex.Rule, detail: ex.Message,
                 statusCode: StatusCodes.Status422UnprocessableEntity,

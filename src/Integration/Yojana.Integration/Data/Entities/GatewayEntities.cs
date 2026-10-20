@@ -101,6 +101,8 @@ public sealed class OutboundCommandRow : ITenantScoped
     public string? ErpChangeMarker { get; set; }
     public string? Outcome { get; set; }
     public string? LastFailure { get; set; }
+    // Remote key of the record held for review (for example an ERP draft) while Status is awaiting_review.
+    public string? PendingRemoteKey { get; set; }
     public byte[] RowVersion { get; set; } = [];
 }
 
@@ -111,6 +113,8 @@ public static class OutboundCommandStatus
     public const string Retry = "retry";
     public const string Done = "done";
     public const string Parked = "parked";
+    // Never claimed for create again: the remote already holds the record. Only the review sweep moves it on.
+    public const string AwaitingReview = "awaiting_review";
 }
 
 public sealed class IntegrationExceptionTask : ITenantScoped

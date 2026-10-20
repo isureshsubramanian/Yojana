@@ -51,6 +51,8 @@ public sealed class ManualOutboundTask : ITenantScoped
     public string? ErpChangeMarker { get; set; }
     public string? CompletedBy { get; set; }
     public DateTime? CompletedAt { get; set; }
+    // Why a person must act, when the draft alone does not say (for example a record waiting for review remotely).
+    public string? Note { get; set; }
 }
 
 public static class DeadLetterStatus

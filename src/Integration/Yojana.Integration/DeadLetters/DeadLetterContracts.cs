@@ -69,7 +69,8 @@ public sealed record ManualOutboundTaskView(
     string? ErpExternalId,
     string? ErpChangeMarker,
     string? CompletedBy,
-    DateTime? CompletedAt);
+    DateTime? CompletedAt,
+    string? Note = null);
 
 public sealed record ManualTaskDeskCount(string Desk, string Label, int Count);
 public sealed record ManualOutboundTaskPage(

@@ -197,6 +197,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.ErpChangeMarker).HasMaxLength(320);
             b.Property(x => x.Outcome).HasMaxLength(40);
             b.Property(x => x.LastFailure).HasMaxLength(2000);
+            b.Property(x => x.PendingRemoteKey).HasMaxLength(100);
             b.Property(x => x.RowVersion).IsRowVersion();
             b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.Status, x.NextAttemptAt, x.CreatedAt, x.OutboundCommandId });
             b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.IdempotencyKey }).IsUnique();
@@ -375,6 +376,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.ErpExternalId).HasMaxLength(320);
             b.Property(x => x.ErpChangeMarker).HasMaxLength(320);
             b.Property(x => x.CompletedBy).HasMaxLength(320);
+            b.Property(x => x.Note).HasMaxLength(1000);
             b.HasIndex(x => new { x.TenantId, x.OutboundCommandId }).IsUnique();
             b.HasIndex(x => new { x.TenantId, x.Status, x.CreatedAt, x.ManualOutboundTaskId });
             b.HasIndex(x => new { x.TenantId, x.Status, x.Desk, x.CreatedAt, x.ManualOutboundTaskId });

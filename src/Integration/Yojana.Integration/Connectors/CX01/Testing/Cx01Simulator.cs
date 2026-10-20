@@ -14,8 +14,15 @@ internal sealed record Cx01SimulatorNotification(
     string CreateTime,
     bool EmptyDeliveryDetails = false);
 
+internal sealed record Cx01SimulatorDraft(int DocEntry, string DocObjectCode, string? Reference,
+    string AuthorizationStatus);
+
 internal sealed class Cx01Simulator : IAsyncDisposable
 {
+    private readonly object draftLock = new();
+    private readonly Dictionary<int, Cx01SimulatorDraft> drafts = [];
+    private readonly Dictionary<string, int> postedFromDrafts = new(StringComparer.Ordinal);
+    private int nextDraft = 7000;
     public static IReadOnlyList<string> TrackingTables { get; } = ["OITL", "ITL1", "OSRN"];
     private readonly HttpListener listener = new();
     private readonly CancellationTokenSource stop = new();
@@ -74,6 +81,36 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public void SimulateLaterDeliveryEdit(string updateTime) => deliveryUpdateTime = updateTime;
     public int PageSize { get; set; } = 1;
     public List<string> ReceivedCookieHeaders { get; } = [];
+    public bool ReturnsApprovalTemplateActive { get; set; }
+    public bool ApprovalTemplatesForbidden { get; set; }
+    public int DraftCreateCount { get; private set; }
+    public JsonDocument? LastDraftBody { get; private set; }
+
+    public Cx01SimulatorDraft? Draft(int docEntry)
+    {
+        lock (draftLock) return drafts.GetValueOrDefault(docEntry);
+    }
+
+    /// <summary>A person adds the held draft in the ERP client: the draft leaves and a document carries its reference.</summary>
+    public void AddDraftAsDocument(int draft, int docEntry)
+    {
+        lock (draftLock)
+        {
+            var held = drafts[draft];
+            drafts.Remove(draft);
+            postedFromDrafts[held.Reference!] = docEntry;
+        }
+    }
+
+    public void SetDraftAuthorization(int draft, string status)
+    {
+        lock (draftLock) drafts[draft] = drafts[draft] with { AuthorizationStatus = status };
+    }
+
+    public void DeleteDraft(int draft)
+    {
+        lock (draftLock) drafts.Remove(draft);
+    }
 
     public string OwnSubscriptionId(Guid tenantId, Guid connectionId) => Cx01Protocol.WebhookId(tenantId, connectionId);
 
@@ -93,6 +130,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
         listener.Close();
         LastSubscriptionBody?.Dispose();
         LastPatchBody?.Dispose();
+        LastDraftBody?.Dispose();
         stop.Dispose();
     }
 
@@ -283,6 +321,79 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 {
                     ["value"] = page,
                     ["@odata.nextLink"] = next,
+                });
+                return;
+            }
+            if (path == Cx01Protocol.Root + Cx01Protocol.ApprovalTemplates && request.HttpMethod == "GET")
+            {
+                if (ApprovalTemplatesForbidden)
+                {
+                    response.StatusCode = (int)HttpStatusCode.Forbidden;
+                    await ErrorAsync(response, "403", "Fictional permission denial");
+                    return;
+                }
+                await JsonAsync(response, new
+                {
+                    value = new object[]
+                    {
+                        new { Code = 1, Name = "FICTIONAL_GOODS_ISSUE", IsActive = "tNO",
+                            ApprovalTemplateDocuments = new[] { new { DocumentType = "atdtGoodsIssue" } } },
+                        new { Code = 2, Name = "FICTIONAL_RETURNS", IsActive = ReturnsApprovalTemplateActive ? "tYES" : "tNO",
+                            ApprovalTemplateDocuments = new[] { new { DocumentType = "atdtReturns" } } },
+                    },
+                });
+                return;
+            }
+            if (path == Cx01Protocol.Root + Cx01Protocol.Drafts && request.HttpMethod == "POST")
+            {
+                using var body = JsonDocument.Parse(await new StreamReader(request.InputStream).ReadToEndAsync());
+                LastDraftBody?.Dispose();
+                LastDraftBody = JsonDocument.Parse(body.RootElement.GetRawText());
+                var reference = body.RootElement.EnumerateObject().Select(x => x.Value)
+                    .Where(x => x.ValueKind == JsonValueKind.String)
+                    .Select(x => x.GetString()).FirstOrDefault(x => x?.StartsWith("YOJANA:", StringComparison.Ordinal) == true);
+                Cx01SimulatorDraft draft;
+                lock (draftLock)
+                {
+                    draft = new(++nextDraft, body.RootElement.GetProperty("DocObjectCode").GetString()!, reference,
+                        "dasWithout");
+                    drafts[draft.DocEntry] = draft;
+                }
+                DraftCreateCount++;
+                response.StatusCode = (int)HttpStatusCode.Created;
+                await JsonAsync(response, new { draft.DocEntry, draft.DocObjectCode });
+                return;
+            }
+            if (path == Cx01Protocol.Root + Cx01Protocol.Drafts && request.HttpMethod == "GET")
+            {
+                var wanted = FilterValue(request.Url);
+                Cx01SimulatorDraft[] found;
+                lock (draftLock) found = drafts.Values.Where(x => x.Reference == wanted).ToArray();
+                await JsonAsync(response, new { value = found.Select(x => new { x.DocEntry }).ToArray() });
+                return;
+            }
+            if (path.StartsWith(Cx01Protocol.Root + Cx01Protocol.Drafts + "(", StringComparison.Ordinal)
+                && request.HttpMethod == "GET")
+            {
+                var key = int.Parse(path[(Cx01Protocol.Root.Length + Cx01Protocol.Drafts.Length + 1)..^1],
+                    System.Globalization.CultureInfo.InvariantCulture);
+                var draft = Draft(key);
+                if (draft is null)
+                {
+                    await NotFoundAsync(response);
+                    return;
+                }
+                await JsonAsync(response, new { draft.DocEntry, draft.AuthorizationStatus });
+                return;
+            }
+            if (path == Cx01Protocol.Root + "Returns" && request.HttpMethod == "GET"
+                && FilterValue(request.Url) is { } returnReference && IsDraftReference(returnReference))
+            {
+                int? posted;
+                lock (draftLock) posted = postedFromDrafts.TryGetValue(returnReference, out var entry) ? entry : null;
+                await JsonAsync(response, new
+                {
+                    value = posted is null ? Array.Empty<object>() : [new { DocEntry = posted.Value }],
                 });
                 return;
             }
@@ -553,6 +664,21 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             if (Uri.UnescapeDataString(pair[0]) == name) return pair.Length == 2 ? Uri.UnescapeDataString(pair[1]) : "";
         }
         return null;
+    }
+
+    private bool IsDraftReference(string reference)
+    {
+        lock (draftLock)
+            return postedFromDrafts.ContainsKey(reference) || drafts.Values.Any(x => x.Reference == reference);
+    }
+
+    private static string? FilterValue(Uri? uri)
+    {
+        var filter = Query(uri, "$filter");
+        if (filter is null) return null;
+        var start = filter.IndexOf('\'');
+        var end = filter.LastIndexOf('\'');
+        return start >= 0 && end > start ? filter[(start + 1)..end].Replace("''", "'", StringComparison.Ordinal) : null;
     }
 
     private static int FreePort()

@@ -85,6 +85,8 @@ public static partial class Cx01FieldMap
         }
     }
 
+    internal static bool IsValidFieldName(string value) => FieldName().IsMatch(value);
+
     [GeneratedRegex("^[A-Za-z][A-Za-z0-9_]{0,63}$")]
     private static partial Regex FieldName();
 }

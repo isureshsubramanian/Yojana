@@ -11,7 +11,7 @@ namespace Yojana.Integration.DeadLetters;
 /// <summary>Persistence adapter used by relay and inbound recovery; it has no connector or retry policy.</summary>
 public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContext tenant, IClock clock,
     ManualTaskDeskSettings deskSettings)
-    : IOutboundCommandParkingSink, IInboundMessageParkingSink
+    : IOutboundCommandParkingSink, IInboundMessageParkingSink, IOutboundReviewTaskSink
 {
     public async Task ParkAsync(OutboundCommandRow command, string reasonCode, string failure,
         CancellationToken cancellationToken)
@@ -47,6 +47,13 @@ public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContex
         if (reasonCode is OutboundConnectorOutcome.Unsupported or OutboundConnectorOutcome.Rejected
             || command.Outcome is OutboundConnectorOutcome.Unsupported or OutboundConnectorOutcome.Rejected)
         {
+            // One task per command (unique index): a review that ends rejected keeps its task, now tied to the letter.
+            if (await OpenTaskAsync(command, cancellationToken) is { } reviewTask)
+            {
+                reviewTask.DeadLetterItemId = id;
+                reviewTask.Note = Cap(failure);
+                return;
+            }
             var desk = await deskSettings.ResolveAsync(command.CommandType, cancellationToken);
             db.ManualOutboundTasks.Add(new ManualOutboundTask
             {
@@ -63,6 +70,49 @@ public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContex
             });
         }
     }
+
+    public async Task OpenAsync(OutboundCommandRow command, string note, CancellationToken cancellationToken)
+    {
+        if (await OpenTaskAsync(command, cancellationToken) is { } existing)
+        {
+            existing.Note = Cap(note);
+            return;
+        }
+        db.ManualOutboundTasks.Add(new ManualOutboundTask
+        {
+            TenantId = tenant.TenantId,
+            ManualOutboundTaskId = TimeOrderedId.New(clock.UtcNow),
+            OutboundCommandId = command.OutboundCommandId,
+            ConnectionId = command.ConnectionId,
+            CommandType = command.CommandType,
+            Desk = await deskSettings.ResolveAsync(command.CommandType, cancellationToken),
+            Draft = command.Payload,
+            Note = Cap(note),
+            Status = ManualTaskStatus.Open,
+            CreatedAt = clock.UtcNow,
+        });
+    }
+
+    public async Task CloseAsync(OutboundCommandRow command, OutboundDocument document,
+        CancellationToken cancellationToken)
+    {
+        if (await OpenTaskAsync(command, cancellationToken) is not { } task) return;
+        task.Status = ManualTaskStatus.Completed;
+        task.ErpExternalId = document.ErpExternalId;
+        task.ErpChangeMarker = document.ErpChangeMarker;
+        task.CompletedBy = $"system:connection:{command.ConnectionId:N}";
+        task.CompletedAt = clock.UtcNow;
+    }
+
+    private async Task<ManualOutboundTask?> OpenTaskAsync(OutboundCommandRow command,
+        CancellationToken cancellationToken) =>
+        db.ManualOutboundTasks.Local.FirstOrDefault(x => x.TenantId == tenant.TenantId
+            && x.OutboundCommandId == command.OutboundCommandId && x.Status == ManualTaskStatus.Open)
+        ?? await db.ManualOutboundTasks.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
+            && x.OutboundCommandId == command.OutboundCommandId && x.Status == ManualTaskStatus.Open,
+            cancellationToken);
+
+    private static string Cap(string value) => value.Length <= 1000 ? value : value[..1000];
 
     public async Task<Guid> ParkInboundAsync(InboundMessage message, string reasonCode, string failure,
         CancellationToken cancellationToken)

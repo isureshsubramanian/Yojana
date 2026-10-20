@@ -27,6 +27,8 @@ internal static class Cx01Protocol
     public const string SerialLinkQueryCode = "YOJANA_SERIAL_LINK";
     public const string AdminInfo = "CompanyService_GetAdminInfo";
     public const string UserFields = "UserFieldsMD";
+    public const string ApprovalTemplates = "ApprovalTemplates";
+    public const string Drafts = "Drafts";
 
     public static readonly IReadOnlyDictionary<string, Cx01EntityDefinition> Entities =
         new Dictionary<string, Cx01EntityDefinition>(StringComparer.Ordinal)

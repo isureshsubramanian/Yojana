@@ -223,12 +223,13 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
                 ErpChangeMarker = x.ErpChangeMarker,
                 CompletedBy = x.CompletedBy,
                 CompletedAt = x.CompletedAt,
+                Note = x.Note,
             }).SingleOrDefaultAsync(cancellationToken);
         if (row is null) return null;
         var connectionLabel = await ConnectionLabelAsync(row.ConnectionId, cancellationToken);
         return new(row.ManualOutboundTaskId, row.DeadLetterItemId,
             row.OutboundCommandId, row.ConnectionId, connectionLabel, row.CommandType, row.Desk, row.Draft, row.Status, row.CreatedAt,
-            row.ErpExternalId, row.ErpChangeMarker, row.CompletedBy, row.CompletedAt);
+            row.ErpExternalId, row.ErpChangeMarker, row.CompletedBy, row.CompletedAt, row.Note);
     }
 
     public async Task<ManualOutboundTaskView> CompleteManualTaskAsync(Guid taskId,
@@ -274,13 +275,17 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         task.ErpChangeMarker = request.ErpChangeMarker;
         task.CompletedBy = actorRef;
         task.CompletedAt = clock.UtcNow;
-        var item = await db.DeadLetterItems.SingleAsync(x => x.TenantId == tenant.TenantId
-            && x.DeadLetterItemId == task.DeadLetterItemId, cancellationToken);
-        item.Status = DeadLetterStatus.Resolved;
-        item.UpdatedAt = clock.UtcNow;
-        item.ResolvedAt = clock.UtcNow;
-        AddEvent(item.DeadLetterItemId, DeadLetterAction.ManualMapping, actorRef, null,
-            new { external_id = externalId, change_marker = request.ErpChangeMarker });
+        // A review task (record held remotely for a person's approval) has no dead letter until it is rejected.
+        if (task.DeadLetterItemId is { } itemId)
+        {
+            var item = await db.DeadLetterItems.SingleAsync(x => x.TenantId == tenant.TenantId
+                && x.DeadLetterItemId == itemId, cancellationToken);
+            item.Status = DeadLetterStatus.Resolved;
+            item.UpdatedAt = clock.UtcNow;
+            item.ResolvedAt = clock.UtcNow;
+            AddEvent(item.DeadLetterItemId, DeadLetterAction.ManualMapping, actorRef, null,
+                new { external_id = externalId, change_marker = request.ErpChangeMarker });
+        }
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return View(task, await ConnectionLabelAsync(task.ConnectionId, cancellationToken));
@@ -478,7 +483,7 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
 
     private static ManualOutboundTaskView View(ManualOutboundTask row, string connectionLabel) => new(row.ManualOutboundTaskId,
         row.DeadLetterItemId, row.OutboundCommandId, row.ConnectionId, connectionLabel, row.CommandType, row.Desk, row.Draft, row.Status,
-        row.CreatedAt, row.ErpExternalId, row.ErpChangeMarker, row.CompletedBy, row.CompletedAt);
+        row.CreatedAt, row.ErpExternalId, row.ErpChangeMarker, row.CompletedBy, row.CompletedAt, row.Note);
 
     private static string Encode(DeadLetterCursor cursor) => Convert.ToBase64String(Encoding.UTF8.GetBytes(
         $"{cursor.CreatedAt.Ticks}:{cursor.DeadLetterItemId:N}"));
@@ -544,6 +549,7 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         public string? ErpChangeMarker { get; init; }
         public string? CompletedBy { get; init; }
         public DateTime? CompletedAt { get; init; }
+        public string? Note { get; init; }
     }
 
     private sealed class DeadLetterEventProjection

@@ -60,6 +60,8 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.Services.AddSingleton(Connector);
         builder.Services.AddKeyedSingleton<IOutboundConnector>(FakeConnectorCode, (services, _) =>
             services.GetRequiredService<FakeOutboundConnector>());
+        builder.Services.AddKeyedSingleton<IOutboundReviewTracker>(FakeConnectorCode, (services, _) =>
+            services.GetRequiredService<FakeOutboundConnector>());
         builder.Services.AddSingleton(ReconciliationSource);
         builder.Services.AddKeyedSingleton<IConnectorAdapter>(FakeConnectorCode, (services, _) =>
             services.GetRequiredService<FakeReconciliationSource>());
