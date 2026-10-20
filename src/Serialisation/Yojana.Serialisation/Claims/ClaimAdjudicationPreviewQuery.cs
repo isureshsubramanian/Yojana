@@ -46,7 +46,8 @@ public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext
         {
             // A decided claim shows what was recorded; an open one shows what approve would record now.
             var outcome = decided
-                ? new ClaimLineOutcome(line.CoveragePct, line.ApprovedAmount, line.CoverageSource, line.DenialReason, line.EntitlementId, line.PolicyVersionId, line.AccrualCohortId, line.SettlementFormula, line.ChainLength)
+                ? new ClaimLineOutcome(line.CoveragePct, line.ApprovedAmount, line.CoverageSource, line.DenialReason, line.EntitlementId, line.PolicyVersionId, line.AccrualCohortId, line.SettlementFormula, line.ChainLength,
+                    WaitingPeriodPurchaseDate: line.WaitingPeriodPurchaseDate, FirstClaimableDate: line.FirstClaimableDate, WaitingPeriodNotAppliedReason: line.WaitingPeriodNotAppliedReason)
                 : await decider.DecideAsync(claim, root, item, line, liveCampaign, cancellationToken);
             outcomes.Add((line, outcome));
             var resolution = outcome.Resolution;
@@ -58,7 +59,7 @@ public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext
                 campaignLines ? namedCampaign!.Code : resolution?.PolicyCode ?? Recorded(outcome.PolicyVersionId)?.PolicyCode,
                 campaignLines ? null : resolution?.Version ?? Recorded(outcome.PolicyVersionId)?.Version, outcome.EntitlementId, start ?? resolution?.StartDate, end ?? resolution?.EndDate, outcome.DenialReason,
                 campaignLines ? [new PolicyStackStep("campaign", "matched", $"{namedCampaign!.Code} · {namedCampaign.Name} · parts {namedCampaign.PartsPct:0.##}% · labour {namedCampaign.LabourPct:0.##}% · travel {namedCampaign.TravelPct:0.##}%")]
-                    : resolution is null ? [] : Stack(resolution, serials)));
+                    : resolution is null ? [] : Stack(resolution, serials), outcome.WaitingPeriodPurchaseDate, outcome.FirstClaimableDate, outcome.WaitingPeriodNotAppliedReason));
         }
 
         (string PolicyCode, int Version)? Recorded(Guid? versionId) =>

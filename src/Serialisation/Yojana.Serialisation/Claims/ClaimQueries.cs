@@ -210,7 +210,8 @@ public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort c
     }
 
     internal static ClaimLineDecision Decision(Data.Entities.ClaimLine line) => new(line.ClaimLineId, line.UnitId, line.CoverageFamily, line.RequestedAmount,
-        line.CoveragePct, line.ApprovedAmount, line.CoverageSource, line.EntitlementId, line.DenialReason, line.ChainLength);
+        line.CoveragePct, line.ApprovedAmount, line.CoverageSource, line.EntitlementId, line.DenialReason, line.ChainLength,
+        line.WaitingPeriodPurchaseDate, line.FirstClaimableDate, line.WaitingPeriodNotAppliedReason);
 
     private sealed class ClaimLineTotals
     {

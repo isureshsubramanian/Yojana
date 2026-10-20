@@ -13,6 +13,17 @@ export function humanise(value: string | null | undefined): string {
   return text[0]!.toUpperCase() + text.slice(1);
 }
 
+const denialReasonLabels: Record<string, string> = {
+  claim_waiting_period: "Within the waiting period",
+};
+
+export function denialReasonLabel(reason: string | null | undefined, purchaseDate?: string | null, firstClaimableDate?: string | null): string {
+  if (!reason) return "—";
+  if (reason === "claim_waiting_period" && purchaseDate && firstClaimableDate)
+    return `Within the waiting period: bought ${purchaseDate}, claimable from ${firstClaimableDate}`;
+  return denialReasonLabels[reason] ?? humanise(reason);
+}
+
 export function claimTone(status: string): Tone {
   if (["approved", "partially_approved", "settled", "closed", "covered", "matched", "ok"].includes(status)) return "ok";
   if (["denied", "fail", "out_of_region"].includes(status)) return "bad";

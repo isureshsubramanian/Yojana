@@ -69,6 +69,14 @@ public sealed class ClaimCampaignTests(SerialisationHostFixture fixture)
     public async Task Live_recall_is_full_uses_campaign_reserve_ignores_recalled_and_raises_no_recovery()
     {
         var setup = await SetUpAsync("campaign-live", 2);
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var entitlement = await db.Entitlements.SingleAsync(x => x.UnitId == setup.Units[0] && x.Direction == EntitlementDirection.Outbound);
+            entitlement.PurchaseDate = ClaimDate.AddDays(-10);
+            (await db.PolicyVersions.SingleAsync(x => x.PolicyVersionId == entitlement.PolicyVersionId)).NoClaimWithinDaysOfPurchase = 30;
+            await db.SaveChangesAsync();
+        }
         var campaignId = await AddCampaignAsync(setup, setup.Units[0], CampaignStatus.Active, null, selected: true, "RECALL");
         await AddInboundChildCoverAsync(setup, setup.Units[0], setup.Units[1]);
         await SetOverlayAsync(setup, setup.Units[0], OverlayFlag.Recalled);

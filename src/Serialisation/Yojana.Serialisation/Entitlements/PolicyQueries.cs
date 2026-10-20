@@ -1,13 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Documents;
 
 namespace Yojana.Serialisation.Entitlements;
 
 /// <summary>Read models of the Warranty policy editor: the policy list, a policy's versions with their live entitlement counts, one version in full.</summary>
-public sealed class PolicyQueries(SerialisationDbContext db, PolicyStore store, ITenantContext tenant)
+public sealed class PolicyQueries(SerialisationDbContext db, PolicyStore store, ClaimWaitingPeriodSettings waitingPeriods, ITenantContext tenant)
 {
     public async Task<IReadOnlyList<PolicySummary>> ListAsync(string? family, CancellationToken cancellationToken)
     {
@@ -38,7 +39,9 @@ public sealed class PolicyQueries(SerialisationDbContext db, PolicyStore store, 
         var row = await db.PolicyVersions.AsNoTracking().FirstOrDefaultAsync(v => v.TenantId == tenantId && v.PolicyVersionId == policyVersionId, cancellationToken);
         if (row is null) return null;
         var terms = await store.ReadTermsAsync(row, cancellationToken, includeItems: true);
-        return new PolicyVersionDetail(row.PolicyVersionId, row.PolicyCode, row.Version, row.Name, row.CoverageFamily, row.EntitlementType, row.AppliesToContractsFrom, row.Status, row.RuleVersion, terms, await store.ValidateAsync(row, terms, cancellationToken), DocumentVersion.Encode(row.RowVersion));
+        var families = await db.CoverageFamilies.AsNoTracking().Where(f => f.TenantId == tenantId).Select(f => f.FamilyCode).ToListAsync(cancellationToken);
+        var defaults = await waitingPeriods.GetAsync(families, cancellationToken);
+        return new PolicyVersionDetail(row.PolicyVersionId, row.PolicyCode, row.Version, row.Name, row.CoverageFamily, row.EntitlementType, row.AppliesToContractsFrom, row.Status, row.RuleVersion, terms, await store.ValidateAsync(row, terms, cancellationToken), DocumentVersion.Encode(row.RowVersion), defaults.DaysByCoverageFamily.GetValueOrDefault(row.CoverageFamily));
     }
 
     public async Task<IReadOnlyList<CoverageFamilyRow>> FamiliesAsync(CancellationToken cancellationToken)

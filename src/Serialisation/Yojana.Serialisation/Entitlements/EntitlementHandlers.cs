@@ -31,7 +31,7 @@ public static class CreateEntitlementHandler
     internal static async Task<CreateEntitlementResult> CreateAsync(CreateEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings,
         IJurisdictionRegionPort regions, IJurisdictionRuleResolver jurisdictionRules, ITenantContext tenant, IClock clock,
         IItemQueryPort items,
-        string? startBasisOverride, IReadOnlyList<string> evidenceRefs, bool financeReviewRequired, string? reasonCode, string? financeReviewRef, CorrectionMetadata? correction, CancellationToken cancellationToken, decimal? salePrice = null, string? saleCurrency = null)
+        string? startBasisOverride, IReadOnlyList<string> evidenceRefs, bool financeReviewRequired, string? reasonCode, string? financeReviewRef, CorrectionMetadata? correction, CancellationToken cancellationToken, decimal? salePrice = null, string? saleCurrency = null, DateOnly? purchaseDateOverride = null)
     {
         var tenantId = tenant.TenantId;
         var key = EntitlementLedger.Key(command.CommandId, command.UnitId, EntitlementEventType.Created, command.EventTime);
@@ -121,7 +121,7 @@ public static class CreateEntitlementHandler
             TenantId = tenantId, EntitlementId = TimeOrderedId.New(command.EventTime), UnitId = command.UnitId, Scope = EntitlementScope.Unit, Type = version.EntitlementType, CoverageFamily = command.CoverageFamily,
             Direction = EntitlementDirection.Outbound, OwnerPartyRef = command.OwnerPartyRef, OwnerPartyType = command.OwnerPartyType, ObligorEntityId = command.ObligorEntityId, PayerPartyRef = command.PayerPartyRef,
             PayerPartyType = command.PayerPartyType, PolicyVersionId = version.PolicyVersionId, StartTrigger = terms.Start.Trigger, StartBasis = start.Start is null ? null : startBasisOverride ?? start.Basis, StartEvidenceRef = start.Basis is null ? null : command.StartEvidenceRef,
-            StartDate = start.Start, StartTimeZone = zone, EndDate = end, ComputedByRuleVersion = version.RuleVersion, StartLatest = startLatest, DurationValue = duration.Duration.Value, DurationUnit = duration.Duration.Unit,
+            StartDate = start.Start, StartTimeZone = zone, PurchaseDate = purchaseDateOverride ?? EntitlementPurchaseDate.From(command, zone), EndDate = end, ComputedByRuleVersion = version.RuleVersion, StartLatest = startLatest, DurationValue = duration.Duration.Value, DurationUnit = duration.Duration.Unit,
             EndOfMonthRule = duration.Duration.EndOfMonth, EndInclusive = duration.Duration.EndInclusive, DurationBasis = terms.DurationBasis, Coverage = JsonSerializer.Serialize(terms.Coverage, LedgerJson.Options),
             RegionScope = JsonSerializer.Serialize(terms.RegionScope, LedgerJson.Options), Transferable = terms.Transferable, ConditionAtCreation = grade, AccrualCohortId = cohortId,
             RefurbishedMatchedRow = disclosure is null ? null : JsonSerializer.Serialize(disclosure.MatchedRow, LedgerJson.Options), RefurbishedFloorApplied = disclosure?.FloorApplied ?? false,
@@ -143,7 +143,7 @@ public static class CreateEntitlementHandler
             matched_refurbished_row = disclosure?.MatchedRow, term_months = disclosure?.TermMonths, floor_months = disclosure?.FloorMonths, floor_source = disclosure?.FloorSource, refurbisher_party_ref = disclosure?.RefurbisherPartyRef, statement_kind = disclosure?.StatementKind,
             price = salePrice, currency = saleCurrency, time_zone = zone, accrual_cohort_id = cohortId, assurance_or_service = entitlement.AssuranceOrService,
             accrual_suppressed = entitlement.AssuranceOrService == AssuranceOrService.Assurance && cohortId is null, provenance = command.Provenance, confidence = command.Confidence,
-            owner_party_ref = command.OwnerPartyRef, rule_version = version.RuleVersion, trail,
+            owner_party_ref = command.OwnerPartyRef, purchase_date = entitlement.PurchaseDate, rule_version = version.RuleVersion, trail,
             evidence_refs = evidenceRefs, finance_review_required = financeReviewRequired, reason_code = reasonCode, finance_review_ref = financeReviewRef,
         }, command.SourceDocument, cancellationToken, eventId, correction);
         return new CreateEntitlementResult(entitlement.EntitlementId, entitlement.Status, level, version.PolicyCode, version.Version, entitlement.StartDate, entitlement.EndDate, entitlement.StartBasis, start.CapApplied, duration.FloorApplied, zone, cohortId, trail, disclosure);
@@ -343,7 +343,7 @@ public static class TransferEntitlementHandler
             TenantId = tenantId, EntitlementId = TimeOrderedId.New(command.EventTime), UnitId = command.TargetUnitId, Scope = source.Scope, ScopeChildUnitId = source.ScopeChildUnitId, ScopeItemClass = source.ScopeItemClass,
             Type = source.Type, CoverageFamily = source.CoverageFamily, Direction = source.Direction, OwnerPartyRef = source.OwnerPartyRef, OwnerPartyType = source.OwnerPartyType, ObligorEntityId = source.ObligorEntityId,
             PayerPartyRef = source.PayerPartyRef, PayerPartyType = source.PayerPartyType, PolicyVersionId = source.PolicyVersionId, StartTrigger = source.StartTrigger, StartBasis = source.StartBasis,
-            StartEvidenceRef = source.StartEvidenceRef, StartDate = source.StartDate, StartTimeZone = source.StartTimeZone, EndDate = computedEnd, ComputedByRuleVersion = source.ComputedByRuleVersion,
+            StartEvidenceRef = source.StartEvidenceRef, StartDate = source.StartDate, StartTimeZone = source.StartTimeZone, PurchaseDate = source.PurchaseDate, EndDate = computedEnd, ComputedByRuleVersion = source.ComputedByRuleVersion,
             StartLatest = source.StartLatest, DurationValue = source.DurationValue, DurationUnit = source.DurationUnit, EndOfMonthRule = source.EndOfMonthRule, EndInclusive = source.EndInclusive,
             EndAdjustmentDays = computedEnd.DayNumber - TermArithmetic.EndDate(source.StartDate.Value, duration).DayNumber, DurationBasis = source.DurationBasis, Coverage = source.Coverage, RegionScope = source.RegionScope, Transferable = source.Transferable, ConditionAtCreation = source.ConditionAtCreation,
             ParentEntitlementId = source.EntitlementId, RootEntitlementId = rootId, ReplacementLinkId = command.ReplacementLinkId, AccrualCohortId = null, RevenueScheduleRef = source.RevenueScheduleRef,

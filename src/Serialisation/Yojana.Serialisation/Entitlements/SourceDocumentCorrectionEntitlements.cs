@@ -356,6 +356,7 @@ public sealed class SourceDocumentCorrectionEntitlements(
         PolicyVersionId = line.Version.PolicyVersionId,
         StartTrigger = line.Terms.Start.Trigger,
         StartTimeZone = zone,
+        PurchaseDate = TermArithmetic.LocalDay(line.Invoice.PostedAt, zone),
         ComputedByRuleVersion = line.Version.RuleVersion,
         DurationValue = line.Terms.Duration.Value,
         DurationUnit = line.Terms.Duration.Unit,

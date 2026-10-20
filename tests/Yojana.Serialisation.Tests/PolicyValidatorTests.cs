@@ -127,4 +127,14 @@ public sealed class PolicyValidatorTests
         Assert.Equal(["amendment_value_not_positive", "amendment_value_per_unknown"], Errors(PolicyValidator.Validate(broken, Context() with { TenantCurrency = "EUR" })));
         Assert.Empty(Errors(PolicyValidator.Validate(Standard24(), Context())));
     }
+
+    [Fact]
+    public void A_claim_waiting_period_is_optional_and_between_zero_and_365_days()
+    {
+        Assert.Empty(Errors(PolicyValidator.Validate(Standard24() with { NoClaimWithinDaysOfPurchase = null }, Context())));
+        Assert.Empty(Errors(PolicyValidator.Validate(Standard24() with { NoClaimWithinDaysOfPurchase = 0 }, Context())));
+        Assert.Empty(Errors(PolicyValidator.Validate(Standard24() with { NoClaimWithinDaysOfPurchase = 365 }, Context())));
+        Assert.Contains("waiting_period_range", Errors(PolicyValidator.Validate(Standard24() with { NoClaimWithinDaysOfPurchase = -1 }, Context())));
+        Assert.Contains("waiting_period_range", Errors(PolicyValidator.Validate(Standard24() with { NoClaimWithinDaysOfPurchase = 366 }, Context())));
+    }
 }

@@ -58,6 +58,7 @@ public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant
         row.ServiceContractRegulated = terms.ServiceContractRegulated;
         row.Eligibility = terms.Eligibility is null ? null : Json(terms.Eligibility);
         row.AmendmentValue = terms.AmendmentValue is null ? null : Json(terms.AmendmentValue);
+        row.NoClaimWithinDaysOfPurchase = terms.NoClaimWithinDaysOfPurchase;
     }
 
     public async Task<PolicyTerms> ReadTermsAsync(WarrantyPolicyVersion row, CancellationToken cancellationToken, bool includeItems = false)
@@ -72,7 +73,8 @@ public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant
             row.Transferable, row.SettlementFormula, replacement, Read<List<RefurbishedTerm>>(row.RefurbishedPolicies), row.DoaWindowDays, row.AssuranceOrService, row.ReferenceTimeZoneRule, row.ServiceContractRegulated,
             row.Eligibility is null ? null : Read<EligibilityRule>(row.Eligibility),
             row.AmendmentValue is null ? null : Read<AmendmentValueTerm>(row.AmendmentValue),
-            includeItems ? await items.ReadAsync(row.PolicyVersionId, cancellationToken) : null);
+            includeItems ? await items.ReadAsync(row.PolicyVersionId, cancellationToken) : null,
+            row.NoClaimWithinDaysOfPurchase);
     }
 
     public async Task<PolicyValidation> ValidateAsync(WarrantyPolicyVersion row, PolicyTerms terms, CancellationToken cancellationToken)

@@ -169,7 +169,7 @@ public sealed class DocumentCorrectionEntitlements(SerialisationDbContext db, IU
         OwnerPartyRef = source.OwnerPartyRef, OwnerPartyType = source.OwnerPartyType, ObligorEntityId = source.ObligorEntityId,
         PayerPartyRef = source.PayerPartyRef, PayerPartyType = source.PayerPartyType, PolicyVersionId = source.PolicyVersionId,
         StartTrigger = source.StartTrigger, StartBasis = source.StartBasis, StartEvidenceRef = source.StartEvidenceRef,
-        StartDate = source.StartDate, StartTimeZone = source.StartTimeZone, EndDate = source.EndDate,
+        StartDate = source.StartDate, StartTimeZone = source.StartTimeZone, PurchaseDate = source.PurchaseDate, EndDate = source.EndDate,
         ComputedByRuleVersion = source.ComputedByRuleVersion, StartLatest = source.StartLatest,
         DurationValue = source.DurationValue, DurationUnit = source.DurationUnit, EndOfMonthRule = source.EndOfMonthRule,
         EndInclusive = source.EndInclusive, EndAdjustmentDays = source.EndAdjustmentDays, DurationBasis = source.DurationBasis,

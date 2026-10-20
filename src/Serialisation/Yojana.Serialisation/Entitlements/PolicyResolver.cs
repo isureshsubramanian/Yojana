@@ -127,7 +127,8 @@ public sealed class PolicyResolver(SerialisationDbContext db, ITenantContext ten
         var coverage = JsonSerializer.Deserialize<CoverageTerms>(entitlement.Coverage, LedgerJson.Options);
         return new PolicyResolution(level, entitlement.EntitlementId, entitlement.PolicyVersionId, version?.PolicyCode, version?.Version, null, outOfRegion, trail,
             entitlement.Type, entitlement.Status, entitlement.Direction, coverage, version?.SettlementFormula, entitlement.AccrualCohortId,
-            entitlement.ObligorEntityId, entitlement.PayerPartyRef, entitlement.StartDate, entitlement.EndDate, await ChainLengthAsync(entitlement, cancellationToken));
+            entitlement.ObligorEntityId, entitlement.PayerPartyRef, entitlement.StartDate, entitlement.EndDate, await ChainLengthAsync(entitlement, cancellationToken),
+            entitlement.PurchaseDate, version?.NoClaimWithinDaysOfPurchase, entitlement.Provenance);
     }
 
     private async Task<PolicyResolution> FromVersionAsync(string level, WarrantyPolicyVersion version, string? contractRef, PolicyQuestion question, List<string> trail, CancellationToken cancellationToken)
@@ -137,7 +138,8 @@ public sealed class PolicyResolver(SerialisationDbContext db, ITenantContext ten
         if (outOfRegion) trail.Add($"region: {question.Country} is outside {version.PolicyCode} v{version.Version} ({string.Join(", ", scope)})");
         var coverage = JsonSerializer.Deserialize<CoverageTerms>(version.Coverage, LedgerJson.Options);
         return new PolicyResolution(level, null, version.PolicyVersionId, version.PolicyCode, version.Version, contractRef, outOfRegion, trail,
-            version.EntitlementType, EntitlementStatus.Active, EntitlementDirection.Outbound, coverage, version.SettlementFormula);
+            version.EntitlementType, EntitlementStatus.Active, EntitlementDirection.Outbound, coverage, version.SettlementFormula,
+            NoClaimWithinDaysOfPurchase: version.NoClaimWithinDaysOfPurchase);
     }
 
     private async Task<bool> InScopeAsync(IReadOnlyList<string> scope, string country, CancellationToken cancellationToken)

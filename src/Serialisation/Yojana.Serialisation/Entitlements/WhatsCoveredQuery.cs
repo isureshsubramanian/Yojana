@@ -145,14 +145,31 @@ public sealed class WhatsCoveredQuery(SerialisationDbContext db, ITenantContext 
     }
 
     public async Task<ClaimGuidance?> GuidanceAsync(Guid unitId, string cause, CancellationToken ct)
+        => await GuidanceAsync(unitId, cause, null, null, ct);
+
+    public async Task<ClaimGuidance?> GuidanceAsync(Guid unitId, string cause, DateOnly? claimDate, DateOnly? occurredDate, CancellationToken ct)
     {
         var all = await ReadAsync(unitId, ct);
         if (all is null) return null;
         var matched = all.Items.Where(x => x.CauseCodes.Contains(cause)).ToList();
         var grants = matched.SelectMany(x => x.Grants).Where(x => !x.Cover.Future && x.Cover.From != null && x.CauseCodes!.Contains(cause)).ToList();
+        var entitlementIds = grants.Select(x => x.Cover.EntitlementId).Distinct().ToList();
+        var waitingPeriods = await (from entitlement in db.Entitlements.AsNoTracking()
+            join policy in db.PolicyVersions.AsNoTracking() on new { entitlement.TenantId, entitlement.PolicyVersionId } equals new { policy.TenantId, policy.PolicyVersionId }
+            where entitlement.TenantId == tenant.TenantId && entitlementIds.Contains(entitlement.EntitlementId)
+            select new { entitlement.EntitlementId, entitlement.PurchaseDate, policy.NoClaimWithinDaysOfPurchase }).ToDictionaryAsync(x => x.EntitlementId, ct);
+        var incidentDate = occurredDate ?? claimDate;
         var covers = grants.GroupBy(x => x.Cover.EntitlementId).Select(g => new GuidedCover(g.First().Cover,
             g.First().Cover.Usage.Select(u => new GuidanceUsage(u.MeterType, u.Period, u.Remaining,
-                null)).ToList(), g.ToList())).ToList();
+                null)).ToList(), g.ToList(), WaitingUntil(g.Key))).ToList();
+
+        DateOnly? WaitingUntil(Guid entitlementId)
+        {
+            if (incidentDate is null || !waitingPeriods.TryGetValue(entitlementId, out var terms)
+                || terms.PurchaseDate is not { } purchase || (terms.NoClaimWithinDaysOfPurchase ?? 0) <= 0) return null;
+            var firstClaimable = purchase.AddDays(terms.NoClaimWithinDaysOfPurchase!.Value);
+            return incidentDate < firstClaimable ? firstClaimable : null;
+        }
         // An exclusion is named on every covered line it touches; count it once.
         var excludes = matched.SelectMany(x => x.Excludes).Where(x => !x.Cover.Future && x.CauseCodes!.Contains(cause))
             .DistinctBy(x => (x.Cover.EntitlementId, x.Code)).ToList();

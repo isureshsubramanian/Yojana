@@ -250,6 +250,7 @@ public static class SerialisationModule
         // Coupled to ClaimReviewSettings and RecoverySettings for the same Wolverine constraint as entitlement approval settings: the
         // factory hides ITenantSettings' PlatformDbContext from AdjudicateClaimHandler's transactional graph.
         builder.Services.AddScoped(sp => new ClaimReviewSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped(sp => new ClaimWaitingPeriodSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped(sp => new RecoverySettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.TryAddScoped<IWarrantyClaimsPort, WarrantyClaimsPort>();
         builder.Services.TryAddScoped<ISettlementFormulaPort, FullSettlementFormula>();

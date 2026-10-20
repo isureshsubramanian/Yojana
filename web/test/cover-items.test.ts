@@ -69,9 +69,9 @@ test("claim cause chips use tenant wording, omit inactive codes and mark the sel
 });
 
 test("claim guidance names both sides, reports remaining usage and labels advice as guidance", () => {
-  const guidance: ClaimGuidance = { causeCode: "LIQUID_SPILL", covered: true, grants: [{ cover: damage, usage: [{ meterType: "claims", period: "term", now: 2, afterThisClaim: null }], items: data.items[0]!.grants }], excludes: data.items[0]!.excludes, sayToCustomer: "Liquid spills", notice: "Guidance only · adjudication confirms the cover" };
+  const guidance: ClaimGuidance = { causeCode: "LIQUID_SPILL", covered: true, grants: [{ cover: damage, usage: [{ meterType: "claims", period: "term", now: 2, afterThisClaim: null }], items: data.items[0]!.grants, waitingPeriodUntil: "2026-09-03" }], excludes: data.items[0]!.excludes, sayToCustomer: "Liquid spills", notice: "Guidance only · adjudication confirms the cover" };
   const html = renderToStaticMarkup(createElement(claim.ClaimGuidanceCard!, { guidance }));
-  for (const text of ["Accidental damage 24 months", "Base warranty", "excludes it", "2 claims remaining now", "— after this claim", "Say to the customer", "Guidance only · adjudication confirms the cover"]) assert.ok(html.includes(text), text);
+  for (const text of ["Accidental damage 24 months", "Base warranty", "excludes it", "2 claims remaining now", "— after this claim", "Inside the waiting period until", "2026", "Say to the customer", "Guidance only · adjudication confirms the cover"]) assert.ok(html.includes(text), text);
   assert.doesNotMatch(html, /Secret service instruction|hidden-damage|hidden-base|waiting period ended/);
 });
 
@@ -92,8 +92,8 @@ test("new APIs page reads and send no browser actor", async () => {
   const original = globalThis.fetch; const calls: { path: string; body: unknown }[] = [];
   globalThis.fetch = async (input, init) => { calls.push({ path: String(input), body: init?.body ? JSON.parse(String(init.body)) : null }); return new Response(JSON.stringify({ items: [], total: 0, skip: 0, take: 25 }), { status: 200, headers: { "content-type": "application/json" } }); };
   try {
-    await coverItemsApi.unit("unit", "covered", "liquid", 7, 7); await coverItemsApi.guidance("unit", "LIQUID_SPILL"); await coverItemsApi.items("version", "excluded", 25); await coverItemsApi.saveCauses([{ code: "CUSTOM", customerWording: "Another cause", active: true }], "loaded-version");
-    assert.match(calls[0]!.path, /skip=7&take=7/); assert.match(calls[1]!.path, /cause=LIQUID_SPILL/); assert.match(calls[2]!.path, /skip=25/);
+    await coverItemsApi.unit("unit", "covered", "liquid", 7, 7); await coverItemsApi.guidance("unit", "LIQUID_SPILL", "2026-09-10", "2026-09-01"); await coverItemsApi.items("version", "excluded", 25); await coverItemsApi.saveCauses([{ code: "CUSTOM", customerWording: "Another cause", active: true }], "loaded-version");
+    assert.match(calls[0]!.path, /skip=7&take=7/); assert.match(calls[1]!.path, /cause=LIQUID_SPILL/); assert.match(calls[1]!.path, /claimDate=2026-09-10/); assert.match(calls[1]!.path, /occurredDate=2026-09-01/); assert.match(calls[2]!.path, /skip=25/);
     assert.doesNotMatch(JSON.stringify(calls), /actorRef/); assert.equal((calls[3]!.body as { expectedVersion: string }).expectedVersion, "loaded-version");
   } finally { globalThis.fetch = original; }
 });
@@ -178,7 +178,7 @@ test("changing a cause preserves the desk's manual family override while guidanc
   const render = () => elements(instance.render("Component"));
   const causePanel = (nodes: any[]) => nodes.find((n) => n.props?.onGuidance && n.props?.onCause);
   const family = (nodes: any[]) => nodes.find((n) => n.props?.["aria-label"] === "Line 1 coverage family");
-  const guidance = { causeCode: "LIQUID_SPILL", covered: true, grants: [{ cover: damage, usage: [], items: [] }], excludes: [], sayToCustomer: "Liquid spills", notice: "Guidance only" };
+  const guidance = { causeCode: "LIQUID_SPILL", covered: true, grants: [{ cover: damage, usage: [], items: [], waitingPeriodUntil: null }], excludes: [], sayToCustomer: "Liquid spills", notice: "Guidance only" };
   let nodes = render(); causePanel(nodes).props.onGuidance(guidance);
   nodes = render(); assert.equal(family(nodes).props.value, "accidental_damage");
   family(nodes).props.onChange({ target: { value: "base_warranty" } });

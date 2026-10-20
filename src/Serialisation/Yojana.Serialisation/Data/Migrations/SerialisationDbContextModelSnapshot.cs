@@ -1778,6 +1778,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("entitlement_id");
 
+                    b.Property<DateOnly?>("FirstClaimableDate")
+                        .HasColumnType("date")
+                        .HasColumnName("first_claimable_date");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -1810,6 +1814,15 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<Guid>("UnitId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("unit_id");
+
+                    b.Property<string>("WaitingPeriodNotAppliedReason")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("waiting_period_not_applied_reason");
+
+                    b.Property<DateOnly?>("WaitingPeriodPurchaseDate")
+                        .HasColumnType("date")
+                        .HasColumnName("waiting_period_purchase_date");
 
                     b.HasKey("TenantId", "ClaimLineId")
                         .HasName("pk_claim_line");
@@ -2878,6 +2891,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)")
                         .HasColumnName("provenance");
+
+                    b.Property<DateOnly?>("PurchaseDate")
+                        .HasColumnType("date")
+                        .HasColumnName("purchase_date");
 
                     b.Property<bool>("RefurbishedFloorApplied")
                         .HasColumnType("bit")
@@ -9598,6 +9615,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("name");
+
+                    b.Property<int?>("NoClaimWithinDaysOfPurchase")
+                        .HasColumnType("int")
+                        .HasColumnName("no_claim_within_days_of_purchase");
 
                     b.Property<DateTime>("PeriodEnd")
                         .ValueGeneratedOnAddOrUpdate()

@@ -73,6 +73,9 @@ public sealed class ClaimLine : ITenantScoped
     public required string CoverageSource { get; set; }
     public string? SettlementFormula { get; set; }
     public string? DenialReason { get; set; }
+    public DateOnly? WaitingPeriodPurchaseDate { get; set; }
+    public DateOnly? FirstClaimableDate { get; set; }
+    public string? WaitingPeriodNotAppliedReason { get; set; }
     public int ChainLength { get; set; }
     public Guid? CoverageDecisionRef { get; set; }
 }

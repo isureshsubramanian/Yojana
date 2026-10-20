@@ -18,7 +18,10 @@ public sealed record ClaimLineOutcome(
     string? SettlementFormula = null,
     int ChainLength = 0,
     Guid? ObligorEntityId = null,
-    PolicyResolution? Resolution = null)
+    PolicyResolution? Resolution = null,
+    DateOnly? WaitingPeriodPurchaseDate = null,
+    DateOnly? FirstClaimableDate = null,
+    string? WaitingPeriodNotAppliedReason = null)
 {
     public static ClaimLineOutcome Denied(string reason, PolicyResolution? resolution = null) =>
         new(0, 0, ClaimCoverageSource.Chargeable, reason, Resolution: resolution);
@@ -55,6 +58,29 @@ public sealed class ClaimLineDecider(ClaimUnitFacts facts, PolicyResolver polici
         if (resolution.OutOfRegion) return ClaimLineOutcome.Denied("service_country_out_of_region", resolution);
         if (resolution.EntitlementStatus == EntitlementStatus.Suspended) return ClaimLineOutcome.Denied("entitlement_suspended", resolution);
 
+        DateOnly? waitingPeriodPurchaseDate = null;
+        DateOnly? firstClaimableDate = null;
+        string? waitingPeriodNotAppliedReason = null;
+        if (resolution.EntitlementId is not null && (resolution.NoClaimWithinDaysOfPurchase ?? 0) > 0)
+        {
+            if (resolution.PurchaseDate is not { } purchaseDate)
+            {
+                waitingPeriodNotAppliedReason = ClaimWaitingPeriodNotAppliedReason.PurchaseDateUnavailable;
+            }
+            else
+            {
+                waitingPeriodPurchaseDate = purchaseDate;
+                firstClaimableDate = purchaseDate.AddDays(resolution.NoClaimWithinDaysOfPurchase!.Value);
+                var incidentDate = claim.OccurredDate ?? claim.ClaimDate;
+                if (incidentDate < firstClaimableDate)
+                {
+                    return new ClaimLineOutcome(0, 0, ClaimCoverageSource.Chargeable, ClaimDenialReason.ClaimWaitingPeriod,
+                        resolution.EntitlementId, resolution.PolicyVersionId, resolution.AccrualCohortId, resolution.SettlementFormula,
+                        resolution.ChainLength, resolution.ObligorEntityId, resolution, waitingPeriodPurchaseDate, firstClaimableDate);
+                }
+            }
+        }
+
         var coverage = CoverageFor(resolution.Coverage, line.Kind);
         var measurements = JsonSerializer.Deserialize<Dictionary<string, decimal>>(line.Measurements, LedgerJson.Options) ?? [];
         var calculated = await formulas.CalculateAsync(new SettlementFormulaQuestion(resolution.SettlementFormula ?? "full", line.RequestedAmount, coverage, measurements), cancellationToken);
@@ -62,7 +88,7 @@ public sealed class ClaimLineDecider(ClaimUnitFacts facts, PolicyResolver polici
         return new ClaimLineOutcome(coverage, approved, Source(resolution.EntitlementType, resolution.Level),
             approved == 0 ? "coverage_percentage_zero" : approved < line.RequestedAmount ? "partially_uncovered" : null,
             resolution.EntitlementId, resolution.PolicyVersionId, resolution.AccrualCohortId, resolution.SettlementFormula ?? "full",
-            resolution.ChainLength, resolution.ObligorEntityId, resolution);
+            resolution.ChainLength, resolution.ObligorEntityId, resolution, waitingPeriodPurchaseDate, firstClaimableDate, waitingPeriodNotAppliedReason);
     }
 
     public static void Apply(ClaimLine line, ClaimLineOutcome outcome)
@@ -76,6 +102,9 @@ public sealed class ClaimLineDecider(ClaimUnitFacts facts, PolicyResolver polici
         line.AccrualCohortId = outcome.AccrualCohortId;
         line.SettlementFormula = outcome.SettlementFormula ?? line.SettlementFormula;
         line.ChainLength = outcome.ChainLength;
+        line.WaitingPeriodPurchaseDate = outcome.WaitingPeriodPurchaseDate;
+        line.FirstClaimableDate = outcome.FirstClaimableDate;
+        line.WaitingPeriodNotAppliedReason = outcome.WaitingPeriodNotAppliedReason;
     }
 
     private static decimal CoverageFor(CoverageTerms? coverage, string kind) => coverage is null ? 0 : kind switch
