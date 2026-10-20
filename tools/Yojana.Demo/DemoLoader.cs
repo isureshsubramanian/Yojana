@@ -2020,9 +2020,51 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
         IReadOnlyList<UsageLimitTerm>? usage = null, string type = EntitlementType.Manufacturer, string assurance = AssuranceOrService.Assurance) =>
         new(code, name, family, type, new PolicyTerms(new DurationRule(months, DurationRule.Months), durationBasis, usage ?? [],
             new StartRule(StartTrigger.Invoice, [new StartFallback(StartTrigger.Deliver)], 30), new CoverageTerms(100, 100, travel, serviceMode, responseHours,
-                responseHours is null ? null : "business_hours"), ["misuse", "unauthorised_modification", "consumables"],
+                responseHours is null ? null : "business_hours"), ["Misuse", "Unauthorised modification", "Consumables"],
             regions ?? ["IN", "GB", "DE", "FR", "US"], "yes", "full", null, [], 30, assurance, PolicyTerms.TimeZoneUtc,
-            ServiceContractRegulated: assurance == AssuranceOrService.Service) with { ReplacementPolicyCode = "DEMO-REPLACE-90" });
+            ServiceContractRegulated: assurance == AssuranceOrService.Service, Items: CoverItems(family, serviceMode)) with { ReplacementPolicyCode = "DEMO-REPLACE-90" });
+
+    // Structured covered and excluded items in customer wording, tied to the default claim causes, so What's covered
+    // and claim intake show both sides on a freshly loaded demo.
+    private static List<PolicyCoverItem> CoverItems(string family, string serviceMode)
+    {
+        static PolicyCoverItem Item(string code, string type, string wording, string category, params string[] causes) =>
+            new(code, type, wording, null, category, CoverPartsScope.All, causes);
+        var service = serviceMode == "on_site"
+            ? Item("SVC-ONSITE", "covered", "Engineer on site to repair the unit", "service")
+            : Item("SVC-RTB", "covered", "Repair at our service centre, with return shipping", "service");
+        return family switch
+        {
+            "goodwill" =>
+            [
+                Item("GW-REPAIR", "covered", "Repairs the service manager approves as goodwill", "cause", "STOPPED_WORKING", "PART_FAILED", "SOMETHING_ELSE"),
+                Item("EX-THEFT", "excluded", "Theft or loss", "cause", "STOLEN_LOST"),
+            ],
+            "service_contract" =>
+            [
+                service,
+                Item("SC-FAULT", "covered", "Faults that stop the network service", "cause", "STOPPED_WORKING", "PART_FAILED"),
+                Item("SC-SURGE", "covered", "Damage from a power surge", "cause", "POWER_SURGE"),
+                Item("EX-THEFT", "excluded", "Theft or loss", "cause", "STOLEN_LOST"),
+                Item("EX-LIQUID", "excluded", "Liquid spilled on or into the equipment", "cause", "LIQUID_SPILL"),
+            ],
+            _ =>
+            [
+                Item("HW-FAIL", "covered", "Hardware failure in normal use", "cause", "STOPPED_WORKING", "PART_FAILED"),
+                Item("HW-PARTS", "covered", "Fans, power supplies, drives and memory", "part", "PART_FAILED"),
+                Item("HW-FIRMWARE", "covered", "Firmware and BIOS faults", "cause", "STOPPED_WORKING"),
+                service,
+                Item("EX-LIQUID", "excluded", "Liquid spilled on or into the unit", "cause", "LIQUID_SPILL"),
+                Item("EX-DROP", "excluded", "Drops, knocks and other accidental damage", "cause", "DROPPED_KNOCKED"),
+                Item("EX-SURGE", "excluded", "Damage from a power surge", "cause", "POWER_SURGE"),
+                Item("EX-COSMETIC", "excluded", "Cosmetic damage that does not affect use", "condition", "COSMETIC_DAMAGE"),
+                Item("EX-THEFT", "excluded", "Theft or loss", "cause", "STOLEN_LOST"),
+                Item("EX-MISUSE", "excluded", "Damage on purpose or from misuse", "cause"),
+                Item("EX-MODIFIED", "excluded", "Unauthorised modification or third-party parts", "condition"),
+                Item("EX-CONSUMABLE", "excluded", "Consumables such as batteries, print heads and nozzles", "part"),
+            ],
+        };
+    }
 
     private PolicyDefinition SupplierPolicy(string code, string name, int months) =>
         new(code, name, CoverageFamilyCode.Supplier, EntitlementType.Manufacturer,

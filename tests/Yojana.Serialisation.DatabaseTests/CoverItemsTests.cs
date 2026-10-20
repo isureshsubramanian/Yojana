@@ -467,6 +467,33 @@ public sealed class CoverItemsTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Promises_sharing_a_cause_keep_their_own_lines_and_a_shared_exclusion_is_named_on_each_but_counted_once()
+    {
+        // Found 2026-10-20 on the demo: joining every item that shares a cause collapsed hardware, parts, firmware and
+        // goodwill promises into one line naming the base warranty three times.
+        var s = await Setup(); using var scope = fixture.ScopeFor(s.Tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        db.PolicyCoverItemCauses.Add(new() { TenantId = s.Tenant, PolicyVersionId = s.BasePolicy, ItemCode = "BASE-FW", CauseCode = "STOPPED_WORKING" });
+        db.PolicyCoverItemCauses.Add(new() { TenantId = s.Tenant, PolicyVersionId = s.DamagePolicy, ItemCode = "ADP-DROP", CauseCode = "LIQUID_SPILL" });
+        await db.SaveChangesAsync();
+        var query = Query(scope.ServiceProvider);
+        var data = (await query.ReadAsync(s.Unit, CancellationToken.None))!;
+
+        Assert.Equal((11, 7), (data.CoveredCount, data.ExcludedCount));
+        var hardware = Assert.Single(data.Items, x => x.CustomerWording == "Hardware failure in normal use");
+        Assert.Equal(["Base warranty", "Extended term"], hardware.Grants.Select(x => x.Cover.FamilyName).Order());
+        Assert.Single(data.Items, x => x.CustomerWording == "Firmware and BIOS faults" && x.Covered);
+        Assert.All(data.Items, x => Assert.Equal(x.Grants.Count, x.Grants.Select(g => g.Cover.EntitlementId).Distinct().Count()));
+        foreach (var wording in new[] { "Liquid spills", "Accidental drops and knocks" })
+            Assert.Equal("EX-LIQ", Assert.Single(Assert.Single(data.Items, x => x.CustomerWording == wording).Excludes).Code);
+        Assert.DoesNotContain(data.Items, x => x.CustomerWording == "Liquid damage");
+
+        var guidance = (await query.GuidanceAsync(s.Unit, "LIQUID_SPILL", CancellationToken.None))!;
+        Assert.Equal("EX-LIQ", Assert.Single(guidance.Excludes).Code);
+        Assert.Equal("Accidental drops and knocks · Liquid spills", guidance.SayToCustomer);
+    }
+
+    [DatabaseFact]
     public async Task Inactive_cause_is_typed_refusal_and_concurrent_first_claims_seed_defaults_once()
     {
         var s = await Setup();
