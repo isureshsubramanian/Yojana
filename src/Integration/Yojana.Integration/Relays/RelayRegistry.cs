@@ -14,10 +14,10 @@ namespace Yojana.Integration.Relays;
 public sealed class RelayRegistry(IntegrationDbContext db, ITenantContext tenant, IClock clock,
     IServiceProvider services, IConnectionAuditSink audit, RelaySigningKeyProtection keys)
 {
-    public async Task<(Connection Connection, IRelayConnectorProfile Profile)> ProfileAsync(Guid connectionId, CancellationToken ct, bool requireRelay = true)
+    public async Task<(Connection Connection, IRelayConnectorProfile Profile)> ProfileAsync(Guid connectionId, CancellationToken ct, bool requireRelay = true, bool requireActive = true)
     {
         var connection = await db.Connections.AsNoTracking().SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
-            && x.ConnectionId == connectionId && x.Status == ConnectionStatus.Active, ct)
+            && x.ConnectionId == connectionId && (!requireActive || x.Status == ConnectionStatus.Active), ct)
             ?? throw new ConnectionRuleException("connection_not_found", "The active connection was not found.");
         var profile = services.GetKeyedService<IRelayConnectorProfile>(connection.ConnectorCode)
             ?? throw new ConnectionRuleException("relay_unsupported", "The connector has no relay profile.");
@@ -90,7 +90,7 @@ public sealed class RelayRegistry(IntegrationDbContext db, ITenantContext tenant
 
     public async Task<SiteRelayPage> ListAsync(Guid connectionId, string? cursor, int take, CancellationToken ct)
     {
-        var (_, profile) = await ProfileAsync(connectionId, ct, requireRelay: false);
+        var (_, profile) = await ProfileAsync(connectionId, ct, requireRelay: false, requireActive: false);
         take = Math.Clamp(take, 1, 100);
         var query = db.SiteRelays.AsNoTracking().Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId);
         if (cursor is not null)

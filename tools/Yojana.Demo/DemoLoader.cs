@@ -31,7 +31,7 @@ using Yojana.Serialisation.TimeZones;
 
 namespace Yojana.Demo;
 
-public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogue, DateOnly today)
+public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue catalogue, DateOnly today)
 {
     private const string Source = "demo.it-hardware.connector";
     private readonly TenantId tenant = DevelopmentSeeder.DevTenantId;
@@ -1743,16 +1743,15 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
             connection = new Yojana.Integration.Data.Entities.Connection
             {
                 TenantId = tenant, ConnectionId = connectionId, ConnectorCode = "CX01",
-                DisplayLabel = "Business ERP (CX01)", Status = ConnectionStatus.Archived,
+                DisplayLabel = "Business ERP (CX01)", Status = ConnectionStatus.Paused,
                 CreatedAt = DemoDates.At(today.AddDays(-120)),
             };
             db.Connections.Add(connection);
         }
         else
         {
-            // This worktree supplies screen data but no connector implementation. Keeping the fixture out of the
-            // relay prevents a recurring job from treating deliberately hand-entered drafts as transport work.
-            connection.Status = ConnectionStatus.Archived;
+            // Demonstration connections stay paused so recurring jobs never call a fictional remote server.
+            connection.Status = ConnectionStatus.Paused;
         }
 
         var attention = new[]
@@ -1844,6 +1843,7 @@ public sealed class DemoLoader(IServiceProvider services, DemoCatalogue catalogu
                 });
         }
         await db.SaveChangesAsync(cancellationToken);
+        await CreateIntegrationMonitorScenariosAsync(connectionId, cancellationToken);
     }
 
     private static string ManualDocumentType(string commandType) => commandType switch

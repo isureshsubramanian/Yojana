@@ -188,7 +188,7 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
             poll.Watermark, poll.LastPolledAt, poll.LastPolledAt is { } at ? Math.Max(0, (now - at).TotalSeconds) : null,
             poll.IntervalSeconds, poll.OverlapSeconds,
             counts.FirstOrDefault(x => x.MessageType == (poll.CanonicalMessage ?? poll.EntityType))?.Today ?? 0,
-            attention.FirstOrDefault(x => x.RecordType == (poll.CanonicalMessage ?? poll.EntityType))?.Count ?? 0)).ToList();
+            attention.FirstOrDefault(x => x.RecordType == (poll.CanonicalMessage ?? poll.EntityType))?.Count ?? 0, poll.EntityType)).ToList();
         records.AddRange(types.Where(type => !records.Any(record => record.RecordType == type)
                 && InboundTypes.Contains(type))
             .Select(type => new RecordTypeHealth(type, "not_subscribed", null, row.CheckedUpTo,

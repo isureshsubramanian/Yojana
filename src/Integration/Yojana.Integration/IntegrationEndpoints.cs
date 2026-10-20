@@ -1,4 +1,5 @@
 using Yojana.Integration.Connections;
+using Yojana.Integration.Data.Entities;
 using System.Security.Claims;
 using Yojana.Integration.Transport;
 using Microsoft.AspNetCore.Builder;
@@ -109,6 +110,14 @@ public static class IntegrationEndpoints
                 CancellationToken ct) =>
             Invoke(() => confirmations.ConfirmAsync(connectionId, itemCode, request, Actor(user), ct)))
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        integration.MapPost("/reconciliation/runs", (RunReconciliationRequest request,
+            ReconciliationService service, CancellationToken ct) => Invoke(async () =>
+            new RunReconciliationResponse(await service.RunAsync(request.ConnectionId, request.RangeStart, request.RangeEnd,
+                ReconciliationTrigger.OnDemand, includeEntityDays: true, ct))));
+        integration.MapGet("/reconciliation/runs/{runId:guid}/entity-days", (Guid runId, string? cursor, int? take,
+            ReconciliationService service, CancellationToken ct) => Invoke(() => service.EntityDaysAsync(runId, cursor, take ?? 12, ct)));
+        integration.MapGet("/reconciliation/runs/{runId:guid}/locations", (Guid runId, string? cursor, int? take, bool? differences,
+            ReconciliationService service, CancellationToken ct) => Invoke(() => service.LocationsAsync(runId, cursor, take ?? 12, differences ?? true, ct)));
         integration.MapGet("/reconciliation/runs", (Guid? connectionId, string? status, string? cursor,
             int? take, ReconciliationService service, CancellationToken ct) => Invoke(() =>
             service.ListAsync(new(connectionId, status, cursor, take ?? 50), ct)));

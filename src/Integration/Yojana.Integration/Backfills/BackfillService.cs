@@ -178,7 +178,7 @@ public sealed class BackfillService(
                     AwaitingAt = job.AwaitingReconciliationAt,
                     CompletedAt = job.CompletedAt,
                     CompletionRunId = job.CompletionReconciliationRunId,
-                    LastFailure = job.LastFailure,
+                    LastFailure = job.LastFailure, SavedCursor = job.Cursor, PageSize = job.PageSize,
                 }).OrderByDescending(row => row.CreatedAt).ThenByDescending(row => row.Id)
             .Take(take + 1).ToListAsync(cancellationToken);
         var more = rows.Count > take;
@@ -188,9 +188,7 @@ public sealed class BackfillService(
 
     public async Task<BackfillView?> DetailAsync(Guid backfillId, CancellationToken cancellationToken)
     {
-        var page = await ListAsync(new(null, null, null, null, 200), cancellationToken);
-        return page.Items.SingleOrDefault(row => row.BackfillId == backfillId)
-            ?? await DetailProjectionAsync(backfillId, cancellationToken);
+        return await DetailProjectionAsync(backfillId, cancellationToken);
     }
 
     private async Task<BackfillView?> DetailProjectionAsync(Guid id, CancellationToken cancellationToken)
@@ -206,7 +204,7 @@ public sealed class BackfillService(
                 ProcessedPages = job.ProcessedPages, TotalMessages = job.TotalMessages, CreatedAt = job.CreatedAt,
                 StartedAt = job.StartedAt, LastPageAt = job.LastPageAt,
                 AwaitingAt = job.AwaitingReconciliationAt, CompletedAt = job.CompletedAt,
-                CompletionRunId = job.CompletionReconciliationRunId, LastFailure = job.LastFailure,
+                CompletionRunId = job.CompletionReconciliationRunId, LastFailure = job.LastFailure, SavedCursor = job.Cursor, PageSize = job.PageSize,
             }).SingleOrDefaultAsync(cancellationToken);
         return row is null ? null : View(row);
     }
@@ -322,7 +320,7 @@ public sealed class BackfillService(
         return new(row.Id, row.ConnectionId, row.ConnectionName, row.Entity, row.RangeStart, row.RangeEnd,
             row.Status, row.ProcessedMessages, row.ProcessedPages, row.TotalMessages, progress, eta,
             row.CreatedAt, row.StartedAt, row.LastPageAt, row.AwaitingAt, row.CompletedAt,
-            row.CompletionRunId, row.LastFailure);
+            row.CompletionRunId, row.LastFailure, row.SavedCursor, row.PageSize);
     }
 
     private static string RequiredActor(string actorRef) => !string.IsNullOrWhiteSpace(actorRef)
@@ -364,5 +362,7 @@ public sealed class BackfillService(
         public DateTime? CompletedAt { get; init; }
         public Guid? CompletionRunId { get; init; }
         public string? LastFailure { get; init; }
+        public string? SavedCursor { get; init; }
+        public int PageSize { get; init; }
     }
 }

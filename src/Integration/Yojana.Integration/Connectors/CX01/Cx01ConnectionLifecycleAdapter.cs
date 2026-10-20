@@ -6,6 +6,10 @@ namespace Yojana.Integration.Connectors.CX01;
 public sealed class Cx01ConnectionLifecycleAdapter(Cx01Settings settings, Cx01Client client,
     Cx01SurveyService survey, Cx01WebhookMaintenance notifications) : IConnectionLifecycleAdapter
 {
+    public ConnectionRegistrationForm RegistrationForm => new(
+        [new("service_uri", "Server address", "url"), new("company_database", "Company database", "text"),
+         new("release", "Release", "text", "unknown"), new("transport", "Connection route", "route", "direct")],
+        Cx01Client.CredentialPurpose, [new("user_name", "Dedicated integration user", "text"), new("password", "Password", "password")]);
     public IReadOnlyList<string> CredentialPurposes => [Cx01Client.CredentialPurpose];
     public IReadOnlyList<string> RequiredCredentialPurposes(JsonElement value) =>
         Read(value) is { Transport: "site_relay", RelayCredentials: "site" } ? [] : CredentialPurposes;

@@ -37,6 +37,8 @@ builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);
 PlatformSetup.IncludeHandlers(typeof(IntegrationModule).Assembly);
+// The console host needs routing services for the platform authorization policy cache in Development.
+builder.Services.AddRouting();
 builder.AddYojanaPlatform();
 builder.AddIntegrationModule();
 builder.AddSerialisationModule();
