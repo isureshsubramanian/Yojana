@@ -45,6 +45,10 @@ public sealed class AppUser
 
     public Guid SecurityStamp { get; set; } = Guid.NewGuid();
 
+    public bool MustChangePassword { get; set; }
+
+    public DateTime? TemporaryPasswordExpiresAt { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public List<UserTenantMembership> Memberships { get; } = [];
@@ -164,4 +168,19 @@ public static class MailStatus
     public const string Retrying = "retrying";
     public const string Sent = "sent";
     public const string Failed = "failed";
+}
+
+/// <summary>
+/// Global password-reset state. It deliberately has no tenant id because a user is a global identity and no tenant
+/// exists before sign-in. TokenHash is the SHA-256 digest of the single-use token; the token itself is never stored.
+/// </summary>
+public sealed class PasswordResetToken
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public required byte[] TokenHash { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public DateTime? UsedAt { get; set; }
+    public DateTime? SupersededAt { get; set; }
 }

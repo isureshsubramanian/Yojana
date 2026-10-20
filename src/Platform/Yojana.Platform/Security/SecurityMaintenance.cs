@@ -7,7 +7,7 @@ using Yojana.Platform.Data.Platform;
 
 namespace Yojana.Platform.Security;
 
-public sealed record SecurityMaintenanceResult(int ThrottleRows, int EventRows, int Batches);
+public sealed record SecurityMaintenanceResult(int ThrottleRows, int EventRows, int TokenRows, int Batches);
 
 public sealed class SecurityMaintenance(PlatformDbContext db, IClock clock, SignInOptions options)
 {
@@ -15,6 +15,7 @@ public sealed class SecurityMaintenance(PlatformDbContext db, IClock clock, Sign
     {
         var throttleRows = 0;
         var eventRows = 0;
+        var tokenRows = 0;
         var batches = 0;
         int deleted;
         do
@@ -36,7 +37,18 @@ public sealed class SecurityMaintenance(PlatformDbContext db, IClock clock, Sign
             if (deleted > 0) batches++;
         } while (deleted == options.MaintenanceBatchSize);
 
-        return new SecurityMaintenanceResult(throttleRows, eventRows, batches);
+        var tokenCutoff = clock.UtcNow.AddDays(-7);
+        do
+        {
+            deleted = await db.PasswordResetTokens
+                .Where(row => row.ExpiresAt < tokenCutoff || row.UsedAt < tokenCutoff)
+                .OrderBy(row => row.ExpiresAt).ThenBy(row => row.Id).Take(options.MaintenanceBatchSize)
+                .ExecuteDeleteAsync(cancellationToken);
+            tokenRows += deleted;
+            if (deleted > 0) batches++;
+        } while (deleted == options.MaintenanceBatchSize);
+
+        return new SecurityMaintenanceResult(throttleRows, eventRows, tokenRows, batches);
     }
 }
 
@@ -51,7 +63,7 @@ public sealed class SecurityMaintenanceJob(SecurityMaintenance maintenance) : IJ
         await maintenance.PurgeAsync(cancellationToken);
 }
 
-/// <summary>Schedules one database-wide cleanup job; startup never scans either security table.</summary>
+/// <summary>Schedules one database-wide cleanup job; startup never scans the security tables.</summary>
 public sealed class SecurityMaintenanceRegistrar(
     ISchedulerFactory schedulerFactory,
     ILogger<SecurityMaintenanceRegistrar> logger) : IHostedService
@@ -68,7 +80,7 @@ public sealed class SecurityMaintenanceRegistrar(
                 .WithMisfireInstruction(CronTriggerMisfireInstruction.DoNothing))
             .Build();
         await scheduler.ScheduleJob(detail, trigger, ScheduleJobOptions.Replacing, cancellationToken);
-        logger.LogInformation("Security throttle and event retention job scheduled ({Cron})", SecurityMaintenanceJob.Cron);
+        logger.LogInformation("Security throttle, token and event retention job scheduled ({Cron})", SecurityMaintenanceJob.Cron);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

@@ -17,7 +17,10 @@ export async function requireSession({ request }: { request: Request }): Promise
     }
     throw error;
   }
-  if (session.tenant === null && url.pathname !== "/tenants") {
+  if (session.passwordChangeRequired && url.pathname !== "/change-password") {
+    throw redirect("/change-password");
+  }
+  if (session.tenant === null && url.pathname !== "/tenants" && url.pathname !== "/change-password") {
     throw redirect("/tenants");
   }
   return session;

@@ -7,6 +7,7 @@ export class ApiError extends Error {
   public readonly unblockingStep: string | null;
   public readonly changedBy: string | null;
   public readonly changedAt: string | null;
+  public readonly reasons: readonly { code: string; message: string }[];
 
   constructor(
     status: number,
@@ -17,6 +18,7 @@ export class ApiError extends Error {
     unblockingStep: string | null = null,
     changedBy: string | null = null,
     changedAt: string | null = null,
+    reasons: readonly { code: string; message: string }[] = [],
   ) {
     super(message);
     this.name = "ApiError";
@@ -27,6 +29,7 @@ export class ApiError extends Error {
     this.unblockingStep = unblockingStep;
     this.changedBy = changedBy;
     this.changedAt = changedAt;
+    this.reasons = reasons;
   }
 }
 
@@ -45,7 +48,7 @@ export async function api<T>(path: string, init?: {
   });
   if (!response.ok && !init?.acceptedStatuses?.includes(response.status)) {
     const problem = await describe(response);
-    throw new ApiError(response.status, problem.message, problem.title, problem.detail, problem.rule, problem.unblockingStep, problem.changedBy, problem.changedAt);
+    throw new ApiError(response.status, problem.message, problem.title, problem.detail, problem.rule, problem.unblockingStep, problem.changedBy, problem.changedAt, problem.reasons);
   }
   if (response.status === 204) {
     return undefined as T;
@@ -53,21 +56,22 @@ export async function api<T>(path: string, init?: {
   return (await response.json()) as T;
 }
 
-async function describe(response: Response): Promise<{ message: string; title: string | null; detail: string | null; rule: string | null; unblockingStep: string | null; changedBy: string | null; changedAt: string | null }> {
+async function describe(response: Response): Promise<{ message: string; title: string | null; detail: string | null; rule: string | null; unblockingStep: string | null; changedBy: string | null; changedAt: string | null; reasons: readonly { code: string; message: string }[] }> {
   const fallback = `Something went wrong (HTTP ${response.status})`;
   try {
     const text = await response.text();
-    if (!text) return { message: fallback, title: null, detail: null, rule: null, unblockingStep: null, changedBy: null, changedAt: null };
+    if (!text) return { message: fallback, title: null, detail: null, rule: null, unblockingStep: null, changedBy: null, changedAt: null, reasons: [] };
     try {
-      const problem = JSON.parse(text) as { title?: string; detail?: string; rule?: string; unblock?: string; unblockingStep?: string; changedBy?: string; changedAt?: string };
+      const problem = JSON.parse(text) as { title?: string; detail?: string; rule?: string; unblock?: string; unblockingStep?: string; changedBy?: string; changedAt?: string; reasons?: unknown };
       const title = typeof problem.title === "string" ? problem.title : null;
       const detail = typeof problem.detail === "string" ? problem.detail : null;
       const rule = typeof problem.rule === "string" ? problem.rule : null;
-      return { message: detail ?? title ?? rule ?? fallback, title, detail, rule, unblockingStep: problem.unblock ?? problem.unblockingStep ?? null, changedBy: problem.changedBy ?? null, changedAt: problem.changedAt ?? null };
+      const reasons = Array.isArray(problem.reasons) ? problem.reasons.filter((reason): reason is { code: string; message: string } => typeof reason === "object" && reason !== null && typeof (reason as { code?: unknown }).code === "string" && typeof (reason as { message?: unknown }).message === "string") : [];
+      return { message: detail ?? title ?? rule ?? fallback, title, detail, rule, unblockingStep: problem.unblock ?? problem.unblockingStep ?? null, changedBy: problem.changedBy ?? null, changedAt: problem.changedAt ?? null, reasons };
     } catch {
-      return { message: fallback, title: null, detail: null, rule: null, unblockingStep: null, changedBy: null, changedAt: null };
+      return { message: fallback, title: null, detail: null, rule: null, unblockingStep: null, changedBy: null, changedAt: null, reasons: [] };
     }
   } catch {
-    return { message: fallback, title: null, detail: null, rule: null, unblockingStep: null, changedBy: null, changedAt: null };
+    return { message: fallback, title: null, detail: null, rule: null, unblockingStep: null, changedBy: null, changedAt: null, reasons: [] };
   }
 }

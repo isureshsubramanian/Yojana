@@ -136,16 +136,23 @@ public sealed class TenancyTests(PlatformHostFixture fixture)
         Assert.Equal("datetime2(3)", columnType);
         var securityTables = await db.Database.SqlQueryRaw<string>("""
             SELECT name AS [Value] FROM sys.tables
-            WHERE schema_id = SCHEMA_ID('platform') AND name IN ('mail_message', 'security_event', 'sign_in_throttle')
+            WHERE schema_id = SCHEMA_ID('platform') AND name IN ('mail_message', 'password_reset_token', 'security_event', 'sign_in_throttle')
             ORDER BY name
             """).ToListAsync();
-        Assert.Equal(["mail_message", "security_event", "sign_in_throttle"], securityTables);
+        Assert.Equal(["mail_message", "password_reset_token", "security_event", "sign_in_throttle"], securityTables);
         var stampColumn = await db.Database.SqlQueryRaw<int>("""
             SELECT COUNT(*) AS [Value] FROM sys.columns
             WHERE object_id = OBJECT_ID('platform.app_user') AND name = 'security_stamp'
               AND is_nullable = 0 AND TYPE_NAME(user_type_id) = 'uniqueidentifier'
             """).SingleAsync();
         Assert.Equal(1, stampColumn);
+        var passwordColumns = await db.Database.SqlQueryRaw<string>("""
+            SELECT name AS [Value] FROM sys.columns
+            WHERE object_id = OBJECT_ID('platform.app_user')
+              AND name IN ('must_change_password', 'temporary_password_expires_at')
+            ORDER BY name
+            """).ToListAsync();
+        Assert.Equal(["must_change_password", "temporary_password_expires_at"], passwordColumns);
         Assert.Empty(db.ValidateTenantKeyConventions());
     }
 }

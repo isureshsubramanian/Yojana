@@ -47,12 +47,14 @@ public sealed class PlatformHostFixture : IAsyncLifetime
         builder.Configuration["Platform:Mail:MaxAttempts"] = "3";
         builder.Configuration["Platform:Mail:RetryDelaySeconds:0"] = "1";
         builder.Configuration["Platform:Mail:MaintenanceBatchSize"] = "2";
+        builder.Configuration["Platform:Mail:LinkBaseUrl"] = "http://127.0.0.1:5080";
         builder.AddYojanaPlatform();
         builder.Services.Replace(ServiceDescriptor.Singleton<IClock>(Clock));
         builder.Services.Replace(ServiceDescriptor.Singleton<IMailTransport>(Mail));
         Host = builder.Build();
         Host.UseYojanaPlatform();
         Host.MapYojanaSecurityEndpoints();
+        Host.MapYojanaPasswordResetEndpoints();
         Host.MapYojanaMailEndpoints();
         await Host.StartAsync();
     }

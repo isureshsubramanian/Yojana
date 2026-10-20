@@ -20,6 +20,7 @@ public sealed class SignInThrottleService(PlatformDbContext db, IClock clock, Si
     // spoofing; running the middleware too late groups every proxied client under the proxy's address.
     private const string AccountKey = "account";
     private const string AddressKey = "address";
+    private const string PasswordResetKey = "password_reset";
 
     public async Task<SignInLockState> LockStateAsync(string normalisedEmail, string clientAddress,
         CancellationToken cancellationToken)
@@ -71,6 +72,45 @@ public sealed class SignInThrottleService(PlatformDbContext db, IClock clock, Si
                 db.ChangeTracker.Clear();
             }
         }
+    }
+
+    public async Task RegisterAccountFailureAsync(string normalisedEmail, CancellationToken cancellationToken)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable,
+            cancellationToken);
+        var now = clock.UtcNow;
+        var account = await GetOrCreateAsync(AccountKey, normalisedEmail, now,
+            TimeSpan.FromMinutes(options.AccountWindowMinutes), cancellationToken);
+        RegisterAccountFailure(account, now);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task<bool> TryConsumePasswordResetMailAsync(string normalisedEmail,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable,
+            cancellationToken);
+        var now = clock.UtcNow;
+        var row = await GetOrCreateAsync(PasswordResetKey, normalisedEmail, now, TimeSpan.FromMinutes(15),
+            cancellationToken);
+        if (row.FailureCount >= 3)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return false;
+        }
+
+        row.FailureCount++;
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task ResetAccountAsync(string normalisedEmail, CancellationToken cancellationToken)
+    {
+        var hash = Hash(AccountKey, normalisedEmail);
+        await db.SignInThrottles.Where(row => row.KeyKind == AccountKey && row.KeyHash == hash)
+            .ExecuteDeleteAsync(cancellationToken);
     }
 
     public async Task<SignInLockState> CompleteSuccessAsync(string normalisedEmail, string clientAddress,

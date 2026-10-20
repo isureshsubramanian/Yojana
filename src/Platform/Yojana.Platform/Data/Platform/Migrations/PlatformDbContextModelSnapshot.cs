@@ -50,6 +50,12 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasColumnType("bit")
                         .HasColumnName("is_active");
 
+                    b.Property<bool>("MustChangePassword")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("must_change_password");
+
                     b.Property<string>("PasswordHash")
                         .HasMaxLength(400)
                         .HasColumnType("nvarchar(400)")
@@ -60,6 +66,10 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("security_stamp")
                         .HasDefaultValueSql("NEWID()");
+
+                    b.Property<DateTime?>("TemporaryPasswordExpiresAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("temporary_password_expires_at");
 
                     b.HasKey("Id")
                         .HasName("pk_app_user");
@@ -205,6 +215,53 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasDatabaseName("ix_mail_message_tenant_id_queued_at_id");
 
                     b.ToTable("mail_message", "platform");
+                });
+
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.PasswordResetToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTime?>("SupersededAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("superseded_at");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("token_hash")
+                        .IsFixedLength();
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("used_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_password_reset_token");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_password_reset_token_token_hash");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_password_reset_token_user_id_created_at");
+
+                    b.ToTable("password_reset_token", "platform");
                 });
 
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.SecurityEvent", b =>
@@ -481,6 +538,16 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .HasConstraintName("fk_mail_message_user_id");
+                });
+
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.PasswordResetToken", b =>
+                {
+                    b.HasOne("Yojana.Platform.Data.Platform.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_password_reset_token_user_id");
                 });
 
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.SecurityEvent", b =>

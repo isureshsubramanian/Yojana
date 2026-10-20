@@ -32,6 +32,8 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
 
     public DbSet<DocumentPresence> DocumentPresence => Set<DocumentPresence>();
 
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Tenant>(b =>
@@ -58,6 +60,7 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             b.Property(u => u.DisplayName).HasMaxLength(200);
             b.Property(u => u.PasswordHash).HasMaxLength(400);
             b.Property(u => u.SecurityStamp).HasDefaultValueSql("NEWID()");
+            b.Property(u => u.MustChangePassword).HasDefaultValue(false);
             b.HasIndex(u => u.Email).IsUnique();
         });
 
@@ -131,6 +134,16 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             b.Property(p => p.Mode).HasMaxLength(10);
             b.HasIndex(p => new { p.TenantId, p.DocumentType, p.DocumentId, p.LastHeartbeat });
             b.HasIndex(p => new { p.TenantId, p.LastHeartbeat });
+        });
+
+        modelBuilder.Entity<PasswordResetToken>(b =>
+        {
+            b.ToTable("password_reset_token");
+            b.HasKey(t => t.Id);
+            b.Property(t => t.TokenHash).HasMaxLength(32).IsFixedLength();
+            b.HasIndex(t => t.TokenHash).IsUnique();
+            b.HasIndex(t => new { t.UserId, t.CreatedAt });
+            b.HasOne<AppUser>().WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         // Base conventions (naming, filters) run after the explicit mapping so they see the final shape.
