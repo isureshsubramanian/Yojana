@@ -12,8 +12,17 @@ namespace Yojana.Integration.DeadLetters;
 
 public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext tenant, IClock clock,
     IManualTaskReferenceVerifier referenceVerifier, ManualTaskDeskSettings deskSettings,
-    IInboundMessageParkingSink parking)
+    IInboundMessageParkingSink parking) : IOutboundRetryWindow
 {
+    public Task<DateTime?> StartedAtAsync(Guid outboundCommandId, CancellationToken cancellationToken) =>
+        (from item in db.DeadLetterItems.AsNoTracking()
+         join action in db.DeadLetterEvents.AsNoTracking()
+             on new { item.TenantId, item.DeadLetterItemId } equals new { action.TenantId, action.DeadLetterItemId }
+         where item.TenantId == tenant.TenantId && item.SourceKind == DeadLetterSourceKind.OutboundCommand
+             && item.SourceId == outboundCommandId
+             && (action.Action == DeadLetterAction.MapAndRetry || action.Action == DeadLetterAction.CreateProvisionalAndRetry)
+         select (DateTime?)action.OccurredAt).MaxAsync(cancellationToken);
+
     public async Task<Guid> ParkReconciliationAsync(Guid resultId, Guid connectionId, string entity,
         string rawComparison, string failure, CancellationToken cancellationToken)
     {

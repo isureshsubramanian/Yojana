@@ -125,7 +125,7 @@ public sealed class NotificationEndpointTests(IntegrationHostFixture fixture, IT
         return request;
     }
 
-    private sealed class WebProcess : IAsyncDisposable
+    internal sealed class WebProcess : IAsyncDisposable
     {
         private readonly Process process;
         private readonly List<string> lines;
