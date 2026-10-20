@@ -160,7 +160,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasFilter("[removed_at] IS NULL AND [child_unit_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "MergedFromUnitId")
-                        .HasDatabaseName("ix_assembly_link_tenant_id_merged_from_unit_id");
+                        .HasDatabaseName("ix_assembly_link_tenant_id_merged_from_unit_id")
+                        .HasFilter("[merged_from_unit_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "ParentUnitId", "RemovedAt")
                         .HasDatabaseName("ix_assembly_link_tenant_id_parent_unit_id_removed_at");
@@ -239,7 +240,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasName("pk_build_record");
 
                     b.HasIndex("TenantId", "MergedFromUnitId")
-                        .HasDatabaseName("ix_build_record_tenant_id_merged_from_unit_id");
+                        .HasDatabaseName("ix_build_record_tenant_id_merged_from_unit_id")
+                        .HasFilter("[merged_from_unit_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "UnitId", "Version")
                         .IsUnique()
@@ -2279,7 +2281,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasName("pk_custody_episode");
 
                     b.HasIndex("TenantId", "MergedFromUnitId")
-                        .HasDatabaseName("ix_custody_episode_tenant_id_merged_from_unit_id");
+                        .HasDatabaseName("ix_custody_episode_tenant_id_merged_from_unit_id")
+                        .HasFilter("[merged_from_unit_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "LocationId", "ValidTo")
                         .HasDatabaseName("ix_custody_episode_tenant_id_location_id_valid_to");
@@ -2984,7 +2987,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasName("pk_entitlement");
 
                     b.HasIndex("TenantId", "MergedFromUnitId")
-                        .HasDatabaseName("ix_entitlement_tenant_id_merged_from_unit_id");
+                        .HasDatabaseName("ix_entitlement_tenant_id_merged_from_unit_id")
+                        .HasFilter("[merged_from_unit_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "PolicyVersionId")
                         .HasDatabaseName("ix_entitlement_tenant_id_policy_version_id");
@@ -3010,6 +3014,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_entitlement_tenant_id_unit_id_coverage_family")
                         .HasFilter("[status] <> 'closed'");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "UnitId", "CoverageFamily"), new[] { "OwnerPartyRef" });
 
                     b.HasIndex("TenantId", "UnitId", "CreatedAt")
                         .HasDatabaseName("ix_entitlement_tenant_id_unit_id_created_at");
@@ -3315,7 +3321,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasName("pk_entitlement_requirement");
 
                     b.HasIndex("TenantId", "MergedFromUnitId")
-                        .HasDatabaseName("ix_entitlement_requirement_tenant_id_merged_from_unit_id");
+                        .HasDatabaseName("ix_entitlement_requirement_tenant_id_merged_from_unit_id")
+                        .HasFilter("[merged_from_unit_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "Status", "RaisedAt")
                         .HasDatabaseName("ix_entitlement_requirement_tenant_id_status_raised_at");
@@ -7182,7 +7189,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasName("pk_search_entry");
 
                     b.HasIndex("TenantId", "MergedFromUnitId")
-                        .HasDatabaseName("ix_search_entry_tenant_id_merged_from_unit_id");
+                        .HasDatabaseName("ix_search_entry_tenant_id_merged_from_unit_id")
+                        .HasFilter("[merged_from_unit_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "UpdatedAt")
                         .HasDatabaseName("ix_search_entry_tenant_id_updated_at");
@@ -7231,7 +7239,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasName("pk_search_term");
 
                     b.HasIndex("TenantId", "MergedFromUnitId")
-                        .HasDatabaseName("ix_search_term_tenant_id_merged_from_unit_id");
+                        .HasDatabaseName("ix_search_term_tenant_id_merged_from_unit_id")
+                        .HasFilter("[merged_from_unit_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "EntityType", "EntityId")
                         .HasDatabaseName("ix_search_term_tenant_id_entity_type_entity_id");
@@ -7362,7 +7371,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasName("pk_selection_set_member");
 
                     b.HasIndex("TenantId", "MergedFromUnitId")
-                        .HasDatabaseName("ix_selection_set_member_tenant_id_merged_from_unit_id");
+                        .HasDatabaseName("ix_selection_set_member_tenant_id_merged_from_unit_id")
+                        .HasFilter("[merged_from_unit_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "SelectionId", "Serial")
                         .HasDatabaseName("ix_selection_set_member_tenant_id_selection_id_serial");
@@ -7704,7 +7714,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ix_serial_range_member_tenant_id_commissioned_unit_id");
 
                     b.HasIndex("TenantId", "MergedFromUnitId")
-                        .HasDatabaseName("ix_serial_range_member_tenant_id_merged_from_unit_id");
+                        .HasDatabaseName("ix_serial_range_member_tenant_id_merged_from_unit_id")
+                        .HasFilter("[merged_from_unit_id] IS NOT NULL");
 
                     b.ToTable("serial_range_member", "serialisation");
                 });
@@ -8617,7 +8628,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ux_unit_event_tenant_id_idempotency_key_event_time");
 
                     b.HasIndex("TenantId", "MergedFromUnitId", "EventTime")
-                        .HasDatabaseName("ix_unit_event_tenant_id_merged_from_unit_id_event_time");
+                        .HasDatabaseName("ix_unit_event_tenant_id_merged_from_unit_id_event_time")
+                        .HasFilter("[merged_from_unit_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "UnitId", "EventTime")
                         .IsDescending(false, false, true)
@@ -8736,7 +8748,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ux_unit_event_archive_tenant_id_idempotency_key_event_time");
 
                     b.HasIndex("TenantId", "MergedFromUnitId", "EventTime")
-                        .HasDatabaseName("ix_unit_event_archive_tenant_id_merged_from_unit_id_event_time");
+                        .HasDatabaseName("ix_unit_event_archive_tenant_id_merged_from_unit_id_event_time")
+                        .HasFilter("[merged_from_unit_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "UnitId", "EventTime")
                         .IsDescending(false, false, true)
@@ -8855,7 +8868,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ux_unit_event_archive_stage_tenant_id_idempotency_key_event_time");
 
                     b.HasIndex("TenantId", "MergedFromUnitId", "EventTime")
-                        .HasDatabaseName("ix_unit_event_archive_stage_tenant_id_merged_from_unit_id_event_time");
+                        .HasDatabaseName("ix_unit_event_archive_stage_tenant_id_merged_from_unit_id_event_time")
+                        .HasFilter("[merged_from_unit_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "UnitId", "EventTime")
                         .IsDescending(false, false, true)
@@ -8978,7 +8992,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasName("pk_unit_identifier");
 
                     b.HasIndex("TenantId", "MergedFromUnitId")
-                        .HasDatabaseName("ix_unit_identifier_tenant_id_merged_from_unit_id");
+                        .HasDatabaseName("ix_unit_identifier_tenant_id_merged_from_unit_id")
+                        .HasFilter("[merged_from_unit_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "SwappedWithIdentifierId")
                         .HasDatabaseName("ix_unit_identifier_tenant_id_swapped_with_identifier_id");
@@ -9052,7 +9067,8 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasName("pk_unit_item_assignment");
 
                     b.HasIndex("TenantId", "MergedFromUnitId")
-                        .HasDatabaseName("ix_unit_item_assignment_tenant_id_merged_from_unit_id");
+                        .HasDatabaseName("ix_unit_item_assignment_tenant_id_merged_from_unit_id")
+                        .HasFilter("[merged_from_unit_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "UnitId")
                         .IsUnique()
