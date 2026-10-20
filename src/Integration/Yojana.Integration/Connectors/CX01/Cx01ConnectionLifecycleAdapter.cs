@@ -4,12 +4,14 @@ using Yojana.Integration.Contracts;
 namespace Yojana.Integration.Connectors.CX01;
 
 public sealed class Cx01ConnectionLifecycleAdapter(Cx01Settings settings, Cx01Client client,
-    Cx01SurveyService survey, Cx01WebhookMaintenance notifications) : IConnectionLifecycleAdapter
+    Cx01SurveyService survey, Cx01WebhookMaintenance notifications,
+    Yojana.Integration.Data.IntegrationDbContext db, Yojana.Platform.Contracts.Tenancy.ITenantContext tenant) : IConnectionLifecycleAdapter
 {
     public ConnectionRegistrationForm RegistrationForm => new(
         [new("service_uri", "Server address", "url"), new("company_database", "Company database", "text"),
          new("release", "Release", "text", "unknown"), new("transport", "Connection route", "route", "direct")],
         Cx01Client.CredentialPurpose, [new("user_name", "Dedicated integration user", "text"), new("password", "Password", "password")]);
+    public string DefaultOutboundMode => "reference_only";
     public IReadOnlyList<string> CredentialPurposes => [Cx01Client.CredentialPurpose];
     public IReadOnlyList<string> RequiredCredentialPurposes(JsonElement value) =>
         Read(value) is { Transport: "site_relay", RelayCredentials: "site" } ? [] : CredentialPurposes;
@@ -17,9 +19,15 @@ public sealed class Cx01ConnectionLifecycleAdapter(Cx01Settings settings, Cx01Cl
 
     public async Task<ConnectionDeclaration> ConfigureAsync(Guid connectionId, JsonElement value, CancellationToken ct)
     {
-        var configured = Read(value);
+        var previous = await settings.TryGetAsync(connectionId, ct);
+        var incoming = Read(value);
+        var configured = incoming with { DocumentsAcceptance = previous?.DocumentsAcceptance, Documents = incoming.Documents ?? previous?.Documents };
+        var gateway = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleOrDefaultAsync(
+            db.ConnectionGatewaySettings.Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId), ct);
+        if (gateway?.OutboundMode == "documents" && string.IsNullOrWhiteSpace(configured.Documents?.LocalCurrencyCode))
+            throw new Cx01DocumentRuleException("Documents mode requires the remote local currency code from the company survey or connection settings.");
         await settings.SetAsync(connectionId, configured, ct);
-        var declaration = Cx01Capabilities.For(configured.Release, configured.WebhooksAvailable);
+        var declaration = Cx01Capabilities.For(configured.Release, configured.WebhooksAvailable, gateway?.OutboundMode ?? DefaultOutboundMode);
         return new(declaration.Messages, declaration.Throttle, Cx01Protocol.Entities.ToDictionary(x => x.Key, x => x.Value.CanonicalMessage), []);
     }
 
@@ -42,7 +50,7 @@ public sealed class Cx01ConnectionLifecycleAdapter(Cx01Settings settings, Cx01Cl
     }
 
     public async Task<JsonElement> ReadSettingsAsync(Guid connectionId, CancellationToken ct) =>
-        JsonSerializer.SerializeToElement(await settings.GetAsync(connectionId, ct), IntegrationContracts.Json);
+        Cx01Settings.ToJson(await settings.GetAsync(connectionId, ct));
 
     public async Task<ConnectionProbe?> LatestProbeAsync(Guid connectionId, CancellationToken ct)
     {

@@ -65,6 +65,7 @@ public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContex
                 CommandType = command.CommandType,
                 Desk = desk,
                 Draft = command.Payload,
+                Note = Cap(failure),
                 Status = ManualTaskStatus.Open,
                 CreatedAt = clock.UtcNow,
             });

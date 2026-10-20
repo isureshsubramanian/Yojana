@@ -7,6 +7,7 @@ namespace Yojana.Integration.Connectors;
 public interface IConnectionLifecycleAdapter
 {
     ConnectionRegistrationForm? RegistrationForm => null;
+    string DefaultOutboundMode => "none";
     void ValidateSettings(JsonElement value);
     IReadOnlyList<string> CredentialPurposes { get; }
     IReadOnlyList<string> RequiredCredentialPurposes(JsonElement value) => CredentialPurposes;

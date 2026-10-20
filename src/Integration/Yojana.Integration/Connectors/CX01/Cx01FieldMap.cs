@@ -44,6 +44,14 @@ public static partial class Cx01FieldMap
     // equivalent field points the attribute at it instead, and a customer with neither sets it to not used.
     public static readonly IReadOnlyList<Cx01MappedFieldDefinition> Definitions =
     [
+        new("outbound.delivery.reference", "Delivery reference", Cx01MappedFieldKind.Text, "DeliveryNotes", "Comments"),
+        new("outbound.credit.reference", "Credit reference", Cx01MappedFieldKind.Text, "CreditNotes", "Comments"),
+        new("outbound.return.reference", "Return reference", Cx01MappedFieldKind.Text, "Returns", "Comments"),
+        new("outbound.journal.reference", "Journal reference", Cx01MappedFieldKind.Text, "JournalEntries", "Memo"),
+        new("outbound.transfer.reference", "Transfer reference", Cx01MappedFieldKind.Text, "StockTransfers", "Comments"),
+        new("outbound.receipt.reference", "Receipt reference", Cx01MappedFieldKind.Text, "InventoryGenEntries", "Comments"),
+        new("outbound.issue.reference", "Issue reference", Cx01MappedFieldKind.Text, "InventoryGenExits", "Comments"),
+        new("outbound.service.reference", "Service reference", Cx01MappedFieldKind.Text, "ServiceCalls", "Subject"),
         new(ItemWarrantyProduct, "Item is a sellable warranty", Cx01MappedFieldKind.YesNo, "Items",
             "U_YojanaWarrantyProduct"),
         new(ItemWarrantyTemplate, "Item's warranty template", Cx01MappedFieldKind.Text, "Items", null),
@@ -75,6 +83,8 @@ public static partial class Cx01FieldMap
         foreach (var (code, source) in configured)
         {
             var definition = Definition(code);
+            if (code.StartsWith("outbound.", StringComparison.Ordinal) && code.EndsWith(".reference", StringComparison.Ordinal))
+                Cx01ReferenceRules.Filterable(definition.Collection, source.Field);
             if (source.Field is not null && !FieldName().IsMatch(source.Field))
                 throw new InvalidOperationException(
                     $"The CX01 field for '{code}' must be a field name of letters, digits and underscores.");

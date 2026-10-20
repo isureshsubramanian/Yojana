@@ -42,7 +42,7 @@ public sealed class ConnectionLifecycleTests(IntegrationHostFixture fixture)
         Assert.Contains(result.Checklist, item => item.Result == "needs_owner");
         Assert.NotNull(result.SurveySummary);
         var detail = await scope.ServiceProvider.GetRequiredService<ConnectionQueries>().DetailAsync(result.ConnectionId, default);
-        Assert.Equal("none", detail.Settings.OutboundMode);
+        Assert.Equal("reference_only", detail.Settings.OutboundMode);
         Assert.True(detail.Settings.ReadOnly);
         Assert.False(detail.Connection.IsLive);
         Assert.NotEmpty(detail.Capabilities);

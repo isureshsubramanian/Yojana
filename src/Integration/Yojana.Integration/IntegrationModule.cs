@@ -106,6 +106,11 @@ public static class IntegrationModule
         builder.Services.AddScoped<Cx01FieldMapService>();
         builder.Services.AddScoped<Cx01ApprovalService>();
         builder.Services.AddScoped<Cx01DocumentPoster>();
+        builder.Services.AddScoped<Cx01DocumentsService>();
+        builder.Services.AddScoped<Cx01OutboundDocuments>();
+        builder.Services.AddScoped<IOutboundProgressStore, OutboundProgressStore>();
+        builder.Services.AddScoped<ICx01OutboundFacts, Cx01OutboundFacts>();
+        builder.Services.AddScoped<ICx01AttachmentContent, Cx01LocalAttachmentContent>();
         builder.Services.AddKeyedScoped<IOutboundReviewTracker, Cx01ReviewTracker>(Cx01Capabilities.ConnectorCode);
         builder.Services.AddScoped<ICx01TrackingPermissionSink>(services => services.GetRequiredService<Cx01SurveyService>());
         builder.Services.AddScoped<ICx01SurveyReader>(services =>
@@ -122,7 +127,8 @@ public static class IntegrationModule
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>(),
             sp.GetRequiredService<Yojana.Platform.Contracts.Time.IClock>(),
             sp.GetRequiredService<ConnectionCapabilityReader>(),
-            sp.GetRequiredService<IOutboundCommandParkingSink>()));
+            sp.GetRequiredService<IOutboundCommandParkingSink>(),
+            sp.GetRequiredService<Yojana.Serialisation.Contracts.ICertificateUnitReadPort>()));
         builder.Services.AddScoped<BoundedWaitResequencer>();
         builder.Services.AddSingleton(RecurringTenantJob.For<ResequencerJob>(ResequencerJob.JobName, ResequencerJob.Cron));
         builder.Services.AddScoped<OutboxRelaySettings>();

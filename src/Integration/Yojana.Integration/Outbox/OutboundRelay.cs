@@ -23,7 +23,7 @@ public sealed class OutboundRelay(
     IConnectionWorkerIsolation isolation,
     IConnectionRetryJitter jitter,
     IOutboundCommandParkingSink parking,
-    IOutboundReviewTaskSink reviewTasks)
+    IOutboundReviewTaskSink reviewTasks, IOutboundProgressStore progress)
 {
     private static readonly TimeSpan ClaimLease = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan RetryCeiling = TimeSpan.FromHours(6);
@@ -72,7 +72,7 @@ public sealed class OutboundRelay(
             {
                 // Query-before-create is unconditional. An ERP idempotency key is an additional guard, not a substitute.
                 found = await connector.FindByReferenceAsync(new(connectionId, command.CommandType,
-                    command.ErpReferenceText), cancellationToken);
+                    command.ErpReferenceText, command.Payload), cancellationToken);
                 if (found is null)
                 {
                     created = await connector.CreateAsync(new(connectionId, command.OutboundCommandId,
@@ -83,6 +83,12 @@ public sealed class OutboundRelay(
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
+            }
+            catch (OutboundMappingConflictException ex)
+            {
+                await ParkAsync(command, "external_mapping_conflict", ex.Message, OutboundConnectorOutcome.Rejected, cancellationToken);
+                parked++;
+                continue;
             }
             catch (Exception ex)
             {
@@ -131,7 +137,7 @@ public sealed class OutboundRelay(
                     retrying++;
                 }
             }
-            catch (ExternalMappingConflictException ex)
+            catch (OutboundMappingConflictException ex)
             {
                 await ParkAsync(command, "external_mapping_conflict", ex.Message,
                     OutboundConnectorOutcome.Rejected, cancellationToken);
@@ -171,11 +177,17 @@ public sealed class OutboundRelay(
             try
             {
                 state = await tracker.CheckAsync(new(connectionId, command.CommandType, command.ErpReferenceText,
-                    command.PendingRemoteKey!), cancellationToken);
+                    command.PendingRemoteKey!, command.Payload, command.OutboundCommandId), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
+            }
+            catch (OutboundMappingConflictException ex)
+            {
+                await ParkAsync(command, "external_mapping_conflict", ex.Message, OutboundConnectorOutcome.Rejected, cancellationToken);
+                parked++;
+                continue;
             }
             catch (Exception ex)
             {
@@ -208,11 +220,16 @@ public sealed class OutboundRelay(
                         break;
                     default:
                         command.LastFailure = null;
+                        if (state.PendingRemoteKey is not null)
+                        {
+                            command.PendingRemoteKey = state.PendingRemoteKey;
+                            await reviewTasks.OpenAsync(command, state.Reason ?? "The next remote document waits for review.", cancellationToken);
+                        }
                         await db.SaveChangesAsync(cancellationToken);
                         break;
                 }
             }
-            catch (ExternalMappingConflictException ex)
+            catch (OutboundMappingConflictException ex)
             {
                 db.ChangeTracker.Clear();
                 var reloaded = await db.OutboundCommands.SingleAsync(x => x.TenantId == tenant.TenantId
@@ -294,47 +311,9 @@ public sealed class OutboundRelay(
         }
     }
 
-    private async Task CompleteAsync(OutboundCommandRow command, OutboundDocument document, string outcome,
-        CancellationToken cancellationToken)
-    {
-        var moduleId = ModuleId(command);
-        var existing = await db.ExternalIdMaps.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
-            && x.ConnectionId == command.ConnectionId && x.EntityType == "document"
-            && x.ExternalId == document.ErpExternalId && x.ValidTo == null, cancellationToken);
-        if (existing is not null && existing.ModuleId != moduleId)
-            throw new ExternalMappingConflictException(document.ErpExternalId);
-        if (existing is null)
-        {
-            db.ExternalIdMaps.Add(new ExternalIdMap
-            {
-                TenantId = tenant.TenantId,
-                ExternalIdMapId = TimeOrderedId.New(clock.UtcNow),
-                ConnectionId = command.ConnectionId,
-                EntityType = "document",
-                ExternalId = document.ErpExternalId,
-                ModuleId = moduleId,
-                ValidFrom = clock.UtcNow,
-                NaturalKeyHash = NaturalKeyHash(command.ModuleDocumentRef),
-                MappingSource = ExternalIdMappingSource.Outbound,
-                MappedBy = $"system:connection:{command.ConnectionId:N}",
-                MappedAt = clock.UtcNow,
-            });
-        }
-
-        command.Status = OutboundCommandStatus.Done;
-        command.ErpExternalId = document.ErpExternalId;
-        // TIGHT COUPLING (own-write recognition): this persisted connector marker and EfCx01OwnWriteStore's exact
-        // lookup are one durable acknowledgement invariant. A process-local marker would be lost on restart;
-        // separating either side makes immediate remote post-write changes look foreign. Later markers must not match.
-        command.ErpChangeMarker = document.ErpChangeMarker;
-        command.Outcome = outcome;
-        command.LastFailure = null;
-        command.NextAttemptAt = null;
-        command.LockedUntil = null;
-        command.CompletedAt = clock.UtcNow;
-        // SaveChanges is one SQL transaction: reply fields, mapping and done status cannot be observed separately.
-        await db.SaveChangesAsync(cancellationToken);
-    }
+    private Task CompleteAsync(OutboundCommandRow command, OutboundDocument document, string outcome,
+        CancellationToken cancellationToken) =>
+        progress.CompleteAsync(command.ConnectionId, command.OutboundCommandId, document, outcome, cancellationToken);
 
     private async Task RetryAsync(OutboundCommandRow command, string failure,
         CancellationToken cancellationToken)
@@ -378,6 +357,4 @@ public sealed class OutboundRelay(
         return value.Length <= 2000 ? value : value[..2000];
     }
 
-    private sealed class ExternalMappingConflictException(string externalId)
-        : Exception($"External document '{externalId}' is already mapped to another module record.");
 }

@@ -32,7 +32,7 @@ public sealed class IntegrationEndpointTests
             .SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()
             .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api/integration/",
                 StringComparison.Ordinal) == true).ToList();
-        Assert.Equal(30, endpoints.Count);
+        Assert.Equal(32, endpoints.Count);
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             metadata => metadata.Policy == YojanaPolicy.IntegrationOperations));
         var fieldMapWrite = endpoints.Single(endpoint => endpoint.RoutePattern.RawText ==
@@ -44,6 +44,11 @@ public sealed class IntegrationEndpointTests
             "/api/integration/connections/{connectionId:guid}/cx01/approval-handling"
             && endpoint.Metadata.GetMetadata<Microsoft.AspNetCore.Routing.HttpMethodMetadata>()!.HttpMethods.Contains("PUT"));
         Assert.Contains(approvalWrite.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+            metadata => metadata.Policy == YojanaPolicy.TenantAdministrator);
+        var documentsWrite = endpoints.Single(endpoint => endpoint.RoutePattern.RawText ==
+            "/api/integration/connections/{connectionId:guid}/cx01/documents"
+            && endpoint.Metadata.GetMetadata<Microsoft.AspNetCore.Routing.HttpMethodMetadata>()!.HttpMethods.Contains("PUT"));
+        Assert.Contains(documentsWrite.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             metadata => metadata.Policy == YojanaPolicy.TenantAdministrator);
         var confirm = endpoints.Single(endpoint => endpoint.RoutePattern.RawText ==
             "/api/integration/connections/{connectionId:guid}/onboarding-checklist/{itemCode}/confirm");

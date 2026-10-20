@@ -24,7 +24,7 @@ public sealed class Cx01RelayProfile(Cx01Settings settings, ITenantContext tenan
         Uri productUrl, CancellationToken ct)
     {
         var configured = await settings.GetAsync(connectionId, ct);
-        return new(tenantId, relayId, productUrl, configured.ServiceUri, Declaration(configured),
+        return new(tenantId, relayId, productUrl, configured.ServiceUri, Declaration(configured, await ModeAsync(connectionId, ct)),
             configured.RelayCredentials, WebhookBind: configured.RelayWebhookUrl);
     }
 
@@ -40,13 +40,21 @@ public sealed class Cx01RelayProfile(Cx01Settings settings, ITenantContext tenan
             await settings.SetAsync(connectionId, configured with { WebhooksAvailable = probed.WebhooksAvailable }, ct);
     }
 
-    public static RelayDeclaration Declaration(Cx01ConnectionSettings configured)
+    private async Task<string> ModeAsync(Guid connectionId, CancellationToken ct)
+    {
+        var db = services.GetRequiredService<IntegrationDbContext>();
+        return await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleOrDefaultAsync(
+            db.ConnectionGatewaySettings.Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId).Select(x => x.OutboundMode), ct) ?? "reference_only";
+    }
+
+    public static RelayDeclaration Declaration(Cx01ConnectionSettings configured, string outboundMode = "reference_only")
     {
         var rules = new List<RelayPathRule>();
         const string key = @"\((?:[0-9]+|'(?:[^'/%\\\r\n]|'')*')\)";
         // Approval-governed document types are read by the review tracker to find the document added from a draft.
         var collections = Cx01Protocol.Entities.Values.Select(entity => entity.Collection)
-            .Concat(["CustomerEquipmentCards"])
+            .Concat(["CustomerEquipmentCards", "SerialNumberDetails"])
+            .Concat(Cx01DocumentCatalogue.Collections)
             .Concat(Cx01ApprovalCatalogue.Targets.Select(target => target.Collection))
             .Distinct(StringComparer.Ordinal).ToList();
         foreach (var collection in collections)
@@ -54,6 +62,13 @@ public sealed class Cx01RelayProfile(Cx01Settings settings, ITenantContext tenan
             var path = Regex.Escape(Cx01Protocol.Root + collection);
             rules.Add(new("GET", path + "(?:" + key + ")?"));
             if (collection is "CustomerEquipmentCards" or "Returns") rules.Add(new("PATCH", path + key));
+        }
+        if (outboundMode == "documents" && configured.DocumentsAcceptance is not null)
+        {
+            foreach (var collection in Cx01DocumentCatalogue.Collections)
+                rules.Add(new("POST", Regex.Escape(Cx01Protocol.Root + collection)));
+            foreach (var collection in Cx01AttachmentMapper.LinkCollections.Where(x => x is not ("Returns" or "CustomerEquipmentCards")))
+                rules.Add(new("PATCH", Regex.Escape(Cx01Protocol.Root + collection) + key));
         }
         foreach (var path in new[] { Cx01Protocol.Root, Cx01Protocol.Metadata,
                      Cx01Protocol.Root + Cx01Protocol.UserFields, Cx01Protocol.Root + "ItemWarehouseInfoCollection",
@@ -63,7 +78,7 @@ public sealed class Cx01RelayProfile(Cx01Settings settings, ITenantContext tenan
         rules.Add(new("GET", Regex.Escape(Cx01Protocol.Root + Cx01Protocol.ApprovalTemplates)));
         var drafts = Regex.Escape(Cx01Protocol.Root + Cx01Protocol.Drafts);
         rules.Add(new("GET", drafts + "(?:" + key + ")?"));
-        rules.Add(new("POST", drafts));
+        if (outboundMode == "documents" && configured.DocumentsAcceptance is not null) rules.Add(new("POST", drafts));
         if (configured.RelayCredentials == "cloud") rules.Add(new("POST", Regex.Escape(Cx01Protocol.Login)));
         var subscription = Regex.Escape(Cx01Protocol.Root + Cx01Protocol.EventSubscriptions);
         rules.Add(new("GET", subscription + "(?:" + key + ")?"));

@@ -15,7 +15,7 @@ using Yojana.Platform.Contracts.Time;
 
 namespace Yojana.Integration.Connectors.CX01;
 
-/// <summary>One adapter owns the remote session, polling, sweep reads and reference-only outbound translation.</summary>
+/// <summary>One adapter owns capture and delegates document posting through the outbound coordinator.</summary>
 public sealed class Cx01Adapter(
     ITenantContext tenant,
     IClock clock,
@@ -29,7 +29,8 @@ public sealed class Cx01Adapter(
     ICx01OwnWriteStore ownWrites,
     ICx01InboundRejectionSink inboundRejections,
     ICx01SurveyReader surveyReader,
-    ICx01TrackingPermissionSink trackingPermissions) : IConnectorAdapter, IOutboundConnector
+    ICx01TrackingPermissionSink trackingPermissions,
+    Cx01OutboundDocuments? documents = null) : IConnectorAdapter, IOutboundConnector
 {
     public string ConnectorCode => Cx01Capabilities.ConnectorCode;
     public OutboundConnectorCapabilities Capabilities { get; } = new(false, OwnsConnectionLane: true);
@@ -185,7 +186,13 @@ public sealed class Cx01Adapter(
         CancellationToken cancellationToken)
     {
         var configured = await settings.GetAsync(lookup.ConnectionId, cancellationToken);
-        if (!await ReferenceOnlyAsync(lookup.ConnectionId, cancellationToken)) return null;
+        var mode = await OutboundModeAsync(lookup.ConnectionId, cancellationToken);
+        if (mode == "documents" && !(lookup.CommandType == nameof(CreateServiceOrder) && configured.Documents?.ServiceOrderAction == "annotate"))
+        {
+            try { return await documents!.FindAsync(lookup, cancellationToken); }
+            catch (Cx01DocumentRuleException) { return null; }
+        }
+        if (mode is not ("reference_only" or "documents")) return null;
         var field = lookup.CommandType switch
         {
             nameof(AttachDocument) => configured.CertificateUrlField,
@@ -208,8 +215,14 @@ public sealed class Cx01Adapter(
     public async Task<OutboundCreateResult> CreateAsync(OutboundCreateRequest request,
         CancellationToken cancellationToken)
     {
-        if (!await ReferenceOnlyAsync(request.ConnectionId, cancellationToken))
-            return OutboundCreateResult.Unsupported("CX01 document posting is reserved for P8-T19.");
+        var mode = await OutboundModeAsync(request.ConnectionId, cancellationToken);
+        if (mode == "documents")
+        {
+            var configuredDocuments = await settings.GetAsync(request.ConnectionId, cancellationToken);
+            if (!(request.CommandType == nameof(CreateServiceOrder) && configuredDocuments.Documents?.ServiceOrderAction == "annotate"))
+                return await documents!.CreateAsync(request, cancellationToken);
+        }
+        else if (mode != "reference_only") return OutboundCreateResult.Unsupported("Outbound posting is disabled on this connection.");
         var configured = await settings.GetAsync(request.ConnectionId, cancellationToken);
         using var payload = JsonDocument.Parse(request.Payload);
         var root = payload.RootElement.TryGetProperty("payload", out var nested) ? nested : payload.RootElement;
@@ -239,11 +252,11 @@ public sealed class Cx01Adapter(
         var key = target.Split(':', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault();
         if (string.IsNullOrWhiteSpace(key))
             return OutboundCreateResult.Rejected("The CX01 reference target is missing.");
-        var body = new Dictionary<string, string>(StringComparer.Ordinal)
+        var body = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             [field] = configured.OwnReferencePrefix + value,
         };
-        await ApplyMandatoryDefaultsAsync(request.ConnectionId, collection, body, configured, cancellationToken);
+        await Cx01MandatoryDefaults.ApplyAsync(surveyReader, request.ConnectionId, collection, body, configured, cancellationToken);
         try
         {
             using var response = await client.SendJsonAsync(request.ConnectionId, HttpMethod.Patch,
@@ -429,10 +442,9 @@ public sealed class Cx01Adapter(
         return result;
     }
 
-    private async Task<bool> ReferenceOnlyAsync(Guid connectionId, CancellationToken cancellationToken) =>
+    private async Task<string> OutboundModeAsync(Guid connectionId, CancellationToken cancellationToken) =>
         await db.ConnectionGatewaySettings.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
-            && x.ConnectionId == connectionId).Select(x => x.OutboundMode).SingleAsync(cancellationToken)
-            == "reference_only";
+            && x.ConnectionId == connectionId).Select(x => x.OutboundMode).SingleAsync(cancellationToken);
 
     private void EnsureTenant(TenantId requested)
     {
@@ -488,27 +500,13 @@ public sealed class Cx01Adapter(
     {
         var key = RequiredText(document, entity.KeyField);
         return await ownWrites.MatchesAsync(connectionId, key, Cx01Mapper.ChangeMarker(document, key),
-            cancellationToken);
+            cancellationToken) || await ownWrites.MatchesAsync(connectionId,
+            Cx01DocumentCatalogue.ExternalId(entity.Collection, key), Cx01Mapper.ChangeMarker(document, key), cancellationToken);
     }
 
     private Task<bool> WasCapturedAsync(Guid connectionId, Cx01EntityDefinition entity, string key,
         CancellationToken cancellationToken) => capturedDocuments.WasCapturedAsync(connectionId,
         entity.Collection, key, cancellationToken);
-
-    private async Task ApplyMandatoryDefaultsAsync(Guid connectionId, string collection,
-        IDictionary<string, string> body, Cx01ConnectionSettings configured, CancellationToken cancellationToken)
-    {
-        if (configured.MandatoryUserFieldDefaults is not { Count: > 0 }
-            || !Cx01Protocol.TableByCollection.TryGetValue(collection, out var table)) return;
-        var fields = await surveyReader.MandatoryWithoutDefaultFieldsAsync(connectionId, table, cancellationToken);
-        foreach (var name in fields)
-        {
-            var wireName = name.StartsWith("U_", StringComparison.Ordinal) ? name : "U_" + name;
-            var configuredDefault = configured.MandatoryUserFieldDefaults.FirstOrDefault(pair =>
-                StringComparer.OrdinalIgnoreCase.Equals(pair.Key, table + "." + wireName));
-            if (!string.IsNullOrWhiteSpace(configuredDefault.Key)) body.TryAdd(wireName, configuredDefault.Value);
-        }
-    }
 
     private static string RequiredText(JsonElement value, string property) => Text(value, property)
         ?? throw new InvalidOperationException("CX01 response is missing a required property.");

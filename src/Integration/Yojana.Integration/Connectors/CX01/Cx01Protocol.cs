@@ -57,6 +57,9 @@ internal static class Cx01Protocol
             ["StockTransfers"] = "OWTR",
             ["InventoryGenExits"] = "OIGE",
             ["CustomerEquipmentCards"] = "OINS",
+            ["CreditNotes"] = "ORIN",
+            ["JournalEntries"] = "OJDT",
+            ["ServiceCalls"] = "OSCL",
         };
 
     public static string Collection(Cx01EntityDefinition entity) => Root + entity.Collection;
@@ -84,6 +87,9 @@ internal static class Cx01Protocol
         "DeliveryNotes" => "15",
         "Returns" => "16",
         "Invoices" => "13",
+        "CreditNotes" => "14",
+        "Orders" => "17",
+        "PurchaseReturns" => "21",
         "PurchaseDeliveryNotes" => "20",
         "InventoryGenEntries" => "59",
         "StockTransfers" => "67",

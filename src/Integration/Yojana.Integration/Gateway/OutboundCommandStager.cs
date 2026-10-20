@@ -14,7 +14,7 @@ namespace Yojana.Integration.Gateway;
 
 /// <summary>Stages canonical commands only. Delivery is owned by P8-T07's later relay.</summary>
 public sealed class OutboundCommandStager(IntegrationDbContext db, ITenantContext tenant, IClock clock,
-    ConnectionCapabilityReader declarations, IOutboundCommandParkingSink parking)
+    ConnectionCapabilityReader declarations, IOutboundCommandParkingSink parking, ICertificateUnitReadPort units)
 {
     public async Task<int> StageAsync(PublishedEventHeader header, IOutboundCommand command,
         CancellationToken cancellationToken)
@@ -42,12 +42,13 @@ public sealed class OutboundCommandStager(IntegrationDbContext db, ITenantContex
             if (await db.OutboundCommands.AnyAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == connection
                 && x.IdempotencyKey == idempotency, cancellationToken)) continue;
             var manual = capability.SupportLevel is CapabilitySupport.Manual or CapabilitySupport.Unsupported;
+            var payload = await EnrichAsync(command, header.UnitId, connection, cancellationToken);
             var row = new OutboundCommandRow
             {
                 TenantId = tenant.TenantId, OutboundCommandId = TimeOrderedId.New(clock.UtcNow), ConnectionId = connection,
                 CommandType = type, IdempotencyKey = idempotency, ModuleDocumentRef = command.ModuleDocumentRef,
                 ErpReferenceText = command.ErpReferenceText,
-                Payload = JsonSerializer.Serialize(command, command.GetType(), IntegrationContracts.Json),
+                Payload = JsonSerializer.Serialize(payload, payload.GetType(), IntegrationContracts.Json),
                 Status = manual ? OutboundCommandStatus.Parked : OutboundCommandStatus.Pending,
                 Outcome = manual ? OutboundConnectorOutcome.Unsupported : null,
                 LastFailure = manual ? "The connection capability requires manual processing for this command." : null,
@@ -61,6 +62,30 @@ public sealed class OutboundCommandStager(IntegrationDbContext db, ITenantContex
             count++;
         }
         return count;
+    }
+
+    private async Task<IOutboundCommand> EnrichAsync(IOutboundCommand command, Guid unitId, Guid connectionId, CancellationToken ct)
+    {
+        if (command is not (CreateReplacementDelivery or CreateCreditMemo or CreateServiceOrder)) return command;
+        var customer = command switch
+        {
+            CreateReplacementDelivery delivery => delivery.CustomerRef,
+            CreateCreditMemo credit => credit.CustomerRef,
+            CreateServiceOrder service => service.CustomerRef, _ => "",
+        };
+        if (customer.StartsWith("unit-owner/", StringComparison.Ordinal) && Guid.TryParse(customer[11..], out var ownerUnit)) unitId = ownerUnit;
+        var unit = await units.ReadAsync(unitId, ct);
+        var party = unit?.Ownership?.HolderRef;
+        var external = party is null ? null : await db.ExternalIdMaps.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+            && x.ConnectionId == connectionId && x.EntityType == "party" && x.ModuleId == party && x.ValidTo == null)
+            .Select(x => x.ExternalId).FirstOrDefaultAsync(ct);
+        return command switch
+        {
+            CreateReplacementDelivery delivery when string.IsNullOrWhiteSpace(delivery.CustomerRef) || delivery.CustomerRef.StartsWith("unit-owner/", StringComparison.Ordinal) => delivery with { CustomerRef = external ?? "" },
+            CreateCreditMemo credit when string.IsNullOrWhiteSpace(credit.CustomerRef) => credit with { CustomerRef = external ?? "" },
+            CreateServiceOrder service when string.IsNullOrWhiteSpace(service.CustomerRef) => service with { CustomerRef = external ?? "" },
+            _ => command,
+        };
     }
 
     private static bool IsFinancial(string type) => type is nameof(CreateCreditMemo) or nameof(PostWarrantyExpense);
@@ -81,9 +106,9 @@ public static class PublishedEventOutboundHandler
         stage.StageAsync(message.Header, new CreateReplacementDelivery(
             OutboundCommandStager.Derive(message.Header.EventId, nameof(CreateReplacementDelivery)),
             OutboundCommandStager.ModuleRef(message.Header, "replacement", message.WarrantyReplacementId),
-            OutboundCommandStager.ErpReference(message.Header, "replacement"), message.Header.UnitId.ToString("N"), "default",
+            OutboundCommandStager.ErpReference(message.Header, "replacement"), "unit-owner/" + message.OriginalUnitId.ToString("N"), "",
             new(message.ReplacementUnitId, message.ReplacementNumber), OpenEnum.Known(message.PricePolicy),
-            message.SourceNumber, message.Reason), ct);
+            message.SourceNumber, message.Reason, Price: message.PricePolicy == "zero" ? null : new(message.DifferenceAmount, message.Currency)), ct);
 
     public static async Task<int> Handle(RmaDispositioned message, OutboundCommandStager stage, CancellationToken ct)
     {
@@ -92,8 +117,8 @@ public static class PublishedEventOutboundHandler
             count += await stage.StageAsync(message.Header, new CreateCreditMemo(
                 OutboundCommandStager.Derive(message.Header.EventId, nameof(CreateCreditMemo)),
                 OutboundCommandStager.ModuleRef(message.Header, "rma", message.RmaId),
-                OutboundCommandStager.ErpReference(message.Header, "credit"), "owner",
-                [new(message.UnitId, "RMA disposition", 1, new(0, "XXX"))], null, null), ct);
+                OutboundCommandStager.ErpReference(message.Header, "credit"), "",
+                [new(message.UnitId, "RMA disposition", 1, new(0, ""))], null, null), ct);
         count += await stage.StageAsync(message.Header, new ChangeStockStatusOrLocation(
             OutboundCommandStager.Derive(message.Header.EventId, nameof(ChangeStockStatusOrLocation)),
             OutboundCommandStager.ModuleRef(message.Header, "rma", message.RmaId),
@@ -107,14 +132,14 @@ public static class PublishedEventOutboundHandler
             OutboundCommandStager.Derive(message.Header.EventId, nameof(CreateCreditMemo)),
             OutboundCommandStager.ModuleRef(message.Header, "replacement", message.ReplacementLinkId),
             OutboundCommandStager.ErpReference(message.Header, "overdue"), message.PartyRef.ToString("N"),
-            [new(message.OriginalUnitId, "Replacement not returned", 1, new(0, "XXX"))], null, null), ct);
+            [new(message.OriginalUnitId, "Replacement not returned", 1, new(0, ""))], null, null), ct);
 
     public static Task<int> Handle(ClaimAdjudicated message, OutboundCommandStager stage, CancellationToken ct) =>
         stage.StageAsync(message.Header, new PostWarrantyExpense(
             OutboundCommandStager.Derive(message.Header.EventId, nameof(PostWarrantyExpense)),
             OutboundCommandStager.ModuleRef(message.Header, "claim", message.ClaimId),
             OutboundCommandStager.ErpReference(message.Header, "expense"),
-            message.ApprovedAmountsByLine.Select(x => new JournalLine("warranty", x.ApprovedAmount, 0, "XXX")).ToList(),
+            message.ApprovedAmountsByLine.Select(x => new JournalLine("warranty", x.ApprovedAmount, 0, "")).ToList(),
             message.ReserveTag, false), ct);
 
     public static Task<int> Handle(EntitlementCreated message, OutboundCommandStager stage, CancellationToken ct) =>
@@ -165,7 +190,7 @@ public static class PublishedEventOutboundHandler
         var service = await stage.StageAsync(message.Header, new CreateServiceOrder(
             OutboundCommandStager.Derive(message.Header.EventId, nameof(CreateServiceOrder)),
             OutboundCommandStager.ModuleRef(message.Header, "rma", message.RmaId),
-            OutboundCommandStager.ErpReference(message.Header, "service"), message.Header.UnitId.ToString("N"),
+            OutboundCommandStager.ErpReference(message.Header, "service"), "",
             new(message.AuthorisedUnitId, message.AuthorisedUnitId.ToString("N")), message.CoverageSource, "RMA authorised"), ct);
         return attached + service;
     }

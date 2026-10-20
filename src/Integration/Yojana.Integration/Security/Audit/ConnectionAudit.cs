@@ -35,6 +35,7 @@ public enum ConnectionAuditEventType
     CoexistenceConflictResolved,
     ParallelRunStarted,
     ParallelRunItemConfirmed,
+    DocumentSettingsChanged,
 }
 
 public sealed record ConnectionAuditEvent(

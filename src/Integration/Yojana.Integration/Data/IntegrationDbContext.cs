@@ -59,6 +59,14 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<OutboundDocumentReceipt>(b =>
+        {
+            b.ToTable("outbound_document_receipt");
+            b.HasKey(x => new { x.TenantId, x.ConnectionId, x.ExternalId });
+            b.Property(x => x.ExternalId).HasMaxLength(320);
+            b.Property(x => x.ChangeMarker).HasMaxLength(320);
+            b.HasIndex(x => new { x.TenantId, x.OutboundCommandId });
+        });
         modelBuilder.Entity<Connection>(b =>
         {
             b.ToTable("connection", table => table.HasCheckConstraint("ck_connection_status", "status IN ('active','paused','registering','archived')"));

@@ -74,9 +74,9 @@ public sealed class SiteRelayTests
     [InlineData("PATCH", "/b1s/v2/Drafts(7001)", false)]
     [InlineData("DELETE", "/b1s/v2/Drafts(7001)", false)]
     [InlineData("POST", "/b1s/v2/ApprovalTemplates", false)]
-    [InlineData("POST", "/b1s/v2/CreditNotes", false)]
-    public void Approval_review_calls_are_declared_and_nothing_more(string method, string path, bool allowed) =>
-        Assert.Equal(allowed, new RelayAllowList(Cx01RelayProfile.Declaration(Settings)).Allows(method, path, ""));
+    [InlineData("POST", "/b1s/v2/CreditNotes", true)]
+    public void Document_and_approval_calls_are_declared_without_draft_mutations(string method, string path, bool allowed) =>
+        Assert.Equal(allowed, new RelayAllowList(Cx01RelayProfile.Declaration(Settings with { DocumentsAcceptance = new("actor", new(2026, 9, 1), "accepted") }, "documents")).Allows(method, path, ""));
 
     [Theory]
     [InlineData("GET", "/admin", "")]

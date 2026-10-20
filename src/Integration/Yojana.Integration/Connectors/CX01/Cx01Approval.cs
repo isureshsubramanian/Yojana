@@ -203,13 +203,14 @@ public sealed class Cx01ApprovalService(Cx01Settings settings, Cx01SurveyService
 /// ERP client. The caller supplies the complete document body; this class owns only the draft/direct decision,
 /// the reference and query-before-create on the draft. The opaque pending key carries draft, collection and field.
 /// </summary>
-internal sealed class Cx01DocumentPoster(Cx01Settings settings, Cx01SurveyService survey, Cx01Client client)
+public sealed class Cx01DocumentPoster(Cx01Settings settings, Cx01SurveyService survey, Cx01Client client)
 {
     public async Task<OutboundCreateResult> PostAsync(Guid connectionId, string collection,
         IReadOnlyDictionary<string, object?> body, string referenceField, string referenceText,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool qualifyId = false)
     {
         var configured = await settings.GetAsync(connectionId, cancellationToken);
+        await Cx01ReferenceRules.CheckAsync(survey, connectionId, collection, referenceText, configured, cancellationToken);
         var latest = await survey.LatestAsync(connectionId, cancellationToken);
         var reference = configured.OwnReferencePrefix + referenceText;
         var document = new Dictionary<string, object?>(body, StringComparer.Ordinal) { [referenceField] = reference };
@@ -220,16 +221,19 @@ internal sealed class Cx01DocumentPoster(Cx01Settings settings, Cx01SurveyServic
                 using var created = await client.SendJsonAsync(connectionId, HttpMethod.Post,
                     Cx01Protocol.Root + collection, document, false, cancellationToken)
                     ?? throw new InvalidOperationException("CX01 create returned no document.");
-                var key = Cx01ReviewKey.Text(created.RootElement, "DocEntry")
+                var key = Cx01ReviewKey.Text(created.RootElement, Cx01DocumentCatalogue.KeyField(collection))
                     ?? throw new InvalidOperationException("CX01 create returned no document key.");
-                return OutboundCreateResult.Created(key, Cx01Mapper.ChangeMarker(created.RootElement, key));
+                using var observed = await client.GetAsync(connectionId, Cx01Protocol.Root + collection
+                    + "(" + Cx01Protocol.KeyLiteral(key) + ")", cancellationToken);
+                return OutboundCreateResult.Created(qualifyId ? Cx01DocumentCatalogue.ExternalId(collection, key) : key,
+                    Cx01Mapper.ChangeMarker(observed.RootElement, key));
             }
 
             var target = Cx01ApprovalCatalogue.Find(collection);
             if (target?.DraftObjectCode is null)
                 return OutboundCreateResult.Unsupported(
                     "This document type is under approval and cannot be held as a draft; enter it in the ERP by hand.");
-            var draft = await ExistingDraftAsync(connectionId, referenceField, reference, cancellationToken);
+            var draft = await ExistingDraftAsync(connectionId, collection, referenceField, reference, cancellationToken);
             if (draft is null)
             {
                 document["DocObjectCode"] = target.DraftObjectCode;
@@ -239,7 +243,7 @@ internal sealed class Cx01DocumentPoster(Cx01Settings settings, Cx01SurveyServic
                 draft = Cx01ReviewKey.Text(created.RootElement, "DocEntry")
                     ?? throw new InvalidOperationException("CX01 draft create returned no draft key.");
             }
-            return OutboundCreateResult.AwaitingReview(Cx01ReviewKey.Format(draft, collection, referenceField),
+            return OutboundCreateResult.AwaitingReview(Cx01ReviewKey.Format(draft, collection, referenceField) + (qualifyId ? "|qualified" : ""),
                 $"Draft {draft} waits in the ERP. Open it there, review it and add it; the customer's approval "
                 + "procedure then applies. This task closes itself when the document is posted.");
         }
@@ -249,21 +253,61 @@ internal sealed class Cx01DocumentPoster(Cx01Settings settings, Cx01SurveyServic
         }
     }
 
-    private async Task<string?> ExistingDraftAsync(Guid connectionId, string field, string reference,
+    internal async Task<string> UploadAsync(Guid connectionId, Cx01MultipartUpload upload, CancellationToken ct)
+    {
+        using var created = await client.SendJsonAsync(connectionId, HttpMethod.Post,
+            Cx01Protocol.Root + "Attachments2", upload, false, ct)
+            ?? throw new InvalidOperationException("CX01 upload returned no attachment.");
+        return Cx01ReviewKey.Text(created.RootElement, "AbsoluteEntry")
+            ?? throw new InvalidOperationException("CX01 upload returned no attachment key.");
+    }
+
+    private async Task<string?> ExistingDraftAsync(Guid connectionId, string collection, string field, string reference,
         CancellationToken cancellationToken)
     {
-        using var response = await client.GetAsync(connectionId, Cx01Protocol.Root + Cx01Protocol.Drafts
-            + "?$select=DocEntry&$filter=" + Cx01ReviewKey.FilterEquals(field, reference) + "&$top=1", cancellationToken);
-        return Cx01ReviewKey.First(response.RootElement, "DocEntry");
+        // Releases expose the object code as either an enumeration name or its numeric string. Filter by our
+        // reference remotely, then check the family on each returned header so two halves never adopt one draft.
+        var target = Cx01ApprovalCatalogue.Find(collection)!;
+        var objectCode = Cx01Protocol.ObjectType(new(collection, "DocEntry", ""));
+        string? path = Cx01Protocol.Root + Cx01Protocol.Drafts + "?$select=DocEntry,DocObjectCode&$filter="
+            + Cx01ReviewKey.FilterEquals(field, reference);
+        while (path is not null)
+        {
+            using var response = await client.GetAsync(connectionId, path, cancellationToken);
+            foreach (var row in response.RootElement.GetProperty("value").EnumerateArray())
+            {
+                var code = Cx01ReviewKey.Text(row, "DocObjectCode");
+                if (code == target.DraftObjectCode || code == objectCode) return Cx01ReviewKey.Text(row, "DocEntry");
+            }
+            path = Cx01ReviewKey.Text(response.RootElement, "@odata.nextLink");
+            if (path is not null && Uri.TryCreate(path, UriKind.Absolute, out var next)) path = next.PathAndQuery;
+        }
+        return null;
     }
 }
 
 /// <summary>Reads the outcome of a draft held for review. Read-only.</summary>
-internal sealed class Cx01ReviewTracker(Cx01Settings settings, Cx01Client client) : IOutboundReviewTracker
+internal sealed class Cx01ReviewTracker(Cx01Settings settings, Cx01Client client, Cx01OutboundDocuments documents) : IOutboundReviewTracker
 {
     public async Task<OutboundReviewState> CheckAsync(OutboundReviewLookup lookup,
         CancellationToken cancellationToken)
     {
+        if (lookup.PendingRemoteKey.StartsWith("pair:", StringComparison.Ordinal))
+        {
+            var half = await CheckAsync(lookup with { PendingRemoteKey = lookup.PendingRemoteKey[5..] }, cancellationToken);
+            if (half.State is OutboundReviewStates.Rejected or OutboundReviewStates.Withdrawn)
+                return await documents.PairReviewFailureAsync(lookup, half, cancellationToken);
+            if (half.State != OutboundReviewStates.Posted) return half;
+            await documents.RecordReviewedAsync(lookup, half.Document!, cancellationToken);
+            var resumed = await documents.CreateAsync(new(lookup.ConnectionId, lookup.OutboundCommandId, lookup.CommandType,
+                lookup.ErpReferenceText, lookup.Payload!, null), cancellationToken);
+            return resumed.Outcome switch
+            {
+                OutboundConnectorOutcome.Created => OutboundReviewState.Posted(resumed.Document!),
+                OutboundConnectorOutcome.AwaitingReview => new(OutboundReviewStates.Pending, Reason: resumed.Reason, PendingRemoteKey: resumed.PendingRemoteKey),
+                _ => OutboundReviewState.Rejected(resumed.Reason ?? "The stock posting pair could not be completed."),
+            };
+        }
         var (draft, collection, field) = Cx01ReviewKey.Parse(lookup.PendingRemoteKey);
         var configured = await settings.GetAsync(lookup.ConnectionId, cancellationToken);
         var reference = configured.OwnReferencePrefix + lookup.ErpReferenceText;
@@ -275,7 +319,8 @@ internal sealed class Cx01ReviewTracker(Cx01Settings settings, Cx01Client client
             {
                 // No change marker on purpose: the reviewer may have edited the draft before adding it, so the posted
                 // document must NOT be recognised as our own write; inbound capture reads it like any remote change.
-                return OutboundReviewState.Posted(new(key, null));
+                return OutboundReviewState.Posted(new(lookup.PendingRemoteKey.EndsWith("|qualified", StringComparison.Ordinal)
+                    ? Cx01DocumentCatalogue.ExternalId(collection, key) : key, null));
             }
         }
         try
@@ -300,12 +345,25 @@ internal sealed class Cx01ReviewTracker(Cx01Settings settings, Cx01Client client
 
 internal static class Cx01ReviewKey
 {
-    public static string Format(string draft, string collection, string field) => $"{draft}|{collection}|{field}";
+    private static string CollectionCode(string collection) => collection switch
+    {
+        "DeliveryNotes" => "d", "Returns" => "r", "Invoices" => "i", "CreditNotes" => "c", "Orders" => "o",
+        "PurchaseDeliveryNotes" => "p", "PurchaseReturns" => "v", "InventoryGenEntries" => "e", "InventoryGenExits" => "x",
+        "StockTransfers" => "t", _ => throw new Cx01DocumentRuleException("This collection cannot be held for review."),
+    };
+
+    public static string Format(string draft, string collection, string field) => $"{draft}|{CollectionCode(collection)}|{field}";
 
     public static (string Draft, string Collection, string Field) Parse(string value)
     {
         var parts = value.Split('|');
-        if (parts.Length != 3 || !long.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
+        if (parts.Length >= 3) parts[1] = parts[1] switch
+        {
+            "d" => "DeliveryNotes", "r" => "Returns", "i" => "Invoices", "c" => "CreditNotes", "o" => "Orders",
+            "p" => "PurchaseDeliveryNotes", "v" => "PurchaseReturns", "e" => "InventoryGenEntries", "x" => "InventoryGenExits",
+            "t" => "StockTransfers", _ => parts[1],
+        };
+        if ((parts.Length != 3 && !(parts.Length == 4 && parts[3] == "qualified")) || !long.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
             || Cx01ApprovalCatalogue.Find(parts[1]) is null || !Cx01FieldMap.IsValidFieldName(parts[2]))
             throw new InvalidOperationException("The CX01 review key is not valid.");
         return (parts[0], parts[1], parts[2]);

@@ -56,6 +56,8 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.AddYojanaPlatform();
         builder.AddSerialisationModule();
         builder.AddIntegrationModule();
+        builder.Services.Replace(ServiceDescriptor.Singleton<Yojana.Integration.Connectors.CX01.ICx01OutboundFacts>(new Yojana.Integration.Connectors.CX01.Testing.Cx01FixtureFacts()));
+        builder.Services.Replace(ServiceDescriptor.Singleton<Yojana.Integration.Connectors.CX01.ICx01AttachmentContent>(new Yojana.Integration.Connectors.CX01.Testing.Cx01FixtureContent()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IIntegrationTransport>(Transport));
         builder.Services.AddSingleton(Connector);
         builder.Services.AddKeyedSingleton<IOutboundConnector>(FakeConnectorCode, (services, _) =>
@@ -141,7 +143,14 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
 
 public sealed class MutableTestClock(DateTime utcNow) : IClock
 {
-    public DateTime UtcNow { get; set; } = utcNow;
+    private DateTime value = DateTime.SpecifyKind(utcNow, DateTimeKind.Utc);
+    // SQL datetime2 reloads lose Kind; fixture dates represent UTC and must still satisfy IClock's UTC contract.
+    public DateTime UtcNow
+    {
+        get => value;
+        set => this.value = value.Kind == DateTimeKind.Local ? value.ToUniversalTime()
+            : DateTime.SpecifyKind(value, DateTimeKind.Utc);
+    }
 }
 
 internal sealed class AdvancingDatabaseThrottleDelay(MutableTestClock clock) : IConnectionThrottleDelay

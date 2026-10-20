@@ -74,6 +74,27 @@
                   }
                 },
                 "additionalProperties": true
+              },
+              "item_external_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "serials": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "object"
+                }
+              },
+              "base_line": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
               }
             },
             "additionalProperties": true

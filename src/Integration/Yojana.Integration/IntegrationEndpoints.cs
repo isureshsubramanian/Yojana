@@ -95,6 +95,14 @@ public static class IntegrationEndpoints
                 [FromBody] UpdateCx01FieldMap request, [FromServices] Cx01FieldMapService fieldMap,
                 CancellationToken ct) => Invoke(() => fieldMap.SetAsync(connectionId, request, ct)))
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        integration.MapGet("/connections/{connectionId:guid}/cx01/documents", (Guid connectionId,
+            [FromServices] Cx01DocumentsService documents, CancellationToken ct) =>
+            Invoke(() => documents.GetAsync(connectionId, ct)));
+        integration.MapPut("/connections/{connectionId:guid}/cx01/documents", (Guid connectionId,
+                [FromBody] UpdateCx01Documents request, ClaimsPrincipal user,
+                [FromServices] Cx01DocumentsService documents, CancellationToken ct) =>
+            Invoke(() => documents.SetAsync(connectionId, request, Actor(user), ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         integration.MapGet("/connections/{connectionId:guid}/cx01/approval-handling", (Guid connectionId,
             [FromServices] Cx01ApprovalService approvals, CancellationToken ct) =>
             Invoke(() => approvals.GetAsync(connectionId, ct)));
@@ -192,6 +200,11 @@ public static class IntegrationEndpoints
             return Results.Problem(title: ex.Rule, detail: ex.Message,
                 statusCode: StatusCodes.Status422UnprocessableEntity,
                 extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+        }
+        catch (Cx01DocumentRuleException ex)
+        {
+            return Results.Problem(title: "document_settings_invalid", detail: ex.Message,
+                statusCode: StatusCodes.Status422UnprocessableEntity);
         }
         catch (Cx01ApprovalRuleException ex)
         {

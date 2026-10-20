@@ -222,7 +222,8 @@ public sealed class Cx01Client(
             $"{Cx01Protocol.SessionCookie}={state.SessionCookie}; {Cx01Protocol.RouteCookie}={state.RouteCookie}");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Options.Set(ConnectionRateLimitedHandler.IdempotentRequest, idempotent);
-        if (body is not null)
+        if (body is Cx01MultipartUpload upload) request.Content = upload.CreateContent();
+        else if (body is not null)
             request.Content = new StringContent(JsonSerializer.Serialize(body, Cx01Protocol.Json),
                 Encoding.UTF8, "application/json");
         var response = await transport.SendAsync(key, request, cancellationToken);

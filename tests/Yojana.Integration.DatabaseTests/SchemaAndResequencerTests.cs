@@ -28,7 +28,7 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
         AssertSuperset(tables, "coexistence_baseline", "coexistence_conflict", "coexistence_scan_state",
             "parallel_run_plan", "parallel_run_confirmation");
         AssertSuperset(tables, "connection_health", "cx01_survey", "connection_notification_receipt",
-            "connection_notification_watchdog");
+            "connection_notification_watchdog", "outbound_document_receipt");
         AssertSuperset(tables, "reconciliation_run", "reconciliation_entity_day",
             "reconciliation_location", "backfill_cursor");
         var columns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'manual_outbound_task'").ToListAsync();
