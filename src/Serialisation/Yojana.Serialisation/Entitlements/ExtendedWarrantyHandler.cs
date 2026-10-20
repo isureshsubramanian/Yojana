@@ -108,7 +108,7 @@ public static partial class AttachExtendedWarrantyHandler
             RegionScope = JsonSerializer.Serialize(terms.RegionScope, LedgerJson.Options), Transferable = terms.Transferable, ConditionAtCreation = null, AccrualCohortId = null,
             AssuranceOrService = AssuranceOrService.Service, Status = EntitlementStatus.Active, Confidence = "high", Provenance = EntitlementProvenance.Created,
             SourceDocumentType = command.SourceDocument.Type, SourceDocumentId = command.SourceDocument.Id, SourceDocumentLine = command.SourceDocument.Line, CustomerPoRef = command.CustomerPoRef,
-            CreatedEventId = eventId, CreatedAt = clock.UtcNow,
+            SalePrice = command.Price, SaleCurrency = command.Currency, CreatedEventId = eventId, CreatedAt = clock.UtcNow,
         };
         db.Entitlements.Add(entitlement);
         foreach (var limit in terms.UsageLimits)

@@ -100,7 +100,7 @@ public static class SalesInvoicePostedHandler
                     invoice.CustomerPartyRef, PartyType.Customer, invoice.CustomerPartyRef, PartyType.Customer, Country: invoice.Country, SiteLocationId: invoice.SiteLocationId,
                     StartEvidenceRef: $"{invoice.Document.Type}:{invoice.Document.Id:N}", SourceDocument: sourceDocument, CustomerPoRef: invoice.CustomerPoRef,
                     Channel: invoice.Channel),
-                    db, ledger, resolver, store, zones, refurbished, regions, jurisdictionRules, tenant, clock, items, null, [], false, null, null, null, cancellationToken);
+                    db, ledger, resolver, store, zones, refurbished, regions, jurisdictionRules, tenant, clock, items, null, [], false, null, null, null, cancellationToken, line.Price / Math.Max(1, line.Quantity), line.Currency);
             }
             else
             {
@@ -111,14 +111,14 @@ public static class SalesInvoicePostedHandler
                     var newEnd = TermArithmetic.EndDate(extensionStart, terms.Duration);
                     await AmendEntitlementHandler.AmendAsync(new AmendEntitlement(commandId, live.EntitlementId, AmendmentReason.Purchase, invoice.PostedAt, envelope.Source,
                         NewEnd: newEnd, SourceDocument: sourceDocument, CommittedBy: new AmendmentCommitter("invoice-posting", [YojanaRole.ServiceDesk])),
-                        db, ledger, approvals, claims, certificates, currency, tenant, null, false, cancellationToken);
+                        db, ledger, approvals, claims, certificates, currency, tenant, null, false, cancellationToken, line.Price / Math.Max(1, line.Quantity), line.Currency);
                     live.CustomerPoRef = invoice.CustomerPoRef;
                 }
                 else
                 {
                     await SupersedeEntitlementHandler.SupersedeAsync(new SupersedeEntitlement(commandId, live.EntitlementId, contractDate, AmendmentReason.Purchase,
                         invoice.PostedAt, envelope.Source, version.PolicyVersionId, SourceDocument: sourceDocument,
-                        CommittedBy: new AmendmentCommitter("invoice-posting", [YojanaRole.ServiceDesk])), db, ledger, store, claims, certificates, tenant, clock, null, false, cancellationToken);
+                        CommittedBy: new AmendmentCommitter("invoice-posting", [YojanaRole.ServiceDesk])), db, ledger, store, claims, certificates, tenant, clock, null, false, cancellationToken, line.Price / Math.Max(1, line.Quantity), line.Currency);
                 }
             }
         }

@@ -203,6 +203,12 @@ public static class SerialisationModule
         // Wolverine's handler graph; replacing it with a plain registration makes transaction discovery ambiguous.
         builder.Services.AddScoped(sp => new Entitlements.WarrantyReferenceSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped<Entitlements.EntitlementLedger>();
+        builder.Services.AddScoped<IUnitEventAppendObserver, Entitlements.CoverDeviationAppendObserver>();
+        builder.Services.AddScoped<Entitlements.CoverHistory>();
+        builder.Services.AddScoped<Entitlements.IUnitCoverDeviationProjection, Entitlements.CoverDeviationProjection>();
+        builder.Services.AddScoped<Entitlements.CoverDeviationQueries>();
+        builder.Services.AddScoped<Entitlements.CoverDeviationBackfill>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<Entitlements.CoverDeviationBackfillJob>(Entitlements.CoverDeviationBackfillJob.JobName, Entitlements.CoverDeviationBackfillJob.Cron));
         builder.Services.AddScoped<Entitlements.EntitlementQueries>();
         builder.Services.TryAddScoped<ICertificateEntitlementReadPort, Entitlements.CertificateEntitlementReadPort>();
         builder.Services.AddScoped<Entitlements.EntitlementRequirementWriter>();

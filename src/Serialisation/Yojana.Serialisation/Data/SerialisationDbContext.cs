@@ -94,6 +94,11 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<AccrualCohort> AccrualCohorts => Set<AccrualCohort>();
 
+    public DbSet<UnitCoverDeviation> CoverDeviations => Set<UnitCoverDeviation>();
+    public DbSet<UnitCoverDeviationChange> CoverDeviationChanges => Set<UnitCoverDeviationChange>();
+    public DbSet<UnitCoverDeviationValue> CoverDeviationValues => Set<UnitCoverDeviationValue>();
+    public DbSet<CoverDeviationBackfillCheckpoint> CoverDeviationBackfillCheckpoints => Set<CoverDeviationBackfillCheckpoint>();
+
     public DbSet<Entitlement> Entitlements => Set<Entitlement>();
 
     public DbSet<EntitlementRequirement> EntitlementRequirements => Set<EntitlementRequirement>();
@@ -725,6 +730,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(c => new { c.TenantId, c.ObligorEntityId, c.ItemId, c.Period, c.AssuranceOrService }).IsUnique();
         });
 
+        Yojana.Serialisation.Entitlements.CoverDeviationModel.Configure(modelBuilder);
+
         modelBuilder.Entity<Entitlement>(b =>
         {
             b.ToTable("entitlement", t =>
@@ -758,6 +765,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(e => e.RefurbishedFloorSource).HasMaxLength(20);
             b.Property(e => e.RefurbishedStatementKind).HasMaxLength(30);
             b.Property(e => e.RevenueScheduleRef).HasMaxLength(100);
+            b.Property(e => e.SalePrice).HasPrecision(19, 4);
+            b.Property(e => e.SaleCurrency).HasColumnType("char(3)");
             b.Property(e => e.AssuranceOrService).HasMaxLength(20);
             b.Property(e => e.Status).HasMaxLength(20);
             b.Property(e => e.ClosedReason).HasMaxLength(40);
