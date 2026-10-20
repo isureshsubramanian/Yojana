@@ -12,7 +12,7 @@ namespace Yojana.Platform.Seeding;
 
 /// <summary>
 /// Seeds the development tenant DEV with one user per ADR role plus an administrator holding every role.
-/// Idempotent. Never run against a customer database: the password is shared and printed in the README.
+/// Idempotent; re-seeding resets these accounts to the given password. Never run against a customer database: the password is shared and printed in the README.
 /// </summary>
 public static class DevelopmentSeeder
 {
@@ -57,6 +57,11 @@ public static class DevelopmentSeeder
             {
                 user = new AppUser { Id = Guid.CreateVersion7(), Email = email, DisplayName = name, PasswordHash = hash, CreatedAt = clock.UtcNow };
                 db.Users.Add(user);
+            }
+            else if (!PasswordHasher.Verify(password, user.PasswordHash))
+            {
+                // Seeded accounts follow the seed password, so changing it and re-seeding takes effect.
+                user.PasswordHash = hash;
             }
 
             var membership = user.Memberships.FirstOrDefault(m => m.TenantId == seed.TenantId);
