@@ -11,6 +11,8 @@ public static class ConnectionEndpoints
     public static IEndpointRouteBuilder MapConnectionEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/integration/connections").RequireAuthorization(YojanaPolicy.IntegrationOperations);
+        group.MapGet("/registration-connectors", (string? cursor, int? take, ConnectionQueries queries, CancellationToken ct) =>
+            Invoke(() => queries.RegistrationConnectorsAsync(cursor, take ?? 12, ct)));
         group.MapGet("", (string? cursor, int? take, bool? archived, ConnectionQueries queries, CancellationToken ct) =>
             Invoke(() => queries.ListAsync(cursor, take ?? 50, archived ?? false, ct)));
         group.MapGet("/{connectionId:guid}", (Guid connectionId, ConnectionQueries queries, CancellationToken ct) =>

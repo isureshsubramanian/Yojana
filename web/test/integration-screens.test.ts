@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { draftValueIsMono, mayOperateIntegration, maySeeIntegrationIndicator, reasonLabel } from "../src/integration/model.ts";
+import { approvalNeedsAcceptance, age, localDate, draftValueIsMono, mayOperateIntegration, maySeeIntegrationIndicator, reasonLabel, reconciliationRange } from "../src/integration/model.ts";
 
 const messages = readFileSync(new URL("../src/integration/MessagesAttention.tsx", import.meta.url), "utf8");
 const manual = readFileSync(new URL("../src/integration/ManualTasks.tsx", import.meta.url), "utf8");
@@ -65,4 +65,82 @@ test("every message state chip renders its server-side count", () => {
   assert.match(messages, /result\.summary\.retried/);
   assert.match(messages, /result\.summary\.discarded/);
   assert.match(messages, /count\.toLocaleString\(\)/);
+});
+
+const adminApi = readFileSync(new URL("../src/integration/adminApi.ts", import.meta.url), "utf8");
+const adminCommon = readFileSync(new URL("../src/integration/AdminCommon.tsx", import.meta.url), "utf8");
+const connections = readFileSync(new URL("../src/integration/Connections.tsx", import.meta.url), "utf8");
+const settings = readFileSync(new URL("../src/integration/ConnectionSettings.tsx", import.meta.url), "utf8");
+const health = readFileSync(new URL("../src/integration/ConnectionHealth.tsx", import.meta.url), "utf8");
+const reconciliation = readFileSync(new URL("../src/integration/Reconciliation.tsx", import.meta.url), "utf8");
+const history = readFileSync(new URL("../src/integration/HistoryLoads.tsx", import.meta.url), "utf8");
+
+test("remaining routes use shared paged controls and role access", () => {
+  const routes = readFileSync(new URL("../src/routes.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(routes, /integration\/ComingSoon/);
+  for (const screen of [connections, health, reconciliation, history]) {
+    assert.match(screen, /<RoleAccess/);
+    assert.match(screen, /<PagedGrid/);
+  }
+  assert.match(adminCommon, /<DataGrid/);
+  assert.match(adminCommon, /continuation: result\?\.nextCursor/);
+  assert.match(adminCommon, /controller\.abort\(\)/);
+});
+
+test("service-manager status uses its read-only endpoint without operator details", () => {
+  assert.match(health, /const readOnly = !operator/);
+  assert.match(health, /readOnly \? <TenantHealth \/> : <OperatorHealth \/>/);
+  assert.match(health, /adminApi\.status/);
+  const tenant = health.slice(health.indexOf("function TenantHealth"), health.indexOf("function Refresh"));
+  assert.doesNotMatch(tenant, /adminApi\.(detail|events|health|smoke|archive)/);
+});
+
+test("one-time secrets are cleared after submission and never persisted in browser storage", () => {
+  assert.match(connections, /setSecrets\(\{\}\); void action\.run/);
+  assert.match(settings, /Store it now/);
+  assert.match(settings, /setIssued\(null\)/);
+  assert.match(settings, /navigator\.clipboard\.writeText\(issued\.secret\)/);
+  for (const screen of [connections, settings]) assert.doesNotMatch(screen, /localStorage|sessionStorage|console\./);
+});
+
+test("archive force and governed approval bypass require explicit evidence", () => {
+  assert.equal(approvalNeedsAcceptance(false, []), true);
+  assert.equal(approvalNeedsAcceptance(true, ["Customer approval"]), true);
+  assert.equal(approvalNeedsAcceptance(true, []), false);
+  assert.match(connections, /!report\.archived && admin/);
+  assert.match(connections, /disabled=\{action\.busy \|\| !reason\.trim\(\)\}/);
+  assert.match(settings, /!accepted \|\| !evidence\.trim\(\)/);
+  assert.doesNotMatch(adminApi, /acceptedBy:|acceptedAt:|actorRef:/);
+});
+
+test("reconciliation details have independent server continuations and location filter", () => {
+  assert.match(adminApi, /\/entity-days\$\{query\(\{ cursor, take: 12 \}\)\}/);
+  assert.match(adminApi, /\/locations\$\{query\(\{ cursor, take: 12, differences \}\)\}/);
+  assert.match(reconciliation, /sourceKeyFieldHash === x\.moduleKeyFieldHash|moduleKeyFieldHash === x\.sourceKeyFieldHash/);
+  assert.match(history, /job\.savedCursor/);
+  assert.match(history, /Confirm cancellation/);
+});
+
+
+test("UTC timestamps render consistently with or without the SQL timezone suffix", () => {
+  assert.equal(localDate("2026-09-01T09:00:00"), localDate("2026-09-01T09:00:00Z"));
+  const now = Date.parse("2026-09-01T09:30:00Z");
+  assert.equal(age("2026-09-01T09:00:00", now), "30 min");
+  assert.equal(age("2026-09-01T09:00:00Z", now), "30 min");
+});
+
+
+test("daily check ranges use the inclusive connection window and reject future UTC days", () => {
+  const today = "2026-09-10";
+  const boundary = reconciliationRange("2026-09-01", "2026-09-07", 7, today);
+  assert.equal(boundary.error, null);
+  assert.equal(boundary.startMin, "2026-09-01");
+  assert.equal(boundary.endMax, "2026-09-07");
+  assert.match(reconciliationRange("2026-09-01", "2026-09-08", 7, today).error!, /at most 7 days/);
+  assert.equal(reconciliationRange("2026-09-01", "2026-09-08", 8, today).error, null);
+  assert.match(reconciliationRange("2026-09-10", "2026-09-11", 7, today).error!, /future/);
+  assert.equal(reconciliationRange("2026-09-10", "2026-09-10", 1, today).error, null);
+  assert.match(reconciliationRange("2026-09-02", "2026-09-01", 7, today).error!, /precede/);
+  assert.equal(reconciliationRange("2026-08-30", "2026-09-01", 3, today).error, null);
+  assert.equal(reconciliationRange("2026-09-09", "", 7, today).endMax, today);
 });

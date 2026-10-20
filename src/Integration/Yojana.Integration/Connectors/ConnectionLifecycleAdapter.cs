@@ -6,6 +6,7 @@ namespace Yojana.Integration.Connectors;
 /// <summary>Local setup and read-only probing are separate from capture and outbound execution.</summary>
 public interface IConnectionLifecycleAdapter
 {
+    ConnectionRegistrationForm? RegistrationForm => null;
     void ValidateSettings(JsonElement value);
     IReadOnlyList<string> CredentialPurposes { get; }
     IReadOnlyList<string> RequiredCredentialPurposes(JsonElement value) => CredentialPurposes;
@@ -28,3 +29,7 @@ public sealed record ConnectionDeclaration(IReadOnlyDictionary<string, string> C
     ConnectorThrottleDeclaration Throttle, IReadOnlyDictionary<string, string> PollEntities,
     IReadOnlyList<string> NotificationSources);
 public sealed record ConnectionProbe(JsonElement? SurveySummary, bool? NotificationsSupported = null);
+
+public sealed record ConnectionRegistrationField(string Code, string Label, string Type, string? DefaultValue = null);
+public sealed record ConnectionRegistrationForm(IReadOnlyList<ConnectionRegistrationField> Settings,
+    string CredentialPurpose, IReadOnlyList<ConnectionRegistrationField> SecretFields);

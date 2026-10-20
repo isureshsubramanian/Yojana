@@ -32,7 +32,7 @@ public sealed class IntegrationEndpointTests
             .SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()
             .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api/integration/",
                 StringComparison.Ordinal) == true).ToList();
-        Assert.Equal(27, endpoints.Count);
+        Assert.Equal(30, endpoints.Count);
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             metadata => metadata.Policy == YojanaPolicy.IntegrationOperations));
         var fieldMapWrite = endpoints.Single(endpoint => endpoint.RoutePattern.RawText ==
@@ -83,7 +83,7 @@ public sealed class IntegrationEndpointTests
         app.MapConnectionEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
-        Assert.Equal(8, endpoints.Count);
+        Assert.Equal(9, endpoints.Count);
         var status = Assert.Single(endpoints, endpoint => endpoint.RoutePattern.RawText == "/api/integration/status");
         Assert.Contains(status.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             policy => policy.Policy == YojanaPolicy.IntegrationIndicator);
@@ -109,7 +109,7 @@ public sealed class IntegrationEndpointTests
     {
         foreach (var type in new[] { typeof(MapAndRetryDeadLetterRequest),
                      typeof(CreateProvisionalAndRetryDeadLetterRequest), typeof(DiscardDeadLetterRequest),
-                     typeof(CompleteManualTaskRequest), typeof(StartBackfillRequest) })
+                     typeof(CompleteManualTaskRequest), typeof(StartBackfillRequest), typeof(RunReconciliationRequest) })
             Assert.DoesNotContain(type.GetProperties(), property => property.Name.Contains("Actor",
                 StringComparison.OrdinalIgnoreCase));
         Assert.True(YojanaRole.IsKnown(YojanaRole.IntegrationOperator));

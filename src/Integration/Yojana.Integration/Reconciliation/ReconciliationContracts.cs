@@ -83,3 +83,8 @@ public sealed class ReconciliationRuleException(string rule, string message) : I
 {
     public string Rule { get; } = rule;
 }
+
+public sealed record RunReconciliationRequest(Guid ConnectionId, DateOnly RangeStart, DateOnly RangeEnd);
+public sealed record ReconciliationResultPage<T>(IReadOnlyList<T> Items, string? NextCursor);
+
+public sealed record RunReconciliationResponse(Guid RunId);

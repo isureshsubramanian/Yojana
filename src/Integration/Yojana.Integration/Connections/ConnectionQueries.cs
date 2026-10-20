@@ -7,6 +7,7 @@ using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Gateway;
+using Yojana.Integration.Reconciliation;
 using Yojana.Integration.Security.Workers;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
@@ -15,9 +16,21 @@ using Yojana.Platform.Contracts.Time;
 namespace Yojana.Integration.Connections;
 
 public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext tenant, IClock clock,
-    ConnectionHealthSettings healthSettings, ConnectorOnboardingChecklistGenerator checklist,
+    ConnectionHealthSettings healthSettings, ReconciliationSettings reconciliationSettings,
+    ConnectorOnboardingChecklistGenerator checklist,
     IConnectionThrottleProfileStore throttles, IUserDirectory people, IServiceProvider services)
 {
+    public async Task<RegistrationConnectorPage> RegistrationConnectorsAsync(string? cursor, int take, CancellationToken ct)
+    {
+        take = Math.Clamp(take, 1, 50);
+        var query = db.ConnectorCatalogue.AsNoTracking().Where(x => x.TenantId == tenant.TenantId && x.Enabled);
+        if (cursor is not null) query = query.Where(x => x.ConnectorCode.CompareTo(cursor) > 0);
+        var rows = await query.OrderBy(x => x.ConnectorCode).Take(take + 1).ToListAsync(ct);
+        var items = rows.Take(take).Select(x => (Entry: x, Form: services.GetKeyedService<IConnectionLifecycleAdapter>(x.ConnectorCode)?.RegistrationForm))
+            .Where(x => x.Form is not null).Select(x => new RegistrationConnector(x.Entry.ConnectorCode, x.Entry.DisplayName, x.Form!)).ToList();
+        return new(items, rows.Count > take ? rows[take - 1].ConnectorCode : null);
+    }
+
     public async Task<ConnectionPage> ListAsync(string? cursor, int take, bool archived, CancellationToken ct)
     {
         take = Math.Clamp(take, 1, 200);
@@ -90,7 +103,8 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
             capabilities, new(gateway.OutboundMode, gateway.ReadOnly, gateway.NativeWarrantyObjectMode,
                 gateway.OrderingWaitMinutes, await healthSettings.GetAsync(id, ct),
                 (await throttles.GetAsync(new(tenant.TenantId, id), ct))?.Profile, connectorSettings, rules), secrets,
-            await checklist.GenerateAsync(id, ct));
+            await checklist.GenerateAsync(id, ct), connection.Status,
+            await reconciliationSettings.WindowDaysAsync(id, ct));
     }
 
     public async Task<ConnectionHealthDetail> HealthAsync(Guid id, CancellationToken ct)

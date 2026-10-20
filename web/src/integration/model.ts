@@ -14,6 +14,8 @@ const reasonLabels: Record<string, string> = {
   max_outbox_age: "Could not send", rejected: "Could not send", unsupported: "Needs hand entry",
 };
 const recordLabels: Record<string, string> = {
+  ItemUpserted: "Items", PartyUpserted: "Customers and suppliers", WarrantyLineSold: "Warranty lines sold",
+  DocumentCancelled: "Cancellations", TransferPosted: "Transfers", InventoryAdjusted: "Stock adjustments", ReturnReceived: "Returns",
   DeliveryPosted: "Delivery", GoodsReceiptPosted: "Goods receipt", InvoicePosted: "Invoice",
   ProductionCompleted: "Production completion", CreateCreditMemo: "Credit note",
   CreateReplacementDelivery: "Replacement delivery", PostWarrantyExpense: "Warranty expense",
@@ -29,11 +31,13 @@ export const reasonLabel = (value: string) => reasonLabels[value] ?? human(value
 export const recordLabel = (value: string) => recordLabels[value] ?? human(value);
 export const statusLabel = (value: string) => value === "needs_attention" ? "Open" : value === "retry_pending" ? "Retried" : human(value);
 
+// Integration timestamps are UTC. SQL materialisation may omit the timezone suffix.
+const timestamp = (value: string) => new Date(/(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? value : `${value}Z`);
 export function localDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+  return new Intl.DateTimeFormat(undefined, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(timestamp(value));
 }
 export function age(value: string, now = Date.now()): string {
-  const minutes = Math.max(0, Math.round((now - new Date(value).getTime()) / 60_000));
+  const minutes = Math.max(0, Math.round((now - timestamp(value).getTime()) / 60_000));
   if (minutes < 60) return `${minutes} min`;
   if (minutes < 48 * 60) return `${Math.round(minutes / 60)} h`;
   return `${Math.round(minutes / 1440)} d`;
@@ -79,4 +83,33 @@ export function draftValueIsMono(key: string): boolean {
     || normalised === "item code" || normalised.endsWith(" item code")
     || normalised.includes("erp key") || normalised.includes("document number")
     || normalised === "reference (paste exactly)";
+}
+
+const degradationLabels: Record<number, string> = {
+  1: "ERP does not know serials: capture them at our scans",
+  2: "ERP serials are incomplete: look again, then raise an attribution task",
+  3: "ERP cannot take a document: prepare a hand-entry draft",
+  4: "ERP sends no notifications: use scheduled checks",
+  5: "Finance is handled by a separate ledger connection",
+  6: "ERP allows duplicate serials: send the second occurrence for review",
+  7: "ERP cannot create serials: create them here and send inside documents",
+};
+export const degradationLabel = (rule: number) => degradationLabels[rule] ?? "Connection fallback";
+
+export const approvalNeedsAcceptance = (templatesKnown: boolean, activeTemplates: readonly string[]) => !templatesKnown || activeTemplates.length > 0;
+
+export function reconciliationRange(start: string, end: string, windowDays: number, today: string) {
+  const shift = (day: string, days: number) => {
+    const value = new Date(`${day}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days);
+    return value.toISOString().slice(0, 10);
+  };
+  const days = Math.max(1, windowDays);
+  const last = start ? shift(start, days - 1) : today;
+  const error = !windowDays ? "Loading the connection's check window."
+    : !start || !end ? "Choose both business dates."
+    : end < start ? "The end date must not precede the start date."
+    : end > today ? "The end date must not be in the future (UTC)."
+    : start < shift(end, -(days - 1)) ? `Choose at most ${days} days, including both dates.` : null;
+  return { startMin: end ? shift(end, -(days - 1)) : undefined, startMax: end && end < today ? end : today,
+    endMin: start || undefined, endMax: last < today ? last : today, error };
 }

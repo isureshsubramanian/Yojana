@@ -13,7 +13,7 @@ using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.Reconciliation;
 
-public sealed class ReconciliationService(
+public sealed partial class ReconciliationService(
     IntegrationDbContext db,
     ITenantContext tenant,
     IClock clock,
@@ -56,6 +56,13 @@ public sealed class ReconciliationService(
         if (rangeEnd < rangeStart)
             throw new ReconciliationRuleException("reconciliation_range_invalid",
                 "The reconciliation end date must not precede its start date.");
+        if (rangeEnd > DateOnly.FromDateTime(clock.UtcNow.Date))
+            throw new ReconciliationRuleException("reconciliation_range_in_future",
+                "The reconciliation end date must not be in the future (UTC).");
+        var windowDays = await settings.WindowDaysAsync(connectionId, cancellationToken);
+        if (rangeEnd.DayNumber - rangeStart.DayNumber + 1 > windowDays)
+            throw new ReconciliationRuleException("reconciliation_range_too_wide",
+                $"The reconciliation range must not exceed this connection's {windowDays}-day window.");
         await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, connectionId, cancellationToken);
         var connectorCode = await db.Connections.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
                 && row.ConnectionId == connectionId && row.Status == ConnectionStatus.Active)

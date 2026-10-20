@@ -33,7 +33,8 @@ public sealed record BackfillView(
     DateTime? AwaitingReconciliationAt,
     DateTime? CompletedAt,
     Guid? CompletionReconciliationRunId,
-    string? LastFailure);
+    string? LastFailure,
+    string? SavedCursor = null, int PageSize = 100);
 
 public sealed record BackfillPage(IReadOnlyList<BackfillView> Items, string? NextCursor);
 

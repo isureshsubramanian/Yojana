@@ -36,7 +36,7 @@ public sealed record ConnectionHealthView(string Status, bool IsLive, DateTime? 
     DateTime UpdatedAt, bool RelayConnected = false);
 public sealed record RecordTypeHealth(string RecordType, string NotificationState, string? Watermark,
     DateTime? CheckedUpTo, double? BehindSeconds, int IntervalSeconds, int OverlapSeconds,
-    long ReceivedToday, int NeedAttention);
+    long ReceivedToday, int NeedAttention, string? SourceEntity = null);
 public sealed record ConnectionHealthDetail(Guid ConnectionId, string ConnectionName, ConnectionHealthView Health,
     IReadOnlyList<RecordTypeHealth> RecordTypes);
 public sealed record CredentialState(string Purpose, bool IsSet, DateTime? CreatedAt, DateTime? ExpiresAt,
@@ -47,10 +47,15 @@ public sealed record ConnectionSettingsView(string OutboundMode, bool ReadOnly, 
     JsonElement? ConnectorSettings, IReadOnlyList<DegradationRuleSetting> DegradationRules);
 public sealed record ConnectionDetail(ConnectionSummary Connection, DateTime CreatedAt, DateTime? ArchivedAt,
     IReadOnlyList<CapabilityView> Capabilities, ConnectionSettingsView Settings,
-    IReadOnlyList<CredentialState> Credentials, ConnectorOnboardingChecklist Checklist);
+    IReadOnlyList<CredentialState> Credentials, ConnectorOnboardingChecklist Checklist,
+    string LifecycleStatus, int ReconciliationWindowDays);
 public sealed record ConnectionEventView(long Sequence, string Kind, DateTime OccurredAt, string ActorName, string Summary);
 public sealed record ConnectionEventPage(IReadOnlyList<ConnectionEventView> Items, string? NextCursor);
 public sealed record TenantConnectionStatus(Guid ConnectionId, string ConnectionName, string Status, bool IsLive,
     DateTime? CheckedUpTo, int WaitingToSend, int MessagesNeedingAttention, int OpenManualTasks,
     int ConnectionAttention, DateTime UpdatedAt);
 public sealed record TenantStatusPage(IReadOnlyList<TenantConnectionStatus> Items, string? NextCursor, ConnectionKpis Kpis);
+
+public sealed record RegistrationConnector(string Code, string DisplayName,
+    Yojana.Integration.Connectors.ConnectionRegistrationForm Form);
+public sealed record RegistrationConnectorPage(IReadOnlyList<RegistrationConnector> Items, string? NextCursor);

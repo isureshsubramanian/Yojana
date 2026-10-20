@@ -41,3 +41,33 @@
 .integration-empty .card-body { max-width: 520px; }
 @media (max-width: 1180px) { .integration-panes { grid-template-columns: 1fr; } .integration-panes > div + div { border-top: 1px solid var(--border); border-left: 0; } .integration-split { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .integration-copylist li { grid-template-columns: 1fr auto; } .integration-copylist .v { grid-column: 1 / -1; grid-row: 2; } .integration-enter-id, .integration-cancel { grid-template-columns: 1fr; } .integration-warning { align-items: stretch; flex-direction: column; } }
+
+.integration-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: end; gap: 14px; }
+.integration-form-grid .btn { justify-self: start; }
+.integration-table { overflow-x: auto; }
+.integration-table .table { min-width: 680px; }
+.integration-checklist { padding: 16px 0; border-bottom: 1px solid var(--rule); }
+.integration-checklist h3 { margin: 0 0 8px; }
+.integration-checklist .field, .integration-form-grid .field { min-width: 0; }
+.integration-checklist textarea { min-height: 72px; resize: vertical; }
+.integration-secret { padding: 16px; border: 1px solid var(--warning); }
+.integration-settings-list { display: grid; gap: 8px; }
+.integration-settings-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+.integration-refresh { justify-self: start; }
+.integration-subnav + .stack > .card { min-width: 0; }
+.integration-subnav + .stack progress { display: block; width: 100%; accent-color: var(--accent); height: 5px; }
+@media (max-width: 720px) { .integration-form-grid { grid-template-columns: 1fr; } .integration-subnav + .stack .card-header { flex-wrap: wrap; gap: 12px; } }
+
+.integration-subnav + .stack .grid-viewport .table { min-width: 720px; }
+
+.integration-subnav + .stack .card-header > .field { display: flex; align-items: center; gap: 10px; }
+.integration-subnav + .stack .card-body.stack > .badge { justify-self: start; }
+
+.integration-disclosure { border-bottom: 1px solid var(--rule); }
+.integration-disclosure > summary { padding: 12px 0; cursor: pointer; font-size: 14px; }
+.integration-disclosure > summary > span { margin-left: 12px; }
+.integration-disclosure > summary .mono { color: var(--text-2); font-size: 12px; }
+.integration-disclosure > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.integration-disclosure[open] > summary { color: var(--accent); }
+.integration-disclosure .integration-checklist { padding: 0 0 16px; border-bottom: 0; }
+@media (max-width: 720px) { .integration-disclosure > summary > span { display: block; width: fit-content; margin: 6px 0 0 16px; } }
