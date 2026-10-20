@@ -68,10 +68,10 @@ public sealed class CustomerSaleCertificateObserver(
                 fact.ReversesEventId!.Value, fact.EventTime, fact.LegalEntityId,
                 fact.DocumentType, fact.DocumentId, fact.DocumentLine))
             .ToList();
-        if (issues.Count > 0 || reversals.Count > 0)
+        // Each envelope joins the same outbox transaction, so the split keeps the all-or-nothing hand-off.
+        foreach (var work in CustomerSaleCertificateWork.Split(issues, reversals))
         {
-            await bus.PublishAsync(new CustomerSaleCertificateWork(issues, reversals),
-                new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
+            await bus.PublishAsync(work, new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
         }
     }
 
