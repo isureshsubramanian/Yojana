@@ -137,6 +137,8 @@ app.MapGet("/notices", () =>
 }).AllowAnonymous();
 
 app.MapYojanaSecurityEndpoints();
+app.MapYojanaUserManagementEndpoints();
+app.MapYojanaInvitationEndpoints();
 app.MapYojanaMailEndpoints();
 
 // The tenant's currencies: the working currency (every configured amount, approval thresholds and policy values, is

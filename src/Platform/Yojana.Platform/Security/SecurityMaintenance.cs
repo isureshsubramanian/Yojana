@@ -7,7 +7,7 @@ using Yojana.Platform.Data.Platform;
 
 namespace Yojana.Platform.Security;
 
-public sealed record SecurityMaintenanceResult(int ThrottleRows, int EventRows, int Batches);
+public sealed record SecurityMaintenanceResult(int ThrottleRows, int EventRows, int InvitationRows, int Batches);
 
 public sealed class SecurityMaintenance(PlatformDbContext db, IClock clock, SignInOptions options)
 {
@@ -15,6 +15,7 @@ public sealed class SecurityMaintenance(PlatformDbContext db, IClock clock, Sign
     {
         var throttleRows = 0;
         var eventRows = 0;
+        var invitationRows = 0;
         var batches = 0;
         int deleted;
         do
@@ -36,7 +37,19 @@ public sealed class SecurityMaintenance(PlatformDbContext db, IClock clock, Sign
             if (deleted > 0) batches++;
         } while (deleted == options.MaintenanceBatchSize);
 
-        return new SecurityMaintenanceResult(throttleRows, eventRows, batches);
+        var invitationCutoff = clock.UtcNow.AddDays(-90);
+        do
+        {
+            deleted = await db.UserInvitations
+                .Where(row => row.ExpiresAt < invitationCutoff || row.AcceptedAt < invitationCutoff ||
+                              row.RevokedAt < invitationCutoff)
+                .OrderBy(row => row.ExpiresAt).ThenBy(row => row.Id).Take(options.MaintenanceBatchSize)
+                .ExecuteDeleteAsync(cancellationToken);
+            invitationRows += deleted;
+            if (deleted > 0) batches++;
+        } while (deleted == options.MaintenanceBatchSize);
+
+        return new SecurityMaintenanceResult(throttleRows, eventRows, invitationRows, batches);
     }
 }
 

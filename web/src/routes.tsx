@@ -22,6 +22,7 @@ const patterns: RouteObject[] = process.env.NODE_ENV === "production" ? [] : [
 
 export const router = createBrowserRouter([
   { path: "/sign-in", lazy: () => import("./pages/SignIn"), errorElement: <ErrorPage /> },
+  { path: "/accept-invitation", lazy: () => import("./pages/AcceptInvitation"), errorElement: <ErrorPage /> },
   { path: "/public/:tenantCode/lookup", lazy: () => import("./p7/PublicLookup"), errorElement: <ErrorPage /> },
   {
     id: ROOT_ROUTE_ID,
@@ -87,6 +88,7 @@ export const router = createBrowserRouter([
           { path: "claims/recovery", lazy: () => import("./recovery/RecoveryClaims") },
           // P6 OD-26 numbering settings route block.
           { path: "settings", lazy: () => import("./settings/Settings") },
+          { path: "settings/users", lazy: () => import("./settings/Users") },
           // End P6 OD-26 numbering settings route block.
           { path: "settings/time-zone", lazy: () => import("./settings/TimeZoneSettings") },
           { path: "settings/import-files", lazy: () => import("./settings/ImportFileSettings") },

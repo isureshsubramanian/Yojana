@@ -136,10 +136,10 @@ public sealed class TenancyTests(PlatformHostFixture fixture)
         Assert.Equal("datetime2(3)", columnType);
         var securityTables = await db.Database.SqlQueryRaw<string>("""
             SELECT name AS [Value] FROM sys.tables
-            WHERE schema_id = SCHEMA_ID('platform') AND name IN ('mail_message', 'security_event', 'sign_in_throttle')
+            WHERE schema_id = SCHEMA_ID('platform') AND name IN ('mail_message', 'security_event', 'sign_in_throttle', 'user_invitation')
             ORDER BY name
             """).ToListAsync();
-        Assert.Equal(["mail_message", "security_event", "sign_in_throttle"], securityTables);
+        Assert.Equal(["mail_message", "security_event", "sign_in_throttle", "user_invitation"], securityTables);
         var stampColumn = await db.Database.SqlQueryRaw<int>("""
             SELECT COUNT(*) AS [Value] FROM sys.columns
             WHERE object_id = OBJECT_ID('platform.app_user') AND name = 'security_stamp'

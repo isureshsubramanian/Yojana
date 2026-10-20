@@ -120,6 +120,8 @@ public static class PlatformSetup
         builder.Services.AddScoped<ISecurityStampService, SecurityStampService>();
         builder.Services.AddSingleton<IPasswordPolicy, PasswordPolicy>();
         builder.Services.AddScoped<SecurityEventQueries>();
+        builder.Services.AddScoped<UserManagementService>();
+        builder.Services.AddScoped<InvitationService>();
         builder.Services.AddScoped<SecurityMaintenance>();
         builder.Services.AddSecurityRateLimiting(signInOptions);
         builder.Services.AddScoped<IMailOutbox, MailOutbox>();

@@ -440,6 +440,97 @@ namespace Yojana.Platform.Data.Platform.Migrations
                             }));
                 });
 
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.UserInvitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime?>("AcceptedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("accepted_at");
+
+                    b.Property<Guid?>("AcceptedUserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("accepted_user_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("display_name");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("email");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<Guid?>("RevokedByUserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("revoked_by_user_id");
+
+                    b.PrimitiveCollection<string>("Roles")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("roles");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("token_hash")
+                        .IsFixedLength();
+
+                    b.HasKey("Id")
+                        .HasName("pk_user_invitation");
+
+                    b.HasIndex("AcceptedUserId")
+                        .HasDatabaseName("ix_user_invitation_accepted_user_id");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_user_invitation_created_by_user_id");
+
+                    b.HasIndex("RevokedByUserId")
+                        .HasDatabaseName("ix_user_invitation_revoked_by_user_id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_user_invitation_token_hash");
+
+                    b.HasIndex("ExpiresAt", "Id")
+                        .HasDatabaseName("ix_user_invitation_expires_at_id");
+
+                    b.HasIndex("TenantId", "DisplayName", "Id")
+                        .HasDatabaseName("ix_user_invitation_tenant_id_display_name_id");
+
+                    b.HasIndex("TenantId", "Email", "ExpiresAt")
+                        .HasDatabaseName("ix_user_invitation_tenant_id_email_expires_at");
+
+                    b.ToTable("user_invitation", "platform");
+                });
+
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.UserTenantMembership", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -454,13 +545,31 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("customer_party_ref");
 
+                    b.Property<DateTime?>("DeactivatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("deactivated_at");
+
+                    b.Property<Guid?>("DeactivatedByUserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("deactivated_by_user_id");
+
                     b.PrimitiveCollection<string>("Roles")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("roles");
 
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("version");
+
                     b.HasKey("UserId", "TenantId")
                         .HasName("pk_user_tenant_membership");
+
+                    b.HasIndex("DeactivatedByUserId")
+                        .HasDatabaseName("ix_user_tenant_membership_deactivated_by_user_id");
 
                     b.HasIndex("TenantId")
                         .HasDatabaseName("ix_user_tenant_membership_tenant_id");
@@ -504,8 +613,45 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasConstraintName("fk_security_event_user_id");
                 });
 
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.UserInvitation", b =>
+                {
+                    b.HasOne("Yojana.Platform.Data.Platform.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("AcceptedUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("fk_user_invitation_accepted_user_id");
+
+                    b.HasOne("Yojana.Platform.Data.Platform.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_invitation_created_by_user_id");
+
+                    b.HasOne("Yojana.Platform.Data.Platform.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("RevokedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("fk_user_invitation_revoked_by_user_id");
+
+                    b.HasOne("Yojana.Platform.Data.Platform.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_invitation_tenant_id");
+
+                    b.Navigation("Tenant");
+                });
+
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.UserTenantMembership", b =>
                 {
+                    b.HasOne("Yojana.Platform.Data.Platform.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("DeactivatedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("fk_user_tenant_membership_deactivated_by_user_id");
+
                     b.HasOne("Yojana.Platform.Data.Platform.Entities.Tenant", "Tenant")
                         .WithMany()
                         .HasForeignKey("TenantId")

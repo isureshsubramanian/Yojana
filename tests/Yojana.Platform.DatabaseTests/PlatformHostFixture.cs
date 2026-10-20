@@ -53,6 +53,8 @@ public sealed class PlatformHostFixture : IAsyncLifetime
         Host = builder.Build();
         Host.UseYojanaPlatform();
         Host.MapYojanaSecurityEndpoints();
+        Host.MapYojanaUserManagementEndpoints();
+        Host.MapYojanaInvitationEndpoints();
         Host.MapYojanaMailEndpoints();
         await Host.StartAsync();
     }

@@ -20,7 +20,7 @@ public sealed class PlatformOverviewContributor(PlatformDbContext db, ITenantCon
     {
         var tenantId = tenant.TenantId;
         var dayStart = context.UtcNow.Date;
-        var users = await db.Memberships.AsNoTracking().CountAsync(m => m.TenantId == tenantId, cancellationToken);
+        var users = await db.Memberships.AsNoTracking().CountAsync(m => m.TenantId == tenantId && m.DeactivatedAt == null, cancellationToken);
         var handledToday = await db.SmokeLogs.AsNoTracking().CountAsync(s => s.Source == "handler" && s.RecordedAt >= dayStart, cancellationToken);
         var jobsToday = await db.SmokeLogs.AsNoTracking().CountAsync(s => s.Source == "job" && s.RecordedAt >= dayStart, cancellationToken);
         var lastJob = await db.SmokeLogs.AsNoTracking().Where(s => s.Source == "job").MaxAsync(s => (DateTime?)s.RecordedAt, cancellationToken);

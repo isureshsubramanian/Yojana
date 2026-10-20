@@ -7,6 +7,7 @@ import { ErrorNote } from "../units/common";
 import { numberingApi, type NumberingMode, type NumberingSeriesSetting } from "./numberingApi";
 
 const sections = [
+  ["Users", "Staff memberships, invitations and tenant roles", "/settings/users"],
   ["Time zone", "Document time plus issuing-entity overrides", "/settings/time-zone"],
   ["Import files", "Active storage and long-term archive", "/settings/import-files"],
   ["Currencies", "Working and accepted currencies", "/settings/currencies"],
