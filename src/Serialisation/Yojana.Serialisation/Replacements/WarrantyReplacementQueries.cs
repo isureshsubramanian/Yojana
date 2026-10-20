@@ -73,12 +73,12 @@ public sealed class WarrantyReplacementQueries(SerialisationDbContext db, ITenan
         var checks = new List<WarrantyReplacementCheck>
         {
             new("condition", "Condition allowed for this reason",
-                $"{l.ReplacementConditionAllowed} · actual grade {replacementGrade}", conditionPassed ? "allowed" : "blocked", conditionPassed),
+                $"{l.ReplacementConditionAllowed.Replace('_', ' ')} · actual grade {replacementGrade.Replace('_', ' ')}", conditionPassed ? "allowed" : "blocked", conditionPassed),
             new("consent", "Consumer consent for a refurbished unit",
                 consentRequired ? "applicable jurisdiction rule · recorded consent required" : "not required for this unit and contract",
                 consentRequired ? l.ConsentRefurbished ? "recorded" : "missing" : "not_required", !consentRequired || l.ConsentRefurbished),
             new("availability", "Replacement unit free to ship",
-                $"lifecycle {replacement.LifecycleStatus} · custody {replacement.LocationKind ?? "not recorded"}", available ? "available" : "blocked", available),
+                $"lifecycle {replacement.LifecycleStatus.Replace('_', ' ')} · custody {replacement.LocationKind?.Replace('_', ' ') ?? "not recorded"}", available ? "available" : "blocked", available),
         };
         var transfers = new List<WarrantyReplacementTransferRow>
         {

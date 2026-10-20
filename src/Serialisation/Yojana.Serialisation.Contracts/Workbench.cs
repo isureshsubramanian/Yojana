@@ -206,7 +206,8 @@ public sealed record WorkbenchEntitlement(
     DateOnly? StartDate,
     DateOnly? EndDate,
     Guid? SupersedesEntitlementId,
-    Guid? ParentEntitlementId);
+    Guid? ParentEntitlementId,
+    string? CoverageFamilyName);
 
 public sealed record WorkbenchAssemblyLink(
     Guid LinkId,

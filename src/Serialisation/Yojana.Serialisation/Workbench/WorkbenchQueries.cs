@@ -103,9 +103,16 @@ public sealed class WorkbenchLineageQueries(SerialisationDbContext db, UnitQueri
             .OrderByDescending(a => a.ValidFrom)
             .Select(a => new WorkbenchItemAssignment(a.AssignmentId, a.ItemId, a.ModelVersionId, a.ValidFrom, a.ValidTo, a.Reason))
             .ToListAsync(cancellationToken);
-        var entitlements = await db.Entitlements.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == unitId)
-            .OrderBy(e => e.CoverageFamily).ThenByDescending(e => e.CreatedAt)
-            .Select(e => new WorkbenchEntitlement(e.EntitlementId, e.CoverageFamily, e.Type, e.Direction, e.Status, e.StartDate, e.EndDate, e.SupersedesEntitlementId, e.ParentEntitlementId))
+        // The family's tenant-defined name is what people read; a left join keeps an entitlement visible even if its
+        // family row is missing, and the screen then falls back to the code.
+        var entitlements = await (
+            from e in db.Entitlements.AsNoTracking()
+            join family in db.CoverageFamilies.AsNoTracking() on new { e.TenantId, FamilyCode = e.CoverageFamily } equals new { family.TenantId, family.FamilyCode } into families
+            from family in families.DefaultIfEmpty()
+            where e.TenantId == tenantId && e.UnitId == unitId
+            orderby e.CoverageFamily, e.CreatedAt descending
+            select new WorkbenchEntitlement(e.EntitlementId, e.CoverageFamily, e.Type, e.Direction, e.Status, e.StartDate, e.EndDate, e.SupersedesEntitlementId, e.ParentEntitlementId,
+                family == null ? null : family.Name))
             .ToListAsync(cancellationToken);
         var assemblyRows = await db.AssemblyLinks.AsNoTracking().Where(l => l.TenantId == tenantId && (l.ParentUnitId == unitId || l.ChildUnitId == unitId))
             .OrderBy(l => l.RemovedAt == null ? 0 : 1).ThenBy(l => l.InstalledAt)
