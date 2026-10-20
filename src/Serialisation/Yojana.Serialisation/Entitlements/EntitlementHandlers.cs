@@ -31,7 +31,7 @@ public static class CreateEntitlementHandler
     internal static async Task<CreateEntitlementResult> CreateAsync(CreateEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, RefurbishedGoodsSettings refurbishedSettings,
         IJurisdictionRegionPort regions, IJurisdictionRuleResolver jurisdictionRules, ITenantContext tenant, IClock clock,
         IItemQueryPort items,
-        string? startBasisOverride, IReadOnlyList<string> evidenceRefs, bool financeReviewRequired, string? reasonCode, string? financeReviewRef, CorrectionMetadata? correction, CancellationToken cancellationToken)
+        string? startBasisOverride, IReadOnlyList<string> evidenceRefs, bool financeReviewRequired, string? reasonCode, string? financeReviewRef, CorrectionMetadata? correction, CancellationToken cancellationToken, decimal? salePrice = null, string? saleCurrency = null)
     {
         var tenantId = tenant.TenantId;
         var key = EntitlementLedger.Key(command.CommandId, command.UnitId, EntitlementEventType.Created, command.EventTime);
@@ -128,7 +128,7 @@ public static class CreateEntitlementHandler
             RefurbishedFloorMonths = disclosure?.FloorMonths, RefurbishedFloorSource = disclosure?.FloorSource, RefurbisherPartyRef = disclosure?.RefurbisherPartyRef, RefurbishedStatementKind = disclosure?.StatementKind,
             AssuranceOrService = terms.AssuranceOrService, Status = start.Start is null ? EntitlementStatus.PendingEvidence : EntitlementStatus.Active, Confidence = command.Confidence, Provenance = command.Provenance,
             SourceDocumentType = command.SourceDocument?.Type, SourceDocumentId = command.SourceDocument?.Id, SourceDocumentLine = command.SourceDocument?.Line, CustomerPoRef = command.CustomerPoRef,
-            CreatedEventId = eventId, CreatedAt = clock.UtcNow,
+            SalePrice = salePrice, SaleCurrency = saleCurrency, CreatedEventId = eventId, CreatedAt = clock.UtcNow,
         };
         db.Entitlements.Add(entitlement);
         foreach (var limit in terms.UsageLimits)
@@ -141,7 +141,7 @@ public static class CreateEntitlementHandler
             entitlement_id = entitlement.EntitlementId, item_id = unit.ItemId, coverage_family = entitlement.CoverageFamily, entitlement_type = entitlement.Type, policy_level = level, policy_code = version.PolicyCode, policy_version = version.Version, policy_version_id = version.PolicyVersionId,
             status = entitlement.Status, start_basis = entitlement.StartBasis, start = start.Explanation, start_date = entitlement.StartDate, end_date = entitlement.EndDate, cap_applied = start.CapApplied, floor_applied = duration.FloorApplied,
             matched_refurbished_row = disclosure?.MatchedRow, term_months = disclosure?.TermMonths, floor_months = disclosure?.FloorMonths, floor_source = disclosure?.FloorSource, refurbisher_party_ref = disclosure?.RefurbisherPartyRef, statement_kind = disclosure?.StatementKind,
-            time_zone = zone, accrual_cohort_id = cohortId, assurance_or_service = entitlement.AssuranceOrService,
+            price = salePrice, currency = saleCurrency, time_zone = zone, accrual_cohort_id = cohortId, assurance_or_service = entitlement.AssuranceOrService,
             accrual_suppressed = entitlement.AssuranceOrService == AssuranceOrService.Assurance && cohortId is null, provenance = command.Provenance, confidence = command.Confidence,
             owner_party_ref = command.OwnerPartyRef, rule_version = version.RuleVersion, trail,
             evidence_refs = evidenceRefs, finance_review_required = financeReviewRequired, reason_code = reasonCode, finance_review_ref = financeReviewRef,

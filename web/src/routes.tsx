@@ -68,6 +68,7 @@ export const router = createBrowserRouter([
           { path: "units/release", lazy: () => import("./units/Release") },
           { path: "units/:unitId", lazy: () => import("./units/UnitDetail") },
           { path: "entitlements", lazy: () => import("./entitlements/GapReport") },
+          { path: "entitlements/cover-changes", lazy: () => import("./entitlements/CoverChanges") },
           { path: "entitlements/gaps", lazy: () => import("./entitlements/GapReport") },
           { path: "entitlements/policies", lazy: () => import("./entitlements/PolicyEditor") },
           { path: "entitlements/bulk", lazy: () => import("./entitlements/BulkOperation") },

@@ -25,7 +25,7 @@ public static class SupersedeEntitlementHandler
         await SupersedeAsync(command, db, ledger, store, claims, certificates, tenant, clock, corrections, true, cancellationToken);
 
     internal static async Task<SupersedeEntitlementResult> SupersedeAsync(SupersedeEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, PolicyStore store,
-        IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates, ITenantContext tenant, IClock clock, CorrectionLedger? corrections, bool recordCorrection, CancellationToken cancellationToken)
+        IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates, ITenantContext tenant, IClock clock, CorrectionLedger? corrections, bool recordCorrection, CancellationToken cancellationToken, decimal? salePrice = null, string? saleCurrency = null)
     {
         var tenantId = tenant.TenantId;
         var old = await ledger.LoadAsync(command.EntitlementId, cancellationToken);
@@ -101,7 +101,7 @@ public static class SupersedeEntitlementHandler
             ConditionAtCreation = old.ConditionAtCreation, ParentEntitlementId = old.ParentEntitlementId, RootEntitlementId = root, SupersedesEntitlementId = old.EntitlementId, AccrualCohortId = old.AccrualCohortId,
             RevenueScheduleRef = old.RevenueScheduleRef, AssuranceOrService = terms.AssuranceOrService, Status = EntitlementStatus.Active, Confidence = old.Confidence, Provenance = EntitlementProvenance.Superseding,
             SourceDocumentType = command.SourceDocument?.Type ?? old.SourceDocumentType, SourceDocumentId = command.SourceDocument?.Id ?? old.SourceDocumentId, SourceDocumentLine = command.SourceDocument?.Line ?? old.SourceDocumentLine,
-            CustomerPoRef = old.CustomerPoRef, CreatedEventId = eventId, CreatedAt = clock.UtcNow,
+            SalePrice = salePrice, SaleCurrency = saleCurrency, CustomerPoRef = old.CustomerPoRef, CreatedEventId = eventId, CreatedAt = clock.UtcNow,
         };
         old.SuccessorEntitlementId = successor.EntitlementId;
         db.Entitlements.Add(successor);
@@ -110,7 +110,7 @@ public static class SupersedeEntitlementHandler
         {
             superseded_entitlement_id = old.EntitlementId, new_entitlement_id = successor.EntitlementId, coverage_family = old.CoverageFamily, effective_date = command.EffectiveDate,
             old_policy_version_id = old.PolicyVersionId, new_policy_version_id = version.PolicyVersionId, reason_code = command.ReasonCode, reduction,
-            approval_level = required.Role, approved_by = committer.UserRef, customer_notification_ref = command.CustomerNotificationRef, accrual_cohort_id = successor.AccrualCohortId,
+            price = salePrice, currency = saleCurrency, approval_level = required.Role, approved_by = committer.UserRef, customer_notification_ref = command.CustomerNotificationRef, accrual_cohort_id = successor.AccrualCohortId,
         }, command.SourceDocument, cancellationToken, eventId, metadata);
         if (metadata is not null)
             await corrections!.RecordAsync(CorrectionCommand.SupersedeEntitlement, metadata, command.ActorRef, command.EventTime, [old.UnitId], cancellationToken);

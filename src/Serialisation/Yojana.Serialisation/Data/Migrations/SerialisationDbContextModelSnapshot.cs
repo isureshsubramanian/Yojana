@@ -1964,6 +1964,30 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("correction_record_unit", "serialisation");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CoverDeviationBackfillCheckpoint", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<bool>("Complete")
+                        .HasColumnType("bit")
+                        .HasColumnName("complete");
+
+                    b.Property<Guid?>("CursorUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("cursor_unit_id");
+
+                    b.Property<long>("UnitsProcessed")
+                        .HasColumnType("bigint")
+                        .HasColumnName("units_processed");
+
+                    b.HasKey("TenantId")
+                        .HasName("pk_cover_deviation_backfill_checkpoint");
+
+                    b.ToTable("cover_deviation_backfill_checkpoint", "serialisation");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CoverageDecision", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -2842,6 +2866,15 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<Guid?>("RootEntitlementId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("root_entitlement_id");
+
+                    b.Property<string>("SaleCurrency")
+                        .HasColumnType("char(3)")
+                        .HasColumnName("sale_currency");
+
+                    b.Property<decimal?>("SalePrice")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("sale_price");
 
                     b.Property<string>("Scope")
                         .IsRequired()
@@ -8181,6 +8214,176 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.UnitCoverDeviation", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<bool>("Added")
+                        .HasColumnType("bit")
+                        .HasColumnName("added");
+
+                    b.Property<bool>("Amended")
+                        .HasColumnType("bit")
+                        .HasColumnName("amended");
+
+                    b.Property<int>("ChangeCount")
+                        .HasColumnType("int")
+                        .HasColumnName("change_count");
+
+                    b.Property<bool>("Changed")
+                        .HasColumnType("bit")
+                        .HasColumnName("changed");
+
+                    b.Property<bool>("ClosedEarly")
+                        .HasColumnType("bit")
+                        .HasColumnName("closed_early");
+
+                    b.Property<bool>("CoverChanged")
+                        .HasColumnType("bit")
+                        .HasColumnName("cover_changed");
+
+                    b.Property<Guid?>("CustomerPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("customer_party_ref");
+
+                    b.Property<string>("ItemFamily")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_family");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("item_id");
+
+                    b.Property<DateTime>("LastChangeAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_change_at");
+
+                    b.Property<DateOnly>("SaleDate")
+                        .HasColumnType("date")
+                        .HasColumnName("sale_date");
+
+                    b.Property<Guid?>("SaleDocumentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("sale_document_id");
+
+                    b.Property<string>("SaleDocumentType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("sale_document_type");
+
+                    b.Property<bool>("Suspended")
+                        .HasColumnType("bit")
+                        .HasColumnName("suspended");
+
+                    b.Property<bool>("Upgraded")
+                        .HasColumnType("bit")
+                        .HasColumnName("upgraded");
+
+                    b.HasKey("TenantId", "UnitId")
+                        .HasName("pk_unit_cover_deviation");
+
+                    b.HasIndex("TenantId", "SaleDate", "UnitId")
+                        .HasDatabaseName("ix_unit_cover_deviation_tenant_id_sale_date_unit_id");
+
+                    b.HasIndex("TenantId", "Changed", "LastChangeAt", "UnitId")
+                        .IsDescending(false, false, true, true)
+                        .HasDatabaseName("ix_unit_cover_deviation_tenant_id_changed_last_change_at_unit_id");
+
+                    b.HasIndex("TenantId", "CustomerPartyRef", "LastChangeAt", "UnitId")
+                        .HasDatabaseName("ix_unit_cover_deviation_tenant_id_customer_party_ref_last_change_at_unit_id");
+
+                    b.HasIndex("TenantId", "ItemFamily", "LastChangeAt", "UnitId")
+                        .HasDatabaseName("ix_unit_cover_deviation_tenant_id_item_family_last_change_at_unit_id");
+
+                    b.ToTable("unit_cover_deviation", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.UnitCoverDeviationChange", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<decimal?>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("amount");
+
+                    b.Property<DateOnly>("BusinessDate")
+                        .HasColumnType("date")
+                        .HasColumnName("business_date");
+
+                    b.Property<string>("Currency")
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<Guid>("EntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entitlement_id");
+
+                    b.Property<DateTime>("EventTime")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("event_time");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<int>("MonthsAfterSale")
+                        .HasColumnType("int")
+                        .HasColumnName("months_after_sale");
+
+                    b.HasKey("TenantId", "UnitId", "EventId")
+                        .HasName("pk_unit_cover_deviation_change");
+
+                    b.HasIndex("TenantId", "Kind", "UnitId", "MonthsAfterSale")
+                        .HasDatabaseName("ix_unit_cover_deviation_change_tenant_id_kind_unit_id_months_after_sale");
+
+                    b.ToTable("unit_cover_deviation_change", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.UnitCoverDeviationValue", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<string>("Currency")
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("amount");
+
+                    b.HasKey("TenantId", "UnitId", "Currency")
+                        .HasName("pk_unit_cover_deviation_value");
+
+                    b.ToTable("unit_cover_deviation_value", "serialisation");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.UnitCurrent", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -10156,6 +10359,26 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_three_pl_feed_message_tenant_id_import_job_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.UnitCoverDeviationChange", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.UnitCoverDeviation", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "UnitId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_unit_cover_deviation_change_tenant_id_unit_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.UnitCoverDeviationValue", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.UnitCoverDeviation", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "UnitId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_unit_cover_deviation_value_tenant_id_unit_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.WarrantyReplacementLine", b =>

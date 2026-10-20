@@ -34,6 +34,13 @@ namespace Yojana.Serialisation.Ledger;
 // WHAT BREAKS IF SEPARATED: a committed shipment can lack its release-record trigger or originating-order lookup, or a
 //        rolled-back shipment can leave either behind. Keep this comment and both observer-side comments together.
 
+// TIGHT COUPLING (entitlement report consistency)
+// WHAT: this writer calls CoverDeviationAppendObserver in the same SerialisationDbContext transaction as all
+// entitlement facts, including document corrections that bypass EntitlementLedger. That observer saves the facts
+// before rebuilding. WHY: an asynchronous subscriber cannot provide the required read-your-writes report. WHAT
+// BREAKS IF SEPARATED: committed changes can be absent from the report, or rolled-back changes can remain. Keep
+// the observer-side comment in step; the writer depends only on IUnitEventAppendObserver.
+
 /// <summary>
 /// Appends events and projects them inline (see the coupling comment above and in <see cref="UnitCurrentStateProjector"/>).
 /// Sequence numbers come from <c>seq_unit_event</c> through <c>sp_sequence_get_range</c>, one range per append, on the

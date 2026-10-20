@@ -100,7 +100,7 @@ public static class SalesInvoicePostedHandler
                     invoice.CustomerPartyRef, PartyType.Customer, invoice.CustomerPartyRef, PartyType.Customer, Country: invoice.Country, SiteLocationId: invoice.SiteLocationId,
                     StartEvidenceRef: $"{invoice.Document.Type}:{invoice.Document.Id:N}", SourceDocument: sourceDocument, CustomerPoRef: invoice.CustomerPoRef,
                     Channel: invoice.Channel),
-                    db, ledger, resolver, store, zones, refurbished, regions, jurisdictionRules, tenant, clock, items, null, [], false, null, null, null, cancellationToken);
+                    db, ledger, resolver, store, zones, refurbished, regions, jurisdictionRules, tenant, clock, items, null, [], false, null, null, null, cancellationToken, line.Price / Math.Max(1, line.Quantity), line.Currency);
             }
             else
             {
@@ -118,7 +118,7 @@ public static class SalesInvoicePostedHandler
                 {
                     await SupersedeEntitlementHandler.SupersedeAsync(new SupersedeEntitlement(commandId, live.EntitlementId, contractDate, AmendmentReason.Purchase,
                         invoice.PostedAt, envelope.Source, version.PolicyVersionId, SourceDocument: sourceDocument,
-                        CommittedBy: new AmendmentCommitter("invoice-posting", [YojanaRole.ServiceDesk])), db, ledger, store, claims, certificates, tenant, clock, null, false, cancellationToken);
+                        CommittedBy: new AmendmentCommitter("invoice-posting", [YojanaRole.ServiceDesk])), db, ledger, store, claims, certificates, tenant, clock, null, false, cancellationToken, line.Price / Math.Max(1, line.Quantity), line.Currency);
                 }
             }
         }

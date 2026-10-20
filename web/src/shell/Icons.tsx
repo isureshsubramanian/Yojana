@@ -4,12 +4,13 @@ export type IconName =
   | "home" | "plus" | "filter" | "print" | "x" | "down" | "search" | "range" | "tree" | "check" | "panel"
   | "campaign" | "recover" | "policy" | "layers" | "upload" | "coins" | "sliders" | "list" | "grid" | "returns"
   | "swap" | "refurb" | "cycle" | "label" | "sun" | "moon" | "templates" | "globe"
-  | "lookup" | "reconcile" | "report" | "disclosure" | "converted";
+  | "cover" | "lookup" | "reconcile" | "report" | "disclosure" | "converted";
 
 export function IconSprite() {
   return (
     <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
       <symbol id="i-units" viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z" /><path d="M3 7v10l9 4 9-4V7" /><path d="M12 11v10" /></symbol>
+      <symbol id="i-cover" viewBox="0 0 24 24"><path d="M3 4h7v16H3zM14 4h7v16h-7zM6 8h1M6 12h1M17 8h1M17 12h1M10 16h4m-2-2 2 2-2 2" /></symbol>
       <symbol id="i-ent" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z" /><path d="M9 12l2 2 4-4" /></symbol>
       <symbol id="i-corr" viewBox="0 0 24 24"><path d="M4 20h4l10-10-4-4L4 16v4z" /><path d="M12 8l4 4" /></symbol>
       <symbol id="i-claim" viewBox="0 0 24 24"><path d="M6 3h9l5 5v13H6z" /><path d="M15 3v5h5" /><path d="M9 13h6M9 17h6" /></symbol>

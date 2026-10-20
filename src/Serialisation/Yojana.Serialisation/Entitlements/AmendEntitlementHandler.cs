@@ -33,7 +33,7 @@ public static class AmendEntitlementHandler
         AmendAsync(command, db, ledger, approvals, claims, certificates, currency, tenant, corrections, true, cancellationToken);
 
     internal static async Task<AmendEntitlementResult> AmendAsync(AmendEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims,
-        IWarrantyCertificatePort certificates, ITenantCurrency currency, ITenantContext tenant, CorrectionLedger? corrections, bool recordCorrection, CancellationToken cancellationToken)
+        IWarrantyCertificatePort certificates, ITenantCurrency currency, ITenantContext tenant, CorrectionLedger? corrections, bool recordCorrection, CancellationToken cancellationToken, decimal? salePrice = null, string? saleCurrency = null)
     {
         var tenantId = tenant.TenantId;
         var entitlement = await ledger.LoadAsync(command.EntitlementId, cancellationToken);
@@ -179,7 +179,7 @@ public static class AmendEntitlementHandler
         {
             entitlement_id = entitlement.EntitlementId, coverage_family = entitlement.CoverageFamily, reason_code = command.ReasonCode, days_changed = daysChanged, reduction,
             approval_level = required.Role, approved_by = approvedBy, finance_review_ref = command.FinanceReviewRef, customer_notification_ref = command.CustomerNotificationRef,
-            certificate_issued = certificateIssued, note = command.Note, changes, value, value_source = valueSource, value_currency = valueCurrency,
+            price = salePrice, currency = saleCurrency, certificate_issued = certificateIssued, note = command.Note, changes, value, value_source = valueSource, value_currency = valueCurrency,
         }, command.SourceDocument, cancellationToken, eventId, metadata);
         if (metadata is not null)
             await corrections!.RecordAsync(CorrectionCommand.AmendEntitlement, metadata, command.ActorRef, command.EventTime, [entitlement.UnitId], cancellationToken);

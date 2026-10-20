@@ -279,6 +279,10 @@ public sealed class Entitlement : ITenantScoped
 
     public string? RevenueScheduleRef { get; set; }
 
+    public decimal? SalePrice { get; set; }
+
+    public string? SaleCurrency { get; set; }
+
     public required string AssuranceOrService { get; set; }
 
     public required string Status { get; set; }

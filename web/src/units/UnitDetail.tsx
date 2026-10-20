@@ -10,6 +10,7 @@ import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section, UnitLink, useActor } from "./common";
 import { documentLabel, fmtDate, fmtDateTime, humanise, shortId, statusLabel, statusTone } from "./format";
 import { EntitlementPanel, openAmendEntitlement, openAttachEntitlement, type EntitlementSummary } from "../entitlements/EntitlementPanel";
+import { CoverSinceSalePanel } from "../entitlements/CoverSinceSalePanel";
 import type { UnitEntitlementDetail } from "../entitlements/types";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 
@@ -28,7 +29,7 @@ export function Component() {
   const [error, setError] = useState<unknown>(null);
   const [version, setVersion] = useState(0);
   const [selectedEvent, setSelectedEvent] = useState<number | null>(null);
-  const [tab, setTab] = useState<"history" | "entitlements" | "identifiers" | "custody" | "asbuilt">("entitlements");
+  const [tab, setTab] = useState<"cover" | "history" | "entitlements" | "identifiers" | "custody" | "asbuilt">(params.get("tab") === "cover" ? "cover" : "entitlements");
   const [entitlementSummary, setEntitlementSummary] = useState<EntitlementSummary | null>(null);
   const [entitlementDetail, setEntitlementDetail] = useState<UnitEntitlementDetail | null>(null);
   const [reloadEntitlements, setReloadEntitlements] = useState<() => void>(() => () => undefined);
@@ -45,6 +46,8 @@ export function Component() {
   const reload = useCallback(() => setVersion((v) => v + 1), []);
   const person = usePeople(history?.items.map((e) => e.actorRef) ?? []);
   const referenceNames = useReferenceNames({
+    parties: [detail?.ownerPartyRef, ...(detail?.episodes.map((e) => e.partyRef) ?? [])],
+    locations: [detail?.locationId, ...(detail?.episodes.map((e) => e.locationId) ?? [])],
     items: [detail?.itemId, ...(detail?.asBuilt.map((row) => row.childItemId) ?? [])],
     documents: [lotDocument(detail?.lotId), ...(detail?.asBuilt.map((row) => lotDocument(row.childLotId)) ?? [])],
   });
@@ -115,7 +118,7 @@ export function Component() {
             <div className="eyebrow">Unit · item {detail ? referenceNames.item(detail.itemId) : "…"}{detail?.modelVersionId ? ` · model ${shortId(detail.modelVersionId)}` : ""}{detail?.lotId ? <> · lot {referenceNames.lot(lotDocument(detail.lotId))}</> : ""}{detail?.expiryDate ? ` · expires ${detail.expiryDate}` : ""}</div>
             <h1 className="mono" style={{ fontFamily: "var(--font-mono)", letterSpacing: 0 }}>{title}</h1>
             <p className="sub">
-              {detail ? tab === "entitlements" && entitlementSummary ? <>Covered to {fmtDate(entitlementSummary.coveredTo)} · {entitlementSummary.live} live entitlements in {entitlementSummary.families} coverage families · owned by {owner ? `${humanise(owner.partyType)} ${shortId(owner.partyRef)}` : "no recorded owner"} · {entitlementSummary.hasOpenClaims ? "open claims" : "no open claims"}</> : <>{statusLabel(detail.lifecycleStatus)} · custody {humanise(detail.locationKind) || "unknown"}{custody?.partyRef ? `, ${humanise(custody.partyType)} ${shortId(custody.partyRef)}` : ""}{owner ? ` · owned by ${humanise(owner.partyType)} ${shortId(owner.partyRef)} since ${fmtDate(owner.validFrom)}` : " · no owner recorded"} · {detail.asBuilt.filter((a) => a.removedAt === null).length} components as built</> : "Loading…"}
+              {detail ? tab === "entitlements" && entitlementSummary ? <>Covered to {fmtDate(entitlementSummary.coveredTo)} · {entitlementSummary.live} live entitlements in {entitlementSummary.families} coverage families · owned by {owner ? referenceNames.party(owner.partyRef) : "no recorded owner"} · {entitlementSummary.hasOpenClaims ? "open claims" : "no open claims"}</> : <>{statusLabel(detail.lifecycleStatus)} · custody {humanise(detail.locationKind) || "unknown"}{custody?.partyRef ? `, ${humanise(custody.partyType)} ${shortId(custody.partyRef)}` : ""}{owner ? ` · owned by ${referenceNames.party(owner.partyRef)} since ${fmtDate(owner.validFrom)}` : " · no owner recorded"} · {detail.asBuilt.filter((a) => a.removedAt === null).length} components as built</> : "Loading…"}
               {resolvedFrom && <> · <span className="serial">{resolvedFrom}</span> is a superseded identifier of this unit</>}
             </p>
           </div>
@@ -131,8 +134,8 @@ export function Component() {
           <div className="card statebar" aria-label="Current state" style={{ marginBottom: "var(--gap)" }}>
             <span><span className="k">Lifecycle</span><span className="v">{detail.lifecycleStatus}</span></span>
             <span><span className="k">Disposition</span><span className="v">{detail.disposition}</span></span>
-            <span><span className="k">Custody</span><span className="v">{detail.locationKind ?? "—"}{detail.locationId ? ` · ${shortId(detail.locationId)}` : ""}</span></span>
-            <span><span className="k">Owner</span><span className="v">{detail.ownerPartyRef ? shortId(detail.ownerPartyRef) : "—"}</span></span>
+            <span><span className="k">Custody</span><span className="v">{detail.locationKind ?? "—"}{detail.locationId ? ` · ${referenceNames.location(detail.locationId)}` : ""}</span></span>
+            <span><span className="k">Owner</span><span className="v">{referenceNames.party(detail.ownerPartyRef)}</span></span>
             <span><span className="k">Condition</span><span className="v">{detail.conditionGrade ?? "—"}</span></span>
             <span><span className="k">Overlay flags</span><span className={`v${flags.length ? " bad-text" : " muted"}`}>{flags.length ? flags.join(", ") : "none"}</span></span>
             <span><span className="k">Last event seq</span><span className="v">{detail.lastEventSeq.toLocaleString()} · {fmtDateTime(detail.lastEventTime)}</span></span>
@@ -142,6 +145,7 @@ export function Component() {
         <nav className="tabs unit-tabs" aria-label="Unit record sections">
           <button type="button" aria-current={tab === "history" ? "page" : undefined} onClick={() => setTab("history")}>History {detail?.eventCount ?? "…"}</button>
           <button type="button" aria-current={tab === "entitlements" ? "page" : undefined} onClick={() => setTab("entitlements")}>Entitlements {entitlementSummary ? `${entitlementSummary.live} live · ${entitlementSummary.closed} closed` : "…"}</button>
+          <button type="button" aria-current={tab === "cover" ? "page" : undefined} onClick={() => setTab("cover")}>Cover since sale</button>
           <button type="button" aria-current={tab === "identifiers" ? "page" : undefined} onClick={() => setTab("identifiers")}>Identifiers {detail?.identifiers.length ?? "…"}</button>
           <button type="button" aria-current={tab === "custody" ? "page" : undefined} onClick={() => setTab("custody")}>Custody and ownership {detail?.episodes.length ?? "…"}</button>
           <button type="button" aria-current={tab === "asbuilt" ? "page" : undefined} onClick={() => setTab("asbuilt")}>As-built {detail ? `${detail.asBuilt.filter((row) => !row.removedAt).length} of ${detail.asBuilt.length}` : "…"}</button>
@@ -149,7 +153,9 @@ export function Component() {
 
         {tab === "entitlements" && <EntitlementPanel unitId={unitId} onSummary={(summary, entitlementRows, reloadRows) => { setEntitlementSummary(summary); setEntitlementDetail(entitlementRows); setReloadEntitlements(() => reloadRows); }} />}
 
-        {tab !== "entitlements" && <div className={`cols-2 unit-tab-content tab-${tab}`}>
+        {tab === "cover" && <CoverSinceSalePanel unitId={unitId} />}
+
+        {tab !== "entitlements" && tab !== "cover" && <div className={`cols-2 unit-tab-content tab-${tab}`}>
           <section className="card unit-history" aria-labelledby="h-tl">
             <div className="card-header"><h2 id="h-tl">History <span className="meta">{detail?.eventCount.toLocaleString() ?? "…"} events</span></h2><span className="meta">Business time · recorded time on hover · click for the attributes</span></div>
             <div className="card-body" style={{ paddingTop: 4 }}>
