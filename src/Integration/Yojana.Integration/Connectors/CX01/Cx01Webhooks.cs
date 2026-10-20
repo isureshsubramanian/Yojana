@@ -404,6 +404,29 @@ public sealed class Cx01WebhookMaintenance(
         }
     }
 
+    /// <summary>Pauses only this connection's own subscription; the remote then holds deliveries for it.</summary>
+    public Task PauseAsync(Guid connectionId, CancellationToken cancellationToken) =>
+        OwnSubscriptionActionAsync(connectionId, "/Pause", cancellationToken);
+
+    public Task ResumeAsync(Guid connectionId, CancellationToken cancellationToken) =>
+        OwnSubscriptionActionAsync(connectionId, "/Resume", cancellationToken);
+
+    private async Task OwnSubscriptionActionAsync(Guid connectionId, string action, CancellationToken cancellationToken)
+    {
+        var id = Cx01Protocol.WebhookId(tenant.TenantId.Value, connectionId);
+        var resource = Cx01Protocol.Root + Cx01Protocol.EventSubscriptions + "("
+            + Cx01Protocol.KeyLiteral(id) + ")";
+        try
+        {
+            using var response = await client.SendJsonAsync(connectionId, HttpMethod.Post, resource + action,
+                new { }, true, cancellationToken);
+        }
+        catch (Cx01RemoteException exception) when (exception.IsRecordGone)
+        {
+            // Never subscribed (or removed by the customer): nothing to hold or release.
+        }
+    }
+
     public async Task<int> WatchdogConnectionAsync(Guid connectionId, CancellationToken cancellationToken)
     {
         await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, connectionId, cancellationToken);

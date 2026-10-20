@@ -14,6 +14,14 @@ public interface IConnectionLifecycleAdapter
     Task<JsonElement> ReadSettingsAsync(Guid connectionId, CancellationToken ct);
     Task<ConnectionProbe?> LatestProbeAsync(Guid connectionId, CancellationToken ct);
     Task UnsubscribeAsync(Guid connectionId, CancellationToken ct);
+
+    /// <summary>
+    /// Holds remote change notifications while a person has stopped the sync, so the remote does not mark the
+    /// stream failed. Polling catches up from its watermark after resume, so a connector without the feature may
+    /// keep the default.
+    /// </summary>
+    Task SuspendNotificationsAsync(Guid connectionId, CancellationToken ct) => Task.CompletedTask;
+    Task ResumeNotificationsAsync(Guid connectionId, CancellationToken ct) => Task.CompletedTask;
 }
 
 public sealed record ConnectionDeclaration(IReadOnlyDictionary<string, string> Capabilities,

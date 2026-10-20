@@ -242,7 +242,7 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         if (task.Status != ManualTaskStatus.Open)
             throw new DeadLetterRuleException("manual_task_closed", "The manual task is already completed.");
         // A cleanup acknowledgement has no remote document id and must never create a document mapping.
-        if (task.CommandType == ManualTaskCommandType.RemoveRemoteSubscription)
+        if (ManualTaskCommandType.IsAcknowledgementOnly(task.CommandType))
         {
             task.Status = ManualTaskStatus.Completed;
             task.CompletedBy = actorRef;

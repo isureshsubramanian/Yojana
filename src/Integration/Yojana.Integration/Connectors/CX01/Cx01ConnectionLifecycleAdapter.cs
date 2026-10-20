@@ -57,6 +57,18 @@ public sealed class Cx01ConnectionLifecycleAdapter(Cx01Settings settings, Cx01Cl
         if (configured.WebhooksAvailable) await notifications.UnsubscribeAsync(connectionId, ct);
     }
 
+    public async Task SuspendNotificationsAsync(Guid connectionId, CancellationToken ct)
+    {
+        var configured = await settings.GetAsync(connectionId, ct);
+        if (configured.WebhooksAvailable) await notifications.PauseAsync(connectionId, ct);
+    }
+
+    public async Task ResumeNotificationsAsync(Guid connectionId, CancellationToken ct)
+    {
+        var configured = await settings.GetAsync(connectionId, ct);
+        if (configured.WebhooksAvailable) await notifications.ResumeAsync(connectionId, ct);
+    }
+
     private static Cx01ConnectionSettings Read(JsonElement value) =>
         (value.Deserialize<Cx01ConnectionSettings>(IntegrationContracts.Json)
             ?? throw new InvalidOperationException("CX01 settings are required.")).Validate();

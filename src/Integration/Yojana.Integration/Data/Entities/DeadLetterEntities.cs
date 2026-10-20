@@ -94,4 +94,10 @@ public static class ManualTaskStatus
 public static class ManualTaskCommandType
 {
     public const string RemoveRemoteSubscription = "RemoveRemoteSubscription";
+    /// <summary>Raised by a coexistence conflict kept on the module side; the next drift scan confirms the revert.</summary>
+    public const string RevertRemoteChange = "RevertRemoteChange";
+
+    /// <summary>Tasks a person acknowledges without a remote document id; they never create a document mapping.</summary>
+    public static bool IsAcknowledgementOnly(string commandType) =>
+        commandType is RemoveRemoteSubscription or RevertRemoteChange;
 }

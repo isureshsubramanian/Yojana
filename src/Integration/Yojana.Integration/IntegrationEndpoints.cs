@@ -1,3 +1,4 @@
+using Yojana.Integration.Coexistence;
 using Yojana.Integration.Connections;
 using System.Security.Claims;
 using Yojana.Integration.Transport;
@@ -22,6 +23,7 @@ public static class IntegrationEndpoints
         app.MapIntegrationTransportEndpoints();
         app.MapIntegrationNotificationEndpoints();
         app.MapConnectionEndpoints();
+        app.MapCoexistenceEndpoints();
         Yojana.Integration.Relays.RelayEndpoints.MapRelayEndpoints(app);
         app.MapIntegrationAttentionEndpoint();
         app.MapCx01WebhookEndpoints();

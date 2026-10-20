@@ -29,6 +29,12 @@ public enum ConnectionAuditEventType
     HealthStatusChanged,
     RemoteSubscriptionLeft,
     OnboardingItemConfirmed,
+    SyncStopped,
+    SyncResumed,
+    CoexistenceSettingsChanged,
+    CoexistenceConflictResolved,
+    ParallelRunStarted,
+    ParallelRunItemConfirmed,
 }
 
 public sealed record ConnectionAuditEvent(

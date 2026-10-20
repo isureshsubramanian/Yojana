@@ -39,6 +39,11 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<ConnectionOnboardingConfirmation> ConnectionOnboardingConfirmations =>
         Set<ConnectionOnboardingConfirmation>();
     public DbSet<ConnectionThrottleProfileEntity> ConnectionThrottleProfiles => Set<ConnectionThrottleProfileEntity>();
+    public DbSet<CoexistenceBaseline> CoexistenceBaselines => Set<CoexistenceBaseline>();
+    public DbSet<CoexistenceConflict> CoexistenceConflicts => Set<CoexistenceConflict>();
+    public DbSet<CoexistenceScanState> CoexistenceScanStates => Set<CoexistenceScanState>();
+    public DbSet<ParallelRunPlan> ParallelRunPlans => Set<ParallelRunPlan>();
+    public DbSet<ParallelRunConfirmation> ParallelRunConfirmations => Set<ParallelRunConfirmation>();
     public DbSet<ConnectionNotificationSource> ConnectionNotificationSources => Set<ConnectionNotificationSource>();
     public DbSet<ConnectionPollWatermark> ConnectionPollWatermarks => Set<ConnectionPollWatermark>();
     public DbSet<ConnectionNotificationReceipt> ConnectionNotificationReceipts => Set<ConnectionNotificationReceipt>();
@@ -284,6 +289,60 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.TextHash).HasMaxLength(64).IsFixedLength().IsUnicode(false);
             b.Property(x => x.Evidence).HasMaxLength(500);
             b.Property(x => x.ConfirmedBy).HasMaxLength(200);
+        });
+        modelBuilder.Entity<CoexistenceBaseline>(b =>
+        {
+            b.ToTable("coexistence_baseline");
+            b.HasKey(x => new { x.TenantId, x.ConnectionId, x.RecordType, x.RecordKey, x.FieldName });
+            b.Property(x => x.RecordType).HasMaxLength(80);
+            b.Property(x => x.RecordKey).HasMaxLength(200);
+            b.Property(x => x.FieldName).HasMaxLength(128);
+            b.Property(x => x.Value).HasMaxLength(1000);
+            b.Property(x => x.ExplainingHash).HasMaxLength(64).IsFixedLength().IsUnicode(false);
+            b.Property(x => x.Source).HasMaxLength(24);
+        });
+        modelBuilder.Entity<CoexistenceConflict>(b =>
+        {
+            b.ToTable("coexistence_conflict", table => table.HasCheckConstraint("ck_coexistence_conflict_status",
+                "status IN ('open','awaiting_remote_revert','closed')"));
+            b.HasKey(x => new { x.TenantId, x.ConflictId });
+            b.Property(x => x.RecordType).HasMaxLength(80);
+            b.Property(x => x.RecordKey).HasMaxLength(200);
+            b.Property(x => x.RecordLabel).HasMaxLength(300);
+            b.Property(x => x.FieldName).HasMaxLength(128);
+            b.Property(x => x.BaselineValue).HasMaxLength(1000);
+            b.Property(x => x.RemoteValue).HasMaxLength(1000);
+            b.Property(x => x.Status).HasMaxLength(32);
+            b.Property(x => x.Decision).HasMaxLength(32);
+            b.Property(x => x.DecisionNote).HasMaxLength(2000);
+            b.Property(x => x.DecidedBy).HasMaxLength(320);
+            // One unresolved conflict per remote field: a later scan refreshes it instead of stacking duplicates.
+            b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.RecordType, x.RecordKey, x.FieldName })
+                .IsUnique().HasFilter("[status] <> 'closed'");
+            b.HasIndex(x => new { x.TenantId, x.Status, x.DetectedAt, x.ConflictId });
+            b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.Status, x.DetectedAt, x.ConflictId });
+        });
+        modelBuilder.Entity<CoexistenceScanState>(b =>
+        {
+            b.ToTable("coexistence_scan_state");
+            b.HasKey(x => new { x.TenantId, x.ConnectionId, x.RecordType });
+            b.Property(x => x.RecordType).HasMaxLength(80);
+            b.Property(x => x.Cursor).HasMaxLength(200);
+        });
+        modelBuilder.Entity<ParallelRunPlan>(b =>
+        {
+            b.ToTable("parallel_run_plan", table => table.HasCheckConstraint("ck_parallel_run_plan_days",
+                "days IN (30,60,90)"));
+            b.HasKey(x => new { x.TenantId, x.ConnectionId });
+            b.Property(x => x.StartedBy).HasMaxLength(320);
+        });
+        modelBuilder.Entity<ParallelRunConfirmation>(b =>
+        {
+            b.ToTable("parallel_run_confirmation");
+            b.HasKey(x => new { x.TenantId, x.ConnectionId, x.ItemCode });
+            b.Property(x => x.ItemCode).HasMaxLength(80);
+            b.Property(x => x.Evidence).HasMaxLength(500);
+            b.Property(x => x.ConfirmedBy).HasMaxLength(320);
         });
         modelBuilder.Entity<ConnectionThrottleProfileEntity>(b =>
         {

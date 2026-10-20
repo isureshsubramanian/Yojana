@@ -1,3 +1,4 @@
+using Yojana.Integration.Coexistence;
 using Yojana.Integration.Relays;
 using Yojana.Integration.Connections;
 using Azure.Identity;
@@ -44,6 +45,13 @@ public static class IntegrationModule
         builder.Services.AddScoped<ConnectionHealthProjection>();
         builder.Services.AddSingleton(RecurringTenantJob.For<ConnectionHealthJob>(ConnectionHealthJob.JobName, ConnectionHealthJob.Cron));
         builder.Services.AddKeyedScoped<IConnectionLifecycleAdapter, Cx01ConnectionLifecycleAdapter>(Cx01Capabilities.ConnectorCode);
+        builder.Services.AddScoped<CoexistenceSettings>();
+        builder.Services.AddScoped<CoexistenceDriftService>();
+        builder.Services.AddScoped<CoexistenceConflicts>();
+        builder.Services.AddScoped<SyncControl>();
+        builder.Services.AddScoped<ParallelRun>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<CoexistenceDriftJob>(CoexistenceDriftJob.JobName, CoexistenceDriftJob.Cron));
+        builder.Services.AddKeyedScoped<ICoexistenceDriftReader, Cx01CoexistenceDriftReader>(Cx01Capabilities.ConnectorCode);
         builder.Services.AddScoped<IdempotencyIndex>();
         builder.Services.AddScoped<InboundMessageStore>();
         builder.Services.AddSingleton<IChangeMarkerComparer, ChangeMarkerComparer>();

@@ -59,6 +59,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public List<string> DeletedSubscriptionPaths { get; } = [];
     public bool WebhookSubscriptionCreated { get; private set; }
     public bool WebhookSubscriptionPaused { get; private set; }
+    public int SubscriptionResumeCount { get; private set; }
     public bool WebhookSubscriptionDeleted { get; private set; }
     public bool FailedNotificationAvailable { get; set; }
     public List<Cx01SimulatorNotification> EventNotifications { get; } = [];
@@ -80,6 +81,10 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public bool SelectEmptiedSerials { get; private set; }
     public bool RejectNextDeliveryReadWithBusinessError { get; set; }
     public List<string> CaptureReadPaths { get; } = [];
+    /// <summary>Remote equipment cards for the coexistence drift scan, keyed rows as the remote returns them.</summary>
+    public List<Dictionary<string, object?>> EquipmentCards { get; } = [];
+    /// <summary>The remote's own page cap, applied below any requested $top.</summary>
+    public int EquipmentCardPageCap { get; set; } = 20;
     public void SimulateLaterUserEdit() => returnUpdateTime = "090200";
     public void SimulateLaterDeliveryEdit(string updateTime) => deliveryUpdateTime = updateTime;
     public int PageSize { get; set; } = 1;
@@ -455,6 +460,25 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 response.Close();
                 return;
             }
+            if (path == Cx01Protocol.Root + "CustomerEquipmentCards" && request.HttpMethod == "GET")
+            {
+                var query = System.Web.HttpUtility.ParseQueryString(request.Url?.Query ?? "");
+                var after = long.Parse(query["$filter"]!.Split(" gt ")[1], System.Globalization.CultureInfo.InvariantCulture);
+                var top = Math.Min(int.Parse(query["$top"] ?? "20", System.Globalization.CultureInfo.InvariantCulture),
+                    EquipmentCardPageCap);
+                var selected = query["$select"]!.Split(',');
+                var matching = EquipmentCards.Where(card => Convert.ToInt64(card["EquipmentCardNum"],
+                        System.Globalization.CultureInfo.InvariantCulture) > after)
+                    .OrderBy(card => Convert.ToInt64(card["EquipmentCardNum"], System.Globalization.CultureInfo.InvariantCulture))
+                    .ToList();
+                var page = matching.Take(top).Select(card => selected.Where(card.ContainsKey)
+                    .ToDictionary(field => field, field => card[field])).ToList();
+                object body = matching.Count > top
+                    ? new Dictionary<string, object?> { ["value"] = page, ["odata.nextLink"] = "CustomerEquipmentCards?$skip=" + top }
+                    : new Dictionary<string, object?> { ["value"] = page };
+                await JsonAsync(response, body);
+                return;
+            }
             if (new[]
                 {
                     "Items", "BusinessPartners", "Invoices", "PurchaseDeliveryNotes",
@@ -504,6 +528,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             {
                 SubscriptionStopped = false;
                 subscriptionActive = true;
+                SubscriptionResumeCount++;
                 response.StatusCode = (int)HttpStatusCode.NoContent;
                 response.Close();
                 return;
