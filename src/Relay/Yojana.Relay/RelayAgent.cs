@@ -35,7 +35,8 @@ public sealed class RelayAgent(RelayAgentConfiguration configuration, RelayCloud
             || configuration.ProductUrl.Scheme == "http" && !configuration.ProductUrl.IsLoopback
             || configuration.ServiceUrl.Scheme is not ("http" or "https")
             || !string.IsNullOrEmpty(configuration.ServiceUrl.UserInfo)
-            || !string.IsNullOrEmpty(configuration.ProductUrl.UserInfo))
+            || !string.IsNullOrEmpty(configuration.ProductUrl.UserInfo)
+            || configuration.ServiceCertificateSha256 is { } pin && RelayCertificatePin.Normalise(pin) is null)
             throw new InvalidOperationException("relay_configuration_invalid");
         return base.StartAsync(cancellationToken);
     }
@@ -67,7 +68,7 @@ public sealed class RelayAgent(RelayAgentConfiguration configuration, RelayCloud
                     RelayResult result;
                     try { result = await local.ExecuteAsync(work, deadline.Token); }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-                    catch (Exception) { result = RelayLocalClient.Failure(work); }
+                    catch (Exception ex) { result = RelayLocalClient.Failure(work, ex); }
                     // A result upload is retried; the local request is never repeated because an upload failed.
                     var uploadFailures = 0;
                     while (!deadline.IsCancellationRequested)

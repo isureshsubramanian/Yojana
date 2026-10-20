@@ -29,6 +29,8 @@ public sealed class RelayLocalClient : IDisposable
         {
             AllowAutoRedirect = false, UseCookies = configuration.Credentials == "site", CookieContainer = new(),
             ConnectTimeout = TimeSpan.FromSeconds(10),
+            SslOptions = new() { RemoteCertificateValidationCallback =
+                RelayCertificatePin.Validator(configuration.ServiceCertificateSha256) },
         }) { Timeout = TimeSpan.FromSeconds(60) };
     }
 
@@ -54,7 +56,7 @@ public sealed class RelayLocalClient : IDisposable
             return await ResultAsync(first, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception) { return Failure(work); }
+        catch (Exception ex) { return Failure(work, ex); }
 
         RelayResult Result(int status, bool denied = false) => new(work.RequestId, work.LeaseId, status,
             new Dictionary<string, string[]>(), [], denied);
@@ -130,9 +132,25 @@ public sealed class RelayLocalClient : IDisposable
         keepAliveAt = DateTime.UtcNow + sessionTimeout / 2;
     }
 
-    public static RelayResult Failure(RelayWork work) => new(work.RequestId, work.LeaseId, 503,
+    // Only the fault's type name leaves the site (never its message, which may carry local paths or data), so the
+    // cloud can tell a certificate or connection failure from an agent bug.
+    public static RelayResult Failure(RelayWork work, Exception? fault = null) => new(work.RequestId, work.LeaseId, 503,
         new Dictionary<string, string[]> { ["Content-Type"] = ["application/json"] },
-        System.Text.Encoding.UTF8.GetBytes("{\"error\":\"relay_local_fault\"}"));
+        JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string>
+        {
+            ["error"] = "relay_local_fault",
+            ["kind"] = Kind(fault),
+        }));
+
+    private static string Kind(Exception? fault) => fault switch
+    {
+        null => "unknown",
+        HttpRequestException { InnerException: System.Security.Authentication.AuthenticationException } =>
+            "certificate_rejected",
+        HttpRequestException => "local_service_unreachable",
+        TaskCanceledException => "local_service_timeout",
+        _ => fault.GetType().Name,
+    };
 
     public void Dispose() { client.Dispose(); sessionLock.Dispose(); }
 }

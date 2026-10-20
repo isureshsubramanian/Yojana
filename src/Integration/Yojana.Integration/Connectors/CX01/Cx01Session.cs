@@ -318,7 +318,13 @@ public sealed class Cx01Client(
         try
         {
             using var body = JsonDocument.Parse(bytes);
-            if (body.RootElement.TryGetProperty("error", out var error))
+            if (body.RootElement.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String)
+            {
+                // A site relay reports its own faults as {"error":"<code>","kind":"<fault kind>"}.
+                code = error.GetString();
+                message = body.RootElement.TryGetProperty("kind", out var kind) ? kind.ToString() : null;
+            }
+            else if (body.RootElement.TryGetProperty("error", out error) && error.ValueKind == JsonValueKind.Object)
             {
                 code = Text(error, "code");
                 message = Text(error, "message");

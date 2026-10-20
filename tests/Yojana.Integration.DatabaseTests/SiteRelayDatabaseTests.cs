@@ -277,9 +277,14 @@ public sealed class SiteRelayDatabaseTests(IntegrationHostFixture fixture)
         }
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(40) };
         var secrets = input.Secrets with { RelaySecret = issued.Secret };
-        using var local = new RelayLocalClient(issued.Configuration, secrets);
-        using var agent = new RelayAgent(issued.Configuration,
-            new RelayCloudClient(http, issued.Configuration, secrets, new TestTime(fixture.Clock)), local,
+        // A self-signed service certificate is trusted only when pinned, exactly as an installed agent would be.
+        var configuration = issued.Configuration with
+        {
+            ServiceCertificateSha256 = Environment.GetEnvironmentVariable("YOJANA_CX01_CERT_SHA256"),
+        };
+        using var local = new RelayLocalClient(configuration, secrets);
+        using var agent = new RelayAgent(configuration,
+            new RelayCloudClient(http, configuration, secrets, new TestTime(fixture.Clock)), local,
             NullLogger<RelayAgent>.Instance, new TestTime(fixture.Clock));
         await agent.StartAsync(CancellationToken.None);
         try

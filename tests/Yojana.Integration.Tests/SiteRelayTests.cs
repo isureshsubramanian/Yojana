@@ -49,6 +49,23 @@ public sealed class SiteRelayTests
         Assert.Equal(expected, RelayAuthentication.IsTimely(timestamp, now));
     }
 
+    [Fact]
+    public void Untrusted_service_certificate_is_accepted_only_when_pinned()
+    {
+        using var key = System.Security.Cryptography.ECDsa.Create();
+        var request = new System.Security.Cryptography.X509Certificates.CertificateRequest("CN=erp.fictional.test", key,
+            System.Security.Cryptography.HashAlgorithmName.SHA256);
+        using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+        var pin = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(certificate.RawData));
+        const System.Net.Security.SslPolicyErrors untrusted = System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors;
+        Assert.False(RelayCertificatePin.Validator(null)(this, certificate, null, untrusted));
+        Assert.True(RelayCertificatePin.Validator(string.Join(':', pin.Chunk(2).Select(x => new string(x))))(
+            this, certificate, null, untrusted));
+        Assert.False(RelayCertificatePin.Validator(new string('A', 64))(this, certificate, null, untrusted));
+        Assert.True(RelayCertificatePin.Validator(null)(this, certificate, null, System.Net.Security.SslPolicyErrors.None));
+        Assert.Throws<InvalidOperationException>(() => RelayCertificatePin.Normalise("not-a-pin"));
+    }
+
     [Theory]
     [InlineData("GET", "/b1s/v2/ApprovalTemplates", true)]
     [InlineData("POST", "/b1s/v2/Drafts", true)]

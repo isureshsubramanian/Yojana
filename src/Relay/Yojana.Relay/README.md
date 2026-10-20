@@ -9,7 +9,9 @@ Save the administrator's registration configuration as `relay.json`. Configurati
 `tenantId`, `relayId`, `productUrl` (HTTPS product base URL, including any path prefix), `serviceUrl` (fixed local service origin),
 `declaration` (the connector's generated method/path and header allow-lists and session declaration),
 `credentials` (`site` default or `cloud`), `concurrency` (1–32, default 4), `webhookBind` (optional
-explicit IP URL ending in `/`), and `webhookTimeoutSeconds` (default 10).
+explicit IP URL ending in `/`), `webhookTimeoutSeconds` (default 10), and `serviceCertificateSha256`
+(optional): when the ERP service interface presents a self-signed certificate, pin exactly that certificate
+by the SHA-256 of its DER bytes (64 hex characters, colons allowed). Any other untrusted certificate is refused.
 Treat the declaration as protected installation configuration. Only administrators should edit it;
 never replace it from a poll response. Re-provision it when enabling a new connector operation.
 

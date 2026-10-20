@@ -17,7 +17,7 @@ public sealed record RelayDeclaration(IReadOnlyList<RelayPathRule> Paths, RelayS
     IReadOnlyList<string> WebhookHeaders);
 public sealed record RelayAgentConfiguration(Guid TenantId, Guid RelayId, Uri ProductUrl, Uri ServiceUrl,
     RelayDeclaration Declaration, string Credentials = "site", int Concurrency = 4,
-    string? WebhookBind = null, int WebhookTimeoutSeconds = 10);
+    string? WebhookBind = null, int WebhookTimeoutSeconds = 10, string? ServiceCertificateSha256 = null);
 public sealed record RelaySecrets(string RelaySecret, string Company, string UserName, string Password);
 
 public sealed record RelayLimits
