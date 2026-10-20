@@ -24,6 +24,13 @@ public static class CustomerSaleCertificateQueue
 {
     public const string Name = "serialisation-certificate-sale-triggers";
     public const int MaximumParallelWork = 8;
+
+    /// <summary>
+    /// Units of work per envelope. The durable inbox refuses to read back an envelope over 4 MB, so an append larger
+    /// than this is split rather than stranded: one work item serialises to about 450 bytes, putting a full envelope
+    /// near 0.5 MB and leaving room for evidence and unknowns lists.
+    /// </summary>
+    public const int MaximumWorkPerEnvelope = 1000;
 }
 
 internal static class CertificatePublishedEventQueue
@@ -38,10 +45,33 @@ public sealed record CertificateTriggerWork(IssueCertificateVersion Command);
 public sealed record CertificateSaleReversalWork(Guid UnitId, Guid CorrectionEventId, Guid ReversedSaleEventId,
     DateTime EffectiveAt, Guid LegalEntityId, string? DocumentType, Guid? DocumentId, int? DocumentLine);
 
-/// <summary>One transactional hand-off for all customer-sale facts accepted by one ledger append.</summary>
+/// <summary>
+/// A transactional hand-off for the customer-sale facts accepted by one ledger append, in envelopes of at most
+/// <see cref="CustomerSaleCertificateQueue.MaximumWorkPerEnvelope"/> items. Splitting adds no ordering hazard: the
+/// handler already runs every item of an envelope as an independent unit chain.
+/// </summary>
 public sealed record CustomerSaleCertificateWork(
     IReadOnlyList<IssueCertificateVersion> Issues,
-    IReadOnlyList<CertificateSaleReversalWork> Reversals);
+    IReadOnlyList<CertificateSaleReversalWork> Reversals)
+{
+    public static IReadOnlyList<CustomerSaleCertificateWork> Split(IReadOnlyList<IssueCertificateVersion> issues,
+        IReadOnlyList<CertificateSaleReversalWork> reversals,
+        int maximumPerEnvelope = CustomerSaleCertificateQueue.MaximumWorkPerEnvelope)
+    {
+        var work = new List<CustomerSaleCertificateWork>();
+        foreach (var chunk in issues.Chunk(maximumPerEnvelope)) work.Add(new(chunk, []));
+        var start = 0;
+        // Reversals fill the spare room in the last issue envelope before opening new ones.
+        if (work.Count > 0 && reversals.Count > 0 && work[^1].Issues.Count < maximumPerEnvelope)
+        {
+            var room = maximumPerEnvelope - work[^1].Issues.Count;
+            work[^1] = work[^1] with { Reversals = reversals.Take(room).ToList() };
+            start = room;
+        }
+        foreach (var chunk in reversals.Skip(start).Chunk(maximumPerEnvelope)) work.Add(new([], chunk));
+        return work;
+    }
+}
 
 public static class CertificateTriggerWorkHandler
 {
