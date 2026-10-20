@@ -73,7 +73,8 @@ the container, `make db-wait` and the seed read the same `.env`. Changing the sa
 exists needs `make db-reset` (drops the development data volume) before `make db-up`.
 
 Seeded users are `<role>@dev.yojana.local` (for example `serial_administrator@dev.yojana.local`) and
-`admin@dev.yojana.local`, password `YOJANA_SEED_PASSWORD` from `.env`. Sign in with
+`admin@dev.yojana.local`, password `YOJANA_SEED_PASSWORD` from `.env` (change it there and rerun `make seed` to
+reset every seeded user to it). Sign in with
 `POST /api/auth/sign-in {"email","password"}`; with one membership the tenant is selected automatically,
 otherwise `POST /api/auth/select-tenant {"tenantCode"}`. `POST /api/smoke/ping {"note"}` publishes a
 message through the outbox; `GET /api/smoke` shows the request, handler and job rows for the tenant.
