@@ -40,6 +40,9 @@ namespace Yojana.Serialisation.Ledger;
 // before rebuilding. WHY: an asynchronous subscriber cannot provide the required read-your-writes report. WHAT
 // BREAKS IF SEPARATED: committed changes can be absent from the report, or rolled-back changes can remain. Keep
 // the observer-side comment in step; the writer depends only on IUnitEventAppendObserver.
+// CoverDeviationBackfill also holds the unit_current row lock while rebuilding. This writer must save its current
+// projection before notifying observers in this transaction: that shared lock orders live writes against backfill.
+// Separating these steps lets an older backfill overwrite newer cover. Keep the backfill-side comment in step.
 
 /// <summary>
 /// Appends events and projects them inline (see the coupling comment above and in <see cref="UnitCurrentStateProjector"/>).

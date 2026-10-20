@@ -111,7 +111,7 @@ public static class SalesInvoicePostedHandler
                     var newEnd = TermArithmetic.EndDate(extensionStart, terms.Duration);
                     await AmendEntitlementHandler.AmendAsync(new AmendEntitlement(commandId, live.EntitlementId, AmendmentReason.Purchase, invoice.PostedAt, envelope.Source,
                         NewEnd: newEnd, SourceDocument: sourceDocument, CommittedBy: new AmendmentCommitter("invoice-posting", [YojanaRole.ServiceDesk])),
-                        db, ledger, approvals, claims, certificates, currency, tenant, null, false, cancellationToken);
+                        db, ledger, approvals, claims, certificates, currency, tenant, null, false, cancellationToken, line.Price / Math.Max(1, line.Quantity), line.Currency);
                     live.CustomerPoRef = invoice.CustomerPoRef;
                 }
                 else

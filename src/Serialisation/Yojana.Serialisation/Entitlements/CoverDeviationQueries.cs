@@ -70,9 +70,12 @@ public sealed class CoverDeviationQueries(SerialisationDbContext db, ITenantCont
         if (live is null)
         {
             if (changes.Any(c => c.Kind == "closed_early")) return "closed_early";
+            var lineage = data.Entitlements.Where(e => e.UnitId == data.UnitId && e.CoverageFamily == baseline.CoverageFamily
+                && CoverHistoryRules.DescendsFrom(e, baseline, data.Entitlements)).ToList();
+            if (lineage.Any(e => e.Status == EntitlementStatus.Suspended)) return "suspended";
+            if (lineage.Any(e => e.ClosedReason == EntitlementClosedReason.Expired && e.EndDate <= data.Today)) return "ended";
             if (changes.Any(c => c.Kind == "transferred") || baseline.ClosedReason is EntitlementClosedReason.Replaced or EntitlementClosedReason.TransferredOut) return "transferred";
-            if (data.Entitlements.Any(e => e.CoverageFamily == baseline.CoverageFamily && e.Status == EntitlementStatus.Suspended)) return "suspended";
-            return baseline.ClosedReason == EntitlementClosedReason.Expired || baseline.EndDate < data.Today ? "ended" : "unresolved";
+            return "unresolved";
         }
         if (live.EntitlementId == baseline.EntitlementId)
             return changes.Any(c => c.Kind == "amended") ? "amended" : changes.Any(c => c.Kind == "transferred") ? "transferred" : "same";
@@ -143,6 +146,12 @@ public sealed class CoverDeviationQueries(SerialisationDbContext db, ITenantCont
         var ids = rows.Select(r => r.UnitId).ToList();
         var values = await db.CoverDeviationValues.AsNoTracking().Where(r => r.TenantId == tenant.TenantId && ids.Contains(r.UnitId)).ToListAsync(ct);
         var kinds = await db.CoverDeviationChanges.AsNoTracking().Where(r => r.TenantId == tenant.TenantId && ids.Contains(r.UnitId)).Select(r => new { r.UnitId, r.Kind }).Distinct().ToListAsync(ct);
+        var labels = await (from change in db.CoverDeviationChanges.AsNoTracking()
+            join term in db.Entitlements.AsNoTracking() on new { change.TenantId, change.EntitlementId } equals new { term.TenantId, term.EntitlementId }
+            join policy in db.PolicyVersions.AsNoTracking() on new { term.TenantId, term.PolicyVersionId } equals new { policy.TenantId, policy.PolicyVersionId }
+            join family in db.CoverageFamilies.AsNoTracking() on new { term.TenantId, FamilyCode = term.CoverageFamily } equals new { family.TenantId, family.FamilyCode }
+            where change.TenantId == tenant.TenantId && ids.Contains(change.UnitId)
+            select new { change.UnitId, change.Kind, FamilyName = family.Name, PolicyName = policy.Name }).Distinct().ToListAsync(ct);
         var serials = await db.Identifiers.AsNoTracking().Where(i => i.TenantId == tenant.TenantId && ids.Contains(i.UnitId) && i.ValidTo == null)
             .Select(i => new { i.UnitId, i.Type, i.RawValue }).ToListAsync(ct);
         var names = await NamesAsync(rows.Select(r => r.ItemId).ToList(), rows.Select(r => r.CustomerPartyRef).OfType<Guid>().ToList(),
@@ -154,7 +163,8 @@ public sealed class CoverDeviationQueries(SerialisationDbContext db, ITenantCont
             names.Item(r.ItemId), r.CustomerPartyRef is { } party ? names.Party(party) : null,
             familyNames.FirstOrDefault(f => f.Code == r.ItemFamily)?.Name, r.SaleDate, names.Document(r.SaleDocumentType, r.SaleDocumentId),
             r.ChangeCount, kinds.Where(k => k.UnitId == r.UnitId).Select(k => k.Kind).Order().ToList(),
-            OrderMoney(values.Where(v => v.UnitId == r.UnitId).Select(v => new CoverMoney(v.Currency, v.Amount)), mainCurrency), r.LastChangeAt)).ToList(),
+            OrderMoney(values.Where(v => v.UnitId == r.UnitId).Select(v => new CoverMoney(v.Currency, v.Amount)), mainCurrency), r.LastChangeAt,
+            labels.Where(c => c.UnitId == r.UnitId).OrderBy(c => c.FamilyName).ThenBy(c => c.Kind).Select(c => new CoverChangeLabel(c.Kind, c.FamilyName, c.PolicyName)).ToList())).ToList(),
             more ? Encode(rows[^1].LastChangeAt, rows[^1].UnitId) : null);
     }
 
@@ -169,6 +179,9 @@ public sealed class CoverDeviationQueries(SerialisationDbContext db, ITenantCont
         var histogram = await changes.GroupBy(c => new { c.Kind, c.MonthsAfterSale }).Select(g => new { g.Key.Kind, Month = g.Key.MonthsAfterSale, Count = g.Count() }).ToListAsync(ct);
         var byKind = await changes.GroupBy(c => c.Kind).Select(g => new { Kind = g.Key, Units = g.Select(c => c.UnitId).Distinct().Count() }).ToListAsync(ct);
         var money = await changes.Where(c => c.Currency != null && c.Amount != null).GroupBy(c => new { c.Kind, c.Currency }).Select(g => new { g.Key.Kind, Currency = g.Key.Currency!, Amount = g.Sum(c => c.Amount!.Value) }).ToListAsync(ct);
+        var firstPurchaseMonths = await changes.Where(c => c.Kind == "added" && c.Amount > 0)
+            .GroupBy(c => c.UnitId).Select(g => new { Month = g.Min(c => c.MonthsAfterSale) })
+            .GroupBy(c => c.Month).Select(g => new { Month = g.Key, Count = g.Count() }).ToListAsync(ct);
         var main = await currency.GetAsync(ct);
         var summaries = byKind.OrderBy(g => g.Kind).Select(g =>
         {
@@ -179,7 +192,17 @@ public sealed class CoverDeviationQueries(SerialisationDbContext db, ITenantCont
                 OrderMoney(money.Where(m => m.Kind == g.Kind).Select(m => new CoverMoney(m.Currency, m.Amount)), main));
         }).ToList();
         return new(await sold.CountAsync(ct), await units.CountAsync(ct), count,
-            OrderMoney(money.Select(m => new CoverMoney(m.Currency, m.Amount)), main), summaries);
+            OrderMoney(money.Select(m => new CoverMoney(m.Currency, m.Amount)), main), summaries,
+            Median(firstPurchaseMonths.Select(h => (h.Month, h.Count))));
+    }
+
+    private static decimal? Median(IEnumerable<(int Month, int Count)> histogram)
+    {
+        var ordered = histogram.OrderBy(h => h.Month).ToList();
+        var count = ordered.Sum(h => h.Count);
+        if (count == 0) return null;
+        int At(int rank) { var seen = 0; foreach (var row in ordered) { seen += row.Count; if (seen > rank) return row.Month; } return 0; }
+        return (At((count - 1) / 2) + At(count / 2)) / 2m;
     }
 
     public async Task<bool> ExportTooLargeAsync(CoverChangeFilters filter, CancellationToken ct)

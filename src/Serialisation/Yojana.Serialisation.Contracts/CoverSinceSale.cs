@@ -15,8 +15,9 @@ public sealed record CoverChangeFilters(DateOnly? SoldFrom = null, DateOnly? Sol
     string? ItemFamily = null, string? ChangeKind = null, string? Serial = null);
 public sealed record CoverChangeUnit(Guid UnitId, string Serial, string ItemName, string? CustomerName, string? ItemFamilyName,
     DateOnly SaleDate, string? SaleDocumentNumber, int ChangeCount, IReadOnlyList<string> Kinds,
-    IReadOnlyList<CoverMoney> Value, DateTime LastChangeAt);
+    IReadOnlyList<CoverMoney> Value, DateTime LastChangeAt, IReadOnlyList<CoverChangeLabel> Changes);
+public sealed record CoverChangeLabel(string Kind, string FamilyName, string PolicyName);
 public sealed record CoverChangePage(IReadOnlyList<CoverChangeUnit> Rows, string? NextCursor);
 public sealed record CoverChangeKindSummary(string Kind, int Units, decimal? MedianMonthsAfterSale, IReadOnlyList<CoverMoney> Value);
 public sealed record CoverChangeSummary(int UnitsSold, int UnitsChanged, int Changes, IReadOnlyList<CoverMoney> Value,
-    IReadOnlyList<CoverChangeKindSummary> ByKind);
+    IReadOnlyList<CoverChangeKindSummary> ByKind, decimal? MedianMonthsToFirstPurchase);

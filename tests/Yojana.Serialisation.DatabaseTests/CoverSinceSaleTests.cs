@@ -35,10 +35,10 @@ public sealed class CoverSinceSaleTests(SerialisationHostFixture fixture)
         var draft = await Invoke<PolicyDraftResult>(tenant, new CreatePolicyDraft(Guid.NewGuid(), "P" + Guid.NewGuid().ToString("N")[..8], name, family, stacking ? EntitlementType.Extended : EntitlementType.Manufacturer, new(2020, 1, 1), terms, "quality.user"));
         return await Invoke<PolicyDraftResult>(tenant, new PublishPolicyVersion(draft.PolicyVersionId, "quality.user"));
     }
-    private async Task<(TenantId Tenant, Guid Unit, Guid Base, Guid Service, Guid Item, Guid Owner, string Serial)> Setup(string prefix, bool service = false)
+    private async Task<(TenantId Tenant, Guid Unit, Guid Base, Guid Service, Guid Item, Guid Owner, string Serial)> Setup(string prefix, bool service = false, int baseMonths = 12)
     {
         var tenant = await fixture.NewTenantAsync(prefix, "USD", "EUR");
-        var policy = await Policy(tenant, CoverageFamilyCode.Base, "Standard 12 months", 12);
+        var policy = await Policy(tenant, CoverageFamilyCode.Base, $"Standard {baseMonths} months", baseMonths);
         var item = Guid.NewGuid();
         var owner = Guid.NewGuid();
         var serial = "RS11-2509-04417-" + Guid.NewGuid().ToString("N")[..6];
@@ -120,6 +120,9 @@ public sealed class CoverSinceSaleTests(SerialisationHostFixture fixture)
         var query = scope.ServiceProvider.GetRequiredService<CoverDeviationQueries>();
         var summary = await query.SummaryAsync(new(), CancellationToken.None);
         Assert.Equal((1, 1, 4), (summary.UnitsSold, summary.UnitsChanged, summary.Changes));
+        Assert.Equal(4m, summary.MedianMonthsToFirstPurchase);
+        var reportUnit = Assert.Single((await query.PageAsync(new(), null, 25, CancellationToken.None)).Rows);
+        Assert.Contains(reportUnit.Changes, c => c.Kind == "added" && c.PolicyName == "Extended 24 months");
         Assert.Equal(new CoverMoney("USD", 1140), Assert.Single(summary.Value));
         Assert.Equal(3, summary.ByKind.Sum(k => k.Units));
         var rows = new List<IReadOnlyList<string?>>();
@@ -137,6 +140,58 @@ public sealed class CoverSinceSaleTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Priced_invoice_extension_keeps_its_amount_on_the_amendment_without_overwriting_the_original_sale()
+    {
+        var s = await Setup("coverextension", true);
+        var policy = await Policy(s.Tenant, "service_level", "Another year of standard service", 12);
+        var doc = new DocumentRef("invoice", Guid.NewGuid(), 1);
+        var at = new DateTime(2026, 6, 2, 10, 0, 0, DateTimeKind.Utc);
+        fixture.Services.GetRequiredService<InMemoryDocumentNumberRegistry>().Register(new(doc, "INV-2026-EXTEND"));
+        fixture.Services.GetRequiredService<InMemoryDocumentPorts>().Add(new InvoiceDocument(doc, new("sales_order", Guid.NewGuid()), s.Owner, Obligor, at,
+            [new InvoiceLine(1, Guid.NewGuid(), 1, 140, "USD", "warranty_service", policy.PolicyCode, policy.PolicyVersionId, new(WarrantyTargetRule.AttachedList, Serials: [s.Serial]))], Country: "DE"));
+        await Invoke<ConsumedEventResult>(s.Tenant, new SalesInvoicePosted(new(Guid.NewGuid(), Obligor, at, "sales"), doc));
+        await AssertProjected(s.Tenant, s.Unit, 1);
+        var view = await View(s.Tenant, s.Unit);
+        var change = Assert.Single(view.Changes);
+        Assert.Equal(("amended", 140m, "USD"), (change.Kind, change.Amount, change.Currency));
+        Assert.Equal("INV-2026-EXTEND", change.DocumentNumber);
+        Assert.Equal(new CoverMoney("USD", 140), Assert.Single(view.Value));
+        using var scope = fixture.ScopeFor(s.Tenant);
+        Assert.Null((await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Entitlements.SingleAsync(e => e.EntitlementId == s.Service)).SalePrice);
+    }
+
+    [DatabaseFact]
+    public async Task Purchased_upgrade_stays_upgraded_after_transfer_but_a_later_unpriced_policy_change_is_changed()
+    {
+        var s = await Setup("coverlineage", true);
+        var policy = await Policy(s.Tenant, "service_level", "Next business day on-site", 36, mode: "on_site");
+        var doc = new DocumentRef("invoice", Guid.NewGuid(), 1);
+        var at = new DateTime(2026, 6, 2, 10, 0, 0, DateTimeKind.Utc);
+        fixture.Services.GetRequiredService<InMemoryDocumentPorts>().Add(new InvoiceDocument(doc, new("sales_order", Guid.NewGuid()), s.Owner, Obligor, at,
+            [new InvoiceLine(1, Guid.NewGuid(), 1, 320, "USD", "warranty_service", policy.PolicyCode, policy.PolicyVersionId, new(WarrantyTargetRule.AttachedList, Serials: [s.Serial]))], Country: "DE"));
+        await Invoke<ConsumedEventResult>(s.Tenant, new SalesInvoicePosted(new(Guid.NewGuid(), Obligor, at, "sales"), doc));
+        var upgraded = (await View(s.Tenant, s.Unit)).Changes.Single().EventId;
+        Guid entitlement;
+        using (var scope = fixture.ScopeFor(s.Tenant))
+            entitlement = (await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Entitlements.SingleAsync(e => e.CreatedEventId == upgraded)).EntitlementId;
+        await Invoke<ReplacementPolicyRow>(s.Tenant, new DefineReplacementPolicy("CARRY", ReplacementRule.CarryRemaining, null, null, null));
+        var target = (await Invoke<CommissionUnitsResult>(s.Tenant, new CommissionUnits(Guid.NewGuid(), s.Item, UnitOrigin.Purchased,
+            [new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, "LINEAGE-" + Guid.NewGuid().ToString("N")[..8])])], Sale, "quality.user", Obligor))).Lines[0].UnitId!.Value;
+        await Invoke<TransferEntitlementResult>(s.Tenant, new TransferEntitlement(Guid.NewGuid(), s.Base, target, Guid.NewGuid(), new(2026, 8, 1),
+            new(2026, 8, 1, 10, 0, 0, DateTimeKind.Utc), "quality.user", "CARRY"));
+        var transferred = await Invoke<TransferEntitlementResult>(s.Tenant, new TransferEntitlement(Guid.NewGuid(), entitlement, target, Guid.NewGuid(), new(2026, 8, 1),
+            new(2026, 8, 1, 10, 0, 0, DateTimeKind.Utc), "quality.user", "CARRY"));
+        Assert.Equal("upgraded", (await View(s.Tenant, target)).Families.Single(f => f.FamilyName == "Service level").Change);
+        var correction = await Policy(s.Tenant, "service_level", "Corrected on-site service", 36, mode: "on_site");
+        await Invoke<SupersedeEntitlementResult>(s.Tenant, new SupersedeEntitlement(Guid.NewGuid(), transferred.TargetEntitlementId, new(2026, 9, 1), AmendmentReason.Correction,
+            new(2026, 9, 1, 10, 0, 0, DateTimeKind.Utc), "quality.user", correction.PolicyVersionId, CommittedBy: Manager));
+        var view = await View(s.Tenant, target);
+        Assert.Equal("changed", view.Families.Single(f => f.FamilyName == "Service level").Change);
+        Assert.Equal(new CoverMoney("USD", 320), Assert.Single(view.Value));
+        await AssertProjected(s.Tenant, target, 2);
+    }
+
+    [DatabaseFact]
     public async Task Refund_without_a_recorded_amount_does_not_invent_negative_money_and_currencies_stay_separate()
     {
         var s = await Setup("covermoney");
@@ -149,6 +204,17 @@ public sealed class CoverSinceSaleTests(SerialisationHostFixture fixture)
         using var scope = fixture.ScopeFor(s.Tenant);
         var summary = await scope.ServiceProvider.GetRequiredService<CoverDeviationQueries>().SummaryAsync(new(), CancellationToken.None);
         Assert.Equal(view.Value, summary.Value);
+    }
+
+    [DatabaseFact]
+    public async Task An_elapsed_end_date_needs_a_recorded_expiry_reason_before_it_is_labelled_ended()
+    {
+        var s = await Setup("coverunknown", baseMonths: 1);
+        Assert.Equal("unresolved", (await View(s.Tenant, s.Unit)).Families.Single().Change);
+        await Invoke<EntitlementChangeResult>(s.Tenant, new CloseEntitlement(Guid.NewGuid(), s.Base, EntitlementClosedReason.Expired, new(2025, 12, 4),
+            new(2025, 12, 4, 10, 0, 0, DateTimeKind.Utc), "quality.user"));
+        Assert.Equal("ended", (await View(s.Tenant, s.Unit)).Families.Single().Change);
+        await AssertProjected(s.Tenant, s.Unit, 0);
     }
 
     [DatabaseFact]

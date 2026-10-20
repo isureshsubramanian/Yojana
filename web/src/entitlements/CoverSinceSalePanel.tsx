@@ -11,10 +11,14 @@ import "./cover.css";
 export function CoverSinceSalePanel({ unitId, compact = false }: { unitId: string; compact?: boolean }) {
   const [data, setData] = useState<CoverSinceSale | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [changedOnly, setChangedOnly] = useState(false);
   useEffect(() => { const controller = new AbortController(); setData(null); setError(null); coverApi.unit(unitId, controller.signal).then(setData).catch((e) => { if (!controller.signal.aborted) setError(e); }); return () => controller.abort(); }, [unitId]);
   if (error) return <ErrorNote error={error} />;
   if (!data) return <p role="status">Loading cover since sale…</p>;
+  return <CoverSinceSaleView data={data} compact={compact} />;
+}
+
+export function CoverSinceSaleView({ data, compact = false }: { data: CoverSinceSale; compact?: boolean }) {
+  const [changedOnly, setChangedOnly] = useState(false);
   if (!data.saleDate) return <section className="card"><div className="card-body"><h2>No sale recorded</h2><p className="muted">An outbound base entitlement and its sale document are needed for this comparison.</p></div></section>;
   const baseEnd = data.families.map((f) => f.atSale?.endDate).filter((v): v is string => !!v).sort().at(-1);
   return <div className="stack cover-since-sale">

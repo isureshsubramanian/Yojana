@@ -8,7 +8,7 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote } from "../units/common";
 import { fmtDate } from "../units/format";
 import { coverApi } from "./coverApi";
-import { changeLabel, coverKinds, coverQuery, moneyLabel } from "./coverModel";
+import { changeLabel, coverChangeLabel, coverKinds, coverQuery, moneyLabel } from "./coverModel";
 import { CoverSinceSalePanel } from "./CoverSinceSalePanel";
 import type { CoverFilters, CoverPage, CoverSummary, CoverUnit } from "./coverTypes";
 
@@ -33,7 +33,7 @@ export function Component() {
     { key: "serial", label: "Serial · item", width: 20, render: (r) => <><span className="serial">{r.serial}</span><span className="sub">{r.itemName}</span></> },
     { key: "customer", label: "Customer", width: 17, render: (r) => r.customerName ?? "Not recorded" },
     { key: "sold", label: "Sold · document", width: 15, render: (r) => <>{fmtDate(r.saleDate)}<span className="sub">{r.saleDocumentNumber}</span></> },
-    { key: "changes", label: "Changes since sale", width: 24, render: (r) => <div className="cover-chips">{r.kinds.map((kind) => <StatusBadge key={kind} tone={kind === "added" ? "info" : "warn"}>{changeLabel(kind)}</StatusBadge>)}<span className="sub">{r.changeCount} changes</span></div> },
+    { key: "changes", label: "Changes since sale", width: 24, render: (r) => <div className="cover-chips" title={r.changes.map(coverChangeLabel).join(" · ")}>{r.changes.map((change) => <StatusBadge key={`${change.kind}:${change.familyName}:${change.policyName}`} tone={change.kind === "added" ? "info" : "warn"}>{coverChangeLabel(change)}</StatusBadge>)}<span className="sub">{r.changeCount} changes</span></div> },
     { key: "value", label: "Value added", width: 14, numeric: true, render: (r) => moneyLabel(r.value) },
     { key: "last", label: "Last change", width: 10, render: (r) => fmtDate(r.lastChangeAt) },
   ];
@@ -44,7 +44,13 @@ export function Component() {
     <ErrorNote error={error} />
     <div className="stack">
       <section className="card"><div className="card-body cover-filters"><label className="field">Sold from<input className="input" type="date" value={filters.soldFrom ?? ""} onChange={(e) => filter("soldFrom", e.target.value)} /></label><label className="field">Sold to<input className="input" type="date" value={filters.soldTo ?? ""} onChange={(e) => filter("soldTo", e.target.value)} /></label><PartyField id="cover-customer" label="Customer" value={filters.customer ?? null} onChange={(value) => filter("customer", value)} optional /><label className="field">Item family<select className="select" value={filters.itemFamily ?? ""} onChange={(e) => filter("itemFamily", e.target.value)}><option value="">All item families</option>{families.options.map((f) => <option key={f.code} value={f.code}>{f.name}</option>)}</select></label><label className="field">Change<select className="select" value={filters.changeKind ?? ""} onChange={(e) => filter("changeKind", e.target.value)}><option value="">Any change</option>{coverKinds.map((k) => <option key={k} value={k}>{changeLabel(k)}</option>)}</select></label><label className="field">Serial<input className="input" type="search" placeholder="Serial starts with…" value={filters.serial ?? ""} onChange={(e) => filter("serial", e.target.value)} /></label></div></section>
-      <KpiStrip kpis={[{ label: "Cover changed since sale", value: summary?.unitsChanged.toLocaleString() ?? "…", detail: summary?.unitsSold ? `${(summary.unitsChanged / summary.unitsSold * 100).toFixed(1)}% of units sold` : "Of units with a sale baseline", trend: null }, { label: "Bought after the sale", value: summary ? moneyLabel(summary.value) : "…", detail: "Recorded values, by currency", trend: null }, { label: "Changes", value: summary?.changes.toLocaleString() ?? "…", detail: "A unit may have several changes", trend: null }, { label: "Units sold", value: summary?.unitsSold.toLocaleString() ?? "…", detail: "In the selected sale period", trend: null }]} />
+      <KpiStrip kpis={[
+        { label: "Units sold in period", value: summary?.unitsSold.toLocaleString() ?? "…", detail: "Serial-tracked, with a sale baseline", trend: null },
+        { label: "Cover changed since sale", value: summary?.unitsChanged.toLocaleString() ?? "…", detail: summary?.unitsSold ? `${(summary.unitsChanged / summary.unitsSold * 100).toFixed(1)}% of units sold` : "Of units with a sale baseline", trend: null },
+        { label: "Bought after the sale", value: summary ? moneyLabel(summary.value) : "…", detail: `${summary?.changes.toLocaleString() ?? "…"} changes · values by currency`, trend: null },
+        { label: "Typical time to buy", value: summary ? summary.medianMonthsToFirstPurchase == null ? "—" : `${summary.medianMonthsToFirstPurchase} months` : "…", detail: "Median from sale to first priced add-on", trend: null },
+        { label: "Closed early", value: summary ? String(summary.byKind.find((k) => k.kind === "closed_early")?.units ?? 0) : "…", detail: "Refunds, cancellations and voids", trend: null },
+      ]} />
       <section className="card"><div className="card-header"><h2>What changed</h2><span className="meta">A unit counts once per kind · median over changes</span></div><table className="table dense"><thead><tr><th>Change</th><th className="num">Units</th><th className="num">Median months after sale</th><th className="num">Value added</th></tr></thead><tbody>{summary?.byKind.map((k) => <tr key={k.kind}><td className="primary">{changeLabel(k.kind)}</td><td className="num">{k.units.toLocaleString()}</td><td className="num">{k.medianMonthsAfterSale ?? "—"}</td><td className="num">{moneyLabel(k.value)}</td></tr>)}{summary?.byKind.length === 0 && <tr><td colSpan={4} className="muted">No changes match these filters.</td></tr>}</tbody></table></section>
       <section className="card"><div className="card-header"><h2>Units</h2><span className="meta">Latest change first · select a row for its cover history</span></div><DataGrid columns={columns} page={{ rows: data?.rows ?? [], total: summary?.unitsChanged ?? 0, page: pageNumber, pageSize: 25, continuation: data?.nextCursor ?? null, totalIsExact: false, hasMore: data?.nextCursor != null }} rowId={(r) => r.unitId} onPage={page} onRowClick={open} activeRowId={active} loading={loading} emptyText="No cover changes match these filters." footerNote="Export carries every counted change as its own row" /></section>
       {(summary?.changes ?? 0) > 100000 && <p className="hint">Narrow the filters to export no more than 100,000 changes.</p>}

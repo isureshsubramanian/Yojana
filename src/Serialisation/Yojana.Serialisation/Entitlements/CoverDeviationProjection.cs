@@ -113,8 +113,10 @@ public sealed class CoverDeviationBackfill(SerialisationDbContext db, ITenantCon
             .Select(e => e.UnitId).Distinct().OrderBy(id => id).Take(take).ToListAsync(ct);
         foreach (var id in ids)
         {
-            // Hold the unit row against entitlement writers until this snapshot commits. A writer already in flight
-            // either precedes this read or rebuilds again after it; stale backfill must never overwrite newer cover.
+            // Coupled to UnitEventWriter saving unit_current before notifying append observers in its transaction.
+            // Hold that same row lock until this snapshot commits: a live writer either precedes this read or rebuilds
+            // again after it. Separating the lock from either rebuild permits stale backfill to overwrite newer cover.
+            // Keep the writer-side comment in step.
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT unit_id FROM serialisation.unit_current WITH (UPDLOCK, HOLDLOCK) WHERE tenant_id={tenant.TenantId.Value} AND unit_id={id}", ct);
             await projection.RebuildAsync(id, ct);
             checkpoint.CursorUnitId = id;
