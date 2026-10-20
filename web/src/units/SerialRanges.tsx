@@ -93,7 +93,7 @@ export function Component() {
           <div>
             <div className="eyebrow">Serial ranges · scheme {scheme || "…"}{list ? ` · ${list.ranges.toLocaleString()} ranges · ${list.serialsIssued.toLocaleString()} serials issued` : ""}</div>
             <h1>Allocate serial range</h1>
-            <p className="sub">{definition ? `${definition.code} · ${definition.identifierType} · ${definition.prefix}${definition.blockFormat ? definition.blockFormat : ""}${definition.separator}${"N".repeat(definition.counterDigits)} · example ${definition.example}` : "A reservation of serials for an order; nothing exists in the unit table until commissioning."}</p>
+            <p className="sub">{definition ? `${definition.code} · ${humanise(definition.identifierType)} · ${definition.prefix}${definition.blockFormat ? definition.blockFormat : ""}${definition.separator}${"N".repeat(definition.counterDigits)} · example ${definition.example}` : "A reservation of serials for an order; nothing exists in the unit table until commissioning."}</p>
           </div>
           <div className="actions">
             <Link className="btn ghost" to="/units">Cancel</Link>
@@ -106,7 +106,7 @@ export function Component() {
             <div className="card-header"><h2 id="h-alloc">Allocation</h2><span className="meta">reservation, not identity</span></div>
             <div className="card-body">
               <div className="form-grid">
-                <div className="field"><label htmlFor="a-scheme">Scheme</label><select id="a-scheme" className="select" value={scheme} onChange={(e) => { setScheme(e.target.value); setPage(1); }}>{schemes.map((s) => <option key={s.code} value={s.code}>{s.code} · {s.identifierType} · {s.example}</option>)}</select></div>
+                <div className="field"><label htmlFor="a-scheme">Scheme</label><select id="a-scheme" className="select" value={scheme} onChange={(e) => { setScheme(e.target.value); setPage(1); }}>{schemes.map((s) => <option key={s.code} value={s.code}>{s.code} · {humanise(s.identifierType)} · {s.example}</option>)}</select></div>
                 <ItemField id="a-item" label="Item" value={itemId} onChange={setItemId} optional hint="Leave empty when the range may be used across items" />
                 <DocumentField id="a-document" label="Allocated to" types={["production_order"]} value={allocatedTo} onChange={setAllocatedTo} hint="Search by production-order number" />
                 <div className="field span">

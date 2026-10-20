@@ -13,7 +13,7 @@ import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section, UnitLink } from "./common";
-import { fmtDate, fmtDateTime, humanise, statusLabel } from "./format";
+import { fmtDate, fmtDateTime, humanise, sentence, statusLabel } from "./format";
 import { EntitlementPanel, openAmendEntitlement, openAttachEntitlement, type EntitlementSummary } from "../entitlements/EntitlementPanel";
 import { CoverSinceSalePanel } from "../entitlements/CoverSinceSalePanel";
 import type { UnitEntitlementDetail } from "../entitlements/types";
@@ -247,7 +247,7 @@ export function Component() {
           <Kv rows={[["Derived from", detail?.derivedFromUnitId ? <UnitLink unitId={detail.derivedFromUnitId}>Open unit</UnitLink> : "—"], ["Merged into", detail?.mergedIntoUnitId ? <UnitLink unitId={detail.mergedIntoUnitId}>Open unit</UnitLink> : "—"], ["Parent", detail?.parentUnitId ? <UnitLink unitId={detail.parentUnitId}>Open unit</UnitLink> : "—"], ["Children", detail ? `${detail.asBuilt.filter((a) => a.childUnitId && !a.removedAt).length} serialised · ${detail.asBuilt.filter((a) => !a.childUnitId && !a.removedAt).length} lot` : "—"], ["Origin", humanise(detail?.origin)], ["Serialisation point", humanise(detail?.serialisationPoint)], ["Retention class", detail?.retentionClass ?? "—"], ["History depth", detail?.historyDepth ?? "—"]]} />
         </Section>
         <Section title="Last events">
-          {history?.items.slice(0, 3).map((e) => <div className="job" key={e.eventId}><div><div className="t">{e.eventType}</div><div className="s">{fmtDateTime(e.eventTime)} · recorded {fmtDateTime(e.recordedTime).slice(11)}</div></div><StatusBadge tone="neutral">seq …{String(e.seq).slice(-4)}</StatusBadge></div>)}
+          {history?.items.slice(0, 3).map((e) => <div className="job" key={e.eventId}><div><div className="t">{eventTitle(e.eventType)}</div><div className="s">{fmtDateTime(e.eventTime)} · recorded {fmtDateTime(e.recordedTime).slice(11)}</div></div><StatusBadge tone="neutral">seq …{String(e.seq).slice(-4)}</StatusBadge></div>)}
         </Section>
         <Section title="Later phases add here">
           <p className="muted">Workbench entry (P3), RMA and refurbishment (P5), and certificates (P6). Entitlements are now part of the unit record above.</p>
@@ -287,7 +287,7 @@ function CorrectForm({ unitId, types, onDone }: { unitId: string; types: string[
       <div className="form-grid">
         <div className="field"><label htmlFor="c-type">Identifier type</label><select id="c-type" className="select" value={type} onChange={(e) => setType(e.target.value)}>{types.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
         <div className="field"><label htmlFor="c-value">New value</label><input id="c-value" className="input serial" value={value} onChange={(e) => setValue(e.target.value)} autoComplete="off" spellCheck={false} /></div>
-        <div className="field"><label htmlFor="c-reason">Reason</label><select id="c-reason" className="select" value={reason} onChange={(e) => setReason(e.target.value)}>{REASONS.map((r) => <option key={r} value={r}>{r}</option>)}</select></div>
+        <div className="field"><label htmlFor="c-reason">Reason</label><select id="c-reason" className="select" value={reason} onChange={(e) => setReason(e.target.value)}>{REASONS.map((r) => <option key={r} value={r}>{sentence(r)}</option>)}</select></div>
         <div className="field"><label htmlFor="c-approver">Approver <span className="hint">· required after the unit appeared on an external document</span></label><input id="c-approver" className="input" value={approver} onChange={(e) => setApprover(e.target.value)} /></div>
         <div className="field"><label htmlFor="c-note">Note</label><textarea id="c-note" className="textarea" value={note} onChange={(e) => setNote(e.target.value)} /></div>
         <ErrorNote error={error} />

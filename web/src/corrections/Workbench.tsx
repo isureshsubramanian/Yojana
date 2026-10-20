@@ -8,7 +8,7 @@ import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section } from "../units/common";
-import { fmtDate, fmtDateTime, humanise, outcomeTone, shortId, statusLabel, statusTone } from "../units/format";
+import { fmtDate, fmtDateTime, humanise, outcomeTone, sentence, shortId, statusLabel, statusTone } from "../units/format";
 import { DocumentField, ItemField, useReferenceNames } from "./ReferenceFields";
 import {
   DEDICATED_SCREENS, commandName, recordedRows, workbenchApi,
@@ -202,7 +202,7 @@ export function Component() {
   const showEvent = (event: HistoryRow) => {
     let attributes = event.attributes;
     try { attributes = JSON.stringify(JSON.parse(event.attributes ?? "{}"), null, 2); } catch { /* raw text */ }
-    openDrawer({ eyebrow: `Event · ${primary?.rawValue ?? ""}`, title: event.eventType, mono: true }, <>
+    openDrawer({ eyebrow: `Event · ${primary?.rawValue ?? ""}`, title: sentence(event.eventType) }, <>
       <h3>Event</h3>
       <Kv rows={[["Effective", fmtDateTime(event.eventTime)], ["Recorded", fmtDateTime(event.recordedTime)], ["Actor", person(event.actorRef)], ["Source document", referenceNames.document(event.document)], ["Event id", shortId(event.eventId, 12)]]} />
       <h3 style={{ marginTop: 16 }}>Is this event the problem?</h3>
@@ -254,7 +254,7 @@ export function Component() {
               ["Owner", owner ? `${humanise(owner.partyType)} ${referenceNames.party(owner.partyRef)} · since ${fmtDate(owner.validFrom)}` : "no owner recorded"],
               ["Opened by", referenceNames.document(owner?.openingDocument)],
               ["Custody", custody ? `${humanise(custody.locationKind ?? custody.partyType)}${custody.partyRef ? ` · ${referenceNames.party(custody.partyRef)}` : ""}` : "—"],
-              ["Entitlements", live.length ? live.map((e) => `${e.coverageFamily}${e.endDate ? ` to ${e.endDate}` : ""}`).join(" · ") : "none live"],
+              ["Entitlements", live.length ? live.map((e) => `${e.coverageFamilyName ?? sentence(e.coverageFamily)}${e.endDate ? ` to ${fmtDate(e.endDate)}` : ""}`).join(" · ") : "none live"],
               ["Earlier corrections", lineage?.corrections.length ? lineage.corrections.map((c) => humanise(c.command)).join(" · ") : "none"],
               ["Merged into", state.mergedIntoUnitId ? shortId(state.mergedIntoUnitId, 12) : "—"],
             ]} /> : <p className="muted">Scan or type a serial to see the unit, its identifier lineage and its last events.</p>}</div>
@@ -263,14 +263,14 @@ export function Component() {
           <section className="card" aria-labelledby="wb-lineage">
             <div className="card-header"><h2 id="wb-lineage">Identifier lineage</h2><span className="meta">{lineage?.identifiers.length ?? 0} rows</span></div>
             <table className="table dense"><thead><tr><th>Value</th><th>Type</th><th>Valid</th><th>Link</th></tr></thead><tbody>
-              {(lineage?.identifiers ?? []).map((i) => <tr key={i.identifierId}><td className="serial">{i.rawValue}</td><td>{i.type}</td><td>{i.validTo ? `to ${fmtDate(i.validTo)}` : `from ${fmtDate(i.validFrom)}`}</td><td>{i.validTo ? <>superseded<span className="sub">{i.correctionReason ? humanise(i.correctionReason) : ""}</span></> : "current"}</td></tr>)}
+              {(lineage?.identifiers ?? []).map((i) => <tr key={i.identifierId}><td className="serial">{i.rawValue}</td><td>{sentence(i.type)}</td><td>{i.validTo ? `to ${fmtDate(i.validTo)}` : `from ${fmtDate(i.validFrom)}`}</td><td>{i.validTo ? <>superseded<span className="sub">{i.correctionReason ? humanise(i.correctionReason) : ""}</span></> : "current"}</td></tr>)}
               {!lineage && <tr><td colSpan={4} className="empty-cell">No unit selected.</td></tr>}
             </tbody></table>
           </section>
 
           <section className="card" aria-labelledby="wb-events">
             <div className="card-header"><h2 id="wb-events">Last ten events</h2>{unitId && <Link className="btn ghost" to={`/units/${unitId}`}>Full history</Link>}</div>
-            <div className="card-body"><ol className="timeline">{(lineage?.lastEvents ?? []).map((e, index) => <li key={e.eventId} className={`ev${index === 0 ? " key" : ""}`} style={{ cursor: "pointer" }} onClick={() => showEvent(e)}><span className="t">{e.eventType}</span><span className="m">{fmtDateTime(e.eventTime)} · {person(e.actorRef)}{e.document ? ` · ${referenceNames.document(e.document)}` : ""}</span></li>)}</ol>{!lineage && <p className="muted">—</p>}</div>
+            <div className="card-body"><ol className="timeline">{(lineage?.lastEvents ?? []).map((e, index) => <li key={e.eventId} className={`ev${index === 0 ? " key" : ""}`} style={{ cursor: "pointer" }} onClick={() => showEvent(e)}><span className="t">{sentence(e.eventType)}</span><span className="m">{fmtDateTime(e.eventTime)} · {person(e.actorRef)}{e.document ? ` · ${referenceNames.document(e.document)}` : ""}</span></li>)}</ol>{!lineage && <p className="muted">—</p>}</div>
           </section>
         </div>
 
@@ -359,7 +359,7 @@ function CommandForm({ command, unitId, primary, openTypes, args, setArgs, candi
       setArgs({ ...args, other: hit.resolvedUnitId }); setOtherLabel(`${hit.displayIdentifier ?? shortId(hit.resolvedUnitId)} · ${statusLabel(hit.lifecycleStatus)}`);
     } catch (reason) { setError(reason); }
   };
-  const typeSelect = <div className="field"><label htmlFor="wb-type">Identifier type</label><select id="wb-type" className="select" value={args.type ?? ""} onChange={(event) => set("type", event.target.value)}><option value="">Choose…</option>{openTypes.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>;
+  const typeSelect = <div className="field"><label htmlFor="wb-type">Identifier type</label><select id="wb-type" className="select" value={args.type ?? ""} onChange={(event) => set("type", event.target.value)}><option value="">Choose…</option>{openTypes.map((t) => <option key={t} value={t}>{sentence(t)}</option>)}</select></div>;
   if (STRUCTURED_COMMANDS.includes(command as typeof STRUCTURED_COMMANDS[number])) return <StructuredCommandForm command={command} unitId={unitId} primary={primary} candidates={candidates} lineage={lineage} initialDocument={initialDocument ?? null} initialSelectionId={initialSelectionId} reason={reason} corrects={corrects} onArguments={setStructuredArguments} />;
   const dedicated = DEDICATED_SCREENS[command];
   if (dedicated) {

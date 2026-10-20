@@ -43,7 +43,7 @@ export interface WorkbenchRequestRow {
 export interface WorkbenchRequestPage { items: WorkbenchRequestRow[]; total: number; skip: number; take: number }
 
 export interface WorkbenchItemAssignment { assignmentId: string; itemId: string; modelVersionId: string | null; validFrom: string; validTo: string | null; reason: string }
-export interface WorkbenchEntitlement { entitlementId: string; coverageFamily: string; type: string; direction: string; status: string; startDate: string | null; endDate: string | null; supersedesEntitlementId: string | null; parentEntitlementId: string | null }
+export interface WorkbenchEntitlement { entitlementId: string; coverageFamily: string; type: string; direction: string; status: string; startDate: string | null; endDate: string | null; supersedesEntitlementId: string | null; parentEntitlementId: string | null; coverageFamilyName: string | null }
 export interface WorkbenchAssemblyLink { linkId: string; parentUnitId: string; childUnitId: string | null; childItemId: string | null; relation: string; slot: string | null; installedAt: string; removedAt: string | null; perspective: string }
 export interface WorkbenchCorrectionHistory { correctionId: string; command: string; reasonCode: string; initiatedVia: string; initiatingRole: string; actorRef: string; eventTime: string; recordedTime: string; correctsCorrectionId: string | null; note: string | null }
 export interface WorkbenchUnitLineage {

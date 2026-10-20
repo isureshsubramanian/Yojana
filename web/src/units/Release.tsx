@@ -7,7 +7,7 @@ import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section, useActor } from "./common";
-import { humanise, shortId, splitSerials } from "./format";
+import { humanise, sentence, shortId, splitSerials } from "./format";
 
 const KINDS = [["document", "Document"], ["customer", "Customer"], ["item", "Item"], ["date_range", "Date range"], ["pasted_list", "Pasted list"], ["serial_range", "Serial range"]] as const;
 const REASONS = ["final_test_passed", "rework_complete", "qa_waiver"];
@@ -143,7 +143,7 @@ export function Component() {
                 {resolved && <div className={`span note ${resolved.rejected.length ? "bad" : "ok"}`}><strong>{resolved.resolved} units resolved.</strong>&nbsp;{resolved.unknown.length ? `${resolved.unknown.length} unknown: ${resolved.unknown.slice(0, 8).join(", ")}${resolved.unknown.length > 8 ? " …" : ""}. ` : ""}{resolved.rejected.length ? `Rejected: ${resolved.rejected.join("; ")}` : "A range expands within one block of its scheme, never by string arithmetic."}</div>}
                 <div className="field"><label htmlFor="s-srcdoctype">Source document type</label><input id="s-srcdoctype" className="input" value={sourceDocType} onChange={(e) => setSourceDocType(e.target.value)} /></div>
                 <div className="field"><label htmlFor="s-srcdocid">Source document id</label><input id="s-srcdocid" className="input serial" value={sourceDocId} onChange={(e) => setSourceDocId(e.target.value)} placeholder="guid · required for the preview" /></div>
-                <div className="field"><label htmlFor="s-reason">Reason</label><select id="s-reason" className="select" value={reason} onChange={(e) => setReason(e.target.value)}>{REASONS.map((r) => <option key={r} value={r}>{r}</option>)}</select></div>
+                <div className="field"><label htmlFor="s-reason">Reason</label><select id="s-reason" className="select" value={reason} onChange={(e) => setReason(e.target.value)}>{REASONS.map((r) => <option key={r} value={r}>{sentence(r)}</option>)}</select></div>
                 <div className="field"><label htmlFor="s-sig">Release signature ref</label><input id="s-sig" className="input" value={signature} onChange={(e) => setSignature(e.target.value)} placeholder={`sig:${actor}`} /></div>
                 <div className="field"><label htmlFor="s-approver">Approver <span className="hint">· recorded with the execution</span></label><input id="s-approver" className="input" value={approver} onChange={(e) => setApprover(e.target.value)} /></div>
                 <div className="field span"><label htmlFor="s-note">Note</label><textarea id="s-note" className="textarea" style={{ minHeight: 64 }} value={note} onChange={(e) => setNote(e.target.value)} /></div>

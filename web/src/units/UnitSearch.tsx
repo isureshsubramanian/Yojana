@@ -7,7 +7,7 @@ import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "./common";
-import { documentLabel, fmtDateTime, humanise, matchSpan, parseDocumentParam, shortId, statusLabel, statusTone } from "./format";
+import { documentLabel, fmtDateTime, humanise, matchSpan, parseDocumentParam, sentence, shortId, statusLabel, statusTone } from "./format";
 
 const PAGE = 50;
 const TYPES = ["internal_serial", "manufacturer_serial", "vendor_serial", "customer_serial", "imei", "mac", "udi_di", "sgtin", "giai", "vin", "customer_asset_tag", "channel_order_ref", "provisional"];
@@ -116,7 +116,7 @@ export function Component() {
               <div className="toolbar" style={{ marginTop: 12 }}>
                 <select className={`chip-select${type ? " on" : ""}`} aria-label="Identifier type" value={type} onChange={(e) => set({ type: e.target.value })}>
                   <option value="">Identifier · Any type</option>
-                  {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {TYPES.map((t) => <option key={t} value={t}>{sentence(t)}</option>)}
                 </select>
                 <select className={`chip-select${status ? " on" : ""}`} aria-label="Lifecycle status" value={status} onChange={(e) => set({ status: e.target.value })}>
                   <option value="">Status · All</option>

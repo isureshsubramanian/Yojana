@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { humanise, matchSpan, parseDocumentParam, serialFromScan, splitSerials, statusLabel, statusTone, documentLabel, fmtDateTime } from "../src/units/format.ts";
+import { humanise, matchSpan, parseDocumentParam, sentence, serialFromScan, splitSerials, statusLabel, statusTone, documentLabel, fmtDateTime } from "../src/units/format.ts";
 
 test("status labels and tones follow the lifecycle vocabulary", () => {
   assert.equal(statusLabel("pre_release"), "Pre-release");
@@ -32,4 +32,11 @@ test("match spans and time formatting", () => {
   assert.deepEqual(matchSpan("2506-493445", "2506-4934"), { start: 0, length: 9 });
   assert.equal(matchSpan("2506-493445", "zzz"), null);
   assert.equal(fmtDateTime("2026-10-15T09:41:07.123Z"), "2026-10-15 09:41");
+});
+
+test("stored codes read as sentence-case labels", () => {
+  assert.equal(sentence("internal_serial"), "Internal serial");
+  assert.equal(sentence("base_warranty"), "Base warranty");
+  assert.equal(sentence(null), "");
+  assert.equal(statusLabel(null), "—");
 });

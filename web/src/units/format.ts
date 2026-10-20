@@ -6,12 +6,18 @@ export function humanise(code: string | null | undefined): string {
   return code ? code.replace(/_/g, " ").replace(/\./g, " ") : "";
 }
 
+/** A stored code as a reader's label: "internal_serial" becomes "Internal serial". */
+export function sentence(code: string | null | undefined): string {
+  const h = humanise(code);
+  return h ? h[0]!.toUpperCase() + h.slice(1) : "";
+}
+
 export function statusLabel(status: string | null | undefined): string {
   switch (status) {
     case "pre_release": return "Pre-release";
     case "pending_identifier": return "Pending identifier";
     case "scrapped_pre_release": return "Scrapped pre-release";
-    default: { const h = humanise(status); return h ? h[0]!.toUpperCase() + h.slice(1) : "—"; }
+    default: return sentence(status) || "—";
   }
 }
 

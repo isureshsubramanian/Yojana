@@ -7,7 +7,7 @@ import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
 import { ErrorNote, Figure, Kv, Section, useActor } from "./common";
-import { outcomeTone, pct, serialFromScan, splitSerials } from "./format";
+import { outcomeTone, pct, sentence, serialFromScan, splitSerials } from "./format";
 
 interface Captured { n: number; raw: string; serial: string; vendor: string | null; lot: string | null; scan: ScanResult | null; source: "scan" | "typed" | "list"; at: string; errors: string[]; result?: CommissionLineResult | undefined }
 
@@ -138,10 +138,10 @@ export function Component() {
               <div className="stack" style={{ gap: 16 }}>
                 <div className="form-grid">
                   <div className="field"><label htmlFor="r-item">Item id <span className="hint">· from the host's item master</span></label><input id="r-item" className="input serial" value={itemId} onChange={(e) => setItemId(e.target.value)} placeholder="00000000-0000-0000-0000-000000000000" /></div>
-                  <div className="field"><label htmlFor="r-origin">Origin</label><select id="r-origin" className="select" value={origin} onChange={(e) => setOrigin(e.target.value)}>{ORIGINS.map((o) => <option key={o} value={o}>{o}</option>)}</select></div>
+                  <div className="field"><label htmlFor="r-origin">Origin</label><select id="r-origin" className="select" value={origin} onChange={(e) => setOrigin(e.target.value)}>{ORIGINS.map((o) => <option key={o} value={o}>{sentence(o)}</option>)}</select></div>
                   <div className="field"><label htmlFor="r-doctype">Document type</label><input id="r-doctype" className="input" value={docType} onChange={(e) => setDocType(e.target.value)} /></div>
                   <div className="field"><label htmlFor="r-docid">Document id <span className="hint">· line optional</span></label><div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px", gap: 8 }}><input id="r-docid" className="input serial" value={docId} onChange={(e) => setDocId(e.target.value)} placeholder="guid" /><input className="input num" value={docLine} onChange={(e) => setDocLine(e.target.value)} placeholder="line" aria-label="Document line" /></div></div>
-                  <div className="field"><label htmlFor="r-loc">Put away to <span className="hint">· opening custody</span></label><div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 150px", gap: 8 }}><input id="r-loc" className="input serial" value={locationId} onChange={(e) => setLocationId(e.target.value)} placeholder="location id" /><select className="select" value={locationKind} onChange={(e) => setLocationKind(e.target.value)} aria-label="Location kind">{LOCATION_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}</select></div></div>
+                  <div className="field"><label htmlFor="r-loc">Put away to <span className="hint">· opening custody</span></label><div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 150px", gap: 8 }}><input id="r-loc" className="input serial" value={locationId} onChange={(e) => setLocationId(e.target.value)} placeholder="location id" /><select className="select" value={locationKind} onChange={(e) => setLocationKind(e.target.value)} aria-label="Location kind">{LOCATION_KINDS.map((k) => <option key={k} value={k}>{sentence(k)}</option>)}</select></div></div>
                   <div className="field"><label htmlFor="r-expected">Expected <span className="hint">· from the document</span></label><input id="r-expected" className="input num" type="number" min={0} value={expected || ""} onChange={(e) => setExpected(Number(e.target.value) || 0)} /></div>
                 </div>
                 <div className="segmented plain" role="group" aria-label="Capture mode"><button type="button" aria-pressed={mode === "scan"} onClick={() => setMode("scan")}>Scan</button><button type="button" aria-pressed={mode === "paste"} onClick={() => setMode("paste")}>Paste list</button></div>

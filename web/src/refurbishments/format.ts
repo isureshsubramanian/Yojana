@@ -3,7 +3,7 @@ import type { RefurbishmentReleaseCheck, RefurbishmentWorkOrderRow } from "./typ
 
 export function humanise(value: string | null | undefined): string {
   if (!value) return "—";
-  return value.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase());
+  return value.replace(/[_.]/g, " ").replace(/^./, (letter) => letter.toUpperCase());
 }
 export function refurbishmentTone(status: string): Tone { return status === "released" ? "ok" : status === "cancelled" ? "bad" : "info"; }
 export function operationTone(status: string): Tone { return status === "completed" ? "ok" : "warn"; }
