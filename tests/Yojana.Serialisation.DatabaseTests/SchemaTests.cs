@@ -164,6 +164,34 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Merged_from_indexes_hold_merged_rows_only_and_the_live_cover_index_covers_the_owner()
+    {
+        using var scope = fixture.ScopeFor(null);
+        var db = Db(scope);
+        var merged = await db.Database.SqlQueryRaw<string>($"""
+            SELECT CONCAT(OBJECT_NAME(i.object_id) COLLATE DATABASE_DEFAULT, '|', ISNULL(i.filter_definition, '') COLLATE DATABASE_DEFAULT,
+                '|', ds.type_desc COLLATE DATABASE_DEFAULT) AS [Value]
+            FROM sys.indexes i JOIN sys.data_spaces ds ON ds.data_space_id = i.data_space_id
+            WHERE OBJECT_SCHEMA_NAME(i.object_id) = '{S}' AND i.name LIKE 'ix[_]%[_]merged[_]from[_]unit[_]id%'
+            """).ToListAsync();
+        var includes = await db.Database.SqlQueryRaw<string>($"""
+            SELECT c.name AS [Value]
+            FROM sys.indexes i
+            JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 1
+            JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+            WHERE i.object_id = OBJECT_ID('{S}.entitlement') AND i.name = 'ux_entitlement_tenant_id_unit_id_coverage_family'
+            """).ToListAsync();
+
+        Assert.Equal(14, merged.Count);
+        Assert.All(merged, value => Assert.Contains("|([merged_from_unit_id] IS NOT NULL)|", value, StringComparison.Ordinal));
+        // The ledger copies stay identical and partition-aligned so archival SWITCH keeps working.
+        Assert.All(merged.Where(value => value.StartsWith("unit_event", StringComparison.Ordinal)),
+            value => Assert.EndsWith("|PARTITION_SCHEME", value, StringComparison.Ordinal));
+        Assert.Equal(3, merged.Count(value => value.StartsWith("unit_event", StringComparison.Ordinal)));
+        Assert.Equal(["owner_party_ref"], includes);
+    }
+
+    [DatabaseFact]
     public async Task Unit_and_custody_episode_are_system_versioned_and_json_columns_are_checked()
     {
         using var scope = fixture.ScopeFor(null);
