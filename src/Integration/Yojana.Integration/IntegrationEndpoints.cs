@@ -22,6 +22,7 @@ public static class IntegrationEndpoints
         app.MapIntegrationTransportEndpoints();
         app.MapIntegrationNotificationEndpoints();
         app.MapConnectionEndpoints();
+        Yojana.Integration.Relays.RelayEndpoints.MapRelayEndpoints(app);
         app.MapIntegrationAttentionEndpoint();
         app.MapCx01WebhookEndpoints();
         return app.MapIntegrationOperationsEndpoints();

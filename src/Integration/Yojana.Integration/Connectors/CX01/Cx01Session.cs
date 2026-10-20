@@ -155,6 +155,7 @@ public sealed class Cx01Client(
     public async Task KeepAliveAsync(Guid connectionId, CancellationToken cancellationToken)
     {
         var configured = await settings.GetAsync(connectionId, cancellationToken);
+        if (SiteSession(configured)) return;
         var state = sessions.For(new(tenant.TenantId, connectionId));
         if (state.SessionCookie is null || state.ExpiresAtUtc - clock.UtcNow >
             TimeSpan.FromMinutes(configured.KeepAliveMinutes)) return;
@@ -189,6 +190,7 @@ public sealed class Cx01Client(
     {
         var configured = await settings.GetAsync(connectionId, cancellationToken);
         var key = new ConnectionWorkerKey(tenant.TenantId, connectionId);
+        if (SiteSession(configured)) return configured.Release;
         await EnsureSessionAsync(key, configured, cancellationToken);
         return sessions.For(key).Release ?? configured.Release;
     }
@@ -198,6 +200,8 @@ public sealed class Cx01Client(
     {
         var key = new ConnectionWorkerKey(tenant.TenantId, connectionId);
         var configured = await settings.GetAsync(connectionId, cancellationToken);
+        if (SiteSession(configured))
+            return await SendOnceAsync(key, configured, method, relativePath, body, idempotent, cancellationToken);
         await EnsureSessionAsync(key, configured, cancellationToken);
         var response = await SendOnceAsync(key, configured, method, relativePath, body, idempotent,
             cancellationToken);
@@ -214,7 +218,7 @@ public sealed class Cx01Client(
     {
         var state = sessions.For(key);
         using var request = new HttpRequestMessage(method, Resolve(configured.ServiceUri, relativePath));
-        request.Headers.TryAddWithoutValidation("Cookie",
+        if (!SiteSession(configured)) request.Headers.TryAddWithoutValidation("Cookie",
             $"{Cx01Protocol.SessionCookie}={state.SessionCookie}; {Cx01Protocol.RouteCookie}={state.RouteCookie}");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Options.Set(ConnectionRateLimitedHandler.IdempotentRequest, idempotent);
@@ -282,6 +286,12 @@ public sealed class Cx01Client(
             state.LoginLock.Release();
         }
     }
+
+    // Session ownership is declared here and in RelayLocalClient through the provisioning contract.
+    // Site credentials cannot cross the customer boundary, so the cloud must skip login and cookies.
+    // Changing one side alone replaces the agent-owned session and breaks all relay authentication.
+    private static bool SiteSession(Cx01ConnectionSettings configured) =>
+        configured.Transport == "site_relay" && configured.RelayCredentials == "site";
 
     private static Uri Resolve(Uri serviceUri, string relativePath) =>
         new(new Uri(serviceUri.GetLeftPart(UriPartial.Authority)), relativePath);

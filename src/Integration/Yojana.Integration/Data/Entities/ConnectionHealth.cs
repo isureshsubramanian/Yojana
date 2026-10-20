@@ -5,6 +5,7 @@ namespace Yojana.Integration.Data.Entities;
 /// <summary>Disposable read projection. Operational tables remain authoritative.</summary>
 public sealed class ConnectionHealth : ITenantScoped
 {
+    public bool RelayConnected { get; set; }
     public TenantId TenantId { get; set; }
     public Guid ConnectionId { get; set; }
     public string Status { get; set; } = "degraded";

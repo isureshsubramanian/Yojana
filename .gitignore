@@ -19,6 +19,7 @@ web/.dev/
 
 # Internal design documents are deliberately not committed (owner direction):
 # ADRs, research, reports and plan live beside the code but outside the repository history.
+/docs
 docs/
 reports/
 research_notes/

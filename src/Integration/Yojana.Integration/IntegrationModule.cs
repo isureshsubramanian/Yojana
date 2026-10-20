@@ -1,3 +1,4 @@
+using Yojana.Integration.Relays;
 using Yojana.Integration.Connections;
 using Azure.Identity;
 using Yojana.Integration.Transport;
@@ -64,7 +65,18 @@ public static class IntegrationModule
             ConnectionPollingJob.JobName, ConnectionPollingJob.Cron));
         builder.Services.AddSingleton<Cx01SessionRegistry>();
         builder.Services.AddScoped<Cx01Settings>();
-        builder.Services.AddScoped<ICx01Transport, Cx01Transport>();
+        builder.Services.AddScoped<Cx01Transport>();
+        builder.Services.AddScoped<ICx01Transport, RelayCx01Transport>();
+        builder.Services.AddKeyedScoped<IRelayConnectorProfile, Cx01RelayProfile>(Cx01Capabilities.ConnectorCode);
+        builder.Services.AddScoped<RelayRegistry>();
+        builder.Services.AddScoped<RelayAuthentication>();
+        builder.Services.AddScoped<RelaySigningKeyProtection>();
+        builder.Services.AddRelayRateLimiting();
+        builder.Services.AddScoped<RelayRequestQueue>();
+        builder.Services.AddScoped<RelayPayloadProtection>();
+        builder.Services.AddScoped<RelayMaintenance>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<RelayProbeJob>(RelayProbeJob.JobName, RelayProbeJob.Cron));
+        builder.Services.AddSingleton(RecurringTenantJob.For<RelayPurgeJob>(RelayPurgeJob.JobName, RelayPurgeJob.Cron));
         builder.Services.AddScoped<Cx01Client>();
         builder.Services.AddScoped<Cx01SessionMaintenance>();
         builder.Services.AddSingleton(RecurringTenantJob.For<Cx01SessionKeepAliveJob>(

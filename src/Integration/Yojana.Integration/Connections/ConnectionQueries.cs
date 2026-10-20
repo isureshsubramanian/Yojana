@@ -129,6 +129,7 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
                 && active.Any(connection => connection.ConnectionId == x.ConnectionId))
             .GroupBy(x => x.TenantId).Select(group => new
             {
+                RelayConnected = group.Count(x => x.RelayConnected),
                 Live = group.Count(x => x.IsLive), Paused = group.Count(x => x.Status == "paused"),
                 Today = group.Sum(x => x.ReceivedToday), Month = group.Sum(x => x.ReceivedLast30Days),
                 Waiting = group.Sum(x => x.OutboxDepth), Oldest = group.Min(x => x.OldestWaitingAt),
@@ -136,7 +137,7 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
                 Attention = group.Count(x => x.Status == "down" || x.Status == "degraded"),
             }).SingleOrDefaultAsync(ct);
         return new(count, summary?.Live ?? 0, summary?.Paused ?? 0, summary?.Today ?? 0, summary?.Month ?? 0,
-            summary?.Waiting ?? 0, summary?.Oldest, summary?.DeadLetters ?? 0, summary?.Tasks ?? 0, summary?.Attention ?? 0);
+            summary?.Waiting ?? 0, summary?.Oldest, summary?.DeadLetters ?? 0, summary?.Tasks ?? 0, summary?.Attention ?? 0, summary?.RelayConnected ?? 0);
     }
 
     private static string EventSummary(string kind) => kind switch
@@ -165,7 +166,7 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
         row.MaxOutboxAgeSeconds, row.OpenDeadLetters, row.OpenManualTasks, row.OldestDeadLetterAt,
         row.LastDailyCheckResult, row.LastDailyCheckAt, row.DailyCheckDifferences, row.CallsUsed, row.CallsCap,
         row.CallAlertPercent, row.CredentialReplaceBy, row.CredentialWarnDays, row.LastErrorCode,
-        row.LastErrorMessage, row.UpdatedAt);
+        row.LastErrorMessage, row.UpdatedAt, row.RelayConnected);
     private static ConnectionHealth Missing(Connection connection) => new()
     {
         ConnectionId = connection.ConnectionId, TenantId = connection.TenantId,

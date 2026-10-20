@@ -7,6 +7,12 @@ namespace Yojana.Integration.Security.Audit;
 
 public enum ConnectionAuditEventType
 {
+    RelayRegistered,
+    RelayRotated,
+    RelayRevoked,
+    RelayFirstSeen,
+    RelayVersionChanged,
+    RelayPathDenied,
     CredentialSet,
     CredentialRotated,
     ConnectionRegistered,

@@ -3,7 +3,7 @@
 # internal-only (docs, mockups, research, screenshots, sample data, benchmark
 # results, plans, ADRs, reports). Mirrors the internal section of .gitignore;
 # change both together. Install with: make hooks
-pattern='(^|/)(docs|reports|research_notes|research|mockups|screenshots|shots[^/]*|plans?|adrs?|benchmarks|samples|sample-data)/|(^|/)bench-[^/]*\.(md|json)$|\.(png|jpe?g|gif|webp|pdf)$|(^|/)\.env$|(^|/)\.claude/'
+pattern='(^|/)docs($|/)|(^|/)(docs|reports|research_notes|research|mockups|screenshots|shots[^/]*|plans?|adrs?|benchmarks|samples|sample-data)/|(^|/)bench-[^/]*\.(md|json)$|\.(png|jpe?g|gif|webp|pdf)$|(^|/)\.env$|(^|/)\.claude/'
 zero=0000000000000000000000000000000000000000
 status=0
 while read -r local_ref local_sha remote_ref remote_sha; do

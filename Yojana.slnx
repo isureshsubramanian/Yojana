@@ -4,6 +4,10 @@
     <Project Path="src/Integration/Yojana.Integration.Contracts/Yojana.Integration.Contracts.csproj" />
     <Project Path="src/Integration/Yojana.Integration/Yojana.Integration.csproj" />
   </Folder>
+  <Folder Name="/src/Relay/">
+    <Project Path="src/Relay/Yojana.Relay/Yojana.Relay.csproj" />
+    <Project Path="src/Relay/Yojana.Relay.Contracts/Yojana.Relay.Contracts.csproj" />
+  </Folder>
   <Folder Name="/src/Platform/">
     <Project Path="src/Platform/Yojana.Platform.Contracts/Yojana.Platform.Contracts.csproj" />
     <Project Path="src/Platform/Yojana.Platform/Yojana.Platform.csproj" />

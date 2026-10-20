@@ -8,6 +8,7 @@ public interface IConnectionLifecycleAdapter
 {
     void ValidateSettings(JsonElement value);
     IReadOnlyList<string> CredentialPurposes { get; }
+    IReadOnlyList<string> RequiredCredentialPurposes(JsonElement value) => CredentialPurposes;
     Task<ConnectionDeclaration> ConfigureAsync(Guid connectionId, JsonElement value, CancellationToken ct);
     Task<ConnectionProbe> SmokeReadAsync(Guid connectionId, CancellationToken ct);
     Task<JsonElement> ReadSettingsAsync(Guid connectionId, CancellationToken ct);

@@ -125,7 +125,7 @@ public sealed class Cx01Onboarding(
                         + "T0.\"LogEntry\" = T1.\"LogEntry\" INNER JOIN OSRN T2 ON T1.\"ItemCode\" = "
                         + "T2.\"ItemCode\" AND T1.\"SysNumber\" = T2.\"SysNumber\" WHERE "
                         + "T0.\"DocType\" = :documentType AND T0.\"DocEntry\" = :documentEntry",
-                }, true, cancellationToken);
+                }, false, cancellationToken);
         }
         catch (Cx01RemoteException exception) when (exception.RemoteCode == "702")
         {
