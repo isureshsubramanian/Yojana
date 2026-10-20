@@ -1,0 +1,10 @@
+{
+  "name": "jstedfast/MimeKit (P9-T23 platform mail transport, through MailKit)",
+  "matchRepositoryUrls": [],
+  "matchPackages": [
+    "MimeKit/4.18.1"
+  ],
+  "licenceFile": "texts/mimekit-4.18.1-LICENSE",
+  "sourceUrl": "https://raw.githubusercontent.com/jstedfast/MimeKit/42a5bec3777923960aeac93d3d609d7cb24613a9/LICENSE",
+  "takenOn": "2026-10-21"
+}

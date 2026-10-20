@@ -1,0 +1,10 @@
+{
+  "name": "MimeKit 4.18.1: files carrying their own copyright notices (Xamarin)",
+  "licence": "MIT",
+  "copyright": "Copyright (c) 2013-2025 Xamarin Inc.; Copyright (c) 2013-2014 Xamarin Inc.",
+  "projectUrl": "https://github.com/jstedfast/MimeKit",
+  "licenceFile": "texts/mimekit-4.18.1-file-notices.txt",
+  "sourceUrl": "https://github.com/jstedfast/MimeKit/tree/42a5bec3777923960aeac93d3d609d7cb24613a9 (tag 4.18.1): header comments of MimeKit/Cryptography/MacSecureMimeContext.cs and LdapUri.cs",
+  "takenOn": "2026-10-21",
+  "why": "These source files are compiled into MimeKit.dll but carry a copyright holder other than the package's own; their MIT notices are reproduced exactly as the files publish them. The package itself ships no licence or NOTICE file."
+}

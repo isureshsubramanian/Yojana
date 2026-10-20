@@ -22,7 +22,9 @@ using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Data;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Messaging;
+using Yojana.Platform.Contracts.Mail;
 using Yojana.Platform.Contracts.Presence;
+using Yojana.Platform.Mail;
 using Yojana.Platform.Presence;
 using Yojana.Platform.Scheduling;
 using Yojana.Platform.Scheduling.Smoke;
@@ -57,6 +59,14 @@ public static class PlatformSetup
             signInOptions.AuditHmacKey = Environment.GetEnvironmentVariable(SignInOptions.AuditHmacKeyVariable) ?? string.Empty;
         signInOptions.Validate();
         builder.Services.AddSingleton(signInOptions);
+        var mailOptions = builder.Configuration.GetSection(MailOptions.SectionName).Get<MailOptions>() ?? new MailOptions();
+        if (string.IsNullOrEmpty(mailOptions.Smtp.Password))
+            mailOptions.Smtp.Password = Environment.GetEnvironmentVariable(MailOptions.SmtpPasswordVariable) ?? string.Empty;
+        if (string.IsNullOrEmpty(mailOptions.Graph.ClientSecret))
+            mailOptions.Graph.ClientSecret = Environment.GetEnvironmentVariable(MailOptions.GraphClientSecretVariable) ?? string.Empty;
+        mailOptions.Validate();
+        builder.Services.AddSingleton(mailOptions);
+        AddMailTransport(builder.Services, mailOptions);
         var forwardedHeaders = builder.Configuration.GetSection(PlatformForwardedHeadersOptions.SectionName)
             .Get<PlatformForwardedHeadersOptions>() ?? new PlatformForwardedHeadersOptions();
         forwardedHeaders.Validate();
@@ -112,6 +122,8 @@ public static class PlatformSetup
         builder.Services.AddScoped<SecurityEventQueries>();
         builder.Services.AddScoped<SecurityMaintenance>();
         builder.Services.AddSecurityRateLimiting(signInOptions);
+        builder.Services.AddScoped<IMailOutbox, MailOutbox>();
+        builder.Services.AddScoped<MailLogMaintenance>();
         builder.Services.AddScoped<IPresenceService, PresenceService>();
         // A factory for the same reason as ITenantCurrency above: it keeps PlatformDbContext out of the generated graph of
         // any module handler that later takes IUserDirectory.
@@ -187,6 +199,7 @@ public static class PlatformSetup
         if (options.StartScheduler)
             builder.Services.AddQuartzHostedService(h => h.WaitForJobsToComplete = true);
         builder.Services.AddHostedService<SecurityMaintenanceRegistrar>();
+        builder.Services.AddHostedService<MailLogMaintenanceRegistrar>();
         builder.Services.AddSingleton<RecurringTenantJobScheduler>();
         builder.Services.AddSingleton<RecurringJobReconciliationLock>();
         builder.Services.AddSingleton<RecurringTenantJobProvisioner>();
@@ -227,6 +240,29 @@ public static class PlatformSetup
         });
 
         return builder;
+    }
+
+    private static void AddMailTransport(IServiceCollection services, MailOptions options)
+    {
+        switch (options.Transport)
+        {
+            case MailTransportKind.Pickup:
+                services.AddSingleton<IMailTransport>(new PickupDirectoryMailTransport(options));
+                break;
+            case MailTransportKind.Smtp:
+                services.AddSingleton<IMailTransport>(new SmtpMailTransport(options));
+                break;
+            case MailTransportKind.Graph:
+                // One credential for the process so its token cache is shared; the HttpClient comes from the factory per use.
+                var credential = GraphMailTransport.CredentialFor(options.Graph);
+                services.AddHttpClient(GraphMailTransport.HttpClientName);
+                services.AddTransient<IMailTransport>(provider => new GraphMailTransport(options,
+                    provider.GetRequiredService<IHttpClientFactory>().CreateClient(GraphMailTransport.HttpClientName), credential));
+                break;
+            default:
+                services.AddSingleton<IMailTransport>(new DisabledMailTransport());
+                break;
+        }
     }
 
     /// <summary>Registers a module's DbContext with the platform conventions and the Wolverine outbox mapping.</summary>

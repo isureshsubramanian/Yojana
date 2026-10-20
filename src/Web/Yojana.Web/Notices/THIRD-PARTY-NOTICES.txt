@@ -12,7 +12,9 @@ CONTENTS
 
   - ASP.NET Core (shared framework Microsoft.AspNetCore.App)
   - Chromium headless shell 153.0.8010.12 (Chrome for Testing build) — downloaded on the customer host at install, not redistributed
+  - MailKit 4.18.1: files carrying their own copyright notices (Mono NTLM code, Xamarin)
   - Microsoft .NET Runtime (shared framework Microsoft.NETCore.App)
+  - MimeKit 4.18.1: files carrying their own copyright notices (Xamarin)
   - Quartz.NET 4.6 SQL Server schema migration scripts (vendored, modified)
   - Quartz.NET SQL Server table script (vendored, modified)
   - Apache.Arrow 22.1.0
@@ -23,6 +25,7 @@ CONTENTS
   - Azure.Security.KeyVault.Keys 4.10.2
   - Azure.Storage.Blobs 12.30.1
   - Azure.Storage.Common 12.29.0
+  - BouncyCastle.Cryptography 2.7.0
   - Cronos 0.11.0
   - DocumentFormat.OpenXml 3.5.1
   - DocumentFormat.OpenXml.Framework 3.5.1
@@ -32,6 +35,7 @@ CONTENTS
   - JasperFx 2.90.2
   - JasperFx.Events 2.90.2
   - JasperFx.RuntimeCompiler 5.0.0
+  - MailKit 4.18.1
   - Microsoft.Azure.Amqp 2.7.0
   - Microsoft.Bcl.AsyncInterfaces 10.0.10
   - Microsoft.Bcl.TimeProvider 10.0.0
@@ -96,6 +100,7 @@ CONTENTS
   - Microsoft.IO.RecyclableMemoryStream 3.0.1
   - Microsoft.SqlServer.Server 1.0.0
   - Microsoft.VisualStudio.SolutionPersistence 1.0.52
+  - MimeKit 4.18.1
   - Mono.TextTemplating 3.0.0
   - NewId 4.0.1
   - Newtonsoft.Json 13.0.4
@@ -123189,6 +123194,182 @@ zune-jpeg
    limitations under the License.
 
 ==============================================================================
+MailKit 4.18.1: files carrying their own copyright notices (Mono NTLM code, Xamarin)
+==============================================================================
+
+Licence: MIT
+Copyright: Copyright (c) 2003 Motus Technologies Inc.; Copyright (c) 2004-2005, 2010 Novell, Inc; Copyright (c) 2013-2019 Xamarin Inc.; Bernie Solomon (author)
+Project: https://github.com/jstedfast/MailKit
+Included because: These source files are compiled into MailKit.dll but carry copyright holders other than the package's own; their MIT notices are reproduced exactly as the files publish them. The package itself ships no licence or NOTICE file.
+Licence text taken from https://github.com/jstedfast/MailKit/tree/f11e199eb639c14e2c4427630cd3a0865a72e425 (tag 4.18.1): header comments of MailKit/Security/Ntlm/MD4.cs, RC4.cs, BitConverterLE.cs, MailKit/Net/SelectMode.cs, MailKit/Security/RandomNumberGenerator.cs, KeyedHashAlgorithm.cs on 2026-10-21.
+
+----- MailKit/Security/Ntlm/MD4.cs (https://github.com/jstedfast/MailKit/blob/f11e199eb639c14e2c4427630cd3a0865a72e425/MailKit/Security/Ntlm/MD4.cs), header comment as published -----
+//
+// MD4.cs
+//
+// Authors: Sebastien Pouliot <sebastien@ximian.com>
+//          Jeffrey Stedfast <jeff@xamarin.com>
+//
+// Copyright (c) 2003 Motus Technologies Inc. (http://www.motus.com)
+// Copyright (c) 2004-2005, 2010 Novell, Inc (http://www.novell.com)
+// Copyright (c) 2013-2026 .NET Foundation and Contributors
+//
+// Permission is hereby granted, free of charge, to any person obtaining
+// a copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to
+// permit persons to whom the Software is furnished to do so, subject to
+// the following conditions:
+// 
+// The above copyright notice and this permission notice shall be
+// included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+
+----- MailKit/Security/Ntlm/RC4.cs (https://github.com/jstedfast/MailKit/blob/f11e199eb639c14e2c4427630cd3a0865a72e425/MailKit/Security/Ntlm/RC4.cs), header comment as published -----
+//
+// ARC4Managed.cs: Alleged RC4(tm) compatible symmetric stream cipher
+//	RC4 is a trademark of RSA Security
+//
+
+//
+// Permission is hereby granted, free of charge, to any person obtaining
+// a copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to
+// permit persons to whom the Software is furnished to do so, subject to
+// the following conditions:
+// 
+// The above copyright notice and this permission notice shall be
+// included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+
+----- MailKit/Security/Ntlm/BitConverterLE.cs (https://github.com/jstedfast/MailKit/blob/f11e199eb639c14e2c4427630cd3a0865a72e425/MailKit/Security/Ntlm/BitConverterLE.cs), header comment as published -----
+//
+// Mono.Security.BitConverterLE.cs
+//  Like System.BitConverter but always little endian
+//
+// Author: Bernie Solomon
+//
+// Permission is hereby granted, free of charge, to any person obtaining
+// a copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to
+// permit persons to whom the Software is furnished to do so, subject to
+// the following conditions:
+// 
+// The above copyright notice and this permission notice shall be
+// included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+
+----- MailKit/Net/SelectMode.cs (https://github.com/jstedfast/MailKit/blob/f11e199eb639c14e2c4427630cd3a0865a72e425/MailKit/Net/SelectMode.cs), header comment as published -----
+//
+// SelectMode.cs
+//
+// Author: Jeffrey Stedfast <jestedfa@microsoft.com>
+//
+// Copyright (c) 2013-2019 Xamarin Inc. (www.xamarin.com)
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
+
+----- MailKit/Security/RandomNumberGenerator.cs (https://github.com/jstedfast/MailKit/blob/f11e199eb639c14e2c4427630cd3a0865a72e425/MailKit/Security/RandomNumberGenerator.cs), header comment as published -----
+//
+// RandomNumberGenerator.cs
+//
+// Author: Jeffrey Stedfast <jestedfa@microsoft.com>
+//
+// Copyright (c) 2013-2019 Xamarin Inc. (www.xamarin.com)
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
+
+----- MailKit/Security/KeyedHashAlgorithm.cs (https://github.com/jstedfast/MailKit/blob/f11e199eb639c14e2c4427630cd3a0865a72e425/MailKit/Security/KeyedHashAlgorithm.cs), header comment as published -----
+//
+// KeyedHashAlgorithm.cs
+//
+// Author: Jeffrey Stedfast <jestedfa@microsoft.com>
+//
+// Copyright (c) 2013-2019 Xamarin Inc. (www.xamarin.com)
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
+
+==============================================================================
 Microsoft .NET Runtime (shared framework Microsoft.NETCore.App)
 ==============================================================================
 
@@ -124925,6 +125106,70 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
+MimeKit 4.18.1: files carrying their own copyright notices (Xamarin)
+==============================================================================
+
+Licence: MIT
+Copyright: Copyright (c) 2013-2025 Xamarin Inc.; Copyright (c) 2013-2014 Xamarin Inc.
+Project: https://github.com/jstedfast/MimeKit
+Included because: These source files are compiled into MimeKit.dll but carry a copyright holder other than the package's own; their MIT notices are reproduced exactly as the files publish them. The package itself ships no licence or NOTICE file.
+Licence text taken from https://github.com/jstedfast/MimeKit/tree/42a5bec3777923960aeac93d3d609d7cb24613a9 (tag 4.18.1): header comments of MimeKit/Cryptography/MacSecureMimeContext.cs and LdapUri.cs on 2026-10-21.
+
+----- MimeKit/Cryptography/MacSecureMimeContext.cs (https://github.com/jstedfast/MimeKit/blob/42a5bec3777923960aeac93d3d609d7cb24613a9/MimeKit/Cryptography/MacSecureMimeContext.cs), header comment as published -----
+//
+// MacSecureMimeContext.cs
+//
+// Author: Jeffrey Stedfast <jeff@xamarin.com>
+//
+// Copyright (c) 2013-2014 Xamarin Inc. (www.xamarin.com)
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
+
+----- MimeKit/Cryptography/LdapUri.cs (https://github.com/jstedfast/MimeKit/blob/42a5bec3777923960aeac93d3d609d7cb24613a9/MimeKit/Cryptography/LdapUri.cs), header comment as published -----
+//
+// LdapUri.cs
+//
+// Author: Jeffrey Stedfast <jestedfa@microsoft.com>
+//
+// Copyright (c) 2013-2025 Xamarin Inc. (www.xamarin.com)
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
+
+==============================================================================
 Quartz.NET 4.6 SQL Server schema migration scripts (vendored, modified)
 ==============================================================================
 
@@ -125812,6 +126057,33 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
+BouncyCastle.Cryptography 2.7.0
+==============================================================================
+
+Licence: MIT
+Copyright (as declared in the package manifest): Copyright © Legion of the Bouncy Castle Inc. 2000-2026
+Project: https://www.bouncycastle.org/stable/nuget/csharp/website
+Repository: https://github.com/bcgit/bc-csharp
+
+Licence text as shipped in the package (LICENSE.md):
+
+MIT License (https://opensource.org/licenses/MIT)
+
+Copyright (c) 2000-2026 The Legion of the Bouncy Castle Inc. (https://www.bouncycastle.org).
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sub license, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions: The above copyright notice and this
+permission notice shall be included in all copies or substantial portions of the Software.
+
+**THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.**
+
+==============================================================================
 Cronos 0.11.0
 ==============================================================================
 
@@ -126099,6 +126371,39 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+==============================================================================
+MailKit 4.18.1
+==============================================================================
+
+Licence: MIT
+Copyright (as declared in the package manifest): .NET Foundation and Contributors
+Project: http://www.mimekit.net/
+Repository: https://github.com/jstedfast/MailKit
+
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/jstedfast/MailKit/f11e199eb639c14e2c4427630cd3a0865a72e425/LICENSE on 2026-10-21:
+
+MIT License
+
+Copyright (C) 2013-2026 .NET Foundation and Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 
 ==============================================================================
 Microsoft.Azure.Amqp 2.7.0
@@ -173860,6 +174165,39 @@ SOFTWARE.
 
 
 ---------------------------------------------------------
+
+==============================================================================
+MimeKit 4.18.1
+==============================================================================
+
+Licence: MIT
+Copyright (as declared in the package manifest): .NET Foundation and Contributors
+Project: https://www.mimekit.net/
+Repository: https://github.com/jstedfast/MimeKit
+
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/jstedfast/MimeKit/42a5bec3777923960aeac93d3d609d7cb24613a9/LICENSE on 2026-10-21:
+
+MIT License
+
+Copyright (C) 2012-2026 .NET Foundation and Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 
 ==============================================================================
 Mono.TextTemplating 3.0.0

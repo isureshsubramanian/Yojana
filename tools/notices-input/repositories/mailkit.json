@@ -1,0 +1,10 @@
+{
+  "name": "jstedfast/MailKit (P9-T23 platform mail transport)",
+  "matchRepositoryUrls": [],
+  "matchPackages": [
+    "MailKit/4.18.1"
+  ],
+  "licenceFile": "texts/mailkit-4.18.1-LICENSE",
+  "sourceUrl": "https://raw.githubusercontent.com/jstedfast/MailKit/f11e199eb639c14e2c4427630cd3a0865a72e425/LICENSE",
+  "takenOn": "2026-10-21"
+}

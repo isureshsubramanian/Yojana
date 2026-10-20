@@ -77,6 +77,18 @@ Behind a reverse proxy, list its addresses under `Platform:ForwardedHeaders:Know
 stays off and ignores `X-Forwarded-For`, so deployment configuration must identify every proxy that may supply the
 client address used by sign-in limiting and audit events.
 
+Mail (password resets, invitations, later customer mail) goes through one transport configured under
+`Platform:Mail`. `Transport` is `none` by default: nothing is sent and every message is recorded as failed, with a
+warning at startup. Development writes each message as an `.eml` file into `/tmp/yojana-mail` (`pickup`). For a
+deployment choose `smtp` (`Smtp:Host`, `Port`, `Security` `starttls` or `tls`; `none` only to a loopback relay;
+`UserName` with the password in `YOJANA_MAIL_SMTP_PASSWORD`) or `graph` (`Graph:SenderMailbox`, and either a managed
+identity or `Credential: client_secret` with `TenantId`, `ClientId` and `YOJANA_MAIL_GRAPH_CLIENT_SECRET`; the app
+needs the `Mail.Send` application permission). `FromAddress` must belong to a domain whose SPF and DKIM records cover
+that transport. A tenant chooses only its sender name and reply-to address (tenant settings `mail.sender_name`,
+`mail.reply_to`). A tenant administrator checks the transport with `POST /api/platform/mail/test`, which sends to their
+own address, then `GET /api/platform/mail/messages/{id}`. Failed attempts retry for about four hours
+(`MaxAttempts`, default 8); the delivery log keeps no message bodies and is purged after `LogRetentionDays` (90).
+
 Seeded users are `<role>@dev.yojana.local` (for example `serial_administrator@dev.yojana.local`) and
 `admin@dev.yojana.local`, password `YOJANA_SEED_PASSWORD` from `.env` (change it there and rerun `make seed` to
 reset every seeded user to it). Sign in with

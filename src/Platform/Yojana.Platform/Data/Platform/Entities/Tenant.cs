@@ -132,3 +132,36 @@ public sealed class DocumentPresence : ITenantScoped
 
     public DateTime LastHeartbeat { get; set; }
 }
+
+/// <summary>
+/// Delivery log of one queued e-mail (P9-T23): who it went to, what kind, and how delivery went. It deliberately has no
+/// row-level security and a nullable tenant: account mail about a global identity is sent before any tenant is chosen,
+/// like <see cref="SecurityEvent"/>. Readers filter by tenant themselves (MailEndpoints). The bodies are never stored
+/// here: they travel only in the delivery message, which Wolverine deletes once the attempt is handled, because account
+/// mail carries single-use links.
+/// </summary>
+public sealed class MailMessage
+{
+    public Guid Id { get; set; }
+    public DateTime QueuedAt { get; set; }
+    public required string Kind { get; set; }
+    public TenantId? TenantId { get; set; }
+    public Guid? UserId { get; set; }
+    public required string Recipient { get; set; }
+    public required string Subject { get; set; }
+    public required string Status { get; set; }
+    public required string Transport { get; set; }
+    public int Attempts { get; set; }
+    public DateTime? LastAttemptAt { get; set; }
+    public DateTime? NextAttemptAt { get; set; }
+    public DateTime? SentAt { get; set; }
+    public string? ProviderMessageId { get; set; }
+    public string? LastError { get; set; }
+}
+
+public static class MailStatus
+{
+    public const string Retrying = "retrying";
+    public const string Sent = "sent";
+    public const string Failed = "failed";
+}

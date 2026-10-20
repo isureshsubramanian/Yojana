@@ -117,6 +117,96 @@ namespace Yojana.Platform.Data.Platform.Migrations
                     b.ToTable("document_presence", "platform");
                 });
 
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.MailMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int")
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTime?>("LastAttemptAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_attempt_at");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("provider_message_id");
+
+                    b.Property<DateTime>("QueuedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("queued_at");
+
+                    b.Property<string>("Recipient")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("recipient");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("sent_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)")
+                        .HasColumnName("subject");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Transport")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("transport");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_mail_message");
+
+                    b.HasIndex("QueuedAt", "Id")
+                        .HasDatabaseName("ix_mail_message_queued_at_id");
+
+                    b.HasIndex("UserId", "QueuedAt")
+                        .HasDatabaseName("ix_mail_message_user_id_queued_at");
+
+                    b.HasIndex("TenantId", "QueuedAt", "Id")
+                        .HasDatabaseName("ix_mail_message_tenant_id_queued_at_id");
+
+                    b.ToTable("mail_message", "platform");
+                });
+
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.SecurityEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -376,6 +466,21 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasDatabaseName("ix_user_tenant_membership_tenant_id");
 
                     b.ToTable("user_tenant_membership", "platform");
+                });
+
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.MailMessage", b =>
+                {
+                    b.HasOne("Yojana.Platform.Data.Platform.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("fk_mail_message_tenant_id");
+
+                    b.HasOne("Yojana.Platform.Data.Platform.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("fk_mail_message_user_id");
                 });
 
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.SecurityEvent", b =>
