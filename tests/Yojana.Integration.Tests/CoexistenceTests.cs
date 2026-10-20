@@ -15,6 +15,7 @@ public sealed class CoexistenceTests
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddAuthorization();
         builder.Services.AddScoped<CoexistenceSettings>();
+        builder.Services.AddScoped<WarrantyContractMaintenanceSettings>();
         builder.Services.AddScoped<CoexistenceDriftService>();
         builder.Services.AddScoped<CoexistenceConflicts>();
         builder.Services.AddScoped<SyncControl>();
@@ -23,7 +24,7 @@ public sealed class CoexistenceTests
         app.MapCoexistenceEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
-        Assert.Equal(11, endpoints.Count);
+        Assert.Equal(13, endpoints.Count);
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             policy => policy.Policy == YojanaPolicy.IntegrationOperations));
         var administrator = endpoints.Where(endpoint => endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>()
@@ -34,12 +35,14 @@ public sealed class CoexistenceTests
         Assert.Equal([
             "/api/integration/connections/{connectionId:guid}/coexistence PUT",
             "/api/integration/connections/{connectionId:guid}/parallel-run POST",
+            "/api/integration/connections/{connectionId:guid}/warranty-contracts PUT",
         ], administrator);
         // Stopping must stay available to the integration operator: rollback cannot wait for an administrator.
         Assert.DoesNotContain(endpoints.Single(endpoint => endpoint.RoutePattern.RawText!.EndsWith("/stop-sync", StringComparison.Ordinal))
             .Metadata.GetOrderedMetadata<IAuthorizeData>(), policy => policy.Policy == YojanaPolicy.TenantAdministrator);
         foreach (var type in new[] { typeof(StopSync), typeof(ResumeSync), typeof(ResolveCoexistenceConflict),
-                     typeof(UpdateCoexistenceSettings), typeof(StartParallelRun), typeof(ConfirmParallelRunItem) })
+                     typeof(UpdateCoexistenceSettings), typeof(UpdateWarrantyContractMaintenance),
+                     typeof(StartParallelRun), typeof(ConfirmParallelRunItem) })
             Assert.DoesNotContain(type.GetProperties(), property => property.Name.Contains("Actor", StringComparison.OrdinalIgnoreCase)
                 || property.Name.EndsWith("By", StringComparison.Ordinal));
     }

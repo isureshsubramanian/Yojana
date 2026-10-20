@@ -4,6 +4,10 @@ using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Gateway;
 using Yojana.Integration.Security.Audit;
+using Wolverine;
+using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Ports;
 
 namespace Yojana.Integration.DatabaseTests;
 
@@ -28,7 +32,10 @@ public sealed class OnboardingChecklistTests(IntegrationHostFixture fixture)
         Assert.Equal("Integration user code as created in the ERP", user.EvidencePrompt);
         Assert.Equal(specific.CustomerCostDisclosure,
             Assert.Single(specific.Items, x => x.Code == OnboardingItemCode.Costs).Detail);
-        Assert.All(specific.Items, x => Assert.Equal(OnboardingItemStatus.Pending, x.Status));
+        Assert.All(specific.Items.Where(x => x.ManualConfirmation),
+            x => Assert.Equal(OnboardingItemStatus.Pending, x.Status));
+        Assert.Equal(OnboardingItemStatus.Pass,
+            Assert.Single(specific.Items, x => x.Code == OnboardingItemCode.AddOnWarrantyItems).Status);
         Assert.False(specific.RequiredItemsConfirmed);
 
         var fallback = await generator.GenerateAsync(generic, CancellationToken.None);
@@ -36,6 +43,85 @@ public sealed class OnboardingChecklistTests(IntegrationHostFixture fixture)
             fallback.CustomerCostDisclosure);
         Assert.Equal(GenericConnectorOnboardingProfile.Instance.IntegrationUser.Label,
             Assert.Single(fallback.Items, x => x.Code == OnboardingItemCode.IntegrationUser).Label);
+    }
+
+    [DatabaseFact]
+    public async Task Add_on_item_check_passes_and_fails_with_policy_and_item_names()
+    {
+        var tenant = await fixture.NewTenantAsync("onbaddon");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        using var scope = fixture.ScopeFor(tenant);
+        await scope.ServiceProvider.GetRequiredService<ConnectorCatalogue>()
+            .SeedGenericEntriesAsync(CancellationToken.None);
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var extended = "FIC-EXT-" + suffix;
+        var damage = "FIC-DMG-" + suffix;
+        await PublishPolicy(tenant, extended, "Extended server cover", "extended_term", "Extended term");
+        await PublishPolicy(tenant, damage, "Accidental server cover", "accidental_damage", "Accidental damage");
+        var mappings = fixture.Services.GetRequiredService<InMemoryWarrantyPorts>();
+        mappings.Register(new WarrantyPolicyItem(Guid.NewGuid(), "NBD-3Y", "Three-year next-business-day service",
+            extended, true, WarrantyTargetRule.ReferencedDocument));
+        var damageItem = Guid.NewGuid();
+        mappings.Register(new WarrantyPolicyItem(damageItem, "ADP-3Y", "Three-year accidental damage",
+            damage, false, null));
+
+        var checklist = await scope.ServiceProvider.GetRequiredService<ConnectorOnboardingChecklistGenerator>()
+            .GenerateAsync(connection, default);
+        var failed = Assert.Single(checklist.Items, item => item.Code == OnboardingItemCode.AddOnWarrantyItems);
+        Assert.Equal(OnboardingItemStatus.Fail, failed.Status);
+        Assert.False(failed.ManualConfirmation);
+        Assert.Contains("Accidental server cover", failed.Detail);
+        Assert.Contains("ADP-3Y · Three-year accidental damage", failed.Detail);
+        Assert.DoesNotContain("NBD-3Y", failed.Detail);
+        Assert.DoesNotContain(damageItem.ToString(), failed.Detail, StringComparison.OrdinalIgnoreCase);
+
+        mappings.Register(new WarrantyPolicyItem(damageItem, "ADP-3Y-STACK", "Stacked accidental damage",
+            damage, true, WarrantyTargetRule.SameOrder));
+        checklist = await scope.ServiceProvider.GetRequiredService<ConnectorOnboardingChecklistGenerator>()
+            .GenerateAsync(connection, default);
+        var passed = Assert.Single(checklist.Items, item => item.Code == OnboardingItemCode.AddOnWarrantyItems);
+        Assert.Equal(OnboardingItemStatus.Pass, passed.Status);
+        Assert.Contains("2 checked", passed.Detail);
+
+        mappings.Register(new WarrantyPolicyItem(Guid.NewGuid(), "NBD-LEGACY", "Legacy service item",
+            extended, false, null));
+        checklist = await scope.ServiceProvider.GetRequiredService<ConnectorOnboardingChecklistGenerator>()
+            .GenerateAsync(connection, default);
+        var mixed = Assert.Single(checklist.Items, item => item.Code == OnboardingItemCode.AddOnWarrantyItems);
+        Assert.Equal(OnboardingItemStatus.Pass, mixed.Status);
+        Assert.Contains("NBD-LEGACY · Legacy service item (not ready)", mixed.Detail);
+
+        var other = await fixture.NewTenantAsync("onbaddiso");
+        var otherConnection = await fixture.AddConnectionAsync(other, Guid.NewGuid());
+        using var otherScope = fixture.ScopeFor(other);
+        await otherScope.ServiceProvider.GetRequiredService<ConnectorCatalogue>().SeedGenericEntriesAsync(default);
+        var isolated = Assert.Single((await otherScope.ServiceProvider
+            .GetRequiredService<ConnectorOnboardingChecklistGenerator>().GenerateAsync(otherConnection, default)).Items,
+            item => item.Code == OnboardingItemCode.AddOnWarrantyItems);
+        Assert.Equal(OnboardingItemStatus.Pass, isolated.Status);
+        Assert.DoesNotContain("Extended server cover", isolated.Detail);
+    }
+
+    private async Task PublishPolicy(TenantId tenant, string code, string name, string family, string familyName)
+    {
+        await Invoke<CoverageFamilyRow>(tenant,
+            new DefineCoverageFamily(family, familyName, true, AssuranceOrService.Service));
+        await Invoke<ReplacementPolicyRow>(tenant,
+            new DefineReplacementPolicy("RP-" + code, ReplacementRule.MaxRemainingOrMinDays, 30, null, null));
+        var terms = new PolicyTerms(new(12, DurationRule.Months), DurationBasis.Time, [],
+            new(StartTrigger.PlanPurchase, [], null), new(100, 100, 100, "return_to_base"), [], ["WORLD"],
+            Transferability.Yes, "full", "RP-" + code, [], null, AssuranceOrService.Service,
+            PolicyTerms.TimeZoneUtc);
+        var draft = await Invoke<PolicyDraftResult>(tenant, new CreatePolicyDraft(Guid.NewGuid(), code, name,
+            family, EntitlementType.Extended, new(2026, 1, 1), terms, "fictional-operator"));
+        await Invoke<PolicyDraftResult>(tenant, new PublishPolicyVersion(draft.PolicyVersionId, "fictional-operator"));
+    }
+
+    private async Task<T> Invoke<T>(TenantId tenant, object message) where T : class
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        return await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<T>(message,
+            new DeliveryOptions { TenantId = tenant.ToString() }, CancellationToken.None);
     }
 
     [DatabaseFact]
@@ -95,7 +181,7 @@ public sealed class OnboardingChecklistTests(IntegrationHostFixture fixture)
         var confirmations = scope.ServiceProvider.GetRequiredService<ConnectorOnboardingConfirmations>();
         var checklist = await scope.ServiceProvider.GetRequiredService<ConnectorOnboardingChecklistGenerator>()
             .GenerateAsync(connection, CancellationToken.None);
-        foreach (var item in checklist.Items.Where(x => x.Required))
+        foreach (var item in checklist.Items.Where(x => x.Required && x.ManualConfirmation))
         {
             Assert.False(checklist.RequiredItemsConfirmed);
             checklist = await confirmations.ConfirmAsync(connection, item.Code,

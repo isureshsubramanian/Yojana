@@ -17,6 +17,7 @@ public sealed class InMemoryWarrantyPorts : IItemPolicyPort, ICustomerContractPo
     ITimeZonePort, ITimeZoneSourcePort, IWarrantyClaimsPort, IWarrantyCertificatePort
 {
     private readonly ConcurrentDictionary<Guid, List<ItemWarrantyPolicy>> policies = new();
+    private readonly ConcurrentDictionary<Guid, WarrantyPolicyItem> policyItems = new();
     private readonly ConcurrentDictionary<Guid, List<(Guid ItemId, CustomerContractTerm Term)>> contracts = new();
     private readonly ConcurrentDictionary<Guid, string> zones = new();
     private readonly ConcurrentDictionary<Guid, bool> openClaims = new();
@@ -24,6 +25,8 @@ public sealed class InMemoryWarrantyPorts : IItemPolicyPort, ICustomerContractPo
     private readonly ConcurrentDictionary<(Guid Vendor, Guid Item), Guid> vendorTerms = new();
 
     public void Register(ItemWarrantyPolicy policy) => policies.AddOrUpdate(policy.ItemId, _ => [policy], (_, list) => { lock (list) { list.RemoveAll(p => p.CoverageFamily == policy.CoverageFamily); list.Add(policy); } return list; });
+
+    public void Register(WarrantyPolicyItem item) => policyItems[item.ItemId] = item;
 
     public void Register(Guid itemId, CustomerContractTerm term) => contracts.AddOrUpdate(term.PartyRef, _ => [(itemId, term)], (_, list) => { lock (list) list.Add((itemId, term)); return list; });
 
@@ -37,6 +40,17 @@ public sealed class InMemoryWarrantyPorts : IItemPolicyPort, ICustomerContractPo
 
     public Task<IReadOnlyList<ItemWarrantyPolicy>> PoliciesForAsync(Guid itemId, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<ItemWarrantyPolicy>>(policies.TryGetValue(itemId, out var list) ? [.. list] : []);
+
+    public Task<IReadOnlyList<WarrantyPolicyItem>> ItemsForPoliciesAsync(
+        IReadOnlyCollection<string> policyCodes, CancellationToken cancellationToken)
+    {
+        var wanted = policyCodes.ToHashSet(StringComparer.Ordinal);
+        return Task.FromResult<IReadOnlyList<WarrantyPolicyItem>>(policyItems.Values
+            .Where(item => wanted.Contains(item.PolicyCode))
+            .OrderBy(item => item.PolicyCode, StringComparer.Ordinal)
+            .ThenBy(item => item.ItemCode, StringComparer.Ordinal)
+            .ToList());
+    }
 
     public Task<IReadOnlyList<CustomerContractTerm>> ContractsForAsync(Guid partyRef, Guid itemId, DateOnly contractDate, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<CustomerContractTerm>>(contracts.TryGetValue(partyRef, out var list)

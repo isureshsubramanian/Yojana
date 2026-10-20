@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import type { ApprovalView, ArchiveResult, Backfill, Checklist, ConnectionDetail, ConnectionEvent, ConnectionPage, CursorPage, EntityDay, FieldMap, FieldSource, HealthDetail, LocationCheck, RegistrationConnector, Relay, RelayIssued, Run, TenantStatusPage, TransportSettings } from "./adminTypes";
+import type { ApprovalView, ArchiveResult, Backfill, Checklist, ConnectionDetail, ConnectionEvent, ConnectionPage, CursorPage, EntityDay, FieldMap, FieldSource, HealthDetail, LocationCheck, RegistrationConnector, Relay, RelayIssued, Run, TenantStatusPage, TransportSettings, WarrantyContractSettings } from "./adminTypes";
 const root = "/api/integration";
 function query(values: Record<string, string | number | boolean | undefined>) { const q = new URLSearchParams(); for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== "") q.set(key, String(value)); return `?${q}`; }
 const connection = (id: string) => `${root}/connections/${id}`;
@@ -19,6 +19,8 @@ export const adminApi = {
   saveApprovals: (id: string, documentTypes: Record<string, { mode: string; evidence: string } | null>) => api<ApprovalView>(`${connection(id)}/cx01/approval-handling`, { method: "PUT", body: { documentTypes } }),
   checklist: (id: string) => api<Checklist>(`${connection(id)}/onboarding-checklist`),
   confirm: (id: string, code: string, evidence: string) => api(`${connection(id)}/onboarding-checklist/${encodeURIComponent(code)}/confirm`, { method: "POST", body: { evidence } }),
+  warrantyContracts: () => api<WarrantyContractSettings>(`${root}/settings/warranty-contracts`),
+  saveWarrantyContracts: (id: string, maintainedIn: WarrantyContractSettings["maintainedIn"], expectedVersion: string) => api<WarrantyContractSettings>(`${connection(id)}/warranty-contracts`, { method: "PUT", body: { maintainedIn, expectedVersion } }),
   relays: (id: string, cursor?: string, signal?: AbortSignal) => api<CursorPage<Relay>>(`${connection(id)}/relays${query({ cursor, take: 12 })}`, { signal }),
   registerRelay: (id: string, displayName: string, productUrl: string) => api<RelayIssued>(`${connection(id)}/relays`, { method: "POST", body: { displayName, productUrl } }),
   revokeRelay: (id: string, relayId: string) => api(`${connection(id)}/relays/${relayId}/revoke`, { method: "POST" }),

@@ -18,7 +18,8 @@ namespace Yojana.Integration.Connections;
 public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext tenant, IClock clock,
     ConnectionHealthSettings healthSettings, ReconciliationSettings reconciliationSettings,
     ConnectorOnboardingChecklistGenerator checklist,
-    IConnectionThrottleProfileStore throttles, IUserDirectory people, IServiceProvider services)
+    IConnectionThrottleProfileStore throttles, IUserDirectory people, IServiceProvider services,
+    Coexistence.WarrantyContractMaintenanceSettings warrantyContracts)
 {
     public async Task<RegistrationConnectorPage> RegistrationConnectorsAsync(string? cursor, int take, CancellationToken ct)
     {
@@ -101,6 +102,7 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
         return new(new(id, connection.DisplayLabel, connection.ConnectorCode, name, health.Status, health.IsLive,
                 gateway.OutboundMode, gateway.ReadOnly, View(health)), connection.CreatedAt, connection.ArchivedAt,
             capabilities, new(gateway.OutboundMode, gateway.ReadOnly, gateway.NativeWarrantyObjectMode,
+                (await warrantyContracts.GetAsync(ct)).MaintainedIn,
                 gateway.OrderingWaitMinutes, await healthSettings.GetAsync(id, ct),
                 (await throttles.GetAsync(new(tenant.TenantId, id), ct))?.Profile, connectorSettings, rules), secrets,
             await checklist.GenerateAsync(id, ct), connection.Status,
@@ -168,6 +170,7 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
         "CredentialSet" => "Connection credential set",
         "CredentialRotated" => "Connection credential replaced",
         "OnboardingItemConfirmed" => "Onboarding checklist item confirmed",
+        "WarrantyContractMaintenanceChanged" => "Warranty contract maintenance changed",
         _ => "Connection activity recorded",
     };
 

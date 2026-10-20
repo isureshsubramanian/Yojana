@@ -15,7 +15,8 @@ namespace Yojana.Integration.Coexistence;
 /// the outbound mode; the drift-scan choices are tenant settings keyed by connection.
 /// </summary>
 public sealed class CoexistenceSettings(IntegrationDbContext db, ITenantContext tenant, ITenantSettings settings,
-    IServiceProvider services, IClock clock, IConnectionAuditSink audit)
+    IServiceProvider services, IClock clock, IConnectionAuditSink audit,
+    WarrantyContractMaintenanceSettings contractMaintenance)
 {
     private static readonly JsonSerializerOptions Json = new(IntegrationContracts.Json) { DictionaryKeyPolicy = null };
 
@@ -30,11 +31,16 @@ public sealed class CoexistenceSettings(IntegrationDbContext db, ITenantContext 
     public ICoexistenceDriftReader? Reader(string connectorCode) =>
         services.GetKeyedService<ICoexistenceDriftReader>(connectorCode);
 
-    public static IReadOnlyList<string> Watched(CoexistenceConnectionSettings value, ICoexistenceDriftReader reader) =>
-        value.WatchedFields ?? reader.DefaultWatchedFields;
+    public static IReadOnlyList<string> Watched(CoexistenceConnectionSettings value, ICoexistenceDriftReader reader,
+        string contractsMaintainedIn = WarrantyContractsMaintainedIn.IncumbentUntilCutover) =>
+        (value.WatchedFields ?? reader.DefaultWatchedFields)
+        .Concat(contractsMaintainedIn == WarrantyContractsMaintainedIn.Module ? reader.WarrantyContractFields : [])
+        .Distinct(StringComparer.Ordinal).ToList();
 
-    public static IReadOnlyList<string> Explaining(CoexistenceConnectionSettings value, ICoexistenceDriftReader reader) =>
-        (value.ExplainingFields ?? reader.DefaultExplainingFields).Except(Watched(value, reader), StringComparer.Ordinal).ToList();
+    public static IReadOnlyList<string> Explaining(CoexistenceConnectionSettings value, ICoexistenceDriftReader reader,
+        string contractsMaintainedIn = WarrantyContractsMaintainedIn.IncumbentUntilCutover) =>
+        (value.ExplainingFields ?? reader.DefaultExplainingFields)
+        .Except(Watched(value, reader, contractsMaintainedIn), StringComparer.Ordinal).ToList();
 
     public async Task<CoexistenceView> ViewAsync(Guid connectionId, CancellationToken ct)
     {
@@ -47,11 +53,13 @@ public sealed class CoexistenceSettings(IntegrationDbContext db, ITenantContext 
             x.TenantId == tenant.TenantId && x.ConnectionId == connectionId && x.RecordType == reader.RecordType, ct);
         var open = await db.CoexistenceConflicts.CountAsync(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == connectionId && x.Status != CoexistenceConflictStatus.Closed, ct);
+        var maintenance = await contractMaintenance.GetAsync(ct);
         return new(connectionId, connection.DisplayLabel, SyncState(connection.Status),
-            gateway?.NativeWarrantyObjectMode ?? NativeWarrantyObjectModes.Frozen, PushedModeAvailable: false,
+            gateway?.NativeWarrantyObjectMode ?? NativeWarrantyObjectModes.Frozen, maintenance.MaintainedIn,
+            maintenance.MaintainedIn == WarrantyContractsMaintainedIn.Module, PushedModeAvailable: false,
             reader is not null, reader?.RecordType, configured.DriftScanEnabled,
-            reader is null ? configured.WatchedFields ?? [] : Watched(configured, reader),
-            reader is null ? configured.ExplainingFields ?? [] : Explaining(configured, reader),
+            reader is null ? configured.WatchedFields ?? [] : Watched(configured, reader, maintenance.MaintainedIn),
+            reader is null ? configured.ExplainingFields ?? [] : Explaining(configured, reader, maintenance.MaintainedIn),
             reader?.DefaultWatchedFields ?? [], reader?.DefaultExplainingFields ?? [],
             configured.PageSize, configured.MaxPagesPerRun, state?.LastCompletedAt, state?.LastPassRecords ?? 0,
             state?.Cursor is not null, open);

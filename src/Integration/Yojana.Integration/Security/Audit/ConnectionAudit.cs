@@ -32,6 +32,7 @@ public enum ConnectionAuditEventType
     SyncStopped,
     SyncResumed,
     CoexistenceSettingsChanged,
+    WarrantyContractMaintenanceChanged,
     CoexistenceConflictResolved,
     ParallelRunStarted,
     ParallelRunItemConfirmed,

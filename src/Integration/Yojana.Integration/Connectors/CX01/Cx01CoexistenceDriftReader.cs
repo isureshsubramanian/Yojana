@@ -20,6 +20,8 @@ internal sealed class Cx01CoexistenceDriftReader(Cx01Client client) : ICoexisten
     public IReadOnlyList<string> DefaultWatchedFields { get; } =
         ["CustomerCode", "StatusOfSerialNumber", "ContractCode", "ContractEndDate"];
 
+    public IReadOnlyList<string> WarrantyContractFields { get; } = ["ContractCode", "ContractEndDate"];
+
     // A posted delivery or invoice re-points these links when it moves the card to a new owner.
     public IReadOnlyList<string> DefaultExplainingFields { get; } = ["DeliveryCode", "InvoiceCode"];
 
@@ -47,7 +49,9 @@ internal sealed class Cx01CoexistenceDriftReader(Cx01Client client) : ICoexisten
                 last = Math.Max(last, key);
                 var values = fields.ToDictionary(field => field, field => Scalar(row, field), StringComparer.Ordinal);
                 var label = $"{Scalar(row, "ItemCode")} {Scalar(row, "InternalSerialNum")} (card {key})".Trim();
-                records.Add(new(key.ToString(CultureInfo.InvariantCulture), label, values));
+                // The equipment-card collection exposes no reliable change timestamp. Leave it absent rather than
+                // presenting this scan's observation time as the incumbent's change time.
+                records.Add(new(key.ToString(CultureInfo.InvariantCulture), label, values, ChangedAt: null));
             }
         }
         // The service caps page size on its own; a next link or a full page means there may be more.

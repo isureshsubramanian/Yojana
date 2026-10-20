@@ -310,6 +310,16 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("nvarchar(128)")
                         .HasColumnName("field_name");
 
+                    b.Property<DateTime?>("IncumbentChangedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("incumbent_changed_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("kind");
+
                     b.Property<DateTime>("LastSeenAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("last_seen_at");

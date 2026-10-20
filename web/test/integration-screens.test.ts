@@ -113,6 +113,17 @@ test("archive force and governed approval bypass require explicit evidence", () 
   assert.doesNotMatch(adminApi, /acceptedBy:|acceptedAt:|actorRef:/);
 });
 
+test("getting-live and connection settings expose the warranty contract rules", () => {
+  assert.match(connections, /Warranty contracts are maintained in/);
+  assert.match(connections, /The incumbent until cutover/);
+  assert.match(connections, /item\.manualConfirmation/);
+  assert.match(settings, /Warranty contract maintenance/);
+  assert.match(settings, /equipment-card contract fields are always watched/);
+  assert.match(settings, /adminApi\.saveWarrantyContracts/);
+  assert.match(adminApi, /settings\/warranty-contracts/);
+  assert.match(adminApi, /connections\/\$\{id\}\/warranty-contracts|\$\{connection\(id\)\}\/warranty-contracts/);
+});
+
 test("reconciliation details have independent server continuations and location filter", () => {
   assert.match(adminApi, /\/entity-days\$\{query\(\{ cursor, take: 12 \}\)\}/);
   assert.match(adminApi, /\/locations\$\{query\(\{ cursor, take: 12, differences \}\)\}/);

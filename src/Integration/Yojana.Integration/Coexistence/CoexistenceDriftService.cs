@@ -20,7 +20,7 @@ namespace Yojana.Integration.Coexistence;
 /// the only closure the scan makes is when the remote value returns to the baseline, i.e. the edit no longer exists.
 /// </summary>
 public sealed class CoexistenceDriftService(IntegrationDbContext db, ITenantContext tenant, IClock clock,
-    CoexistenceSettings coexistence)
+    CoexistenceSettings coexistence, WarrantyContractMaintenanceSettings contractMaintenance)
 {
     public const string SourceObserved = "observed";
     public const string SourceDocument = "document";
@@ -53,8 +53,9 @@ public sealed class CoexistenceDriftService(IntegrationDbContext db, ITenantCont
         var reader = coexistence.Reader(connection.ConnectorCode);
         if (reader is null) return new(connectionId, false, 0, 0, 0, 0, 0, 0, false);
         var configured = await coexistence.GetAsync(connectionId, ct);
-        var watched = CoexistenceSettings.Watched(configured, reader);
-        var explaining = CoexistenceSettings.Explaining(configured, reader);
+        var maintainedIn = (await contractMaintenance.GetAsync(ct)).MaintainedIn;
+        var watched = CoexistenceSettings.Watched(configured, reader, maintainedIn);
+        var explaining = CoexistenceSettings.Explaining(configured, reader, maintainedIn);
         var fields = watched.Concat(explaining).ToList();
 
         var state = await db.CoexistenceScanStates.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
@@ -75,7 +76,8 @@ public sealed class CoexistenceDriftService(IntegrationDbContext db, ITenantCont
             }
             var read = await reader.ReadPageAsync(connectionId, fields, state.Cursor, configured.PageSize, ct);
             counts.Pages++;
-            await ApplyAsync(connectionId, reader.RecordType, read.Records, watched, explaining, counts, ct);
+            await ApplyAsync(connectionId, reader.RecordType, read.Records, watched, explaining,
+                reader.WarrantyContractFields, maintainedIn, counts, ct);
             state.LastPassRecords += read.Records.Count;
             state.Cursor = read.NextCursor;
             state.UpdatedAt = clock.UtcNow;
@@ -92,7 +94,8 @@ public sealed class CoexistenceDriftService(IntegrationDbContext db, ITenantCont
     }
 
     private async Task ApplyAsync(Guid connectionId, string recordType, IReadOnlyList<CoexistenceRemoteRecord> records,
-        IReadOnlyList<string> watched, IReadOnlyList<string> explaining, Counts counts, CancellationToken ct)
+        IReadOnlyList<string> watched, IReadOnlyList<string> explaining, IReadOnlyList<string> contractFields,
+        string maintainedIn, Counts counts, CancellationToken ct)
     {
         if (records.Count == 0) return;
         var keys = records.Select(x => x.RecordKey).Distinct(StringComparer.Ordinal).ToList();
@@ -124,8 +127,11 @@ public sealed class CoexistenceDriftService(IntegrationDbContext db, ITenantCont
                     }
                     else
                     {
+                        if (maintainedIn == WarrantyContractsMaintainedIn.Module && contractFields.Contains(field))
+                            conflict.Kind = CoexistenceConflictKind.ContractChangedInIncumbent;
                         conflict.RemoteValue = remote;
                         conflict.LastSeenAt = now;
+                        conflict.IncumbentChangedAt = record.ChangedAt ?? conflict.IncumbentChangedAt;
                     }
                     continue;
                 }
@@ -161,8 +167,12 @@ public sealed class CoexistenceDriftService(IntegrationDbContext db, ITenantCont
                 {
                     TenantId = tenant.TenantId, ConflictId = Guid.CreateVersion7(now), ConnectionId = connectionId,
                     RecordType = recordType, RecordKey = record.RecordKey, RecordLabel = Truncate(record.Label, 300)!,
+                    Kind = maintainedIn == WarrantyContractsMaintainedIn.Module && contractFields.Contains(field)
+                        ? CoexistenceConflictKind.ContractChangedInIncumbent
+                        : CoexistenceConflictKind.FieldChangedInIncumbent,
                     FieldName = field, BaselineValue = baseline.Value, RemoteValue = remote,
                     Status = CoexistenceConflictStatus.Open, DetectedAt = now, LastSeenAt = now,
+                    IncumbentChangedAt = record.ChangedAt,
                 };
                 db.CoexistenceConflicts.Add(conflict);
                 conflicts.Add(conflict);

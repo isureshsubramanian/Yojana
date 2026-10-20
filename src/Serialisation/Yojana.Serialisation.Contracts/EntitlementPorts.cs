@@ -6,9 +6,39 @@ namespace Yojana.Serialisation.Contracts;
 /// <summary>An item's warranty policy in one coverage family, by policy code; the version is chosen by contract date.</summary>
 public sealed record ItemWarrantyPolicy(Guid ItemId, string CoverageFamily, string PolicyCode, bool EntitlementRequiredOnSale);
 
+/// <summary>
+/// One item mapped to a warranty policy, including the host-owned facts that decide whether an invoice line follows
+/// the warranty-line path. Names are part of this read record so callers never have to expose an opaque item id.
+/// </summary>
+public sealed record WarrantyPolicyItem(
+    Guid ItemId,
+    string ItemCode,
+    string? ItemName,
+    string PolicyCode,
+    bool WarrantyServiceItem,
+    string? TargetRule);
+
 public interface IItemPolicyPort
 {
     Task<IReadOnlyList<ItemWarrantyPolicy>> PoliciesForAsync(Guid itemId, CancellationToken cancellationToken);
+
+    /// <summary>Lists item mappings for a set of policies in one call; implementations must not issue one remote call per policy.</summary>
+    Task<IReadOnlyList<WarrantyPolicyItem>> ItemsForPoliciesAsync(
+        IReadOnlyCollection<string> policyCodes, CancellationToken cancellationToken);
+}
+
+/// <summary>A published policy and its tenant-defined family, exposed without Serialisation persistence.</summary>
+public sealed record PublishedWarrantyPolicy(
+    string PolicyCode,
+    string PolicyName,
+    string CoverageFamily,
+    string CoverageFamilyName,
+    string EntitlementType);
+
+/// <summary>Narrow policy catalogue used by other modules for readiness checks.</summary>
+public interface IPublishedWarrantyPolicyPort
+{
+    Task<IReadOnlyList<PublishedWarrantyPolicy>> ListAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>

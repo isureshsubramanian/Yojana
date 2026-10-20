@@ -317,6 +317,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.RecordType).HasMaxLength(80);
             b.Property(x => x.RecordKey).HasMaxLength(200);
             b.Property(x => x.RecordLabel).HasMaxLength(300);
+            b.Property(x => x.Kind).HasMaxLength(64);
             b.Property(x => x.FieldName).HasMaxLength(128);
             b.Property(x => x.BaselineValue).HasMaxLength(1000);
             b.Property(x => x.RemoteValue).HasMaxLength(1000);

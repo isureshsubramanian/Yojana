@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Platform.Contracts.Tenancy;
 
 namespace Yojana.Integration.Coexistence;
 
@@ -15,6 +16,13 @@ public static class CoexistenceEndpoints
             CancellationToken ct) => Invoke(() => settings.ViewAsync(connectionId, ct)));
         group.MapPut("/connections/{connectionId:guid}/coexistence", (Guid connectionId, UpdateCoexistenceSettings request,
             ClaimsPrincipal user, CoexistenceSettings settings, CancellationToken ct) =>
+                Invoke(() => settings.UpdateAsync(connectionId, request, Actor(user), ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        group.MapGet("/settings/warranty-contracts", (WarrantyContractMaintenanceSettings settings,
+            CancellationToken ct) => Invoke(() => settings.GetAsync(ct)));
+        group.MapPut("/connections/{connectionId:guid}/warranty-contracts", (Guid connectionId,
+            UpdateWarrantyContractMaintenance request, ClaimsPrincipal user,
+            WarrantyContractMaintenanceSettings settings, CancellationToken ct) =>
                 Invoke(() => settings.UpdateAsync(connectionId, request, Actor(user), ct)))
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         group.MapPost("/connections/{connectionId:guid}/coexistence/drift-scan", (Guid connectionId,
@@ -56,6 +64,10 @@ public static class CoexistenceEndpoints
             return Results.Problem(title: ex.Rule, detail: ex.Message,
                 statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
                 extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+        }
+        catch (TenantSettingVersionConflictException)
+        {
+            return Results.Conflict(new { error = "warranty_contract_setting_changed" });
         }
     }
 }
