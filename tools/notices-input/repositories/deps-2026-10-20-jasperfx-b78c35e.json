@@ -1,0 +1,11 @@
+{
+  "name": "jasperfx/jasperfx packages taken in the 2026-10-20 dependency upgrade (owner direction: all packages latest)",
+  "matchRepositoryUrls": [],
+  "matchPackages": [
+    "JasperFx.Events/2.90.2",
+    "JasperFx/2.90.2"
+  ],
+  "licenceFile": "texts/jasperfx-jasperfx-LICENSE",
+  "sourceUrl": "https://raw.githubusercontent.com/jasperfx/jasperfx/b78c35ead9b8fb4440f330a182bd727418d89b3c/LICENSE",
+  "takenOn": "2026-10-20"
+}

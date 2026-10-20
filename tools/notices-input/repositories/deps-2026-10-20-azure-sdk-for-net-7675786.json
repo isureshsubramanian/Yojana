@@ -1,0 +1,10 @@
+{
+  "name": "azure/azure-sdk-for-net packages taken in the 2026-10-20 dependency upgrade (owner direction: all packages latest)",
+  "matchRepositoryUrls": [],
+  "matchPackages": [
+    "Azure.Storage.Blobs/12.30.1"
+  ],
+  "licenceFile": "texts/azure-sdk-for-net-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/azure/azure-sdk-for-net/76757861573893283568dd0764eba22e014c066e/LICENSE.txt",
+  "takenOn": "2026-10-20"
+}

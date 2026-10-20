@@ -1,0 +1,10 @@
+{
+  "name": "quartznet/quartznet packages taken in the 2026-10-20 dependency upgrade (owner direction: all packages latest)",
+  "matchRepositoryUrls": [],
+  "matchPackages": [
+    "Quartz/4.6.0"
+  ],
+  "licenceFile": "texts/quartznet-license.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/quartznet/quartznet/c3112273c7a8c67b45296754dba3fefe654f2710/license.txt",
+  "takenOn": "2026-10-20"
+}

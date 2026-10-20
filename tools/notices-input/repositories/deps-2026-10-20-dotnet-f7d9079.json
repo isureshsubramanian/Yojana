@@ -1,0 +1,11 @@
+{
+  "name": "dotnet/dotnet packages taken in the 2026-10-20 dependency upgrade (owner direction: all packages latest)",
+  "matchRepositoryUrls": [],
+  "matchPackages": [
+    "Microsoft.Bcl.AsyncInterfaces/10.0.10",
+    "System.Memory.Data/10.0.10"
+  ],
+  "licenceFile": "texts/dotnet-dotnet-LICENSE.TXT",
+  "sourceUrl": "https://raw.githubusercontent.com/dotnet/dotnet/f7d90799ce4ef09a0bb257852a57248d2a8fb8dd/LICENSE.TXT",
+  "takenOn": "2026-10-20"
+}

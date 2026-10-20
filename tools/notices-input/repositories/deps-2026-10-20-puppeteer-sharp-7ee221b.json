@@ -1,0 +1,10 @@
+{
+  "name": "hardkoded/puppeteer-sharp packages taken in the 2026-10-20 dependency upgrade (owner direction: all packages latest)",
+  "matchRepositoryUrls": [],
+  "matchPackages": [
+    "PuppeteerSharp/25.14.0"
+  ],
+  "licenceFile": "texts/puppeteer-sharp-25.12.0-LICENSE",
+  "sourceUrl": "https://raw.githubusercontent.com/hardkoded/puppeteer-sharp/7ee221b6b9b4286ccc400bbc2537e4ec9a315dcd/LICENSE",
+  "takenOn": "2026-10-20"
+}

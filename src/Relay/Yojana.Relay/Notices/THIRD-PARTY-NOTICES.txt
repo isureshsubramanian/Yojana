@@ -11,36 +11,36 @@ Listing a licensor here is a licence requirement and is not an endorsement by th
 CONTENTS
 
   - Microsoft .NET Runtime (shared framework Microsoft.NETCore.App)
-  - Microsoft.Extensions.Configuration 10.0.9
-  - Microsoft.Extensions.Configuration.Abstractions 10.0.9
-  - Microsoft.Extensions.Configuration.Binder 10.0.9
-  - Microsoft.Extensions.Configuration.CommandLine 10.0.9
-  - Microsoft.Extensions.Configuration.EnvironmentVariables 10.0.9
-  - Microsoft.Extensions.Configuration.FileExtensions 10.0.9
-  - Microsoft.Extensions.Configuration.Json 10.0.9
-  - Microsoft.Extensions.Configuration.UserSecrets 10.0.9
-  - Microsoft.Extensions.DependencyInjection 10.0.9
-  - Microsoft.Extensions.DependencyInjection.Abstractions 10.0.9
-  - Microsoft.Extensions.Diagnostics 10.0.9
-  - Microsoft.Extensions.Diagnostics.Abstractions 10.0.9
-  - Microsoft.Extensions.FileProviders.Abstractions 10.0.9
-  - Microsoft.Extensions.FileProviders.Physical 10.0.9
-  - Microsoft.Extensions.FileSystemGlobbing 10.0.9
-  - Microsoft.Extensions.Hosting 10.0.9
-  - Microsoft.Extensions.Hosting.Abstractions 10.0.9
-  - Microsoft.Extensions.Hosting.WindowsServices 10.0.9
-  - Microsoft.Extensions.Logging 10.0.9
-  - Microsoft.Extensions.Logging.Abstractions 10.0.9
-  - Microsoft.Extensions.Logging.Configuration 10.0.9
-  - Microsoft.Extensions.Logging.Console 10.0.9
-  - Microsoft.Extensions.Logging.Debug 10.0.9
-  - Microsoft.Extensions.Logging.EventLog 10.0.9
-  - Microsoft.Extensions.Logging.EventSource 10.0.9
-  - Microsoft.Extensions.Options 10.0.9
-  - Microsoft.Extensions.Options.ConfigurationExtensions 10.0.9
-  - Microsoft.Extensions.Primitives 10.0.9
-  - System.Diagnostics.EventLog 10.0.9
-  - System.ServiceProcess.ServiceController 10.0.9
+  - Microsoft.Extensions.Configuration 10.0.13
+  - Microsoft.Extensions.Configuration.Abstractions 10.0.13
+  - Microsoft.Extensions.Configuration.Binder 10.0.13
+  - Microsoft.Extensions.Configuration.CommandLine 10.0.13
+  - Microsoft.Extensions.Configuration.EnvironmentVariables 10.0.13
+  - Microsoft.Extensions.Configuration.FileExtensions 10.0.13
+  - Microsoft.Extensions.Configuration.Json 10.0.13
+  - Microsoft.Extensions.Configuration.UserSecrets 10.0.13
+  - Microsoft.Extensions.DependencyInjection 10.0.13
+  - Microsoft.Extensions.DependencyInjection.Abstractions 10.0.13
+  - Microsoft.Extensions.Diagnostics 10.0.13
+  - Microsoft.Extensions.Diagnostics.Abstractions 10.0.13
+  - Microsoft.Extensions.FileProviders.Abstractions 10.0.13
+  - Microsoft.Extensions.FileProviders.Physical 10.0.13
+  - Microsoft.Extensions.FileSystemGlobbing 10.0.13
+  - Microsoft.Extensions.Hosting 10.0.13
+  - Microsoft.Extensions.Hosting.Abstractions 10.0.13
+  - Microsoft.Extensions.Hosting.WindowsServices 10.0.13
+  - Microsoft.Extensions.Logging 10.0.13
+  - Microsoft.Extensions.Logging.Abstractions 10.0.13
+  - Microsoft.Extensions.Logging.Configuration 10.0.13
+  - Microsoft.Extensions.Logging.Console 10.0.13
+  - Microsoft.Extensions.Logging.Debug 10.0.13
+  - Microsoft.Extensions.Logging.EventLog 10.0.13
+  - Microsoft.Extensions.Logging.EventSource 10.0.13
+  - Microsoft.Extensions.Options 10.0.13
+  - Microsoft.Extensions.Options.ConfigurationExtensions 10.0.13
+  - Microsoft.Extensions.Primitives 10.0.13
+  - System.Diagnostics.EventLog 10.0.13
+  - System.ServiceProcess.ServiceController 10.0.13
 
 ==============================================================================
 Microsoft .NET Runtime (shared framework Microsoft.NETCore.App)
@@ -1779,7 +1779,7 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-Microsoft.Extensions.Configuration 10.0.9
+Microsoft.Extensions.Configuration 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -1787,7 +1787,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -3234,7 +3234,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Configuration.Abstractions 10.0.9
+Microsoft.Extensions.Configuration.Abstractions 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -3242,7 +3242,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -4689,7 +4689,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Configuration.Binder 10.0.9
+Microsoft.Extensions.Configuration.Binder 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -4697,7 +4697,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -6144,7 +6144,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Configuration.CommandLine 10.0.9
+Microsoft.Extensions.Configuration.CommandLine 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -6152,7 +6152,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -7599,7 +7599,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Configuration.EnvironmentVariables 10.0.9
+Microsoft.Extensions.Configuration.EnvironmentVariables 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -7607,7 +7607,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -9054,7 +9054,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Configuration.FileExtensions 10.0.9
+Microsoft.Extensions.Configuration.FileExtensions 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -9062,7 +9062,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -10509,7 +10509,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Configuration.Json 10.0.9
+Microsoft.Extensions.Configuration.Json 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -10517,7 +10517,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -11964,7 +11964,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Configuration.UserSecrets 10.0.9
+Microsoft.Extensions.Configuration.UserSecrets 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -11972,7 +11972,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -13419,7 +13419,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.DependencyInjection 10.0.9
+Microsoft.Extensions.DependencyInjection 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -13427,7 +13427,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -14874,7 +14874,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.DependencyInjection.Abstractions 10.0.9
+Microsoft.Extensions.DependencyInjection.Abstractions 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -14882,7 +14882,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -16329,7 +16329,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Diagnostics 10.0.9
+Microsoft.Extensions.Diagnostics 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -16337,7 +16337,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -17784,7 +17784,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Diagnostics.Abstractions 10.0.9
+Microsoft.Extensions.Diagnostics.Abstractions 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -17792,7 +17792,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/main/LICENSE.TXT on 2026-10-15:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -19239,7 +19239,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.FileProviders.Abstractions 10.0.9
+Microsoft.Extensions.FileProviders.Abstractions 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -19247,7 +19247,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/main/LICENSE.TXT on 2026-10-15:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -20694,7 +20694,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.FileProviders.Physical 10.0.9
+Microsoft.Extensions.FileProviders.Physical 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -20702,7 +20702,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -22149,7 +22149,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.FileSystemGlobbing 10.0.9
+Microsoft.Extensions.FileSystemGlobbing 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -22157,7 +22157,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -23604,7 +23604,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Hosting 10.0.9
+Microsoft.Extensions.Hosting 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -23612,7 +23612,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -25059,7 +25059,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Hosting.Abstractions 10.0.9
+Microsoft.Extensions.Hosting.Abstractions 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -25067,7 +25067,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-19:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -26514,7 +26514,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Hosting.WindowsServices 10.0.9
+Microsoft.Extensions.Hosting.WindowsServices 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -26522,7 +26522,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -27969,7 +27969,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Logging 10.0.9
+Microsoft.Extensions.Logging 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -27977,7 +27977,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -29424,7 +29424,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Logging.Abstractions 10.0.9
+Microsoft.Extensions.Logging.Abstractions 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -29432,7 +29432,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -30879,7 +30879,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Logging.Configuration 10.0.9
+Microsoft.Extensions.Logging.Configuration 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -30887,7 +30887,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -32334,7 +32334,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Logging.Console 10.0.9
+Microsoft.Extensions.Logging.Console 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -32342,7 +32342,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -33789,7 +33789,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Logging.Debug 10.0.9
+Microsoft.Extensions.Logging.Debug 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -33797,7 +33797,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -35244,7 +35244,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Logging.EventLog 10.0.9
+Microsoft.Extensions.Logging.EventLog 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -35252,7 +35252,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -36699,7 +36699,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Logging.EventSource 10.0.9
+Microsoft.Extensions.Logging.EventSource 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -36707,7 +36707,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -38154,7 +38154,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Options 10.0.9
+Microsoft.Extensions.Options 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -38162,7 +38162,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -39609,7 +39609,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Options.ConfigurationExtensions 10.0.9
+Microsoft.Extensions.Options.ConfigurationExtensions 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -39617,7 +39617,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -41064,7 +41064,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-Microsoft.Extensions.Primitives 10.0.9
+Microsoft.Extensions.Primitives 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -41072,7 +41072,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -42519,7 +42519,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-System.Diagnostics.EventLog 10.0.9
+System.Diagnostics.EventLog 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -42527,7 +42527,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 
@@ -43974,7 +43974,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ==============================================================================
-System.ServiceProcess.ServiceController 10.0.9
+System.ServiceProcess.ServiceController 10.0.13
 ==============================================================================
 
 Licence: MIT
@@ -43982,7 +43982,7 @@ Copyright (as declared in the package manifest): © Microsoft Corporation. All r
 Project: https://dot.net/
 Repository: https://github.com/dotnet/dotnet
 
-The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/901ca941248413c79832d2fdbd709da0c4386353/LICENSE.TXT on 2026-10-20:
+The package carries only a licence identifier. Licence text taken from https://raw.githubusercontent.com/dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699/LICENSE.TXT on 2026-10-20:
 
 The MIT License (MIT)
 

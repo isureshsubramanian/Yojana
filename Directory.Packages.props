@@ -6,25 +6,29 @@
   -->
   <ItemGroup>
     <!-- Relay only: MIT; licence and bundled notices audited at add-time. -->
-    <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.13" />
     <!-- Data: MIT (dotnet/efcore, dotnet/SqlClient) -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.13" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.13" />
+    <!-- Held at 6.1.7, the version EF Core 10.0.13 is built against (checked 2026-10-20 when 7.1.1 was current).
+         Only the bench and SQL verification tools reference it directly; the shipped hosts get it through EF Core.
+         Keep the two equal so the bench measures the shipped driver. Move to 7.x with the EF Core release that adopts it;
+         7.x also moves Entra ID sign-in into Microsoft.Data.SqlClient.Extensions.Azure, needed for Azure SQL (OD-01). -->
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.7" />
     <!-- Pinned above the vulnerable 9.0.x that Microsoft.Data.SqlClient pulls on its own (NU1902/NU1903); MIT (dotnet/dotnet) -->
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <!-- Integration security (MOD-14, P8-T14): MIT; package and transitive notices are generated from audited inputs. -->
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="Azure.Security.KeyVault.Keys" Version="4.10.2" />
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.30.0" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.30.1" />
     <!-- Messaging: MIT (JasperFx/wolverine) -->
-    <PackageVersion Include="WolverineFx" Version="6.50.2" />
-    <PackageVersion Include="WolverineFx.AzureServiceBus" Version="6.50.2" />
-    <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
-    <PackageVersion Include="WolverineFx.SqlServer" Version="6.50.2" />
-    <PackageVersion Include="WolverineFx.EntityFrameworkCore" Version="6.50.2" />
+    <PackageVersion Include="WolverineFx" Version="6.51.1" />
+    <PackageVersion Include="WolverineFx.AzureServiceBus" Version="6.51.1" />
+    <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
+    <PackageVersion Include="WolverineFx.SqlServer" Version="6.51.1" />
+    <PackageVersion Include="WolverineFx.EntityFrameworkCore" Version="6.51.1" />
     <!-- Runtime handler compilation (Roslyn, MIT dotnet/roslyn); production may switch to pre-generated code (TypeLoadMode.Static) later -->
-    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.50.2" />
+    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.51.1" />
     <!-- GS1 Application Identifier validating parser (MOD-03, P1-T07): Apache-2.0, bundled LICENSE.txt read 2026-10-15
          ("Copyright 2018-2025 Solidsoft Reply Ltd."); its dependency Solidsoft.Reply.Parsers.Common 1.0.3 is Apache-2.0 too
          ("Copyright 2018-2024 Solidsoft Reply Ltd."). Neither ships a NOTICE file. Recorded in tools/gates/licence-policy.json knownLicenceFiles. -->
@@ -34,10 +38,10 @@
     <!-- Spreadsheet intake/export (MOD-12, OD-30): MIT. Open XML SDK also brings its MIT Framework and System.IO.Packaging dependencies. -->
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
     <PackageVersion Include="ExcelDataReader" Version="3.9.0" />
-    <!-- PDF render worker only: MIT; 25.12.0 was published 2026-09-24 (older than two weeks at adoption). -->
-    <PackageVersion Include="PuppeteerSharp" Version="25.12.0" />
+    <!-- PDF render worker only: MIT; 25.14.0 published 2026-10-15, taken 2026-10-20 at owner direction (all packages latest). -->
+    <PackageVersion Include="PuppeteerSharp" Version="25.14.0" />
     <!-- Scheduling: Apache-2.0 (quartznet/quartznet) -->
-    <PackageVersion Include="Quartz" Version="4.5.0" />
+    <PackageVersion Include="Quartz" Version="4.6.0" />
     <!-- Tests only (not shipped): Apache-2.0 (xunit), MIT (Microsoft test platform) -->
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />

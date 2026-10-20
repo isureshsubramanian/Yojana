@@ -1,0 +1,10 @@
+{
+  "name": "Quartz.NET 4.6 SQL Server schema migration scripts (vendored, modified)",
+  "licence": "Apache-2.0",
+  "copyright": "Copyright Marko Lahma",
+  "projectUrl": "https://www.quartz-scheduler.net/",
+  "licenceFile": "texts/quartznet-license.txt",
+  "sourceUrl": "https://github.com/quartznet/quartznet/tree/c3112273c7a8c67b45296754dba3fefe654f2710/database/migrations/4.6",
+  "takenOn": "2026-10-20",
+  "why": "src/Platform/Yojana.Platform/Scheduling/migrations-4.6/add_scheduler_version_sqlServer.sql, add_fired_trigger_interrupt_sqlServer.sql and add_trigger_misfire_threshold_sqlServer.sql are copies of the Quartz.NET 4.6.0 migrations, taken at the commit the Quartz 4.6.0 package was built from, with the table schema changed from [dbo] to [quartz]; the modification notice is in each file header (Apache-2.0 section 4(b)). The upstream repository has no NOTICE file at that commit."
+}
