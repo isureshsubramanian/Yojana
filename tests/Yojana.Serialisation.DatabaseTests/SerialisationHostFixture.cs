@@ -71,6 +71,7 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         builder.Configuration["Platform:AutoBuildMessageStorage"] = "true";
         builder.Configuration["Platform:StartScheduler"] = "false";
         builder.Configuration["Platform:ServiceName"] = "yojana-serialisation-tests";
+        builder.Configuration["Platform:SignIn:AuditHmacKey"] = "serialisation-database-tests-only-hmac-key";
         builder.Configuration[$"{CertificateRunOptions.SectionName}:MaximumSynchronousUnits"] = "120";
         builder.Configuration[$"{Yojana.Serialisation.Ledger.LedgerBaseOrderBackfillOptions.SectionName}:BatchSize"] = "1";
         builder.Configuration[$"{Yojana.Serialisation.Ledger.LedgerBaseOrderBackfillOptions.SectionName}:PauseMilliseconds"] = "0";
@@ -103,20 +104,50 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         app.UseYojanaPlatform();
         app.UseSerialisationInteractiveReads();
         app.MapSerialisationEndpoints();
-        app.MapGet("/test/sign-in/{tenantId:guid}", async (Guid tenantId, string? role, Guid? asUser, HttpContext http) =>
+        app.MapGet("/test/sign-in/{tenantId:guid}", async (Guid tenantId, string? role, Guid? asUser,
+            PlatformDbContext platform, HttpContext http) =>
         {
             var userId = asUser ?? Guid.NewGuid();
+            var selectedTenant = new TenantId(tenantId);
+            var grantedRoles = (role is null ? YojanaRole.All : [role]).ToList();
+            var user = await platform.Users.Include(row => row.Memberships)
+                .FirstOrDefaultAsync(row => row.Id == userId);
+            if (user is null)
+            {
+                user = new AppUser
+                {
+                    Id = userId,
+                    Email = $"test-{userId:N}@example.invalid",
+                    DisplayName = "Fictional Quality User",
+                    CreatedAt = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc),
+                };
+                platform.Users.Add(user);
+            }
+            var membership = user.Memberships.FirstOrDefault(row => row.TenantId == selectedTenant);
+            if (membership is null)
+            {
+                user.Memberships.Add(new UserTenantMembership
+                {
+                    UserId = userId, TenantId = selectedTenant, Roles = grantedRoles,
+                });
+            }
+            else
+            {
+                membership.Roles = grantedRoles;
+            }
+            await platform.SaveChangesAsync();
             var claims = new List<Claim>
             {
                 new(YojanaClaim.UserId, userId.ToString("D")),
+                new(YojanaClaim.SecurityStamp, user.SecurityStamp.ToString("D")),
+                new(YojanaClaim.SessionId, Guid.NewGuid().ToString("D")),
                 new(ClaimTypes.NameIdentifier, userId.ToString("D")),
                 new(ClaimTypes.Name, "Fictional Quality User"),
                 new(ClaimTypes.Email, "quality.user@example.invalid"),
                 new(YojanaClaim.TenantId, tenantId.ToString("D")),
                 new(YojanaClaim.TenantCode, "http-test"),
             };
-            claims.AddRange((role is null ? YojanaRole.All : [role])
-                .Select(grantedRole => new Claim(YojanaClaim.Role, grantedRole)));
+            claims.AddRange(grantedRoles.Select(grantedRole => new Claim(YojanaClaim.Role, grantedRole)));
             var principal = new ClaimsPrincipal(new ClaimsIdentity(claims,
                 CookieAuthenticationDefaults.AuthenticationScheme, ClaimTypes.Name, YojanaClaim.Role));
             await http.SignInAsync(principal);

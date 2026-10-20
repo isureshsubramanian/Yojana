@@ -184,9 +184,11 @@ public sealed class MessagingAndSchedulingTests(PlatformHostFixture fixture)
         await DevelopmentSeeder.SeedAsync(fixture.Services, "Test!Pass2026", CancellationToken.None);
         using var scope = fixture.Services.CreateScope();
         var signIn = scope.ServiceProvider.GetRequiredService<SignInService>();
-        var user = await signIn.AuthenticateAsync("service_manager@" + DevelopmentSeeder.EmailDomain, "Test!Pass2026", CancellationToken.None);
+        var request = new SecurityRequestContext($"seed-test-{Guid.NewGuid():N}", "test-agent");
+        var user = (await signIn.AuthenticateAsync("service_manager@" + DevelopmentSeeder.EmailDomain,
+            "Test!Pass2026", request, CancellationToken.None)).User;
         Assert.NotNull(user);
-        Assert.Null(await signIn.AuthenticateAsync(user!.Email, "wrong", CancellationToken.None));
+        Assert.Null((await signIn.AuthenticateAsync(user!.Email, "wrong", request, CancellationToken.None)).User);
         var tenants = await signIn.TenantsForAsync(user.Id, CancellationToken.None);
         var choice = Assert.Single(tenants);
         Assert.Equal(DevelopmentSeeder.DevTenantCode, choice.Code);

@@ -48,6 +48,7 @@ public static class DevelopmentSeeder
         }
 
         var hash = PasswordHasher.Hash(password);
+        var resetUserIds = new List<Guid>();
         var users = YojanaRole.All.Select(r => (Email: $"{r}@{seed.EmailDomain}", Name: r.Replace('_', ' '), Roles: new List<string> { r }))
             .Append((Email: AdministratorEmail(seed.EmailDomain), Name: seed.AdministratorName, Roles: YojanaRole.All.ToList()));
         foreach (var (email, name, roles) in users)
@@ -62,6 +63,7 @@ public static class DevelopmentSeeder
             {
                 // Seeded accounts follow the seed password, so changing it and re-seeding takes effect.
                 user.PasswordHash = hash;
+                resetUserIds.Add(user.Id);
             }
 
             var membership = user.Memberships.FirstOrDefault(m => m.TenantId == seed.TenantId);
@@ -76,6 +78,14 @@ public static class DevelopmentSeeder
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        if (resetUserIds.Count > 0)
+        {
+            var stamps = scope.ServiceProvider.GetRequiredService<ISecurityStampService>();
+            foreach (var userId in resetUserIds)
+            {
+                await stamps.RotateSecurityStampAsync(userId, "development_seed_password_reset", cancellationToken);
+            }
+        }
         // This is the platform's current tenant-creation seam. Schedule after the tenant commits so Quartz never
         // points at a tenant that rolled back; the startup reconciliation remains the recovery path after a crash.
         await services.GetRequiredService<RecurringTenantJobProvisioner>()

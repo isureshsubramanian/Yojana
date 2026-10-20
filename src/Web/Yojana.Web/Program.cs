@@ -109,7 +109,6 @@ app.UseStaticFiles(new StaticFileOptions
     },
 });
 app.UseYojanaPlatform();
-app.UseRateLimiter();
 app.UseSerialisationInteractiveReads();
 app.MapPresenceEndpoints();
 app.MapSerialisationEndpoints();
@@ -136,53 +135,7 @@ app.MapGet("/notices", () =>
     return File.Exists(path) ? Results.File(path, "text/plain; charset=utf-8") : Results.Problem("notices file missing from the artefact", statusCode: 500);
 }).AllowAnonymous();
 
-app.MapPost("/api/auth/sign-in", async (SignInRequest request, SignInService signIn, HttpContext http, CancellationToken ct) =>
-{
-    var user = await signIn.AuthenticateAsync(request.Email, request.Password, ct);
-    if (user is null)
-    {
-        return Results.Unauthorized();
-    }
-
-    var tenants = await signIn.TenantsForAsync(user.Id, ct);
-    var selected = tenants.Count == 1 ? tenants[0] : null;
-    await http.SignInAsync(SignInService.PrincipalFor(user, selected));
-    return Results.Ok(SessionView.From(user, selected, tenants));
-}).AllowAnonymous();
-
-app.MapPost("/api/auth/select-tenant", async (SelectTenantRequest request, SignInService signIn, PlatformDbContext db, HttpContext http, CancellationToken ct) =>
-{
-    var userId = Guid.Parse(http.User.FindFirst(YojanaClaim.UserId)!.Value);
-    var tenants = await signIn.TenantsForAsync(userId, ct);
-    var choice = tenants.FirstOrDefault(t => t.Code == request.TenantCode);
-    if (choice is null)
-    {
-        return Results.Forbid();
-    }
-
-    var user = await db.Users.AsNoTracking().FirstAsync(u => u.Id == userId, ct);
-    await http.SignInAsync(SignInService.PrincipalFor(user, choice));
-    return Results.Ok(SessionView.From(user, choice, tenants));
-}).RequireAuthorization();
-
-// The shell's session: who is signed in, which tenant is selected, which tenants could be.
-app.MapGet("/api/auth/me", async (SignInService signIn, PlatformDbContext db, HttpContext http, CancellationToken ct) =>
-{
-    var userId = Guid.Parse(http.User.FindFirst(YojanaClaim.UserId)!.Value);
-    var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && u.IsActive, ct);
-    if (user is null)
-    {
-        await http.SignOutAsync();
-        return Results.Unauthorized();
-    }
-
-    var tenants = await signIn.TenantsForAsync(userId, ct);
-    var code = http.User.FindFirst(YojanaClaim.TenantCode)?.Value;
-    var selected = code is null ? null : tenants.FirstOrDefault(t => t.Code == code);
-    return Results.Ok(SessionView.From(user, selected, tenants));
-}).RequireAuthorization();
-
-app.MapPost("/api/auth/sign-out", async (HttpContext http) => { await http.SignOutAsync(); return Results.NoContent(); }).RequireAuthorization();
+app.MapYojanaSecurityEndpoints();
 
 // The tenant's currencies: the working currency (every configured amount, approval thresholds and policy values, is
 // in it) and the other currencies documents may be written in, both chosen from the ISO 4217 catalogue at setup. The
@@ -258,31 +211,11 @@ await app.RunAsync();
 
 namespace Yojana.Web
 {
-    public sealed record SignInRequest(string Email, string Password);
-
-    public sealed record SelectTenantRequest(string TenantCode);
-
     public sealed record PingRequest(string Note);
 
     public sealed record TenantCurrencyRequest(string Currency, IReadOnlyList<string>? Accepted = null);
 
     public sealed record PeopleNamesRequest(IReadOnlyList<string> References);
-
-    /// <summary>Wire shape of the signed-in session for the web shell (web/src/api/types.ts mirrors it).</summary>
-    public sealed record SessionView(SessionUserView User, SessionTenantView? Tenant, IReadOnlyList<string> Roles, IReadOnlyList<TenantChoiceView> Tenants)
-    {
-        public static SessionView From(AppUser user, TenantChoice? selected, IReadOnlyList<TenantChoice> tenants) => new(
-            new SessionUserView(user.Id, user.Email, user.DisplayName),
-            selected is null ? null : new SessionTenantView(selected.Code, selected.Name),
-            selected?.Roles.Where(YojanaRole.IsKnown).ToList() ?? [],
-            tenants.Select(t => new TenantChoiceView(t.Code, t.Name, t.Roles)).ToList());
-    }
-
-    public sealed record SessionUserView(Guid Id, string Email, string DisplayName);
-
-    public sealed record SessionTenantView(string Code, string Name);
-
-    public sealed record TenantChoiceView(string Code, string Name, IReadOnlyList<string> Roles);
 
     /// <summary>Marker so test projects can reference the host assembly.</summary>
     public static class WebHost

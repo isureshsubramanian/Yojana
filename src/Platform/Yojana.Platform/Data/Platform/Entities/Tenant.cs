@@ -43,9 +43,45 @@ public sealed class AppUser
 
     public bool IsActive { get; set; } = true;
 
+    public Guid SecurityStamp { get; set; } = Guid.NewGuid();
+
     public DateTime CreatedAt { get; set; }
 
     public List<UserTenantMembership> Memberships { get; } = [];
+}
+
+/// <summary>
+/// Global failed-attempt state. It deliberately has no tenant id: an identity can belong to several tenants and the
+/// state is consulted before tenant selection. The key is a one-way digest, never an e-mail address or client address.
+/// </summary>
+public sealed class SignInThrottle
+{
+    public required string KeyKind { get; set; }
+    public required byte[] KeyHash { get; set; }
+    public DateTime WindowStartedAt { get; set; }
+    public int FailureCount { get; set; }
+    public int LockoutCount { get; set; }
+    public DateTime? LockedUntil { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// Global security audit. TenantId is nullable because sign-in occurs before tenant selection; tenant visibility is
+/// enforced by SecurityEventQueries using the selected tenant and memberships rather than by tenant RLS.
+/// </summary>
+public sealed class SecurityEvent
+{
+    public Guid Id { get; set; }
+    public DateTime OccurredAt { get; set; }
+    public required string Kind { get; set; }
+    public Guid? UserId { get; set; }
+    public TenantId? TenantId { get; set; }
+    public Guid? ActorUserId { get; set; }
+    public string? ClientAddress { get; set; }
+    public string? UserAgent { get; set; }
+    public required string Reason { get; set; }
+    public string? UnknownUserHash { get; set; }
 }
 
 /// <summary>Which roles a user holds in a tenant. Read before the tenant is selected, so not under row-level security.</summary>

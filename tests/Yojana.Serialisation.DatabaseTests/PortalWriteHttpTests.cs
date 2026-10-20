@@ -222,6 +222,7 @@ public sealed class PortalWriteHttpTests(SerialisationHostFixture fixture)
             start.Environment["Platform__AutoBuildMessageStorage"] = "false";
             start.Environment["Platform__StartScheduler"] = "false";
             start.Environment["Platform__ServiceName"] = "yojana-portal-write-http-test";
+            start.Environment["Platform__SignIn__AuditHmacKey"] = "portal-write-http-tests-only-hmac-key";
             var process = new Process { StartInfo = start };
             process.OutputDataReceived += (_, args) => Capture(args.Data, output, listening);
             process.ErrorDataReceived += (_, args) => Capture(args.Data, output, listening);
