@@ -38,7 +38,9 @@ public sealed class P5PublishedEventContractTests
     {
         using var document = JsonDocument.Parse(PublishedEventSchemas.Read(schema, version));
         Assert.Equal(schema, document.RootElement.GetProperty("title").GetString());
-        Assert.Equal("1.0", version);
+        var expectedVersion = schema == RmaDispositioned.Schema ? "1.2"
+            : schema is RmaAuthorised.Schema or RmaReceived.Schema or RefurbishmentReleased.Schema or ReplacementShipped.Schema or ReplacementReturnOverdue.Schema ? "1.1" : "1.0";
+        Assert.Equal(expectedVersion, version);
 
         // Replacement.Shipped leaves only from the replacement unit's copy of the fact (the original unit records it too),
         // so the audit event carries the replacement unit wherever the attributes name one.
@@ -52,6 +54,8 @@ public sealed class P5PublishedEventContractTests
             ActorRef = "contract-audit", IdempotencyKey = Guid.NewGuid().ToString("N"), Attributes = attributes,
         });
         Assert.IsType(contractType, mapped);
+        Assert.Equal(schema, mapped!.Header.Schema);
+        Assert.Equal(version, mapped.Header.Version);
         Assert.NotNull(typeof(PublishedEventSinkHandler).GetMethod(nameof(PublishedEventSinkHandler.Handle), [contractType]));
     }
 }

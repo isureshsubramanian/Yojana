@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.1/replacement.returnoverdue.json",
+  "title": "Replacement.ReturnOverdue",
+  "type": "object",
+  "required": [
+    "header",
+    "replacement_link_id",
+    "original_unit_id",
+    "replacement_unit_id",
+    "party_ref",
+    "return_due",
+    "non_return_price_basis",
+    "days_overdue"
+  ],
+  "properties": {
+    "header": {
+      "type": "object",
+      "required": [
+        "schema",
+        "version",
+        "event_id",
+        "unit_id",
+        "event_time",
+        "recorded_time",
+        "seq",
+        "legal_entity_id",
+        "actor_ref"
+      ],
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "unit_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "recorded_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "legal_entity_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actor_ref": {
+          "type": "string"
+        },
+        "document": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    },
+    "replacement_link_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "original_unit_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "replacement_unit_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "party_ref": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "return_due": {
+      "type": "string",
+      "format": "date"
+    },
+    "non_return_price_basis": {
+      "type": "string",
+      "enum": [
+        "list",
+        "fmv",
+        "cost"
+      ]
+    },
+    "days_overdue": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "non_return_amount": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "currency": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

@@ -7,13 +7,13 @@ namespace Yojana.Serialisation.Tests;
 public sealed class RmaEventSchemaTests
 {
     [Theory]
-    [InlineData(RmaAuthorised.Schema, RmaAuthorised.Version)]
-    [InlineData(RmaReceived.Schema, RmaReceived.Version)]
-    [InlineData(RmaDispositioned.Schema, RmaDispositioned.Version)]
-    public void Published_rma_contract_has_an_embedded_1_0_schema(string schema, string version)
+    [InlineData(RmaAuthorised.Schema, RmaAuthorised.Version, "1.1")]
+    [InlineData(RmaReceived.Schema, RmaReceived.Version, "1.1")]
+    [InlineData(RmaDispositioned.Schema, RmaDispositioned.Version, "1.2")]
+    public void Published_rma_contract_has_its_embedded_schema(string schema, string version, string expected)
     {
         using var document = JsonDocument.Parse(PublishedEventSchemas.Read(schema, version));
-        Assert.Equal("1.0", version);
+        Assert.Equal(expected, version);
         Assert.Equal(schema, document.RootElement.GetProperty("title").GetString());
     }
 }

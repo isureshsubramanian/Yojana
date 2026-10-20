@@ -7,6 +7,8 @@ namespace Yojana.Serialisation.Certificates;
 /// <summary>Dependency-free HTML renderer for tests, previews and installations without a configured PDF worker.</summary>
 public sealed class PlainHtmlCertificateRenderer(CertificateHtmlComposer composer) : ICertificateRenderer, ICertificateBundleRenderer
 {
+    public string ContentType => "text/html; charset=utf-8";
+
     public async Task<CertificateRenderResult> RenderAsync(CertificateRenderRequest request, CancellationToken cancellationToken)
     {
         var document = await composer.ComposeAsync(request, cancellationToken);

@@ -128,7 +128,10 @@ public static class IntegrationModule
             sp.GetRequiredService<Yojana.Platform.Contracts.Time.IClock>(),
             sp.GetRequiredService<ConnectionCapabilityReader>(),
             sp.GetRequiredService<IOutboundCommandParkingSink>(),
-            sp.GetRequiredService<Yojana.Serialisation.Contracts.ICertificateUnitReadPort>()));
+            sp.GetRequiredService<Yojana.Serialisation.Contracts.IOutboundUnitSourcePort>(),
+            sp.GetRequiredService<Yojana.Serialisation.Contracts.IRenderedOutboundDocumentPort>(),
+            sp.GetServices<IOutboundSourcePolicy>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<OutboundCommandStager>>()));
         builder.Services.AddScoped<BoundedWaitResequencer>();
         builder.Services.AddSingleton(RecurringTenantJob.For<ResequencerJob>(ResequencerJob.JobName, ResequencerJob.Cron));
         builder.Services.AddScoped<OutboxRelaySettings>();
@@ -141,6 +144,9 @@ public static class IntegrationModule
         builder.Services.AddScoped<IOutboundReviewTaskSink>(services =>
             services.GetRequiredService<DeadLetterParkingSink>());
         builder.Services.AddScoped<OutboundRelay>();
+        builder.Services.AddScoped<OutboundCompleteness>();
+        builder.Services.AddScoped<IOutboundSourcePolicy, Cx01OutboundSourcePolicy>();
+        builder.Services.AddKeyedScoped<IOutboundCompletenessCheck, Cx01OutboundCompleteness>(Cx01Capabilities.ConnectorCode);
         builder.Services.AddScoped<DeadLetterService>();
         builder.Services.AddScoped<IOutboundRetryWindow>(services => services.GetRequiredService<DeadLetterService>());
         builder.Services.AddScoped<ManualTaskDeskSettings>();

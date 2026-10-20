@@ -10,10 +10,11 @@ public sealed record RmaAuthorised(
     DocumentRef OriginalSaleRef,
     decimal CoveragePct,
     string CoverageSource,
-    Guid? EntitlementId) : IPublishedUnitEvent
+    Guid? EntitlementId,
+    Guid? CustomerPartyRef = null) : IPublishedUnitEvent
 {
     public const string Schema = "Rma.Authorised";
-    public const string Version = "1.0";
+    public const string Version = "1.1";
 }
 
 public sealed record RmaReceived(
@@ -27,10 +28,11 @@ public sealed record RmaReceived(
     string Outcome,
     string ConditionGrade,
     string ValuationRule,
-    string PostingPeriod) : IPublishedUnitEvent
+    string PostingPeriod,
+    Guid? SourceLocationId = null) : IPublishedUnitEvent
 {
     public const string Schema = "Rma.Received";
-    public const string Version = "1.0";
+    public const string Version = "1.1";
 }
 
 public sealed record RmaDispositioned(
@@ -40,8 +42,11 @@ public sealed record RmaDispositioned(
     Guid UnitId,
     string Disposition,
     string? EntitlementClosedReason,
-    Guid? ReplacementIntentId) : IPublishedUnitEvent
+    Guid? ReplacementIntentId,
+    string? Currency = null,
+    Guid? CustomerPartyRef = null,
+    Guid? SourceLocationId = null) : IPublishedUnitEvent
 {
     public const string Schema = "Rma.Dispositioned";
-    public const string Version = "1.0";
+    public const string Version = "1.2";
 }

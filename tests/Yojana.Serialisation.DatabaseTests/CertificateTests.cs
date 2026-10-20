@@ -538,6 +538,13 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
             certificate.Payload, StringComparison.Ordinal);
         var queries = scope.ServiceProvider.GetRequiredService<CertificateQueries>();
         var before = await queries.RenderAsync(certificate.CertificateId, CancellationToken.None);
+        var outbound = await scope.ServiceProvider.GetRequiredService<IRenderedOutboundDocumentPort>()
+            .ReadAsync(certificate.CertificateId, CancellationToken.None);
+        Assert.NotNull(outbound);
+        Assert.Equal(before!.Bytes, outbound.Bytes);
+        Assert.Equal(before.MediaType, outbound.ContentType);
+        Assert.EndsWith(".html", outbound.FileName);
+        Assert.DoesNotContain(certificate.CertificateId.ToString(), outbound.FileName);
         var beforeHtml = Encoding.UTF8.GetString(before!.Bytes);
         Assert.Contains(facilityName, beforeHtml, StringComparison.Ordinal);
         Assert.DoesNotContain("FAC-21", beforeHtml, StringComparison.Ordinal);

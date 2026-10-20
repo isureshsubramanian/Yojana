@@ -291,6 +291,7 @@ public sealed record CertificateRenderRequest(string Payload, Guid TemplateVersi
 public sealed record CertificateRenderResult(byte[] Bytes, string MediaType);
 public interface ICertificateRenderer
 {
+    string ContentType => "application/pdf";
     Task<CertificateRenderResult> RenderAsync(CertificateRenderRequest request, CancellationToken cancellationToken);
 }
 

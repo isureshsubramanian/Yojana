@@ -22,10 +22,11 @@ public sealed record ReplacementShipped(
     DateOnly ComputedEnd,
     string ReplacementCondition,
     bool AccrualSuppressed,
-    decimal RestockingFeeAmount) : IPublishedUnitEvent
+    decimal RestockingFeeAmount,
+    Guid? CustomerPartyRef = null) : IPublishedUnitEvent
 {
     public const string Schema = "Replacement.Shipped";
-    public const string Version = "1.0";
+    public const string Version = "1.1";
 }
 
 /// <summary>P6 consumes this recorded request; P5 neither chooses a template nor reports a print result.</summary>
@@ -48,10 +49,12 @@ public sealed record ReplacementReturnOverdue(
     Guid PartyRef,
     DateOnly ReturnDue,
     string NonReturnPriceBasis,
-    int DaysOverdue) : IPublishedUnitEvent
+    int DaysOverdue,
+    decimal? NonReturnAmount = null,
+    string? Currency = null) : IPublishedUnitEvent
 {
     public const string Schema = "Replacement.ReturnOverdue";
-    public const string Version = "1.0";
+    public const string Version = "1.1";
 }
 
 public sealed record ReplacementLinkCorrected(

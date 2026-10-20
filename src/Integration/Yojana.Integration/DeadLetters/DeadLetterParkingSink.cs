@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Outbox;
@@ -21,7 +22,44 @@ public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContex
             ?? await db.DeadLetterItems.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
                 && x.SourceKind == DeadLetterSourceKind.OutboundCommand
                 && x.SourceId == command.OutboundCommandId, cancellationToken);
-        if (existing is not null) return;
+        if (existing is not null)
+        {
+            existing.ReasonCode = reasonCode;
+            existing.Failure = Failure(failure);
+            existing.CanonicalAttempt = command.Payload;
+            existing.Status = DeadLetterStatus.NeedsAttention;
+            existing.ResolvedAt = null;
+            existing.UpdatedAt = clock.UtcNow;
+            var previousTask = await db.ManualOutboundTasks.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
+                && x.OutboundCommandId == command.OutboundCommandId, cancellationToken);
+            // The unique task-per-command contract keeps one inbox row. Its previous completion is immutable
+            // audit data before that row can be reopened; expiry does not reopen an operator task.
+            db.DeadLetterEvents.Add(Event(existing.DeadLetterItemId, DeadLetterAction.Parked,
+                $"system:connection:{command.ConnectionId:N}", Failure(failure), JsonSerializer.Serialize(new
+                {
+                    reason_code = reasonCode, failure,
+                    previous_task = previousTask is null ? null : new
+                    {
+                        previousTask.ManualOutboundTaskId, previousTask.Status, previousTask.CompletedBy,
+                        previousTask.CompletedAt, previousTask.ErpExternalId, previousTask.ErpChangeMarker, previousTask.Draft,
+                    },
+                }, Yojana.Integration.Contracts.IntegrationContracts.Json)));
+            if (NeedsManualTask(reasonCode))
+            {
+                if (previousTask is not null)
+                {
+                    previousTask.Status = ManualTaskStatus.Open;
+                    previousTask.Draft = command.Payload;
+                    previousTask.Note = Cap(failure);
+                    previousTask.CompletedAt = null;
+                    previousTask.CompletedBy = null;
+                    previousTask.ErpExternalId = null;
+                    previousTask.ErpChangeMarker = null;
+                }
+                else await AddManualTaskAsync(command, existing.DeadLetterItemId, failure, cancellationToken);
+            }
+            return;
+        }
 
         var id = TimeOrderedId.New(clock.UtcNow);
         db.DeadLetterItems.Add(new DeadLetterItem
@@ -36,16 +74,15 @@ public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContex
             ReasonCode = reasonCode,
             RawPayload = command.Payload,
             CanonicalAttempt = command.Payload,
-            Failure = failure,
+            Failure = Failure(failure),
             Status = DeadLetterStatus.NeedsAttention,
             CreatedAt = clock.UtcNow,
             UpdatedAt = clock.UtcNow,
         });
         db.DeadLetterEvents.Add(Event(id, DeadLetterAction.Parked,
-            $"system:connection:{command.ConnectionId:N}", failure, "{}"));
+            $"system:connection:{command.ConnectionId:N}", Failure(failure), JsonSerializer.Serialize(new { reason_code = reasonCode, failure })));
 
-        if (reasonCode is OutboundConnectorOutcome.Unsupported or OutboundConnectorOutcome.Rejected
-            || command.Outcome is OutboundConnectorOutcome.Unsupported or OutboundConnectorOutcome.Rejected)
+        if (NeedsManualTask(reasonCode))
         {
             // One task per command (unique index): a review that ends rejected keeps its task, now tied to the letter.
             if (await OpenTaskAsync(command, cancellationToken) is { } reviewTask)
@@ -54,23 +91,23 @@ public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContex
                 reviewTask.Note = Cap(failure);
                 return;
             }
-            var desk = await deskSettings.ResolveAsync(command.CommandType, cancellationToken);
-            db.ManualOutboundTasks.Add(new ManualOutboundTask
-            {
-                TenantId = tenant.TenantId,
-                ManualOutboundTaskId = TimeOrderedId.New(clock.UtcNow),
-                DeadLetterItemId = id,
-                OutboundCommandId = command.OutboundCommandId,
-                ConnectionId = command.ConnectionId,
-                CommandType = command.CommandType,
-                Desk = desk,
-                Draft = command.Payload,
-                Note = Cap(failure),
-                Status = ManualTaskStatus.Open,
-                CreatedAt = clock.UtcNow,
-            });
+            await AddManualTaskAsync(command, id, failure, cancellationToken);
         }
     }
+
+    private static bool NeedsManualTask(string reasonCode) =>
+        reasonCode is OutboundCompleteness.MissingSourceField or OutboundConnectorOutcome.Unsupported or OutboundConnectorOutcome.Rejected
+            or "rejected_in_remote_review" or "withdrawn_in_remote_review" or "external_mapping_conflict";
+
+    private async Task AddManualTaskAsync(OutboundCommandRow command, Guid letterId, string failure, CancellationToken ct) =>
+        db.ManualOutboundTasks.Add(new ManualOutboundTask
+        {
+            TenantId = tenant.TenantId, ManualOutboundTaskId = TimeOrderedId.New(clock.UtcNow),
+            DeadLetterItemId = letterId, OutboundCommandId = command.OutboundCommandId,
+            ConnectionId = command.ConnectionId, CommandType = command.CommandType,
+            Desk = await deskSettings.ResolveAsync(command.CommandType, ct), Draft = command.Payload,
+            Note = Cap(failure), Status = ManualTaskStatus.Open, CreatedAt = clock.UtcNow,
+        });
 
     public async Task OpenAsync(OutboundCommandRow command, string note, CancellationToken cancellationToken)
     {
@@ -113,7 +150,9 @@ public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContex
             && x.OutboundCommandId == command.OutboundCommandId && x.Status == ManualTaskStatus.Open,
             cancellationToken);
 
-    private static string Cap(string value) => value.Length <= 1000 ? value : value[..1000];
+    private static string Failure(string value) => value.Length <= 4000 ? value : value[..3900] + " (full field list in the parked event)";
+
+    private static string Cap(string value) => value.Length <= 1000 ? value : value[..900] + " (full field list in the dead letter / parked event)";
 
     public async Task<Guid> ParkInboundAsync(InboundMessage message, string reasonCode, string failure,
         CancellationToken cancellationToken)
@@ -138,7 +177,7 @@ public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContex
             ReasonCode = reasonCode,
             RawPayload = message.RawPayload,
             CanonicalAttempt = message.CanonicalMessage,
-            Failure = failure,
+            Failure = Failure(failure),
             Status = DeadLetterStatus.NeedsAttention,
             CreatedAt = clock.UtcNow,
             UpdatedAt = clock.UtcNow,
@@ -155,7 +194,7 @@ public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContex
         DeadLetterItemId = itemId,
         Action = action,
         ActorRef = actor,
-        Reason = reason,
+        Reason = reason is { Length: > 2000 } ? reason[..1900] + " (full field list in event details)" : reason,
         DetailsJson = details,
         OccurredAt = clock.UtcNow,
     };

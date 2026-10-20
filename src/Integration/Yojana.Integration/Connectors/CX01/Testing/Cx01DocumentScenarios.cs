@@ -13,6 +13,8 @@ internal static class Cx01DocumentScenarios
     {
         ["default"] = new("01"), ["store"] = new("01"), ["repair"] = new("02"), ["hold"] = new("01"),
     });
+    public static string AttachmentTarget => "Returns:5101";
+    public static string AlternativeAttachmentTarget => "DeliveryNotes:9001";
     public static IReadOnlyList<string> Cases { get; } = ["delivery", "credit", "journal", "transfer", "attachment", "service", "return"];
     public static Cx01ConnectionSettings Annotate(Cx01ConnectionSettings current) => current with
         { RmaReferenceField = "U_YojanaRma", Documents = current.Documents! with { ServiceOrderAction = "annotate" } };
@@ -46,10 +48,17 @@ internal static class Cx01DocumentScenarios
     }
 }
 
-internal sealed class Cx01FixtureFacts : ICx01OutboundFacts
+internal sealed class Cx01FixtureFacts(Yojana.Integration.Data.IntegrationDbContext? db = null, Yojana.Platform.Contracts.Tenancy.ITenantContext? tenant = null) : ICx01OutboundFacts
 {
-    public Task<Cx01OutboundUnit?> UnitAsync(Guid connectionId, Guid unitId, CancellationToken ct) => Task.FromResult<Cx01OutboundUnit?>(Cx01DocumentScenarios.Unit);
-    public Task<string?> ReferenceAsync(Guid connectionId, string kind, string reference, CancellationToken ct) => Task.FromResult<string?>(reference);
+    public Task<Cx01OutboundUnit?> UnitAsync(Guid connectionId, Guid unitId, CancellationToken ct, string? suppliedSerial = null) => Task.FromResult<Cx01OutboundUnit?>(Cx01DocumentScenarios.Unit with { Serial = suppliedSerial ?? Cx01DocumentScenarios.Unit.Serial });
+    public async Task<string?> ReferenceAsync(Guid connectionId, string kind, string reference, CancellationToken ct)
+    {
+        if (db is not null && tenant is not null && Guid.TryParse(reference, out var id))
+            return await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
+                db.ExternalIdMaps.Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId
+                    && x.EntityType == kind && x.ModuleId == id && x.ValidTo == null).Select(x => x.ExternalId), ct);
+        return reference;
+    }
 }
 
 internal sealed class Cx01FixtureContent : ICx01AttachmentContent

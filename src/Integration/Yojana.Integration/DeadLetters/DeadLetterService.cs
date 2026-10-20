@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Yojana.Integration.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
@@ -12,7 +13,7 @@ namespace Yojana.Integration.DeadLetters;
 
 public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext tenant, IClock clock,
     IManualTaskReferenceVerifier referenceVerifier, ManualTaskDeskSettings deskSettings,
-    IInboundMessageParkingSink parking) : IOutboundRetryWindow
+    IInboundMessageParkingSink parking, OutboundCompleteness completeness) : IOutboundRetryWindow
 {
     public Task<DateTime?> StartedAtAsync(Guid outboundCommandId, CancellationToken cancellationToken) =>
         (from item in db.DeadLetterItems.AsNoTracking()
@@ -245,33 +246,96 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         CompleteManualTaskRequest request, string actorRef, CancellationToken cancellationToken)
     {
         actorRef = RequiredActor(actorRef);
-        var task = await db.ManualOutboundTasks.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
-            && x.ManualOutboundTaskId == taskId, cancellationToken)
+        // Remote checks (ERP number lookup, rendering for the completeness gate) run BEFORE the transaction so that no
+        // database lock is held for the length of a remote call; the locked phase below re-checks that nothing changed.
+        var seen = await db.ManualOutboundTasks.AsNoTracking().SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
+                && x.ManualOutboundTaskId == taskId, cancellationToken)
             ?? throw new DeadLetterRuleException("manual_task_not_found", "The manual task was not found.");
+        if (seen.Status != ManualTaskStatus.Open)
+            throw new DeadLetterRuleException("manual_task_closed", "The manual task is already completed.");
+        var acknowledgementOnly = ManualTaskCommandType.IsAcknowledgementOnly(seen.CommandType);
+        Yojana.Integration.Contracts.IOutboundCommand? supplied = null;
+        string? validatedPayload = null;
+        string? externalId = null;
+        if (!acknowledgementOnly && request.CorrectedDraft is { } draft)
+        {
+            if (seen.DeadLetterItemId is not { } heldLetterId)
+                throw new DeadLetterRuleException("draft_not_held", "Only a held source draft can be completed with values.");
+            var heldReason = await db.DeadLetterItems.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && x.DeadLetterItemId == heldLetterId).Select(x => x.ReasonCode).SingleAsync(cancellationToken);
+            if (heldReason != OutboundCompleteness.MissingSourceField)
+                throw new DeadLetterRuleException("draft_not_held", "This task needs the remote document id.");
+            validatedPayload = await db.OutboundCommands.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && x.OutboundCommandId == seen.OutboundCommandId).Select(x => x.Payload).SingleAsync(cancellationToken);
+            try { supplied = OutboundCompleteness.Read(seen.CommandType, draft.GetRawText()); }
+            catch (JsonException) { throw new DeadLetterRuleException("draft_invalid", "The corrected command draft is invalid."); }
+            var original = OutboundCompleteness.Read(seen.CommandType, validatedPayload);
+            if (supplied.IdempotencyKey != original.IdempotencyKey || supplied.ModuleDocumentRef != original.ModuleDocumentRef
+                || supplied.ErpReferenceText != original.ErpReferenceText || !UnitIds(supplied).SequenceEqual(UnitIds(original)))
+                throw new DeadLetterRuleException("draft_identity_changed", "Keep the draft's idempotency, document references and unit identities unchanged.");
+            var connection = await db.Connections.AsNoTracking().SingleAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == seen.ConnectionId, cancellationToken);
+            var mode = await db.ConnectionGatewaySettings.AsNoTracking().Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == seen.ConnectionId)
+                .Select(x => x.OutboundMode).SingleAsync(cancellationToken);
+            var missing = await completeness.MissingAsync(connection.ConnectorCode, seen.ConnectionId, mode, supplied, cancellationToken);
+            if (missing.Count > 0) throw new DeadLetterRuleException(OutboundCompleteness.MissingSourceField, "Missing source fields: " + string.Join(", ", missing));
+        }
+        else if (!acknowledgementOnly)
+        {
+            externalId = Required(request.ErpExternalId ?? "", "erp_external_id_required", "The ERP document id is required.");
+            var match = await referenceVerifier.VerifyAsync(seen.ConnectionId, seen.CommandType, externalId, seen.Draft, cancellationToken);
+            if (match != ManualTaskReferenceMatch.Found && !request.AllowUnverified)
+                throw new DeadLetterRuleException("manual_task_external_id_unverified",
+                    match == ManualTaskReferenceMatch.NotFound
+                        ? "The ERP number was not found. Check it, or record it anyway with the warning acknowledged."
+                        : "This connection could not verify the ERP number. Check it, or record it anyway with the warning acknowledged.");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        // Hold an update lock through completion so two operators cannot complete the same task.
+        var tenantId = tenant.TenantId.Value;
+        var task = await db.ManualOutboundTasks.FromSqlInterpolated($"SELECT * FROM integration.manual_outbound_task WITH (UPDLOCK, ROWLOCK) WHERE tenant_id = {tenantId} AND manual_outbound_task_id = {taskId}")
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new DeadLetterRuleException("manual_task_not_found", "The manual task was not found.");
+        await db.Entry(task).ReloadAsync(cancellationToken);
         if (task.Status != ManualTaskStatus.Open)
             throw new DeadLetterRuleException("manual_task_closed", "The manual task is already completed.");
         // A cleanup acknowledgement has no remote document id and must never create a document mapping.
-        if (ManualTaskCommandType.IsAcknowledgementOnly(task.CommandType))
+        if (acknowledgementOnly)
         {
             task.Status = ManualTaskStatus.Completed;
             task.CompletedBy = actorRef;
             task.CompletedAt = clock.UtcNow;
             await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return View(task, await ConnectionLabelAsync(task.ConnectionId, cancellationToken));
         }
-        var externalId = Required(request.ErpExternalId ?? "", "erp_external_id_required",
-            "The ERP document id is required.");
-        var match = await referenceVerifier.VerifyAsync(task.ConnectionId, task.CommandType, externalId, task.Draft,
-            cancellationToken);
-        if (match != ManualTaskReferenceMatch.Found && !request.AllowUnverified)
-            throw new DeadLetterRuleException("manual_task_external_id_unverified",
-                match == ManualTaskReferenceMatch.NotFound
-                    ? "The ERP number was not found. Check it, or record it anyway with the warning acknowledged."
-                    : "This connection could not verify the ERP number. Check it, or record it anyway with the warning acknowledged.");
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        if (supplied is not null)
+        {
+            var letterId = task.DeadLetterItemId!.Value;
+            var letter = await db.DeadLetterItems.SingleAsync(x => x.TenantId == tenant.TenantId && x.DeadLetterItemId == letterId, cancellationToken);
+            var outbound = await db.OutboundCommands.SingleAsync(x => x.TenantId == tenant.TenantId && x.OutboundCommandId == task.OutboundCommandId, cancellationToken);
+            // The draft was validated against this payload outside the lock; a change in between means start again.
+            if (outbound.Payload != validatedPayload || letter.ReasonCode != OutboundCompleteness.MissingSourceField)
+                throw new DeadLetterRuleException("manual_task_changed", "The held command changed while it was being completed; reload and try again.");
+            using var previousPayload = JsonDocument.Parse(outbound.Payload);
+            outbound.Payload = JsonSerializer.Serialize(supplied, supplied.GetType(), Yojana.Integration.Contracts.IntegrationContracts.Json);
+            task.Draft = outbound.Payload;
+            await ScheduleRetryAsync(letter, cancellationToken);
+            task.Status = ManualTaskStatus.Completed;
+            task.CompletedBy = actorRef;
+            task.CompletedAt = clock.UtcNow;
+            letter.CanonicalAttempt = outbound.Payload;
+            letter.Status = DeadLetterStatus.RetryPending;
+            letter.UpdatedAt = clock.UtcNow;
+            letter.ResolvedAt = clock.UtcNow;
+            AddEvent(letterId, DeadLetterAction.MapAndRetry, actorRef, "Source fields completed", new { previous_payload = previousPayload.RootElement, corrected_draft = JsonSerializer.SerializeToElement(supplied, supplied.GetType(), IntegrationContracts.Json) });
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return View(task, await ConnectionLabelAsync(task.ConnectionId, cancellationToken));
+        }
         var command = await db.OutboundCommands.SingleAsync(x => x.TenantId == tenant.TenantId
             && x.OutboundCommandId == task.OutboundCommandId, cancellationToken);
-        await AddMappingAsync(command.ConnectionId, "document", externalId, OutboundRelay.ModuleId(command),
+        await AddMappingAsync(command.ConnectionId, "document", externalId!, OutboundRelay.ModuleId(command),
             ExternalIdMappingSource.Manual, actorRef, command.ModuleDocumentRef, cancellationToken);
         command.Status = OutboundCommandStatus.Done;
         command.ErpExternalId = externalId;
@@ -299,6 +363,16 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         await transaction.CommitAsync(cancellationToken);
         return View(task, await ConnectionLabelAsync(task.ConnectionId, cancellationToken));
     }
+
+    // Operators may correct source values and references, but may never retarget a command to another unit.
+    private static IEnumerable<Guid?> UnitIds(IOutboundCommand command) => command switch
+    {
+        CreateReplacementDelivery value => [value.ReplacementUnit?.UnitId],
+        CreateServiceOrder value => [value.Unit?.UnitId],
+        ChangeStockStatusOrLocation value => [value.Unit?.UnitId],
+        CreateCreditMemo value => value.Lines?.Select(line => line?.UnitId) ?? [],
+        _ => [],
+    };
 
     private async Task<DeadLetterActionResult> MapAndRetryAsync(Guid itemId, string entityType,
         string externalId, Guid moduleId, bool provisional, string actorRef,

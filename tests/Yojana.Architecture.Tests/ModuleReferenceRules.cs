@@ -109,6 +109,17 @@ public sealed class ModuleReferenceRules
     }
 
     [Fact]
+    public void Outbound_source_ports_are_contracts_without_infrastructure_dependencies()
+    {
+        var source = File.ReadAllText(Path.Combine(Root, "src/Serialisation/Yojana.Serialisation.Contracts/OutboundSourcePorts.cs"));
+        Assert.Contains("interface IOutboundUnitSourcePort", source);
+        Assert.Contains("interface IRenderedOutboundDocumentPort", source);
+        Assert.DoesNotContain("EntityFrameworkCore", source);
+        Assert.DoesNotContain("Yojana.Integration", source);
+        Assert.DoesNotContain("IServiceProvider", source);
+    }
+
+    [Fact]
     public void Relay_has_only_wire_contracts_and_the_approved_host_package()
     {
         Assert.Equal(["Yojana.Relay.Contracts"], Graph()["Yojana.Relay"]);

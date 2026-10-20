@@ -10,20 +10,21 @@ public sealed record Cx01OutboundUnit(string ItemCode, string Serial, string? Sy
 /// <summary>Resolves module references without exposing another module's storage to document mappers.</summary>
 public interface ICx01OutboundFacts
 {
-    Task<Cx01OutboundUnit?> UnitAsync(Guid connectionId, Guid unitId, CancellationToken ct);
+    Task<Cx01OutboundUnit?> UnitAsync(Guid connectionId, Guid unitId, CancellationToken ct, string? suppliedSerial = null);
     Task<string?> ReferenceAsync(Guid connectionId, string kind, string reference, CancellationToken ct);
 }
 
 internal sealed class Cx01OutboundFacts(IntegrationDbContext db, ITenantContext tenant,
     ICertificateUnitReadPort units, Cx01Client client) : ICx01OutboundFacts
 {
-    public async Task<Cx01OutboundUnit?> UnitAsync(Guid connectionId, Guid unitId, CancellationToken ct)
+    public async Task<Cx01OutboundUnit?> UnitAsync(Guid connectionId, Guid unitId, CancellationToken ct, string? suppliedSerial = null)
     {
         var fact = await units.ReadAsync(unitId, ct);
         if (fact is null) return null;
         var item = await ReferenceAsync(connectionId, "item", fact.ItemId.ToString(), ct);
         var serials = await units.PrimarySerialsAsync([unitId], ct);
-        if (item is null || !serials.TryGetValue(unitId, out var serial)) return null;
+        var serial = string.IsNullOrWhiteSpace(suppliedSerial) ? serials.GetValueOrDefault(unitId) : suppliedSerial;
+        if (item is null || string.IsNullOrWhiteSpace(serial)) return null;
         using var response = await client.GetAsync(connectionId, Cx01Protocol.Root + "SerialNumberDetails?$filter="
             + Cx01ReviewKey.FilterEquals("ItemCode", item) + "%20and%20" + Cx01ReviewKey.FilterEquals("SerialNumber", serial) + "&$top=2", ct);
         var matches = response.RootElement.GetProperty("value");

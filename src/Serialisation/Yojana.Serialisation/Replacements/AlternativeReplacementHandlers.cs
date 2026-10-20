@@ -117,7 +117,7 @@ public static class ConvertLoanToReplacementHandler
                 original_unit_id = command.OriginalUnitId, replacement_unit_id = command.LoanerUnitId, original_item_id = original.ItemId,
                 replacement_item_id = loaner.ItemId, source_entitlement_id = source.EntitlementId, target_entitlement_id = transfer.TargetEntitlementId,
                 source_kind = ReplacementSourceKind.Loan, source_id = command.LoanerIssue.Id, source_number = document.SourceNumber,
-                reason = command.ReplacementReason, price_policy = ReplacementPricePolicy.Zero, difference_amount = 0m, currency = "XXX",
+                customer_party_ref = link.CounterpartyPartyRef, reason = command.ReplacementReason, price_policy = ReplacementPricePolicy.Zero, difference_amount = 0m, currency = "XXX",
                 policy_applied = transfer.PolicyApplied, computed_end = transfer.ComputedEnd, replacement_condition = grade,
                 accrual_suppressed = true, restocking_fee_amount = 0m, loan_conversion = true }),
         });

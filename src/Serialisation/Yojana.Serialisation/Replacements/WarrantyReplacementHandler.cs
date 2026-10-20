@@ -311,7 +311,7 @@ public sealed class ShipWarrantyReplacementHandler
             target_entitlement_id = transfer.TargetEntitlementId, source_kind = link.SourceKind, source_id = link.SourceId, source_number = link.SourceNumber,
             reason = link.ReplacementReason, price_policy = link.PricePolicy, difference_amount = link.DifferenceAmount, currency = link.Currency,
             policy_applied = transfer.PolicyApplied, computed_end = transfer.ComputedEnd, replacement_condition = grade,
-            accrual_suppressed = true, restocking_fee_amount = document.RestockingFeeAmount, stock_posting_reference = postingReference,
+            customer_party_ref = link.CounterpartyPartyRef, accrual_suppressed = true, restocking_fee_amount = document.RestockingFeeAmount, stock_posting_reference = postingReference,
         }),
     };
 
