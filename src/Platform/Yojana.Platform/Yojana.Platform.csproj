@@ -7,6 +7,8 @@
     <PackageReference Include="WolverineFx.EntityFrameworkCore" />
     <PackageReference Include="WolverineFx.RuntimeCompilation" />
     <PackageReference Include="Quartz" />
+    <PackageReference Include="MailKit" />
+    <PackageReference Include="Azure.Identity" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>

@@ -26,6 +26,8 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
 
     public DbSet<SecurityEvent> SecurityEvents => Set<SecurityEvent>();
 
+    public DbSet<MailMessage> MailMessages => Set<MailMessage>();
+
     public DbSet<SmokeLog> SmokeLogs => Set<SmokeLog>();
 
     public DbSet<DocumentPresence> DocumentPresence => Set<DocumentPresence>();
@@ -83,6 +85,24 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             b.HasOne<AppUser>().WithMany().HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.NoAction);
             b.HasOne<AppUser>().WithMany().HasForeignKey(e => e.ActorUserId).OnDelete(DeleteBehavior.NoAction);
             b.HasOne<Tenant>().WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<MailMessage>(b =>
+        {
+            b.ToTable("mail_message");
+            b.HasKey(m => m.Id);
+            b.Property(m => m.Kind).HasMaxLength(60);
+            b.Property(m => m.Recipient).HasMaxLength(320);
+            b.Property(m => m.Subject).HasMaxLength(300);
+            b.Property(m => m.Status).HasMaxLength(20);
+            b.Property(m => m.Transport).HasMaxLength(20);
+            b.Property(m => m.ProviderMessageId).HasMaxLength(200);
+            b.Property(m => m.LastError).HasMaxLength(400);
+            b.HasIndex(m => new { m.TenantId, m.QueuedAt, m.Id });
+            b.HasIndex(m => new { m.UserId, m.QueuedAt });
+            b.HasIndex(m => new { m.QueuedAt, m.Id });
+            b.HasOne<AppUser>().WithMany().HasForeignKey(m => m.UserId).OnDelete(DeleteBehavior.NoAction);
+            b.HasOne<Tenant>().WithMany().HasForeignKey(m => m.TenantId).OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<UserTenantMembership>(b =>

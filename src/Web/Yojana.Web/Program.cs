@@ -12,6 +12,7 @@ using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Data;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
+using Yojana.Platform.Mail;
 using Yojana.Platform.Messaging.Smoke;
 using Yojana.Platform.Presence;
 using Yojana.Platform.Seeding;
@@ -136,6 +137,7 @@ app.MapGet("/notices", () =>
 }).AllowAnonymous();
 
 app.MapYojanaSecurityEndpoints();
+app.MapYojanaMailEndpoints();
 
 // The tenant's currencies: the working currency (every configured amount, approval thresholds and policy values, is
 // in it) and the other currencies documents may be written in, both chosen from the ISO 4217 catalogue at setup. The

@@ -8,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Xunit;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Mail;
 using Yojana.Platform.Security;
 
 namespace Yojana.Platform.DatabaseTests;
@@ -23,6 +24,8 @@ public sealed class PlatformHostFixture : IAsyncLifetime
     public WebApplication Host { get; private set; } = null!;
 
     public MutablePlatformClock Clock { get; } = new(new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc));
+
+    public ScriptedMailTransport Mail { get; } = new();
 
     public IServiceProvider Services => Host.Services;
 
@@ -41,11 +44,16 @@ public sealed class PlatformHostFixture : IAsyncLifetime
         builder.Configuration["Platform:ServiceName"] = "yojana-tests";
         builder.Configuration["Platform:SignIn:AuditHmacKey"] = "platform-database-tests-only-hmac-key";
         builder.Configuration["Platform:SignIn:MaintenanceBatchSize"] = "2";
+        builder.Configuration["Platform:Mail:MaxAttempts"] = "3";
+        builder.Configuration["Platform:Mail:RetryDelaySeconds:0"] = "1";
+        builder.Configuration["Platform:Mail:MaintenanceBatchSize"] = "2";
         builder.AddYojanaPlatform();
         builder.Services.Replace(ServiceDescriptor.Singleton<IClock>(Clock));
+        builder.Services.Replace(ServiceDescriptor.Singleton<IMailTransport>(Mail));
         Host = builder.Build();
         Host.UseYojanaPlatform();
         Host.MapYojanaSecurityEndpoints();
+        Host.MapYojanaMailEndpoints();
         await Host.StartAsync();
     }
 
@@ -65,6 +73,36 @@ public sealed class PlatformHostFixture : IAsyncLifetime
         var address = Host.Services.GetRequiredService<IServer>().Features
             .Get<IServerAddressesFeature>()!.Addresses.Single();
         return new HttpClient { BaseAddress = new Uri(address) };
+    }
+}
+
+/// <summary>A transport whose outcome each test scripts per recipient address; unscripted recipients are sent.</summary>
+public sealed class ScriptedMailTransport : IMailTransport
+{
+    private readonly Dictionary<string, Queue<MailSendResult>> scripts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<PreparedMail> attempts = [];
+
+    public string Name => "scripted";
+
+    public void Script(string recipient, params MailSendResult[] outcomes)
+    {
+        lock (scripts) scripts[recipient] = new Queue<MailSendResult>(outcomes);
+    }
+
+    public IReadOnlyList<PreparedMail> AttemptsFor(string recipient)
+    {
+        lock (attempts) return attempts.Where(mail => string.Equals(mail.Mail.To.Address, recipient, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    public Task<MailSendResult> SendAsync(PreparedMail mail, CancellationToken cancellationToken)
+    {
+        lock (attempts) attempts.Add(mail);
+        lock (scripts)
+        {
+            return Task.FromResult(scripts.TryGetValue(mail.Mail.To.Address, out var queue) && queue.Count > 0
+                ? queue.Dequeue()
+                : MailSendResult.Sent($"scripted-{mail.MailId:N}"));
+        }
     }
 }
 

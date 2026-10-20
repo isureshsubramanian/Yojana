@@ -1,0 +1,10 @@
+{
+  "name": "MailKit 4.18.1: files carrying their own copyright notices (Mono NTLM code, Xamarin)",
+  "licence": "MIT",
+  "copyright": "Copyright (c) 2003 Motus Technologies Inc.; Copyright (c) 2004-2005, 2010 Novell, Inc; Copyright (c) 2013-2019 Xamarin Inc.; Bernie Solomon (author)",
+  "projectUrl": "https://github.com/jstedfast/MailKit",
+  "licenceFile": "texts/mailkit-4.18.1-file-notices.txt",
+  "sourceUrl": "https://github.com/jstedfast/MailKit/tree/f11e199eb639c14e2c4427630cd3a0865a72e425 (tag 4.18.1): header comments of MailKit/Security/Ntlm/MD4.cs, RC4.cs, BitConverterLE.cs, MailKit/Net/SelectMode.cs, MailKit/Security/RandomNumberGenerator.cs, KeyedHashAlgorithm.cs",
+  "takenOn": "2026-10-21",
+  "why": "These source files are compiled into MailKit.dll but carry copyright holders other than the package's own; their MIT notices are reproduced exactly as the files publish them. The package itself ships no licence or NOTICE file."
+}
