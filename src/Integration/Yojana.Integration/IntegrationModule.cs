@@ -46,6 +46,7 @@ public static class IntegrationModule
         builder.Services.AddSingleton(RecurringTenantJob.For<ConnectionHealthJob>(ConnectionHealthJob.JobName, ConnectionHealthJob.Cron));
         builder.Services.AddKeyedScoped<IConnectionLifecycleAdapter, Cx01ConnectionLifecycleAdapter>(Cx01Capabilities.ConnectorCode);
         builder.Services.AddScoped<CoexistenceSettings>();
+        builder.Services.AddScoped<WarrantyContractMaintenanceSettings>();
         builder.Services.AddScoped<CoexistenceDriftService>();
         builder.Services.AddScoped<CoexistenceConflicts>();
         builder.Services.AddScoped<SyncControl>();

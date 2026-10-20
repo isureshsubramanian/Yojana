@@ -7,13 +7,14 @@ using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Security.Audit;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.Gateway;
 
 /// <summary>
 /// One onboarding step. <paramref name="EvidencePrompt"/> is set when confirming the item needs a written record
-/// (who acknowledged the costs, which user was created); <paramref name="Status"/> is pending, confirmed, or stale
-/// when the item text changed after it was confirmed.
+/// (who acknowledged the costs, which user was created); <paramref name="Status"/> is pending, confirmed, stale,
+/// pass or fail. Calculated items set <paramref name="ManualConfirmation"/> to false.
 /// </summary>
 public sealed record ConnectorOnboardingChecklistItem(
     string Code,
@@ -24,7 +25,8 @@ public sealed record ConnectorOnboardingChecklistItem(
     string Status = OnboardingItemStatus.Pending,
     string? Evidence = null,
     string? ConfirmedBy = null,
-    DateTime? ConfirmedAt = null);
+    DateTime? ConfirmedAt = null,
+    bool ManualConfirmation = true);
 
 public sealed record ConnectorOnboardingChecklist(
     string ConnectorCode,
@@ -33,7 +35,7 @@ public sealed record ConnectorOnboardingChecklist(
     IReadOnlyList<ConnectorOnboardingChecklistItem> Items)
 {
     public bool RequiredItemsConfirmed => Items.Where(x => x.Required)
-        .All(x => x.Status == OnboardingItemStatus.Confirmed);
+        .All(x => x.Status is OnboardingItemStatus.Confirmed or OnboardingItemStatus.Pass);
 }
 
 public static class OnboardingItemStatus
@@ -41,6 +43,8 @@ public static class OnboardingItemStatus
     public const string Pending = "pending";
     public const string Confirmed = "confirmed";
     public const string Stale = "stale";
+    public const string Pass = "pass";
+    public const string Fail = "fail";
 }
 
 public static class OnboardingItemCode
@@ -49,6 +53,7 @@ public static class OnboardingItemCode
     public const string Credentials = "credentials";
     public const string Poll = "poll";
     public const string Costs = "costs";
+    public const string AddOnWarrantyItems = "add-on-warranty-items";
 }
 
 public sealed record ConfirmOnboardingItemRequest(string? Evidence);
@@ -94,7 +99,9 @@ public sealed class ConnectorCatalogue(IntegrationDbContext db, ITenantContext t
 public sealed class ConnectorOnboardingChecklistGenerator(
     IntegrationDbContext db,
     ITenantContext tenant,
-    IConnectorOnboardingProfiles profiles)
+    IConnectorOnboardingProfiles profiles,
+    IPublishedWarrantyPolicyPort policies,
+    IItemPolicyPort itemPolicies)
 {
     public async Task<ConnectorOnboardingChecklist> GenerateAsync(Guid connectionId,
         CancellationToken cancellationToken)
@@ -121,6 +128,7 @@ public sealed class ConnectorOnboardingChecklistGenerator(
             new(OnboardingItemCode.Costs, "Disclose and acknowledge customer-side costs", true,
                 catalogue.CustomerCostDisclosure,
                 "Who at the customer acknowledged these costs, and the reference (for example the quote number)"),
+            await AddOnWarrantyItemsAsync(cancellationToken),
         };
         items.AddRange(declarations.Select(x => new ConnectorOnboardingChecklistItem(
             $"capability:{x.CanonicalMessage}", $"Confirm {x.CanonicalMessage}",
@@ -130,11 +138,63 @@ public sealed class ConnectorOnboardingChecklistGenerator(
             items.Select(item => WithConfirmation(item, confirmations.GetValueOrDefault(item.Code))).ToList());
     }
 
+    private async Task<ConnectorOnboardingChecklistItem> AddOnWarrantyItemsAsync(CancellationToken cancellationToken)
+    {
+        var addOns = (await policies.ListAsync(cancellationToken))
+            .Where(policy => policy.CoverageFamily != CoverageFamilyCode.Base
+                && policy.CoverageFamily != CoverageFamilyCode.Supplier)
+            .OrderBy(policy => policy.CoverageFamilyName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(policy => policy.PolicyName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var mappings = await itemPolicies.ItemsForPoliciesAsync(
+            addOns.Select(policy => policy.PolicyCode).Distinct(StringComparer.Ordinal).ToList(), cancellationToken);
+        var failures = new List<string>();
+        var configured = new List<string>();
+        foreach (var policy in addOns)
+        {
+            var items = mappings.Where(item => item.PolicyCode == policy.PolicyCode)
+                .OrderBy(item => item.ItemCode, StringComparer.Ordinal).ToList();
+            if (items.Count == 0)
+            {
+                failures.Add($"{policy.PolicyName} ({policy.CoverageFamilyName}): no mapped item");
+                continue;
+            }
+            var ready = items.Where(WarrantyLineReady).ToList();
+            if (ready.Count > 0)
+            {
+                configured.Add($"{policy.PolicyName} ({policy.CoverageFamilyName}): "
+                    + string.Join(", ", items.Select(item => $"{ItemName(item)} ({(WarrantyLineReady(item) ? "ready" : "not ready")})")));
+                continue;
+            }
+            foreach (var item in items)
+                failures.Add($"{policy.PolicyName} ({policy.CoverageFamilyName}): {ItemName(item)} is not a warranty-service item with a target rule");
+        }
+        var passed = failures.Count == 0;
+        var detail = addOns.Count == 0
+            ? "No published add-on policies need an item mapping."
+            : passed
+                ? $"Every published add-on policy has a warranty-service item with a target rule ({addOns.Count} checked): "
+                    + string.Join("; ", configured) + "."
+                : "Fix these add-on policy mappings: " + string.Join("; ", failures) + ".";
+        return new(OnboardingItemCode.AddOnWarrantyItems,
+            "Add-on items are sold as warranty-service items", true, detail,
+            Status: passed ? OnboardingItemStatus.Pass : OnboardingItemStatus.Fail,
+            ManualConfirmation: false);
+    }
+
+    private static bool WarrantyLineReady(WarrantyPolicyItem item) => item.WarrantyServiceItem
+        && item.TargetRule is WarrantyTargetRule.SameOrder or WarrantyTargetRule.ReferencedDocument
+            or WarrantyTargetRule.AttachedList;
+
+    private static string ItemName(WarrantyPolicyItem item) => string.IsNullOrWhiteSpace(item.ItemName)
+        ? string.IsNullOrWhiteSpace(item.ItemCode) ? "Unnamed item" : item.ItemCode
+        : string.IsNullOrWhiteSpace(item.ItemCode) ? item.ItemName : $"{item.ItemCode} · {item.ItemName}";
+
     internal static string TextHash(ConnectorOnboardingChecklistItem item) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(item.Label + "\n" + item.Detail)));
 
     private static ConnectorOnboardingChecklistItem WithConfirmation(ConnectorOnboardingChecklistItem item,
-        ConnectionOnboardingConfirmation? confirmation) => confirmation is null ? item : item with
+        ConnectionOnboardingConfirmation? confirmation) => !item.ManualConfirmation || confirmation is null ? item : item with
     {
         Status = string.Equals(confirmation.TextHash, TextHash(item), StringComparison.OrdinalIgnoreCase)
             ? OnboardingItemStatus.Confirmed : OnboardingItemStatus.Stale,
@@ -168,6 +228,9 @@ public sealed class ConnectorOnboardingConfirmations(
         var checklist = await checklists.GenerateAsync(connectionId, cancellationToken);
         var item = checklist.Items.SingleOrDefault(x => x.Code == itemCode)
             ?? throw new OnboardingRuleException("onboarding_item_not_found", "The checklist item was not found.");
+        if (!item.ManualConfirmation)
+            throw new OnboardingRuleException("onboarding_item_automatic",
+                "This checklist item is calculated from configuration and cannot be confirmed by hand.");
         var evidence = request.Evidence?.Trim() ?? "";
         if (item.EvidencePrompt is not null && evidence.Length == 0)
             throw new OnboardingRuleException("onboarding_evidence_required", item.EvidencePrompt + " is required.");

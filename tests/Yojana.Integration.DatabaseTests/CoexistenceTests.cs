@@ -248,6 +248,55 @@ public sealed class CoexistenceTests(IntegrationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Module_contract_maintenance_forces_contract_fields_and_raises_the_named_conflict()
+    {
+        await using var simulator = new Cx01Simulator();
+        AddCard(simulator, 81, "C-FICTIONAL-01", "FIC-DELIVERY-1");
+        var (tenant, id) = await RegisteredAsync(simulator);
+        using var scope = fixture.ScopeFor(tenant);
+        var coexistence = scope.ServiceProvider.GetRequiredService<CoexistenceSettings>();
+        await coexistence.UpdateAsync(id,
+            new(NativeWarrantyObjectModes.Frozen, ["CustomerCode"], ["DeliveryCode"]), Actor, default);
+        var drift = scope.ServiceProvider.GetRequiredService<CoexistenceDriftService>();
+        await drift.ScanAsync(id, default);
+        Card(simulator, 81)["ContractCode"] = 7001;
+        Assert.Equal(0, (await drift.ScanAsync(id, default)).ConflictsRaised);
+
+        var settings = scope.ServiceProvider.GetRequiredService<WarrantyContractMaintenanceSettings>();
+        var initial = await settings.GetAsync(default);
+        Assert.Equal(WarrantyContractsMaintainedIn.IncumbentUntilCutover, initial.MaintainedIn);
+        await settings.UpdateAsync(id, new(WarrantyContractsMaintainedIn.Module, initial.Version), Actor, default);
+        var view = await coexistence.ViewAsync(id, default);
+        Assert.True(view.ContractFieldsAlwaysWatched);
+        Assert.Contains("ContractCode", view.WatchedFields);
+        Assert.Contains("ContractEndDate", view.WatchedFields);
+        await drift.ScanAsync(id, default);
+
+        Card(simulator, 81)["ContractCode"] = 7002;
+        var changed = await drift.ScanAsync(id, default);
+        Assert.Equal(1, changed.ConflictsRaised);
+        var conflict = Assert.Single((await scope.ServiceProvider.GetRequiredService<CoexistenceConflicts>()
+            .ListAsync(id, "open", null, 20, default)).Items);
+        Assert.Equal(CoexistenceConflictKind.ContractChangedInIncumbent, conflict.Kind);
+        Assert.Equal("ContractCode", conflict.FieldName);
+        Assert.Equal("7001", conflict.BaselineValue);
+        Assert.Equal("7002", conflict.RemoteValue);
+        Assert.Null(conflict.IncumbentChangedAt);
+
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        Assert.Contains(await db.ConnectionEvents.ToListAsync(), row =>
+            row.EventType == "WarrantyContractMaintenanceChanged" && row.ActorRef == Actor);
+
+        var other = await NewTenant();
+        using var otherScope = fixture.ScopeFor(other);
+        Assert.Equal(WarrantyContractsMaintainedIn.IncumbentUntilCutover,
+            (await otherScope.ServiceProvider.GetRequiredService<WarrantyContractMaintenanceSettings>()
+                .GetAsync(default)).MaintainedIn);
+        Assert.Empty(await otherScope.ServiceProvider.GetRequiredService<IntegrationDbContext>()
+            .CoexistenceConflicts.ToListAsync());
+    }
+
+    [DatabaseFact]
     public async Task Parallel_run_measures_what_the_gateway_records_and_needs_confirmations_with_evidence()
     {
         await using var simulator = new Cx01Simulator();

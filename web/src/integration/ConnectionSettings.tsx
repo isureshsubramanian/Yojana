@@ -3,7 +3,13 @@ import { ErrorNote } from "../units/common";
 import { approvalNeedsAcceptance, human } from "./model";
 import { adminApi } from "./adminApi";
 import { date, Panel, PagedGrid, State, useAction, useCursorPage } from "./AdminCommon";
-import type { ApprovalView, FieldMap, FieldSource, Relay, RelayIssued, TransportSettings } from "./adminTypes";
+import type { ApprovalView, FieldMap, FieldSource, Relay, RelayIssued, TransportSettings, WarrantyContractSettings } from "./adminTypes";
+
+export function WarrantyContractMaintenance({ id, admin, changed }: { id: string; admin: boolean; changed: () => void }) {
+  const [settings, setSettings] = useState<WarrantyContractSettings | null>(null); const [error, setError] = useState<unknown>(null); const [value, setValue] = useState<WarrantyContractSettings["maintainedIn"]>("incumbent_until_cutover"); const action = useAction();
+  useEffect(() => { let alive = true; adminApi.warrantyContracts().then(x => { if (alive) { setSettings(x); setValue(x.maintainedIn); } }).catch(reason => { if (alive) setError(reason); }); return () => { alive = false; }; }, [id]);
+  return <Panel title="Warranty contract maintenance"><ErrorNote error={error} /><p>Applies to every connection for this tenant. When the module is chosen, equipment-card contract fields are always watched even if a connection's watched-field list leaves them out.</p>{settings ? <form className="stack" onSubmit={e => { e.preventDefault(); void action.run(async () => { const saved = await adminApi.saveWarrantyContracts(id, value, settings.version); setSettings(saved); setValue(saved.maintainedIn); changed(); }, "Warranty contract maintenance saved."); }}><label className="field"><span className="lbl">Warranty contracts are maintained in</span><select className="select" disabled={!admin} value={value} onChange={e => setValue(e.target.value as WarrantyContractSettings["maintainedIn"])}><option value="incumbent_until_cutover">The incumbent until cutover</option><option value="module">Module</option></select></label>{admin && <button className="btn" disabled={action.busy || value === settings.maintainedIn}>Save warranty contract setting</button>}</form> : !error && <p role="status">Loading warranty contract setting…</p>}{action.feedback}</Panel>;
+}
 
 export function ConnectorSettings({ id, admin }: { id: string; admin: boolean }) {
   const [fields, setFields] = useState<FieldMap | null>(null); const [approvals, setApprovals] = useState<ApprovalView | null>(null); const [error, setError] = useState<unknown>(null);

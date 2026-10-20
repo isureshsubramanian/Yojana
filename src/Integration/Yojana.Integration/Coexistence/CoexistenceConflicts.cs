@@ -141,6 +141,7 @@ public sealed class CoexistenceConflicts(IntegrationDbContext db, ITenantContext
 
     private static CoexistenceConflictView View(CoexistenceConflict x, IReadOnlyDictionary<Guid, string> labels) =>
         new(x.ConflictId, x.ConnectionId, labels.GetValueOrDefault(x.ConnectionId, "Connection"), x.RecordType,
-            x.RecordKey, x.RecordLabel, x.FieldName, x.BaselineValue, x.RemoteValue, x.Status, x.DetectedAt,
-            x.LastSeenAt, x.Decision, x.DecisionNote, x.DecidedBy, x.DecidedAt, x.ManualTaskId, x.ClosedAt);
+            x.RecordKey, x.RecordLabel, x.Kind, x.FieldName, x.BaselineValue, x.RemoteValue, x.Status, x.DetectedAt,
+            x.LastSeenAt, x.IncumbentChangedAt, x.Decision, x.DecisionNote, x.DecidedBy, x.DecidedAt,
+            x.ManualTaskId, x.ClosedAt);
 }

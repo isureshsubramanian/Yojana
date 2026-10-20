@@ -28,18 +28,26 @@ public sealed class CoexistenceConflict : ITenantScoped
     public required string RecordType { get; set; }
     public required string RecordKey { get; set; }
     public required string RecordLabel { get; set; }
+    public string Kind { get; set; } = CoexistenceConflictKind.FieldChangedInIncumbent;
     public required string FieldName { get; set; }
     public string? BaselineValue { get; set; }
     public string? RemoteValue { get; set; }
     public required string Status { get; set; }
     public DateTime DetectedAt { get; set; }
     public DateTime LastSeenAt { get; set; }
+    public DateTime? IncumbentChangedAt { get; set; }
     public string? Decision { get; set; }
     public string? DecisionNote { get; set; }
     public string? DecidedBy { get; set; }
     public DateTime? DecidedAt { get; set; }
     public Guid? ManualTaskId { get; set; }
     public DateTime? ClosedAt { get; set; }
+}
+
+public static class CoexistenceConflictKind
+{
+    public const string FieldChangedInIncumbent = "field_changed_in_incumbent";
+    public const string ContractChangedInIncumbent = "contract_changed_in_incumbent";
 }
 
 public static class CoexistenceConflictStatus

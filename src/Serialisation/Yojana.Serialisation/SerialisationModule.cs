@@ -192,6 +192,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<Entitlements.WhatsCoveredQuery>();
         builder.Services.AddScoped<IUnitCustomerDocument, Entitlements.UnitCustomerDocument>();
         builder.Services.AddScoped<Entitlements.PolicyQueries>();
+        builder.Services.AddScoped<IPublishedWarrantyPolicyPort, Entitlements.PublishedWarrantyPolicyPort>();
         builder.Services.AddScoped<Entitlements.PolicyResolver>();
         // A factory on purpose, coupled to AmendEntitlementHandler: Wolverine does not look inside a factory, so the
         // PlatformDbContext behind ITenantSettings stays out of the handler's generated graph and the handler keeps the

@@ -15,6 +15,9 @@ public interface ICoexistenceDriftReader
     /// <summary>Module-owned remote fields watched when the connection has not chosen its own list.</summary>
     IReadOnlyList<string> DefaultWatchedFields { get; }
 
+    /// <summary>Fields carrying the incumbent's warranty-contract link and term.</summary>
+    IReadOnlyList<string> WarrantyContractFields { get; }
+
     /// <summary>
     /// Remote fields that change only when a document is posted (for example the link to the latest delivery).
     /// A watched field that changes together with one of these is a document consequence, not a person's edit.
@@ -25,7 +28,8 @@ public interface ICoexistenceDriftReader
         int take, CancellationToken cancellationToken);
 }
 
-public sealed record CoexistenceRemoteRecord(string RecordKey, string Label, IReadOnlyDictionary<string, string?> Values);
+public sealed record CoexistenceRemoteRecord(string RecordKey, string Label,
+    IReadOnlyDictionary<string, string?> Values, DateTime? ChangedAt = null);
 
 public sealed record CoexistenceRecordPage(IReadOnlyList<CoexistenceRemoteRecord> Records, string? NextCursor);
 
@@ -67,11 +71,23 @@ public static class NativeWarrantyObjectModes
     public const string Pushed = "pushed";
 }
 
+public static class WarrantyContractsMaintainedIn
+{
+    public const string IncumbentUntilCutover = "incumbent_until_cutover";
+    public const string Module = "module";
+}
+
+public sealed record WarrantyContractMaintenanceView(string MaintainedIn, string Version);
+
+public sealed record UpdateWarrantyContractMaintenance(string MaintainedIn, string ExpectedVersion);
+
 public sealed record CoexistenceView(
     Guid ConnectionId,
     string ConnectionLabel,
     string SyncState,
     string NativeWarrantyObjectMode,
+    string WarrantyContractsMaintainedIn,
+    bool ContractFieldsAlwaysWatched,
     bool PushedModeAvailable,
     bool DriftScanSupported,
     string? RecordType,
@@ -105,12 +121,14 @@ public sealed record CoexistenceConflictView(
     string RecordType,
     string RecordKey,
     string RecordLabel,
+    string Kind,
     string FieldName,
     string? BaselineValue,
     string? RemoteValue,
     string Status,
     DateTime DetectedAt,
     DateTime LastSeenAt,
+    DateTime? IncumbentChangedAt,
     string? Decision,
     string? DecisionNote,
     string? DecidedBy,

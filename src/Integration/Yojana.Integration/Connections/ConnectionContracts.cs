@@ -43,6 +43,7 @@ public sealed record CredentialState(string Purpose, bool IsSet, DateTime? Creat
     DateTime? ReplaceBy, DateTime? RetiredAt);
 public sealed record CapabilityView(string CanonicalMessage, string SupportLevel);
 public sealed record ConnectionSettingsView(string OutboundMode, bool ReadOnly, string NativeWarrantyObjectMode,
+    string WarrantyContractsMaintainedIn,
     int OrderingWaitMinutes, ConnectionHealthThresholds Health, ConnectionThrottleProfile? Throttle,
     JsonElement? ConnectorSettings, IReadOnlyList<DegradationRuleSetting> DegradationRules);
 public sealed record ConnectionDetail(ConnectionSummary Connection, DateTime CreatedAt, DateTime? ArchivedAt,
