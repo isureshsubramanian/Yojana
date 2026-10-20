@@ -1,0 +1,10 @@
+{
+  "name": "azure/azure-sdk-for-net packages taken in the 2026-10-20 dependency upgrade (owner direction: all packages latest)",
+  "matchRepositoryUrls": [],
+  "matchPackages": [
+    "Azure.Core/1.62.0"
+  ],
+  "licenceFile": "texts/azure-sdk-for-net-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/azure/azure-sdk-for-net/86e9f4dd0218b07ec408b9452893f9efea974ff8/LICENSE.txt",
+  "takenOn": "2026-10-20"
+}

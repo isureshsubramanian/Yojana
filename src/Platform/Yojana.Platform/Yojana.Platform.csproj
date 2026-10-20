@@ -11,5 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Scheduling/quartz_tables_sqlServer.sql" LogicalName="quartz_tables_sqlServer.sql" />
+    <EmbeddedResource Include="Scheduling/migrations-4.6/*.sql" LogicalName="quartz_4.6_%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

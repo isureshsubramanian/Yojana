@@ -1,0 +1,10 @@
+{
+  "name": "azure/azure-sdk-for-net packages taken in the 2026-10-20 dependency upgrade (owner direction: all packages latest)",
+  "matchRepositoryUrls": [],
+  "matchPackages": [
+    "Azure.Messaging.ServiceBus/7.21.0"
+  ],
+  "licenceFile": "texts/azure-sdk-for-net-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/azure/azure-sdk-for-net/4e4c19469fe598b9f28a73d065514106985e7560/LICENSE.txt",
+  "takenOn": "2026-10-20"
+}

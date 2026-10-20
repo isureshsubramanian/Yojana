@@ -1,0 +1,16 @@
+{
+  "name": "jasperfx/wolverine packages taken in the 2026-10-20 dependency upgrade (owner direction: all packages latest)",
+  "matchRepositoryUrls": [],
+  "matchPackages": [
+    "WolverineFx.AzureServiceBus/6.51.1",
+    "WolverineFx.EntityFrameworkCore/6.51.1",
+    "WolverineFx.Newtonsoft/6.51.1",
+    "WolverineFx.RDBMS/6.51.1",
+    "WolverineFx.RuntimeCompilation/6.51.1",
+    "WolverineFx.SqlServer/6.51.1",
+    "WolverineFx/6.51.1"
+  ],
+  "licenceFile": "texts/jasperfx-wolverine-LICENSE",
+  "sourceUrl": "https://raw.githubusercontent.com/jasperfx/wolverine/47460635a777fa6e73611e0814d5c5320ca15f8b/LICENSE",
+  "takenOn": "2026-10-20"
+}
