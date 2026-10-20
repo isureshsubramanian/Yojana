@@ -99,6 +99,12 @@ public sealed class UserTenantMembership
 
     public List<string> Roles { get; set; } = [];
 
+    public DateTime? DeactivatedAt { get; set; }
+
+    public Guid? DeactivatedByUserId { get; set; }
+
+    public byte[] Version { get; set; } = [];
+
     public AppUser? User { get; set; }
 
     public Tenant? Tenant { get; set; }
@@ -183,4 +189,27 @@ public sealed class PasswordResetToken
     public DateTime ExpiresAt { get; set; }
     public DateTime? UsedAt { get; set; }
     public DateTime? SupersededAt { get; set; }
+}
+
+/// <summary>
+/// A single-use tenant invitation. This table is deliberately global, like <see cref="SecurityEvent"/>, because
+/// inspection and acceptance happen before a tenant is known. Every tenant-side reader must filter TenantId itself;
+/// there is no RLS safety net for this table.
+/// </summary>
+public sealed class UserInvitation
+{
+    public Guid Id { get; set; }
+    public TenantId TenantId { get; set; }
+    public required string Email { get; set; }
+    public required string DisplayName { get; set; }
+    public List<string> Roles { get; set; } = [];
+    public required byte[] TokenHash { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public Guid CreatedByUserId { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public DateTime? AcceptedAt { get; set; }
+    public Guid? AcceptedUserId { get; set; }
+    public DateTime? RevokedAt { get; set; }
+    public Guid? RevokedByUserId { get; set; }
+    public Tenant? Tenant { get; set; }
 }

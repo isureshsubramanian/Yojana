@@ -245,7 +245,8 @@ public sealed class PasswordResetService(
         var targetTenants = await db.Memberships.AsNoTracking().Where(row => row.UserId == target.Id)
             .Select(row => row.TenantId).ToListAsync(cancellationToken);
         var administered = await db.Memberships.AsNoTracking()
-            .Where(row => row.UserId == actorId && row.Roles.Contains(YojanaRole.TenantAdministrator))
+            .Where(row => row.UserId == actorId && row.DeactivatedAt == null &&
+                          row.Roles.Contains(YojanaRole.TenantAdministrator))
             .Select(row => row.TenantId).ToListAsync(cancellationToken);
         return targetTenants.All(administered.Contains) ? null : "other_memberships";
     }
@@ -254,7 +255,7 @@ public sealed class PasswordResetService(
         CancellationToken cancellationToken)
     {
         var rows = await db.Memberships.AsNoTracking()
-            .Where(row => row.UserId == userId && row.Tenant!.IsActive)
+            .Where(row => row.UserId == userId && row.DeactivatedAt == null && row.Tenant!.IsActive)
             .Select(row => new { row.TenantId, row.Tenant!.Name })
             .ToListAsync(cancellationToken);
         return rows.Select(row => (row.TenantId, row.Name)).ToList();

@@ -138,6 +138,8 @@ app.MapGet("/notices", () =>
 
 app.MapYojanaSecurityEndpoints();
 app.MapYojanaPasswordResetEndpoints();
+app.MapYojanaUserManagementEndpoints();
+app.MapYojanaInvitationEndpoints();
 app.MapYojanaMailEndpoints();
 
 // The tenant's currencies: the working currency (every configured amount, approval thresholds and policy values, is

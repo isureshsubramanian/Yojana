@@ -39,6 +39,22 @@ public sealed class SignInThrottleService(PlatformDbContext db, IClock clock, Si
             address?.LockedUntil > now ? address.LockedUntil.Value - now : null);
     }
 
+    /// <summary>Reads account-only lockouts for a bounded user-list page; address throttles are never scanned.</summary>
+    public async Task<IReadOnlyDictionary<string, DateTime>> LockedAccountsAsync(
+        IReadOnlyCollection<string> normalisedEmails, CancellationToken cancellationToken)
+    {
+        if (normalisedEmails.Count == 0) return new Dictionary<string, DateTime>();
+        var keys = normalisedEmails.Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(email => Convert.ToHexString(Hash(AccountKey, email)), email => email,
+                StringComparer.Ordinal);
+        var hashes = keys.Keys.Select(Convert.FromHexString).ToList();
+        var rows = await db.SignInThrottles.AsNoTracking()
+            .Where(row => row.KeyKind == AccountKey && hashes.Contains(row.KeyHash) && row.LockedUntil > clock.UtcNow)
+            .Select(row => new { row.KeyHash, row.LockedUntil }).ToListAsync(cancellationToken);
+        return rows.ToDictionary(row => keys[Convert.ToHexString(row.KeyHash)], row => row.LockedUntil!.Value,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
     public async Task<FailedAttemptResult> RegisterFailureAsync(string normalisedEmail, string clientAddress,
         bool includeAccount, CancellationToken cancellationToken)
     {

@@ -34,7 +34,7 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init?: {
-  method?: "GET" | "POST" | "PUT" | undefined;
+  method?: "GET" | "POST" | "PUT" | "DELETE" | undefined;
   body?: unknown;
   signal?: AbortSignal | undefined;
   acceptedStatuses?: readonly number[] | undefined;

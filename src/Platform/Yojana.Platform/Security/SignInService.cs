@@ -113,7 +113,7 @@ public sealed class SignInService(
     public async Task<IReadOnlyList<TenantChoice>> TenantsForAsync(Guid userId, CancellationToken cancellationToken)
     {
         var rows = await db.Memberships.AsNoTracking()
-            .Where(m => m.UserId == userId && m.Tenant!.IsActive)
+            .Where(m => m.UserId == userId && m.DeactivatedAt == null && m.Tenant!.IsActive)
             .Select(m => new { m.TenantId, m.Tenant!.Code, m.Tenant.Name, m.Roles, m.CustomerPartyRef })
             .ToListAsync(cancellationToken);
         return rows.Select(r => new TenantChoice(r.TenantId, r.Code, r.Name,

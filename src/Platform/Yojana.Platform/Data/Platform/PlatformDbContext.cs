@@ -33,6 +33,7 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
     public DbSet<DocumentPresence> DocumentPresence => Set<DocumentPresence>();
 
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+    public DbSet<UserInvitation> UserInvitations => Set<UserInvitation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -114,6 +115,25 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             b.HasKey(m => new { m.UserId, m.TenantId });
             b.HasOne(m => m.User).WithMany(u => u.Memberships).HasForeignKey(m => m.UserId);
             b.HasOne(m => m.Tenant).WithMany().HasForeignKey(m => m.TenantId);
+            b.Property(m => m.Version).IsRowVersion();
+            b.HasOne<AppUser>().WithMany().HasForeignKey(m => m.DeactivatedByUserId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<UserInvitation>(b =>
+        {
+            b.ToTable("user_invitation");
+            b.HasKey(i => i.Id);
+            b.Property(i => i.Email).HasMaxLength(320);
+            b.Property(i => i.DisplayName).HasMaxLength(200);
+            b.Property(i => i.TokenHash).HasMaxLength(32).IsFixedLength();
+            b.HasIndex(i => i.TokenHash).IsUnique();
+            b.HasIndex(i => new { i.TenantId, i.Email, i.ExpiresAt });
+            b.HasIndex(i => new { i.TenantId, i.DisplayName, i.Id });
+            b.HasIndex(i => new { i.ExpiresAt, i.Id });
+            b.HasOne(i => i.Tenant).WithMany().HasForeignKey(i => i.TenantId).OnDelete(DeleteBehavior.NoAction);
+            b.HasOne<AppUser>().WithMany().HasForeignKey(i => i.CreatedByUserId).OnDelete(DeleteBehavior.NoAction);
+            b.HasOne<AppUser>().WithMany().HasForeignKey(i => i.AcceptedUserId).OnDelete(DeleteBehavior.NoAction);
+            b.HasOne<AppUser>().WithMany().HasForeignKey(i => i.RevokedByUserId).OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<SmokeLog>(b =>
