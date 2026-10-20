@@ -104,7 +104,8 @@ public sealed class Cx01DocumentLiveTests
             Assert.Equal(HttpStatusCode.OK, read.StatusCode);
             using var observed = JsonDocument.Parse(await read.Content.ReadAsStringAsync());
             Assert.Equal(key, Cx01ReviewKey.Text(observed.RootElement, Cx01DocumentCatalogue.KeyField(collection)));
-            if (body.TryGetProperty("DocumentLines", out var expected))
+            // An upload has no JSON body to compare serials against.
+            if (body.ValueKind == JsonValueKind.Object && body.TryGetProperty("DocumentLines", out var expected))
                 for (var i = 0; i < expected.GetArrayLength(); i++)
                     if (expected[i].TryGetProperty("SerialNumbers", out var serials) && serials.GetArrayLength() > 0)
                         Assert.NotEmpty(observed.RootElement.GetProperty("DocumentLines")[i].GetProperty("SerialNumbers").EnumerateArray());
