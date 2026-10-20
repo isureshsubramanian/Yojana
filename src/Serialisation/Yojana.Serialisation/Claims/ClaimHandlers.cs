@@ -264,7 +264,7 @@ public static class AdjudicateClaimHandler
                     claim_id = claim.ClaimId, cohort_id = liveCampaign is not null || claim.CoverageSource == ClaimCoverageSource.Recall || cohorts.Count == 0 ? (Guid?)null : cohorts.Single(), coverage_source = claim.CoverageSource,
                     approved_amounts_by_line = lines.Select(l => new { claim_line_id = l.ClaimLineId, requested_amount = l.RequestedAmount, approved_amount = l.ApprovedAmount, coverage_pct = l.CoveragePct, coverage_source = l.CoverageSource, entitlement_id = l.EntitlementId }),
                     service_entity_id = claim.ServiceEntityId, obligor_entity_id = claim.ObligorEntityId, claimant_party_ref = claim.ClaimantPartyRef,
-                    settlement_party_ref = claim.SettlementPartyRef, status = claim.Status, denial_reason = claim.DenialReason,
+                    settlement_party_ref = claim.SettlementPartyRef, currency = claim.Currency, status = claim.Status, denial_reason = claim.DenialReason,
                     chain_length = claim.ChainLength, remedy = claim.Remedy, adjudicated_by = claim.AdjudicatedBy, reviewer_role = claim.ReviewerRole, successor_item_id = claim.SuccessorItemId,
                     campaign_id = claim.CampaignId, campaign_code = namedCampaign?.Code, reserve_tag = claim.ReserveTag, campaign_cover_reason = claim.CampaignCoverReason,
                 }),

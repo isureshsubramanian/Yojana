@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.1/rma.authorised.json",
+  "title": "Rma.Authorised",
+  "type": "object",
+  "required": [
+    "header",
+    "rma_id",
+    "rma_line_id",
+    "rma_number",
+    "authorised_unit_id",
+    "ownership_episode_id",
+    "original_sale_ref",
+    "coverage_pct",
+    "coverage_source"
+  ],
+  "properties": {
+    "header": {
+      "type": "object"
+    },
+    "rma_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "rma_line_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "rma_number": {
+      "type": "string"
+    },
+    "authorised_unit_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "ownership_episode_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "original_sale_ref": {
+      "type": "object"
+    },
+    "coverage_pct": {
+      "type": "number"
+    },
+    "coverage_source": {
+      "type": "string"
+    },
+    "entitlement_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "customer_party_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    }
+  }
+}

@@ -92,7 +92,8 @@ public sealed class ClaimCampaignTests(SerialisationHostFixture fixture)
 
         var published = Assert.Single(await PublishedEventSink.WaitForAsync<ClaimAdjudicated>(
             message => message.ClaimId == submitted.ClaimId, 1, TimeSpan.FromSeconds(20)));
-        Assert.Equal("1.2", published.Header.Version);
+        Assert.Equal("1.3", published.Header.Version);
+        Assert.Equal("EUR", published.Currency);
         Assert.Equal((campaignId, "RECALL", "reserve:RECALL", (string?)null, (Guid?)null),
             (published.CampaignId, published.CampaignCode, published.ReserveTag, published.CampaignCoverReason, published.CohortId));
 

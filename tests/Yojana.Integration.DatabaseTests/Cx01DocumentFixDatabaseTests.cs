@@ -118,7 +118,7 @@ public sealed partial class Cx01DocumentDatabaseTests
     }
 
     [DatabaseFact]
-    public async Task Real_facts_with_real_staging_shapes_resolve_owner_and_park_missing_module_data_as_unsupported()
+    public async Task Real_facts_with_real_staging_shapes_resolve_owner_and_hold_missing_module_data_before_remote_calls()
     {
         await using var simulator = new Cx01Simulator { EnableDocumentPosts = true };
         var (tenant, connection) = await ConnectionAsync(simulator);
@@ -144,10 +144,10 @@ public sealed partial class Cx01DocumentDatabaseTests
         Assert.Equal(3, (await relay.RelayConnectionAsync(connection, default)).Parked);
         var tasks = await db.ManualOutboundTasks.Where(x => x.ConnectionId == connection).ToListAsync();
         Assert.Equal(3, tasks.Count);
-        Assert.True(tasks.Any(x => x.Note!.Contains("missing credit amount and currency in the module event", StringComparison.Ordinal)), string.Join("; ", tasks.Select(x => x.CommandType + ": " + x.Note)));
-        Assert.Contains(tasks, x => x.Note!.Contains("missing journal currency and balancing account in the module event", StringComparison.Ordinal));
-        Assert.Contains(tasks, x => x.Note!.Contains("missing attachment content reference in the module event", StringComparison.Ordinal));
-        Assert.All(await db.OutboundCommands.Where(x => x.ConnectionId == connection).ToListAsync(), x => Assert.Equal(OutboundConnectorOutcome.Unsupported, x.Outcome));
+        Assert.True(tasks.Any(x => x.Note!.Contains("lines[0].amount.currency", StringComparison.Ordinal)), string.Join("; ", tasks.Select(x => x.CommandType + ": " + x.Note)));
+        Assert.Contains(tasks, x => x.Note!.Contains("journal_lines[0].currency", StringComparison.Ordinal));
+        Assert.Contains(tasks, x => x.Note!.Contains("display_name", StringComparison.Ordinal));
+        Assert.All(await db.OutboundCommands.Where(x => x.ConnectionId == connection).ToListAsync(), x => Assert.Equal(OutboundConnectorOutcome.Rejected, x.Outcome));
         Assert.Equal("FIC-CUSTOMER", await facts.ReferenceAsync(connection, "party", units.Owner.ToString(), default));
         Assert.Empty(simulator.DocumentCreateCounts);
     }
@@ -274,8 +274,8 @@ public sealed partial class Cx01DocumentDatabaseTests
         Assert.Equal(2, result.Parked);
         Assert.Equal(1, simulator.DocumentCreateCounts.GetValueOrDefault(Cx01DocumentScenarios.Collection("service")));
         await db.Entry(replacement).ReloadAsync();
-        Assert.Equal(OutboundConnectorOutcome.Unsupported, replacement.Outcome);
-        Assert.Contains("missing ship-to address name in the module event", replacement.LastFailure);
+        Assert.Equal(OutboundConnectorOutcome.Rejected, replacement.Outcome);
+        Assert.Contains("ship_to_ref", replacement.LastFailure);
     }
 
     [DatabaseFact]
@@ -321,8 +321,10 @@ public sealed partial class Cx01DocumentDatabaseTests
         public IOutboundReviewTracker? ResolveReviewTracker(string code) => null;
     }
 
-    private sealed class ModuleUnitFacts : ICertificateUnitReadPort
+    private sealed class ModuleUnitFacts : ICertificateUnitReadPort, IOutboundUnitSourcePort
     {
+        public Task<OutboundUnitSource> ReadAsync(Guid id, DocumentRef? document, CancellationToken ct, Guid? customerPartyRef = null, bool allowOwnershipFallback = true, DateTime? custodyAt = null) =>
+            Task.FromResult(new OutboundUnitSource(Cx01DocumentScenarios.Unit.Serial, null, Owner, null));
         public Guid Owner { get; } = Guid.NewGuid();
         public Guid Item { get; } = Guid.NewGuid();
         public Task<CertificateUnitFact?> ReadAsync(Guid id, CancellationToken ct) => Task.FromResult<CertificateUnitFact?>(new(id,

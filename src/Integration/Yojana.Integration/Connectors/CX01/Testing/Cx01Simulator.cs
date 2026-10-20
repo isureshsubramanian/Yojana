@@ -25,6 +25,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     private int nextDraft = 7000;
     private readonly Dictionary<string, Dictionary<int, Dictionary<string, object?>>> documents = new(StringComparer.Ordinal);
     private bool enableDocumentPosts;
+    public string? LastAttachmentUpload { get; private set; }
     public bool EnableDocumentPosts
     {
         get => enableDocumentPosts;
@@ -730,6 +731,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             if (collection == "Attachments2")
             {
                 var multipart = await new StreamReader(request.InputStream).ReadToEndAsync();
+                LastAttachmentUpload = multipart;
                 var match = System.Text.RegularExpressions.Regex.Match(multipart, "filename=\"?([^\";\r\n]+)");
                 var name = match.Groups[1].Value;
                 body = new() { ["Attachments2_Lines"] = new[] { new { FileName = Path.GetFileNameWithoutExtension(name), FileExtension = Path.GetExtension(name).TrimStart('.') } } };

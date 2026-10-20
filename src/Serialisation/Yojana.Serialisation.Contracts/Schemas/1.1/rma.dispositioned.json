@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.1/rma.dispositioned.json",
+  "title": "Rma.Dispositioned",
+  "type": "object",
+  "required": [
+    "header",
+    "rma_id",
+    "rma_line_id",
+    "unit_id",
+    "disposition"
+  ],
+  "properties": {
+    "header": {
+      "type": "object"
+    },
+    "rma_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "rma_line_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "unit_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "disposition": {
+      "type": "string"
+    },
+    "entitlement_closed_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "replacement_intent_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "currency": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "customer_party_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    }
+  }
+}

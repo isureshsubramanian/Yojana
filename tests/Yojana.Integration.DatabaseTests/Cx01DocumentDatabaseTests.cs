@@ -89,7 +89,7 @@ public sealed partial class Cx01DocumentDatabaseTests(IntegrationHostFixture fix
         await db.Entry(rejected).ReloadAsync();
         Assert.Equal(OutboundConnectorOutcome.Rejected, rejected.Outcome);
         Assert.Equal(OutboundConnectorOutcome.Rejected, unmapped.Outcome);
-        Assert.Contains("Map the warranty account", unmapped.LastFailure);
+        Assert.Contains("account_ref", unmapped.LastFailure);
         Assert.Equal(2, await db.ManualOutboundTasks.CountAsync(x => x.ConnectionId == connection));
         Assert.False(await db.ExternalIdMaps.AnyAsync(x => x.ConnectionId == connection && x.EntityType == "document"));
     }

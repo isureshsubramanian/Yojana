@@ -158,7 +158,7 @@ public static class ReplacementOverdueSweepHandler
                 IdempotencyKey = IdempotencyKey.ForCommand("serialisation", link.ReplacementLinkId, link.OriginalUnitId, ReplacementEventType.ReturnOverdue, overdueAt),
                 Attributes = JsonObjectText.Of(new { replacement_link_id = link.ReplacementLinkId, original_unit_id = link.OriginalUnitId,
                     replacement_unit_id = link.ReplacementUnitId, party_ref = partyRef, return_due = due,
-                    non_return_price_basis = link.NonReturnPriceBasis, days_overdue = command.AsOf.DayNumber - due.DayNumber }),
+                    non_return_amount = link.NonReturnAmount, currency = link.Currency, non_return_price_basis = link.NonReturnPriceBasis, days_overdue = command.AsOf.DayNumber - due.DayNumber }),
             });
             link.OverdueEventId = eventId;
             link.OverduePublishedAt = clock.UtcNow;

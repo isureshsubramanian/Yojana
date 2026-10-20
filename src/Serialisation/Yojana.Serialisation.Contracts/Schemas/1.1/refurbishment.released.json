@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.1/refurbishment.released.json",
+  "title": "Refurbishment.Released",
+  "type": "object",
+  "required": [
+    "header",
+    "work_order_id",
+    "work_order_number",
+    "source_unit_id",
+    "released_unit_id",
+    "kind",
+    "grade",
+    "cycle_number",
+    "identity_policy",
+    "total_cost",
+    "currency"
+  ],
+  "properties": {
+    "header": {
+      "$ref": "#/$defs/header"
+    },
+    "work_order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "work_order_number": {
+      "type": "string"
+    },
+    "source_unit_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "released_unit_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "refurbish",
+        "remanufacture",
+        "rework"
+      ]
+    },
+    "grade": {
+      "type": "string",
+      "enum": [
+        "open_box",
+        "refurbished_a",
+        "refurbished_b",
+        "refurbished_c",
+        "used",
+        "remanufactured"
+      ]
+    },
+    "cycle_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "identity_policy": {
+      "type": "string",
+      "enum": [
+        "same_unit_same_serial",
+        "same_unit_new_serial",
+        "new_unit"
+      ]
+    },
+    "total_cost": {
+      "type": "number",
+      "minimum": 0
+    },
+    "currency": {
+      "type": "string"
+    },
+    "source_location_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    }
+  },
+  "$defs": {
+    "header": {
+      "type": "object",
+      "required": [
+        "schema",
+        "version",
+        "event_id",
+        "unit_id",
+        "event_time",
+        "recorded_time",
+        "seq",
+        "legal_entity_id",
+        "actor_ref"
+      ],
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "Refurbishment.Released"
+        },
+        "version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "unit_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "recorded_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "legal_entity_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actor_ref": {
+          "type": "string"
+        },
+        "document": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

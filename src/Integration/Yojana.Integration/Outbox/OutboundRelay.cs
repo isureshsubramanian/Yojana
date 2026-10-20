@@ -23,7 +23,7 @@ public sealed class OutboundRelay(
     IConnectionWorkerIsolation isolation,
     IConnectionRetryJitter jitter,
     IOutboundCommandParkingSink parking,
-    IOutboundReviewTaskSink reviewTasks, IOutboundProgressStore progress, IOutboundRetryWindow retryWindow)
+    IOutboundReviewTaskSink reviewTasks, IOutboundProgressStore progress, IOutboundRetryWindow retryWindow, OutboundCompleteness completeness)
 {
     private static readonly TimeSpan ClaimLease = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan RetryCeiling = TimeSpan.FromHours(6);
@@ -55,6 +55,9 @@ public sealed class OutboundRelay(
             await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, connectionId, cancellationToken);
             if (!await db.Connections.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
                 && x.ConnectionId == connectionId && x.Status == ConnectionStatus.Active, cancellationToken)) break;
+            var currentGateway = await db.ConnectionGatewaySettings.AsNoTracking().SingleOrDefaultAsync(x =>
+                x.TenantId == tenant.TenantId && x.ConnectionId == connectionId, cancellationToken);
+            if (currentGateway?.ReadOnly == true || currentGateway?.OutboundMode == "none") break;
             // A connector whose HTTP pipeline owns the shared rate-limited lane must not be wrapped in the same
             // non-reentrant lane here. Connectors without that pipeline retain the relay's connection-wide serialisation.
             await using IConnectionWorkerLease? lane = connector.Capabilities.OwnsConnectionLane
@@ -81,6 +84,29 @@ public sealed class OutboundRelay(
                     command.ErpReferenceText, command.Payload), cancellationToken);
                 if (found is null)
                 {
+                    // Validate at claim, using current mode/settings: enabling documents after staging must not release
+                    // an old incomplete draft. Operator corrections pass through this same boundary on every retry.
+                    IReadOnlyList<string> missing;
+                    try
+                    {
+                        missing = await completeness.MissingPayloadAsync(connection.ConnectorCode, connectionId,
+                            currentGateway?.OutboundMode ?? "reference_only", command.CommandType, command.Payload, cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                    catch (Exception ex)
+                    {
+                        await RetryAsync(command, Failure(ex), cancellationToken);
+                        retrying++;
+                        continue;
+                    }
+                    if (missing.Count > 0)
+                    {
+                        var failure = "Missing source fields: " + string.Join(", ", missing);
+                        await ParkAsync(command, OutboundCompleteness.MissingSourceField, failure, OutboundConnectorOutcome.Rejected, cancellationToken);
+                        parked++;
+                        continue;
+                    }
+
                     created = await connector.CreateAsync(new(connectionId, command.OutboundCommandId,
                         command.CommandType, command.ErpReferenceText, command.Payload,
                         connector.Capabilities.AcceptsIdempotencyKey ? command.IdempotencyKey : null), cancellationToken);
@@ -338,7 +364,7 @@ public sealed class OutboundRelay(
     {
         command.Status = OutboundCommandStatus.Parked;
         command.Outcome = outcome;
-        command.LastFailure = failure;
+        command.LastFailure = failure.Length <= 2000 ? failure : failure[..2000];
         command.NextAttemptAt = null;
         command.LockedUntil = null;
         command.CompletedAt = clock.UtcNow;

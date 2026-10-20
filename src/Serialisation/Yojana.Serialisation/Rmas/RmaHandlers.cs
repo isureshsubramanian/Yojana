@@ -203,7 +203,7 @@ public static class AuthoriseRmaHandler
                 PresetEventId = index == 0 ? eventId : TimeOrderedId.New(command.EventTime), LegalEntityId = rma.ServiceEntityId,
                 ActorRef = command.ActorRef, DocumentType = original.Type, DocumentId = original.Id, DocumentLine = original.Line,
                 IdempotencyKey = IdempotencyKey.ForCommand(CommissionUnitsHandler.Source, command.CommandId, line.RequestedUnitId, RmaEventType.Authorised, command.EventTime),
-                Attributes = JsonObjectText.Of(new { rma_id = rma.RmaId, rma_line_id = line.RmaLineId, rma_number = rma.RmaNumber, authorised_unit_id = line.AuthorisedUnitId, ownership_episode_id = line.OwnershipEpisodeId, original_sale_ref = original, coverage_pct = line.CoveragePct, coverage_source = line.CoverageSource, entitlement_id = line.EntitlementId }),
+                Attributes = JsonObjectText.Of(new { rma_id = rma.RmaId, rma_line_id = line.RmaLineId, rma_number = rma.RmaNumber, authorised_unit_id = line.AuthorisedUnitId, ownership_episode_id = line.OwnershipEpisodeId, original_sale_ref = original, customer_party_ref = rma.ReturningPartyRef, coverage_pct = line.CoveragePct, coverage_source = line.CoverageSource, entitlement_id = line.EntitlementId }),
             });
         }
         rma.AuthorisedAt = command.EventTime;
@@ -346,8 +346,12 @@ public static class ReceiveReturnHandler
             var (authorised, receivedUnit, provisional, outcome) = receiptFacts[input.RmaLineId];
             var receiptId = TimeOrderedId.New(command.ReceivedAt);
             var eventId = TimeOrderedId.New(command.ReceivedAt);
+            Guid? sourceLocationId = null;
             if (receivedUnit is { } unitId)
             {
+                // The remote return document books the unit into the receiving location; the quarantine status change
+                // sent to the remote therefore starts there, not at the customer site the unit came from.
+                sourceLocationId = command.ReceivingLocationId;
                 if (!CustodyTransitions.CustodyAllowed(
                         (await episodes.OpenAsync(unitId, EpisodeKind.Custody, cancellationToken))?.LocationKind,
                         LocationKind.Quarantine))
@@ -378,7 +382,7 @@ public static class ReceiveReturnHandler
                 UnitId = receivedUnit ?? authorised, EventTime = command.ReceivedAt, EventType = RmaEventType.Received, PresetEventId = eventId,
                 LegalEntityId = rma.ServiceEntityId, ActorRef = command.ActorRef, PostingPeriod = postingPeriod,
                 IdempotencyKey = IdempotencyKey.ForCommand(CommissionUnitsHandler.Source, command.CommandId, receivedUnit ?? authorised, RmaEventType.Received, command.ReceivedAt),
-                Attributes = JsonObjectText.Of(new { rma_id = rma.RmaId, rma_line_id = line.RmaLineId, return_receipt_id = receiptId, authorised_unit_id = authorised, received_unit_id = receivedUnit, provisional_unit_id = provisional, outcome, condition_grade = input.ConditionGrade, valuation_rule = input.ValuationRule, posting_period = postingPeriod }),
+                Attributes = JsonObjectText.Of(new { rma_id = rma.RmaId, rma_line_id = line.RmaLineId, return_receipt_id = receiptId, authorised_unit_id = authorised, received_unit_id = receivedUnit, provisional_unit_id = provisional, outcome, condition_grade = input.ConditionGrade, valuation_rule = input.ValuationRule, posting_period = postingPeriod, source_location_id = sourceLocationId }),
             });
         }
         db.ReturnReceipts.AddRange(receipts);
@@ -450,6 +454,7 @@ public static class DispositionRmaHandler
         {
             var line = lines.Single(l => l.RmaLineId == input.RmaLineId);
             var unitId = line.ReceivedUnitId ?? throw new CommandRefusedException("received_unit_required", $"Line {line.RmaLineId} has only a provisional identity and cannot be dispositioned.", "resolve the provisional identity first");
+            var sourceLocationId = (await episodes.OpenAsync(unitId, EpisodeKind.Custody, cancellationToken))?.LocationId;
             string? closedReason = null;
             Guid? replacementIntentId = null;
             var document = new DocumentRef("rma", rma.RmaId, line.Sequence);
@@ -536,7 +541,7 @@ public static class DispositionRmaHandler
                 UnitId = unitId, EventTime = command.EventTime, EventType = RmaEventType.Dispositioned, PresetEventId = eventId,
                 LegalEntityId = rma.ServiceEntityId, ActorRef = command.ActorRef, DocumentType = document.Type, DocumentId = document.Id, DocumentLine = document.Line,
                 IdempotencyKey = IdempotencyKey.ForCommand(CommissionUnitsHandler.Source, command.CommandId, unitId, RmaEventType.Dispositioned, command.EventTime),
-                Attributes = JsonObjectText.Of(new { rma_id = rma.RmaId, rma_line_id = line.RmaLineId, unit_id = unitId, disposition = input.Disposition, entitlement_closed_reason = closedReason, replacement_intent_id = replacementIntentId, refurbishment_work_order_id = refurbishmentWorkOrderId }),
+                Attributes = JsonObjectText.Of(new { rma_id = rma.RmaId, rma_line_id = line.RmaLineId, unit_id = unitId, disposition = input.Disposition, source_location_id = sourceLocationId, currency = rma.Currency, customer_party_ref = rma.SettlementPartyRef, entitlement_closed_reason = closedReason, replacement_intent_id = replacementIntentId, refurbishment_work_order_id = refurbishmentWorkOrderId }),
             });
         }
         rma.LastActorRef = command.ActorRef;

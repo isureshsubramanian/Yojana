@@ -634,6 +634,27 @@ public sealed class RmaTests(SerialisationHostFixture fixture)
         Assert.Equal((setup.Unit, setup.Shipment), (Assert.Single(detail.Lines).RequestedUnitId, detail.Lines[0].OriginalSaleRef));
     }
 
+    [DatabaseFact]
+    public async Task Receipt_and_disposition_publish_the_location_before_each_move()
+    {
+        var setup = await SetUpReturnedUnitAsync("rma-source");
+        var requested = await InvokeAsync<RequestRmaResult>(setup.Tenant, Request(setup, Guid.NewGuid()));
+        await InvokeAsync<AuthoriseRmaResult>(setup.Tenant, new AuthoriseRma(Guid.NewGuid(), requested.RmaId, At.AddHours(1)));
+        var source = Guid.NewGuid();
+        await InvokeAsync<ChangeCustodyResult>(setup.Tenant, new ChangeCustody(Guid.NewGuid(), setup.Unit, LocationKind.Returning,
+            "return", At.AddHours(2), "test", Entity, LocationId: source));
+        var receive = Receive(requested.RmaId, requested.LineIds[0], setup.Serial, Guid.NewGuid()) with { DispatchedAt = null };
+        await InvokeAsync<ReceiveReturnResult>(setup.Tenant, receive);
+        await InvokeAsync<DispositionRmaResult>(setup.Tenant, new DispositionRma(Guid.NewGuid(), requested.RmaId,
+            [new(requested.LineIds[0], RmaDisposition.RepairAndReturn)], new(2026, 9, 1), At.AddHours(5)));
+        var received = Assert.Single(await PublishedEventSink.WaitForAsync<RmaReceived>(x => x.RmaId == requested.RmaId, 1, TimeSpan.FromSeconds(20)));
+        var dispositioned = Assert.Single(await PublishedEventSink.WaitForAsync<RmaDispositioned>(x => x.RmaId == requested.RmaId, 1, TimeSpan.FromSeconds(20)));
+        // The remote return books the unit into the receiving location, so the receipt's stock change starts there.
+        Assert.Equal(receive.ReceivingLocationId, received.SourceLocationId);
+        Assert.NotEqual(source, received.SourceLocationId);
+        Assert.Equal(receive.ReceivingLocationId, dispositioned.SourceLocationId);
+    }
+
     private async Task<RmaDetail> DetailAsync(TenantId tenant, Guid rmaId)
     {
         using var scope = fixture.ScopeFor(tenant);

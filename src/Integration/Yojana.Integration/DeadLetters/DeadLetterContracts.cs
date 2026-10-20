@@ -104,7 +104,8 @@ public sealed record DiscardDeadLetterRequest(string Reason);
 public sealed record CompleteManualTaskRequest(
     string? ErpExternalId = null,
     string? ErpChangeMarker = null,
-    bool AllowUnverified = false);
+    bool AllowUnverified = false,
+    System.Text.Json.JsonElement? CorrectedDraft = null);
 public sealed record DeadLetterActionResult(Guid DeadLetterItemId, string Status, Guid? ModuleId = null);
 
 public sealed class DeadLetterRuleException(string rule, string message) : Exception(message)

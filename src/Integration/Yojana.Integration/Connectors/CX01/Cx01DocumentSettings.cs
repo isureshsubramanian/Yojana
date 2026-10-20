@@ -20,7 +20,8 @@ public sealed record Cx01DocumentSettings(
     IReadOnlyList<string>? AttachmentExtensions = null,
     IReadOnlyDictionary<string, string>? CurrencyMap = null, string? LocalCurrencyCode = null,
     IReadOnlyDictionary<string, int>? CurrencyPrecision = null,
-    IReadOnlyDictionary<string, int>? ReferenceFieldLengths = null)
+    IReadOnlyDictionary<string, int>? ReferenceFieldLengths = null,
+    bool UseRecordedReplacementShipTo = true)
 {
     public IReadOnlyList<string> AllowedExtensions => AttachmentExtensions ?? ["pdf", "png", "jpg", "jpeg", "txt", "docx", "xlsx"];
 

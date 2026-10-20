@@ -471,7 +471,7 @@ public sealed class RefurbishmentService(
                 work_order_id = workOrder.WorkOrderId, work_order_number = workOrder.WorkOrderNumber,
                 source_unit_id = workOrder.TargetUnitId, released_unit_id = releasedUnitId, kind = workOrder.Kind,
                 grade = command.Grade, cycle_number = workOrder.CycleNumber, identity_policy = workOrder.IdentityPolicy,
-                total_cost = totalCost, currency,
+                total_cost = totalCost, currency, source_location_id = releasedCustody?.LocationId,
             }));
         if (workOrder.Kind == RefurbishmentKind.Rework && workOrder.AsBuiltChanged)
         {

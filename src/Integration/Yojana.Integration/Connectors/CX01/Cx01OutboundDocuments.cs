@@ -19,6 +19,8 @@ public sealed class Cx01OutboundDocuments(Cx01Settings settings, Cx01Client clie
             using var json = JsonDocument.Parse(lookup.Payload);
             var root = json.RootElement.TryGetProperty("payload", out var nested) ? nested : json.RootElement;
             var command = root.Deserialize<AttachDocument>(IntegrationContracts.Json)!;
+            if (string.IsNullOrWhiteSpace(command.DisplayName) || string.IsNullOrWhiteSpace(Path.GetExtension(command.DisplayName))
+                || string.IsNullOrWhiteSpace(command.TargetRecordRef)) return null;
             try
             {
                 var name = Cx01AttachmentMapper.FileName(configured.OwnReferencePrefix + lookup.ErpReferenceText,
@@ -73,7 +75,7 @@ public sealed class Cx01OutboundDocuments(Cx01Settings settings, Cx01Client clie
                 ?? throw new Cx01UnmappableException("The outbound command payload is missing."); }
             catch (JsonException) { throw new Cx01DocumentRuleException("The outbound document payload is invalid."); }
         }
-        async Task<Cx01OutboundUnit> Unit(Guid id) => await facts.UnitAsync(request.ConnectionId, id, ct)
+        async Task<Cx01OutboundUnit> Unit(Guid id, string? serial = null) => await facts.UnitAsync(request.ConnectionId, id, ct, serial)
             ?? throw new Cx01UnmappableException("Map the unit's item and serial before posting this document.");
         async Task<string> Ref(string kind, string value)
         {
@@ -94,9 +96,9 @@ public sealed class Cx01OutboundDocuments(Cx01Settings settings, Cx01Client clie
                     var delivery = Command<CreateReplacementDelivery>();
                     if (string.IsNullOrWhiteSpace(delivery.ShipToRef) || delivery.ShipToRef == "default")
                         throw new Cx01UnmappableException("missing ship-to address name in the module event");
-                    var replacement = await Unit(delivery.ReplacementUnit.UnitId);
+                    var replacement = await Unit(delivery.ReplacementUnit.UnitId, delivery.ReplacementUnit.IdentifierValue);
                     collection = "DeliveryNotes";
-                    body = Cx01DeliveryMapper.Map(delivery, await Ref("party", delivery.CustomerRef), replacement,
+                    body = Cx01DeliveryMapper.Map(delivery with { ShipToRef = await Ref("location", delivery.ShipToRef) }, await Ref("party", delivery.CustomerRef), replacement,
                         Location(replacement.Location), options, delivery.BaseReturnRef is null ? null : await Ref("document", delivery.BaseReturnRef.Contains(':') ? delivery.BaseReturnRef : "Returns:" + delivery.BaseReturnRef));
                     break;
                 case nameof(CreateCreditMemo):
@@ -104,7 +106,7 @@ public sealed class Cx01OutboundDocuments(Cx01Settings settings, Cx01Client clie
                     if (credit.Lines.Any(x => x.Amount.Amount == 0 && (string.IsNullOrWhiteSpace(x.Amount.Currency) || x.Amount.Currency == "XXX")))
                         throw new Cx01UnmappableException("missing credit amount and currency in the module event");
                     var units = new List<Cx01OutboundUnit?>();
-                    foreach (var line in credit.Lines) units.Add(line.UnitId is { } id ? await Unit(id) : null);
+                    foreach (var line in credit.Lines) units.Add(line.UnitId is { } id ? await Unit(id, line.Serials is { Count: > 0 } serials ? serials[0].Value : null) : null);
                     collection = "CreditNotes";
                     body = Cx01CreditMapper.Map(credit, await Ref("party", credit.CustomerRef), units, Location(null),
                         credit.BaseInvoiceRef is null ? null : await Ref("document", credit.BaseInvoiceRef.Contains(':') ? credit.BaseInvoiceRef : "Invoices:" + credit.BaseInvoiceRef), options);
@@ -115,7 +117,7 @@ public sealed class Cx01OutboundDocuments(Cx01Settings settings, Cx01Client clie
                     break;
                 case nameof(CreateServiceOrder):
                     var service = Command<CreateServiceOrder>();
-                    var serviceUnit = await Unit(service.Unit.UnitId);
+                    var serviceUnit = await Unit(service.Unit.UnitId, service.Unit.IdentifierValue);
                     var customer = await Ref("party", service.CustomerRef);
                     if (options.ServiceOrderAction == "annotate")
                         return OutboundCreateResult.Unsupported("The service order is configured for reference annotation; no document is created.");
@@ -135,7 +137,7 @@ public sealed class Cx01OutboundDocuments(Cx01Settings settings, Cx01Client clie
                     {
                         if (options.StatusPostingPair is not { } pair)
                             return OutboundCreateResult.Unsupported("A status-only stock change requires a per-installation test and an enabled goods-issue/goods-receipt pair.");
-                        var stockUnit = await Unit(stock.Unit.UnitId);
+                        var stockUnit = await Unit(stock.Unit.UnitId, stock.Unit.IdentifierValue);
                         var issue = await PostOrFindAsync(request, "InventoryGenExits", Cx01StockMapper.Adjustment(stockUnit, from, pair.IssueAccount), configured, ct);
                         if (issue.Outcome != OutboundConnectorOutcome.Created) return PairWait(issue);
                         var receipt = await PostOrFindAsync(request, "InventoryGenEntries", Cx01StockMapper.Adjustment(stockUnit, to, pair.ReceiptAccount), configured, ct);
@@ -145,7 +147,7 @@ public sealed class Cx01OutboundDocuments(Cx01Settings settings, Cx01Client clie
                             : receipt with { Document = receipt.Document with { RelatedDocuments = [issue.Document!] } };
                     }
                     collection = "StockTransfers";
-                    body = Cx01StockMapper.Transfer(await Unit(stock.Unit.UnitId), from, to);
+                    body = Cx01StockMapper.Transfer(await Unit(stock.Unit.UnitId, stock.Unit.IdentifierValue), from, to);
                     break;
                 case nameof(AttachDocument):
                     return await AttachAsync(request, Command<AttachDocument>(), configured, ct);
@@ -240,8 +242,13 @@ public sealed class Cx01OutboundDocuments(Cx01Settings settings, Cx01Client clie
         if (attachment is null)
         {
             if (command.ContentRef is null) return OutboundCreateResult.Unsupported("Attachment upload needs a content reference; a URL alone is not uploaded.");
+            // Cx01OutboundCompleteness starts the scoped content attempt before validation. Sharing its content
+            // port keeps upload bytes identical to those checked; separate caches would render twice and could
+            // upload a different document. Direct connector callers can still read without a prior check.
             var file = await content.ReadAsync(command.ContentRef, sizeLimit, ct);
             if (file is null) return OutboundCreateResult.Unsupported("Attachment content is unavailable; configure the attachment content store.");
+            if (file.Bytes.Length == 0 || string.IsNullOrWhiteSpace(file.ContentType))
+                return OutboundCreateResult.Rejected("The attachment needs rendered bytes and its content type.");
             if (file.Bytes.LongLength > sizeLimit) return OutboundCreateResult.Rejected("The attachment exceeds the connection's size cap.");
             await tenantSettings.SetAsync(AttachmentIntent(request.ConnectionId, filename), "pending", ct);
             attachment = await poster.UploadAsync(request.ConnectionId, new(filename, file.Bytes, file.ContentType), ct);

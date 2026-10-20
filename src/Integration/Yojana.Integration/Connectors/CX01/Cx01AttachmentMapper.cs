@@ -9,13 +9,38 @@ public sealed record Cx01AttachmentContent(byte[] Bytes, string ContentType);
 /// <summary>Content storage seam. The development implementation reads only inside the configured attachment root.</summary>
 public interface ICx01AttachmentContent
 {
+    /// <summary>Start a relay/correction attempt. Subsequent reads share the validated bytes until the next attempt.</summary>
+    void BeginAttempt() { }
     Task<Cx01AttachmentContent?> ReadAsync(string contentRef, long maximumBytes, CancellationToken ct);
 }
 
-internal sealed class Cx01LocalAttachmentContent(IConfiguration configuration) : ICx01AttachmentContent
+internal sealed class Cx01LocalAttachmentContent(IConfiguration configuration, Yojana.Serialisation.Contracts.IRenderedOutboundDocumentPort? documents = null) : ICx01AttachmentContent
 {
+    private readonly Dictionary<string, Cx01AttachmentContent> attemptContent = new(StringComparer.Ordinal);
+    public void BeginAttempt() => attemptContent.Clear();
+
     public async Task<Cx01AttachmentContent?> ReadAsync(string contentRef, long maximumBytes, CancellationToken ct)
     {
+        if (!attemptContent.TryGetValue(contentRef, out var file))
+        {
+            file = await ReadCoreAsync(contentRef, maximumBytes, ct);
+            if (file is null) return null;
+            attemptContent.Add(contentRef, file);
+        }
+        if (file.Bytes.LongLength > maximumBytes) throw new Cx01DocumentRuleException("The attachment exceeds the connection's size cap.");
+        return file;
+    }
+
+    private async Task<Cx01AttachmentContent?> ReadCoreAsync(string contentRef, long maximumBytes, CancellationToken ct)
+    {
+        if (Yojana.Serialisation.Contracts.OutboundDocumentContentReference.TryDocumentId(contentRef, out var id))
+        {
+            if (documents is null) return null;
+            var rendered = await documents.ReadAsync(id, ct);
+            if (rendered is not null && rendered.Bytes.LongLength > maximumBytes)
+                throw new Cx01DocumentRuleException("The attachment exceeds the connection's size cap.");
+            return rendered is null ? null : new(rendered.Bytes, rendered.ContentType);
+        }
         var root = configuration["Integration:AttachmentRoot"];
         if (string.IsNullOrWhiteSpace(root)) return null;
         root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));

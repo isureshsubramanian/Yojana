@@ -1,5 +1,6 @@
 using Yojana.Integration.Connections;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
@@ -12,12 +13,12 @@ using Yojana.Integration.Outbox;
 
 namespace Yojana.Integration.Gateway;
 
-/// <summary>Stages canonical commands only. Delivery is owned by P8-T07's later relay.</summary>
+/// <summary>Stages canonical commands only. The relay owns delivery.</summary>
 public sealed class OutboundCommandStager(IntegrationDbContext db, ITenantContext tenant, IClock clock,
-    ConnectionCapabilityReader declarations, IOutboundCommandParkingSink parking, ICertificateUnitReadPort units)
+    ConnectionCapabilityReader declarations, IOutboundCommandParkingSink parking, IOutboundUnitSourcePort sources, IRenderedOutboundDocumentPort documents, IEnumerable<IOutboundSourcePolicy> sourcePolicies, ILogger<OutboundCommandStager> logger)
 {
     public async Task<int> StageAsync(PublishedEventHeader header, IOutboundCommand command,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Guid? sourceUnitId = null, Guid? sourceLocationId = null)
     {
         var type = command.GetType().Name;
         var connections = await db.Connections.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
@@ -33,8 +34,9 @@ public sealed class OutboundCommandStager(IntegrationDbContext db, ITenantContex
             var connection = IsFinancial(type) && declaration.DegradationRules.GetValueOrDefault(DegradationRule.DownstreamLedger)?.Enabled == true
                 ? declaration.LedgerConnectionId ?? originalConnection : originalConnection;
             await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, connection, cancellationToken);
-            if (!await db.Connections.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
-                && x.ConnectionId == connection && x.Status == ConnectionStatus.Active, cancellationToken)) continue;
+            var connectorCode = await db.Connections.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && x.ConnectionId == connection && x.Status == ConnectionStatus.Active).Select(x => x.ConnectorCode).SingleOrDefaultAsync(cancellationToken);
+            if (connectorCode is null) continue;
             var targetSettings = await db.ConnectionGatewaySettings.AsNoTracking().SingleOrDefaultAsync(x =>
                 x.TenantId == tenant.TenantId && x.ConnectionId == connection, cancellationToken);
             if (targetSettings?.ReadOnly == true || targetSettings?.OutboundMode == "none") continue;
@@ -42,7 +44,7 @@ public sealed class OutboundCommandStager(IntegrationDbContext db, ITenantContex
             if (await db.OutboundCommands.AnyAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == connection
                 && x.IdempotencyKey == idempotency, cancellationToken)) continue;
             var manual = capability.SupportLevel is CapabilitySupport.Manual or CapabilitySupport.Unsupported;
-            var payload = await EnrichAsync(command, header.UnitId, connection, cancellationToken);
+            var payload = await EnrichAsync(command, header with { UnitId = sourceUnitId ?? header.UnitId }, connection, connectorCode, targetSettings?.OutboundMode ?? "reference_only", sourceLocationId, cancellationToken);
             var row = new OutboundCommandRow
             {
                 TenantId = tenant.TenantId, OutboundCommandId = TimeOrderedId.New(clock.UtcNow), ConnectionId = connection,
@@ -64,28 +66,65 @@ public sealed class OutboundCommandStager(IntegrationDbContext db, ITenantContex
         return count;
     }
 
-    private async Task<IOutboundCommand> EnrichAsync(IOutboundCommand command, Guid unitId, Guid connectionId, CancellationToken ct)
+    private async Task<IOutboundCommand> EnrichAsync(IOutboundCommand command, PublishedEventHeader header, Guid connectionId, string connectorCode, string mode, Guid? sourceLocationId, CancellationToken ct)
     {
-        if (command is not (CreateReplacementDelivery or CreateCreditMemo or CreateServiceOrder)) return command;
-        var customer = command switch
+        if (command is AttachDocument attachment)
         {
-            CreateReplacementDelivery delivery => delivery.CustomerRef,
-            CreateCreditMemo credit => credit.CustomerRef,
-            CreateServiceOrder service => service.CustomerRef, _ => "",
-        };
-        if (customer.StartsWith("unit-owner/", StringComparison.Ordinal) && Guid.TryParse(customer[11..], out var ownerUnit)) unitId = ownerUnit;
-        var unit = await units.ReadAsync(unitId, ct);
-        var party = unit?.Ownership?.HolderRef;
-        var external = party is null ? null : await db.ExternalIdMaps.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
-            && x.ConnectionId == connectionId && x.EntityType == "party" && x.ModuleId == party && x.ValidTo == null)
-            .Select(x => x.ExternalId).FirstOrDefaultAsync(ct);
-        return command switch
+            if (mode == "documents" && OutboundDocumentContentReference.TryDocumentId(attachment.ContentRef, out var documentId)
+                && await documents.DescribeAsync(documentId, ct) is { } rendered)
+                return attachment with { DisplayName = rendered.FileName };
+            return attachment;
+        }
+        if (command is PostWarrantyExpense) return command;
+        var unitId = command switch
         {
-            CreateReplacementDelivery delivery when string.IsNullOrWhiteSpace(delivery.CustomerRef) || delivery.CustomerRef.StartsWith("unit-owner/", StringComparison.Ordinal) => delivery with { CustomerRef = external ?? "" },
-            CreateCreditMemo credit when string.IsNullOrWhiteSpace(credit.CustomerRef) => credit with { CustomerRef = external ?? "" },
-            CreateServiceOrder service when string.IsNullOrWhiteSpace(service.CustomerRef) => service with { CustomerRef = external ?? "" },
-            _ => command,
+            ChangeStockStatusOrLocation stock => stock.Unit.UnitId,
+            CreateServiceOrder service => service.Unit.UnitId,
+            _ => header.UnitId,
         };
+        if (command is CreateReplacementDelivery delivery && delivery.CustomerRef.StartsWith("unit-owner/", StringComparison.Ordinal)
+            && Guid.TryParse(delivery.CustomerRef[11..], out var original)) unitId = original;
+        Guid? requestedCustomer = command is CreateReplacementDelivery named && Guid.TryParse(named.CustomerRef, out var party) ? party : null;
+        var source = await sources.ReadAsync(unitId, header.Document, ct, requestedCustomer, allowOwnershipFallback: command is not CreateCreditMemo, custodyAt: header.EventTime);
+        async Task<string?> External(string kind, Guid? id)
+        {
+            if (id is null) return null;
+            var matches = await db.ExternalIdMaps.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                    && x.ConnectionId == connectionId && x.EntityType == kind && x.ModuleId == id && x.ValidTo == null)
+                .Select(x => x.ExternalId).Take(2).ToListAsync(ct);
+            return matches.Count == 1 ? matches[0] : null;
+        }
+        async Task<string> Customer(string reference) => string.IsNullOrWhiteSpace(reference)
+            || reference.StartsWith("unit-owner/", StringComparison.Ordinal)
+                ? await External("party", source.CustomerPartyRef) ?? "" : reference;
+        switch (command)
+        {
+            case CreateReplacementDelivery value:
+                var serial = await sources.ReadAsync(value.ReplacementUnit.UnitId, null, ct);
+                var policy = sourcePolicies.SingleOrDefault(x => x.ConnectorCode == connectorCode);
+                var useRecordedShipTo = mode == "documents" && source.ShipToLocationId is not null && string.IsNullOrWhiteSpace(value.ShipToRef);
+                if (useRecordedShipTo && policy is not null)
+                    useRecordedShipTo = await policy.UseRecordedReplacementShipToAsync(connectionId, ct);
+                return value with { CustomerRef = await Customer(value.CustomerRef),
+                    // Inbound deliveries map the ERP ship-to address as a "location"; the customer-site custody episode records it.
+                    ShipToRef = string.IsNullOrWhiteSpace(value.ShipToRef) && useRecordedShipTo ? await External("location", source.ShipToLocationId) ?? "" : value.ShipToRef,
+                    ReplacementUnit = value.ReplacementUnit with { IdentifierValue = serial.Serial ?? value.ReplacementUnit.IdentifierValue } };
+            case CreateCreditMemo value:
+                return value with { CustomerRef = await Customer(value.CustomerRef) };
+            case CreateServiceOrder value:
+                return value with { CustomerRef = await Customer(value.CustomerRef), Unit = value.Unit with { IdentifierValue = source.Serial ?? value.Unit.IdentifierValue } };
+            case ChangeStockStatusOrLocation value:
+                return value with { Unit = value.Unit with { IdentifierValue = source.Serial ?? value.Unit.IdentifierValue },
+                    FromLocationOrStatus = value.FromLocationOrStatus ?? await External("location", sourceLocationId ?? source.LocationId) };
+            default: return command;
+        }
+    }
+
+    public int RecordExpenseSkip(PublishedEventHeader header)
+    {
+        logger.LogInformation("Outbound command {CommandType} skipped for event {EventId} ({Schema}): {ReasonCode}",
+            nameof(PostWarrantyExpense), header.EventId, header.Schema, "no_posting_amounts");
+        return 0;
     }
 
     private static bool IsFinancial(string type) => type is nameof(CreateCreditMemo) or nameof(PostWarrantyExpense);
@@ -106,9 +145,9 @@ public static class PublishedEventOutboundHandler
         stage.StageAsync(message.Header, new CreateReplacementDelivery(
             OutboundCommandStager.Derive(message.Header.EventId, nameof(CreateReplacementDelivery)),
             OutboundCommandStager.ModuleRef(message.Header, "replacement", message.WarrantyReplacementId),
-            OutboundCommandStager.ErpReference(message.Header, "replacement"), "unit-owner/" + message.OriginalUnitId.ToString("N"), "",
-            new(message.ReplacementUnitId, message.ReplacementNumber), OpenEnum.Known(message.PricePolicy),
-            message.SourceNumber, message.Reason, Price: message.PricePolicy == "zero" ? null : new(message.DifferenceAmount, message.Currency)), ct);
+            OutboundCommandStager.ErpReference(message.Header, "replacement"), message.CustomerPartyRef?.ToString("N") ?? "unit-owner/" + message.OriginalUnitId.ToString("N"), "",
+            new(message.ReplacementUnitId, ""), OpenEnum.Known(message.PricePolicy),
+            message.SourceNumber, message.Reason, Price: message.PricePolicy == "zero" ? null : new(message.DifferenceAmount, message.Currency)), ct, message.OriginalUnitId);
 
     public static async Task<int> Handle(RmaDispositioned message, OutboundCommandStager stage, CancellationToken ct)
     {
@@ -117,13 +156,13 @@ public static class PublishedEventOutboundHandler
             count += await stage.StageAsync(message.Header, new CreateCreditMemo(
                 OutboundCommandStager.Derive(message.Header.EventId, nameof(CreateCreditMemo)),
                 OutboundCommandStager.ModuleRef(message.Header, "rma", message.RmaId),
-                OutboundCommandStager.ErpReference(message.Header, "credit"), "",
-                [new(message.UnitId, "RMA disposition", 1, new(0, ""))], null, null), ct);
+                OutboundCommandStager.ErpReference(message.Header, "credit"), message.CustomerPartyRef?.ToString("N") ?? "",
+                [new(message.UnitId, "RMA disposition", 1, new(0, message.Currency ?? ""))], null, null), ct);
         count += await stage.StageAsync(message.Header, new ChangeStockStatusOrLocation(
             OutboundCommandStager.Derive(message.Header.EventId, nameof(ChangeStockStatusOrLocation)),
             OutboundCommandStager.ModuleRef(message.Header, "rma", message.RmaId),
-            OutboundCommandStager.ErpReference(message.Header, "stock"), new(message.UnitId, message.UnitId.ToString("N")),
-            null, message.Disposition, "RMA disposition"), ct);
+            OutboundCommandStager.ErpReference(message.Header, "stock"), new(message.UnitId, ""),
+            null, message.Disposition, "RMA disposition"), ct, sourceLocationId: message.SourceLocationId);
         return count;
     }
 
@@ -132,35 +171,31 @@ public static class PublishedEventOutboundHandler
             OutboundCommandStager.Derive(message.Header.EventId, nameof(CreateCreditMemo)),
             OutboundCommandStager.ModuleRef(message.Header, "replacement", message.ReplacementLinkId),
             OutboundCommandStager.ErpReference(message.Header, "overdue"), message.PartyRef.ToString("N"),
-            [new(message.OriginalUnitId, "Replacement not returned", 1, new(0, ""))], null, null), ct);
+            [new(message.OriginalUnitId, "Replacement not returned", 1, new(message.NonReturnAmount ?? 0, message.Currency ?? ""))], null, null), ct);
 
     public static Task<int> Handle(ClaimAdjudicated message, OutboundCommandStager stage, CancellationToken ct) =>
         stage.StageAsync(message.Header, new PostWarrantyExpense(
             OutboundCommandStager.Derive(message.Header.EventId, nameof(PostWarrantyExpense)),
             OutboundCommandStager.ModuleRef(message.Header, "claim", message.ClaimId),
             OutboundCommandStager.ErpReference(message.Header, "expense"),
-            message.ApprovedAmountsByLine.Select(x => new JournalLine("warranty", x.ApprovedAmount, 0, "")).ToList(),
+            // Logical account roles are resolved by each connection's account map; no GL code is chosen here.
+            message.ApprovedAmountsByLine.Where(x => x.ApprovedAmount > 0)
+                .SelectMany(x => new[] { new JournalLine(message.CoverageSource, x.ApprovedAmount, 0, message.Currency ?? ""),
+                    new JournalLine(message.CoverageSource + ".offset", 0, x.ApprovedAmount, message.Currency ?? "") }).ToList(),
             message.ReserveTag, false), ct);
 
-    public static Task<int> Handle(EntitlementCreated message, OutboundCommandStager stage, CancellationToken ct) =>
-        stage.StageAsync(message.Header, new PostWarrantyExpense(
-            OutboundCommandStager.Derive(message.Header.EventId, nameof(PostWarrantyExpense)),
-            OutboundCommandStager.ModuleRef(message.Header, "entitlement", message.EntitlementId),
-            OutboundCommandStager.ErpReference(message.Header, "reserve"), [], message.AccrualCohortId?.ToString("N"),
-            message.AccrualSuppressed, ReserveDrawdown: true), ct);
+    // These facts carry valuation/accrual instructions, not posting amounts. Finance owns their calculation;
+    // the gateway must not turn them into empty journals or guess their value.
+    public static Task<int> Handle(EntitlementCreated message, OutboundCommandStager stage, CancellationToken ct) => Task.FromResult(stage.RecordExpenseSkip(message.Header));
 
-    public static async Task<int> Handle(UnitGraded message, OutboundCommandStager stage, CancellationToken ct)
+    public static Task<int> Handle(UnitGraded message, OutboundCommandStager stage, CancellationToken ct)
     {
-        var expense = await stage.StageAsync(message.Header, new PostWarrantyExpense(
-            OutboundCommandStager.Derive(message.Header.EventId, nameof(PostWarrantyExpense)),
-            OutboundCommandStager.ModuleRef(message.Header, "unit", message.Header.UnitId),
-            OutboundCommandStager.ErpReference(message.Header, "grade-expense"), [], null, false), ct);
-        var stock = await stage.StageAsync(message.Header, new ChangeStockStatusOrLocation(
+        stage.RecordExpenseSkip(message.Header);
+        return stage.StageAsync(message.Header, new ChangeStockStatusOrLocation(
             OutboundCommandStager.Derive(message.Header.EventId, nameof(ChangeStockStatusOrLocation)),
             OutboundCommandStager.ModuleRef(message.Header, "unit", message.Header.UnitId),
             OutboundCommandStager.ErpReference(message.Header, "grade-stock"),
-            new(message.Header.UnitId, message.Header.UnitId.ToString("N")), null, message.Grade, "condition grade"), ct);
-        return expense + stock;
+            new(message.Header.UnitId, ""), null, message.Grade, "condition grade"), ct);
     }
 
     public static Task<int> Handle(RmaReceived message, OutboundCommandStager stage, CancellationToken ct) =>
@@ -168,15 +203,15 @@ public static class PublishedEventOutboundHandler
             OutboundCommandStager.Derive(message.Header.EventId, nameof(ChangeStockStatusOrLocation)),
             OutboundCommandStager.ModuleRef(message.Header, "rma", message.RmaId),
             OutboundCommandStager.ErpReference(message.Header, "received"),
-            new(message.ReceivedUnitId ?? message.AuthorisedUnitId, (message.ReceivedUnitId ?? message.AuthorisedUnitId).ToString("N")),
-            null, "quarantine", "RMA received"), ct);
+            new(message.ReceivedUnitId ?? message.AuthorisedUnitId, ""),
+            null, "quarantine", "RMA received"), ct, sourceLocationId: message.SourceLocationId);
 
     public static Task<int> Handle(RefurbishmentReleased message, OutboundCommandStager stage, CancellationToken ct) =>
         stage.StageAsync(message.Header, new ChangeStockStatusOrLocation(
             OutboundCommandStager.Derive(message.Header.EventId, nameof(ChangeStockStatusOrLocation)),
             OutboundCommandStager.ModuleRef(message.Header, "refurbishment", message.WorkOrderId),
-            OutboundCommandStager.ErpReference(message.Header, "release"), new(message.ReleasedUnitId, message.ReleasedUnitId.ToString("N")),
-            null, message.Grade, "refurbishment released"), ct);
+            OutboundCommandStager.ErpReference(message.Header, "release"), new(message.ReleasedUnitId, ""),
+            null, message.Grade, "refurbishment released"), ct, sourceLocationId: message.SourceLocationId);
 
     public static Task<int> Handle(CertificateIssued message, OutboundCommandStager stage, CancellationToken ct) =>
         Attach(message.Header, message.CertificateId, message.TrackingNumber, stage, ct);
@@ -190,8 +225,8 @@ public static class PublishedEventOutboundHandler
         var service = await stage.StageAsync(message.Header, new CreateServiceOrder(
             OutboundCommandStager.Derive(message.Header.EventId, nameof(CreateServiceOrder)),
             OutboundCommandStager.ModuleRef(message.Header, "rma", message.RmaId),
-            OutboundCommandStager.ErpReference(message.Header, "service"), "",
-            new(message.AuthorisedUnitId, message.AuthorisedUnitId.ToString("N")), message.CoverageSource, "RMA authorised"), ct);
+            OutboundCommandStager.ErpReference(message.Header, "service"), message.CustomerPartyRef?.ToString("N") ?? "",
+            new(message.AuthorisedUnitId, ""), message.CoverageSource, "RMA authorised"), ct);
         return attached + service;
     }
 
@@ -199,5 +234,5 @@ public static class PublishedEventOutboundHandler
         OutboundCommandStager stage, CancellationToken ct) => stage.StageAsync(header, new AttachDocument(
             OutboundCommandStager.Derive(header.EventId, nameof(AttachDocument)),
             OutboundCommandStager.ModuleRef(header, "document", id), OutboundCommandStager.ErpReference(header, "attachment"),
-            header.UnitId.ToString("N"), name, null, $"/api/documents/{id:N}"), ct);
+            header.UnitId.ToString("N"), name, OutboundDocumentContentReference.ForDocument(id), $"/api/documents/{id:N}"), ct);
 }

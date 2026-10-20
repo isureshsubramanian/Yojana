@@ -24,10 +24,11 @@ public sealed record RefurbishmentReleased(
     int CycleNumber,
     string IdentityPolicy,
     decimal TotalCost,
-    string Currency) : IPublishedUnitEvent
+    string Currency,
+    Guid? SourceLocationId = null) : IPublishedUnitEvent
 {
     public const string Schema = "Refurbishment.Released";
-    public const string Version = "1.0";
+    public const string Version = "1.1";
 }
 
 public sealed record RefurbishmentCostPosted(

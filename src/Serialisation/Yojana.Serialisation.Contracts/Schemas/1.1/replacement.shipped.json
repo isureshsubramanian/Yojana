@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.1/replacement.shipped.json",
+  "title": "Replacement.Shipped",
+  "type": "object",
+  "required": [
+    "header",
+    "warranty_replacement_id",
+    "replacement_number",
+    "replacement_link_id",
+    "original_unit_id",
+    "replacement_unit_id",
+    "original_item_id",
+    "replacement_item_id",
+    "source_entitlement_id",
+    "target_entitlement_id",
+    "source_kind",
+    "source_id",
+    "source_number",
+    "reason",
+    "price_policy",
+    "difference_amount",
+    "currency",
+    "policy_applied",
+    "computed_end",
+    "replacement_condition",
+    "accrual_suppressed",
+    "restocking_fee_amount"
+  ],
+  "properties": {
+    "header": {
+      "type": "object",
+      "required": [
+        "schema",
+        "version",
+        "event_id",
+        "unit_id",
+        "event_time",
+        "recorded_time",
+        "seq",
+        "legal_entity_id",
+        "actor_ref"
+      ],
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "unit_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "recorded_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "legal_entity_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actor_ref": {
+          "type": "string"
+        },
+        "document": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "type",
+            "id"
+          ],
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "line": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "warranty_replacement_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "replacement_number": {
+      "type": "string"
+    },
+    "replacement_link_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "original_unit_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "replacement_unit_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "original_item_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "replacement_item_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_entitlement_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "target_entitlement_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_kind": {
+      "type": "string"
+    },
+    "source_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_number": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "warranty_defect",
+        "dead_on_arrival",
+        "seller_error",
+        "goodwill",
+        "recall"
+      ]
+    },
+    "price_policy": {
+      "type": "string",
+      "enum": [
+        "zero",
+        "difference",
+        "full"
+      ]
+    },
+    "difference_amount": {
+      "type": "number"
+    },
+    "currency": {
+      "type": "string"
+    },
+    "policy_applied": {
+      "type": "string"
+    },
+    "computed_end": {
+      "type": "string",
+      "format": "date"
+    },
+    "replacement_condition": {
+      "type": "string"
+    },
+    "accrual_suppressed": {
+      "type": "boolean",
+      "const": true
+    },
+    "restocking_fee_amount": {
+      "type": "number",
+      "minimum": 0
+    },
+    "customer_party_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    }
+  }
+}

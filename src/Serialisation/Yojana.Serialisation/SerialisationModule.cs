@@ -383,6 +383,8 @@ public static class SerialisationModule
         // P6 certificate block. Owner modules expose snapshots through the narrow ports above; the engine owns only
         // immutable certificate rows and state-neutral certificate ledger events.
         builder.Services.TryAddScoped<ICertificateUnitReadPort, CertificateUnitReadPort>();
+        builder.Services.TryAddScoped<IOutboundUnitSourcePort, OutboundUnitSourcePort>();
+        builder.Services.TryAddScoped<IRenderedOutboundDocumentPort, RenderedOutboundDocumentPort>();
         builder.Services.TryAddScoped<ICertificateConditionReadPort, CertificateConditionReadPort>();
         builder.Services.TryAddScoped<ICertificateRefurbishmentReadPort, CertificateRefurbishmentReadPort>();
         builder.Services.TryAddScoped<ICertificateReplacementReadPort, Replacements.CertificateReplacementReadPort>();

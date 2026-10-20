@@ -231,7 +231,7 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     GuidOrNull(a, "service_entity_id") ?? Guid.Empty, GuidOrNull(a, "obligor_entity_id") ?? Guid.Empty,
                     GuidOrNull(a, "claimant_party_ref") ?? Guid.Empty, GuidOrNull(a, "settlement_party_ref") ?? Guid.Empty,
                     GuidOrNull(a, "successor_item_id"), GuidOrNull(a, "campaign_id"), Str(a, "campaign_code"),
-                    Str(a, "reserve_tag"), Str(a, "campaign_cover_reason"));
+                    Str(a, "reserve_tag"), Str(a, "campaign_cover_reason"), Str(a, "currency"));
             case ClaimEventType.RecoveryRaised:
                 return new RecoveryClaimRaised(Header(RecoveryClaimRaised.Schema, RecoveryClaimRaised.Version), GuidOrNull(a, "recovery_claim_id") ?? Guid.Empty,
                     GuidOrNull(a, "customer_claim_id") ?? Guid.Empty, GuidOrNull(a, "claim_line_id") ?? Guid.Empty,
@@ -254,20 +254,20 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                 return new RmaAuthorised(Header(RmaAuthorised.Schema, RmaAuthorised.Version), GuidOrNull(a, "rma_id") ?? Guid.Empty,
                     GuidOrNull(a, "rma_line_id") ?? Guid.Empty, Str(a, "rma_number") ?? "", GuidOrNull(a, "authorised_unit_id") ?? Guid.Empty,
                     GuidOrNull(a, "ownership_episode_id") ?? Guid.Empty, original, Decimal(a, "coverage_pct"), Str(a, "coverage_source") ?? "",
-                    GuidOrNull(a, "entitlement_id"));
+                    GuidOrNull(a, "entitlement_id"), GuidOrNull(a, "customer_party_ref"));
             }
             case RmaEventType.Received:
                 return new RmaReceived(Header(RmaReceived.Schema, RmaReceived.Version), GuidOrNull(a, "rma_id") ?? Guid.Empty,
                     GuidOrNull(a, "rma_line_id") ?? Guid.Empty, GuidOrNull(a, "return_receipt_id") ?? Guid.Empty,
                     GuidOrNull(a, "authorised_unit_id") ?? Guid.Empty, GuidOrNull(a, "received_unit_id"), GuidOrNull(a, "provisional_unit_id"),
-                    Str(a, "outcome") ?? "", Str(a, "condition_grade") ?? "", Str(a, "valuation_rule") ?? "", Str(a, "posting_period") ?? "");
+                    Str(a, "outcome") ?? "", Str(a, "condition_grade") ?? "", Str(a, "valuation_rule") ?? "", Str(a, "posting_period") ?? "", GuidOrNull(a, "source_location_id"));
             case RmaEventType.Dispositioned:
                 // Deliberately coupled to RmaClosure.LoadForClosureAsync: disposition is a unit-scoped fact, so a
                 // multi-line RMA publishes several document follow-ups. Closure must serialise on the RMA row or the
                 // duplicate follow-ups can move its synchronous stage counter more than once.
                 return new RmaDispositioned(Header(RmaDispositioned.Schema, RmaDispositioned.Version), GuidOrNull(a, "rma_id") ?? Guid.Empty,
                     GuidOrNull(a, "rma_line_id") ?? Guid.Empty, GuidOrNull(a, "unit_id") ?? e.UnitId, Str(a, "disposition") ?? "",
-                    Str(a, "entitlement_closed_reason"), GuidOrNull(a, "replacement_intent_id"));
+                    Str(a, "entitlement_closed_reason"), GuidOrNull(a, "replacement_intent_id"), Str(a, "currency"), GuidOrNull(a, "customer_party_ref"), GuidOrNull(a, "source_location_id"));
             case ReplacementEventType.Shipped:
                 // COUPLED to ShipWarrantyReplacementHandler: it records the fact on both physical units, while this
                 // integration contract leaves once from the replacement unit or consumers process one shipment twice.
@@ -280,7 +280,7 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     GuidOrNull(a, "target_entitlement_id") ?? Guid.Empty, Str(a, "source_kind") ?? "", GuidOrNull(a, "source_id") ?? Guid.Empty,
                     Str(a, "source_number") ?? "", Str(a, "reason") ?? "", Str(a, "price_policy") ?? "", Decimal(a, "difference_amount"),
                     Str(a, "currency") ?? "", Str(a, "policy_applied") ?? "", Date(a, "computed_end") ?? default,
-                    Str(a, "replacement_condition") ?? "", Bool(a, "accrual_suppressed"), Decimal(a, "restocking_fee_amount"));
+                    Str(a, "replacement_condition") ?? "", Bool(a, "accrual_suppressed"), Decimal(a, "restocking_fee_amount"), GuidOrNull(a, "customer_party_ref"));
             case ReplacementEventType.AssetTagPrintRequested:
                 return new ReplacementAssetTagPrintRequested(Header(ReplacementAssetTagPrintRequested.Schema, ReplacementAssetTagPrintRequested.Version),
                     GuidOrNull(a, "warranty_replacement_id") ?? Guid.Empty, GuidOrNull(a, "replacement_link_id") ?? Guid.Empty,
@@ -289,7 +289,8 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                 return new ReplacementReturnOverdue(Header(ReplacementReturnOverdue.Schema, ReplacementReturnOverdue.Version),
                     GuidOrNull(a, "replacement_link_id") ?? Guid.Empty, GuidOrNull(a, "original_unit_id") ?? Guid.Empty,
                     GuidOrNull(a, "replacement_unit_id") ?? Guid.Empty, GuidOrNull(a, "party_ref") ?? Guid.Empty,
-                    Date(a, "return_due") ?? default, Str(a, "non_return_price_basis") ?? "", Int(a, "days_overdue") ?? 0);
+                    Date(a, "return_due") ?? default, Str(a, "non_return_price_basis") ?? "", Int(a, "days_overdue") ?? 0,
+                    a?.TryGetProperty("non_return_amount", out var amount) == true && amount.ValueKind == JsonValueKind.Number ? amount.GetDecimal() : null, Str(a, "currency"));
             // P5 refurbishment published contracts — keep this block separate for mechanical sibling merges.
             case RefurbishmentEventType.CostPosted:
                 return new RefurbishmentCostPosted(Header(RefurbishmentCostPosted.Schema, RefurbishmentCostPosted.Version),
@@ -300,7 +301,7 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     GuidOrNull(a, "work_order_id") ?? Guid.Empty, Str(a, "work_order_number") ?? "",
                     GuidOrNull(a, "source_unit_id") ?? Guid.Empty, GuidOrNull(a, "released_unit_id") ?? e.UnitId,
                     Str(a, "kind") ?? "", Str(a, "grade") ?? "", Int(a, "cycle_number") ?? 0,
-                    Str(a, "identity_policy") ?? "", Decimal(a, "total_cost"), Str(a, "currency") ?? "");
+                    Str(a, "identity_policy") ?? "", Decimal(a, "total_cost"), Str(a, "currency") ?? "", GuidOrNull(a, "source_location_id"));
             case RefurbishmentEventType.ReleaseRecordReissueRequested:
                 return new ReleaseRecordReissueRequested(Header(ReleaseRecordReissueRequested.Schema, ReleaseRecordReissueRequested.Version),
                     GuidOrNull(a, "work_order_id") ?? Guid.Empty, Str(a, "reason") ?? "");
