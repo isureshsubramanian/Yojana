@@ -10,7 +10,7 @@ namespace Yojana.Serialisation.Entitlements;
 
 /// <summary>Maps <see cref="PolicyTerms"/> to and from the version row's columns and reads what the validator needs.</summary>
 public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant, ITenantCurrency currency,
-    IJurisdictionRegionPort regions)
+    IJurisdictionRegionPort regions, PolicyCoverItems items)
 {
     /// <summary>
     /// The version of the duration arithmetic (P2-T04). An entitlement records the policy version and this number as
@@ -43,7 +43,8 @@ public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant
         row.FallbackChain = Json(terms.Start.Fallbacks);
         row.StartCapDays = terms.Start.CapDays;
         row.Coverage = Json(terms.Coverage);
-        row.Exclusions = Json(terms.Exclusions);
+        // Legacy exclusions are read-only; structured child rows own all new wording.
+        if (terms.Items is not null) await items.WriteAsync(row, terms.Items, cancellationToken);
         row.RegionScope = Json(terms.RegionScope);
         row.Transferable = terms.Transferable;
         row.SettlementFormula = terms.SettlementFormula;
@@ -70,7 +71,8 @@ public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant
             new StartRule(row.StartTrigger, Read<List<StartFallback>>(row.FallbackChain), row.StartCapDays), Read<CoverageTerms>(row.Coverage), Read<List<string>>(row.Exclusions), Read<List<string>>(row.RegionScope),
             row.Transferable, row.SettlementFormula, replacement, Read<List<RefurbishedTerm>>(row.RefurbishedPolicies), row.DoaWindowDays, row.AssuranceOrService, row.ReferenceTimeZoneRule, row.ServiceContractRegulated,
             row.Eligibility is null ? null : Read<EligibilityRule>(row.Eligibility),
-            row.AmendmentValue is null ? null : Read<AmendmentValueTerm>(row.AmendmentValue));
+            row.AmendmentValue is null ? null : Read<AmendmentValueTerm>(row.AmendmentValue),
+            await items.ReadAsync(row.PolicyVersionId, cancellationToken));
     }
 
     public async Task<PolicyValidation> ValidateAsync(WarrantyPolicyVersion row, PolicyTerms terms, CancellationToken cancellationToken)

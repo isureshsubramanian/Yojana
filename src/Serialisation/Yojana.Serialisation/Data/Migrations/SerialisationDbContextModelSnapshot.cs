@@ -1501,6 +1501,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("obligor_entity_id");
 
+                    b.Property<DateOnly?>("OccurredDate")
+                        .HasColumnType("date")
+                        .HasColumnName("occurred_date");
+
                     b.Property<string>("RecoveryNotRaisedReason")
                         .HasMaxLength(40)
                         .IsUnicode(false)
@@ -1516,6 +1520,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)")
                         .HasColumnName("remedy");
+
+                    b.Property<string>("ReportedCauseCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("reported_cause_code");
+
+                    b.Property<string>("ReportedDescription")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)")
+                        .HasColumnName("reported_description");
 
                     b.Property<string>("ReserveTag")
                         .HasMaxLength(100)
@@ -1591,6 +1605,9 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_claim_tenant_id_command_id");
 
+                    b.HasIndex("TenantId", "ReportedCauseCode")
+                        .HasDatabaseName("ix_claim_tenant_id_reported_cause_code");
+
                     b.HasIndex("TenantId", "Status", "SubmittedAt")
                         .HasDatabaseName("ix_claim_tenant_id_status_submitted_at");
 
@@ -1608,6 +1625,43 @@ namespace Yojana.Serialisation.Data.Migrations
 
                             t.HasCheckConstraint("ck_claim_status", "status IN ('submitted', 'adjudicating', 'approved', 'partially_approved', 'denied', 'settled', 'closed')");
                         });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ClaimCauseRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("code");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit")
+                        .HasColumnName("active");
+
+                    b.Property<string>("CustomerWording")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("customer_wording");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("TenantId", "Code")
+                        .HasName("pk_claim_cause");
+
+                    b.ToTable("claim_cause", "serialisation");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ClaimEvidence", b =>
@@ -4858,6 +4912,89 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ux_pending_shipment_line_tenant_id_document_type_document_id_document_line");
 
                     b.ToTable("pending_shipment_line", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PolicyCoverItemCause", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PolicyVersionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("policy_version_id");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("item_code");
+
+                    b.Property<string>("CauseCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("cause_code");
+
+                    b.HasKey("TenantId", "PolicyVersionId", "ItemCode", "CauseCode")
+                        .HasName("pk_policy_cover_item_cause");
+
+                    b.HasIndex("TenantId", "CauseCode")
+                        .HasDatabaseName("ix_policy_cover_item_cause_tenant_id_cause_code");
+
+                    b.ToTable("policy_cover_item_cause", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PolicyCoverItemRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PolicyVersionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("policy_version_id");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("code");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("category");
+
+                    b.Property<string>("CustomerWording")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("customer_wording");
+
+                    b.Property<string>("InternalNote")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("internal_note");
+
+                    b.Property<string>("PartsScope")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("parts_scope");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)")
+                        .HasColumnName("type");
+
+                    b.HasKey("TenantId", "PolicyVersionId", "Code")
+                        .HasName("pk_policy_cover_item");
+
+                    b.ToTable("policy_cover_item", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_policy_cover_item_category", "category IS NULL OR category IN ('cause','part','condition','service')");
+
+                            t.HasCheckConstraint("ck_policy_cover_item_scope", "ISJSON(parts_scope) = 1");
+
+                            t.HasCheckConstraint("ck_policy_cover_item_type", "type IN ('covered','excluded')");
+                        });
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PortalRegistration", b =>
@@ -10121,6 +10258,15 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasConstraintName("fk_certificate_trigger_tenant_id_certificate_id");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.Claim", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.ClaimCauseRow", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ReportedCauseCode")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("fk_claim_tenant_id_reported_cause_code");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ClaimEvidence", b =>
                 {
                     b.HasOne("Yojana.Serialisation.Data.Entities.Claim", null)
@@ -10204,6 +10350,33 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_label_template_version_tenant_id_template_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PolicyCoverItemCause", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.ClaimCauseRow", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CauseCode")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("fk_policy_cover_item_cause_tenant_id_cause_code");
+
+                    b.HasOne("Yojana.Serialisation.Data.Entities.PolicyCoverItemRow", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PolicyVersionId", "ItemCode")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_policy_cover_item_cause_tenant_id_policy_version_id_item_code");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PolicyCoverItemRow", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.WarrantyPolicyVersion", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PolicyVersionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_policy_cover_item_tenant_id_policy_version_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PortalRegistration", b =>

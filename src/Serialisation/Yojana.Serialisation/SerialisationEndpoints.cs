@@ -564,6 +564,7 @@ public static class SerialisationEndpoints
         // Entitlements (P2-T05): the panel reads; the service desk and manager act. AmendEntitlement (P2-T08) is open to any
         // member: the handler checks the committer's roles against the tenant's approval policy for the reason and days.
         app.MapCoverDeviationEndpoints();
+        app.MapCoverItemsEndpoints();
         var entitlements = app.MapGroup("/api/entitlements").RequireAuthorization(YojanaPolicy.TenantMember);
         var desk = YojanaPolicy.ForRole(YojanaRole.ServiceDesk);
         units.MapGet("/{unitId:guid}/entitlements", async (Guid unitId, DateOnly? on, EntitlementQueries queries, IClock clock, CancellationToken ct) =>

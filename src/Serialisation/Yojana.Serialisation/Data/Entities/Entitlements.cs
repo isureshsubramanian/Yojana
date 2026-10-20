@@ -104,6 +104,8 @@ public sealed class WarrantyPolicyVersion : ITenantScoped
     /// <summary>JSON object: parts_pct, labour_pct, travel_pct, service_mode, response_hours, coverage_hours.</summary>
     public string Coverage { get; set; } = "{}";
 
+    // Coupled to P9T19CoverItems: retained read-only for one release so legacy consumers can read old terms.
+    // Drop only after those consumers migrate to policy_cover_item; removing it earlier breaks their reads.
     public string Exclusions { get; set; } = "[]";
 
     public string RegionScope { get; set; } = "[]";

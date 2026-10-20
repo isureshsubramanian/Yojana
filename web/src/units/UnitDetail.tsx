@@ -1,3 +1,8 @@
+import { WhatsCoveredPanel } from "../entitlements/WhatsCoveredPanel";
+import { coverItemsApi, customerEmailEnabled, unitTab, type WhatsCoveredPage } from "../entitlements/coverItems";
+import { entitlementApi } from "../entitlements/api";
+import { coverApi } from "../entitlements/coverApi";
+import { UnitTabBar } from "./UnitTabBar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { units, DEFAULT_LEGAL_ENTITY, newCommandId, now, type HistoryRow, type Page, type UnitDetail } from "../api/units";
@@ -7,8 +12,8 @@ import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
-import { ErrorNote, Kv, Section, UnitLink, useActor } from "./common";
-import { documentLabel, fmtDate, fmtDateTime, humanise, shortId, statusLabel, statusTone } from "./format";
+import { ErrorNote, Kv, Section, UnitLink } from "./common";
+import { fmtDate, fmtDateTime, humanise, statusLabel } from "./format";
 import { EntitlementPanel, openAmendEntitlement, openAttachEntitlement, type EntitlementSummary } from "../entitlements/EntitlementPanel";
 import { CoverSinceSalePanel } from "../entitlements/CoverSinceSalePanel";
 import type { UnitEntitlementDetail } from "../entitlements/types";
@@ -29,7 +34,9 @@ export function Component() {
   const [error, setError] = useState<unknown>(null);
   const [version, setVersion] = useState(0);
   const [selectedEvent, setSelectedEvent] = useState<number | null>(null);
-  const [tab, setTab] = useState<"cover" | "history" | "entitlements" | "identifiers" | "custody" | "asbuilt">(params.get("tab") === "cover" ? "cover" : "entitlements");
+  const tab = unitTab(params.get("tab"));
+  const [whatsCovered, setWhatsCovered] = useState<WhatsCoveredPage | null>(null);
+  const [changeCount, setChangeCount] = useState<number | undefined>();
   const [entitlementSummary, setEntitlementSummary] = useState<EntitlementSummary | null>(null);
   const [entitlementDetail, setEntitlementDetail] = useState<UnitEntitlementDetail | null>(null);
   const [reloadEntitlements, setReloadEntitlements] = useState<() => void>(() => () => undefined);
@@ -43,16 +50,28 @@ export function Component() {
     return () => controller.abort();
   }, [unitId, skip, version]);
 
+  useEffect(() => {
+    const c = new AbortController();
+    Promise.all([entitlementApi.detailForUnit(unitId, c.signal), coverItemsApi.unit(unitId, undefined, "", 0, 1, c.signal), coverApi.unit(unitId, c.signal)])
+      .then(([entitlements, covered, changes]) => {
+        setEntitlementDetail(entitlements); setWhatsCovered(covered); setChangeCount(changes.changeCount);
+        const live = entitlements.entitlements.filter((e) => e.storedStatus !== "closed");
+        setEntitlementSummary({ live: live.length, closed: entitlements.entitlements.length - live.length, families: new Set(live.map((e) => e.coverageFamily)).size,
+          coveredTo: live.map((e) => e.endDate).filter((d): d is string => !!d).sort().at(-1) ?? null, owner: null, hasOpenClaims: entitlements.hasOpenClaims });
+      }).catch((e) => { if (!c.signal.aborted) setError(e); });
+    return () => c.abort();
+  }, [unitId, version]);
+
   const reload = useCallback(() => setVersion((v) => v + 1), []);
   const person = usePeople(history?.items.map((e) => e.actorRef) ?? []);
   const referenceNames = useReferenceNames({
-    parties: [detail?.ownerPartyRef, ...(detail?.episodes.map((e) => e.partyRef) ?? [])],
+    parties: [detail?.ownerPartyRef, ...(detail?.identifiers.map((i) => i.issuerPartyRef) ?? []), ...(detail?.episodes.map((e) => e.partyRef) ?? [])],
     locations: [detail?.locationId, ...(detail?.episodes.map((e) => e.locationId) ?? [])],
-    items: [detail?.itemId, ...(detail?.asBuilt.map((row) => row.childItemId) ?? [])],
-    documents: [lotDocument(detail?.lotId), ...(detail?.asBuilt.map((row) => lotDocument(row.childLotId)) ?? [])],
+    items: [detail?.itemId, ...(detail?.asBuilt.flatMap((row) => [row.childItemId, row.throughPhantomItemId]) ?? [])],
+    documents: [lotDocument(detail?.lotId), ...(history?.items.map((e) => e.document) ?? []), ...(detail?.episodes.flatMap((e) => [e.openingDocument, e.closingDocument]) ?? []), ...(detail?.asBuilt.map((row) => lotDocument(row.childLotId)) ?? [])],
   });
   const primary = detail?.identifiers.find((i) => i.validTo === null && i.type === "internal_serial") ?? detail?.identifiers.find((i) => i.validTo === null);
-  const title = primary?.rawValue ?? (detail ? `unit ${shortId(detail.unitId)}` : "…");
+  const title = primary?.rawValue ?? (detail ? "Serial not recorded" : "…");
   const owner = detail?.episodes.find((e) => e.kind === "ownership" && e.validTo === null);
   const custody = detail?.episodes.find((e) => e.kind === "custody" && e.validTo === null);
   const flags = useMemo(() => { try { return JSON.parse(detail?.overlayFlags ?? "[]") as string[]; } catch { return []; } }, [detail?.overlayFlags]);
@@ -67,19 +86,19 @@ export function Component() {
     for (const e of history.items) {
       const t = e.eventTime;
       const ep = detail.episodes.find((x) => x.kind === "ownership" && x.validFrom <= t && (x.validTo === null || x.validTo > t));
-      const label = ep ? `Ownership · ${humanise(ep.partyType)} ${shortId(ep.partyRef)} · from ${fmtDate(ep.validFrom)}${ep.validTo ? ` to ${fmtDate(ep.validTo)}` : ""}` : "No owner recorded";
+      const label = ep ? `Ownership · ${referenceNames.party(ep.partyRef)} · from ${fmtDate(ep.validFrom)}${ep.validTo ? ` to ${fmtDate(ep.validTo)}` : ""}` : "No owner recorded";
       if (label !== lastEpisode) { out.push({ kind: "episode", label }); lastEpisode = label; }
       const key = e.eventType === "unit.released" || e.eventType === "ownership.opened" || e.eventType === "ownership.transferred" || e.eventType === "unit.commissioned";
       const bad = e.eventType === "ownership.closed" || e.eventType === "unit.scrapped" || e.eventType === "unit.flag_set";
       out.push({
         kind: "event", title: eventTitle(e.eventType), code: e.eventType,
-        meta: [fmtDateTime(e.eventTime), e.bizStep ? humanise(e.bizStep) : null, e.disposition ? humanise(e.disposition) : null, e.document ? documentLabel(e.document) : null, person(e.actorRef)].filter(Boolean).join(" · "),
+        meta: [fmtDateTime(e.eventTime), e.bizStep ? humanise(e.bizStep) : null, e.disposition ? humanise(e.disposition) : null, e.document ? referenceNames.document(e.document) : null, person(e.actorRef)].filter(Boolean).join(" · "),
         recordedAt: e.recordedTime !== e.eventTime ? fmtDateTime(e.recordedTime) : null,
         emphasis: key ? "key" : bad ? "bad" : null,
       });
     }
     return out;
-  }, [history, detail, person]);
+  }, [history, detail, person, referenceNames]);
 
   const eventAt = (index: number): HistoryRow | undefined => {
     // entries interleave episode headings; map the clicked entry back to its event
@@ -97,7 +116,7 @@ export function Component() {
     openDrawer({ eyebrow: "Selected · history event", title: eventTitle(e.eventType) }, (
       <>
         <h3>Event</h3>
-        <Kv rows={[["Type", e.eventType], ["Business time", fmtDateTime(e.eventTime)], ["Recorded time", fmtDateTime(e.recordedTime)], ["Seq", e.seq.toLocaleString()], ["Actor", person(e.actorRef)], ["Biz step", humanise(e.bizStep) || "—"], ["Disposition", humanise(e.disposition) || "—"], ["Document", e.document ? documentLabel(e.document) : "—"], ["Event id", shortId(e.eventId, 12)]]} />
+        <Kv rows={[["Type", e.eventType], ["Business time", fmtDateTime(e.eventTime)], ["Recorded time", fmtDateTime(e.recordedTime)], ["Seq", e.seq.toLocaleString()], ["Actor", person(e.actorRef)], ["Biz step", humanise(e.bizStep) || "—"], ["Disposition", humanise(e.disposition) || "—"], ["Document", e.document ? referenceNames.document(e.document) : "—"]]} />
         <h3 style={{ marginTop: 16 }}>Attributes</h3>
         <pre className="raw" style={{ whiteSpace: "pre-wrap", overflow: "auto", maxHeight: 360 }}>{attributes ?? "{}"}</pre>
       </>
@@ -115,17 +134,17 @@ export function Component() {
         <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Units", to: "/units" }, { label: title }]} />
         <div className="page-header">
           <div>
-            <div className="eyebrow">Unit · item {detail ? referenceNames.item(detail.itemId) : "…"}{detail?.modelVersionId ? ` · model ${shortId(detail.modelVersionId)}` : ""}{detail?.lotId ? <> · lot {referenceNames.lot(lotDocument(detail.lotId))}</> : ""}{detail?.expiryDate ? ` · expires ${detail.expiryDate}` : ""}</div>
+            <div className="eyebrow">Unit · item {detail ? referenceNames.item(detail.itemId) : "…"}{detail?.lotId ? <> · lot {referenceNames.lot(lotDocument(detail.lotId))}</> : ""}{detail?.expiryDate ? ` · expires ${detail.expiryDate}` : ""}</div>
             <h1 className="mono" style={{ fontFamily: "var(--font-mono)", letterSpacing: 0 }}>{title}</h1>
             <p className="sub">
-              {detail ? tab === "entitlements" && entitlementSummary ? <>Covered to {fmtDate(entitlementSummary.coveredTo)} · {entitlementSummary.live} live entitlements in {entitlementSummary.families} coverage families · owned by {owner ? referenceNames.party(owner.partyRef) : "no recorded owner"} · {entitlementSummary.hasOpenClaims ? "open claims" : "no open claims"}</> : <>{statusLabel(detail.lifecycleStatus)} · custody {humanise(detail.locationKind) || "unknown"}{custody?.partyRef ? `, ${humanise(custody.partyType)} ${shortId(custody.partyRef)}` : ""}{owner ? ` · owned by ${referenceNames.party(owner.partyRef)} since ${fmtDate(owner.validFrom)}` : " · no owner recorded"} · {detail.asBuilt.filter((a) => a.removedAt === null).length} components as built</> : "Loading…"}
+              {detail ? tab === "whats-covered" ? <>What this unit is covered for today, from all its live covers together. Each line names the cover that grants or excludes it. Customer wording is what you can read out or print.</> : tab === "entitlements" && entitlementSummary ? <>Covered to {fmtDate(entitlementSummary.coveredTo)} · {entitlementSummary.live} live entitlements in {entitlementSummary.families} coverage families · owned by {owner ? referenceNames.party(owner.partyRef) : "no recorded owner"} · {entitlementSummary.hasOpenClaims ? "open claims" : "no open claims"}</> : <>{statusLabel(detail.lifecycleStatus)} · custody {humanise(detail.locationKind) || "unknown"}{custody?.partyRef ? `, ${referenceNames.party(custody.partyRef)}` : ""}{owner ? ` · owned by ${referenceNames.party(owner.partyRef)} since ${fmtDate(owner.validFrom)}` : " · no owner recorded"} · {detail.asBuilt.filter((a) => a.removedAt === null).length} components as built</> : "Loading…"}
               {resolvedFrom && <> · <span className="serial">{resolvedFrom}</span> is a superseded identifier of this unit</>}
             </p>
           </div>
           <div className="actions">
-            <button type="button" className="btn" onClick={() => window.print()}><Icon name="print" />Print</button>
-            <Link className="btn" to={`/corrections?unit=${unitId}&q=${encodeURIComponent(primary?.rawValue ?? "")}`}>Something is wrong…</Link>
-            {tab === "entitlements" ? <><button type="button" className="btn" onClick={() => openAttachEntitlement(unitId, entitlementDetail, reloadEntitlements)}>Attach extended or add-on…</button><button type="button" className="btn primary" onClick={() => openAmendEntitlement(entitlementDetail, reloadEntitlements)}><Icon name="corr" />Amend entitlement…</button></> : <><button type="button" className="btn" onClick={flag}>Overlay flag…</button><button type="button" className="btn primary" onClick={correct}><Icon name="corr" />Correct identifier…</button></>}
+            <button type="button" className="btn" onClick={() => { if (tab === "whats-covered") window.open(`/api/units/${unitId}/whats-covered/sheet.pdf`, "_blank", "noopener"); else window.print(); }}><Icon name="print" />Print</button>
+            {tab !== "whats-covered" && <Link className="btn" to={`/corrections?unit=${unitId}&q=${encodeURIComponent(primary?.rawValue ?? "")}`}>Something is wrong…</Link>}
+            {tab === "whats-covered" ? <>{customerEmailEnabled && <button type="button" className="btn">E-mail to customer…</button>}<Link className="btn primary" to={`/claims/new?unit=${unitId}`}>Start a claim</Link></> : tab === "entitlements" ? <><button type="button" className="btn" onClick={() => openAttachEntitlement(unitId, entitlementDetail, reloadEntitlements)}>Attach extended or add-on…</button><button type="button" className="btn primary" onClick={() => openAmendEntitlement(entitlementDetail, reloadEntitlements)}><Icon name="corr" />Amend entitlement…</button></> : <><button type="button" className="btn" onClick={flag}>Overlay flag…</button><button type="button" className="btn primary" onClick={correct}><Icon name="corr" />Correct identifier…</button></>}
           </div>
         </div>
         <ErrorNote error={error} />
@@ -142,20 +161,18 @@ export function Component() {
           </div>
         )}
 
-        <nav className="tabs unit-tabs" aria-label="Unit record sections">
-          <button type="button" aria-current={tab === "history" ? "page" : undefined} onClick={() => setTab("history")}>History {detail?.eventCount ?? "…"}</button>
-          <button type="button" aria-current={tab === "entitlements" ? "page" : undefined} onClick={() => setTab("entitlements")}>Entitlements {entitlementSummary ? `${entitlementSummary.live} live · ${entitlementSummary.closed} closed` : "…"}</button>
-          <button type="button" aria-current={tab === "cover" ? "page" : undefined} onClick={() => setTab("cover")}>Cover since sale</button>
-          <button type="button" aria-current={tab === "identifiers" ? "page" : undefined} onClick={() => setTab("identifiers")}>Identifiers {detail?.identifiers.length ?? "…"}</button>
-          <button type="button" aria-current={tab === "custody" ? "page" : undefined} onClick={() => setTab("custody")}>Custody and ownership {detail?.episodes.length ?? "…"}</button>
-          <button type="button" aria-current={tab === "asbuilt" ? "page" : undefined} onClick={() => setTab("asbuilt")}>As-built {detail ? `${detail.asBuilt.filter((row) => !row.removedAt).length} of ${detail.asBuilt.length}` : "…"}</button>
-        </nav>
+        <UnitTabBar search={params} counts={{ history: detail?.eventCount, entitlements: entitlementSummary ? `${entitlementSummary.live} live · ${entitlementSummary.closed} closed` : undefined,
+          "whats-covered": whatsCovered ? `${whatsCovered.coveredCount} covered · ${whatsCovered.excludedCount} not` : undefined,
+          cover: changeCount === undefined ? undefined : `${changeCount} changes`, identifiers: detail?.identifiers.length,
+          custody: detail?.episodes.length, asbuilt: detail ? `${detail.asBuilt.filter((r) => !r.removedAt).length} of ${detail.asBuilt.length}` : undefined }} />
+        {tab === "whats-covered" && <WhatsCoveredPanel unitId={unitId} summary={whatsCovered} />}
+
 
         {tab === "entitlements" && <EntitlementPanel unitId={unitId} onSummary={(summary, entitlementRows, reloadRows) => { setEntitlementSummary(summary); setEntitlementDetail(entitlementRows); setReloadEntitlements(() => reloadRows); }} />}
 
         {tab === "cover" && <CoverSinceSalePanel unitId={unitId} />}
 
-        {tab !== "entitlements" && tab !== "cover" && <div className={`cols-2 unit-tab-content tab-${tab}`}>
+        {tab !== "entitlements" && tab !== "cover" && tab !== "whats-covered" && <div className={`cols-2 unit-tab-content tab-${tab}`}>
           <section className="card unit-history" aria-labelledby="h-tl">
             <div className="card-header"><h2 id="h-tl">History <span className="meta">{detail?.eventCount.toLocaleString() ?? "…"} events</span></h2><span className="meta">Business time · recorded time on hover · click for the attributes</span></div>
             <div className="card-body" style={{ paddingTop: 4 }}>
@@ -176,7 +193,7 @@ export function Component() {
                 <tbody>
                   {detail?.identifiers.map((i) => (
                     <tr key={i.identifierId}>
-                      <td className={`primary${i.validTo ? " muted" : ""}`}>{i.type}<span className="sub">{i.validTo ? `superseded${i.correctionReason ? ` · ${i.correctionReason}` : ""}` : `${i.scheme} · scope ${i.scopeKey === "TENANT" ? "tenant" : "item"}${i.issuerPartyRef ? ` · issuer ${shortId(i.issuerPartyRef)}` : ""}`}</span></td>
+                      <td className={`primary${i.validTo ? " muted" : ""}`}>{i.type}<span className="sub">{i.validTo ? `superseded${i.correctionReason ? ` · ${i.correctionReason}` : ""}` : `${i.scheme} · scope ${i.scopeKey === "TENANT" ? "tenant" : "item"}${i.issuerPartyRef ? ` · issuer ${referenceNames.party(i.issuerPartyRef)}` : ""}`}</span></td>
                       <td className={`serial${i.validTo ? " muted" : ""}`} title={i.rawValue}>{i.validTo ? <s>{i.rawValue}</s> : i.rawValue}{i.validTo && i.supersededByIdentifierId && <> → {detail.identifiers.find((x) => x.identifierId === i.supersededByIdentifierId)?.rawValue ?? "…"}</>}</td>
                       <td className="muted">{fmtDate(i.validFrom)}<span className="sub">{i.validTo ? `to ${fmtDate(i.validTo)}` : "open"}</span></td>
                     </tr>
@@ -194,9 +211,9 @@ export function Component() {
                   {detail?.episodes.map((e) => (
                     <tr key={e.episodeId}>
                       <td><StatusBadge tone={e.validTo ? "neutral" : "ok"}>{e.kind === "ownership" ? "Ownership" : "Custody"}</StatusBadge></td>
-                      <td className="primary">{e.kind === "ownership" ? `${humanise(e.partyType)} ${shortId(e.partyRef)}` : `${humanise(e.locationKind)}${e.locationId ? ` · ${shortId(e.locationId)}` : ""}${e.partyRef ? ` · ${humanise(e.partyType)} ${shortId(e.partyRef)}` : ""}`}<span className="sub">{[e.reason ? `reason ${humanise(e.reason)}` : null, e.source ? `source ${humanise(e.source)}` : null, e.confidence ? `confidence ${e.confidence}` : null, e.customerPoRef ? `PO ${e.customerPoRef}` : null, e.dueBack ? `due back ${e.dueBack}` : null].filter(Boolean).join(" · ")}</span></td>
-                      <td>{fmtDate(e.validFrom)}<span className="sub">{e.openingDocument ? documentLabel(e.openingDocument) : ""}</span></td>
-                      <td className={e.validTo ? undefined : "muted"}>{e.validTo ? fmtDate(e.validTo) : "open"}<span className="sub">{e.closingDocument ? documentLabel(e.closingDocument) : ""}</span></td>
+                      <td className="primary">{e.kind === "ownership" ? `${referenceNames.party(e.partyRef)}` : `${humanise(e.locationKind)}${e.locationId ? ` · ${referenceNames.location(e.locationId)}` : ""}${e.partyRef ? ` · ${referenceNames.party(e.partyRef)}` : ""}`}<span className="sub">{[e.reason ? `reason ${humanise(e.reason)}` : null, e.source ? `source ${humanise(e.source)}` : null, e.confidence ? `confidence ${e.confidence}` : null, e.customerPoRef ? `PO ${e.customerPoRef}` : null, e.dueBack ? `due back ${e.dueBack}` : null].filter(Boolean).join(" · ")}</span></td>
+                      <td>{fmtDate(e.validFrom)}<span className="sub">{e.openingDocument ? referenceNames.document(e.openingDocument) : ""}</span></td>
+                      <td className={e.validTo ? undefined : "muted"}>{e.validTo ? fmtDate(e.validTo) : "open"}<span className="sub">{e.closingDocument ? referenceNames.document(e.closingDocument) : ""}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -213,7 +230,7 @@ export function Component() {
                   <li><span className="node"><span className="item">{detail ? referenceNames.item(detail.itemId) : "…"}</span><span className="serial">{title}</span><span className="hint">· this unit</span></span><StatusBadge tone="neutral">Parent</StatusBadge></li>
                   {detail?.asBuilt.map((a) => (
                     <li className="l1" key={a.linkId}>
-                      <span className="node"><span className="slot">{a.slot ?? "—"}</span><span className="item">{a.childItemId ? referenceNames.item(a.childItemId) : "Lot item"}</span>{a.childUnitId ? <UnitLink unitId={a.childUnitId}>{a.childSerial ?? shortId(a.childUnitId)}</UnitLink> : <span className="serial muted">{a.childLotId ? <>lot {referenceNames.lot(lotDocument(a.childLotId))}</> : ""}{a.quantity != null ? ` · qty ${a.quantity}` : ""}</span>}<span className="hint">· {a.relation}{a.throughPhantomItemId ? ` · through phantom ${shortId(a.throughPhantomItemId)}` : ""}{a.releaseStatus ? ` · ${a.releaseStatus}` : ""}{a.removedAt ? ` · removed ${fmtDate(a.removedAt)}` : ""}</span></span>
+                      <span className="node"><span className="slot">{a.slot ?? "—"}</span><span className="item">{a.childItemId ? referenceNames.item(a.childItemId) : "Lot item"}</span>{a.childUnitId ? <UnitLink unitId={a.childUnitId}>{a.childSerial ?? "Open child unit"}</UnitLink> : <span className="serial muted">{a.childLotId ? <>lot {referenceNames.lot(lotDocument(a.childLotId))}</> : ""}{a.quantity != null ? ` · qty ${a.quantity}` : ""}</span>}<span className="hint">· {a.relation}{a.throughPhantomItemId ? ` · through phantom ${referenceNames.item(a.throughPhantomItemId)}` : ""}{a.releaseStatus ? ` · ${a.releaseStatus}` : ""}{a.removedAt ? ` · removed ${fmtDate(a.removedAt)}` : ""}</span></span>
                       <StatusBadge tone={a.removedAt ? "neutral" : a.childUnitId ? "ok" : "neutral"}>{a.removedAt ? "Removed" : a.childUnitId ? "Captured" : "Lot"}</StatusBadge>
                     </li>
                   ))}
@@ -227,7 +244,7 @@ export function Component() {
       </main>
       <Rail label="Lineage">
         <Section title="Lineage">
-          <Kv rows={[["Derived from", detail?.derivedFromUnitId ? <UnitLink unitId={detail.derivedFromUnitId}>{shortId(detail.derivedFromUnitId)}</UnitLink> : "—"], ["Merged into", detail?.mergedIntoUnitId ? <UnitLink unitId={detail.mergedIntoUnitId}>{shortId(detail.mergedIntoUnitId)}</UnitLink> : "—"], ["Parent", detail?.parentUnitId ? <UnitLink unitId={detail.parentUnitId}>{shortId(detail.parentUnitId)}</UnitLink> : "—"], ["Children", detail ? `${detail.asBuilt.filter((a) => a.childUnitId && !a.removedAt).length} serialised · ${detail.asBuilt.filter((a) => !a.childUnitId && !a.removedAt).length} lot` : "—"], ["Origin", humanise(detail?.origin)], ["Serialisation point", humanise(detail?.serialisationPoint)], ["Retention class", detail?.retentionClass ?? "—"], ["History depth", detail?.historyDepth ?? "—"]]} />
+          <Kv rows={[["Derived from", detail?.derivedFromUnitId ? <UnitLink unitId={detail.derivedFromUnitId}>Open unit</UnitLink> : "—"], ["Merged into", detail?.mergedIntoUnitId ? <UnitLink unitId={detail.mergedIntoUnitId}>Open unit</UnitLink> : "—"], ["Parent", detail?.parentUnitId ? <UnitLink unitId={detail.parentUnitId}>Open unit</UnitLink> : "—"], ["Children", detail ? `${detail.asBuilt.filter((a) => a.childUnitId && !a.removedAt).length} serialised · ${detail.asBuilt.filter((a) => !a.childUnitId && !a.removedAt).length} lot` : "—"], ["Origin", humanise(detail?.origin)], ["Serialisation point", humanise(detail?.serialisationPoint)], ["Retention class", detail?.retentionClass ?? "—"], ["History depth", detail?.historyDepth ?? "—"]]} />
         </Section>
         <Section title="Last events">
           {history?.items.slice(0, 3).map((e) => <div className="job" key={e.eventId}><div><div className="t">{e.eventType}</div><div className="s">{fmtDateTime(e.eventTime)} · recorded {fmtDateTime(e.recordedTime).slice(11)}</div></div><StatusBadge tone="neutral">seq …{String(e.seq).slice(-4)}</StatusBadge></div>)}
@@ -249,7 +266,6 @@ function eventTitle(code: string): string {
 }
 
 function CorrectForm({ unitId, types, onDone }: { unitId: string; types: string[]; onDone: () => void }) {
-  const actor = useActor();
   const [type, setType] = useState(types[0] ?? "internal_serial");
   const [value, setValue] = useState("");
   const [reason, setReason] = useState(REASONS[0]!);
@@ -260,7 +276,7 @@ function CorrectForm({ unitId, types, onDone }: { unitId: string; types: string[
   const submit = async () => {
     setBusy(true); setError(null);
     try {
-      const r = await units.correctIdentifier({ commandId: newCommandId(), unitId, identifierType: type, newRawValue: value, reason, eventTime: now(), actorRef: actor, legalEntityId: DEFAULT_LEGAL_ENTITY, approverRef: approver || null, note: note || null });
+      const r = await units.correctIdentifier({ commandId: newCommandId(), unitId, identifierType: type, newRawValue: value, reason, eventTime: now(), legalEntityId: DEFAULT_LEGAL_ENTITY, approverRef: approver || null, note: note || null });
       updateDrawer({ eyebrow: "Recorded · unit.identifier_corrected", title: r.newNormalisedValue, mono: true }, <><h3>Done</h3><Kv rows={[["Before", r.oldNormalisedValue], ["After", r.newNormalisedValue], ["Old row", "closed, still searchable"]]} /></>);
       onDone();
     } catch (e) { setError(e); } finally { setBusy(false); }
@@ -283,7 +299,6 @@ function CorrectForm({ unitId, types, onDone }: { unitId: string; types: string[
 }
 
 function FlagForm({ unitId, flags, onDone }: { unitId: string; flags: string[]; onDone: () => void }) {
-  const actor = useActor();
   const [flag, setFlag] = useState(FLAGS[0]!);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -292,7 +307,7 @@ function FlagForm({ unitId, flags, onDone }: { unitId: string; flags: string[]; 
   const submit = async () => {
     setBusy(true); setError(null);
     try {
-      const command = { commandId: newCommandId(), unitId, flag, eventTime: now(), actorRef: actor, legalEntityId: DEFAULT_LEGAL_ENTITY, reason: reason || null };
+      const command = { commandId: newCommandId(), unitId, flag, eventTime: now(), legalEntityId: DEFAULT_LEGAL_ENTITY, reason: reason || null };
       const r = isSet ? await units.unflag(command) : await units.flag(command);
       updateDrawer({ eyebrow: `Recorded · ${isSet ? "unit.flag_cleared" : "unit.flag_set"}`, title: flag }, <><h3>Done</h3><Kv rows={[["Flags now", r.flags.length ? r.flags.join(", ") : "none"], ["Investigation", r.investigationRaised ? "raised · the unit reappeared after a custody fact" : "none"]]} /></>);
       onDone();

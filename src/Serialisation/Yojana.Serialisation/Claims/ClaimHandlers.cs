@@ -19,7 +19,7 @@ public static class SubmitClaimHandler
 {
     public static async Task<SubmitClaimResult> Handle(SubmitClaim command, SerialisationDbContext db, UnitQueries units, ClaimUnitFacts facts,
         ClaimLedger ledger, LegacyUnknownClaimUnitCreator legacyUnits, DocumentNumbers numbers, ICampaignCoverPort campaigns,
-        ITenantCurrency currencies, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITenantCurrency currencies, ITenantContext tenant, IClock clock, ClaimCauseCatalogue causes, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         if (await db.Claims.AsNoTracking().FirstOrDefaultAsync(c => c.TenantId == tenantId && c.CommandId == command.CommandId, cancellationToken) is { } replay)
@@ -37,6 +37,9 @@ public static class SubmitClaimHandler
 
         // ITenantCurrency reaches PlatformDbContext; it is safe in this handler only because PlatformSetup registers it
         // through a factory that Wolverine's code generation does not look inside.
+        await causes.ValidateReportedAsync(command.ReportedCauseCode, cancellationToken);
+        if (command.ReportedDescription?.Length > 4000)
+            throw new CommandRefusedException("claim_description_too_long", "The customer description is at most 4,000 characters.");
         var accepted = await currencies.GetAcceptedAsync(cancellationToken);
         if (accepted.Count == 0)
         {
@@ -93,6 +96,7 @@ public static class SubmitClaimHandler
         {
             TenantId = tenantId, ClaimId = claimId, ClaimNumber = await numbers.NextAsync(DocumentNumbers.Claim, command.EventTime, cancellationToken),
             CommandId = command.CommandId, UnitId = unitId.Value, CampaignId = command.CampaignId, ClaimDate = command.ClaimDate,
+            ReportedCauseCode = command.ReportedCauseCode, ReportedDescription = command.ReportedDescription, OccurredDate = command.OccurredDate,
             ClaimantPartyRef = command.ClaimantPartyRef, SettlementPartyRef = command.SettlementPartyRef, ServiceEntityId = command.ServiceEntityId,
             ObligorEntityId = command.ObligorEntityId, ServiceCountry = command.ServiceCountry.Trim().ToUpperInvariant(), Currency = command.Currency.Trim().ToUpperInvariant(),
             CoverageSource = ClaimCoverageSource.Chargeable, Remedy = command.Remedy, Status = ClaimStatus.Submitted, SubmittedAt = command.EventTime,

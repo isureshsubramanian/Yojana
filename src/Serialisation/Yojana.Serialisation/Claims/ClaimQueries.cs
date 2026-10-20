@@ -162,7 +162,8 @@ public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort c
             items.TryGetValue(claim.UnitId, out var itemId) ? itemId : null, claim.SubmittedAt, claim.SubmittedBy, claim.AdjudicatedAt,
             lines.Select(l => Row(l, serials, items)).ToList(), recoveries, CampaignId: claim.CampaignId, CampaignCode: campaign?.Code,
             CampaignName: campaign?.Name, ReserveTag: claim.ReserveTag, CampaignCoverReason: claim.CampaignCoverReason,
-            Version: DocumentVersion.Encode(claim.RowVersion));
+            Version: DocumentVersion.Encode(claim.RowVersion), ReportedCauseCode: claim.ReportedCauseCode,
+            ReportedDescription: claim.ReportedDescription, OccurredDate: claim.OccurredDate);
     }
 
     internal static ClaimLineRow Row(ClaimLine line, IReadOnlyDictionary<Guid, string> serials, IReadOnlyDictionary<Guid, Guid> items) =>

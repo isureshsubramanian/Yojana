@@ -33,6 +33,8 @@ public static class CreatePolicyDraftHandler
         }
 
         var terms = command.Terms ?? (newest is null ? throw new CommandRefusedException("terms_required", $"{code} has no version to copy; give the terms.") : await store.ReadTermsAsync(newest, cancellationToken));
+        if (terms.Items is null && newest is not null)
+            terms = terms with { Items = (await store.ReadTermsAsync(newest, cancellationToken)).Items };
         var version = (newest?.Version ?? 0) + 1;
         var now = clock.UtcNow;
         var row = new WarrantyPolicyVersion
@@ -86,6 +88,8 @@ public static class PublishPolicyVersionHandler
             throw new CommandRefusedException("policy_invalid", $"{row.PolicyCode} v{row.Version} has {validation.Issues.Count(i => i.Severity == PolicyIssue.Error)} error(s); first: {first.Message}", "fix the errors the validation lists, then publish");
         }
 
+        // Coupled to PolicyCoverItems.WriteAsync: publication and child-item edits compete on this parent's
+        // rowversion in one transaction. Independent child writes would allow a concurrent edit after publication.
         row.Status = PolicyVersionStatus.Published;
         row.PublishedAt = clock.UtcNow;
         row.PublishedBy = command.ActorRef;
