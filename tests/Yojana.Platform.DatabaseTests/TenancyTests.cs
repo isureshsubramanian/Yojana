@@ -134,6 +134,18 @@ public sealed class TenancyTests(PlatformHostFixture fixture)
         Assert.True(wolverine >= 3, $"expected Wolverine envelope tables in schema wolverine, found {wolverine}");
         var columnType = await db.Database.SqlQueryRaw<string>("SELECT CONCAT(t.name, '(', c.scale, ')') AS [Value] FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID('platform.smoke_log') AND c.name = 'recorded_at'").SingleAsync();
         Assert.Equal("datetime2(3)", columnType);
+        var securityTables = await db.Database.SqlQueryRaw<string>("""
+            SELECT name AS [Value] FROM sys.tables
+            WHERE schema_id = SCHEMA_ID('platform') AND name IN ('security_event', 'sign_in_throttle')
+            ORDER BY name
+            """).ToListAsync();
+        Assert.Equal(["security_event", "sign_in_throttle"], securityTables);
+        var stampColumn = await db.Database.SqlQueryRaw<int>("""
+            SELECT COUNT(*) AS [Value] FROM sys.columns
+            WHERE object_id = OBJECT_ID('platform.app_user') AND name = 'security_stamp'
+              AND is_nullable = 0 AND TYPE_NAME(user_type_id) = 'uniqueidentifier'
+            """).SingleAsync();
+        Assert.Equal(1, stampColumn);
         Assert.Empty(db.ValidateTenantKeyConventions());
     }
 }

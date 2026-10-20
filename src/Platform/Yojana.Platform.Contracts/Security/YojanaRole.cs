@@ -89,6 +89,8 @@ public static class YojanaPolicy
 public static class YojanaClaim
 {
     public const string UserId = "yojana:user_id";
+    public const string SecurityStamp = "yojana:security_stamp";
+    public const string SessionId = "yojana:session_id";
     public const string TenantId = "yojana:tenant_id";
     public const string TenantCode = "yojana:tenant_code";
     public const string Role = "yojana:role";

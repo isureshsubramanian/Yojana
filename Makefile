@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 # Local secrets live in .env (git-ignored), written once by `make env`; every target below inherits them.
 -include .env
-export YOJANA_SQL_PASSWORD YOJANA_SEED_PASSWORD
+export YOJANA_SQL_PASSWORD YOJANA_SEED_PASSWORD YOJANA_SECURITY_AUDIT_HMAC_KEY
 SLN := Yojana.slnx
 WEB := src/Web/Yojana.Web
 CLIENT := web
@@ -16,10 +16,14 @@ RENDER_WORKER := src/Workers/Yojana.RenderWorker
 help:
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
 
-env: ## Write .env with generated development passwords (SQL sa login, seeded users) unless it exists
-	@if [ -f .env ]; then echo ".env exists; leaving it alone"; else \
+env: ## Write .env with generated development passwords and audit key; preserve existing values
+	@if [ ! -f .env ]; then \
 	  printf 'YOJANA_SQL_PASSWORD=%s\nYOJANA_SEED_PASSWORD=%s\n' "Yj$$(openssl rand -hex 10)!A1" "Dev$$(openssl rand -hex 8)!a1" > .env; \
-	  echo "wrote .env (development passwords; never committed)"; fi
+	fi; \
+	if ! grep -q '^YOJANA_SECURITY_AUDIT_HMAC_KEY=' .env; then \
+	  printf 'YOJANA_SECURITY_AUDIT_HMAC_KEY=%s\n' "$$(openssl rand -base64 32)" >> .env; \
+	fi; \
+	echo ".env is ready (development secrets; never committed)"
 
 restore: ## Restore packages and local tools
 	dotnet restore $(SLN) && dotnet tool restore

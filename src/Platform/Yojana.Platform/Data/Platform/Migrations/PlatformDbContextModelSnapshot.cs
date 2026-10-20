@@ -55,6 +55,12 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasColumnType("nvarchar(400)")
                         .HasColumnName("password_hash");
 
+                    b.Property<Guid>("SecurityStamp")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("security_stamp")
+                        .HasDefaultValueSql("NEWID()");
+
                     b.HasKey("Id")
                         .HasName("pk_app_user");
 
@@ -102,13 +108,128 @@ namespace Yojana.Platform.Data.Platform.Migrations
                     b.HasKey("TenantId", "UserId", "DocumentType", "DocumentId")
                         .HasName("pk_document_presence");
 
-                    b.HasIndex("TenantId", "DocumentType", "DocumentId", "LastHeartbeat")
-                        .HasDatabaseName("ix_document_presence_tenant_id_document_type_document_id_last_heartbeat");
-
                     b.HasIndex("TenantId", "LastHeartbeat")
                         .HasDatabaseName("ix_document_presence_tenant_id_last_heartbeat");
 
+                    b.HasIndex("TenantId", "DocumentType", "DocumentId", "LastHeartbeat")
+                        .HasDatabaseName("ix_document_presence_tenant_id_document_type_document_id_last_heartbeat");
+
                     b.ToTable("document_presence", "platform");
+                });
+
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.SecurityEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<string>("ClientAddress")
+                        .HasMaxLength(45)
+                        .HasColumnType("nvarchar(45)")
+                        .HasColumnName("client_address");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("UnknownUserHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .HasColumnName("unknown_user_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasColumnName("user_agent");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_security_event");
+
+                    b.HasIndex("ActorUserId")
+                        .HasDatabaseName("ix_security_event_actor_user_id");
+
+                    b.HasIndex("OccurredAt", "Id")
+                        .HasDatabaseName("ix_security_event_occurred_at_id");
+
+                    b.HasIndex("TenantId", "OccurredAt", "Id")
+                        .HasDatabaseName("ix_security_event_tenant_id_occurred_at_id");
+
+                    b.HasIndex("UserId", "OccurredAt", "Id")
+                        .HasDatabaseName("ix_security_event_user_id_occurred_at_id");
+
+                    b.ToTable("security_event", "platform");
+                });
+
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.SignInThrottle", b =>
+                {
+                    b.Property<string>("KeyKind")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("key_kind");
+
+                    b.Property<byte[]>("KeyHash")
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("key_hash")
+                        .IsFixedLength();
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("expires_at");
+
+                    b.Property<int>("FailureCount")
+                        .HasColumnType("int")
+                        .HasColumnName("failure_count");
+
+                    b.Property<DateTime?>("LockedUntil")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("locked_until");
+
+                    b.Property<int>("LockoutCount")
+                        .HasColumnType("int")
+                        .HasColumnName("lockout_count");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.Property<DateTime>("WindowStartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("window_started_at");
+
+                    b.HasKey("KeyKind", "KeyHash")
+                        .HasName("pk_sign_in_throttle");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_sign_in_throttle_expires_at");
+
+                    b.ToTable("sign_in_throttle", "platform");
                 });
 
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.SmokeLog", b =>
@@ -255,6 +376,27 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasDatabaseName("ix_user_tenant_membership_tenant_id");
 
                     b.ToTable("user_tenant_membership", "platform");
+                });
+
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.SecurityEvent", b =>
+                {
+                    b.HasOne("Yojana.Platform.Data.Platform.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("fk_security_event_actor_user_id");
+
+                    b.HasOne("Yojana.Platform.Data.Platform.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("fk_security_event_tenant_id");
+
+                    b.HasOne("Yojana.Platform.Data.Platform.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("fk_security_event_user_id");
                 });
 
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.UserTenantMembership", b =>

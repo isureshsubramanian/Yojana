@@ -49,6 +49,7 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.Configuration["Platform:AutoBuildMessageStorage"] = "true";
         builder.Configuration["Platform:StartScheduler"] = "false";
         builder.Configuration["Platform:ServiceName"] = "yojana-integration-tests";
+        builder.Configuration["Platform:SignIn:AuditHmacKey"] = "integration-database-tests-only-hmac-key";
         builder.Configuration["Serialisation:Documents:ConfirmDeliverySeparately"] = "false";
         ConfigureLocalKey(builder.Configuration);
         PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);

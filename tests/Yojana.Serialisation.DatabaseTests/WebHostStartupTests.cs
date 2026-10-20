@@ -45,6 +45,7 @@ public sealed class WebHostStartupTests(SerialisationHostFixture fixture, ITestO
         start.Environment["Platform__MigrateOnStartup"] = "false";
         start.Environment["Platform__AutoBuildMessageStorage"] = "false";
         start.Environment["Platform__ServiceName"] = "yojana-serialisation-tests";
+        start.Environment["Platform__SignIn__AuditHmacKey"] = "web-host-startup-tests-only-hmac-key";
 
         using var process = new Process { StartInfo = start };
         process.OutputDataReceived += (_, args) => { if (args.Data is { } line) lock (output) output.Add(line); };

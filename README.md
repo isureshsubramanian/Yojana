@@ -72,6 +72,11 @@ No password is built into the repository. The host's development connection stri
 the container, `make db-wait` and the seed read the same `.env`. Changing the sa password after the container
 exists needs `make db-reset` (drops the development data volume) before `make db-up`.
 
+Behind a reverse proxy, list its addresses under `Platform:ForwardedHeaders:KnownProxies` or its CIDR ranges under
+`KnownNetworks`, and set `ForwardLimit` to the proxy-chain length. With neither allow-list configured the middleware
+stays off and ignores `X-Forwarded-For`, so deployment configuration must identify every proxy that may supply the
+client address used by sign-in limiting and audit events.
+
 Seeded users are `<role>@dev.yojana.local` (for example `serial_administrator@dev.yojana.local`) and
 `admin@dev.yojana.local`, password `YOJANA_SEED_PASSWORD` from `.env` (change it there and rerun `make seed` to
 reset every seeded user to it). Sign in with

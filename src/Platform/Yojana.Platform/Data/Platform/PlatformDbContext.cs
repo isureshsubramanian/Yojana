@@ -22,6 +22,10 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
 
     public DbSet<UserTenantMembership> Memberships => Set<UserTenantMembership>();
 
+    public DbSet<SignInThrottle> SignInThrottles => Set<SignInThrottle>();
+
+    public DbSet<SecurityEvent> SecurityEvents => Set<SecurityEvent>();
+
     public DbSet<SmokeLog> SmokeLogs => Set<SmokeLog>();
 
     public DbSet<DocumentPresence> DocumentPresence => Set<DocumentPresence>();
@@ -51,7 +55,34 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             b.Property(u => u.Email).HasMaxLength(320);
             b.Property(u => u.DisplayName).HasMaxLength(200);
             b.Property(u => u.PasswordHash).HasMaxLength(400);
+            b.Property(u => u.SecurityStamp).HasDefaultValueSql("NEWID()");
             b.HasIndex(u => u.Email).IsUnique();
+        });
+
+        modelBuilder.Entity<SignInThrottle>(b =>
+        {
+            b.ToTable("sign_in_throttle");
+            b.HasKey(t => new { t.KeyKind, t.KeyHash });
+            b.Property(t => t.KeyKind).HasMaxLength(20);
+            b.Property(t => t.KeyHash).HasMaxLength(32).IsFixedLength();
+            b.HasIndex(t => t.ExpiresAt);
+        });
+
+        modelBuilder.Entity<SecurityEvent>(b =>
+        {
+            b.ToTable("security_event");
+            b.HasKey(e => e.Id);
+            b.Property(e => e.Kind).HasMaxLength(60);
+            b.Property(e => e.ClientAddress).HasMaxLength(45);
+            b.Property(e => e.UserAgent).HasMaxLength(256);
+            b.Property(e => e.Reason).HasMaxLength(100);
+            b.Property(e => e.UnknownUserHash).HasMaxLength(64).IsFixedLength();
+            b.HasIndex(e => new { e.TenantId, e.OccurredAt, e.Id });
+            b.HasIndex(e => new { e.UserId, e.OccurredAt, e.Id });
+            b.HasIndex(e => new { e.OccurredAt, e.Id });
+            b.HasOne<AppUser>().WithMany().HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.NoAction);
+            b.HasOne<AppUser>().WithMany().HasForeignKey(e => e.ActorUserId).OnDelete(DeleteBehavior.NoAction);
+            b.HasOne<Tenant>().WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<UserTenantMembership>(b =>

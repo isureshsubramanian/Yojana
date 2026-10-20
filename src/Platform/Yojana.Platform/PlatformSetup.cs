@@ -4,6 +4,7 @@ using JasperFx;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,6 +49,32 @@ public static class PlatformSetup
             ?? throw new InvalidOperationException($"Configuration section '{PlatformOptions.SectionName}' with ConnectionString is required.");
         options.ConnectionString = PlatformOptions.Resolve(options.ConnectionString, Environment.GetEnvironmentVariable, options.MaxPoolSize);
         builder.Services.AddSingleton(options);
+        // Sign-in identities are global and can span tenants. These are deployment-wide platform settings rather than
+        // tenant_setting rows, because one account cannot safely have different lockout state in each membership.
+        var signInOptions = builder.Configuration.GetSection(SignInOptions.SectionName).Get<SignInOptions>()
+            ?? new SignInOptions();
+        if (string.IsNullOrWhiteSpace(signInOptions.AuditHmacKey))
+            signInOptions.AuditHmacKey = Environment.GetEnvironmentVariable(SignInOptions.AuditHmacKeyVariable) ?? string.Empty;
+        signInOptions.Validate();
+        builder.Services.AddSingleton(signInOptions);
+        var forwardedHeaders = builder.Configuration.GetSection(PlatformForwardedHeadersOptions.SectionName)
+            .Get<PlatformForwardedHeadersOptions>() ?? new PlatformForwardedHeadersOptions();
+        forwardedHeaders.Validate();
+        builder.Services.AddSingleton(forwardedHeaders);
+        if (forwardedHeaders.Enabled)
+        {
+            builder.Services.Configure<ForwardedHeadersOptions>(options =>
+            {
+                options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+                options.ForwardLimit = forwardedHeaders.ForwardLimit;
+                options.KnownProxies.Clear();
+                options.KnownIPNetworks.Clear();
+                foreach (var proxy in forwardedHeaders.KnownProxies)
+                    options.KnownProxies.Add(System.Net.IPAddress.Parse(proxy));
+                foreach (var network in forwardedHeaders.KnownNetworks)
+                    options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network));
+            });
+        }
         builder.Services.AddProblemDetails();
 
         // Hosted services start in registration order: migrations must precede the Quartz job store
@@ -76,6 +103,15 @@ public static class PlatformSetup
         HandlerAssemblies.Add(typeof(PlatformSetup).Assembly);
 
         builder.Services.AddScoped<SignInService>();
+        builder.Services.AddScoped<SignInThrottleService>();
+        builder.Services.AddScoped<SecurityEventWriter>();
+        builder.Services.AddScoped<SecurityStampValidator>();
+        builder.Services.AddSingleton<SecurityStampValidationCache>();
+        builder.Services.AddScoped<ISecurityStampService, SecurityStampService>();
+        builder.Services.AddSingleton<IPasswordPolicy, PasswordPolicy>();
+        builder.Services.AddScoped<SecurityEventQueries>();
+        builder.Services.AddScoped<SecurityMaintenance>();
+        builder.Services.AddSecurityRateLimiting(signInOptions);
         builder.Services.AddScoped<IPresenceService, PresenceService>();
         // A factory for the same reason as ITenantCurrency above: it keeps PlatformDbContext out of the generated graph of
         // any module handler that later takes IUserDirectory.
@@ -94,6 +130,7 @@ public static class PlatformSetup
                 cookie.ExpireTimeSpan = TimeSpan.FromHours(10);
                 cookie.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
                 cookie.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
+                cookie.Events.OnValidatePrincipal = SecurityStampCookieValidator.ValidateAsync;
             });
         builder.Services.AddAuthorization(auth =>
         {
@@ -149,6 +186,7 @@ public static class PlatformSetup
         });
         if (options.StartScheduler)
             builder.Services.AddQuartzHostedService(h => h.WaitForJobsToComplete = true);
+        builder.Services.AddHostedService<SecurityMaintenanceRegistrar>();
         builder.Services.AddSingleton<RecurringTenantJobScheduler>();
         builder.Services.AddSingleton<RecurringJobReconciliationLock>();
         builder.Services.AddSingleton<RecurringTenantJobProvisioner>();
@@ -231,7 +269,17 @@ public static class PlatformSetup
     {
         // Only an exception that has escaped Wolverine's complete retry schedule reaches this boundary.
         app.UseMiddleware<ConcurrencyRetryExhaustionMiddleware>();
+        var forwardedHeaders = app.Services.GetRequiredService<PlatformForwardedHeadersOptions>();
+        if (forwardedHeaders.Enabled)
+        {
+            // TIGHT COUPLING (trusted client address): this must precede authentication and rate limiting because
+            // SecurityRateLimiting and SignInThrottleService partition on RemoteIpAddress. If reordered or removed
+            // behind a listed proxy, all its clients share one key; enabling it without the allow-list permits spoofing.
+            app.UseForwardedHeaders();
+        }
         app.UseAuthentication();
+        // Endpoint policies must run before authorization can short-circuit an anonymous auth request.
+        app.UseRateLimiter();
         app.UseMiddleware<TenantResolutionMiddleware>();
         app.UseAuthorization();
         return app;

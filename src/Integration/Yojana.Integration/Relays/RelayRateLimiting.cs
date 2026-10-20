@@ -8,6 +8,9 @@ namespace Yojana.Integration.Relays;
 public static class RelayRateLimiting
 {
     public const string PolicyName = "relay";
+    // TIGHT COUPLING (trusted client address): both limiters partition on RemoteIpAddress, which is only the real
+    // client when PlatformSetup's forwarded-header middleware (Platform:ForwardedHeaders) runs before UseRateLimiter.
+    // Behind a listed proxy without it, every site relay shares the proxy's partition.
     public static IServiceCollection AddRelayRateLimiting(this IServiceCollection services) => services.AddRateLimiter(options =>
     {
         options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
