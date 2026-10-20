@@ -165,8 +165,10 @@ public interface IOutboundCommand
 
 public sealed record CreateReplacementDelivery(Guid IdempotencyKey, string ModuleDocumentRef, string ErpReferenceText,
     string CustomerRef, string ShipToRef, UnitReference ReplacementUnit, OpenEnum PricePolicy,
-    string OriginalInvoiceRef, string ReasonCodeText) : IOutboundCommand;
-public sealed record CreditMemoLine(Guid? UnitId, string Description, decimal Quantity, Money Amount);
+    string OriginalInvoiceRef, string ReasonCodeText, string? BaseReturnRef = null, int? BaseReturnLine = null,
+    Money? Price = null) : IOutboundCommand;
+public sealed record CreditMemoLine(Guid? UnitId, string Description, decimal Quantity, Money Amount,
+    string? ItemExternalId = null, IReadOnlyList<CanonicalSerial>? Serials = null, int? BaseLine = null);
 public sealed record CreateCreditMemo(Guid IdempotencyKey, string ModuleDocumentRef, string ErpReferenceText,
     string CustomerRef, IReadOnlyList<CreditMemoLine> Lines, Money? RestockingFee, string? BaseInvoiceRef) : IOutboundCommand;
 public sealed record JournalLine(string AccountRef, decimal Debit, decimal Credit, string Currency);

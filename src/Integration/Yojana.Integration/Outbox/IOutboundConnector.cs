@@ -7,7 +7,7 @@ public sealed record OutboundConnectorCapabilities(bool AcceptsIdempotencyKey, b
 public sealed record OutboundLookup(
     Guid ConnectionId,
     string CommandType,
-    string ErpReferenceText);
+    string ErpReferenceText, string? Payload = null);
 
 public sealed record OutboundCreateRequest(
     Guid ConnectionId,
@@ -17,7 +17,8 @@ public sealed record OutboundCreateRequest(
     string Payload,
     Guid? IdempotencyKey);
 
-public sealed record OutboundDocument(string ErpExternalId, string? ErpChangeMarker);
+public sealed record OutboundDocument(string ErpExternalId, string? ErpChangeMarker,
+    IReadOnlyList<OutboundDocument>? RelatedDocuments = null);
 
 public sealed record OutboundCreateResult(
     string Outcome,
@@ -58,7 +59,7 @@ public sealed record OutboundReviewLookup(
     Guid ConnectionId,
     string CommandType,
     string ErpReferenceText,
-    string PendingRemoteKey);
+    string PendingRemoteKey, string? Payload = null, Guid OutboundCommandId = default);
 
 public static class OutboundReviewStates
 {
@@ -68,7 +69,8 @@ public static class OutboundReviewStates
     public const string Withdrawn = "withdrawn";
 }
 
-public sealed record OutboundReviewState(string State, OutboundDocument? Document = null, string? Reason = null)
+public sealed record OutboundReviewState(string State, OutboundDocument? Document = null, string? Reason = null,
+    string? PendingRemoteKey = null)
 {
     public static OutboundReviewState Pending { get; } = new(OutboundReviewStates.Pending);
     public static OutboundReviewState Posted(OutboundDocument document) => new(OutboundReviewStates.Posted, document);

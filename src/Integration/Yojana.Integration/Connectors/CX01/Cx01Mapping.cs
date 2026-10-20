@@ -124,14 +124,27 @@ public interface ICx01OwnWriteStore
 
 public sealed class EfCx01OwnWriteStore(IntegrationDbContext db, ITenantContext tenant) : ICx01OwnWriteStore
 {
-    // TIGHT COUPLING (own-write recognition): this exact-marker lookup and OutboundRelay.CompleteAsync's persisted
-    // ErpChangeMarker are one durable acknowledgement invariant. A process-local marker would be lost on restart;
-    // separating either side makes immediate remote post-write changes look foreign. Later markers must not match.
-    public Task<bool> MatchesAsync(Guid connectionId, string externalId, string changeMarker,
-        CancellationToken cancellationToken) => db.OutboundCommands.AsNoTracking().AnyAsync(x =>
-            x.TenantId == tenant.TenantId && x.ConnectionId == connectionId
-            && x.ErpExternalId == externalId && x.ErpChangeMarker == changeMarker
-            && x.Status == OutboundCommandStatus.Done, cancellationToken);
+    // TIGHT COUPLING (own-write recognition): OutboundAcknowledgement defines the persisted composite marker
+    // and its exact-match decoding here. Remote replies must survive restarts; separating the encoding and decoding
+    // would hide our own writes or suppress later foreign edits. Per-document receipts also cover pending commands.
+    public async Task<bool> MatchesAsync(Guid connectionId, string externalId, string changeMarker,
+        CancellationToken cancellationToken)
+    {
+        if (await db.Set<OutboundDocumentReceipt>().AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
+            && x.ConnectionId == connectionId && x.ExternalId == externalId && x.ChangeMarker == changeMarker, cancellationToken)) return true;
+        if (await db.OutboundCommands.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId
+            && x.ErpExternalId == externalId && x.ErpChangeMarker == changeMarker, cancellationToken)) return true;
+        // Legacy composite acknowledgements are reached through the indexed external identity, never a marker scan.
+        var moduleIds = db.ExternalIdMaps.Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId
+            && x.EntityType == "document" && x.ExternalId == externalId && x.ValidTo == null).Select(x => x.ModuleId);
+        if (!await moduleIds.AnyAsync(cancellationToken)) return false;
+        var externalIds = db.ExternalIdMaps.Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId
+            && x.EntityType == "document" && moduleIds.Contains(x.ModuleId) && x.ValidTo == null).Select(x => x.ExternalId);
+        var candidates = await db.OutboundCommands.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+            && x.ConnectionId == connectionId && externalIds.Contains(x.ErpExternalId!))
+            .Select(x => x.ErpChangeMarker).ToListAsync(cancellationToken);
+        return candidates.Any(x => OutboundAcknowledgement.Matches(x, externalId, changeMarker));
+    }
 }
 
 public interface ICx01InboundRejectionSink

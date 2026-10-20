@@ -126,6 +126,19 @@ public sealed class ModuleReferenceRules
     }
 
     [Fact]
+    public void Document_mappers_depend_on_contracts_and_never_on_persistence_or_transport()
+    {
+        var boundary = Path.Combine(Root, "src/Integration/Yojana.Integration/Connectors/CX01");
+        foreach (var name in new[] { "Delivery", "Credit", "Return", "Journal", "Stock", "Service" })
+        {
+            var text = File.ReadAllText(Path.Combine(boundary, "Cx01" + name + "Mapper.cs"));
+            Assert.DoesNotContain("DbContext", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("HttpClient", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("Cx01Client", text, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void Every_source_project_is_in_the_solution()
     {
         var solution = File.ReadAllText(Path.Combine(Root, "Yojana.slnx"));

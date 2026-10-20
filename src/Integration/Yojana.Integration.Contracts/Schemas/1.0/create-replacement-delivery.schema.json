@@ -68,6 +68,32 @@
         },
         "reason_code_text": {
           "type": "string"
+        },
+        "base_return_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_return_line": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "price": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "amount": {
+              "type": "number"
+            },
+            "currency": {
+              "type": "string"
+            }
+          }
         }
       },
       "additionalProperties": true

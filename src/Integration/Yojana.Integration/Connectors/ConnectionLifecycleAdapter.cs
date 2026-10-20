@@ -6,6 +6,7 @@ namespace Yojana.Integration.Connectors;
 /// <summary>Local setup and read-only probing are separate from capture and outbound execution.</summary>
 public interface IConnectionLifecycleAdapter
 {
+    string DefaultOutboundMode => "none";
     void ValidateSettings(JsonElement value);
     IReadOnlyList<string> CredentialPurposes { get; }
     IReadOnlyList<string> RequiredCredentialPurposes(JsonElement value) => CredentialPurposes;

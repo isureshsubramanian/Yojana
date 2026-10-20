@@ -38,12 +38,16 @@ public static class Cx01Capabilities
             ["CreateServiceOrder"] = CapabilitySupport.Native,
         };
 
-    public static Cx01CapabilityDeclaration For(string release, bool probedWebhooksAvailable)
+    public static Cx01CapabilityDeclaration For(string release, bool probedWebhooksAvailable, string outboundMode = "reference_only")
     {
         // Metadata presence plus the company admin flag is the authoritative live probe. Numeric login versions do
         // not encode feature-pack labels reliably, so release text is retained for evidence rather than gating it.
         var webhooks = probedWebhooksAvailable;
-        return new(MessageSupport, webhooks, webhooks ? ["poll", "webhook"] : ["poll"],
+        var support = new Dictionary<string, string>(MessageSupport, StringComparer.Ordinal);
+        if (outboundMode == "documents")
+            foreach (var command in new[] { "CreateReplacementDelivery", "CreateCreditMemo", "PostWarrantyExpense", "ChangeStockStatusOrLocation" })
+                support[command] = CapabilitySupport.Native;
+        return new(support, webhooks, webhooks ? ["poll", "webhook"] : ["poll"],
             new(ConnectorCode, new(null, 120, null, 8, 1, TimeSpan.FromMinutes(5))));
     }
 
@@ -70,7 +74,9 @@ public sealed class Cx01Onboarding(
         var initial = Cx01Capabilities.For(configured.Release, configured.WebhooksAvailable);
         await throttles.OnboardAsync(new(tenant.TenantId, connectionId), initial.Throttle, cancellationToken);
         var probed = await client.ProbeReleaseAsync(connectionId, cancellationToken);
-        var declaration = Cx01Capabilities.For(probed.Release, probed.WebhooksAvailable);
+        var mode = await db.ConnectionGatewaySettings.Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId)
+            .Select(x => x.OutboundMode).SingleAsync(cancellationToken);
+        var declaration = Cx01Capabilities.For(probed.Release, probed.WebhooksAvailable, mode);
         var rows = await db.ConnectionCapabilities.Where(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == connectionId).ToListAsync(cancellationToken);
         db.ConnectionCapabilities.RemoveRange(rows);

@@ -1737,6 +1737,39 @@ namespace Yojana.Integration.Migrations
                     b.ToTable("outbound_command", "integration");
                 });
 
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.OutboundDocumentReceipt", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<string>("ExternalId")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("external_id");
+
+                    b.Property<string>("ChangeMarker")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("change_marker");
+
+                    b.Property<Guid>("OutboundCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("outbound_command_id");
+
+                    b.HasKey("TenantId", "ConnectionId", "ExternalId")
+                        .HasName("pk_outbound_document_receipt");
+
+                    b.HasIndex("TenantId", "OutboundCommandId")
+                        .HasDatabaseName("ix_outbound_document_receipt_tenant_id_outbound_command_id");
+
+                    b.ToTable("outbound_document_receipt", "integration");
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.ReconciliationEntityDayResult", b =>
                 {
                     b.Property<Guid>("TenantId")

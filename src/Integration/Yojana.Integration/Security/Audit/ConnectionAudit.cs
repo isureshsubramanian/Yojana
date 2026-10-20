@@ -29,6 +29,7 @@ public enum ConnectionAuditEventType
     HealthStatusChanged,
     RemoteSubscriptionLeft,
     OnboardingItemConfirmed,
+    DocumentSettingsChanged,
 }
 
 public sealed record ConnectionAuditEvent(

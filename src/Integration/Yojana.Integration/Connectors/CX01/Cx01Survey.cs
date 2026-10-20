@@ -15,7 +15,7 @@ public sealed record Cx01SurveyOwnerAnswers(
     string? ScreenOnlyAddOnNotes = null);
 
 public sealed record Cx01SurveyUserField(string TableName, string Name, string Type, string Mandatory,
-    string? DefaultValue, bool MandatoryWithoutDefault, bool WrittenObject);
+    string? DefaultValue, bool MandatoryWithoutDefault, bool WrittenObject, int? Size = null);
 
 public sealed record Cx01SurveyWebhook(
     bool ReleaseSupportsWebhooks,
@@ -60,7 +60,8 @@ public sealed record Cx01SurveyResult(
     IReadOnlyDictionary<string, Cx01TrackingTablePermission> TrackingTableAllowlist,
     Cx01SurveyOwnerAnswers OwnerAnswers,
     // Null when not read (older survey, or the integration user may not read approval templates).
-    IReadOnlyList<Cx01SurveyApprovalTemplate>? ApprovalTemplates = null);
+    IReadOnlyList<Cx01SurveyApprovalTemplate>? ApprovalTemplates = null, string? LocalCurrencyCode = null,
+    IReadOnlyDictionary<string, int>? FieldLengths = null);
 
 public sealed record Cx01SurveyPage(
     Guid ConnectionId,
@@ -77,6 +78,7 @@ public interface ICx01SurveyReader
 {
     Task<IReadOnlyList<string>> MandatoryWithoutDefaultFieldsAsync(Guid connectionId, string table,
         CancellationToken cancellationToken);
+    Task<int?> FieldLengthAsync(Guid connectionId, string collection, string field, CancellationToken ct) => Task.FromResult<int?>(null);
 }
 
 public interface ICx01SurveyRemotePort
@@ -108,6 +110,7 @@ public sealed class Cx01SurveyProbe(ICx01SurveyRemotePort remote, IClock clock)
     public async Task<Cx01SurveyResult> ReadAsync(Guid connectionId,
         Cx01ConnectionSettings configured, Cx01SurveyOwnerAnswers answers, CancellationToken cancellationToken)
     {
+        Cx01ReferenceRules.Validate(configured);
         var release = await remote.ReleaseAsync(connectionId, cancellationToken);
         var metadata = await remote.GetTextAsync(connectionId, Cx01Protocol.Metadata, cancellationToken);
         var releaseSupports = metadata.Contains(Cx01Protocol.EventSubscriptions, StringComparison.Ordinal);
@@ -126,7 +129,32 @@ public sealed class Cx01SurveyProbe(ICx01SurveyRemotePort remote, IClock clock)
                 Int(adminRoot, "MaxNumberOfWebHooks"), subscriptionCount,
                 "Error 10001237 while enabling webhooks means a configured company folder path is invalid; "
                 + "the customer's administrator must correct it. The adapter does not change company settings."),
-            userFields, allowlist, answers, approvalTemplates);
+            userFields, allowlist, answers, approvalTemplates, Text(adminRoot, "LocalCurrency"), ReadLengths(metadata, userFields));
+    }
+
+    private static Dictionary<string, int> ReadLengths(string metadata, IReadOnlyList<Cx01SurveyUserField> fields)
+    {
+        var lengths = new Dictionary<string, int>(StringComparer.Ordinal);
+        try
+        {
+            var xml = System.Xml.Linq.XDocument.Parse(metadata);
+            var types = xml.Descendants().Where(x => x.Name.LocalName == "EntityType")
+                .ToDictionary(x => (string)x.Attribute("Name")!, x => x);
+            foreach (var set in xml.Descendants().Where(x => x.Name.LocalName == "EntitySet"))
+            {
+                var collection = (string?)set.Attribute("Name");
+                var type = ((string?)set.Attribute("EntityType"))?.Split('.').Last();
+                if (collection is null || type is null || !types.TryGetValue(type, out var entity)) continue;
+                foreach (var property in entity.Elements().Where(x => x.Name.LocalName == "Property"))
+                    if (int.TryParse((string?)property.Attribute("MaxLength"), out var size))
+                        lengths[collection + "." + (string?)property.Attribute("Name")] = size;
+            }
+        }
+        catch (System.Xml.XmlException) { /* Some older endpoints return only a metadata capability summary. */ }
+        foreach (var field in fields.Where(x => x.Size is > 0))
+            foreach (var collection in Cx01Protocol.TableByCollection.Where(x => x.Value == field.TableName).Select(x => x.Key))
+                lengths[collection + ".U_" + (field.Name.StartsWith("U_", StringComparison.Ordinal) ? field.Name[2..] : field.Name)] = field.Size!.Value;
+        return lengths;
     }
 
     private async Task<IReadOnlyList<Cx01SurveyApprovalTemplate>?> ApprovalTemplatesAsync(Guid connectionId,
@@ -190,7 +218,7 @@ public sealed class Cx01SurveyProbe(ICx01SurveyRemotePort remote, IClock clock)
             .Select(collection => Cx01Protocol.TableByCollection[collection]).ToHashSet(StringComparer.Ordinal);
         var result = new List<Cx01SurveyUserField>();
         var path = Cx01Protocol.Root + Cx01Protocol.UserFields
-            + "?$select=TableName,Name,Type,Mandatory,DefaultValue&$top=1000";
+            + "?$select=TableName,Name,Type,Mandatory,DefaultValue,Size&$top=1000";
         while (path is not null)
         {
             using var response = await remote.GetAsync(connectionId, path, cancellationToken);
@@ -202,7 +230,7 @@ public sealed class Cx01SurveyProbe(ICx01SurveyRemotePort remote, IClock clock)
                 var defaultValue = Text(row, "DefaultValue");
                 result.Add(new(table, Text(row, "Name") ?? "", Text(row, "Type") ?? "",
                     mandatory, defaultValue, mandatory is "tYES" or "Y"
-                    && string.IsNullOrWhiteSpace(defaultValue), written.Contains(table)));
+                    && string.IsNullOrWhiteSpace(defaultValue), written.Contains(table), Int(row, "Size")));
             }
             path = response.RootElement.TryGetProperty("@odata.nextLink", out var next)
                 && !string.IsNullOrWhiteSpace(next.GetString())
@@ -232,12 +260,16 @@ public sealed class Cx01SurveyService(
     Cx01SurveyProbe probe,
     IClock clock) : ICx01SurveyReader, ICx01TrackingPermissionSink
 {
+    private static readonly JsonSerializerOptions Json = new(IntegrationContracts.Json) { DictionaryKeyPolicy = null };
+
     public async Task<Cx01SurveyResult> RunAsync(Guid connectionId, Cx01SurveyOwnerAnswers answers,
         CancellationToken cancellationToken)
     {
         var configured = await settings.GetAsync(connectionId, cancellationToken);
         var result = await probe.ReadAsync(connectionId, configured, answers,
             cancellationToken);
+        if (configured.Documents?.LocalCurrencyCode is null && result.LocalCurrencyCode is { } local)
+            await settings.SetAsync(connectionId, configured with { Documents = (configured.Documents ?? new()) with { LocalCurrencyCode = local } }, cancellationToken);
         var row = await db.Cx01SurveyRecords.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == connectionId, cancellationToken);
         if (row is null)
@@ -260,7 +292,7 @@ public sealed class Cx01SurveyService(
             result = result with { TrackingTableAllowlist = merged };
         }
         row.ObservedAt = result.ObservedAt;
-        row.ResultJson = JsonSerializer.Serialize(result, IntegrationContracts.Json);
+        row.ResultJson = JsonSerializer.Serialize(result, Json);
         await db.SaveChangesAsync(cancellationToken);
         return result;
     }
@@ -283,7 +315,7 @@ public sealed class Cx01SurveyService(
         var merged = result.TrackingTableAllowlist.ToDictionary(pair => pair.Key, pair => pair.Value);
         foreach (var table in denied)
             merged[table] = new("not_allowed", "remote_table_denied", clock.UtcNow);
-        row.ResultJson = JsonSerializer.Serialize(result with { TrackingTableAllowlist = merged }, IntegrationContracts.Json);
+        row.ResultJson = JsonSerializer.Serialize(result with { TrackingTableAllowlist = merged }, Json);
         await db.SaveChangesAsync(ct);
     }
 
@@ -319,6 +351,12 @@ public sealed class Cx01SurveyService(
         var next = hasMore && page.Count > 0 ? page[^1].TableName + "|" + page[^1].Name : null;
         return new(survey.ConnectionId, survey.ObservedAt, survey.Release, survey.Webhooks,
             survey.TrackingTableAllowlist, survey.OwnerAnswers, page, next);
+    }
+
+    public async Task<int?> FieldLengthAsync(Guid connectionId, string collection, string field, CancellationToken ct)
+    {
+        var latest = await LatestAsync(connectionId, ct);
+        return latest?.FieldLengths?.GetValueOrDefault(collection + "." + field) is > 0 and var size ? size : null;
     }
 
     public async Task<IReadOnlyList<string>> MandatoryWithoutDefaultFieldsAsync(Guid connectionId, string table,

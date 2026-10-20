@@ -23,6 +23,28 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     private readonly Dictionary<int, Cx01SimulatorDraft> drafts = [];
     private readonly Dictionary<string, int> postedFromDrafts = new(StringComparer.Ordinal);
     private int nextDraft = 7000;
+    private readonly Dictionary<string, Dictionary<int, Dictionary<string, object?>>> documents = new(StringComparer.Ordinal);
+    private bool enableDocumentPosts;
+    public bool EnableDocumentPosts
+    {
+        get => enableDocumentPosts;
+        set
+        {
+            enableDocumentPosts = value;
+            if (value) documents["Returns"] = new() { [5101] = new() { ["DocEntry"] = 5101,
+                ["UpdateDate"] = "2026-09-01", ["UpdateTime"] = "090000", ["DocumentLines"] = Array.Empty<object>() } };
+        }
+    }
+    public bool DropNextCreateReply { get; set; }
+    public string? RejectNextDocumentCollection { get; set; }
+    public string? FailNextDocumentCollection { get; set; }
+    public Dictionary<string, int> DocumentCreateCounts { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, JsonElement> DocumentBodies { get; } = new(StringComparer.Ordinal);
+    public List<(string Method, string Path)> OutboundPaths { get; } = [];
+    public Dictionary<string, object?>? Document(string collection, int key)
+    {
+        lock (draftLock) return documents.GetValueOrDefault(collection)?.GetValueOrDefault(key);
+    }
     public static IReadOnlyList<string> TrackingTables { get; } = ["OITL", "ITL1", "OSRN"];
     private readonly HttpListener listener = new();
     private readonly CancellationTokenSource stop = new();
@@ -65,6 +87,9 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public int EventNotificationPageSize { get; set; } = 200;
     public List<string> EventNotificationQueries { get; } = [];
     public string? LastReferenceValue { get; private set; }
+    public string? LastReferenceField { get; private set; }
+    private readonly Dictionary<int, JsonElement> draftBodies = [];
+    public string DocumentRejectionMessage { get; set; } = "Fictional posting period is closed";
     public JsonDocument? LastSubscriptionBody { get; private set; }
     public JsonDocument? LastPatchBody { get; private set; }
     public HttpStatusCode? RejectNextPatchWith { get; set; }
@@ -85,6 +110,8 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public int PageSize { get; set; } = 1;
     public List<string> ReceivedCookieHeaders { get; } = [];
     public bool ReturnsApprovalTemplateActive { get; set; }
+    public int? JournalReferenceLength { get; set; }
+    public string? LocalCurrencyCode { get; set; }
     public bool ApprovalTemplatesForbidden { get; set; }
     public int DraftCreateCount { get; private set; }
     public JsonDocument? LastDraftBody { get; private set; }
@@ -102,6 +129,17 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             var held = drafts[draft];
             drafts.Remove(draft);
             postedFromDrafts[held.Reference!] = docEntry;
+            if (EnableDocumentPosts)
+            {
+                var collection = Cx01ApprovalCatalogue.Targets.Single(x => x.DraftObjectCode == held.DocObjectCode).Collection;
+                var body = JsonSerializer.Deserialize<Dictionary<string, object?>>(draftBodies[draft].GetRawText())!;
+                body.Remove("DocObjectCode");
+                body["DocEntry"] = docEntry;
+                body["UpdateDate"] = "2026-09-01";
+                body["UpdateTime"] = "100000";
+                if (!documents.ContainsKey(collection)) documents[collection] = [];
+                documents[collection][docEntry] = body;
+            }
         }
     }
 
@@ -195,6 +233,13 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             }
 
             var path = request.Url?.AbsolutePath ?? "";
+            OutboundPaths.Add((request.HttpMethod, path));
+            if (EnableDocumentPosts && await HandleDocumentAsync(request, response, path)) return;
+            if (path == Cx01Protocol.Root + "SerialNumberDetails" && request.HttpMethod == "GET")
+            {
+                await JsonAsync(response, new { value = new[] { new { SystemNumber = 17 } } });
+                return;
+            }
             if (path == Cx01Protocol.Metadata)
             {
                 if (FailMetadataRead)
@@ -204,7 +249,9 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                     return;
                 }
                 await TextAsync(response,
-                    "<edmx:Edmx><EntitySet Name=\"EventSubscriptions\"/><EntitySet Name=\"EventNotifications\"/></edmx:Edmx>",
+                    JournalReferenceLength is { } size
+                        ? $"<Schema><EntityType Name=\"JournalEntry\"><Property Name=\"Memo\" MaxLength=\"{size}\" /></EntityType><EntitySet Name=\"JournalEntries\" EntityType=\"F.JournalEntry\" /><EntitySet Name=\"EventSubscriptions\" /></Schema>"
+                        : "<edmx:Edmx><EntitySet Name=\"EventSubscriptions\"/><EntitySet Name=\"EventNotifications\"/></edmx:Edmx>",
                     "application/xml");
                 return;
             }
@@ -217,6 +264,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             {
                 await JsonAsync(response, new
                 {
+                    LocalCurrency = LocalCurrencyCode,
                     EnableWebhook = WebhooksEnabled ? "tYES" : "tNO",
                     WebhookRetryTimes = 3,
                     WebhookRetryInterval = 2,
@@ -361,8 +409,10 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                     draft = new(++nextDraft, body.RootElement.GetProperty("DocObjectCode").GetString()!, reference,
                         "dasWithout");
                     drafts[draft.DocEntry] = draft;
+                    draftBodies[draft.DocEntry] = body.RootElement.Clone();
                 }
                 DraftCreateCount++;
+                if (DropNextCreateReply) { DropNextCreateReply = false; response.Abort(); return; }
                 response.StatusCode = (int)HttpStatusCode.Created;
                 await JsonAsync(response, new { draft.DocEntry, draft.DocObjectCode });
                 return;
@@ -371,8 +421,8 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             {
                 var wanted = FilterValue(request.Url);
                 Cx01SimulatorDraft[] found;
-                lock (draftLock) found = drafts.Values.Where(x => x.Reference == wanted).ToArray();
-                await JsonAsync(response, new { value = found.Select(x => new { x.DocEntry }).ToArray() });
+                lock (draftLock) found = drafts.Values.Where(x => x.Reference == wanted && draftBodies[x.DocEntry].TryGetProperty(FilterField(request.Url), out var value) && value.GetString() == wanted).ToArray();
+                await JsonAsync(response, new { value = found.Select(x => new { x.DocEntry, x.DocObjectCode }).ToArray() });
                 return;
             }
             if (path.StartsWith(Cx01Protocol.Root + Cx01Protocol.Drafts + "(", StringComparison.Ordinal)
@@ -411,7 +461,8 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             {
                 await JsonAsync(response, new
                 {
-                    value = LastReferenceValue is null
+                    value = LastReferenceValue is null || Query(request.Url, "$filter")?.Contains(" eq ", StringComparison.Ordinal) == true
+                        && (LastReferenceValue != FilterValue(request.Url) || LastReferenceField != FilterField(request.Url))
                         ? Array.Empty<object>()
                         : new[] { new { DocEntry = 5101, UpdateDate = "2026-09-01", UpdateTime = returnUpdateTime } },
                 });
@@ -430,6 +481,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 using var body = JsonDocument.Parse(await new StreamReader(request.InputStream).ReadToEndAsync());
                 LastPatchBody?.Dispose();
                 LastPatchBody = JsonDocument.Parse(body.RootElement.GetRawText());
+                LastReferenceField = body.RootElement.EnumerateObject().First(property => property.Name.StartsWith("u_", StringComparison.OrdinalIgnoreCase)).Name;
                 LastReferenceValue = body.RootElement.EnumerateObject()
                     .First(property => property.Name.StartsWith("u_", StringComparison.OrdinalIgnoreCase))
                     .Value.GetString();
@@ -631,6 +683,91 @@ internal sealed class Cx01Simulator : IAsyncDisposable
         }
     }
 
+    private async Task<bool> HandleDocumentAsync(HttpListenerRequest request, HttpListenerResponse response, string path)
+    {
+        var collection = Cx01DocumentCatalogue.Collections.FirstOrDefault(x => path == Cx01Protocol.Root + x
+            || path.StartsWith(Cx01Protocol.Root + x + "(", StringComparison.Ordinal));
+        if (collection is null) return false;
+        var byKey = path.EndsWith(')');
+        var entry = byKey ? int.Parse(path[(path.LastIndexOf('(') + 1)..^1], System.Globalization.CultureInfo.InvariantCulture) : 0;
+        if (request.HttpMethod == "POST" && !byKey)
+        {
+            if (RejectNextDocumentCollection == collection || FailNextDocumentCollection == collection)
+            {
+                var transient = FailNextDocumentCollection == collection;
+                RejectNextDocumentCollection = null;
+                FailNextDocumentCollection = null;
+                response.StatusCode = transient ? 503 : 400;
+                await ErrorAsync(response, "-5002", DocumentRejectionMessage);
+                return true;
+            }
+            Dictionary<string, object?> body;
+            if (collection == "Attachments2")
+            {
+                var multipart = await new StreamReader(request.InputStream).ReadToEndAsync();
+                var match = System.Text.RegularExpressions.Regex.Match(multipart, "filename=\"?([^\";\r\n]+)");
+                var name = match.Groups[1].Value;
+                body = new() { ["Attachments2_Lines"] = new[] { new { FileName = Path.GetFileNameWithoutExtension(name), FileExtension = Path.GetExtension(name).TrimStart('.') } } };
+            }
+            else
+            {
+                body = JsonSerializer.Deserialize<Dictionary<string, object?>>(await new StreamReader(request.InputStream).ReadToEndAsync())!;
+                var required = collection switch
+                {
+                    "ServiceCalls" => "Subject", "JournalEntries" => "JournalEntryLines", "StockTransfers" => "StockTransferLines", _ => "DocumentLines",
+                };
+                if (!body.ContainsKey(required))
+                {
+                    response.StatusCode = 400;
+                    await ErrorAsync(response, "-5002", "Fictional document is missing required lines or subject");
+                    return true;
+                }
+            }
+            lock (draftLock)
+            {
+                if (!documents.ContainsKey(collection)) documents[collection] = [];
+                entry = 8001 + documents[collection].Count;
+                body[Cx01DocumentCatalogue.KeyField(collection)] = entry;
+                body["UpdateDate"] = "2026-09-01";
+                body["UpdateTime"] = "100000";
+                documents[collection][entry] = body;
+                DocumentCreateCounts[collection] = DocumentCreateCounts.GetValueOrDefault(collection) + 1;
+                DocumentBodies[collection] = JsonSerializer.SerializeToElement(body);
+            }
+            if (DropNextCreateReply) { DropNextCreateReply = false; response.Abort(); return true; }
+            response.StatusCode = 201;
+            await JsonAsync(response, body);
+            return true;
+        }
+        if (request.HttpMethod == "GET")
+        {
+            if (byKey)
+            {
+                var found = Document(collection, entry);
+                if (found is null) return false;
+                await JsonAsync(response, found);
+            }
+            else
+            {
+                var reference = Query(request.Url, "$filter")?.Contains(" eq ", StringComparison.Ordinal) == true ? FilterValue(request.Url) : null;
+                object[] found;
+                lock (draftLock) found = (documents.GetValueOrDefault(collection)?.Values.AsEnumerable() ?? Enumerable.Empty<Dictionary<string, object?>>())
+                    .Where(x => reference is null || x.GetValueOrDefault(FilterField(request.Url))?.ToString() == reference).Cast<object>().ToArray();
+                await JsonAsync(response, new { value = found });
+            }
+            return true;
+        }
+        if (request.HttpMethod == "PATCH" && byKey && Document(collection, entry) is { } target)
+        {
+            using var body = JsonDocument.Parse(await new StreamReader(request.InputStream).ReadToEndAsync());
+            foreach (var property in body.RootElement.EnumerateObject()) target[property.Name] = property.Value.Clone();
+            response.StatusCode = 204;
+            response.Close();
+            return true;
+        }
+        return false;
+    }
+
     private static async Task JsonAsync(HttpListenerResponse response, object value) =>
         await RawJsonAsync(response, JsonSerializer.Serialize(value));
 
@@ -678,12 +815,15 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             return postedFromDrafts.ContainsKey(reference) || drafts.Values.Any(x => x.Reference == reference);
     }
 
+    private static string FilterField(Uri? uri) => Query(uri, "$filter")?.Split(" eq ", 2)[0] ?? "";
+
     private static string? FilterValue(Uri? uri)
     {
         var filter = Query(uri, "$filter");
         if (filter is null) return null;
         var start = filter.IndexOf('\'');
-        var end = filter.LastIndexOf('\'');
+        var end = filter.IndexOf("\' and", start + 1, StringComparison.Ordinal);
+        if (end < 0) end = filter.LastIndexOf('\'');
         return start >= 0 && end > start ? filter[(start + 1)..end].Replace("''", "'", StringComparison.Ordinal) : null;
     }
 

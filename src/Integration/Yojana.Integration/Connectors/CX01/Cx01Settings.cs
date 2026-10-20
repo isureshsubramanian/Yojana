@@ -25,12 +25,15 @@ public sealed record Cx01ConnectionSettings(
     IReadOnlyDictionary<string, Cx01FieldSource>? FieldMap = null,
     string Transport = "direct", string RelayCredentials = "site", string? RelayWebhookUrl = null,
     int RelayOfflineAfterSeconds = 120, int RelayRequestTimeoutSeconds = 90, int RelayQueueCapacity = 128,
-    IReadOnlyDictionary<string, Cx01ApprovalHandling>? ApprovalHandling = null)
+    IReadOnlyDictionary<string, Cx01ApprovalHandling>? ApprovalHandling = null,
+    Cx01DocumentSettings? Documents = null, Cx01DocumentAcceptance? DocumentsAcceptance = null)
 {
     public Cx01ConnectionSettings Validate()
     {
         Cx01FieldMap.Validate(FieldMap);
+        Cx01ReferenceRules.Validate(this);
         Cx01ApprovalPolicy.Validate(ApprovalHandling);
+        Documents?.Validate();
         if (RelayWebhookUrl is not null) Yojana.Relay.Contracts.RelayWebhookUrl.Validate(RelayWebhookUrl);
         if (Transport is not ("direct" or "site_relay") || RelayCredentials is not ("site" or "cloud")
             || RelayQueueCapacity is < 1 or > 1024 || RelayOfflineAfterSeconds is < 30 or > 3600 || RelayRequestTimeoutSeconds is < 1 or > 300)
@@ -77,7 +80,12 @@ public sealed class Cx01Settings(ITenantSettings settings)
     // "ORDN.U_RetCause" into "ordn.u_ret_cause" so it never matched again; keys must round-trip exactly.
     private static readonly JsonSerializerOptions Json = new(IntegrationContracts.Json) { DictionaryKeyPolicy = null };
 
+    public static JsonElement ToJson(Cx01ConnectionSettings value) => JsonSerializer.SerializeToElement(value, Json);
+
     public static string Key(Guid connectionId) => $"integration.cx01.connection.{connectionId:N}";
+
+    public async Task<Cx01ConnectionSettings?> TryGetAsync(Guid connectionId, CancellationToken ct) =>
+        await settings.GetAsync(Key(connectionId), ct) is { } value ? JsonSerializer.Deserialize<Cx01ConnectionSettings>(value, Json) : null;
 
     public async Task<Cx01ConnectionSettings> GetAsync(Guid connectionId, CancellationToken cancellationToken)
     {

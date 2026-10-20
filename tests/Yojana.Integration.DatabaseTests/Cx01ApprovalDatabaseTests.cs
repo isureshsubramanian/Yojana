@@ -94,7 +94,7 @@ public sealed class Cx01ApprovalDatabaseTests(IntegrationHostFixture fixture)
 
         var held = await poster.PostAsync(connection, "Returns", body, "U_YojanaRma", "RMA-1", default);
         Assert.Equal(OutboundConnectorOutcome.AwaitingReview, held.Outcome);
-        Assert.Equal("7001|Returns|U_YojanaRma", held.PendingRemoteKey);
+        Assert.Equal(Cx01ReviewKey.Format("7001", "Returns", "U_YojanaRma"), held.PendingRemoteKey);
         Assert.Equal("oReturns", simulator.LastDraftBody!.RootElement.GetProperty("DocObjectCode").GetString());
         Assert.Equal("YOJANA:RMA-1", simulator.LastDraftBody.RootElement.GetProperty("U_YojanaRma").GetString());
         var again = await poster.PostAsync(connection, "Returns", body, "U_YojanaRma", "RMA-1", default);

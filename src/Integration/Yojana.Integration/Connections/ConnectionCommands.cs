@@ -67,7 +67,7 @@ public sealed class ConnectionCommands(IntegrationDbContext db, ITenantContext t
             db.ConnectionGatewaySettings.Add(new()
             {
                 TenantId = tenant.TenantId, ConnectionId = connection.ConnectionId, LegalEntityId = request.LegalEntityId,
-                OutboundMode = "none", ReadOnly = true, NativeWarrantyObjectMode = "frozen",
+                OutboundMode = adapter.DefaultOutboundMode, ReadOnly = true, NativeWarrantyObjectMode = "frozen",
             });
             await db.SaveChangesAsync(ct);
 
