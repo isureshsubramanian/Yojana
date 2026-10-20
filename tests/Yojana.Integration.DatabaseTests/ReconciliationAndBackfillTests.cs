@@ -35,7 +35,7 @@ public sealed class ReconciliationAndBackfillTests(IntegrationHostFixture fixtur
         {
             var sweep = scope.ServiceProvider.GetRequiredService<ReconciliationService>();
             firstRun = await sweep.RunAsync(connection, Day, Day, ReconciliationTrigger.OnDemand,
-                true, CancellationToken.None);
+                true, "user:test-operator", CancellationToken.None);
             var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
             var diff = await db.ReconciliationEntityDayResults.SingleAsync(row =>
                 row.ReconciliationRunId == firstRun);
@@ -57,7 +57,7 @@ public sealed class ReconciliationAndBackfillTests(IntegrationHostFixture fixtur
         {
             var sweep = scope.ServiceProvider.GetRequiredService<ReconciliationService>();
             cleanRun = await sweep.RunAsync(connection, Day, Day, ReconciliationTrigger.OnDemand,
-                true, CancellationToken.None);
+                true, "user:test-operator", CancellationToken.None);
             var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
             Assert.Equal(ReconciliationRunStatus.Clean, (await db.ReconciliationRuns.SingleAsync(row =>
                 row.ReconciliationRunId == cleanRun)).Status);
@@ -92,9 +92,19 @@ public sealed class ReconciliationAndBackfillTests(IntegrationHostFixture fixtur
 
         using var checkScope = fixture.ScopeFor(tenant);
         var service = checkScope.ServiceProvider.GetRequiredService<ReconciliationService>();
-        var runId = await service.RunLocationChecksAsync(connection, CancellationToken.None);
+        var runId = await service.RunLocationChecksAsync(connection, "user:test-operator", CancellationToken.None);
         var detail = Assert.IsType<ReconciliationRunDetail>(
             await service.DetailAsync(runId, CancellationToken.None));
+        // The requester is stored as a reference and shown as a name, never as the raw reference.
+        Assert.Equal("user:test-operator", (await checkScope.ServiceProvider.GetRequiredService<IntegrationDbContext>()
+            .ReconciliationRuns.AsNoTracking().SingleAsync(x => x.ReconciliationRunId == runId)).RequestedBy);
+        Assert.Equal("Unknown user", detail.Run.RequestedByName);
+        var today = DateOnly.FromDateTime(fixture.Clock.UtcNow);
+        var scheduled = await service.RunAsync(connection, today, today, ReconciliationTrigger.Scheduled, false, null,
+            CancellationToken.None);
+        var listed = await service.ListAsync(new(connection, null, null, 10), CancellationToken.None);
+        Assert.Equal("Scheduled", listed.Items.Single(x => x.RunId == scheduled).RequestedByName);
+        Assert.Equal("Unknown user", listed.Items.Single(x => x.RunId == runId).RequestedByName);
         var mismatch = Assert.Single(detail.LocationChecks);
         Assert.Equal(3, mismatch.SourceOnHand);
         Assert.Equal(2, mismatch.ModuleUnitCount);
@@ -135,7 +145,7 @@ public sealed class ReconciliationAndBackfillTests(IntegrationHostFixture fixtur
 
         using var checkScope = fixture.ScopeFor(tenant);
         var service = checkScope.ServiceProvider.GetRequiredService<ReconciliationService>();
-        var runId = await service.RunLocationChecksAsync(connection, CancellationToken.None);
+        var runId = await service.RunLocationChecksAsync(connection, "user:test-operator", CancellationToken.None);
         var detail = Assert.IsType<ReconciliationRunDetail>(
             await service.DetailAsync(runId, CancellationToken.None));
         var comparison = Assert.Single(detail.LocationChecks);

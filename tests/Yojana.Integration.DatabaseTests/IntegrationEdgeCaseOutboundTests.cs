@@ -28,7 +28,7 @@ public sealed partial class IntegrationEdgeCaseTests
         await scope.ServiceProvider.GetRequiredService<ITenantSettings>().SetAsync(OutboxRelaySettings.ConnectionKey(connection), "1", default);
         var relay = scope.ServiceProvider.GetRequiredService<OutboundRelay>();
         var command = await db.OutboundCommands.SingleAsync(x => x.OutboundCommandId == commandId);
-        await scope.ServiceProvider.GetRequiredService<ReconciliationService>().RunAsync(connection, new(2026, 9, 10), new(2026, 9, 10), ReconciliationTrigger.Scheduled, false, default);
+        await scope.ServiceProvider.GetRequiredService<ReconciliationService>().RunAsync(connection, new(2026, 9, 10), new(2026, 9, 10), ReconciliationTrigger.Scheduled, false, null, default);
         Assert.Equal("healthy", (await scope.ServiceProvider.GetRequiredService<ConnectionHealthProjection>().RefreshAsync(connection, default)).Status);
         var start = fixture.Clock.UtcNow;
         db.ConnectionPollWatermarks.Add(new() { TenantId = tenant, ConnectionId = connection, EntityType = "invoice", LastPolledAt = start, NextPollAt = start.AddMinutes(1), IntervalSeconds = 60, OverlapSeconds = 120, LastError = "Fictional remote unavailable" });

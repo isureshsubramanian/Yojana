@@ -463,6 +463,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.Trigger).HasMaxLength(24);
             b.Property(x => x.Status).HasMaxLength(24);
             b.Property(x => x.Failure).HasMaxLength(4000);
+            b.Property(x => x.RequestedBy).HasMaxLength(320);
             b.HasIndex(x => new { x.TenantId, x.StartedAt, x.ReconciliationRunId });
             b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.StartedAt, x.ReconciliationRunId });
         });

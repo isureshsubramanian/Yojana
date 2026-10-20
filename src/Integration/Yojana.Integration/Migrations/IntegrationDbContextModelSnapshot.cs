@@ -2262,6 +2262,11 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("date")
                         .HasColumnName("range_start");
 
+                    b.Property<string>("RequestedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("requested_by");
+
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("started_at");

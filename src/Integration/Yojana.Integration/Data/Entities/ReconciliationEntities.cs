@@ -16,6 +16,8 @@ public sealed class ReconciliationRun : ITenantScoped
     public int MismatchCount { get; set; }
     public int LocationMismatchCount { get; set; }
     public string? Failure { get; set; }
+    // The signed-in user who asked for an on-demand run; null for scheduled runs and runs recorded before P8.
+    public string? RequestedBy { get; set; }
 }
 
 public sealed class ReconciliationEntityDayResult : ITenantScoped

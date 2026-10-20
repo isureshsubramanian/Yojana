@@ -18,7 +18,7 @@ function ReconciliationScreen() {
   const columns: GridColumn<Run>[] = [
     { key: "connection", label: "Connection", width: 25, render: x => <span className="primary">{x.connectionName}</span> },
     { key: "range", label: "Business date range", width: 22, render: x => `${x.rangeStart} – ${x.rangeEnd}` },
-    { key: "at", label: "Ran", width: 18, render: x => <>{date(x.startedAt)}<span className="sub">{human(x.trigger)}</span></> },
+    { key: "at", label: "Ran", width: 18, render: x => <>{date(x.startedAt)}<span className="sub">{human(x.trigger)} · {x.requestedByName}</span></> },
     { key: "state", label: "Result", width: 20, render: x => <State value={x.status} /> },
     { key: "diff", label: "Differences / stock", width: 15, numeric: true, render: x => `${x.mismatchCount} / ${x.locationMismatchCount}` },
   ];
