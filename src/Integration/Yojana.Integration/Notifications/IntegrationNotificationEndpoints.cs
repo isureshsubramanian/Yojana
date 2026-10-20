@@ -106,9 +106,17 @@ public static class IntegrationNotificationEndpoints
             acceptances.Add(new(canonical.Envelope, canonical.MessageType,
                 notification.CanonicalMessage.GetRawText(), notification.RawPayload.GetRawText()));
         }
-        await bus.PublishAsync(new AcceptInboundNotificationBatch(acceptances),
+        var externalIds = acceptances.Select(x => x.Envelope.ErpExternalId).Distinct().ToList();
+        var claimed = await db.IdempotencyIndex.AsNoTracking().Where(x => x.TenantId == tenantId
+                && x.ConnectionId == connectionId && externalIds.Contains(x.ErpExternalId))
+            .Select(x => new { x.ErpEntity, x.ErpExternalId, x.ErpChangeMarker }).ToListAsync(cancellationToken);
+        var keys = claimed.Select(x => (x.ErpEntity, x.ErpExternalId, x.ErpChangeMarker)).ToHashSet();
+        var pending = acceptances.Where(x => keys.Add((x.Envelope.ErpEntity,
+            x.Envelope.ErpExternalId, x.Envelope.ErpChangeMarker.Value))).ToList();
+        if (pending.Count > 0)
+            await bus.PublishAsync(new AcceptInboundNotificationBatch(pending),
             new DeliveryOptions { TenantId = tenantId.ToString() });
-        return Results.Accepted(value: new WebhookNotificationResponse(acceptances.Count, 0, 0));
+        return Results.Accepted(value: new WebhookNotificationResponse(pending.Count, acceptances.Count - pending.Count, 0));
     }
 
     public static byte[] SignedContent(DateTime timestampUtc, ReadOnlySpan<byte> body)

@@ -142,6 +142,7 @@ public static class IntegrationModule
             services.GetRequiredService<DeadLetterParkingSink>());
         builder.Services.AddScoped<OutboundRelay>();
         builder.Services.AddScoped<DeadLetterService>();
+        builder.Services.AddScoped<IOutboundRetryWindow>(services => services.GetRequiredService<DeadLetterService>());
         builder.Services.AddScoped<ManualTaskDeskSettings>();
         builder.Services.TryAddScoped<IManualTaskReferenceVerifier, UnavailableManualTaskReferenceVerifier>();
         builder.Services.AddSingleton(RecurringTenantJob.For<OutboxRelayJob>(OutboxRelayJob.JobName, OutboxRelayJob.Cron));

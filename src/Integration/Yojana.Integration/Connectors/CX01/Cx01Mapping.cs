@@ -351,7 +351,7 @@ internal static class Cx01Mapper
     {
         var baseLine = LineElements(value).FirstOrDefault(line => Text(line, "BaseEntry") is not null);
         var original = baseLine.ValueKind == JsonValueKind.Undefined ? null : Text(baseLine, "BaseEntry");
-        return new(entity.Collection, original ?? cancellationKey,
+        return new(Text(value, "DocObjectCode") ?? entity.Collection, original ?? cancellationKey,
             DateOnly.FromDateTime((Date(value, "DocDate") ?? DateTimeOffset.UnixEpoch).Date),
             original ?? cancellationKey,
             baseLine.ValueKind == JsonValueKind.Undefined ? null : Int(baseLine, "BaseLine"));

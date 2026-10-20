@@ -23,7 +23,7 @@ public sealed class OutboundRelay(
     IConnectionWorkerIsolation isolation,
     IConnectionRetryJitter jitter,
     IOutboundCommandParkingSink parking,
-    IOutboundReviewTaskSink reviewTasks, IOutboundProgressStore progress)
+    IOutboundReviewTaskSink reviewTasks, IOutboundProgressStore progress, IOutboundRetryWindow retryWindow)
 {
     private static readonly TimeSpan ClaimLease = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan RetryCeiling = TimeSpan.FromHours(6);
@@ -58,7 +58,9 @@ public sealed class OutboundRelay(
                 ? null : await isolation.AcquireAsync(new(tenant.TenantId, connectionId), cancellationToken);
             var command = await ClaimNextAsync(connectionId, cancellationToken);
             if (command is null) break;
-            if (command.CreatedAt + maxAge <= clock.UtcNow)
+            // An explicit operator retry grants a fresh bounded window; retain the original creation time for audit.
+            var retriedAt = await retryWindow.StartedAtAsync(command.OutboundCommandId, cancellationToken);
+            if ((retriedAt ?? command.CreatedAt) + maxAge <= clock.UtcNow)
             {
                 await ParkAsync(command, "max_outbox_age", "The command exceeded its configured maximum outbox age.",
                     OutboundConnectorOutcome.Expired, cancellationToken);

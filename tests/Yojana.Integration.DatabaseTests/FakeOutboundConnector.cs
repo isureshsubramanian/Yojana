@@ -28,6 +28,8 @@ public sealed class FakeOutboundConnector : IOutboundConnector, IOutboundReviewT
     private readonly ConcurrentDictionary<Guid, int> createCalls = new();
     private readonly ConcurrentDictionary<Guid, Guid?> lastIdempotencyKeys = new();
 
+    public Func<Task>? BeforeCreate { get; set; }
+
     public string ConnectorCode => IntegrationHostFixture.FakeConnectorCode;
     public OutboundConnectorCapabilities Capabilities { get; private set; } = new(true);
     public FakeOutboundBehaviour Behaviour { get; private set; }
@@ -47,6 +49,7 @@ public sealed class FakeOutboundConnector : IOutboundConnector, IOutboundReviewT
         reviews.Clear();
         reviewChecks.Clear();
         FailReviewCheck = false;
+        BeforeCreate = null;
     }
 
     public Task<OutboundDocument?> FindByReferenceAsync(OutboundLookup lookup,
@@ -57,26 +60,27 @@ public sealed class FakeOutboundConnector : IOutboundConnector, IOutboundReviewT
         return Task.FromResult(documents.GetValueOrDefault(lookup.ErpReferenceText));
     }
 
-    public Task<OutboundCreateResult> CreateAsync(OutboundCreateRequest request,
+    public async Task<OutboundCreateResult> CreateAsync(OutboundCreateRequest request,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (BeforeCreate is { } before) await before();
         createCalls.AddOrUpdate(request.ConnectionId, 1, (_, count) => count + 1);
         lastIdempotencyKeys[request.ConnectionId] = request.IdempotencyKey;
         if (Behaviour == FakeOutboundBehaviour.Fail) throw new HttpRequestException("Fictional ERP unavailable.");
         if (Behaviour == FakeOutboundBehaviour.Reject)
-            return Task.FromResult(OutboundCreateResult.Rejected("The fictional posting period is closed."));
+            return OutboundCreateResult.Rejected("The fictional posting period is closed.");
         if (Behaviour == FakeOutboundBehaviour.Unsupported)
-            return Task.FromResult(OutboundCreateResult.Unsupported("This connection does not support the document."));
+            return OutboundCreateResult.Unsupported("This connection does not support the document.");
         if (Behaviour == FakeOutboundBehaviour.HoldForReview)
-            return Task.FromResult(OutboundCreateResult.AwaitingReview("HELD-" + request.ErpReferenceText,
-                "A fictional reviewer must add the held record."));
+            return OutboundCreateResult.AwaitingReview("HELD-" + request.ErpReferenceText,
+                "A fictional reviewer must add the held record.");
         var document = documents.GetOrAdd(request.ErpReferenceText,
             _ => new($"ERP-{documents.Count + 1}", $"v{documents.Count + 1}"));
         if (Behaviour == FakeOutboundBehaviour.TimeoutAfterCreate
             && timedOutConnections.TryAdd(request.ConnectionId, 0))
             throw new TimeoutException("The reply was lost after creation.");
-        return Task.FromResult(OutboundCreateResult.Created(document.ErpExternalId, document.ErpChangeMarker));
+        return OutboundCreateResult.Created(document.ErpExternalId, document.ErpChangeMarker);
     }
 
     public Task<OutboundReviewState> CheckAsync(OutboundReviewLookup lookup, CancellationToken cancellationToken)

@@ -14,6 +14,7 @@
     <ProjectReference Include="../../src/Web/Yojana.Web/Yojana.Web.csproj" />
     <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01RelayLiveInput.cs" Link="Connectors/CX01/Cx01RelayLiveInput.cs" />
     <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01RelayAcceptance.cs" Link="Connectors/CX01/Cx01RelayAcceptance.cs" />
+    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01EdgeScenarios.cs" Link="Connectors/CX01/Cx01EdgeScenarios.cs" />
     <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01DocumentScenarios.cs" Link="Connectors/CX01/Cx01DocumentScenarios.cs" />
     <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01Simulator.cs"
              Link="Connectors/CX01/Cx01Simulator.cs" />

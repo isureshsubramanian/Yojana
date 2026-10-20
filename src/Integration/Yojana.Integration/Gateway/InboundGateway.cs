@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Wolverine;
 using Wolverine.Attributes;
@@ -95,7 +96,7 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
             return new(row.InboundMessageId, row.MessageType, true, 0, ["unsupported"]);
         }
 
-        var result = row.MessageType switch
+        var result = await IsSecondaryDocumentAsync(row, cancellationToken) ? Done(row, 0, []) : row.MessageType switch
         {
             nameof(ItemUpserted) => await TranslateItemAsync(row, cancellationToken),
             nameof(PartyUpserted) => await TranslatePartyAsync(row, cancellationToken),
@@ -119,6 +120,9 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
         };
         if (result.Translated)
         {
+            foreach (var exception in result.Exceptions)
+                await RaiseAsync(row, "consumed_event_exception", exception, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
             db.Entry(row).State = EntityState.Detached;
             await db.InboundMessages.Where(x => x.TenantId == tenant.TenantId
                     && x.InboundMessageId == inboundMessageId && x.IsLatest
@@ -139,6 +143,29 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
                     .SetProperty(x => x.TranslationStartedAt, (DateTime?)null), cancellationToken);
         }
         return result;
+    }
+
+    private async Task<bool> IsSecondaryDocumentAsync(InboundMessage row, CancellationToken cancellationToken)
+    {
+        if (row.MessageType == nameof(DocumentCancelled)) return false;
+        using var canonical = JsonDocument.Parse(row.CanonicalMessage);
+        if (!canonical.RootElement.GetProperty("payload").TryGetProperty("document_ref", out var reference)) return false;
+        var external = reference.Deserialize<ExternalDocumentRef>(IntegrationContracts.Json)!;
+        var id = await references.FindAsync(row.ConnectionId, "document", external.ExternalId ?? external.Number, cancellationToken);
+        if (id is null) return false;
+        var incumbent = await db.CanonicalDocuments.AsNoTracking().SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
+            && x.DocumentId == id && x.ConnectionId != row.ConnectionId, cancellationToken);
+        if (incumbent is null) return false;
+        // Only an explicit, currently valid map can identify the same fact across connections. Equal remote numbers
+        // in different companies are insufficient. The incumbent projection remains authoritative during overlap;
+        // the secondary version stays in the inbox and any divergence becomes an operator review.
+        var original = JsonNode.Parse(incumbent.Payload)!.AsObject();
+        var incoming = JsonNode.Parse(canonical.RootElement.GetProperty("payload").GetRawText())!.AsObject();
+        original.Remove("document_ref");
+        incoming.Remove("document_ref");
+        if (incumbent.MessageType != row.MessageType || !JsonNode.DeepEquals(original, incoming))
+            await RaiseAsync(row, "cross_connection_document_conflict", "The mapped business document differs from the incumbent connection; review before cutover.", cancellationToken);
+        return true;
     }
 
     private async Task<GatewayTranslationResult> TranslateItemAsync(InboundMessage row, CancellationToken cancellationToken)
@@ -216,7 +243,8 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
     {
         var message = Message<GoodsReceiptPosted>(row);
         var result = await TranslateDocumentAsync<GoodsReceiptPosted>(row, p => p.DocumentRef,
-            (env, doc) => new PurchasingReceiptPosted(env, doc), cancellationToken);
+            (env, doc) => new PurchasingReceiptPosted(env, doc), cancellationToken,
+            payload => DeduplicateReceiptAsync(row, payload, cancellationToken));
         await resequencer.ReleaseSatisfiedAsync(row.ConnectionId,
             message.Payload.Lines.SelectMany(x => x.Serials).Select(x => x.Value).ToList(), cancellationToken);
         return result;
@@ -224,14 +252,35 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
 
     private async Task<GatewayTranslationResult> TranslateDocumentAsync<TPayload>(InboundMessage row,
         Func<TPayload, ExternalDocumentRef> documentOf, Func<ThinEnvelope, SerialDocumentRef, object> consumed,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Func<TPayload, Task<TPayload>>? prepare = null)
     {
         var message = Message<TPayload>(row);
+        if (prepare is not null) message = message with { Payload = await prepare(message.Payload) };
         await PreparePayloadReferencesAsync(row, message.Payload!, cancellationToken);
         var document = await ProjectDocumentAsync(row, documentOf(message.Payload), message.Payload!, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         var result = await InvokeAsync(consumed(await ThinAsync(row, message.Envelope, cancellationToken), document), cancellationToken);
         return Done(row, result.UnitsAffected, result.Exceptions);
+    }
+
+    private async Task<GoodsReceiptPosted> DeduplicateReceiptAsync(InboundMessage row, GoodsReceiptPosted receipt,
+        CancellationToken cancellationToken)
+    {
+        var seen = new HashSet<(string Item, string Serial)>();
+        var lines = new List<CanonicalLine>();
+        foreach (var line in receipt.Lines)
+        {
+            var serials = new List<CanonicalSerial>();
+            foreach (var serial in line.Serials)
+            {
+                if (seen.Add((line.ItemExternalId.Trim().ToUpperInvariant(), serial.Value.Trim().ToUpperInvariant())))
+                    serials.Add(serial);
+                else
+                    await RaiseAsync(row, "duplicate_serial", $"Serial '{serial.Value}' occurs more than once for item '{line.ItemExternalId}' in the receipt; review the source document.", cancellationToken);
+            }
+            lines.Add(line with { Serials = serials });
+        }
+        return receipt with { Lines = lines };
     }
 
     private async Task PreparePayloadReferencesAsync<TPayload>(InboundMessage row, TPayload payload, CancellationToken cancellationToken)
