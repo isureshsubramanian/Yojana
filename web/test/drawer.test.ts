@@ -28,3 +28,11 @@ test("the header button shows the screen context alone and toggles", () => {
   updateDrawer({ eyebrow: "x", title: "y" }, "ignored while closed");
   assert.equal(drawerState().selected, null);
 });
+
+test("re-registering the screen context leaves the open snapshot unchanged, so a page reading it does not re-render", () => {
+  closeDrawer();
+  const before = drawerState();
+  setDrawerContext("context again", "This lookup");
+  assert.notEqual(drawerState(), before);
+  assert.equal(drawerState().open, before.open);
+});

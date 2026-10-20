@@ -1,4 +1,4 @@
-import { useDrawer, closeDrawer } from "../shell/drawerStore";
+import { closeDrawer, useDrawerOpen } from "../shell/drawerStore";
 import { PolicyItemsEditor } from "./PolicyItemsEditor";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -18,7 +18,9 @@ const draftSnapshot = (detail: PolicyDetail): string => JSON.stringify({
 export function Component() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedVersion = searchParams.get("version");
-  const drawer = useDrawer();
+  // Only whether the drawer is open: subscribing to the whole drawer state re-renders this page on every context
+  // registration its Rail makes, which loops (React error 185).
+  const drawerOpen = useDrawerOpen();
   const [summaries, setSummaries] = useState<PolicySummary[]>([]);
   const [policyCode, setPolicyCode] = useState(() => searchParams.get("policy") ?? "");
   const [versions, setVersions] = useState<PolicyVersion[]>([]);
@@ -93,12 +95,12 @@ export function Component() {
   const policyOptions = useMemo(() => summaries.map((row) => <option key={row.policyCode} value={row.policyCode}>{row.name} · {row.policyCode}</option>), [summaries]);
   const policyDirty = !!detail && !!savedDraft && editable && draftSnapshot(detail) !== savedDraft;
   const presence = useDocumentPresence("policy_draft", selectedId, policyDirty);
-  useModEnter(publish, !editable || errors > 0 || busy || drawer.open);
+  useModEnter(publish, !editable || errors > 0 || busy || drawerOpen);
 
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Entitlements", to: "/entitlements/gaps" }, { label: "Warranty policies" }]} />
-      <div className="page-header"><div><div className="eyebrow">Warranty policy · versions by contract date · {families.find((f) => f.familyCode === detail?.coverageFamily)?.name ?? "…"}</div><h1>{detail?.name ?? (loading ? "Loading policy…" : "Warranty policies")}</h1><p className="sub">Published versions are immutable · draft changes are validated before publication · {detail ? `${selectedSummary?.liveEntitlements ?? 0} live entitlements remain on their recorded version` : "select a policy"}</p><PresenceChips users={presence} /></div><div className="actions"><button type="button" className="btn" disabled={!selectedSummary || !!selectedSummary.draftVersion || busy} onClick={newVersion}>New version</button><button type="button" className="btn" disabled={!detail || busy} onClick={validate}>Validate</button><button type="button" className="btn" disabled={!editable || !policyDirty || busy} onClick={save}>Save draft</button><button type="button" className="btn primary" disabled={!editable || errors > 0 || busy || drawer.open} aria-busy={busy} onClick={publish}>Publish version {detail?.version}<Shortcut keys="mod+enter" /></button></div></div>
+      <div className="page-header"><div><div className="eyebrow">Warranty policy · versions by contract date · {families.find((f) => f.familyCode === detail?.coverageFamily)?.name ?? "…"}</div><h1>{detail?.name ?? (loading ? "Loading policy…" : "Warranty policies")}</h1><p className="sub">Published versions are immutable · draft changes are validated before publication · {detail ? `${selectedSummary?.liveEntitlements ?? 0} live entitlements remain on their recorded version` : "select a policy"}</p><PresenceChips users={presence} /></div><div className="actions"><button type="button" className="btn" disabled={!selectedSummary || !!selectedSummary.draftVersion || busy} onClick={newVersion}>New version</button><button type="button" className="btn" disabled={!detail || busy} onClick={validate}>Validate</button><button type="button" className="btn" disabled={!editable || !policyDirty || busy} onClick={save}>Save draft</button><button type="button" className="btn primary" disabled={!editable || errors > 0 || busy || drawerOpen} aria-busy={busy} onClick={publish}>Publish version {detail?.version}<Shortcut keys="mod+enter" /></button></div></div>
       <PresenceAdvisory users={presence} editing={policyDirty} documentLabel="policy draft" />
       <ErrorNote error={error} onReload={detail ? () => { setError(null); void entitlementApi.policyDetail(detail.policyVersionId).then((row) => { setDetail(row); setSavedDraft(draftSnapshot(row)); }).catch(setError); } : undefined} />{message && <div className="note ok" role="status" style={{ marginBottom: "var(--gap)" }}>{message}</div>}
       {detail && <div style={{ marginBottom: "var(--gap)" }}><PolicyItemsEditor key={detail.policyVersionId} versionId={detail.policyVersionId} items={detail.terms.items ?? []} editable={editable} dirty={policyDirty} onChange={(update) => { const id = detail.policyVersionId; setDetail((current) => current?.policyVersionId === id ? { ...current, terms: { ...current.terms, items: update(current.terms.items ?? []) } } : current); }} /></div>}

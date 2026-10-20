@@ -142,6 +142,31 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public void Policy_row_version_upgrade_unbinds_versioning_and_the_tenant_policy_before_adding_the_column()
+    {
+        // Found 2026-10-20 upgrading a database with policy history: a rowversion column cannot be added to a
+        // system-versioned table, and the schema-bound tenant policy blocks the ALTER. A fresh database never shows it.
+        using var scope = fixture.ScopeFor(null);
+        var script = Db(scope).GetService<IMigrator>().GenerateScript("20261017203758_P5Refurb", "20261018063446_P6DocVersion");
+
+        int At(string sql)
+        {
+            var index = script.IndexOf(sql, StringComparison.OrdinalIgnoreCase);
+            Assert.True(index >= 0, $"Missing: {sql}");
+            return index;
+        }
+
+        var policyOff = At("WITH (STATE = OFF)");
+        var versioningOff = At("ALTER TABLE [serialisation].[warranty_policy_version] SET (SYSTEM_VERSIONING = OFF)");
+        var history = At("ALTER TABLE [serialisation].[warranty_policy_version_history] ADD [row_version] rowversion NOT NULL");
+        var current = At("ALTER TABLE [serialisation].[warranty_policy_version] ADD [row_version] rowversion NOT NULL");
+        var versioningOn = At("ALTER TABLE [serialisation].[warranty_policy_version] SET (SYSTEM_VERSIONING = ON");
+        var policyOn = At("WITH (STATE = ON)");
+        Assert.True(policyOff < versioningOff && versioningOff < history && history < current && current < versioningOn
+            && versioningOn < policyOn, "The row_version upgrade runs out of order.");
+    }
+
+    [DatabaseFact]
     public async Task Rma_volume_indexes_seek_the_default_order_and_only_exception_lines()
     {
         using var scope = fixture.ScopeFor(null);

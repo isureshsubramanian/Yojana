@@ -1,4 +1,5 @@
 import { api } from "../api/client";
+import { humanise } from "../units/format";
 
 export interface PartsScope { partCategories: string[]; itemFamilies: string[] }
 export interface PolicyCoverItem { code: string; type: "covered" | "excluded"; customerWording: string; internalNote: string | null; category: string | null; partsScope: PartsScope; causeCodes: string[]; sinceVersion?: number | null; tooLongForCustomerSheet?: boolean }
@@ -26,7 +27,7 @@ export const coverItemsApi = {
   items: (id: string, type = "", skip = 0, signal?: AbortSignal) => api<PolicyItemPage>(`/api/warranty-policies/versions/${id}/items?${new URLSearchParams({ type, skip: String(skip), take: "25" })}`, { signal }),
 };
 export const coverLabel = (c: ItemCover) => `${c.familyName} · ${c.policyName} v${c.policyVersion}`;
-export const usageLabel = (c: ItemCover) => c.usage.map((u) => `${u.remaining} ${u.meterType} left / ${u.period === "contract_year" ? "contract year" : "term"}`).join(" · ");
+export const usageLabel = (c: ItemCover) => c.usage.map((u) => `${u.remaining} ${humanise(u.meterType)} left / ${u.period === "contract_year" ? "contract year" : "term"}`).join(" · ");
 export const unitTabs = ["history", "entitlements", "whats-covered", "cover", "identifiers", "custody", "asbuilt"] as const;
 export type UnitTab = typeof unitTabs[number];
 export function unitTab(value: string | null): UnitTab { return unitTabs.includes(value as UnitTab) ? value as UnitTab : "entitlements"; }

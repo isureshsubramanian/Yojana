@@ -54,13 +54,21 @@ namespace Yojana.Serialisation.Data.Migrations
                 nullable: false,
                 defaultValue: "");
 
-            migrationBuilder.AddColumn<byte[]>(
-                name: "row_version",
-                schema: "serialisation",
-                table: "warranty_policy_version",
-                type: "rowversion",
-                rowVersion: true,
-                nullable: false);
+            // warranty_policy_version is system-versioned. Adding a rowversion while versioning is on fails once the
+            // history table holds rows ("Cannot insert the value NULL into column 'row_version'"), so an upgrade of any
+            // database with edited policies stopped here (found 2026-10-20 on the development database). Versioning is
+            // paused inside the migration transaction, the column is added to both tables, and versioning resumes with a
+            // consistency check: the result is the same timestamp NOT NULL history column a fresh database gets. The
+            // schema-bound tenant predicates block the versioning change, so they come off and back on around it, all in
+            // the migration transaction (P6PerfCreatedEventTime's Down does the same for unit).
+            migrationBuilder.Sql($"ALTER SECURITY POLICY [{TenantSecurityMigrations.SecuritySchema}].[{TenantSecurityMigrations.PolicyNameFor("serialisation")}] WITH (STATE = OFF);");
+            migrationBuilder.RemoveTenantPolicy("serialisation", "warranty_policy_version");
+            migrationBuilder.Sql("ALTER TABLE [serialisation].[warranty_policy_version] SET (SYSTEM_VERSIONING = OFF);");
+            migrationBuilder.Sql("ALTER TABLE [serialisation].[warranty_policy_version_history] ADD [row_version] rowversion NOT NULL;");
+            migrationBuilder.Sql("ALTER TABLE [serialisation].[warranty_policy_version] ADD [row_version] rowversion NOT NULL;");
+            migrationBuilder.Sql("ALTER TABLE [serialisation].[warranty_policy_version] SET (SYSTEM_VERSIONING = ON (HISTORY_TABLE = [serialisation].[warranty_policy_version_history], DATA_CONSISTENCY_CHECK = ON));");
+            migrationBuilder.AddTenantPolicy("serialisation", "warranty_policy_version");
+            migrationBuilder.Sql($"ALTER SECURITY POLICY [{TenantSecurityMigrations.SecuritySchema}].[{TenantSecurityMigrations.PolicyNameFor("serialisation")}] WITH (STATE = ON);");
 
             migrationBuilder.AddColumn<DateTime>(
                 name: "last_modified_at",
