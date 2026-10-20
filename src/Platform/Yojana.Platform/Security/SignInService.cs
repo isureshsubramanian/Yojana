@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
 
@@ -17,7 +18,8 @@ public sealed record SignInAttemptResult(AppUser? User, TimeSpan? AddressRetryAf
 public sealed class SignInService(
     PlatformDbContext db,
     SignInThrottleService throttles,
-    SecurityEventWriter events)
+    SecurityEventWriter events,
+    IClock clock)
 {
     // A real PBKDF2 hash with the production work factor. Unknown and locked identities verify against it so account
     // existence cannot be inferred by observing whether the expensive password operation ran.
@@ -53,7 +55,8 @@ public sealed class SignInService(
         }
 
         var valid = false;
-        if (user is { IsActive: true, PasswordHash: not null })
+        if (user is { IsActive: true, PasswordHash: not null }
+            && (!user.MustChangePassword || user.TemporaryPasswordExpiresAt > clock.UtcNow))
         {
             valid = PasswordHasher.Verify(password ?? string.Empty, user.PasswordHash);
         }
@@ -129,6 +132,10 @@ public sealed class SignInService(
             new(ClaimTypes.Name, user.DisplayName),
             new(ClaimTypes.Email, user.Email),
         };
+        // COUPLING (temporary-password claim): PasswordChangeRequiredMiddleware treats this claim as a platform-wide
+        // API gate. Removing it here would make must_change_password a UI hint instead of an enforced requirement.
+        if (user.MustChangePassword)
+            claims.Add(new Claim(YojanaClaim.PasswordChangeRequired, "true"));
         if (tenant is not null)
         {
             claims.Add(new Claim(YojanaClaim.TenantId, tenant.TenantId.ToString()));

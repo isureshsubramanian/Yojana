@@ -121,6 +121,8 @@ public static class PlatformSetup
         builder.Services.AddSingleton<IPasswordPolicy, PasswordPolicy>();
         builder.Services.AddScoped<SecurityEventQueries>();
         builder.Services.AddScoped<SecurityMaintenance>();
+        builder.Services.AddScoped<PasswordResetService>();
+        builder.Services.AddScoped<PasswordSecuritySettings>();
         builder.Services.AddSecurityRateLimiting(signInOptions);
         builder.Services.AddScoped<IMailOutbox, MailOutbox>();
         builder.Services.AddScoped<MailLogMaintenance>();
@@ -317,6 +319,9 @@ public static class PlatformSetup
         // Endpoint policies must run before authorization can short-circuit an anonymous auth request.
         app.UseRateLimiter();
         app.UseMiddleware<TenantResolutionMiddleware>();
+        // COUPLING (temporary-password claim): SignInService issues the claim and change-password reissues the cookie
+        // without it. Moving or removing this middleware would let every module API ignore must_change_password.
+        app.UseMiddleware<PasswordChangeRequiredMiddleware>();
         app.UseAuthorization();
         return app;
     }

@@ -95,4 +95,5 @@ public static class YojanaClaim
     public const string TenantCode = "yojana:tenant_code";
     public const string Role = "yojana:role";
     public const string CustomerPartyRef = "yojana:customer_party_ref";
+    public const string PasswordChangeRequired = "yojana:password_change_required";
 }

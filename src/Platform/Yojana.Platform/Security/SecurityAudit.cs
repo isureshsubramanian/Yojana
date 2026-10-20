@@ -56,7 +56,8 @@ public sealed class SecurityEventWriter(PlatformDbContext db, IClock clock, Sign
 
 public sealed class SecurityStampService(
     PlatformDbContext db,
-    SecurityEventWriter events) : ISecurityStampService
+    SecurityEventWriter events,
+    SecurityStampValidationCache cache) : ISecurityStampService
 {
     public async Task RotateSecurityStampAsync(Guid userId, string reason, CancellationToken cancellationToken)
     {
@@ -72,5 +73,6 @@ public sealed class SecurityStampService(
         events.Add(SecurityEventKind.SecurityStampRotated, userId, null, null,
             new SecurityRequestContext(null, null), reason);
         await db.SaveChangesAsync(cancellationToken);
+        cache.Invalidate(userId);
     }
 }

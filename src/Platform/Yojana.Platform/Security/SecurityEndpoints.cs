@@ -119,13 +119,14 @@ public sealed record SignInRequest(string Email, string Password);
 public sealed record SelectTenantRequest(string TenantCode);
 
 public sealed record SessionView(SessionUserView User, SessionTenantView? Tenant, IReadOnlyList<string> Roles,
-    IReadOnlyList<TenantChoiceView> Tenants)
+    IReadOnlyList<TenantChoiceView> Tenants, bool PasswordChangeRequired)
 {
     public static SessionView From(AppUser user, TenantChoice? selected, IReadOnlyList<TenantChoice> tenants) => new(
         new SessionUserView(user.Id, user.Email, user.DisplayName),
         selected is null ? null : new SessionTenantView(selected.Code, selected.Name),
         selected?.Roles.Where(YojanaRole.IsKnown).ToList() ?? [],
-        tenants.Select(tenant => new TenantChoiceView(tenant.Code, tenant.Name, tenant.Roles)).ToList());
+        tenants.Select(tenant => new TenantChoiceView(tenant.Code, tenant.Name, tenant.Roles)).ToList(),
+        user.MustChangePassword);
 }
 
 public sealed record SessionUserView(Guid Id, string Email, string DisplayName);

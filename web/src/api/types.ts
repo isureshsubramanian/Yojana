@@ -9,6 +9,7 @@ export interface Session {
   tenant: SessionTenant | null;
   roles: string[];
   tenants: TenantChoice[];
+  passwordChangeRequired: boolean;
 }
 
 export type Badge = "ok" | "warn" | "bad" | "info" | "neutral";

@@ -21,7 +21,7 @@ export function Component() {
     try {
       const session = await api<Session>("/api/auth/sign-in", { method: "POST", body: { email, password } });
       const next = params.get("next");
-      navigate(session.tenant ? (next && next.startsWith("/") ? next : "/") : "/tenants", { replace: true });
+      navigate(session.passwordChangeRequired ? "/change-password" : session.tenant ? (next && next.startsWith("/") ? next : "/") : "/tenants", { replace: true });
     } catch (err) {
       setError(err instanceof ApiError && err.status === 401 ? "That email and password do not match an active account." : "Sign-in is unavailable right now. Try again in a moment.");
     } finally {
@@ -41,6 +41,7 @@ export function Component() {
                 <label htmlFor="s-email">Email</label>
                 <input id="s-email" className="input" type="email" autoComplete="username" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
               </div>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}><a href="/forgot-password" style={{ fontSize: 13 }}>Forgot password?</a></div>
               <div className="field">
                 <label htmlFor="s-pass">Password</label>
                 <input id="s-pass" className="input" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />

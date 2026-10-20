@@ -22,6 +22,8 @@ const patterns: RouteObject[] = process.env.NODE_ENV === "production" ? [] : [
 
 export const router = createBrowserRouter([
   { path: "/sign-in", lazy: () => import("./pages/SignIn"), errorElement: <ErrorPage /> },
+  { path: "/forgot-password", lazy: () => import("./pages/ForgotPassword"), errorElement: <ErrorPage /> },
+  { path: "/reset-password", lazy: () => import("./pages/ResetPassword"), errorElement: <ErrorPage /> },
   { path: "/public/:tenantCode/lookup", lazy: () => import("./p7/PublicLookup"), errorElement: <ErrorPage /> },
   {
     id: ROOT_ROUTE_ID,
@@ -30,6 +32,7 @@ export const router = createBrowserRouter([
     errorElement: <ErrorPage />,
     children: [
       { path: "tenants", lazy: () => import("./pages/ChooseTenant") },
+      { path: "change-password", lazy: () => import("./pages/ChangePassword") },
       {
         path: "portal",
         lazy: () => import("./p7/PortalLayout"),
@@ -89,6 +92,7 @@ export const router = createBrowserRouter([
           { path: "settings", lazy: () => import("./settings/Settings") },
           // End P6 OD-26 numbering settings route block.
           { path: "settings/time-zone", lazy: () => import("./settings/TimeZoneSettings") },
+          { path: "settings/sign-in-policy", lazy: () => import("./settings/SignInPolicy") },
           { path: "settings/import-files", lazy: () => import("./settings/ImportFileSettings") },
           { path: "settings/currencies", lazy: () => import("./settings/Currencies") },
           { path: "settings/recovery", lazy: () => import("./settings/SupplierRecovery") },
@@ -106,6 +110,7 @@ export const router = createBrowserRouter([
           { path: "labels/templates/new", lazy: () => import("./labels/LabelTemplateEditor") },
           { path: "labels/templates/:id", lazy: () => import("./labels/LabelTemplateEditor") },
           { path: "settings/labels", lazy: () => import("./settings/LabelSettings") },
+          { path: "account/security", lazy: () => import("./pages/AccountSecurity") },
           { path: "claims/campaigns", lazy: () => import("./campaigns/Campaigns") },
           { path: "claims/campaigns/new", lazy: () => import("./campaigns/CampaignEditor") },
           { path: "claims/campaigns/:campaignId", lazy: () => import("./campaigns/CampaignEditor") },

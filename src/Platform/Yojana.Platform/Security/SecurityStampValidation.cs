@@ -27,10 +27,16 @@ public sealed class SecurityStampValidationCache(IClock clock, SignInOptions opt
         return cached.Stamp == stamp;
     }
 
-    public void Remember(string sessionId, Guid stamp) =>
-        stamps[sessionId] = new CachedStamp(stamp, clock.UtcNow + options.StampValidationInterval);
+    public void Remember(string sessionId, Guid userId, Guid stamp) =>
+        stamps[sessionId] = new CachedStamp(userId, stamp, clock.UtcNow + options.StampValidationInterval);
 
-    private sealed record CachedStamp(Guid Stamp, DateTime ExpiresAt);
+    public void Invalidate(Guid userId)
+    {
+        foreach (var row in stamps.Where(row => row.Value.UserId == userId))
+            stamps.TryRemove(row.Key, out _);
+    }
+
+    private sealed record CachedStamp(Guid UserId, Guid Stamp, DateTime ExpiresAt);
 }
 
 public sealed class SecurityStampValidator(
@@ -70,7 +76,7 @@ public sealed class SecurityStampValidator(
             principal = new ClaimsPrincipal(identity);
         }
 
-        cache.Remember(sessionClaim!, user.SecurityStamp);
+        cache.Remember(sessionClaim!, userId, user.SecurityStamp);
         return new SecurityStampValidationResult(true, principal, renew);
     }
 }
