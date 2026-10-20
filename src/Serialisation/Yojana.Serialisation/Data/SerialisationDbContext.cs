@@ -21,6 +21,13 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     /// <summary>Partition function and scheme shared by <c>unit_event</c> and <c>unit_event_archive</c>.</summary>
     public const string PartitionFunction = "pf_event_month";
     public const string PartitionScheme = "ps_event_month";
+
+    /// <summary>
+    /// Filter of every merged-from index. Only rows moved by a unit merge carry the column, and the merge reads it only
+    /// by equality with the absorbed unit, so the indexes hold merged rows alone instead of one entry per row of the
+    /// table (11.5 GB on the benchmark ledger, maintained by every append).
+    /// </summary>
+    public const string MergedFromFilter = "[merged_from_unit_id] IS NOT NULL";
     public const string EventSequence = "seq_unit_event";
 
     public override string Schema => SchemaName;
@@ -245,7 +252,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             // 2026-10-16), starving the receipt it ran beside.
             b.HasIndex(i => new { i.TenantId, i.UnitId });
             b.HasIndex(i => new { i.TenantId, i.SwappedWithIdentifierId });
-            b.HasIndex(i => new { i.TenantId, i.MergedFromUnitId });
+            b.HasIndex(i => new { i.TenantId, i.MergedFromUnitId }).HasFilter(MergedFromFilter);
             // Lookup by any identifier, open or superseded; prefix search uses LIKE 'value%' and the browse path can
             // stop after TOP(n+1) without sorting the tenant's whole identifier set.
             b.HasIndex(i => new { i.TenantId, i.NormalisedValue, i.Type, i.UnitId })
@@ -259,7 +266,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(a => a.Reason).HasMaxLength(20);
             b.HasIndex(a => new { a.TenantId, a.UnitId }).IsUnique().HasFilter("[valid_to] IS NULL");
             b.HasIndex(a => new { a.TenantId, a.ItemId, a.ValidTo });
-            b.HasIndex(a => new { a.TenantId, a.MergedFromUnitId });
+            b.HasIndex(a => new { a.TenantId, a.MergedFromUnitId }).HasFilter(MergedFromFilter);
         });
 
         modelBuilder.Entity<AssemblyLink>(b =>
@@ -273,7 +280,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(l => l.ReleaseStatus).HasMaxLength(20);
             b.Property(l => l.ReleaseDocRef).HasMaxLength(100);
             b.HasIndex(l => new { l.TenantId, l.ParentUnitId, l.RemovedAt });
-            b.HasIndex(l => new { l.TenantId, l.MergedFromUnitId });
+            b.HasIndex(l => new { l.TenantId, l.MergedFromUnitId }).HasFilter(MergedFromFilter);
             // Tree integrity (case 37): a serialised child has at most one open parent.
             b.HasIndex(l => new { l.TenantId, l.ChildUnitId }).IsUnique()
                 .HasFilter("[removed_at] IS NULL AND [child_unit_id] IS NOT NULL");
@@ -287,7 +294,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(r => r.PayloadHash).HasMaxLength(64).IsUnicode(false);
             b.Property(r => r.ReleaseSignatureRef).HasMaxLength(200);
             b.HasIndex(r => new { r.TenantId, r.UnitId, r.Version }).IsUnique();
-            b.HasIndex(r => new { r.TenantId, r.MergedFromUnitId });
+            b.HasIndex(r => new { r.TenantId, r.MergedFromUnitId }).HasFilter(MergedFromFilter);
         });
 
         modelBuilder.Entity<SerialRange>(b =>
@@ -316,7 +323,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasKey(m => new { m.TenantId, m.RangeId, m.Ordinal });
             b.Property(m => m.Value).HasMaxLength(100);
             b.HasIndex(m => new { m.TenantId, m.CommissionedUnitId });
-            b.HasIndex(m => new { m.TenantId, m.MergedFromUnitId });
+            b.HasIndex(m => new { m.TenantId, m.MergedFromUnitId }).HasFilter(MergedFromFilter);
         });
 
         modelBuilder.Entity<DisclosurePolicy>(b =>
@@ -442,7 +449,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
                 .IncludeProperties(e => new { e.UnitId, e.EpisodeId, e.PartyRef, e.Source, e.OpeningDocumentType });
             b.HasIndex(e => new { e.TenantId, e.PartyRef, e.Kind, e.ValidTo });
             b.HasIndex(e => new { e.TenantId, e.LocationId, e.ValidTo });
-            b.HasIndex(e => new { e.TenantId, e.MergedFromUnitId });
+            b.HasIndex(e => new { e.TenantId, e.MergedFromUnitId }).HasFilter(MergedFromFilter);
         });
 
         ConfigureLedger<UnitEvent>(modelBuilder, "unit_event");
@@ -545,7 +552,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(m => m.Reason).HasMaxLength(100);
             b.Property(m => m.Detail).HasMaxLength(400);
             b.HasIndex(m => new { m.TenantId, m.SelectionId, m.Serial });
-            b.HasIndex(m => new { m.TenantId, m.MergedFromUnitId });
+            b.HasIndex(m => new { m.TenantId, m.MergedFromUnitId }).HasFilter(MergedFromFilter);
         });
 
         modelBuilder.Entity<CorrectionRecord>(b =>
@@ -644,7 +651,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             // convention would reject: SQL Server full-text needs exactly that shape as its KEY INDEX. The index is
             // created by SQL in the Search migration, not here; tenant isolation still comes from the RLS policy.
             b.HasIndex(e => new { e.TenantId, e.UpdatedAt });
-            b.HasIndex(e => new { e.TenantId, e.MergedFromUnitId });
+            b.HasIndex(e => new { e.TenantId, e.MergedFromUnitId }).HasFilter(MergedFromFilter);
         });
 
         modelBuilder.Entity<SearchTerm>(b =>
@@ -656,7 +663,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(t => t.Kind).HasMaxLength(20);
             b.Property(t => t.Detail).HasMaxLength(60);
             b.HasIndex(t => new { t.TenantId, t.EntityType, t.EntityId });
-            b.HasIndex(t => new { t.TenantId, t.MergedFromUnitId });
+            b.HasIndex(t => new { t.TenantId, t.MergedFromUnitId }).HasFilter(MergedFromFilter);
         });
 
         // MOD-06 (P2-T02).
@@ -775,7 +782,10 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(e => e.SourceDocumentType).HasMaxLength(40);
             b.Property(e => e.CustomerPoRef).HasMaxLength(100);
             // Invariant 1: at most one live (not closed) entitlement per unit and coverage family; families stack beside each other.
-            b.HasIndex(e => new { e.TenantId, e.UnitId, e.CoverageFamily }).IsUnique().HasFilter("[status] <> 'closed'");
+            // Covers the sale-time owner lookup (EntitlementRequirements.PreloadAsync): a shipment reads the live base
+            // cover's owner for every unit, which without the include is a key lookup into the clustered index per unit.
+            b.HasIndex(e => new { e.TenantId, e.UnitId, e.CoverageFamily }).IsUnique().HasFilter("[status] <> 'closed'")
+                .IncludeProperties(e => e.OwnerPartyRef);
             // Every entitlement a unit has carried, newest first, for the Entitlements panel and the policy stack.
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.CreatedAt });
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.CoverageFamily, e.Status, e.ClosedReason });
@@ -786,7 +796,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(e => new { e.TenantId, e.OwnerPartyRef, e.Status });
             b.HasIndex(e => new { e.TenantId, e.PolicyVersionId });
             b.HasIndex(e => new { e.TenantId, e.SourceDocumentType, e.SourceDocumentId });
-            b.HasIndex(e => new { e.TenantId, e.MergedFromUnitId });
+            b.HasIndex(e => new { e.TenantId, e.MergedFromUnitId }).HasFilter(MergedFromFilter);
         });
 
         modelBuilder.Entity<EntitlementRequirement>(b =>
@@ -802,7 +812,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(r => new { r.TenantId, r.UnitId, r.OwnershipEpisodeId }).IsUnique();
             b.HasIndex(r => new { r.TenantId, r.Status, r.RaisedAt });
             b.HasIndex(r => new { r.TenantId, r.SourceDocumentType, r.SourceDocumentId, r.Status });
-            b.HasIndex(r => new { r.TenantId, r.MergedFromUnitId });
+            b.HasIndex(r => new { r.TenantId, r.MergedFromUnitId }).HasFilter(MergedFromFilter);
         });
 
         modelBuilder.Entity<EntitlementGapRun>(b =>
@@ -2038,7 +2048,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(e => new { e.TenantId, e.IdempotencyKey, e.EventTime }).IsUnique();
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.EventTime }).IsDescending(false, false, true)
                 .IncludeProperties(e => new { e.EventType, e.BizStep, e.Disposition, e.LocationId, e.Seq, e.RecordedTime });
-            b.HasIndex(e => new { e.TenantId, e.MergedFromUnitId, e.EventTime });
+            b.HasIndex(e => new { e.TenantId, e.MergedFromUnitId, e.EventTime }).HasFilter(MergedFromFilter);
         });
     }
 }
