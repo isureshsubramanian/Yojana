@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
+    <!--
+      Declared coupling: tools/Yojana.Demo (DemoConfiguration) reads this secrets id and appsettings.Development.json
+      so `make demo` fills the stores this host reads and seals credentials with this host's local key. Renaming
+      either breaks the demo at start-up or makes its data invisible here; update DemoConfiguration with it.
+    -->
     <UserSecretsId>yojana-web</UserSecretsId>
     <!--
       The SDK's static web assets pipeline (Razor/Blazor asset discovery) is off: the client is plain copied
