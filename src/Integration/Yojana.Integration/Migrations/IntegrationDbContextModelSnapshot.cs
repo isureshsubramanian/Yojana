@@ -649,6 +649,10 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("record_types_json");
 
+                    b.Property<bool>("RelayConnected")
+                        .HasColumnType("bit")
+                        .HasColumnName("relay_connected");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(24)
@@ -2205,6 +2209,187 @@ namespace Yojana.Integration.Migrations
                     b.ToTable("tenant_data_key_rewrap_checkpoint", "integration");
                 });
 
+            modelBuilder.Entity("Yojana.Integration.Relays.RelayNonce", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RelayId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("relay_id");
+
+                    b.Property<string>("Nonce")
+                        .HasMaxLength(48)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(48)")
+                        .HasColumnName("nonce");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTime>("SeenAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("seen_at");
+
+                    b.HasKey("TenantId", "RelayId", "Nonce")
+                        .HasName("pk_relay_nonce");
+
+                    b.HasIndex("TenantId", "ExpiresAt")
+                        .HasDatabaseName("ix_relay_nonce_tenant_id_expires_at");
+
+                    b.HasIndex("TenantId", "RelayId", "SeenAt")
+                        .HasDatabaseName("ix_relay_nonce_tenant_id_relay_id_seen_at");
+
+                    b.ToTable("relay_nonce", "integration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Relays.RelayRequestRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("request_id");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("completed_at");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid?>("LeaseId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("lease_id");
+
+                    b.Property<DateTime?>("LeasedUntil")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("leased_until");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("payload_json");
+
+                    b.Property<Guid?>("RelayId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("relay_id");
+
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("result_json");
+
+                    b.HasKey("TenantId", "RequestId")
+                        .HasName("pk_relay_request");
+
+                    b.HasIndex("TenantId", "ExpiresAt", "RequestId")
+                        .HasDatabaseName("ix_relay_request_tenant_id_expires_at_request_id");
+
+                    b.HasIndex("TenantId", "ConnectionId", "LeaseId", "CreatedAt", "RequestId")
+                        .HasDatabaseName("ix_relay_request_tenant_id_connection_id_lease_id_created_at_request_id");
+
+                    b.ToTable("relay_request", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_relay_request_payload", "DATALENGTH(payload_json) <= 25165824");
+
+                            t.HasCheckConstraint("ck_relay_request_result", "DATALENGTH(result_json) <= 25165824");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Relays.SiteRelay", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RelayId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("relay_id");
+
+                    b.Property<string>("AgentVersion")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("agent_version");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("display_name");
+
+                    b.Property<string>("ErpVersion")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("erp_version");
+
+                    b.Property<string>("HostName")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("host_name");
+
+                    b.Property<DateTime?>("LastSeenAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<DateTime?>("PreviousSecretExpiresAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("previous_secret_expires_at");
+
+                    b.Property<string>("PreviousSigningKeyEnvelope")
+                        .HasMaxLength(4096)
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("previous_signing_key_envelope");
+
+                    b.Property<string>("ProbedErpVersion")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("probed_erp_version");
+
+                    b.Property<string>("SigningKeyEnvelope")
+                        .IsRequired()
+                        .HasMaxLength(4096)
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("signing_key_envelope");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("status");
+
+                    b.HasKey("TenantId", "RelayId")
+                        .HasName("pk_relay");
+
+                    b.HasIndex("TenantId", "ConnectionId", "Status", "LastSeenAt", "RelayId")
+                        .HasDatabaseName("ix_relay_tenant_id_connection_id_status_last_seen_at_relay_id");
+
+                    b.ToTable("relay", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_relay_status", "status IN ('active','revoked')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.DeadLetterEvent", b =>
                 {
                     b.HasOne("Yojana.Integration.Data.Entities.DeadLetterItem", null)
@@ -2252,6 +2437,26 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_reconciliation_location_tenant_id_reconciliation_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Relays.RelayRequestRow", b =>
+                {
+                    b.HasOne("Yojana.Integration.Data.Entities.Connection", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ConnectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_relay_request_tenant_id_connection_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Relays.SiteRelay", b =>
+                {
+                    b.HasOne("Yojana.Integration.Data.Entities.Connection", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ConnectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_relay_tenant_id_connection_id");
                 });
 #pragma warning restore 612, 618
         }

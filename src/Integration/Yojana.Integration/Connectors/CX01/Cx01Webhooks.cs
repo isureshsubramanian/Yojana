@@ -53,7 +53,7 @@ public static class Cx01WebhookEndpoints
         return app;
     }
 
-    private static async Task<IResult> ReceiveAsync(Guid connectionId, HttpRequest request, HttpResponse response,
+    internal static async Task<IResult> ReceiveAsync(Guid connectionId, HttpRequest request, HttpResponse response,
         ITenantContextSetter tenantSetter, IntegrationDbContext db, Cx01Settings settings,
         IConnectionCredentialStore credentials, ConnectionCredentialProtector protector, IMessageBus bus,
         CancellationToken cancellationToken)
@@ -315,8 +315,9 @@ public sealed class Cx01WebhookMaintenance(
         var secret = await protector.DecryptAsync(credential, cancellationToken);
         try
         {
-            await UnsubscribeAsync(connectionId, cancellationToken);
-            var callbackBuilder = new UriBuilder(callback);
+            var callbackBuilder = new UriBuilder(configured.Transport == "site_relay"
+                ? configured.RelayWebhookUrl ?? throw new InvalidOperationException("The relay webhook URL is required.")
+                : callback.ToString());
             var tenantParameter = "tenant=" + Uri.EscapeDataString(tenant.TenantId.ToString());
             callbackBuilder.Query = string.IsNullOrWhiteSpace(callbackBuilder.Query)
                 ? tenantParameter : callbackBuilder.Query.TrimStart('?') + "&" + tenantParameter;
@@ -345,8 +346,25 @@ public sealed class Cx01WebhookMaintenance(
                     return item;
                 }).ToList(),
             };
-            using var ignored = await client.SendJsonAsync(connectionId, HttpMethod.Post,
-                Cx01Protocol.Root + Cx01Protocol.EventSubscriptions, body, false, cancellationToken);
+            // A lost create result is uncertain. Read the deterministic resource before every retry;
+            // replace only a different configuration, never repeat a successful identical create.
+            var resource = Cx01Protocol.Root + Cx01Protocol.EventSubscriptions + "("
+                + Cx01Protocol.KeyLiteral(Cx01Protocol.WebhookId(tenant.TenantId.Value, connectionId)) + ")";
+            var exists = false;
+            try
+            {
+                using var existing = await client.GetAsync(connectionId, resource, cancellationToken);
+                var desired = JsonSerializer.SerializeToElement(body, Cx01Protocol.Json);
+                exists = desired.EnumerateObject().All(property => existing.RootElement.TryGetProperty(property.Name, out var value)
+                    && JsonElement.DeepEquals(property.Value, value));
+            }
+            catch (Cx01RemoteException exception) when (exception.IsRecordGone) { }
+            if (!exists)
+            {
+                await UnsubscribeAsync(connectionId, cancellationToken);
+                using var ignored = await client.SendJsonAsync(connectionId, HttpMethod.Post,
+                    Cx01Protocol.Root + Cx01Protocol.EventSubscriptions, body, false, cancellationToken);
+            }
             var sources = await db.ConnectionNotificationSources.Where(x => x.TenantId == tenant.TenantId
                 && x.ConnectionId == connectionId).ToListAsync(cancellationToken);
             foreach (var entity in Cx01Protocol.Entities)

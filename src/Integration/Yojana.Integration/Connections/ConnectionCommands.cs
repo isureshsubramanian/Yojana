@@ -51,7 +51,7 @@ public sealed class ConnectionCommands(IntegrationDbContext db, ITenantContext t
         }
         if (request.Credentials is null || request.Credentials.Count > 8
             || request.Credentials.Select(x => x.Purpose).Distinct(StringComparer.Ordinal).Count() != request.Credentials.Count
-            || adapter.CredentialPurposes.Any(purpose => !request.Credentials.Any(x => x.Purpose == purpose))
+            || adapter.RequiredCredentialPurposes(request.ConnectorSettings).Any(purpose => !request.Credentials.Any(x => x.Purpose == purpose))
             || request.Credentials.Any(x => string.IsNullOrWhiteSpace(x.Secret) || string.IsNullOrWhiteSpace(x.Purpose)
                 || x.Purpose.Length > 100 || x.Secret.Length > 64000))
             throw new ConnectionRuleException("connection_credentials_invalid", "Supply the required credentials once per purpose.");
@@ -116,7 +116,12 @@ public sealed class ConnectionCommands(IntegrationDbContext db, ITenantContext t
                 });
         connection.Status = ConnectionStatus.Active;
         await db.SaveChangesAsync(ct);
-        var result = await ProbeAsync(connection, adapter, ct);
+        // A relay is provisioned after registration. Do not hold the connection operation lock while
+        // waiting for an agent that cannot yet have been registered by the administrator.
+        var profile = services.GetKeyedService<Yojana.Integration.Relays.IRelayConnectorProfile>(connection.ConnectorCode);
+        var relayOptions = profile is null ? null : await profile.OptionsAsync(id, ct);
+        var result = relayOptions?.Transport == "site_relay"
+            ? await ResultAsync(connection, null, ct) : await ProbeAsync(connection, adapter, ct);
         connection.RegistrationCompleted = true;
         await db.SaveChangesAsync(ct);
         return result;

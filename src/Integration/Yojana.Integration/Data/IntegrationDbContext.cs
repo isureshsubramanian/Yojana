@@ -11,6 +11,10 @@ namespace Yojana.Integration.Data;
 public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> options, ITenantContext tenant)
     : YojanaDbContext(options, tenant)
 {
+    public DbSet<Yojana.Integration.Relays.SiteRelay> SiteRelays => Set<Yojana.Integration.Relays.SiteRelay>();
+    public DbSet<Yojana.Integration.Relays.RelayRequestRow> RelayRequests => Set<Yojana.Integration.Relays.RelayRequestRow>();
+    public DbSet<Yojana.Integration.Relays.RelayNonce> RelayNonces => Set<Yojana.Integration.Relays.RelayNonce>();
+
     public const string SchemaName = "integration";
     public override string Schema => SchemaName;
 
@@ -447,6 +451,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.Entity, x.Status,
                 x.CreatedAt, x.BackfillCursorId });
         });
+        Yojana.Integration.Relays.RelayModel.Configure(modelBuilder);
         base.OnModelCreating(modelBuilder);
     }
 

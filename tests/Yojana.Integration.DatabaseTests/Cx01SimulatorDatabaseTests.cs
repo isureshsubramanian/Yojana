@@ -264,6 +264,11 @@ public sealed class Cx01SimulatorDatabaseTests(IntegrationHostFixture fixture)
             CancellationToken.None);
         await maintenance.SubscribeAsync(connection, new Uri("https://connector.invalid/notifications"),
             CancellationToken.None);
+        Assert.Equal(1, simulator.SubscriptionCreateCount);
+        Assert.False(simulator.WebhookSubscriptionPaused);
+        await maintenance.SubscribeAsync(connection, new Uri("https://connector.invalid/updated-notifications"),
+            CancellationToken.None);
+        Assert.Equal(2, simulator.SubscriptionCreateCount);
         var accepted = await maintenance.WatchdogConnectionAsync(connection, CancellationToken.None);
 
         Assert.True(simulator.WebhookSubscriptionCreated);
@@ -301,6 +306,7 @@ public sealed class Cx01SimulatorDatabaseTests(IntegrationHostFixture fixture)
             CancellationToken.None);
         _ = await scope.ServiceProvider.GetRequiredService<Cx01Onboarding>().ProbeAndApplyAsync(connection,
             CancellationToken.None);
+        Assert.Equal(1, simulator.SerialQueryCreateCount);
         var survey = await scope.ServiceProvider.GetRequiredService<Cx01SurveyService>().RunAsync(connection,
             new(true, "Reviewed fictional procedure", false, "No screen-only checks"), CancellationToken.None);
 

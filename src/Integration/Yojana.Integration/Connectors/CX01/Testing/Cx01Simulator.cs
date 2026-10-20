@@ -47,6 +47,9 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     }
 
     public Uri BaseUri { get; }
+    public string Release { get; set; } = "1000340";
+    public bool WebhooksEnabled { get; set; } = true;
+    public int SubscriptionCreateCount { get; private set; }
     public int LoginCount { get; private set; }
     public int ExpireAfterAuthenticatedRequests { get; set; } = int.MaxValue;
     public bool RateLimitNextRequest { get; set; }
@@ -160,7 +163,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 response.Headers.Add("Set-Cookie", Cx01Protocol.SessionCookie + "=" + session
                     + "; Path=/b1s/v2; HttpOnly");
                 response.AppendHeader("Set-Cookie", Cx01Protocol.RouteCookie + "=.node1; Path=/b1s/v2; HttpOnly");
-                await JsonAsync(response, new { SessionId = session, SessionTimeout = 30, Version = "1000340" });
+                await JsonAsync(response, new { SessionId = session, SessionTimeout = 30, Version = Release });
                 return;
             }
 
@@ -207,14 +210,14 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             }
             if (path == Cx01Protocol.Root)
             {
-                await JsonAsync(response, new { Version = "1000340" });
+                await JsonAsync(response, new { Version = Release });
                 return;
             }
             if (path == Cx01Protocol.Root + Cx01Protocol.AdminInfo && request.HttpMethod == "POST")
             {
                 await JsonAsync(response, new
                 {
-                    EnableWebhook = "tYES",
+                    EnableWebhook = WebhooksEnabled ? "tYES" : "tNO",
                     WebhookRetryTimes = 3,
                     WebhookRetryInterval = 2,
                     WebhookRequestTimeout = 10,
@@ -466,6 +469,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 var body = await new StreamReader(request.InputStream).ReadToEndAsync();
                 LastSubscriptionBody?.Dispose();
                 LastSubscriptionBody = JsonDocument.Parse(body);
+                SubscriptionCreateCount++;
                 WebhookSubscriptionCreated = true;
                 subscriptionActive = true;
                 response.StatusCode = (int)HttpStatusCode.Created;
@@ -490,7 +494,9 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 && request.HttpMethod == "GET")
             {
                 if (LastSubscriptionBody is null) { await NotFoundAsync(response); return; }
-                await JsonAsync(response, new { State = SubscriptionStopped ? "Stopped" : "Active" });
+                var state = JsonSerializer.Deserialize<Dictionary<string, object?>>(LastSubscriptionBody.RootElement.GetRawText())!;
+                state["State"] = SubscriptionStopped ? "Stopped" : "Active";
+                await JsonAsync(response, state);
                 return;
             }
             if (path.Contains(Cx01Protocol.EventSubscriptions + "('", StringComparison.Ordinal)

@@ -7,6 +7,8 @@ public sealed class Cx01ConnectionLifecycleAdapter(Cx01Settings settings, Cx01Cl
     Cx01SurveyService survey, Cx01WebhookMaintenance notifications) : IConnectionLifecycleAdapter
 {
     public IReadOnlyList<string> CredentialPurposes => [Cx01Client.CredentialPurpose];
+    public IReadOnlyList<string> RequiredCredentialPurposes(JsonElement value) =>
+        Read(value) is { Transport: "site_relay", RelayCredentials: "site" } ? [] : CredentialPurposes;
     public void ValidateSettings(JsonElement value) => _ = Read(value);
 
     public async Task<ConnectionDeclaration> ConfigureAsync(Guid connectionId, JsonElement value, CancellationToken ct)

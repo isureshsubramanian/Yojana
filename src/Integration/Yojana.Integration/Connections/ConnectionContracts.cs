@@ -22,7 +22,7 @@ public sealed record RegistrationResult(Guid ConnectionId, string HealthStatus, 
     JsonElement? SurveySummary);
 public sealed record ConnectionKpis(int Connections, int Live, int Paused, long ReceivedToday,
     long ReceivedLast30Days, int WaitingToSend, DateTime? OldestWaitingAt, int OpenDeadLetters,
-    int OpenManualTasks, int ConnectionsNeedingAttention);
+    int OpenManualTasks, int ConnectionsNeedingAttention, int RelayConnected = 0);
 public sealed record ConnectionPage(IReadOnlyList<ConnectionSummary> Items, string? NextCursor, ConnectionKpis Kpis);
 public sealed record ConnectionSummary(Guid ConnectionId, string ConnectionName, string ConnectorCode,
     string ConnectorName, string Status, bool IsLive, string OutboundMode, bool ReadOnly,
@@ -33,7 +33,7 @@ public sealed record ConnectionHealthView(string Status, bool IsLive, DateTime? 
     int OpenDeadLetters, int OpenManualTasks, DateTime? OldestDeadLetterAt, string? LastDailyCheckResult,
     DateTime? LastDailyCheckAt, int DailyCheckDifferences, int CallsUsed, int? CallsCap, int CallAlertPercent,
     DateTime? CredentialReplaceBy, int CredentialWarnDays, string? LastErrorCode, string? LastErrorMessage,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt, bool RelayConnected = false);
 public sealed record RecordTypeHealth(string RecordType, string NotificationState, string? Watermark,
     DateTime? CheckedUpTo, double? BehindSeconds, int IntervalSeconds, int OverlapSeconds,
     long ReceivedToday, int NeedAttention);

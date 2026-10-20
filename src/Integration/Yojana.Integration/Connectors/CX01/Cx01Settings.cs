@@ -23,12 +23,18 @@ public sealed record Cx01ConnectionSettings(
     int KeepAliveMinutes = 20,
     IReadOnlyDictionary<string, bool>? TrackingTableDeclarations = null,
     IReadOnlyDictionary<string, Cx01FieldSource>? FieldMap = null,
+    string Transport = "direct", string RelayCredentials = "site", string? RelayWebhookUrl = null,
+    int RelayOfflineAfterSeconds = 120, int RelayRequestTimeoutSeconds = 90, int RelayQueueCapacity = 128,
     IReadOnlyDictionary<string, Cx01ApprovalHandling>? ApprovalHandling = null)
 {
     public Cx01ConnectionSettings Validate()
     {
         Cx01FieldMap.Validate(FieldMap);
         Cx01ApprovalPolicy.Validate(ApprovalHandling);
+        if (RelayWebhookUrl is not null) Yojana.Relay.Contracts.RelayWebhookUrl.Validate(RelayWebhookUrl);
+        if (Transport is not ("direct" or "site_relay") || RelayCredentials is not ("site" or "cloud")
+            || RelayQueueCapacity is < 1 or > 1024 || RelayOfflineAfterSeconds is < 30 or > 3600 || RelayRequestTimeoutSeconds is < 1 or > 300)
+            throw new InvalidOperationException("The relay transport settings are invalid.");
         if (!ServiceUri.IsAbsoluteUri || ServiceUri.Scheme is not ("http" or "https"))
             throw new InvalidOperationException("The CX01 service URL must be an absolute HTTP or HTTPS URL.");
         if (string.IsNullOrWhiteSpace(CompanyDatabase))

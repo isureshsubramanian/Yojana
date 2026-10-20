@@ -5,6 +5,8 @@
     that adds it (standing rule). Adding a line here without those two edits fails `make gate`.
   -->
   <ItemGroup>
+    <!-- Relay only: MIT; licence and bundled notices audited at add-time. -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.9" />
     <!-- Data: MIT (dotnet/efcore, dotnet/SqlClient) -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.13" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.13" />

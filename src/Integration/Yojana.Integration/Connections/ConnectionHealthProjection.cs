@@ -155,6 +155,28 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
             polls.Count > 0, row.LastDailyCheckResult, row.LastDailyCheckAt, row.OpenDeadLetters,
             row.OpenManualTasks, row.OldestWaitingAt, maxAge, row.NotificationState, credentialDue,
             row.CallsCap is { } cap && row.CallsUsed * 100L >= cap * (long)row.CallAlertPercent, pollFailed, connection.CreatedAt), thresholds, now);
+        row.RelayConnected = false;
+        var relayProfile = services.GetKeyedService<Yojana.Integration.Relays.IRelayConnectorProfile>(connection.ConnectorCode);
+        if (connection.Status == ConnectionStatus.Active && relayProfile is not null)
+        {
+            try
+            {
+                var relay = await relayProfile.OptionsAsync(connectionId, ct);
+                if (relay.Transport == "site_relay")
+                {
+                    var relayCutoff = now.AddSeconds(-relay.OfflineAfterSeconds);
+                    row.RelayConnected = await db.SiteRelays.AnyAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId
+                        && x.Status == "active" && x.LastSeenAt >= relayCutoff, ct);
+                    if (!row.RelayConnected)
+                    {
+                        row.Status = "down";
+                        row.LastErrorCode = "relay_offline";
+                        row.LastErrorMessage = "The site relay is offline; queued work will retry after it reconnects.";
+                    }
+                }
+            }
+            catch (InvalidOperationException) when (!connection.RegistrationCompleted) { }
+        }
         row.IsLive = connection.Status == ConnectionStatus.Active && row.Status != "down" && !smokeFailed
             && row.LastDailyCheckResult == "clean" && row.LastDailyCheckAt > now.AddHours(-thresholds.HealthySweepHours);
         // Message types (canonical), rather than remote entity names, join counters to poll declarations.

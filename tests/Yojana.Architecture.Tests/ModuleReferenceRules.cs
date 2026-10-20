@@ -109,6 +109,23 @@ public sealed class ModuleReferenceRules
     }
 
     [Fact]
+    public void Relay_has_only_wire_contracts_and_the_approved_host_package()
+    {
+        Assert.Equal(["Yojana.Relay.Contracts"], Graph()["Yojana.Relay"]);
+        Assert.Empty(Graph()["Yojana.Relay.Contracts"]);
+        var relay = XDocument.Load(Path.Combine(Root, "src/Relay/Yojana.Relay/Yojana.Relay.csproj"));
+        Assert.Equal(["Microsoft.Extensions.Hosting.WindowsServices"], relay.Descendants("PackageReference")
+            .Select(reference => reference.Attribute("Include")!.Value));
+        Assert.Empty(relay.Descendants("FrameworkReference"));
+        var contract = XDocument.Load(Path.Combine(Root, "src/Relay/Yojana.Relay.Contracts/Yojana.Relay.Contracts.csproj"));
+        Assert.Empty(contract.Descendants("PackageReference"));
+        var forbidden = new[] { "Yojana.Integration", "Yojana.Platform", "EntityFrameworkCore", "SqlClient" };
+        foreach (var file in Directory.EnumerateFiles(Path.Combine(Root, "src/Relay"), "*.cs", SearchOption.AllDirectories)
+                     .Where(file => !file.Contains("/obj/", StringComparison.Ordinal)))
+            foreach (var text in forbidden) Assert.DoesNotContain(text, File.ReadAllText(file), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Every_source_project_is_in_the_solution()
     {
         var solution = File.ReadAllText(Path.Combine(Root, "Yojana.slnx"));

@@ -109,6 +109,7 @@ app.UseStaticFiles(new StaticFileOptions
     },
 });
 app.UseYojanaPlatform();
+app.UseRateLimiter();
 app.UseSerialisationInteractiveReads();
 app.MapPresenceEndpoints();
 app.MapSerialisationEndpoints();

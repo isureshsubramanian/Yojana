@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <ProjectReference Include="../../Relay/Yojana.Relay.Contracts/Yojana.Relay.Contracts.csproj" />
     <PackageReference Include="WolverineFx.AzureServiceBus" />
     <PackageReference Include="Azure.Messaging.ServiceBus" />
     <PackageReference Include="Azure.Identity" />
