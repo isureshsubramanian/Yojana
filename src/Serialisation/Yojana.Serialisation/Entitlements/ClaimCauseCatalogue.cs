@@ -22,7 +22,10 @@ public sealed class ClaimCauseCatalogue(SerialisationDbContext db, ITenantContex
     public async Task<IReadOnlyList<ClaimCause>> ReadAsync(CancellationToken ct)
     {
         var rows = await db.ClaimCauses.AsNoTracking().Where(x => x.TenantId == tenant.TenantId).OrderBy(x => x.Code).ToListAsync(ct);
-        return rows.Count == 0 ? Defaults : rows.Select(x => new ClaimCause(x.Code, x.CustomerWording, x.Active)).ToList();
+        // The default causes keep the order the service desk asks them in; tenant additions follow by code.
+        int Rank(string code) { var index = Defaults.Select(x => x.Code).ToList().IndexOf(code); return index < 0 ? Defaults.Count : index; }
+        return rows.Count == 0 ? Defaults : rows.OrderBy(x => Rank(x.Code)).ThenBy(x => x.Code, StringComparer.Ordinal)
+            .Select(x => new ClaimCause(x.Code, x.CustomerWording, x.Active)).ToList();
     }
 
     public static string Version(IReadOnlyList<ClaimCause> causes) => DocumentVersion.Encode(

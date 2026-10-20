@@ -151,12 +151,12 @@ export function Component() {
 
         {detail && (
           <div className="card statebar" aria-label="Current state" style={{ marginBottom: "var(--gap)" }}>
-            <span><span className="k">Lifecycle</span><span className="v">{detail.lifecycleStatus}</span></span>
-            <span><span className="k">Disposition</span><span className="v">{detail.disposition}</span></span>
-            <span><span className="k">Custody</span><span className="v">{detail.locationKind ?? "—"}{detail.locationId ? ` · ${referenceNames.location(detail.locationId)}` : ""}</span></span>
+            <span><span className="k">Lifecycle</span><span className="v">{statusLabel(detail.lifecycleStatus)}</span></span>
+            <span><span className="k">Disposition</span><span className="v">{statusLabel(detail.disposition)}</span></span>
+            <span><span className="k">Custody</span><span className="v">{statusLabel(detail.locationKind)}{detail.locationId ? ` · ${referenceNames.location(detail.locationId)}` : ""}</span></span>
             <span><span className="k">Owner</span><span className="v">{referenceNames.party(detail.ownerPartyRef)}</span></span>
-            <span><span className="k">Condition</span><span className="v">{detail.conditionGrade ?? "—"}</span></span>
-            <span><span className="k">Overlay flags</span><span className={`v${flags.length ? " bad-text" : " muted"}`}>{flags.length ? flags.join(", ") : "none"}</span></span>
+            <span><span className="k">Condition</span><span className="v">{statusLabel(detail.conditionGrade)}</span></span>
+            <span><span className="k">Overlay flags</span><span className={`v${flags.length ? " bad-text" : " muted"}`}>{flags.length ? flags.map(statusLabel).join(", ") : "None"}</span></span>
             <span><span className="k">Last event seq</span><span className="v">{detail.lastEventSeq.toLocaleString()} · {fmtDateTime(detail.lastEventTime)}</span></span>
           </div>
         )}

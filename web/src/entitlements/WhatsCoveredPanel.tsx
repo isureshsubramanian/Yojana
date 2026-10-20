@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { DataGrid, KpiStrip, StatusBadge, type GridColumn } from "../components";
 import { openDrawer, closeDrawer } from "../shell/drawerStore";
 import { ErrorNote, Kv } from "../units/common";
@@ -32,8 +32,9 @@ export function WhatsCoveredPanel({ unitId, summary }: { unitId: string; summary
     const size = covered ? paging.coveredSize : paging.excludedSize;
     const total = covered ? data?.coveredTotal : data?.excludedTotal;
     const onPage = (value: number) => setPaging((p) => ({ ...p, [covered ? "coveredPage" : "excludedPage"]: value }));
-    return <section className="card"><div className="card-header"><h2>{covered ? "Covered" : "Not covered"} <span className="meta">{total ?? "…"} items</span></h2><button type="button" className="btn ghost sm" onClick={() => setPaging((p) => ({ ...p, [covered ? "coveredSize" : "excludedSize"]: size === 7 ? 200 : 7, [covered ? "coveredPage" : "excludedPage"]: 1 }))}>{size === 7 ? "Show all" : "Show fewer"}</button></div>
-      <CoverItemsTable data={data ? { ...data, items: data.items.filter((x) => x.covered === covered), total: total ?? 0 } : null} covered={covered} internal={internal} page={page} size={size} onPage={onPage} />
+    return <section className="card"><div className="card-header"><h2>{covered ? "Covered" : "Not covered"} <span className="meta">{total ?? "…"} items</span></h2></div>
+      <CoverItemsTable data={data ? { ...data, items: data.items.filter((x) => x.covered === covered), total: total ?? 0 } : null} covered={covered} internal={internal} page={page} size={size} onPage={onPage}
+        footer={total && total > 200 ? undefined : total && total > 7 ? <><span>{Math.min(total, size)} of {total} shown · search above to find any item</span><button type="button" className="btn ghost sm" onClick={() => setPaging((p) => ({ ...p, [covered ? "coveredSize" : "excludedSize"]: size === 7 ? 200 : 7, [covered ? "coveredPage" : "excludedPage"]: 1 }))}>{size === 7 ? "Show all" : "Show fewer"}</button></> : <span>{covered ? "Each line names the cover that grants it" : "Wording comes from each cover’s policy version, as sold"}</span>} />
     </section>;
   };
   return <div className="stack">
@@ -48,13 +49,13 @@ export function WhatsCoveredPanel({ unitId, summary }: { unitId: string; summary
 export function CoverStrip({ data }: { data: WhatsCoveredPage }) {
   return <KpiStrip label="Live covers" kpis={data.covers.map((c) => ({ label: c.familyName, value: c.future ? `from ${fmtDate(c.from)}` : c.usage.length ? usageLabel(c) : `to ${fmtDate(c.until)}`, detail: `${c.policyName} v${c.policyVersion} · ${c.future ? "not yet running · " : ""}until ${fmtDate(c.until)}` }))} />;
 }
-export function CoverItemsTable({ data, covered, internal = false, page = 1, size = 7, onPage = () => undefined }: { data: WhatsCoveredPage | null; covered: boolean; internal?: boolean; page?: number; size?: number; onPage?: (p: number) => void }) {
+export function CoverItemsTable({ data, covered, internal = false, page = 1, size = 7, onPage = () => undefined, footer }: { data: WhatsCoveredPage | null; covered: boolean; internal?: boolean; page?: number; size?: number; onPage?: (p: number) => void; footer?: ReactNode }) {
   const columns: GridColumn<UnitCoverItem>[] = [
-    { key: "what", label: "What", width: 43, render: (r) => <div className="wrap">{r.customerWording}<span className="sub">{r.category ?? "Needs category"}</span>{r.causeNames?.length ? <span className="sub">{r.causeNames.join(", ")}</span> : null}{internal && [...r.grants, ...r.excludes].map((x) => <span className="sub" key={`${x.cover.entitlementId}:${x.code}`}>{x.code}{x.internalNote ? ` · ${x.internalNote}` : ""}</span>)}</div> },
+    { key: "what", label: "What", width: 43, render: (r) => <div className="cover-wrap">{r.customerWording}<span className="sub">{r.category ?? "Needs category"}</span>{r.causeNames?.length ? <span className="sub">{r.causeNames.join(", ")}</span> : null}{internal && [...r.grants, ...r.excludes].map((x) => <span className="sub" key={`${x.cover.entitlementId}:${x.code}`}>{x.code}{x.internalNote ? ` · ${x.internalNote}` : ""}</span>)}</div> },
     { key: "cover", label: covered ? "Covered by" : "Excluded by", width: 30, render: (r) => <div className="cover-pills">{(covered ? r.grants : r.excludes).map((x) => <span key={`${x.cover.entitlementId}:${x.code}`} title={`${coverLabel(x.cover)}${x.cover.future ? ` · from ${fmtDate(x.cover.from)}` : ""}`}><StatusBadge tone={x.cover.future ? "info" : covered ? "ok" : "neutral"}>{x.cover.familyName}</StatusBadge></span>)}</div> },
-    { key: "until", label: covered ? "Until · limit" : "Can it be covered?", width: 27, render: (r) => covered ? <>{r.grants.map((x) => <div className="wrap" key={`${x.cover.entitlementId}:${x.code}`}>{fmtDate(x.cover.until)}<span className="sub">{usageLabel(x.cover)}{x.cover.future ? ` · From ${fmtDate(x.cover.from)}` : ""}</span></div>)}</> : r.canBeCovered },
+    { key: "until", label: covered ? "Until · limit" : "Can it be covered?", width: 27, render: (r) => covered ? <>{r.grants.map((x) => <div className="cover-wrap" key={`${x.cover.entitlementId}:${x.code}`}>{fmtDate(x.cover.until)}<span className="sub">{usageLabel(x.cover)}{x.cover.future ? ` · From ${fmtDate(x.cover.from)}` : ""}</span></div>)}</> : r.canBeCovered },
   ];
-  return <DataGrid columns={columns} rowId={(r) => r.key} page={{ rows: data?.items ?? [], total: data?.total ?? 0, page, pageSize: size, continuation: null }} onPage={onPage} onRowClick={(r) => openCoverItem(r, internal, data?.unitId)} loading={!data} />;
+  return <DataGrid columns={columns} rowId={(r) => r.key} page={{ rows: data?.items ?? [], total: data?.total ?? 0, page, pageSize: size, continuation: null }} onPage={onPage} onRowClick={(r) => openCoverItem(r, internal, data?.unitId)} loading={!data} footer={footer} emptyText={covered ? "No cover grants anything for this search." : "Nothing is excluded for this search."} />;
 }
 export function openCoverItem(item: UnitCoverItem, internal: boolean, unitId?: string) {
   openDrawer({ eyebrow: item.covered ? "Covered item" : "Not covered", title: item.customerWording }, <CoverItemDetail item={item} internal={internal} unitId={unitId} />);

@@ -31,3 +31,4 @@
 .cover-toolbar > .input { flex: 0 1 480px; min-width: 220px; }
 .cover-toolbar > .hint { margin: 0 0 0 auto; }
 .cover-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.cover-wrap { white-space: normal; line-height: 1.4; padding: 6px 0; }

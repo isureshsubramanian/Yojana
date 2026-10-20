@@ -57,30 +57,33 @@ public sealed class WhatsCoveredQuery(SerialisationDbContext db, ITenantContext 
                 item.PartsScope.PartCategories.Count + item.PartsScope.ItemFamilies.Count == 0 ? "All parts" : string.Join(", ",
                     item.PartsScope.PartCategories.Concat(item.PartsScope.ItemFamilies.Select(code => familyNames.FirstOrDefault(f => f.Code == code)?.Name ?? "Item family unavailable"))), item.CauseCodes));
         })).ToList();
-        // Causes connect promises across covers. Build connected groups before projecting lines, so an item
-        // answering several causes is never split. Guidance still matches each contribution's own cause codes.
-        var groups = new List<List<(PolicyCoverItem Item, CoverItemContribution Contribution)>>();
-        foreach (var contribution in contributions)
+        // One line per promise: the same type, category and customer wording across covers (a base and an extended
+        // cover copying one item show once, with both covers). An item answering several causes stays one line.
+        // An exclusion is named on every covered line that grants one of its causes (grant over exclusion), and keeps
+        // its own Not covered line only while some of its causes, or no cause at all, are granted nowhere.
+        // Guidance still matches each contribution's own cause codes.
+        static string Promise(PolicyCoverItem item) => $"{item.Category}\u001f{item.CustomerWording}";
+        var granted = contributions.Where(x => x.Item.Type == "covered").GroupBy(x => Promise(x.Item)).Select(g => g.ToList()).ToList();
+        var grantedCauses = granted.SelectMany(g => g.SelectMany(x => x.Item.CauseCodes)).ToHashSet();
+        var excluded = contributions.Where(x => x.Item.Type == "excluded").GroupBy(x => Promise(x.Item)).Select(g => g.ToList()).ToList();
+        string CauseName(string code) => causes.First(x => x.CauseCode == code).CustomerWording;
+        var coveredLines = granted.Select(g =>
         {
-            var matching = groups.Where(g => g.Any(x => contribution.Item.CauseCodes.Count > 0
-                ? x.Item.CauseCodes.Intersect(contribution.Item.CauseCodes).Any()
-                : x.Item.CauseCodes.Count == 0 && x.Item.Category == contribution.Item.Category
-                    && x.Item.CustomerWording == contribution.Item.CustomerWording)).ToList();
-            var group = matching.SelectMany(x => x).ToList();
-            foreach (var match in matching) groups.Remove(match);
-            group.Add(contribution); groups.Add(group);
-        }
-        var lines = groups.Select(g =>
-        {
-            var grants = g.Where(x => x.Item.Type == "covered").Select(x => x.Contribution).ToList();
-            var excludes = g.Where(x => x.Item.Type == "excluded").Select(x => x.Contribution).ToList();
-            var primary = grants.FirstOrDefault(x => !x.Cover.Future && x.Cover.From != null) ?? grants.FirstOrDefault() ?? excludes[0];
             var answeredCauses = g.SelectMany(x => x.Item.CauseCodes).Distinct().Order().ToList();
-            var key = answeredCauses.Count > 0 ? "cause:" + string.Join(":", answeredCauses) : "text:" + primary.Category + ":" + primary.CustomerWording;
-            return new UnitCoverItem(key, primary.CustomerWording, primary.Category, answeredCauses,
-                grants.Count > 0, grants, excludes, Availability(answeredCauses),
-                answeredCauses.Select(code => causes.First(x => x.CauseCode == code).CustomerWording).ToList());
-        }).OrderBy(x => x.CustomerWording).ToList();
+            var grants = g.Select(x => x.Contribution).ToList();
+            var excludes = excluded.SelectMany(e => e).Where(e => e.Item.CauseCodes.Intersect(answeredCauses).Any()).Select(e => e.Contribution).ToList();
+            var primary = grants.FirstOrDefault(x => !x.Cover.Future && x.Cover.From != null) ?? grants[0];
+            return new UnitCoverItem("covered:" + Promise(g[0].Item), primary.CustomerWording, primary.Category, answeredCauses,
+                true, grants, excludes, Availability(answeredCauses), answeredCauses.Select(CauseName).ToList());
+        });
+        var excludedLines = excluded.Where(g => g.Any(x => x.Item.CauseCodes.Count == 0 || x.Item.CauseCodes.Any(c => !grantedCauses.Contains(c)))).Select(g =>
+        {
+            var answeredCauses = g.SelectMany(x => x.Item.CauseCodes).Distinct().Order().ToList();
+            var primary = g[0].Contribution;
+            return new UnitCoverItem("excluded:" + Promise(g[0].Item), primary.CustomerWording, primary.Category, answeredCauses,
+                false, [], g.Select(x => x.Contribution).ToList(), Availability(answeredCauses), answeredCauses.Select(CauseName).ToList());
+        });
+        var lines = coveredLines.Concat(excludedLines).OrderBy(x => x.CustomerWording).ToList();
 
         string Availability(IReadOnlyList<string> answeredCauses)
         {
@@ -150,9 +153,12 @@ public sealed class WhatsCoveredQuery(SerialisationDbContext db, ITenantContext 
         var covers = grants.GroupBy(x => x.Cover.EntitlementId).Select(g => new GuidedCover(g.First().Cover,
             g.First().Cover.Usage.Select(u => new GuidanceUsage(u.MeterType, u.Period, u.Remaining,
                 null)).ToList(), g.ToList())).ToList();
-        var wording = grants.Count > 0 ? string.Join(" ", grants.Select(x => x.CustomerWording).Distinct())
-            : string.Join(" ", matched.SelectMany(x => x.Excludes).Where(x => !x.Cover.Future && x.CauseCodes!.Contains(cause)).Select(x => x.CustomerWording).Distinct());
-        return new(cause, covers.Count > 0, covers, matched.SelectMany(x => x.Excludes).Where(x => !x.Cover.Future && x.CauseCodes!.Contains(cause)).ToList(),
+        // An exclusion is named on every covered line it touches; count it once.
+        var excludes = matched.SelectMany(x => x.Excludes).Where(x => !x.Cover.Future && x.CauseCodes!.Contains(cause))
+            .DistinctBy(x => (x.Cover.EntitlementId, x.Code)).ToList();
+        var wording = grants.Count > 0 ? string.Join(" · ", grants.Select(x => x.CustomerWording).Distinct())
+            : string.Join(" · ", excludes.Select(x => x.CustomerWording).Distinct());
+        return new(cause, covers.Count > 0, covers, excludes,
             wording.Length == 0 ? "No customer wording has been recorded for this cause." : wording,
             "Guidance only · adjudication confirms the cover. Check any parts scope. Usage after this claim is unknown; consumption is decided at adjudication.");
     }

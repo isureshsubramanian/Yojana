@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { StatusBadge } from "../components";
 import { ErrorNote } from "../units/common";
-import { fmtDate } from "../units/format";
+import { fmtDate, humanise } from "../units/format";
 import { coverItemsApi, coverLabel, type ClaimCause, type ClaimGuidance } from "../entitlements/coverItems";
 
 export function ClaimCausePanel({ unitId, cause, onCause, description, onDescription, occurredDate, onOccurredDate, onGuidance }: {
@@ -27,11 +27,11 @@ export function ClaimCausePanel({ unitId, cause, onCause, description, onDescrip
   </div></div>;
 }
 export function CauseChips({ causes, selected, onChange }: { causes: ClaimCause[]; selected: string; onChange: (v: string) => void }) {
-  return <div className="claims-segmented" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }} role="group" aria-label="What happened?">{causes.filter((c) => c.active).map((c) => <button type="button" className={`chip${selected === c.code ? " on" : ""}`} aria-pressed={selected === c.code} key={c.code} onClick={() => onChange(c.code)}>{c.customerWording}</button>)}</div>;
+  return <div className="cause-options" role="group" aria-label="What happened?">{causes.filter((c) => c.active).map((c) => <button type="button" className="cause-option" aria-pressed={selected === c.code} key={c.code} onClick={() => onChange(c.code)}>{c.customerWording}</button>)}</div>;
 }
 export function ClaimGuidanceCard({ guidance }: { guidance: ClaimGuidance }) {
   return <section className="card"><div className="card-header"><h2>Which cover applies</h2><StatusBadge tone={guidance.covered ? "ok" : "warn"}>{guidance.covered ? "Covered" : "No granting cover recorded"}</StatusBadge></div><div className="card-body stack">
-    {guidance.grants.map((g) => <div className="note" key={g.cover.entitlementId}><strong>{coverLabel(g.cover)}</strong><p>Until {fmtDate(g.cover.until)}</p>{g.usage.map((u) => <p key={u.meterType}>{u.now} {u.meterType} remaining now · {u.afterThisClaim ?? "—"} after this claim · {u.period === "contract_year" ? "contract year" : "term"}</p>)}{g.items.map((i) => <p key={i.code}>{i.customerWording}{i.partsScope.partCategories.length || i.partsScope.itemFamilies.length ? ` · applies to ${i.partsScopeDescription ?? "the recorded parts scope"}` : ""}</p>)}</div>)}
+    {guidance.grants.map((g) => <div className="note" key={g.cover.entitlementId}><strong>{coverLabel(g.cover)}</strong><p>Until {fmtDate(g.cover.until)}</p>{g.usage.map((u) => <p key={u.meterType}>{u.now} {humanise(u.meterType)} remaining now · {u.afterThisClaim ?? "—"} after this claim · {u.period === "contract_year" ? "contract year" : "term"}</p>)}{g.items.map((i) => <p key={i.code}>{i.customerWording}{i.partsScope.partCategories.length || i.partsScope.itemFamilies.length ? ` · applies to ${i.partsScopeDescription ?? "the recorded parts scope"}` : ""}</p>)}</div>)}
     {guidance.excludes.map((x) => <p key={`${x.cover.entitlementId}:${x.code}`}>{coverLabel(x.cover)} excludes it · {x.customerWording}</p>)}
     <div className="note warn"><strong>Say to the customer</strong><p>{guidance.sayToCustomer}</p></div></div><div className="card-footer"><span className="muted">{guidance.notice}</span></div></section>;
 }
