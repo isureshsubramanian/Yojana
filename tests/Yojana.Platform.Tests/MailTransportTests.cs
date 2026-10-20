@@ -20,6 +20,7 @@ public sealed class MailTransportTests
         Transport = transport,
         FromAddress = "no-reply@yojana.example",
         FromName = "Yojana",
+        LinkBaseUrl = "https://yojana.example",
         PickupDirectory = Path.Combine(Path.GetTempPath(), "yojana-mail-tests", Guid.NewGuid().ToString("N")),
     };
 
@@ -53,6 +54,19 @@ public sealed class MailTransportTests
         Assert.Contains(MailOptions.GraphClientSecretVariable, Assert.Throws<InvalidOperationException>(options.Validate).Message);
 
         new MailOptions().Validate();
+    }
+
+    [Fact]
+    public void Links_come_from_the_configured_base_and_keep_tokens_in_the_fragment()
+    {
+        var options = Options();
+        Assert.Equal("https://yojana.example/reset-password#t=abc", options.Link("/reset-password", "t=abc"));
+        Assert.Throws<ArgumentException>(() => options.Link("//evil.example/x"));
+
+        options.LinkBaseUrl = "http://yojana.example";
+        Assert.Contains("LinkBaseUrl", Assert.Throws<InvalidOperationException>(options.Validate).Message);
+        options.LinkBaseUrl = "http://localhost:5080";
+        options.Validate();
     }
 
     [Theory]

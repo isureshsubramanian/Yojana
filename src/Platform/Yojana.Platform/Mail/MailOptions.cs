@@ -18,6 +18,11 @@ public sealed class MailOptions
     public string Transport { get; set; } = MailTransportKind.None;
     public string FromAddress { get; set; } = "";
     public string FromName { get; set; } = "Yojana";
+    /// <summary>
+    /// Where recipients open the product (for example https://yojana.example.com): every link in a mail is built from
+    /// it with <see cref="Link"/>, never from the request's Host header, which a client controls.
+    /// </summary>
+    public string LinkBaseUrl { get; set; } = "";
     public int MaxAttempts { get; set; } = 8;
     /// <summary>
     /// Wait after each failed attempt, in seconds; attempts past the end of the list wait as long as its last entry. Null
@@ -44,6 +49,9 @@ public sealed class MailOptions
         if (RetryDelays.Count == 0 || RetryDelays.Any(delay => delay is < 1 or > 86_400))
             throw Invalid("RetryDelaySeconds needs at least one delay, each 1 to 86400 seconds.");
         if (Transport == MailTransportKind.None) return;
+        if (!Uri.TryCreate(LinkBaseUrl, UriKind.Absolute, out var linkBase) || linkBase.Query.Length > 0 || linkBase.Fragment.Length > 0
+            || !(linkBase.Scheme == Uri.UriSchemeHttps || (linkBase.Scheme == Uri.UriSchemeHttp && linkBase.IsLoopback)))
+            throw Invalid("LinkBaseUrl must be an absolute https address (http only for a loopback host) without query or fragment.");
         if (!MailboxAddress.TryParse(FromAddress, out var from) || from.Address != FromAddress.Trim())
             throw Invalid("FromAddress must be a single e-mail address.");
         if (FromName.Any(char.IsControl)) throw Invalid("FromName must not contain control characters.");
@@ -58,6 +66,18 @@ public sealed class MailOptions
                 Graph.Validate();
                 break;
         }
+    }
+
+    /// <summary>
+    /// An absolute link into the product. <paramref name="fragment"/> (a single-use token, for instance) goes after '#'
+    /// so it never reaches a server or proxy log; the page reads it and posts it.
+    /// </summary>
+    public string Link(string path, string? fragment = null)
+    {
+        if (!path.StartsWith('/') || path.StartsWith("//", StringComparison.Ordinal))
+            throw new ArgumentException("A link path starts with a single '/'.", nameof(path));
+        var link = LinkBaseUrl.TrimEnd('/') + path;
+        return fragment is null ? link : $"{link}#{fragment}";
     }
 
     internal static InvalidOperationException Invalid(string detail) => new($"{SectionName}: {detail}");

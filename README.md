@@ -83,7 +83,8 @@ warning at startup. Development writes each message as an `.eml` file into `/tmp
 deployment choose `smtp` (`Smtp:Host`, `Port`, `Security` `starttls` or `tls`; `none` only to a loopback relay;
 `UserName` with the password in `YOJANA_MAIL_SMTP_PASSWORD`) or `graph` (`Graph:SenderMailbox`, and either a managed
 identity or `Credential: client_secret` with `TenantId`, `ClientId` and `YOJANA_MAIL_GRAPH_CLIENT_SECRET`; the app
-needs the `Mail.Send` application permission). `FromAddress` must belong to a domain whose SPF and DKIM records cover
+needs the `Mail.Send` application permission). `LinkBaseUrl` is the https address people open the product at; every link in a mail is built from it, never from the
+request. `FromAddress` must belong to a domain whose SPF and DKIM records cover
 that transport. A tenant chooses only its sender name and reply-to address (tenant settings `mail.sender_name`,
 `mail.reply_to`). A tenant administrator checks the transport with `POST /api/platform/mail/test`, which sends to their
 own address, then `GET /api/platform/mail/messages/{id}`. Failed attempts retry for about four hours
