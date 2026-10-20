@@ -32,7 +32,9 @@ public static class CreatePolicyDraftHandler
             throw new CommandRefusedException("policy_identity_changed", $"{code} is a {newest.CoverageFamily} {newest.EntitlementType} policy; a version cannot change its family or type.", "create a new policy code");
         }
 
-        var terms = command.Terms ?? (newest is null ? throw new CommandRefusedException("terms_required", $"{code} has no version to copy; give the terms.") : await store.ReadTermsAsync(newest, cancellationToken));
+        var terms = command.Terms ?? (newest is null ? throw new CommandRefusedException("terms_required", $"{code} has no version to copy; give the terms.") : await store.ReadTermsAsync(newest, cancellationToken, includeItems: true));
+        if (terms.Items is null && newest is not null)
+            terms = terms with { Items = (await store.ReadTermsAsync(newest, cancellationToken, includeItems: true)).Items };
         var version = (newest?.Version ?? 0) + 1;
         var now = clock.UtcNow;
         var row = new WarrantyPolicyVersion
@@ -70,7 +72,7 @@ public static class ValidatePolicyDraftHandler
         var tenantId = tenant.TenantId;
         var row = await db.PolicyVersions.AsNoTracking().FirstOrDefaultAsync(v => v.TenantId == tenantId && v.PolicyVersionId == command.PolicyVersionId, cancellationToken)
             ?? throw new CommandRefusedException("policy_version_unknown", $"Policy version {command.PolicyVersionId} does not exist.");
-        return await store.ValidateAsync(row, await store.ReadTermsAsync(row, cancellationToken), cancellationToken);
+        return await store.ValidateAsync(row, await store.ReadTermsAsync(row, cancellationToken, includeItems: true), cancellationToken);
     }
 }
 
@@ -79,13 +81,16 @@ public static class PublishPolicyVersionHandler
     public static async Task<PolicyDraftResult> Handle(PublishPolicyVersion command, SerialisationDbContext db, PolicyStore store, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var row = await PolicyDrafts.DraftAsync(db, tenant.TenantId, command.PolicyVersionId, cancellationToken);
-        var validation = await store.ValidateAsync(row, await store.ReadTermsAsync(row, cancellationToken), cancellationToken);
+        var validation = await store.ValidateAsync(row, await store.ReadTermsAsync(row, cancellationToken, includeItems: true), cancellationToken);
         if (!validation.CanPublish)
         {
             var first = validation.Issues.First(i => i.Severity == PolicyIssue.Error);
             throw new CommandRefusedException("policy_invalid", $"{row.PolicyCode} v{row.Version} has {validation.Issues.Count(i => i.Severity == PolicyIssue.Error)} error(s); first: {first.Message}", "fix the errors the validation lists, then publish");
         }
 
+        // Coupled to PolicyCoverItems.WriteAsync: publication and child-item edits compete on this parent's
+        // rowversion across competing transactions. Each command saves atomically; independent child writes would
+        // allow a concurrent edit after publication.
         row.Status = PolicyVersionStatus.Published;
         row.PublishedAt = clock.UtcNow;
         row.PublishedBy = command.ActorRef;

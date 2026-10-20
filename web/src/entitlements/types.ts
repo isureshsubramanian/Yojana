@@ -1,3 +1,4 @@
+import type { PolicyCoverItem } from "./coverItems";
 import type { BulkOperationArguments, DocumentRef } from "../api/units";
 
 export interface EntitlementView { entitlementId: string; unitId: string; coverageFamily: string; direction: string; type: string; storedStatus: string; effectiveStatus: string; closedReason: string | null; startDate: string | null; endDate: string | null; daysRemaining: number | null; policyVersionId: string; startBasis: string | null; startTimeZone: string; parentEntitlementId: string | null; rootEntitlementId: string | null; supersedesEntitlementId: string | null }
@@ -18,7 +19,7 @@ export interface CoverageTerms { partsPct: number; labourPct: number; travelPct:
 export interface RefurbishedTerm { itemId: string | null; grade: string; channel: string; region: string; durationMonths: number; statutoryFloorMonths: number | null; statementKind: string }
 export interface EligibilityRule { kind: string; baseFamily: string; withinDays: number | null }
 export interface AmendmentValueTerm { amount: number; currency: string; per: string }
-export interface PolicyTerms { duration: DurationRule; durationBasis: string; usageLimits: UsageLimitTerm[]; start: StartRule; coverage: CoverageTerms; exclusions: string[]; regionScope: string[]; transferable: string; settlementFormula: string; replacementPolicyCode: string | null; refurbished: RefurbishedTerm[]; doaWindowDays: number | null; assuranceOrService: string; referenceTimeZoneRule: string; serviceContractRegulated: boolean; eligibility: EligibilityRule | null; amendmentValue: AmendmentValueTerm | null }
+export interface PolicyTerms { duration: DurationRule; durationBasis: string; usageLimits: UsageLimitTerm[]; start: StartRule; coverage: CoverageTerms; exclusions: string[]; items?: PolicyCoverItem[]; regionScope: string[]; transferable: string; settlementFormula: string; replacementPolicyCode: string | null; refurbished: RefurbishedTerm[]; doaWindowDays: number | null; assuranceOrService: string; referenceTimeZoneRule: string; serviceContractRegulated: boolean; eligibility: EligibilityRule | null; amendmentValue: AmendmentValueTerm | null }
 export interface PolicyIssue { severity: string; code: string; field: string; message: string }
 export interface PolicyValidation { issues: PolicyIssue[]; canPublish: boolean }
 export interface PolicySummary { policyCode: string; name: string; coverageFamily: string; versions: number; inForceVersion: number | null; inForceFrom: string | null; draftVersion: number | null; liveEntitlements: number }

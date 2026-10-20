@@ -72,6 +72,7 @@ export interface ClaimLineInput {
 }
 export interface ClaimEvidenceInput { kind: string; reference: string; description: string | null }
 export interface SubmitClaim {
+  reportedCauseCode?: string | null; reportedDescription?: string | null; occurredDate?: string | null;
   commandId: string; unitId: string | null; identifier: { value: string; issuerPartyRef: string | null; identifierType: string | null; erpSerialId: string | null } | null;
   claimDate: string; claimantPartyRef: string; settlementPartyRef: string; serviceEntityId: string; obligorEntityId: string;
   serviceCountry: string; currency: string; lines: ClaimLineInput[]; evidence: ClaimEvidenceInput[]; remedy: string;

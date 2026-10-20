@@ -15,6 +15,9 @@ public sealed class Claim : ITenantScoped
     public Guid UnitId { get; set; }
     public Guid? CampaignId { get; set; }
     public DateOnly ClaimDate { get; set; }
+    public string? ReportedCauseCode { get; set; }
+    public string? ReportedDescription { get; set; }
+    public DateOnly? OccurredDate { get; set; }
     public Guid ClaimantPartyRef { get; set; }
     public Guid SettlementPartyRef { get; set; }
     public Guid ServiceEntityId { get; set; }

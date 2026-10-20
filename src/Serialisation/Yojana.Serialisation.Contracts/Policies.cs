@@ -55,7 +55,8 @@ public sealed record PolicyTerms(
     string ReferenceTimeZoneRule,
     bool ServiceContractRegulated = false,
     EligibilityRule? Eligibility = null,
-    AmendmentValueTerm? AmendmentValue = null)
+    AmendmentValueTerm? AmendmentValue = null,
+    IReadOnlyList<PolicyCoverItem>? Items = null)
 {
     public const string TimeZoneCustomerSite = "customer_site";
     public const string TimeZoneObligorEntity = "obligor_entity";

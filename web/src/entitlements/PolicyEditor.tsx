@@ -1,5 +1,7 @@
+import { useDrawer, closeDrawer } from "../shell/drawerStore";
+import { PolicyItemsEditor } from "./PolicyItemsEditor";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { PresenceAdvisory, PresenceChips, Shortcut, StatusBadge, useDocumentPresence, useModEnter } from "../components";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
@@ -14,8 +16,11 @@ const draftSnapshot = (detail: PolicyDetail): string => JSON.stringify({
 });
 
 export function Component() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedVersion = searchParams.get("version");
+  const drawer = useDrawer();
   const [summaries, setSummaries] = useState<PolicySummary[]>([]);
-  const [policyCode, setPolicyCode] = useState("");
+  const [policyCode, setPolicyCode] = useState(() => searchParams.get("policy") ?? "");
   const [versions, setVersions] = useState<PolicyVersion[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<PolicyDetail | null>(null);
@@ -31,6 +36,10 @@ export function Component() {
   const [error, setError] = useState<unknown>(null);
   const [message, setMessage] = useState("");
 
+  const choosePolicy = (code: string) => { setPolicyCode(code); setSearchParams({ policy: code }); };
+  const chooseVersion = (row: PolicyVersion) => { setSelectedId(row.policyVersionId); setSearchParams({ policy: policyCode, version: String(row.version) }); };
+  useEffect(() => { const code = searchParams.get("policy"); if (code) setPolicyCode(code); }, [searchParams]);
+
   const loadList = async () => {
     const [policies, familyRows, replacementRows, approvalPolicy, refurb, rules, tenantCurrency] = await Promise.all([entitlementApi.policies(), entitlementApi.families(), entitlementApi.replacementPolicies(), entitlementApi.approvalPolicy(), entitlementApi.refurbishedPolicy(), entitlementApi.serviceContractRules(), entitlementApi.currency()]);
     setSummaries(policies); setFamilies(familyRows); setReplacements(replacementRows); setApproval(approvalPolicy); setRefurbished(refurb); setServiceRules(rules); setCurrency(tenantCurrency);
@@ -40,15 +49,17 @@ export function Component() {
   useEffect(() => {
     if (!policyCode) return;
     const controller = new AbortController();
-    entitlementApi.policyVersions(policyCode, controller.signal).then((rows) => { setVersions(rows); const preferred = rows.find((row) => row.status === "draft") ?? rows[0]; setSelectedId(preferred?.policyVersionId ?? ""); }).catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
+    entitlementApi.policyVersions(policyCode, controller.signal).then((rows) => { setVersions(rows); const preferred = rows.find((row) => String(row.version) === requestedVersion) ?? rows.find((row) => row.status === "draft") ?? rows[0]; setSelectedId(preferred?.policyVersionId ?? ""); }).catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
     return () => controller.abort();
-  }, [policyCode]);
+  }, [policyCode, requestedVersion]);
   useEffect(() => {
     if (!selectedId) { setDetail(null); setSavedDraft(""); return; }
     const controller = new AbortController();
     entitlementApi.policyDetail(selectedId, controller.signal).then((row) => { setDetail(row); setSavedDraft(draftSnapshot(row)); }).catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
     return () => controller.abort();
   }, [selectedId]);
+
+  useEffect(() => { closeDrawer(); }, [selectedId]);
 
   const selectedSummary = summaries.find((row) => row.policyCode === policyCode);
   const editable = detail?.status === "draft";
@@ -66,14 +77,14 @@ export function Component() {
   const publish = async () => {
     if (!detail || !editable) return;
     setBusy(true); setError(null);
-    try { await entitlementApi.publishPolicy(detail.policyVersionId); setMessage("Policy version published."); await loadList(); const fresh = await entitlementApi.policyDetail(detail.policyVersionId); setDetail(fresh); setSavedDraft(draftSnapshot(fresh)); } catch (reason) { setError(reason); } finally { setBusy(false); }
+    try { await entitlementApi.updatePolicy(detail); await entitlementApi.publishPolicy(detail.policyVersionId); setMessage("Policy version published."); await loadList(); const fresh = await entitlementApi.policyDetail(detail.policyVersionId); setDetail(fresh); setSavedDraft(draftSnapshot(fresh)); } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
   const newVersion = async () => {
     if (!selectedSummary) return;
     setBusy(true); setError(null);
     try {
       const result = await entitlementApi.createPolicyDraft({ commandId: crypto.randomUUID(), policyCode: selectedSummary.policyCode, name: selectedSummary.name, coverageFamily: selectedSummary.coverageFamily, entitlementType: detail?.entitlementType ?? "manufacturer", appliesToContractsFrom: new Date().toISOString().slice(0, 10), terms: null });
-      setVersions(await entitlementApi.policyVersions(selectedSummary.policyCode)); setSelectedId(result.policyVersionId); setMessage("New draft opened from the newest version.");
+      setVersions(await entitlementApi.policyVersions(selectedSummary.policyCode)); setSelectedId(result.policyVersionId); setSearchParams({ policy: selectedSummary.policyCode, version: String(result.version) }); setMessage("New draft opened from the newest version.");
     } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
   const errors = detail?.validation.issues.filter((issue) => issue.severity === "error").length ?? 0;
@@ -82,18 +93,19 @@ export function Component() {
   const policyOptions = useMemo(() => summaries.map((row) => <option key={row.policyCode} value={row.policyCode}>{row.name} · {row.policyCode}</option>), [summaries]);
   const policyDirty = !!detail && !!savedDraft && editable && draftSnapshot(detail) !== savedDraft;
   const presence = useDocumentPresence("policy_draft", selectedId, policyDirty);
-  useModEnter(publish, !editable || errors > 0 || busy);
+  useModEnter(publish, !editable || errors > 0 || busy || drawer.open);
 
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Entitlements", to: "/entitlements/gaps" }, { label: "Warranty policies" }]} />
-      <div className="page-header"><div><div className="eyebrow">Warranty policy · versions by contract date · {detail?.coverageFamily ?? "…"}</div><h1>{detail?.name ?? (loading ? "Loading policy…" : "Warranty policies")}</h1><p className="sub">Published versions are immutable · draft changes are validated before publication · {detail ? `${selectedSummary?.liveEntitlements ?? 0} live entitlements remain on their recorded version` : "select a policy"}</p><PresenceChips users={presence} /></div><div className="actions"><button type="button" className="btn" disabled={!selectedSummary || !!selectedSummary.draftVersion || busy} onClick={newVersion}>New version</button><button type="button" className="btn" disabled={!detail || busy} onClick={validate}>Validate</button><button type="button" className="btn primary" disabled={!editable || errors > 0 || busy} aria-busy={busy} onClick={publish}>Publish version<Shortcut keys="mod+enter" /></button></div></div>
+      <div className="page-header"><div><div className="eyebrow">Warranty policy · versions by contract date · {families.find((f) => f.familyCode === detail?.coverageFamily)?.name ?? "…"}</div><h1>{detail?.name ?? (loading ? "Loading policy…" : "Warranty policies")}</h1><p className="sub">Published versions are immutable · draft changes are validated before publication · {detail ? `${selectedSummary?.liveEntitlements ?? 0} live entitlements remain on their recorded version` : "select a policy"}</p><PresenceChips users={presence} /></div><div className="actions"><button type="button" className="btn" disabled={!selectedSummary || !!selectedSummary.draftVersion || busy} onClick={newVersion}>New version</button><button type="button" className="btn" disabled={!detail || busy} onClick={validate}>Validate</button><button type="button" className="btn" disabled={!editable || !policyDirty || busy} onClick={save}>Save draft</button><button type="button" className="btn primary" disabled={!editable || errors > 0 || busy || drawer.open} aria-busy={busy} onClick={publish}>Publish version {detail?.version}<Shortcut keys="mod+enter" /></button></div></div>
       <PresenceAdvisory users={presence} editing={policyDirty} documentLabel="policy draft" />
       <ErrorNote error={error} onReload={detail ? () => { setError(null); void entitlementApi.policyDetail(detail.policyVersionId).then((row) => { setDetail(row); setSavedDraft(draftSnapshot(row)); }).catch(setError); } : undefined} />{message && <div className="note ok" role="status" style={{ marginBottom: "var(--gap)" }}>{message}</div>}
+      {detail && <div style={{ marginBottom: "var(--gap)" }}><PolicyItemsEditor key={detail.policyVersionId} versionId={detail.policyVersionId} items={detail.terms.items ?? []} editable={editable} dirty={policyDirty} onChange={(update) => { const id = detail.policyVersionId; setDetail((current) => current?.policyVersionId === id ? { ...current, terms: { ...current.terms, items: update(current.terms.items ?? []) } } : current); }} /></div>}
       <div className="cols-2-3">
         <div className="stack">
-          <section className="card"><div className="card-header"><h2>Policies</h2><span className="meta">{summaries.length}</span></div><div className="card-body"><label className="lbl" htmlFor="policy-select">Policy</label><select id="policy-select" className="select" value={policyCode} onChange={(event) => setPolicyCode(event.target.value)}>{policyOptions}</select></div></section>
-          <section className="card" aria-labelledby="policy-versions"><div className="card-header"><h2 id="policy-versions">Versions <span className="meta">effective by contract date</span></h2><span className="meta">{versions.length}</span></div><table className="table dense"><thead><tr><th>Version</th><th>Contracts from</th><th>Status</th></tr></thead><tbody>{versions.map((row) => <tr key={row.policyVersionId} className={`clickable${selectedId === row.policyVersionId ? " sel" : ""}`} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(row.policyVersionId); } }} onClick={() => setSelectedId(row.policyVersionId)}><td className="primary">v{row.version}<span className="sub">{row.liveEntitlements} live · {row.ruleVersion}</span></td><td>{fmtDate(row.appliesToContractsFrom)}</td><td><StatusBadge tone={row.status === "draft" ? "warn" : "ok"}>{humanise(row.status)}</StatusBadge></td></tr>)}</tbody></table></section>
+          <section className="card"><div className="card-header"><h2>Policies</h2><span className="meta">{summaries.length}</span></div><div className="card-body"><label className="lbl" htmlFor="policy-select">Policy</label><select id="policy-select" className="select" value={policyCode} onChange={(event) => choosePolicy(event.target.value)}>{policyOptions}</select></div></section>
+          <section className="card" aria-labelledby="policy-versions"><div className="card-header"><h2 id="policy-versions">Versions <span className="meta">effective by contract date</span></h2><span className="meta">{versions.length}</span></div><table className="table dense"><thead><tr><th>Version</th><th>Contracts from</th><th>Status</th></tr></thead><tbody>{versions.map((row) => <tr key={row.policyVersionId} className={`clickable${selectedId === row.policyVersionId ? " sel" : ""}`} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); chooseVersion(row); } }} onClick={() => chooseVersion(row)}><td className="primary">v{row.version}<span className="sub">{row.liveEntitlements} live · {row.ruleVersion}</span></td><td>{fmtDate(row.appliesToContractsFrom)}</td><td><StatusBadge tone={row.status === "draft" ? "warn" : "ok"}>{humanise(row.status)}</StatusBadge></td></tr>)}</tbody></table></section>
           <section className="card" aria-labelledby="policy-validation"><div className="card-header"><h2 id="policy-validation">Validation <span className="meta">{detail ? `v${detail.version}` : "—"}</span></h2><StatusBadge tone={errors ? "bad" : warnings ? "warn" : "ok"}>{errors ? `${errors} errors` : warnings ? `${warnings} warnings` : "Ready"}</StatusBadge></div><div className="card-body stack">{detail?.validation.issues.length ? detail.validation.issues.map((issue) => <div className={`note ${issueTone(issue)}`} key={`${issue.code}:${issue.field}`}><strong>{humanise(issue.field)}</strong> · {issue.message}<span className="serial">{issue.code}</span></div>) : <div className="note ok"><strong>Validation passed.</strong>&nbsp;This version can be published.</div>}</div></section>
           <section className="card"><div className="card-header"><h2>Coverage families <span className="meta">tenant reference data</span></h2></div><table className="table dense"><thead><tr><th>Family</th><th>Stacking</th><th>Accounting tag</th></tr></thead><tbody>{families.map((row) => <tr key={row.familyCode}><td className="primary">{row.name}<span className="sub serial">{row.familyCode}</span></td><td><StatusBadge tone={row.stacking ? "info" : "neutral"}>{row.stacking ? "Stacks" : "One live"}</StatusBadge></td><td className="serial">{row.accountingTag}</td></tr>)}</tbody></table></section>
         </div>
@@ -118,7 +130,7 @@ export function Component() {
             <Field label="Service mode" id="policy-service" value={detail.terms.coverage.serviceMode} disabled={!editable} onChange={(value) => setTerms({ ...detail.terms, coverage: { ...detail.terms.coverage, serviceMode: value } })} />
             <Field label="Region scope" id="policy-regions" value={detail.terms.regionScope.join(", ")} disabled={!editable} onChange={(value) => setTerms({ ...detail.terms, regionScope: commaList(value) })} />
             <Select label="Transferable" id="policy-transfer" value={detail.terms.transferable} disabled={!editable} options={["yes", "no", "fee", "registration_required"]} onChange={(value) => setTerms({ ...detail.terms, transferable: value })} />
-            <Field label="Exclusions" id="policy-exclusions" value={detail.terms.exclusions.join(", ")} disabled={!editable} span onChange={(value) => setTerms({ ...detail.terms, exclusions: commaList(value) })} />
+
           </div></div></section>
           <section className="card"><div className="card-header"><h2>Replacement policy <span className="meta">what the replacement unit inherits</span></h2></div><div className="card-body"><div className="form-grid"><div className="field span"><label htmlFor="policy-replacement">Policy</label><select id="policy-replacement" className="select" disabled={!editable} value={detail.terms.replacementPolicyCode ?? ""} onChange={(event) => setTerms({ ...detail.terms, replacementPolicyCode: event.target.value || null })}><option value="">None</option>{replacements.map((row) => <option key={row.code} value={row.code}>{row.code} · {humanise(row.rule)}</option>)}</select></div>{replacement && <div className="span note"><strong>{humanise(replacement.rule)}</strong>&nbsp;{replacement.minDays ? `minimum ${replacement.minDays} days` : replacement.extensionMonths ? `${replacement.extensionMonths} month extension` : replacement.description ?? "Configured replacement rule"}.</div>}</div></div></section>
           <section className="card"><div className="card-header"><h2>Refurbished policies <span className="meta">by item, grade, channel and region</span></h2>{editable && <button type="button" className="btn ghost sm" onClick={() => setTerms({ ...detail.terms, refurbished: [...detail.terms.refurbished, { itemId: null, grade: "refurbished_a", channel: "consumer", region: "EU", durationMonths: 12, statutoryFloorMonths: 12, statementKind: "seller_refurbished" }] })}>Add row</button>}</div><table className="table"><thead><tr><th>Item · grade</th><th>Channel · region</th><th className="num">Term</th><th className="num">Floor</th><th>Statement</th></tr></thead><tbody>{detail.terms.refurbished.map((row, index) => editable ? <tr key={index}>

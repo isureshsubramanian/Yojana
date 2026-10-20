@@ -34,10 +34,10 @@ export interface CommissionUnits { commandId: string; itemId: string; origin: st
 export interface CommissionLineResult { index: number; clientReference: string | null; unitId: string | null; outcome: "commissioned" | "pending" | "refused" | "duplicate" | string; reasons: string[] }
 export interface CommissionUnitsResult { lines: CommissionLineResult[]; commissioned: number; pending: number; refused: number; duplicates: number }
 
-export interface CorrectIdentifier { commandId: string; unitId: string; identifierType: string; newRawValue: string; reason: string; eventTime: string; actorRef: string; legalEntityId: string; approverRef?: string | null; note?: string | null }
+export interface CorrectIdentifier { commandId: string; unitId: string; identifierType: string; newRawValue: string; reason: string; eventTime: string; actorRef?: string; legalEntityId: string; approverRef?: string | null; note?: string | null }
 export interface CorrectIdentifierResult { unitId: string; supersededIdentifierId: string; newIdentifierId: string; oldNormalisedValue: string; newNormalisedValue: string }
 export interface AssignIdentifier { commandId: string; unitId: string; identifier: IdentifierInput; eventTime: string; actorRef: string; legalEntityId: string }
-export interface UnitFlagCommand { commandId: string; unitId: string; flag: string; eventTime: string; actorRef: string; legalEntityId: string; reason?: string | null }
+export interface UnitFlagCommand { commandId: string; unitId: string; flag: string; eventTime: string; actorRef?: string; legalEntityId: string; reason?: string | null }
 export interface UnitFlagResult { unitId: string; flags: string[]; changed: boolean; investigationRaised: boolean }
 
 export interface SerialSchemeRow { code: string; identifierType: string; prefix: string; blockFormat: string | null; separator: string; counterDigits: number; example: string }

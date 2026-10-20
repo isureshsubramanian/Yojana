@@ -187,6 +187,10 @@ public static class SerialisationModule
         // Global search (MOD-13, P1-T23): the index table and its maintenance handlers live here; other modules index through ISearchIndex.
         // Warranty policies (MOD-06, P2-T03).
         builder.Services.AddScoped<Entitlements.PolicyStore>();
+        builder.Services.AddScoped<Entitlements.PolicyCoverItems>();
+        builder.Services.AddScoped<Entitlements.ClaimCauseCatalogue>();
+        builder.Services.AddScoped<Entitlements.WhatsCoveredQuery>();
+        builder.Services.AddScoped<IUnitCustomerDocument, Entitlements.UnitCustomerDocument>();
         builder.Services.AddScoped<Entitlements.PolicyQueries>();
         builder.Services.AddScoped<Entitlements.PolicyResolver>();
         // A factory on purpose, coupled to AmendEntitlementHandler: Wolverine does not look inside a factory, so the

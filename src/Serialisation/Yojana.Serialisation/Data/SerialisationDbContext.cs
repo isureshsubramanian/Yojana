@@ -124,6 +124,9 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<WarrantyCurrent> WarrantyCurrent => Set<WarrantyCurrent>();
 
+    public DbSet<PolicyCoverItemRow> PolicyCoverItems => Set<PolicyCoverItemRow>();
+    public DbSet<PolicyCoverItemCause> PolicyCoverItemCauses => Set<PolicyCoverItemCause>();
+    public DbSet<ClaimCauseRow> ClaimCauses => Set<ClaimCauseRow>();
     public DbSet<Claim> Claims => Set<Claim>();
 
     public DbSet<ClaimLine> ClaimLines => Set<ClaimLine>();
@@ -738,6 +741,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
         });
 
         Yojana.Serialisation.Entitlements.CoverDeviationModel.Configure(modelBuilder);
+        Yojana.Serialisation.Entitlements.CoverItemsModel.Configure(modelBuilder);
 
         modelBuilder.Entity<Entitlement>(b =>
         {

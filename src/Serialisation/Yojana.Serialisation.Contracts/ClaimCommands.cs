@@ -36,7 +36,10 @@ public sealed record SubmitClaim(
     string? ProofOfPurchaseRef = null,
     DateOnly? ProofOfPurchaseDate = null,
     Guid? ItemId = null,
-    Guid? CampaignId = null);
+    Guid? CampaignId = null,
+    string? ReportedCauseCode = null,
+    string? ReportedDescription = null,
+    DateOnly? OccurredDate = null);
 
 public sealed record SubmitClaimResult(Guid ClaimId, Guid UnitId, string Status, IReadOnlyList<Guid> ClaimLineIds, Guid EventId, bool Replayed);
 
@@ -147,7 +150,8 @@ public sealed record ClaimDetail(
     string? CampaignName = null,
     string? ReserveTag = null,
     string? CampaignCoverReason = null,
-    string Version = "");
+    string Version = "",
+    string? ReportedCauseCode = null, string? ReportedDescription = null, DateOnly? OccurredDate = null);
 
 public sealed record RecoveryClaimRow(
     Guid RecoveryClaimId,

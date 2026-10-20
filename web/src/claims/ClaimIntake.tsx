@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { ClaimCausePanel } from "./ClaimCausePanel";
+import type { ClaimGuidance } from "../entitlements/coverItems";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { DEFAULT_LEGAL_ENTITY, units, type AsBuiltRow, type LookupHit, type UnitDetail } from "../api/units";
 import { ScanInput, Shortcut, useModEnter } from "../components";
 import { ItemField, PartyField, useReferenceNames } from "../corrections/ReferenceFields";
@@ -33,6 +35,22 @@ function draftEvidence(): DraftEvidence { return { id: crypto.randomUUID(), kind
 
 export function Component() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const id = searchParams.get("unit"); if (!id) return;
+    const c = new AbortController();
+    Promise.all([units.detail(id, c.signal), entitlementApi.detailForUnit(id, c.signal)]).then(([d, e]) => {
+      setUnit(d); setEntitlements(e); setClaimant(d.ownerPartyRef); setSettlement(d.ownerPartyRef);
+      setIdentifier(d.identifiers.find((i) => !i.validTo)?.rawValue ?? "");
+    }).catch((e) => { if (!c.signal.aborted) setError(e); });
+    return () => c.abort();
+  }, [searchParams]);
+  const familyEdited = useRef(false);
+  const [cause, setCause] = useState(() => searchParams.get("cause") ?? "");
+  const [reportedDescription, setReportedDescription] = useState("");
+  const [occurredDate, setOccurredDate] = useState("");
+  const [guidance, setGuidance] = useState<ClaimGuidance | null>(null);
+  const [guidedFamily, setGuidedFamily] = useState("");
   const [mode, setMode] = useState<IntakeMode>("unit");
   const [identifier, setIdentifier] = useState("");
   const [hit, setHit] = useState<LookupHit | null>(null);
@@ -129,6 +147,7 @@ export function Component() {
     if (!canSubmit || busy) return;
     setBusy(true); setError(null);
     const body: SubmitClaim = {
+      reportedCauseCode: cause || null, reportedDescription: reportedDescription || null, occurredDate: occurredDate || null,
       commandId: crypto.randomUUID(), unitId: mode === "unit" ? unit!.unitId : null,
       identifier: mode === "unit" ? null : { value: identifier.trim(), issuerPartyRef: null, identifierType: null, erpSerialId: null },
       claimDate, claimantPartyRef: claimant!, settlementPartyRef: settlement!,
@@ -145,7 +164,7 @@ export function Component() {
 
   return <><main className="content" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Claims", to: "/claims" }, { label: "New claim" }]} />
-    <div className="page-header"><div><h1>New claim</h1><p className="sub">Find the unit by any identifier or by proof of purchase · the claimant may differ from the party that settles · nothing is decided here; adjudication runs next</p></div><div className="actions"><Link className="btn" to="/claims">Cancel</Link><button type="button" className="btn primary" disabled={!canSubmit || busy} aria-busy={busy} onClick={() => void submit()}><Icon name="check" />Submit and adjudicate<Shortcut keys="mod+enter" /></button></div></div>
+    <div className="page-header"><div><h1>New claim</h1><p className="sub">Find the unit by any identifier or by proof of purchase · the claimant may differ from the party that settles · nothing is decided here; adjudication runs next</p></div><div className="actions"><Link className="btn" to="/claims">Cancel</Link><button type="button" className="btn primary" disabled={!canSubmit || busy} aria-busy={busy} onClick={() => void submit()}><Icon name="check" />{guidedFamily ? `Submit under ${families.find((f) => f.familyCode === guidedFamily)?.name ?? "selected cover"}` : "Submit and adjudicate"}<Shortcut keys="mod+enter" /></button></div></div>
     <div className="stack">
       <section className="card" aria-labelledby="claim-find"><div className="card-body"><div className="toolbar">
         <ScanInput size="lg" primary value={identifier} onChange={(value) => { setIdentifier(value); if (unit) { setUnit(null); setHit(null); setEntitlements(null); } }} onSubmit={(scan) => { if (mode === "unit") void resolve(scan.value); }} ariaLabel="Scan or enter a serial, asset tag or licence id" placeholder={mode === "unit" ? "Scan or enter any unit identifier" : "Identifier on the product or proof"} hint={lookupBusy ? <span>…</span> : <Shortcut keys="/" />} />
@@ -154,6 +173,14 @@ export function Component() {
       </div>{mode === "unit" && identifier && !unit && <div style={{ marginTop: 10 }}><button type="button" className="btn sm" disabled={lookupBusy} onClick={() => void resolve(identifier)}>Resolve unit</button></div>}
       {mode !== "unit" && <div className="form-grid" style={{ marginTop: 16 }}><ItemField id="claim-item" label="Item" value={itemId} onChange={setItemId} hint="Required to reconstruct the unit without an existing record" /><div className="field"><label htmlFor="claim-proof-ref">Proof-of-purchase reference</label><input id="claim-proof-ref" className="input" value={proofRef} onChange={(event) => setProofRef(event.target.value)} /></div><div className="field"><label htmlFor="claim-proof-date">Proof-of-purchase date</label><input id="claim-proof-date" className="input" type="date" value={proofDate} onChange={(event) => setProofDate(event.target.value)} /></div></div>}
       </div></section>
+      <ClaimCausePanel unitId={unit?.unitId ?? null} cause={cause} onCause={(value) => { if (!familyEdited.current) { setGuidedFamily(""); setLines((current) => current.map((line, index) => index === 0 ? { ...line, coverageFamily: defaultFamily(families) } : line)); } setCause(value); }} description={reportedDescription} onDescription={setReportedDescription} occurredDate={occurredDate} onOccurredDate={setOccurredDate} onGuidance={(g) => {
+        setGuidance(g);
+        const family = g?.grants.length === 1 ? g.grants[0]!.cover.familyCode : "";
+        if (familyEdited.current) return;
+        setGuidedFamily(family);
+        if (family) setLines((current) => current.map((line, index) => index === 0 ? { ...line, coverageFamily: family } : line));
+      }} />
+      {guidance && guidance.grants.length > 1 && <p className="hint">Several covers grant this cause. Choose the coverage family on each line.</p>}
       <ErrorNote error={error} />
       {!currencyChoices.length && <div className="note warn"><strong>No accepted currencies are configured.</strong>&nbsp;Set a working currency and accepted claim currencies in <Link to="/settings/currencies">Currencies settings</Link>. Claim submission is disabled until then.</div>}
       <div className="cols-3-2">
@@ -171,7 +198,7 @@ export function Component() {
               <td><select className="select" aria-label={`Line ${index + 1} kind`} value={line.kind} onChange={(event) => updateLine(line.id, { kind: event.target.value })}>{LINE_KINDS.map((kind) => <option key={kind} value={kind}>{humanise(kind)}</option>)}</select></td>
               <td><input className="input" aria-label={index === 0 ? "Fault as reported" : `Line ${index + 1} description`} placeholder={index === 0 ? "Fault as reported" : "Work or item claimed"} value={line.description} onChange={(event) => updateLine(line.id, { description: event.target.value })} /></td>
               <td><select className="select" aria-label={`Line ${index + 1} child unit`} value={line.childUnitId} onChange={(event) => { updateLine(line.id, { childUnitId: event.target.value }); const child = children.find((candidate) => candidate.childUnitId === event.target.value); if (child) showChild(child); }}><option value="">Root unit</option>{children.map((child) => <option key={child.childUnitId!} value={child.childUnitId!}>{child.childSerial ?? child.slot ?? "Child unit"}</option>)}</select></td>
-              <td><select className="select" aria-label={`Line ${index + 1} coverage family`} value={line.coverageFamily} onChange={(event) => updateLine(line.id, { coverageFamily: event.target.value })}><option value="">Choose…</option>{families.map((family) => <option key={family.familyCode} value={family.familyCode}>{family.name}</option>)}</select></td>
+              <td><select className="select" aria-label={`Line ${index + 1} coverage family`} value={line.coverageFamily} onChange={(event) => { updateLine(line.id, { coverageFamily: event.target.value }); if (index === 0) { familyEdited.current = true; setGuidedFamily(event.target.value); } }}><option value="">Choose…</option>{families.map((family) => <option key={family.familyCode} value={family.familyCode}>{family.name}</option>)}</select></td>
               <td><input className="input num" aria-label={`Line ${index + 1} requested amount`} type="number" min="0" step="0.01" value={line.requestedAmount} onChange={(event) => updateLine(line.id, { requestedAmount: event.target.value })} /></td>
               <td><input className="input" aria-label={`Line ${index + 1} measurements`} placeholder="print_hours=1840" value={line.measurements} onChange={(event) => updateLine(line.id, { measurements: event.target.value })} /></td>
               <td><button type="button" className="btn sm" aria-label={`Remove line ${index + 1}`} disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((candidate) => candidate.id !== line.id))}>×</button></td>
