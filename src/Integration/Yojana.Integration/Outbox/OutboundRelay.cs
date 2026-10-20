@@ -46,6 +46,9 @@ public sealed class OutboundRelay(
         var retrying = 0;
         var parked = 0;
         var awaiting = 0;
+        // One pass attempts a command at most once. A short first backoff can fall due within the same pass, and
+        // re-claiming it there would retry a failing remote back to back instead of on the next scheduled pass.
+        var attempted = new List<Guid>();
 
         for (var processed = 0; processed < 100; processed++)
         {
@@ -56,8 +59,9 @@ public sealed class OutboundRelay(
             // non-reentrant lane here. Connectors without that pipeline retain the relay's connection-wide serialisation.
             await using IConnectionWorkerLease? lane = connector.Capabilities.OwnsConnectionLane
                 ? null : await isolation.AcquireAsync(new(tenant.TenantId, connectionId), cancellationToken);
-            var command = await ClaimNextAsync(connectionId, cancellationToken);
+            var command = await ClaimNextAsync(connectionId, attempted, cancellationToken);
             if (command is null) break;
+            attempted.Add(command.OutboundCommandId);
             if (command.CreatedAt + maxAge <= clock.UtcNow)
             {
                 await ParkAsync(command, "max_outbox_age", "The command exceeded its configured maximum outbox age.",
@@ -282,7 +286,8 @@ public sealed class OutboundRelay(
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<OutboundCommandRow?> ClaimNextAsync(Guid connectionId, CancellationToken cancellationToken)
+    private async Task<OutboundCommandRow?> ClaimNextAsync(Guid connectionId, IReadOnlyCollection<Guid> attempted,
+        CancellationToken cancellationToken)
     {
         while (true)
         {
@@ -291,7 +296,8 @@ public sealed class OutboundRelay(
                     && x.ConnectionId == connectionId
                     && (x.Status == OutboundCommandStatus.Pending || x.Status == OutboundCommandStatus.Retry
                         || (x.Status == OutboundCommandStatus.Processing && x.LockedUntil <= now))
-                    && (x.NextAttemptAt == null || x.NextAttemptAt <= now))
+                    && (x.NextAttemptAt == null || x.NextAttemptAt <= now)
+                    && !attempted.Contains(x.OutboundCommandId))
                 .OrderBy(x => x.CreatedAt).ThenBy(x => x.OutboundCommandId)
                 .FirstOrDefaultAsync(cancellationToken);
             if (row is null) return null;

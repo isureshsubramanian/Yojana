@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Outbox;
+using Yojana.Integration.Security.Workers;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 
@@ -41,6 +42,33 @@ public sealed class OutboxRelayTests(IntegrationHostFixture fixture)
         var mapping = await db.ExternalIdMaps.SingleAsync(x => x.ExternalId == retry.ErpExternalId);
         Assert.Equal(Guid.Parse(retry.ModuleDocumentRef[(retry.ModuleDocumentRef.LastIndexOf('/') + 1)..]),
             mapping.ModuleId);
+    }
+
+    [DatabaseFact]
+    public async Task A_retry_that_falls_due_within_the_same_pass_waits_for_the_next_pass()
+    {
+        fixture.Clock.UtcNow = new DateTime(2026, 9, 10, 9, 0, 0, DateTimeKind.Utc);
+        fixture.Connector.Configure(FakeOutboundBehaviour.Fail);
+        var tenant = await fixture.NewTenantAsync("same-pass");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid(),
+            IntegrationHostFixture.FakeConnectorCode);
+        var commandId = await AddCommandAsync(tenant, connection);
+
+        using var scope = fixture.ScopeFor(tenant);
+        // A zero backoff makes the retry due at once; the pass must still not attempt it a second time.
+        var relay = ActivatorUtilities.CreateInstance<OutboundRelay>(scope.ServiceProvider, new ZeroJitter());
+        var result = await relay.RelayConnectionAsync(connection, CancellationToken.None);
+        Assert.Equal(new OutboundRelayResult(0, 1, 0), result);
+        Assert.Equal(1, fixture.Connector.CreateCallsFor(connection));
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var command = await db.OutboundCommands.AsNoTracking().SingleAsync(x => x.OutboundCommandId == commandId);
+        Assert.Equal(OutboundCommandStatus.Retry, command.Status);
+        Assert.Equal(1, command.AttemptCount);
+    }
+
+    private sealed class ZeroJitter : IConnectionRetryJitter
+    {
+        public TimeSpan Backoff(int retryNumber, TimeSpan ceiling) => TimeSpan.Zero;
     }
 
     [DatabaseFact]
