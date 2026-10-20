@@ -4,6 +4,7 @@ import { DataGrid, KpiStrip, StatusBadge, type GridColumn } from "../components"
 import { openDrawer, closeDrawer } from "../shell/drawerStore";
 import { ErrorNote, Kv } from "../units/common";
 import { fmtDate } from "../units/format";
+import "./cover.css";
 import { coverItemsApi, coverLabel, usageLabel, startClaimUrl, policyCoverUrl, type Contribution, type UnitCoverItem, type WhatsCoveredPage } from "./coverItems";
 
 export function WhatsCoveredPanel({ unitId, summary }: { unitId: string; summary: WhatsCoveredPage | null }) {
@@ -36,8 +37,8 @@ export function WhatsCoveredPanel({ unitId, summary }: { unitId: string; summary
     </section>;
   };
   return <div className="stack">
-    <div className="card toolbar" style={{ padding: 12 }}><input className="input" aria-label="Find a cause, part or service" placeholder="What about… (spill, fan, battery, theft)" value={search} onChange={(e) => { setSearch(e.target.value); setPaging((p) => ({ ...p, coveredPage: 1, excludedPage: 1 })); }} /><div className="segmented" role="group" aria-label="Wording"><button type="button" aria-pressed={!internal} onClick={() => { setInternal(false); closeDrawer(); }}>Customer wording</button><button type="button" aria-pressed={internal} onClick={() => { setInternal(true); closeDrawer(); }}>Internal detail</button></div></div>
-    {data && <><CoverStrip data={data} /><p className="hint">As of {data.asOf} · each cover uses its own business time zone.</p></>}
+    <div className="card toolbar cover-toolbar"><input className="input" aria-label="Find a cause, part or service" placeholder="What about… (spill, fan, battery, theft)" value={search} onChange={(e) => { setSearch(e.target.value); setPaging((p) => ({ ...p, coveredPage: 1, excludedPage: 1 })); }} /><div className="segmented" role="group" aria-label="Wording"><button type="button" aria-pressed={!internal} onClick={() => { setInternal(false); closeDrawer(); }}>Customer wording</button><button type="button" aria-pressed={internal} onClick={() => { setInternal(true); closeDrawer(); }}>Internal detail</button></div>{data && <span className="hint">As of {data.asOf} · each cover uses its own business time zone</span>}</div>
+    {data && <CoverStrip data={data} />}
     <ErrorNote error={error} />
     <div className="cols-2" style={{ alignItems: "start" }}>{table(true)}{table(false)}</div>
     {data?.notice && <p className="hint">{data.notice}</p>}
@@ -50,7 +51,7 @@ export function CoverStrip({ data }: { data: WhatsCoveredPage }) {
 export function CoverItemsTable({ data, covered, internal = false, page = 1, size = 7, onPage = () => undefined }: { data: WhatsCoveredPage | null; covered: boolean; internal?: boolean; page?: number; size?: number; onPage?: (p: number) => void }) {
   const columns: GridColumn<UnitCoverItem>[] = [
     { key: "what", label: "What", width: 43, render: (r) => <div className="wrap">{r.customerWording}<span className="sub">{r.category ?? "Needs category"}</span>{r.causeNames?.length ? <span className="sub">{r.causeNames.join(", ")}</span> : null}{internal && [...r.grants, ...r.excludes].map((x) => <span className="sub" key={`${x.cover.entitlementId}:${x.code}`}>{x.code}{x.internalNote ? ` · ${x.internalNote}` : ""}</span>)}</div> },
-    { key: "cover", label: covered ? "Covered by" : "Excluded by", width: 30, render: (r) => <>{(covered ? r.grants : r.excludes).map((x) => <div key={`${x.cover.entitlementId}:${x.code}`} className="wrap"><StatusBadge tone={x.cover.future ? "info" : covered ? "ok" : "neutral"}>{x.cover.familyName}</StatusBadge><span className="sub">{x.cover.policyName} v{x.cover.policyVersion}{x.cover.future ? ` · From ${fmtDate(x.cover.from)}` : ""}</span></div>)}</> },
+    { key: "cover", label: covered ? "Covered by" : "Excluded by", width: 30, render: (r) => <div className="cover-pills">{(covered ? r.grants : r.excludes).map((x) => <span key={`${x.cover.entitlementId}:${x.code}`} title={`${coverLabel(x.cover)}${x.cover.future ? ` · from ${fmtDate(x.cover.from)}` : ""}`}><StatusBadge tone={x.cover.future ? "info" : covered ? "ok" : "neutral"}>{x.cover.familyName}</StatusBadge></span>)}</div> },
     { key: "until", label: covered ? "Until · limit" : "Can it be covered?", width: 27, render: (r) => covered ? <>{r.grants.map((x) => <div className="wrap" key={`${x.cover.entitlementId}:${x.code}`}>{fmtDate(x.cover.until)}<span className="sub">{usageLabel(x.cover)}{x.cover.future ? ` · From ${fmtDate(x.cover.from)}` : ""}</span></div>)}</> : r.canBeCovered },
   ];
   return <DataGrid columns={columns} rowId={(r) => r.key} page={{ rows: data?.items ?? [], total: data?.total ?? 0, page, pageSize: size, continuation: null }} onPage={onPage} onRowClick={(r) => openCoverItem(r, internal, data?.unitId)} loading={!data} />;

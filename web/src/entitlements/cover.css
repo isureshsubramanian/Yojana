@@ -26,3 +26,8 @@
 .drawer .cover-arrow { display: none; }
 .drawer .cover-comparison { min-width: 720px; }
 @media (max-width: 800px) { .cover-glance { grid-template-columns: 1fr; } .cover-arrow { transform: rotate(90deg); justify-self: center; } .cover-comparison { min-width: 900px; } }
+.cover-items-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.cover-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px; }
+.cover-toolbar > .input { flex: 0 1 480px; min-width: 220px; }
+.cover-toolbar > .hint { margin: 0 0 0 auto; }
+.cover-pills { display: flex; flex-wrap: wrap; gap: 6px; }

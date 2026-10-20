@@ -21,13 +21,27 @@ export function updateDrawer(head: DrawerHead, selected: ReactNode): void { if (
 export function setDrawerContext(context: ReactNode, label = "Details"): void { state = { ...state, context, contextLabel: label }; emit(); }
 export function drawerState(): DrawerState { return state; }
 
+const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
+
+/** The whole drawer state: for the frame and the drawer itself, which render its content. */
 export function useDrawer(): DrawerState {
-  return useSyncExternalStore((l) => { listeners.add(l); return () => listeners.delete(l); }, () => state, () => state);
+  return useSyncExternalStore(subscribe, () => state, () => state);
+}
+
+/**
+ * Whether the drawer is open, for pages. A page must not subscribe through useDrawer: its Rail re-registers the screen
+ * context on every render (useDrawerContext), each registration replaces the state, and the page would re-render in a
+ * loop. A boolean snapshot is unchanged by those registrations, so React skips the re-render.
+ */
+export function useDrawerOpen(): boolean {
+  return useSyncExternalStore(subscribe, () => state.open, () => state.open);
 }
 
 /**
  * A page's screen context (what the fixed rail used to show). Set on render, cleared on unmount; the drawer closes
  * with the page so a stale selection never outlives its screen.
+ * Every render re-registers and emits a new state, so the page that calls this (or any ancestor) must read the drawer
+ * through useDrawerOpen, never useDrawer: a whole-state subscription above this call re-renders it in a loop.
  */
 export function useDrawerContext(context: ReactNode, label = "Details"): void {
   useEffect(() => { setDrawerContext(context, label); });

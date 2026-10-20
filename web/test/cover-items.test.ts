@@ -10,7 +10,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import type { WhatsCoveredPage, ItemCover, PolicyCoverItem, ClaimGuidance, ClaimCause } from "../src/entitlements/coverItems.ts";
 
 async function compile<T = Record<string, ComponentType<any>>>(path: string) {
-  const result = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, platform: "node", format: "cjs", jsx: "automatic", packages: "external", write: false });
+  const result = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, platform: "node", format: "cjs", jsx: "automatic", packages: "external", loader: { ".css": "empty" }, write: false });
   const module = { exports: {} as T };
   new Function("require", "module", "exports", result.outputFiles[0]!.text)(createRequire(import.meta.url), module, module.exports);
   return module.exports;
