@@ -3,6 +3,7 @@ using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Documents;
@@ -78,10 +79,20 @@ public static class ValidatePolicyDraftHandler
 
 public static class PublishPolicyVersionHandler
 {
-    public static async Task<PolicyDraftResult> Handle(PublishPolicyVersion command, SerialisationDbContext db, PolicyStore store, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+    public static async Task<PolicyDraftResult> Handle(PublishPolicyVersion command, SerialisationDbContext db, PolicyStore store,
+        ClaimWaitingPeriodSettings waitingPeriods, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var row = await PolicyDrafts.DraftAsync(db, tenant.TenantId, command.PolicyVersionId, cancellationToken);
-        var validation = await store.ValidateAsync(row, await store.ReadTermsAsync(row, cancellationToken, includeItems: true), cancellationToken);
+        var terms = await store.ReadTermsAsync(row, cancellationToken, includeItems: true);
+        if (terms.NoClaimWithinDaysOfPurchase is null)
+        {
+            var families = await db.CoverageFamilies.AsNoTracking().Where(f => f.TenantId == tenant.TenantId)
+                .Select(f => f.FamilyCode).ToListAsync(cancellationToken);
+            var defaults = await waitingPeriods.GetAsync(families, cancellationToken);
+            row.NoClaimWithinDaysOfPurchase = defaults.DaysByCoverageFamily.GetValueOrDefault(row.CoverageFamily);
+            terms = terms with { NoClaimWithinDaysOfPurchase = row.NoClaimWithinDaysOfPurchase };
+        }
+        var validation = await store.ValidateAsync(row, terms, cancellationToken);
         if (!validation.CanPublish)
         {
             var first = validation.Issues.First(i => i.Severity == PolicyIssue.Error);

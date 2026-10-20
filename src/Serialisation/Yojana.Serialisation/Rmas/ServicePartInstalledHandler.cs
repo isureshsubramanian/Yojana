@@ -70,7 +70,7 @@ public static class ServicePartInstalledHandler
                 OwnerPartyRef = owner.PartyRef, OwnerPartyType = owner.PartyType, ObligorEntityId = parent.ObligorEntityId,
                 PayerPartyRef = parent.PayerPartyRef, PayerPartyType = parent.PayerPartyType, PolicyVersionId = parent.PolicyVersionId,
                 StartTrigger = StartTrigger.Install, StartBasis = StartTrigger.Install, StartEvidenceRef = message.AssemblyLinkId.ToString("N"),
-                StartDate = installedDate, StartTimeZone = parent.StartTimeZone, EndDate = computedEnd,
+                StartDate = installedDate, StartTimeZone = parent.StartTimeZone, PurchaseDate = parent.PurchaseDate, EndDate = computedEnd,
                 ComputedByRuleVersion = parent.ComputedByRuleVersion, DurationValue = minimumDays, DurationUnit = DurationRule.Days,
                 EndOfMonthRule = DurationRule.Clamp, EndInclusive = false, EndAdjustmentDays = computedEnd.DayNumber - minimumEnd.DayNumber,
                 DurationBasis = DurationBasis.Time, Coverage = parent.Coverage, RegionScope = parent.RegionScope, Transferable = parent.Transferable,

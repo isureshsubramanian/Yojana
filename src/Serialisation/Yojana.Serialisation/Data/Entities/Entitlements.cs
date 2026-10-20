@@ -135,6 +135,9 @@ public sealed class WarrantyPolicyVersion : ITenantScoped
     /// <summary>JSON <see cref="Contracts.AmendmentValueTerm"/>: what a day or month of this term is worth, null when the policy states no value (P2-T08b).</summary>
     public string? AmendmentValue { get; set; }
 
+    /// <summary>Null on versions published before waiting periods were introduced; those versions mean zero days.</summary>
+    public int? NoClaimWithinDaysOfPurchase { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public required string CreatedBy { get; set; }
@@ -210,6 +213,12 @@ public sealed class Entitlement : ITenantScoped
     public string? StartBasis { get; set; }
 
     public string? StartEvidenceRef { get; set; }
+
+    /// <summary>
+    /// Business date of the sale document that created this cover, in <see cref="StartTimeZone"/>. Null means the
+    /// entitlement's origin did not provide a sale date; adjudication must not substitute another timestamp.
+    /// </summary>
+    public DateOnly? PurchaseDate { get; set; }
 
     /// <summary>Null while pending evidence.</summary>
     public DateOnly? StartDate { get; set; }

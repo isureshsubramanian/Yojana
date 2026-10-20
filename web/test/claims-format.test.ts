@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ageBucketLabel, campaignCoverNote, campaignCoverTerms, campaignOptionHint, coverageSourceLabel, humanise, money, moneyTotals, overlayFlagsText, stackOutcome } from "../src/claims/format.ts";
+import { ageBucketLabel, campaignCoverNote, campaignCoverTerms, campaignOptionHint, coverageSourceLabel, denialReasonLabel, humanise, money, moneyTotals, overlayFlagsText, stackOutcome } from "../src/claims/format.ts";
 import type { ClaimCampaignOption } from "../src/claims/types.ts";
 
 const catalogue = [
@@ -24,6 +24,12 @@ test("claim labels humanise reasons, ageing buckets and policy outcomes", () => 
   assert.equal(stackOutcome({ outcome: "matched" }), "Matched");
   assert.equal(stackOutcome({ outcome: "no_match" }), "No match");
   assert.equal(stackOutcome({ outcome: "not_reached" }), "Not reached");
+});
+
+test("waiting-period decisions name the purchase and first claimable dates", () => {
+  assert.equal(denialReasonLabel("claim_waiting_period", "2026-08-04", "2026-09-03"),
+    "Within the waiting period: bought 2026-08-04, claimable from 2026-09-03");
+  assert.equal(denialReasonLabel("claim_waiting_period"), "Within the waiting period");
 });
 
 const endedRecall: ClaimCampaignOption = {

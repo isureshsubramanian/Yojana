@@ -1016,6 +1016,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(l => l.CoverageSource).HasMaxLength(20);
             b.Property(l => l.SettlementFormula).HasMaxLength(60);
             b.Property(l => l.DenialReason).HasMaxLength(100);
+            b.Property(l => l.WaitingPeriodNotAppliedReason).HasMaxLength(60);
             b.HasIndex(l => new { l.TenantId, l.ClaimId, l.Sequence }).IsUnique();
             b.HasIndex(l => new { l.TenantId, l.UnitId, l.EntitlementId });
             b.HasOne<Claim>().WithMany().HasForeignKey(l => new { l.TenantId, l.ClaimId }).OnDelete(DeleteBehavior.Cascade);

@@ -3,7 +3,7 @@ namespace Yojana.Serialisation.Contracts;
 public sealed record WhatsCoveredRequest(string? Type = null, string? Search = null, int? Skip = null, int? Take = null, bool SectionPages = false, int CoveredSkip = 0, int CoveredTake = 7, int ExcludedSkip = 0, int ExcludedTake = 7);
 public sealed record PolicyCoverItemsRequest(string? Type = null, int? Skip = null, int? Take = null);
 public sealed record ClaimCausesRequest(int? Skip = null, int? Take = null);
-public sealed record ClaimGuidanceRequest(string Cause);
+public sealed record ClaimGuidanceRequest(string Cause, DateOnly? ClaimDate = null, DateOnly? OccurredDate = null);
 public sealed record CustomerSheetRequest(string? Language = null);
 
 public sealed record CoverPartsScope(IReadOnlyList<string> PartCategories, IReadOnlyList<string> ItemFamilies)
@@ -34,7 +34,8 @@ public sealed record WhatsCoveredPage(Guid UnitId, string Serial, string ItemNam
     DateOnly AsOf, IReadOnlyList<ItemCover> Covers, IReadOnlyList<UnitCoverItem> Items,
     int CoveredCount, int ExcludedCount, int Total, int Skip, int Take, string? Notice, bool CustomerEmailEnabled = false, int CoveredTotal = 0, int ExcludedTotal = 0);
 public sealed record GuidanceUsage(string MeterType, string Period, decimal Now, decimal? AfterThisClaim);
-public sealed record GuidedCover(ItemCover Cover, IReadOnlyList<GuidanceUsage> Usage, IReadOnlyList<CoverItemContribution> Items);
+public sealed record GuidedCover(ItemCover Cover, IReadOnlyList<GuidanceUsage> Usage, IReadOnlyList<CoverItemContribution> Items,
+    DateOnly? WaitingPeriodUntil = null);
 public sealed record ClaimGuidance(string CauseCode, bool Covered, IReadOnlyList<GuidedCover> Grants,
     IReadOnlyList<CoverItemContribution> Excludes, string SayToCustomer, string Notice);
 

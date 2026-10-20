@@ -120,6 +120,7 @@ public sealed class ReplacementLinkCorrectionEntitlements(
         StartEvidenceRef = source.StartEvidenceRef,
         StartDate = source.StartDate,
         StartTimeZone = source.StartTimeZone,
+        PurchaseDate = source.PurchaseDate,
         EndDate = source.EndDate,
         ComputedByRuleVersion = source.ComputedByRuleVersion,
         StartLatest = source.StartLatest,

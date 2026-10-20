@@ -131,7 +131,10 @@ public sealed record ClaimLinePreview(
     DateOnly? CoverStart,
     DateOnly? CoverEnd,
     string? DenialReason,
-    IReadOnlyList<PolicyStackStep> Stack);
+    IReadOnlyList<PolicyStackStep> Stack,
+    DateOnly? WaitingPeriodPurchaseDate = null,
+    DateOnly? FirstClaimableDate = null,
+    string? WaitingPeriodNotAppliedReason = null);
 
 public sealed record ClaimCheck(string Key, string Value, string Outcome);
 

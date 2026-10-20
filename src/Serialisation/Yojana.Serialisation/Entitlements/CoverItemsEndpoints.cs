@@ -25,7 +25,7 @@ public static class CoverItemsEndpoints
                 ? Results.Ok(request.SectionPages ? WhatsCoveredQuery.Sections(result, request) : WhatsCoveredQuery.Page(result, string.IsNullOrWhiteSpace(request.Type) ? null : request.Type, request.Search, request.Skip ?? 0, request.Take ?? 25)) : Results.NotFound();
         });
         units.MapGet("/claim-guidance", async (Guid unitId, [AsParameters] ClaimGuidanceRequest request, WhatsCoveredQuery query, CancellationToken ct) =>
-            await query.GuidanceAsync(unitId, request.Cause, ct) is { } result ? Results.Ok(result) : Results.NotFound());
+            await query.GuidanceAsync(unitId, request.Cause, request.ClaimDate, request.OccurredDate, ct) is { } result ? Results.Ok(result) : Results.NotFound());
         units.MapGet("/whats-covered/sheet.pdf", async (Guid unitId, [AsParameters] CustomerSheetRequest request, IUnitCustomerDocument document, CancellationToken ct) =>
         {
             var result = await document.CreateAsync(unitId, request.Language ?? "en", ct);

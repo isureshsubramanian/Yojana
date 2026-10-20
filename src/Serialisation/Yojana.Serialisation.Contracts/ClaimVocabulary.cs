@@ -56,6 +56,12 @@ public static class ClaimDenialReason
 {
     public const string ItemServiceBlocked = "item_service_blocked";
     public const string AfterLastServiceDate = "after_last_service_date";
+    public const string ClaimWaitingPeriod = "claim_waiting_period";
+}
+
+public static class ClaimWaitingPeriodNotAppliedReason
+{
+    public const string PurchaseDateUnavailable = "purchase_date_unavailable";
 }
 
 public static class ClaimCampaignCoverReason

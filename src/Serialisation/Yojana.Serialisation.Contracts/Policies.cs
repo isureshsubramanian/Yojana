@@ -56,7 +56,8 @@ public sealed record PolicyTerms(
     bool ServiceContractRegulated = false,
     EligibilityRule? Eligibility = null,
     AmendmentValueTerm? AmendmentValue = null,
-    IReadOnlyList<PolicyCoverItem>? Items = null)
+    IReadOnlyList<PolicyCoverItem>? Items = null,
+    int? NoClaimWithinDaysOfPurchase = null)
 {
     public const string TimeZoneCustomerSite = "customer_site";
     public const string TimeZoneObligorEntity = "obligor_entity";
@@ -95,6 +96,12 @@ public sealed record PolicyValidation(IReadOnlyList<PolicyIssue> Issues)
     public bool CanPublish => Issues.All(i => i.Severity != PolicyIssue.Error);
 }
 
+/// <summary>
+/// Per-family defaults copied into a policy version when it is published. A later settings change never changes an
+/// already-published version.
+/// </summary>
+public sealed record ClaimWaitingPeriodDefaults(IReadOnlyDictionary<string, int> DaysByCoverageFamily);
+
 /// <summary>Opens the next version of a policy as a draft; without terms it copies the newest version's terms.</summary>
 public sealed record CreatePolicyDraft(Guid CommandId, string PolicyCode, string Name, string CoverageFamily, string EntitlementType, DateOnly AppliesToContractsFrom, PolicyTerms? Terms, string ActorRef);
 
@@ -127,7 +134,7 @@ public sealed record PolicySummary(string PolicyCode, string Name, string Covera
 public sealed record PolicyVersionRow(Guid PolicyVersionId, int Version, DateOnly AppliesToContractsFrom, string Status, string RuleVersion, long LiveEntitlements, DateTime CreatedAt, string CreatedBy, DateTime? PublishedAt, string? PublishedBy);
 
 public sealed record PolicyVersionDetail(Guid PolicyVersionId, string PolicyCode, int Version, string Name, string CoverageFamily, string EntitlementType, DateOnly AppliesToContractsFrom, string Status, string RuleVersion, PolicyTerms Terms, PolicyValidation Validation,
-    string DocumentVersion = "");
+    string DocumentVersion = "", int WaitingPeriodDefaultDays = 0);
 
 /// <summary>Where the policy stack stopped (ADR-0001 "Policy stack and resolution order").</summary>
 public static class PolicyLevel
@@ -168,4 +175,7 @@ public sealed record PolicyResolution(
     Guid? PayerPartyRef = null,
     DateOnly? StartDate = null,
     DateOnly? EndDate = null,
-    int ChainLength = 0);
+    int ChainLength = 0,
+    DateOnly? PurchaseDate = null,
+    int? NoClaimWithinDaysOfPurchase = null,
+    string? EntitlementProvenance = null);

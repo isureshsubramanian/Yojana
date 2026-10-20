@@ -73,7 +73,10 @@ public sealed record ClaimLineDecision(
     string CoverageSource,
     Guid? EntitlementId,
     string? DenialReason,
-    int ChainLength);
+    int ChainLength,
+    DateOnly? WaitingPeriodPurchaseDate = null,
+    DateOnly? FirstClaimableDate = null,
+    string? WaitingPeriodNotAppliedReason = null);
 
 public sealed record AdjudicateClaimResult(
     Guid ClaimId,

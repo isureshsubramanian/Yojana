@@ -103,7 +103,7 @@ public static partial class AttachExtendedWarrantyHandler
             TenantId = tenantId, EntitlementId = TimeOrderedId.New(command.EventTime), UnitId = command.UnitId, Scope = EntitlementScope.Unit, Type = version.EntitlementType, CoverageFamily = command.CoverageFamily,
             Direction = EntitlementDirection.Outbound, OwnerPartyRef = command.OwnerPartyRef, OwnerPartyType = command.OwnerPartyType, ObligorEntityId = command.ObligorEntityId, PayerPartyRef = command.PayerPartyRef,
             PayerPartyType = command.PayerPartyType, PolicyVersionId = version.PolicyVersionId, StartTrigger = terms.Start.Trigger, StartBasis = terms.Start.Trigger, StartEvidenceRef = $"{command.SourceDocument.Type}:{command.SourceDocument.Id}",
-            StartDate = start, StartTimeZone = zone, EndDate = end, ComputedByRuleVersion = version.RuleVersion, DurationValue = terms.Duration.Value, DurationUnit = terms.Duration.Unit,
+            StartDate = start, StartTimeZone = zone, PurchaseDate = purchaseDay, EndDate = end, ComputedByRuleVersion = version.RuleVersion, DurationValue = terms.Duration.Value, DurationUnit = terms.Duration.Unit,
             EndOfMonthRule = terms.Duration.EndOfMonth, EndInclusive = terms.Duration.EndInclusive, DurationBasis = terms.DurationBasis, Coverage = JsonSerializer.Serialize(terms.Coverage, LedgerJson.Options),
             RegionScope = JsonSerializer.Serialize(terms.RegionScope, LedgerJson.Options), Transferable = terms.Transferable, ConditionAtCreation = null, AccrualCohortId = null,
             AssuranceOrService = AssuranceOrService.Service, Status = EntitlementStatus.Active, Confidence = "high", Provenance = EntitlementProvenance.Created,

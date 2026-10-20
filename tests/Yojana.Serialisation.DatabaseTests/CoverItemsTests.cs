@@ -155,11 +155,18 @@ public sealed class CoverItemsTests(SerialisationHostFixture fixture)
     public async Task Guidance_explains_grants_exclusions_and_never_guesses_meter_consumption()
     {
         var s = await Setup(); using var scope = fixture.ScopeFor(s.Tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        (await db.Entitlements.SingleAsync(x => x.EntitlementId == s.Damage)).PurchaseDate = new DateOnly(2026, 8, 4);
+        await db.SaveChangesAsync();
         var guidance = (await Query(scope.ServiceProvider).GuidanceAsync(s.Unit, "LIQUID_SPILL", CancellationToken.None))!;
         Assert.True(guidance.Covered); Assert.Single(guidance.Excludes);
         var usage = Assert.Single(Assert.Single(guidance.Grants).Usage);
         Assert.Equal(2m, usage.Now); Assert.Null(usage.AfterThisClaim);
         Assert.Equal("Liquid spills", guidance.SayToCustomer); Assert.Contains("Guidance only", guidance.Notice);
+        var waiting = (await Query(scope.ServiceProvider).GuidanceAsync(s.Unit, "LIQUID_SPILL", new DateOnly(2026, 9, 20), new DateOnly(2026, 8, 14), CancellationToken.None))!;
+        Assert.Equal(new DateOnly(2026, 9, 3), waiting.Grants.Single(x => x.Cover.EntitlementId == s.Damage).WaitingPeriodUntil);
+        var boundary = (await Query(scope.ServiceProvider).GuidanceAsync(s.Unit, "LIQUID_SPILL", new DateOnly(2026, 9, 3), null, CancellationToken.None))!;
+        Assert.Null(boundary.Grants.Single(x => x.Cover.EntitlementId == s.Damage).WaitingPeriodUntil);
         var no = (await Query(scope.ServiceProvider).GuidanceAsync(s.Unit, "STOLEN_LOST", CancellationToken.None))!;
         Assert.False(no.Covered); Assert.Equal("Theft or loss", no.SayToCustomer);
     }

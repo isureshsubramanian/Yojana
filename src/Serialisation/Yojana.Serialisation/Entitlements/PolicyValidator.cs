@@ -119,6 +119,8 @@ public static partial class PolicyValidator
         if (terms.AssuranceOrService is not (AssuranceOrService.Assurance or AssuranceOrService.Service)) Error("accounting_tag_unknown", "assurance_or_service", $"'{terms.AssuranceOrService}' is not assurance or service.");
         if (terms.ReferenceTimeZoneRule is not (PolicyTerms.TimeZoneCustomerSite or PolicyTerms.TimeZoneObligorEntity or PolicyTerms.TimeZoneUtc)) Error("time_zone_rule_unknown", "reference_time_zone_rule", $"'{terms.ReferenceTimeZoneRule}' is not customer_site, obligor_entity or utc.");
         if (terms.ServiceContractRegulated && terms.AssuranceOrService == AssuranceOrService.Assurance) Warn("regulated_assurance", "service_contract_regulated", "Service-contract regulation applies to separately priced plans; this policy is an assurance warranty.");
+        if (terms.NoClaimWithinDaysOfPurchase is < 0 or > 365)
+            Error("waiting_period_range", "no_claim_within_days_of_purchase", "The claim waiting period must be between 0 and 365 whole days.");
 
         // P2-T08b: the value is in the tenant's currency, so it cannot be checked, or used, before that is set up.
         if (terms.AmendmentValue is { } value)

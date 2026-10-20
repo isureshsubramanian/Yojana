@@ -193,6 +193,29 @@ public sealed class ClaimRulesTests
     public void Document_numbers_carry_series_year_and_padded_value(string series, int value, string expected) =>
         Assert.Equal(expected, DocumentNumbers.Format(series, 2026, value));
 
+    [Fact]
+    public async Task Waiting_period_defaults_use_only_the_exact_accidental_damage_family_code()
+    {
+        var settings = new ClaimWaitingPeriodSettings(new MemoryTenantSettings());
+        var withoutAccidental = await settings.GetAsync([CoverageFamilyCode.Base, "damage_cover"], CancellationToken.None);
+        Assert.Equal(0, withoutAccidental.DaysByCoverageFamily["damage_cover"]);
+        var withAccidental = await settings.GetAsync([CoverageFamilyCode.Base, "accidental_damage"], CancellationToken.None);
+        Assert.Equal(30, withAccidental.DaysByCoverageFamily["accidental_damage"]);
+        Assert.Equal(0, withAccidental.DaysByCoverageFamily[CoverageFamilyCode.Base]);
+    }
+
+    private sealed class MemoryTenantSettings : ITenantSettings
+    {
+        private readonly Dictionary<string, string> values = [];
+        public Task<string?> GetAsync(string key, CancellationToken cancellationToken) =>
+            Task.FromResult(values.GetValueOrDefault(key));
+        public Task SetAsync(string key, string value, CancellationToken cancellationToken)
+        {
+            values[key] = value;
+            return Task.CompletedTask;
+        }
+    }
+
     private static ItemSerialisationProfile Item() => new(Guid.NewGuid(), "ITEM-1", ItemSerialisationProfile.TrackingModes.Serial,
         SerialisationPoint.ProductionRelease, "standard_10y", ItemSerialisationProfile.ReusePolicies.Never,
         ItemSerialisationProfile.Completeness.Block, IdentifierScheme.Internal);

@@ -30,6 +30,7 @@ export interface ClaimLineRow {
 export interface ClaimLineDecision {
   claimLineId: string; unitId: string; coverageFamily: string; requestedAmount: number; coveragePct: number;
   approvedAmount: number; coverageSource: string; entitlementId: string | null; denialReason: string | null; chainLength: number;
+  waitingPeriodPurchaseDate: string | null; firstClaimableDate: string | null; waitingPeriodNotAppliedReason: string | null;
 }
 export interface ClaimEvidenceRow { evidenceId: string; kind: string; reference: string; description: string | null; recordedAt: string; actorRef: string }
 export interface ClaimRecoveryRef { recoveryClaimId: string; recoveryNumber: string; vendorPartyRef: string; status: string }
@@ -50,6 +51,7 @@ export interface ClaimLinePreview {
   kind: string; coverageFamily: string; description: string | null; requestedAmount: number; coveragePct: number;
   approvedAmount: number; coverageSource: string; level: string; policyCode: string | null; policyVersion: number | null;
   entitlementId: string | null; coverStart: string | null; coverEnd: string | null; denialReason: string | null; stack: PolicyStackStep[];
+  waitingPeriodPurchaseDate: string | null; firstClaimableDate: string | null; waitingPeriodNotAppliedReason: string | null;
 }
 export interface ClaimCheck { key: string; value: string; outcome: string }
 export interface RecoveryPreview {

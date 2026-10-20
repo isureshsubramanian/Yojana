@@ -662,6 +662,28 @@ public static class SerialisationEndpoints
                     extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
             }
         }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+        claims.MapGet("/waiting-period-defaults", async (SerialisationDbContext db, ClaimWaitingPeriodSettings settings,
+            ITenantContext tenant, CancellationToken ct) =>
+        {
+            var families = await db.CoverageFamilies.AsNoTracking().Where(f => f.TenantId == tenant.TenantId)
+                .Select(f => f.FamilyCode).ToListAsync(ct);
+            return Results.Ok(await settings.GetAsync(families, ct));
+        }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+        claims.MapPut("/waiting-period-defaults", async (ClaimWaitingPeriodDefaults policy, SerialisationDbContext db,
+            ClaimWaitingPeriodSettings settings, ITenantContext tenant, CancellationToken ct) =>
+        {
+            try
+            {
+                var families = await db.CoverageFamilies.AsNoTracking().Where(f => f.TenantId == tenant.TenantId)
+                    .Select(f => f.FamilyCode).ToListAsync(ct);
+                return Results.Ok(await settings.SetAsync(policy, families, ct));
+            }
+            catch (CommandRefusedException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+            }
+        }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         claims.MapGet("/{claimId:guid}", async (Guid claimId, ClaimQueries queries, CancellationToken ct) =>
             await queries.DetailAsync(claimId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
         claims.MapPost("/", (SubmitClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>

@@ -90,7 +90,7 @@ public sealed class LegacyUnknownClaimUnitCreator(
                 Country: command.ServiceCountry, StartEvidenceRef: command.ProofOfPurchaseRef,
                 Provenance: EntitlementProvenance.Reconstructed, Confidence: Confidence.Low),
             db, entitlementLedger, policies, policyStore, zones, refurbishedSettings, regions, jurisdictionRules, tenant, clock, itemQueries,
-            null, [command.ProofOfPurchaseRef], false, null, null, null, cancellationToken);
+            null, [command.ProofOfPurchaseRef], false, null, null, null, cancellationToken, purchaseDateOverride: purchaseDate);
 
         await bus.PublishAsync(new CertificateIssueRequested(
                 TimeOrderedId.New(command.EventTime), unitId, CertificateDocumentKind.ReleaseRecord,

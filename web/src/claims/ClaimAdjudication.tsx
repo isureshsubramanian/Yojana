@@ -12,7 +12,7 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDate, fmtDateTime } from "../units/format";
 import { claimsApi } from "./api";
-import { campaignCoverNote, checkLabel, checkValue, claimTone, humanise, money, stackOutcome } from "./format";
+import { campaignCoverNote, checkLabel, checkValue, claimTone, denialReasonLabel, humanise, money, stackOutcome } from "./format";
 import type { ClaimAdjudicationPreview, ClaimDetail, ClaimLinePreview, CurrencyInfo } from "./types";
 import "./claims.css";
 
@@ -89,7 +89,7 @@ export function Component() {
             <td className="primary"><span className="t">{line.description ?? humanise(line.kind)}</span><span className="sub">{humanise(line.kind)}{line.isChild ? ` · child ${line.serial ?? names.item(line.itemId)}` : " · root unit"}</span></td>
             <td>{line.policyCode ? `${line.policyCode}${line.policyVersion == null ? "" : ` v${line.policyVersion}`}` : "No policy matched"}<span className="sub">{humanise(line.level)} · {humanise(line.coverageFamily)}</span></td>
             <td className="num">{line.coveragePct} %</td><td className="num">{money(line.requestedAmount, preview.currency, catalogue)}</td><td className="num">{money(line.approvedAmount, preview.currency, catalogue)}</td>
-            <td><StatusBadge tone={line.approvedAmount > 0 ? "ok" : line.denialReason ? "warn" : "neutral"}>{line.approvedAmount > 0 ? "Covered" : line.coverageSource === "chargeable" ? "Chargeable" : "Not covered"}</StatusBadge>{line.denialReason && <span className="sub">{humanise(line.denialReason)}</span>}</td>
+            <td><StatusBadge tone={line.approvedAmount > 0 ? "ok" : line.denialReason ? "warn" : "neutral"}>{line.approvedAmount > 0 ? "Covered" : line.coverageSource === "chargeable" ? "Chargeable" : "Not covered"}</StatusBadge>{line.denialReason && <span className="sub">{denialReasonLabel(line.denialReason, line.waitingPeriodPurchaseDate, line.firstClaimableDate)}</span>}</td>
           </tr>)}</tbody></table></div><div className="card-footer"><span>Settlement formula <span className="serial">full</span> · pro-rata formulas arrive later · {preview.campaignCode && !preview.campaignCoverReason ? `coverage percentages come from campaign ${preview.campaignCode}` : "coverage percentages come from the policy version effective for the claim"}</span></div></section>
           <section className="card claims-stack" aria-labelledby="policy-stack"><div className="card-header"><h2 id="policy-stack">{preview.campaignCode && !preview.campaignCoverReason ? "Campaign cover" : `Policy stack on ${detail.claimDate}`}</h2><span className="meta">{preview.campaignCode && !preview.campaignCoverReason ? "the named campaign decides each line · the policy stack is not consulted" : "first match wins · ties by priority, then latest start"}</span></div><div className="card-body">{firstStack.length ? firstStack.map((step) => <div className="job" key={`${step.level}-${step.outcome}`}><div><div className="t">{humanise(step.level)}</div><div className="s">{step.detail || humanise(step.outcome)}</div></div><StatusBadge tone={claimTone(step.outcome)}>{stackOutcome(step)}</StatusBadge></div>) : <p className="muted">No policy-stack trail was recorded for the first line.</p>}</div></section>
           <section className="card" aria-labelledby="claim-record"><div className="card-header"><h2 id="claim-record">{decided ? "Recorded on adjudication" : "Will be recorded on approve"}</h2><span className="meta">one transaction · outbox</span></div><table className="table dense"><colgroup><col style={{ width: "30%" }} /><col style={{ width: "58%" }} /><col style={{ width: "12%" }} /></colgroup><tbody>
@@ -121,6 +121,6 @@ function DecisionDialog({ title, children, actions, onCancel }: { title: string;
 function openLine(line: ClaimLinePreview, itemName: string) {
   openDrawer({ eyebrow: "Line decision", title: line.description ?? humanise(line.kind) }, <><h3>Why this decision</h3><Kv rows={[
     ["Unit", <><UnitLink unitId={line.unitId}>{line.serial ?? "Open unit"}</UnitLink> · {itemName}</>], ["Level", humanise(line.level)], ["Policy", line.policyCode ? `${line.policyCode}${line.policyVersion == null ? "" : ` v${line.policyVersion}`}` : "No match"],
-    ["Term", line.coverStart || line.coverEnd ? `${line.coverStart ?? "open"} → ${line.coverEnd ?? "open"}` : "—"], ["Coverage", `${line.coveragePct} %`], ["Denial reason", humanise(line.denialReason)],
+    ["Term", line.coverStart || line.coverEnd ? `${line.coverStart ?? "open"} → ${line.coverEnd ?? "open"}` : "—"], ["Coverage", `${line.coveragePct} %`], ["Denial reason", denialReasonLabel(line.denialReason, line.waitingPeriodPurchaseDate, line.firstClaimableDate)],
   ]} /><h3 style={{ marginTop: 24 }}>Policy trail</h3>{line.stack.map((step) => <div className="job" key={`${step.level}-${step.outcome}`}><div><div className="t">{humanise(step.level)}</div><div className="s">{step.detail || humanise(step.outcome)}</div></div><StatusBadge tone={claimTone(step.outcome)}>{stackOutcome(step)}</StatusBadge></div>)}</>);
 }

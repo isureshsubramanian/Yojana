@@ -77,3 +77,52 @@ public sealed class ClaimReviewSettings(ITenantSettings settings)
         await settings.SetAsync(Key, JsonSerializer.Serialize(policy, LedgerJson.Options), cancellationToken);
     }
 }
+
+/// <summary>
+/// Tenant defaults copied into policy versions at publication. The accidental-damage proposal is identified only by
+/// the exact tenant catalogue code; names are customer wording and are never guessed.
+/// </summary>
+public sealed class ClaimWaitingPeriodSettings(ITenantSettings settings)
+{
+    public const string Key = "claims.waiting_period_defaults";
+    private const string ProposedAccidentalDamageFamily = "accidental_damage";
+
+    public async Task<ClaimWaitingPeriodDefaults> GetAsync(IReadOnlyCollection<string> coverageFamilies,
+        CancellationToken cancellationToken)
+    {
+        if (await settings.GetAsync(Key, cancellationToken) is { } text)
+        {
+            var stored = JsonSerializer.Deserialize<ClaimWaitingPeriodDefaults>(text, LedgerJson.Options);
+            if (stored is not null)
+            {
+                var proposed = Defaults(coverageFamilies).DaysByCoverageFamily;
+                return new ClaimWaitingPeriodDefaults(coverageFamilies.Order(StringComparer.Ordinal).ToDictionary(code => code,
+                    code => stored.DaysByCoverageFamily.TryGetValue(code, out var days) ? days : proposed.GetValueOrDefault(code), StringComparer.Ordinal));
+            }
+        }
+
+        return Defaults(coverageFamilies);
+    }
+
+    public async Task<ClaimWaitingPeriodDefaults> SetAsync(ClaimWaitingPeriodDefaults policy,
+        IReadOnlyCollection<string> coverageFamilies, CancellationToken cancellationToken)
+    {
+        var known = coverageFamilies.ToHashSet(StringComparer.Ordinal);
+        var unknown = policy.DaysByCoverageFamily.Keys.Where(code => !known.Contains(code)).Order().ToList();
+        if (unknown.Count > 0)
+            throw new CommandRefusedException("claim_waiting_period_defaults_invalid",
+                $"Unknown coverage families: {string.Join(", ", unknown)}.");
+        if (policy.DaysByCoverageFamily.Any(pair => pair.Value is < 0 or > 365))
+            throw new CommandRefusedException("claim_waiting_period_defaults_invalid",
+                "Every claim waiting-period default must be between 0 and 365 whole days.");
+
+        var complete = new ClaimWaitingPeriodDefaults(coverageFamilies.Order(StringComparer.Ordinal)
+            .ToDictionary(code => code, code => policy.DaysByCoverageFamily.GetValueOrDefault(code), StringComparer.Ordinal));
+        await settings.SetAsync(Key, JsonSerializer.Serialize(complete, LedgerJson.Options), cancellationToken);
+        return complete;
+    }
+
+    private static ClaimWaitingPeriodDefaults Defaults(IEnumerable<string> coverageFamilies) =>
+        new(coverageFamilies.Order(StringComparer.Ordinal).ToDictionary(code => code,
+            code => code == ProposedAccidentalDamageFamily ? 30 : 0, StringComparer.Ordinal));
+}

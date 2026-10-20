@@ -111,7 +111,7 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
             var facts = await db.Events.Where(e => e.UnitId == submitted.UnitId).Select(e => e.EventType).ToListAsync();
 
             Assert.Equal((UnitOrigin.LegacyUnknown, HistoryDepth.OpeningOnly), (unit.Origin, unit.HistoryDepth));
-            Assert.Equal((Confidence.Low, EntitlementProvenance.Reconstructed, "2025-01"), (entitlement.Confidence, entitlement.Provenance, cohortPeriod));
+            Assert.Equal((Confidence.Low, EntitlementProvenance.Reconstructed, "2025-01", purchaseDate), (entitlement.Confidence, entitlement.Provenance, cohortPeriod, entitlement.PurchaseDate));
             Assert.DoesNotContain(UnitEventType.Shipped, facts);
             Assert.DoesNotContain(UnitEventType.Delivered, facts);
             Assert.DoesNotContain(UnitEventType.Released, facts);
