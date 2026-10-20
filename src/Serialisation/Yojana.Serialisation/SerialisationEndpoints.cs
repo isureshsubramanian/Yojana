@@ -1711,7 +1711,7 @@ public static class SerialisationEndpoints
         }
     }
 
-    private static async Task<IResult> Invoke<TResult>(IMessageBus bus, ITenantContext tenant, object command, CancellationToken ct) where TResult : class
+    internal static async Task<IResult> Invoke<TResult>(IMessageBus bus, ITenantContext tenant, object command, CancellationToken ct) where TResult : class
     {
         try
         {
@@ -1724,6 +1724,12 @@ public static class SerialisationEndpoints
         catch (CommandRefusedException ex)
         {
             return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict, extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Results.Problem(title: "document_changed", detail: "The document changed while this edit was being saved.",
+                statusCode: StatusCodes.Status409Conflict, extensions: new Dictionary<string, object?>
+                { ["rule"] = "document_changed", ["unblockingStep"] = DocumentVersionRules.Reload });
         }
     }
 
@@ -1912,7 +1918,7 @@ public static class SerialisationEndpoints
         await Task.CompletedTask;
     }
 
-    private static Task<IResult> InvokeEdit<TResult>(IMessageBus bus, ITenantContext tenant, IExpectedDocumentVersion command, CancellationToken ct) where TResult : class
+    internal static Task<IResult> InvokeEdit<TResult>(IMessageBus bus, ITenantContext tenant, IExpectedDocumentVersion command, CancellationToken ct) where TResult : class
     {
         if (string.IsNullOrWhiteSpace(command.ExpectedVersion))
         {

@@ -4968,8 +4968,7 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.Property<string>("CustomerWording")
                         .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)")
+                        .HasColumnType("nvarchar(max)")
                         .HasColumnName("customer_wording");
 
                     b.Property<string>("InternalNote")
@@ -4989,6 +4988,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasKey("TenantId", "PolicyVersionId", "Code")
                         .HasName("pk_policy_cover_item");
+
+                    b.HasIndex("TenantId", "Code")
+                        .HasDatabaseName("ix_policy_cover_item_tenant_id_code");
 
                     b.ToTable("policy_cover_item", "serialisation", t =>
                         {

@@ -26,7 +26,8 @@ internal static class CoverItemsModel
             b.HasKey(x => new { x.TenantId, x.PolicyVersionId, x.Code });
             b.Property(x => x.Code).HasMaxLength(24);
             b.Property(x => x.Type).HasMaxLength(8);
-            b.Property(x => x.CustomerWording).HasMaxLength(500);
+            b.Property(x => x.CustomerWording).HasColumnType("nvarchar(max)");
+            b.HasIndex(x => new { x.TenantId, x.Code });
             b.Property(x => x.Category).HasMaxLength(10);
             b.HasOne<WarrantyPolicyVersion>().WithMany().HasForeignKey(x => new { x.TenantId, x.PolicyVersionId }).OnDelete(DeleteBehavior.Cascade);
         });

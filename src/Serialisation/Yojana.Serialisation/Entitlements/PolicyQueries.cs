@@ -37,7 +37,7 @@ public sealed class PolicyQueries(SerialisationDbContext db, PolicyStore store, 
         var tenantId = tenant.TenantId;
         var row = await db.PolicyVersions.AsNoTracking().FirstOrDefaultAsync(v => v.TenantId == tenantId && v.PolicyVersionId == policyVersionId, cancellationToken);
         if (row is null) return null;
-        var terms = await store.ReadTermsAsync(row, cancellationToken);
+        var terms = await store.ReadTermsAsync(row, cancellationToken, includeItems: true);
         return new PolicyVersionDetail(row.PolicyVersionId, row.PolicyCode, row.Version, row.Name, row.CoverageFamily, row.EntitlementType, row.AppliesToContractsFrom, row.Status, row.RuleVersion, terms, await store.ValidateAsync(row, terms, cancellationToken), DocumentVersion.Encode(row.RowVersion));
     }
 

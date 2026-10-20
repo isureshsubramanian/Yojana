@@ -42,10 +42,17 @@ public sealed class PolicyCoverItems(SerialisationDbContext db, ITenantContext t
             throw new CommandRefusedException("policy_items_published", "Published items are immutable. Open a new draft.");
         if (items.Select(x => x.Code).Distinct(StringComparer.OrdinalIgnoreCase).Count() != items.Count)
             throw new CommandRefusedException("policy_items_invalid", "Item codes must be unique within the policy version.");
+        var copying = db.Entry(version).State is EntityState.Detached or EntityState.Added;
+        var retainedLegacy = items.Any(x => x.CustomerWording?.Length > 500)
+            ? await (from item in db.PolicyCoverItems.AsNoTracking()
+                join policy in db.PolicyVersions.AsNoTracking() on new { item.TenantId, item.PolicyVersionId } equals new { policy.TenantId, policy.PolicyVersionId }
+                where item.TenantId == tenant.TenantId && policy.PolicyCode == version.PolicyCode && item.Code.StartsWith("LEGACY-")
+                    && (item.PolicyVersionId == version.PolicyVersionId || (copying && policy.Version == version.Version - 1))
+                select new { item.Code, item.CustomerWording }).ToListAsync(ct) : [];
         foreach (var item in items)
         {
             if (string.IsNullOrWhiteSpace(item.Code) || item.Code.Length > 24 || item.Code.Any(c => !(char.IsAsciiLetterUpper(c) || char.IsAsciiDigit(c) || c is '-' or '_'))
-                || item.Type is not ("covered" or "excluded") || string.IsNullOrWhiteSpace(item.CustomerWording) || item.CustomerWording.Length > 500
+                || item.Type is not ("covered" or "excluded") || string.IsNullOrWhiteSpace(item.CustomerWording) || (item.CustomerWording.Length > 500 && !retainedLegacy.Any(x => x.Code == item.Code && x.CustomerWording == item.CustomerWording))
                 || item.Category is not (null or "cause" or "part" or "condition" or "service")
                 || item.CauseCodes is null || item.PartsScope is null || item.PartsScope.PartCategories is null || item.PartsScope.ItemFamilies is null
                 || item.CauseCodes.Distinct().Count() != item.CauseCodes.Count
@@ -54,7 +61,8 @@ public sealed class PolicyCoverItems(SerialisationDbContext db, ITenantContext t
         }
         // Coupled to publication in PolicyHandlers: the parent rowversion is the shared concurrency seam for its
         // child items and publication. Force an update even with a fixed clock; separating these writes lets a
-        // concurrent publish commit editable items. Both commands run in the same database transaction.
+        // concurrent publish commit editable items. Each command saves the parent and children atomically;
+        // the competing commands use separate transactions.
         if (db.Entry(version).State is not (EntityState.Detached or EntityState.Added))
             db.Entry(version).Property(x => x.LastModifiedAt).IsModified = true;
         await catalogue.EnsureDefaultsAsync(ct);

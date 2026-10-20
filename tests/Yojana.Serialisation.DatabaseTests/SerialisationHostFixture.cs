@@ -83,6 +83,7 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         builder.Services.AddSingleton<TestCertificateRunChunkObserver>();
         builder.Services.AddSingleton<ICertificateRunChunkObserver>(sp => sp.GetRequiredService<TestCertificateRunChunkObserver>());
         builder.AddSerialisationModule();
+        builder.Services.AddDbContext<Yojana.Serialisation.Data.SerialisationDbContext>(options => options.AddInterceptors(PolicyCommandCounter.Instance), optionsLifetime: ServiceLifetime.Singleton);
         builder.Services.ConfigureWolverine(options =>
         {
             // TIGHT COUPLING (test sink endpoint configuration)

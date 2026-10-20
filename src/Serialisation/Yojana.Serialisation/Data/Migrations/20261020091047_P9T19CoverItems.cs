@@ -61,7 +61,7 @@ namespace Yojana.Serialisation.Data.Migrations
                     policy_version_id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     code = table.Column<string>(type: "nvarchar(24)", maxLength: 24, nullable: false),
                     type = table.Column<string>(type: "nvarchar(8)", maxLength: 8, nullable: false),
-                    customer_wording = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
+                    customer_wording = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     internal_note = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     category = table.Column<string>(type: "nvarchar(10)", maxLength: 10, nullable: true),
                     parts_scope = table.Column<string>(type: "nvarchar(max)", nullable: false)
@@ -109,6 +109,13 @@ namespace Yojana.Serialisation.Data.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            // The nullable claim FK and tenant-led index still scan the existing claim table during upgrade.
+            migrationBuilder.CreateIndex(
+                name: "ix_policy_cover_item_tenant_id_code",
+                schema: "serialisation",
+                table: "policy_cover_item",
+                columns: new[] { "tenant_id", "code" });
+
             migrationBuilder.CreateIndex(
                 name: "ix_claim_tenant_id_reported_cause_code",
                 schema: "serialisation",
@@ -132,54 +139,68 @@ namespace Yojana.Serialisation.Data.Migrations
             migrationBuilder.AddTenantPolicy("serialisation", "claim_cause");
             migrationBuilder.AddTenantPolicy("serialisation", "policy_cover_item");
             migrationBuilder.AddTenantPolicy("serialisation", "policy_cover_item_cause");
-            migrationBuilder.Sql(LegacyBackfill, suppressTransaction: true);
+            migrationBuilder.Sql(LegacyBackfill);
         }
 
         // Coupled to WarrantyPolicyVersion.Exclusions: the JSON column stays read-only for one release.
         // Drop it only after legacy readers move to policy_cover_item; this backfill must retain the sold version.
-        // Stage once with RLS briefly disabled, restore it, then insert 500 rows at a time in each tenant context.
+        // Enumerate only this module's tenants with RLS OFF/ON in one XACT_ABORT transaction. Cancellation rolls
+        // the policy state back to ON. The schema and backfill share EF's migration transaction (no suppression).
+        // Standalone re-runs open their own transaction for enumeration, then insert at most 500 items per batch
+        // with RLS ON in each tenant context. Invalid JSON rows are skipped and counted; blank strings are skipped.
         // Scope JSON uses PolicyCoverItems.Read's snake-case contract; SQL cannot invoke its serialiser.
-        // Changing those keys without migrating saved scopes would discard their part references.
-        // NOT EXISTS makes re-running the data step safe; customer text and list order are never inferred or changed.
+        // NOT EXISTS makes re-running safe. Long legacy text is retained whole; only new or changed wording is limited.
         public const string LegacyBackfill = """
             SET NOCOUNT ON;
-            CREATE TABLE #legacy_items (tenant_id uniqueidentifier NOT NULL, policy_version_id uniqueidentifier NOT NULL,
-                code nvarchar(24) NOT NULL, customer_wording nvarchar(max) NOT NULL,
-                PRIMARY KEY(tenant_id, policy_version_id, code));
+            SET XACT_ABORT ON;
+            CREATE TABLE #legacy_tenants (tenant_id uniqueidentifier NOT NULL PRIMARY KEY);
             DECLARE @original_tenant sql_variant = SESSION_CONTEXT(N'tenant_id');
+            DECLARE @own_transaction bit = CASE WHEN @@TRANCOUNT = 0 THEN 1 ELSE 0 END;
+            DECLARE @invalid_json int;
+            DECLARE @whitespace nvarchar(32) = NCHAR(9)+NCHAR(10)+NCHAR(11)+NCHAR(12)+NCHAR(13)+NCHAR(32)
+                +NCHAR(133)+NCHAR(160)+NCHAR(5760)+NCHAR(8192)+NCHAR(8193)+NCHAR(8194)+NCHAR(8195)+NCHAR(8196)
+                +NCHAR(8197)+NCHAR(8198)+NCHAR(8199)+NCHAR(8200)+NCHAR(8201)+NCHAR(8202)+NCHAR(8232)+NCHAR(8233)
+                +NCHAR(8239)+NCHAR(8287)+NCHAR(12288);
             BEGIN TRY
+                IF @own_transaction = 1 BEGIN TRANSACTION;
                 ALTER SECURITY POLICY [sec].[tenant_policy_serialisation] WITH (STATE = OFF);
-                INSERT INTO #legacy_items
-                SELECT p.tenant_id, p.policy_version_id, CONCAT(N'LEGACY-', CONVERT(int, j.[key]) + 1), j.[value]
-                FROM serialisation.warranty_policy_version p CROSS APPLY OPENJSON(p.exclusions) j
-                WHERE j.[type] = 1
-                OPTION(MAXDOP 1);
+                INSERT INTO #legacy_tenants SELECT DISTINCT tenant_id FROM serialisation.warranty_policy_version;
+                SELECT @invalid_json = COUNT(*) FROM serialisation.warranty_policy_version WHERE ISJSON(exclusions) <> 1;
                 ALTER SECURITY POLICY [sec].[tenant_policy_serialisation] WITH (STATE = ON);
-                IF EXISTS (SELECT 1 FROM #legacy_items WHERE DATALENGTH(customer_wording) > 1000)
-                    THROW 51000, 'Legacy exclusion exceeds 500 characters; owner review is required before migration.', 1;
-                DECLARE @tenant uniqueidentifier;
-                WHILE EXISTS (SELECT 1 FROM #legacy_items)
+                IF @own_transaction = 1 COMMIT TRANSACTION;
+                PRINT CONCAT(N'Legacy exclusions: skipped invalid JSON rows: ', @invalid_json);
+                DECLARE @tenant uniqueidentifier, @inserted int;
+                WHILE EXISTS (SELECT 1 FROM #legacy_tenants)
                 BEGIN
-                    SELECT TOP(1) @tenant = tenant_id FROM #legacy_items ORDER BY tenant_id;
+                    SELECT TOP(1) @tenant = tenant_id FROM #legacy_tenants ORDER BY tenant_id;
                     EXEC sys.sp_set_session_context @key=N'tenant_id', @value=@tenant;
-                    INSERT INTO serialisation.policy_cover_item (tenant_id, policy_version_id, code, type, customer_wording, category, parts_scope)
-                    SELECT TOP(500) s.tenant_id, s.policy_version_id, s.code, N'excluded', s.customer_wording, NULL,
-                        N'{"part_categories":[],"item_families":[]}'
-                    FROM #legacy_items s
-                    WHERE s.tenant_id = @tenant AND NOT EXISTS (SELECT 1 FROM serialisation.policy_cover_item i
-                        WHERE i.tenant_id = s.tenant_id AND i.policy_version_id = s.policy_version_id AND i.code = s.code)
-                    ORDER BY s.policy_version_id, s.code;
-                    DELETE s FROM #legacy_items s WHERE s.tenant_id = @tenant AND EXISTS (SELECT 1 FROM serialisation.policy_cover_item i
-                        WHERE i.tenant_id = s.tenant_id AND i.policy_version_id = s.policy_version_id AND i.code = s.code);
+                    SET @inserted = 1;
+                    WHILE @inserted > 0
+                    BEGIN
+                        INSERT INTO serialisation.policy_cover_item (tenant_id, policy_version_id, code, type, customer_wording, category, parts_scope)
+                        SELECT TOP(500) p.tenant_id, p.policy_version_id, CONCAT(N'LEGACY-', CONVERT(int, j.[key]) + 1),
+                            N'excluded', j.[value], NULL, N'{"part_categories":[],"item_families":[]}'
+                        FROM serialisation.warranty_policy_version p
+                        CROSS APPLY OPENJSON(CASE WHEN ISJSON(p.exclusions) = 1 THEN p.exclusions ELSE N'[]' END) j
+                        WHERE p.tenant_id = @tenant AND j.[type] = 1
+                            AND DATALENGTH(TRIM(@whitespace FROM j.[value])) > 0
+                            AND NOT EXISTS (SELECT 1 FROM serialisation.policy_cover_item i
+                                WHERE i.tenant_id = p.tenant_id AND i.policy_version_id = p.policy_version_id
+                                    AND i.code = CONCAT(N'LEGACY-', CONVERT(int, j.[key]) + 1))
+                        ORDER BY p.policy_version_id, CONVERT(int, j.[key])
+                        OPTION(MAXDOP 1);
+                        SET @inserted = @@ROWCOUNT;
+                    END;
+                    DELETE FROM #legacy_tenants WHERE tenant_id = @tenant;
                 END;
                 EXEC sys.sp_set_session_context @key=N'tenant_id', @value=@original_tenant;
             END TRY
             BEGIN CATCH
-                ALTER SECURITY POLICY [sec].[tenant_policy_serialisation] WITH (STATE = ON);
+                IF @own_transaction = 1 AND XACT_STATE() <> 0 ROLLBACK TRANSACTION;
                 EXEC sys.sp_set_session_context @key=N'tenant_id', @value=@original_tenant;
                 THROW;
             END CATCH;
-            DROP TABLE #legacy_items;
+            DROP TABLE #legacy_tenants;
             """;
 
         /// <inheritdoc />

@@ -1,5 +1,5 @@
 import { WhatsCoveredPanel } from "../entitlements/WhatsCoveredPanel";
-import { coverItemsApi, customerEmailEnabled, unitTab, type WhatsCoveredPage } from "../entitlements/coverItems";
+import { coverItemsApi, unitTab, type WhatsCoveredPage } from "../entitlements/coverItems";
 import { entitlementApi } from "../entitlements/api";
 import { coverApi } from "../entitlements/coverApi";
 import { UnitTabBar } from "./UnitTabBar";
@@ -52,7 +52,7 @@ export function Component() {
 
   useEffect(() => {
     const c = new AbortController();
-    Promise.all([entitlementApi.detailForUnit(unitId, c.signal), coverItemsApi.unit(unitId, undefined, "", 0, 1, c.signal), coverApi.unit(unitId, c.signal)])
+    Promise.all([entitlementApi.detailForUnit(unitId, c.signal), coverItemsApi.sections(unitId, "", 0, 7, 0, 7, c.signal), coverApi.unit(unitId, c.signal)])
       .then(([entitlements, covered, changes]) => {
         setEntitlementDetail(entitlements); setWhatsCovered(covered); setChangeCount(changes.changeCount);
         const live = entitlements.entitlements.filter((e) => e.storedStatus !== "closed");
@@ -144,7 +144,7 @@ export function Component() {
           <div className="actions">
             <button type="button" className="btn" onClick={() => { if (tab === "whats-covered") window.open(`/api/units/${unitId}/whats-covered/sheet.pdf`, "_blank", "noopener"); else window.print(); }}><Icon name="print" />Print</button>
             {tab !== "whats-covered" && <Link className="btn" to={`/corrections?unit=${unitId}&q=${encodeURIComponent(primary?.rawValue ?? "")}`}>Something is wrong…</Link>}
-            {tab === "whats-covered" ? <>{customerEmailEnabled && <button type="button" className="btn">E-mail to customer…</button>}<Link className="btn primary" to={`/claims/new?unit=${unitId}`}>Start a claim</Link></> : tab === "entitlements" ? <><button type="button" className="btn" onClick={() => openAttachEntitlement(unitId, entitlementDetail, reloadEntitlements)}>Attach extended or add-on…</button><button type="button" className="btn primary" onClick={() => openAmendEntitlement(entitlementDetail, reloadEntitlements)}><Icon name="corr" />Amend entitlement…</button></> : <><button type="button" className="btn" onClick={flag}>Overlay flag…</button><button type="button" className="btn primary" onClick={correct}><Icon name="corr" />Correct identifier…</button></>}
+            {tab === "whats-covered" ? <>{whatsCovered?.customerEmailEnabled && <button type="button" className="btn">E-mail to customer…</button>}<Link className="btn primary" to={`/claims/new?unit=${unitId}`}>Start a claim</Link></> : tab === "entitlements" ? <><button type="button" className="btn" onClick={() => openAttachEntitlement(unitId, entitlementDetail, reloadEntitlements)}>Attach extended or add-on…</button><button type="button" className="btn primary" onClick={() => openAmendEntitlement(entitlementDetail, reloadEntitlements)}><Icon name="corr" />Amend entitlement…</button></> : <><button type="button" className="btn" onClick={flag}>Overlay flag…</button><button type="button" className="btn primary" onClick={correct}><Icon name="corr" />Correct identifier…</button></>}
           </div>
         </div>
         <ErrorNote error={error} />

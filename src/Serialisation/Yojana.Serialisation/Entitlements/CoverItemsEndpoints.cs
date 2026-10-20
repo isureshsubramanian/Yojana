@@ -22,7 +22,7 @@ public static class CoverItemsEndpoints
         {
             if (request.Type is not (null or "" or "covered" or "excluded")) return InvalidType();
             return await query.ReadAsync(unitId, ct) is { } result
-                ? Results.Ok(WhatsCoveredQuery.Page(result, string.IsNullOrWhiteSpace(request.Type) ? null : request.Type, request.Search, request.Skip ?? 0, request.Take ?? 25)) : Results.NotFound();
+                ? Results.Ok(request.SectionPages ? WhatsCoveredQuery.Sections(result, request) : WhatsCoveredQuery.Page(result, string.IsNullOrWhiteSpace(request.Type) ? null : request.Type, request.Search, request.Skip ?? 0, request.Take ?? 25)) : Results.NotFound();
         });
         units.MapGet("/claim-guidance", async (Guid unitId, [AsParameters] ClaimGuidanceRequest request, WhatsCoveredQuery query, CancellationToken ct) =>
             await query.GuidanceAsync(unitId, request.Cause, ct) is { } result ? Results.Ok(result) : Results.NotFound());
@@ -44,24 +44,19 @@ public static class CoverItemsEndpoints
             return Results.Ok(new PolicyCoverItemPage(rows.Skip(offset).Take(size).ToList(), rows.Count, offset, size, DocumentVersion.Encode(version.RowVersion)));
         });
         versions.MapPut("", (Guid policyVersionId, UpdatePolicyCoverItems command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<PolicyCoverItemPage>(bus, tenant, command with { PolicyVersionId = policyVersionId, ActorRef = Actor(user) }, ct))
-            .RequireAuthorization(p => p.RequireClaim(YojanaClaim.Role, YojanaRole.ServiceManager));
+            SerialisationEndpoints.InvokeEdit<PolicyCoverItemPage>(bus, tenant, command with { PolicyVersionId = policyVersionId, ActorRef = Actor(user) }, ct))
+            .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.ServiceManager));
         var causes = app.MapGroup("/api/claim-causes").RequireAuthorization(YojanaPolicy.TenantMember);
         causes.MapGet("", async ([AsParameters] ClaimCausesRequest request, ClaimCauseCatalogue catalogue, CancellationToken ct) =>
         {
             var rows = await catalogue.ReadAsync(ct); var offset = Math.Max(0, request.Skip ?? 0); var size = Math.Clamp(request.Take ?? 25, 1, 100);
-            return Results.Ok(new ClaimCausePage(rows.Skip(offset).Take(size).ToList(), rows.Count, offset, size));
+            return Results.Ok(new ClaimCausePage(rows.Skip(offset).Take(size).ToList(), rows.Count, offset, size, ClaimCauseCatalogue.Version(rows)));
         });
         causes.MapPut("", (UpdateClaimCauses command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<ClaimCausePage>(bus, tenant, command with { ActorRef = Actor(user) }, ct))
-            .RequireAuthorization(p => p.RequireClaim(YojanaClaim.Role, YojanaRole.ServiceManager));
+            SerialisationEndpoints.InvokeEdit<ClaimCausePage>(bus, tenant, command with { ActorRef = Actor(user) }, ct))
+            .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.ServiceManager));
     }
 
     private static IResult InvalidType() => Results.Problem(statusCode: 400, title: "cover_item_type_invalid", detail: "Choose covered or excluded items.");
     private static string Actor(ClaimsPrincipal user) => user.FindFirstValue(YojanaClaim.UserId) ?? throw new UnauthorizedAccessException();
-    private static async Task<IResult> Invoke<T>(IMessageBus bus, ITenantContext tenant, object message, CancellationToken ct) where T : class
-    {
-        try { return Results.Ok(await bus.InvokeAsync<T>(message, new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, ct)); }
-        catch (CommandRefusedException e) { return Results.Problem(statusCode: e.Rule is "policy_items_published" or "claim_cause_referenced" ? 409 : 400, title: e.Rule, detail: e.Message); }
-    }
 }

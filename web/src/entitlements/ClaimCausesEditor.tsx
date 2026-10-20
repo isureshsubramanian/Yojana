@@ -2,14 +2,14 @@ import { useState } from "react";
 import { ErrorNote } from "../units/common";
 import { coverItemsApi, type ClaimCause } from "./coverItems";
 
-export function ClaimCausesEditor({ causes, onSaved }: { causes: ClaimCause[]; onSaved: (items: ClaimCause[]) => void }) {
+export function ClaimCausesEditor({ causes, version, onSaved }: { causes: ClaimCause[]; version: string; onSaved: (items: ClaimCause[], version: string) => void }) {
   const [rows, setRows] = useState(() => causes.map((c) => ({ ...c, rowId: c.code, fresh: false })));
   const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
   const save = async () => {
     setBusy(true); setError(null);
     try {
       const items = rows.map(({ code, customerWording, active }) => ({ code, customerWording, active }));
-      await coverItemsApi.saveCauses(items); onSaved(items);
+      const saved = await coverItemsApi.saveCauses(items, version); onSaved(items, saved.version);
     } catch (e) { setError(e); } finally { setBusy(false); }
   };
   return <div className="stack"><h3>Tenant claim causes</h3><p className="hint">Use your customers’ words. A referenced code cannot be removed; deactivate it to keep it off new intake screens. Existing items and claims keep their reference.</p>

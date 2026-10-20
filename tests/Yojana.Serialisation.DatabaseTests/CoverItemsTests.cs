@@ -95,8 +95,8 @@ public sealed class CoverItemsTests(SerialisationHostFixture fixture)
         Assert.Equal(3, Assert.Single(data.Covers.Single(x => x.EntitlementId == s.Service).Usage).Remaining);
         Assert.Equal("contract_year", Assert.Single(data.Covers.Single(x => x.EntitlementId == s.Service).Usage).Period);
         Assert.Equal(2, Assert.Single(data.Covers.Single(x => x.EntitlementId == s.Damage).Usage).Remaining);
-        Assert.All(data.Items.Where(x => !x.Covered), x => Assert.Equal("—", x.CanBeCovered));
-        Assert.Contains("country and context", data.Notice);
+        Assert.All(data.Items.Where(x => !x.Covered), x => Assert.Equal("No · not offered on this item", x.CanBeCovered));
+        Assert.Contains("unit’s country", data.Notice);
         Assert.Equal(2, WhatsCoveredQuery.Page(data, "covered", null, 0, 2).Items.Count);
         Assert.Equal(11, WhatsCoveredQuery.Page(data, "covered", null, 0, 2).Total);
         Assert.Single(WhatsCoveredQuery.Page(data, null, "Liquid", 0, 25).Items);
@@ -152,13 +152,13 @@ public sealed class CoverItemsTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
-    public async Task Guidance_explains_grants_exclusions_and_only_projects_consumption_for_claim_count_meters()
+    public async Task Guidance_explains_grants_exclusions_and_never_guesses_meter_consumption()
     {
         var s = await Setup(); using var scope = fixture.ScopeFor(s.Tenant);
         var guidance = (await Query(scope.ServiceProvider).GuidanceAsync(s.Unit, "LIQUID_SPILL", CancellationToken.None))!;
         Assert.True(guidance.Covered); Assert.Single(guidance.Excludes);
         var usage = Assert.Single(Assert.Single(guidance.Grants).Usage);
-        Assert.Equal((2m, 1m), (usage.Now, usage.AfterThisClaim));
+        Assert.Equal(2m, usage.Now); Assert.Null(usage.AfterThisClaim);
         Assert.Equal("Liquid spills", guidance.SayToCustomer); Assert.Contains("Guidance only", guidance.Notice);
         var no = (await Query(scope.ServiceProvider).GuidanceAsync(s.Unit, "STOLEN_LOST", CancellationToken.None))!;
         Assert.False(no.Covered); Assert.Equal("Theft or loss", no.SayToCustomer);
@@ -284,7 +284,7 @@ public sealed class CoverItemsTests(SerialisationHostFixture fixture)
         Assert.DoesNotContain("Internal service instruction", await sheet.Content.ReadAsStringAsync());
         Assert.Equal(HttpStatusCode.Forbidden, (await member.PutAsJsonAsync($"/api/warranty-policies/versions/{s.BasePolicy}/items", new UpdatePolicyCoverItems(s.BasePolicy, []))).StatusCode);
         using var manager = await fixture.AuthenticatedClientAsync(s.Tenant, YojanaRole.ServiceManager);
-        Assert.Equal(HttpStatusCode.Conflict, (await manager.PutAsJsonAsync($"/api/warranty-policies/versions/{s.BasePolicy}/items", new UpdatePolicyCoverItems(s.BasePolicy, []))).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await manager.PutAsJsonAsync($"/api/warranty-policies/versions/{s.BasePolicy}/items", new UpdatePolicyCoverItems(s.BasePolicy, [], ExpectedVersion: itemPage.Version))).StatusCode);
         using var outsider = await fixture.AuthenticatedClientAsync(other, YojanaRole.ServiceDesk);
         Assert.Equal(HttpStatusCode.NotFound, (await outsider.GetAsync($"/api/units/{s.Unit}/whats-covered")).StatusCode);
         using var anonymous = fixture.Client();
@@ -327,7 +327,7 @@ public sealed class CoverItemsTests(SerialisationHostFixture fixture)
         var tenant = await fixture.NewTenantAsync("cause-actor"); var other = await fixture.NewTenantAsync("cause-other");
         var user = Guid.NewGuid();
         using var manager = await fixture.AuthenticatedClientAsync(tenant, YojanaRole.ServiceManager, user);
-        using var response = await manager.PutAsJsonAsync("/api/claim-causes", new UpdateClaimCauses([..ClaimCauseCatalogue.Defaults, new("CUSTOM_CAUSE", "Another cause")], "forged.actor"));
+        using var response = await manager.PutAsJsonAsync("/api/claim-causes", new UpdateClaimCauses([..ClaimCauseCatalogue.Defaults, new("CUSTOM_CAUSE", "Another cause")], "forged.actor", ClaimCauseCatalogue.Version(ClaimCauseCatalogue.Defaults)));
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using (var scope = fixture.ScopeFor(tenant))
         {
@@ -340,6 +340,204 @@ public sealed class CoverItemsTests(SerialisationHostFixture fixture)
             db.ClaimCauses.Add(new Yojana.Serialisation.Data.Entities.ClaimCauseRow { TenantId = tenant, Code = "FOREIGN_CAUSE", CustomerWording = "Must not enter" });
             await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
         }
+    }
+
+    [DatabaseFact]
+    public async Task Long_legacy_wording_is_preserved_flagged_and_copyable_while_blanks_and_invalid_json_are_skipped()
+    {
+        var tenant = await fixture.NewTenantAsync("legacy-long");
+        var policy = await Policy(tenant, CoverageFamilyCode.Base, "Base warranty", []);
+        var invalid = await Policy(tenant, "legacy_invalid", "Legacy invalid", []);
+        var wording = new string('W', 1201);
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var row = await db.PolicyVersions.SingleAsync(x => x.PolicyVersionId == policy.PolicyVersionId);
+            row.Exclusions = System.Text.Json.JsonSerializer.Serialize(new[] { "", " ", "\t\r\n\u00a0\u2003\u3000", wording });
+            await db.SaveChangesAsync();
+        }
+        await using (var connection = new Microsoft.Data.SqlClient.SqlConnection(SerialisationHostFixture.ConnectionString))
+        {
+            var messages = new List<string>();
+            connection.InfoMessage += (_, args) => messages.Add(args.Message);
+            await connection.OpenAsync();
+            await using var transaction = (Microsoft.Data.SqlClient.SqlTransaction)await connection.BeginTransactionAsync();
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                SET XACT_ABORT ON;
+                EXEC sys.sp_set_session_context @key=N'tenant_id', @value=@fixture_tenant;
+                ALTER TABLE serialisation.warranty_policy_version NOCHECK CONSTRAINT ck_warranty_policy_version_exclusions_json;
+                UPDATE serialisation.warranty_policy_version SET exclusions=N'not JSON' WHERE tenant_id=@fixture_tenant AND policy_version_id=@version;
+                """;
+            command.Parameters.AddWithValue("@fixture_tenant", tenant.Value);
+            command.Parameters.AddWithValue("@version", invalid.PolicyVersionId);
+            await command.ExecuteNonQueryAsync();
+            try
+            {
+                command.CommandText = P9T19CoverItems.LegacyBackfill;
+                await command.ExecuteNonQueryAsync();
+                await command.ExecuteNonQueryAsync();
+                Assert.Contains(messages, message => message.Contains("skipped invalid JSON rows: 1", StringComparison.Ordinal));
+                command.CommandText = "SELECT is_enabled FROM sys.security_policies WHERE name=N'tenant_policy_serialisation';";
+                Assert.True((bool)(await command.ExecuteScalarAsync())!);
+                command.CommandText = """
+                    UPDATE serialisation.warranty_policy_version SET exclusions=N'[]' WHERE tenant_id=@fixture_tenant AND policy_version_id=@version;
+                    ALTER TABLE serialisation.warranty_policy_version WITH CHECK CHECK CONSTRAINT ck_warranty_policy_version_exclusions_json;
+                    """;
+                await command.ExecuteNonQueryAsync();
+                await transaction.CommitAsync();
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        }
+        using var read = fixture.ScopeFor(tenant);
+        var items = read.ServiceProvider.GetRequiredService<PolicyCoverItems>();
+        var imported = Assert.Single(await items.ReadAsync(policy.PolicyVersionId, CancellationToken.None));
+        Assert.Equal("LEGACY-4", imported.Code); Assert.Equal(wording, imported.CustomerWording);
+        Assert.True(imported.TooLongForCustomerSheet); Assert.Null(imported.Category);
+        Assert.Empty(await items.ReadAsync(invalid.PolicyVersionId, CancellationToken.None));
+        await Invoke<PolicyCoverItemPage>(tenant, new UpdatePolicyCoverItems(policy.PolicyVersionId, [imported]));
+        Assert.Equal("policy_item_invalid", (await Assert.ThrowsAsync<CommandRefusedException>(() =>
+            Invoke<PolicyCoverItemPage>(tenant, new UpdatePolicyCoverItems(policy.PolicyVersionId, [imported with { CustomerWording = wording + "changed" }])))).Rule);
+        await Invoke<PolicyDraftResult>(tenant, new PublishPolicyVersion(policy.PolicyVersionId, "quality.user"));
+        var draft = await Invoke<PolicyDraftResult>(tenant, new CreatePolicyDraft(Guid.NewGuid(), CoverageFamilyCode.Base.ToUpperInvariant(),
+            "Base warranty", CoverageFamilyCode.Base, EntitlementType.Manufacturer, new(2026, 9, 1), null, "quality.user"));
+        Assert.Equal(wording, Assert.Single(await items.ReadAsync(draft.PolicyVersionId, CancellationToken.None)).CustomerWording);
+    }
+
+    [DatabaseFact]
+    public async Task Availability_checks_published_item_mapping_today_eligibility_and_unknown_region_without_guessing()
+    {
+        var s = await Setup(); using var scope = fixture.ScopeFor(s.Tenant);
+        var query = Query(scope.ServiceProvider);
+        async Task<string> Answer() => (await query.ReadAsync(s.Unit, CancellationToken.None))!.Items.Single(x => x.CauseCodes.Contains("STOLEN_LOST")).CanBeCovered;
+        Assert.Equal("No · not offered on this item", await Answer());
+        var policy = await Policy(s.Tenant, "loss_cover", "Loss protection", [Item("LOSS", "Loss protection", cause: "STOLEN_LOST")]);
+        var mappings = fixture.Services.GetRequiredService<InMemoryWarrantyPorts>();
+        mappings.Register(new ItemWarrantyPolicy(s.Item, "loss_cover", "LOSS_COVER", false));
+        Assert.Equal("No · not offered on this item", await Answer());
+        await Invoke<PolicyDraftResult>(s.Tenant, new PublishPolicyVersion(policy.PolicyVersionId, "quality.user"));
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var row = await db.PolicyVersions.SingleAsync(x => x.PolicyVersionId == policy.PolicyVersionId);
+        row.Eligibility = System.Text.Json.JsonSerializer.Serialize(new EligibilityRule(EligibilityRule.WithinBaseCoverage, CoverageFamilyCode.Base), Yojana.Serialisation.Ledger.LedgerJson.Options);
+        row.StartTrigger = StartTrigger.PlanPurchase;
+        await db.SaveChangesAsync();
+        Assert.Equal("Yes · Loss protection, until 2028-08-31", await Answer());
+        row.Eligibility = System.Text.Json.JsonSerializer.Serialize(new EligibilityRule(EligibilityRule.WithinDaysOfBaseStart, CoverageFamilyCode.Base, 30), Yojana.Serialisation.Ledger.LedgerJson.Options);
+        await db.SaveChangesAsync();
+        Assert.Equal("No", await Answer());
+        row.Eligibility = null; row.RegionScope = "[\"DE\"]";
+        await db.SaveChangesAsync();
+        Assert.Equal("—", await Answer());
+        row.RegionScope = "[\"WORLD\"]";
+        db.PolicyCoverItemCauses.Remove(await db.PolicyCoverItemCauses.SingleAsync(x => x.PolicyVersionId == row.PolicyVersionId));
+        await db.SaveChangesAsync();
+        Assert.Equal("No", await Answer());
+    }
+
+    [DatabaseFact]
+    public async Task Multi_cause_item_has_one_line_and_one_customer_wording_while_future_only_grants_stay_covered()
+    {
+        var s = await Setup(); using var scope = fixture.ScopeFor(s.Tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        db.PolicyCoverItemCauses.Add(new() { TenantId = s.Tenant, PolicyVersionId = s.DamagePolicy, ItemCode = "ADP-LIQ", CauseCode = "DROPPED_KNOCKED" });
+        db.PolicyCoverItems.Remove(await db.PolicyCoverItems.SingleAsync(x => x.PolicyVersionId == s.DamagePolicy && x.Code == "ADP-DROP"));
+        var future = await db.Entitlements.SingleAsync(x => x.EntitlementId == s.Future);
+        db.PolicyCoverItems.Add(new() { TenantId = s.Tenant, PolicyVersionId = future.PolicyVersionId, Code = "FUTURE-SERVICE", Type = "covered", CustomerWording = "Future rack inspection" });
+        await db.SaveChangesAsync();
+        var data = (await Query(scope.ServiceProvider).ReadAsync(s.Unit, CancellationToken.None))!;
+        var liquid = Assert.Single(data.Items, x => x.Grants.Any(g => g.Code == "ADP-LIQ"));
+        Assert.Equal(["DROPPED_KNOCKED", "LIQUID_SPILL"], liquid.CauseCodes);
+        Assert.Equal(["Dropped or knocked", "Liquid spill"], liquid.CauseNames);
+        Assert.Single(liquid.Grants); Assert.Single(liquid.Excludes); Assert.True(liquid.Covered);
+        var futureLine = Assert.Single(data.Items, x => x.CustomerWording == "Future rack inspection");
+        Assert.True(futureLine.Covered); Assert.Empty(futureLine.Excludes); Assert.True(Assert.Single(futureLine.Grants).Cover.Future);
+        Assert.Equal(data.Items.Count(x => x.Covered), data.CoveredCount);
+        Assert.Equal(data.Items.Count(x => !x.Covered), data.ExcludedCount);
+        var sheet = (await new UnitCustomerDocument(Query(scope.ServiceProvider)).CreateAsync(s.Unit, "en", CancellationToken.None))!;
+        Assert.Equal(1, System.Text.RegularExpressions.Regex.Count(sheet.Html, "Liquid spills"));
+        Assert.Contains("from 2026-11-25", sheet.Html);
+        var sections = WhatsCoveredQuery.Sections(data, new(Search: "rack", SectionPages: true));
+        Assert.Equal(1, sections.CoveredTotal); Assert.Equal(0, sections.ExcludedTotal); Assert.Single(sections.Items);
+        Assert.False(data.CustomerEmailEnabled);
+    }
+
+    [DatabaseFact]
+    public async Task Inactive_cause_is_typed_refusal_and_concurrent_first_claims_seed_defaults_once()
+    {
+        var s = await Setup();
+        SubmitClaim Command() => new(Guid.NewGuid(), s.Unit, null, new(2026, 9, 1), s.Owner, s.Owner, Entity, Entity, "DE", "USD",
+            [new(ClaimLineKind.Parts, CoverageFamilyCode.Base, 100, Description: "Fan stopped")], [], ClaimRemedy.Repair, "CALL-RECORDED", At, "quality.user", ReportedCauseCode: "STOPPED_WORKING");
+        var existingClaim = await Invoke<SubmitClaimResult>(s.Tenant, Command());
+        await Invoke<ClaimCausePage>(s.Tenant, new UpdateClaimCauses(ClaimCauseCatalogue.Defaults.Select(x => x.Code == "STOPPED_WORKING" ? x with { Active = false } : x).ToList()));
+        Assert.Equal("claim_cause_inactive", (await Assert.ThrowsAsync<CommandRefusedException>(() => Invoke<SubmitClaimResult>(s.Tenant, Command()))).Rule);
+        using (var existing = fixture.ScopeFor(s.Tenant))
+            Assert.Equal("STOPPED_WORKING", (await existing.ServiceProvider.GetRequiredService<SerialisationDbContext>().Claims.SingleAsync(x => x.ClaimId == existingClaim.ClaimId)).ReportedCauseCode);
+        // No item or claim refers to the catalogue on this tenant yet, so two first claims exercise lazy seeding.
+        var fresh = await fixture.NewTenantAsync("causes-race", "USD");
+        var item = Guid.NewGuid();
+        fixture.Services.GetRequiredService<InMemoryItemPorts>().Register(InMemoryItemPorts.DefaultProfile(item));
+        var unit = (await Invoke<CommissionUnitsResult>(fresh, new CommissionUnits(Guid.NewGuid(), item, UnitOrigin.Purchased,
+            [new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, "RACE-SERVER-01")])], At.AddDays(-1), "quality.user", Entity))).Lines[0].UnitId!.Value;
+        var commands = new[] { Command() with { UnitId = unit }, Command() with { UnitId = unit } };
+        var results = await Task.WhenAll(commands.Select(x => Invoke<SubmitClaimResult>(fresh, x)));
+        Assert.Equal(2, results.Select(x => x.ClaimId).Distinct().Count());
+        using var scope = fixture.ScopeFor(fresh);
+        Assert.Equal(8, await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().ClaimCauses.CountAsync());
+    }
+
+    [DatabaseFact]
+    public async Task Item_and_catalogue_http_edits_require_versions_and_stale_edits_return_document_changed()
+    {
+        var tenant = await fixture.NewTenantAsync("items-conflict");
+        var draft = await Policy(tenant, CoverageFamilyCode.Base, "Base warranty", []);
+        using var manager = await fixture.AuthenticatedClientAsync(tenant, YojanaRole.ServiceManager);
+        var path = $"/api/warranty-policies/versions/{draft.PolicyVersionId}/items";
+        var loaded = (await manager.GetFromJsonAsync<PolicyCoverItemPage>(path))!;
+        Assert.Equal(HttpStatusCode.BadRequest, (await manager.PutAsJsonAsync(path, new UpdatePolicyCoverItems(draft.PolicyVersionId, []))).StatusCode);
+        var command = new UpdatePolicyCoverItems(draft.PolicyVersionId, [Item("FAN", "Fan failure")], ExpectedVersion: loaded.Version);
+        Assert.Equal(HttpStatusCode.OK, (await manager.PutAsJsonAsync(path, command)).StatusCode);
+        using var stale = await manager.PutAsJsonAsync(path, command);
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        var problem = await stale.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal("document_changed", problem.GetProperty("rule").GetString()); Assert.True(problem.TryGetProperty("unblockingStep", out _));
+        Assert.Equal(HttpStatusCode.BadRequest, (await manager.PutAsJsonAsync("/api/claim-causes", new UpdateClaimCauses(ClaimCauseCatalogue.Defaults))).StatusCode);
+        var causes = (await manager.GetFromJsonAsync<ClaimCausePage>("/api/claim-causes"))!;
+        var edit = new UpdateClaimCauses(causes.Items.Select(x => x with { CustomerWording = x.CustomerWording + " today" }).ToList(), ExpectedVersion: causes.Version);
+        Assert.Equal(HttpStatusCode.OK, (await manager.PutAsJsonAsync("/api/claim-causes", edit)).StatusCode);
+        using var staleCause = await manager.PutAsJsonAsync("/api/claim-causes", edit);
+        Assert.Equal(HttpStatusCode.Conflict, staleCause.StatusCode);
+        Assert.Equal("document_changed", (await staleCause.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("rule").GetString());
+        using var admin = await fixture.AuthenticatedClientAsync(tenant, YojanaRole.TenantAdministrator);
+        var current = (await admin.GetFromJsonAsync<ClaimCausePage>("/api/claim-causes"))!;
+        Assert.Equal(HttpStatusCode.Forbidden, (await admin.PutAsJsonAsync("/api/claim-causes", new UpdateClaimCauses(current.Items, ExpectedVersion: current.Version))).StatusCode);
+    }
+
+    [DatabaseFact]
+    public async Task Entitlement_creation_reads_terms_without_any_cover_item_queries_and_customer_sheet_humanises_meters()
+    {
+        var s = await Setup();
+        var policy = await Policy(s.Tenant, "inspection", "Rack inspection", [Item("RACK", "Rack inspection")], [new("nbd_visits", 4)]);
+        await Invoke<PolicyDraftResult>(s.Tenant, new PublishPolicyVersion(policy.PolicyVersionId, "quality.user"));
+        using (PolicyCommandCounter.Capture(out var commands))
+        {
+            await Invoke<CreateEntitlementResult>(s.Tenant, new CreateEntitlement(Guid.NewGuid(), s.Unit, "inspection", new(2026, 1, 1), Entity, At, "quality.user",
+                new Dictionary<string, DateTime> { [StartTrigger.Invoice] = At }, policy.PolicyVersionId));
+            Assert.NotEmpty(commands);
+            Assert.DoesNotContain(commands, sql => sql.Contains("policy_cover_item", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(commands, sql => sql.Contains("warranty_policy_version", StringComparison.OrdinalIgnoreCase));
+            Assert.True(commands.Count < 30, $"Expected a bounded entitlement path; got {commands.Count} commands.");
+        }
+        using var scope = fixture.ScopeFor(s.Tenant);
+        var query = Query(scope.ServiceProvider);
+        var sheet = (await new UnitCustomerDocument(query).CreateAsync(s.Unit, "en", CancellationToken.None))!;
+        Assert.DoesNotContain("nbd_visits", sheet.Html); Assert.Contains("next-business-day visits", sheet.Html);
+        var guidance = (await query.GuidanceAsync(s.Unit, "LIQUID_SPILL", CancellationToken.None))!;
+        Assert.All(guidance.Grants.SelectMany(x => x.Usage), x => Assert.Null(x.AfterThisClaim));
     }
 
 }

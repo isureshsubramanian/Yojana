@@ -60,7 +60,7 @@ public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant
         row.AmendmentValue = terms.AmendmentValue is null ? null : Json(terms.AmendmentValue);
     }
 
-    public async Task<PolicyTerms> ReadTermsAsync(WarrantyPolicyVersion row, CancellationToken cancellationToken)
+    public async Task<PolicyTerms> ReadTermsAsync(WarrantyPolicyVersion row, CancellationToken cancellationToken, bool includeItems = false)
     {
         var tenantId = tenant.TenantId;
         var replacement = row.ReplacementPolicyId is { } id
@@ -72,7 +72,7 @@ public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant
             row.Transferable, row.SettlementFormula, replacement, Read<List<RefurbishedTerm>>(row.RefurbishedPolicies), row.DoaWindowDays, row.AssuranceOrService, row.ReferenceTimeZoneRule, row.ServiceContractRegulated,
             row.Eligibility is null ? null : Read<EligibilityRule>(row.Eligibility),
             row.AmendmentValue is null ? null : Read<AmendmentValueTerm>(row.AmendmentValue),
-            await items.ReadAsync(row.PolicyVersionId, cancellationToken));
+            includeItems ? await items.ReadAsync(row.PolicyVersionId, cancellationToken) : null);
     }
 
     public async Task<PolicyValidation> ValidateAsync(WarrantyPolicyVersion row, PolicyTerms terms, CancellationToken cancellationToken)

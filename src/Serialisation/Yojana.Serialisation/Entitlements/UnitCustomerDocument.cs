@@ -28,7 +28,7 @@ public sealed class UnitCustomerDocument(WhatsCoveredQuery query, IPdfRenderer? 
                     if (grant.Cover.Future) html.Append(" · from ").Append(grant.Cover.From?.ToString("yyyy-MM-dd"));
                     if (grant.Cover.From is null) html.Append(" · start not confirmed");
                     html.Append(" · until ").Append(grant.Cover.Until?.ToString("yyyy-MM-dd") ?? "end not recorded");
-                    foreach (var u in grant.Cover.Usage) html.Append(" · ").Append(u.Remaining).Append(' ').Append(E(u.MeterType)).Append(" left / ").Append(u.Period == "contract_year" ? "contract year" : "term");
+                    foreach (var u in grant.Cover.Usage) html.Append(" · ").Append(u.Remaining).Append(' ').Append(E(MeterName(u.MeterType))).Append(" left / ").Append(u.Period == "contract_year" ? "contract year" : "term");
                     html.Append("</p>");
                 }
                 html.Append("</li>");
@@ -44,6 +44,9 @@ public sealed class UnitCustomerDocument(WhatsCoveredQuery query, IPdfRenderer? 
             ["sheet.title"] = title, ["sheet.as_of"] = data.AsOf.ToString("yyyy-MM-dd"),
         });
     }
+
+    private static string MeterName(string code) => string.Join(" ", code.Replace('_', ' ').Replace('-', ' ')
+        .Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(word => word.Equals("nbd", StringComparison.OrdinalIgnoreCase) ? "next-business-day" : word.ToLowerInvariant()));
 
     private static string E(string? value) => WebUtility.HtmlEncode(value ?? "");
 }
