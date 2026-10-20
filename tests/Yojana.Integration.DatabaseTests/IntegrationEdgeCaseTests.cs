@@ -192,14 +192,14 @@ public sealed partial class IntegrationEdgeCaseTests(IntegrationHostFixture fixt
         var service = scope.ServiceProvider.GetRequiredService<ReconciliationService>();
         for (var run = 0; run < 2; run++)
         {
-            var detail = (await service.DetailAsync(await service.RunLocationChecksAsync(connection, default), default))!;
+            var detail = (await service.DetailAsync(await service.RunLocationChecksAsync(connection, "user:test-operator", default), default))!;
             var diff = Assert.Single(detail.LocationChecks);
             Assert.Equal(ReconciliationResultStatus.Mismatch, diff.Status);
             Assert.Equal(1, diff.ModuleUnitCount);
             Assert.Equal(2, diff.SourceOnHand);
         }
         fixture.ReconciliationSource.SetOnHand(connection, new ConnectorOnHandBalance(current.ItemId, Item, "Fictional controller", current.LocationId.Value, "FIC-STORE", "Fictional store", 1));
-        var clean = (await service.DetailAsync(await service.RunLocationChecksAsync(connection, default), default))!;
+        var clean = (await service.DetailAsync(await service.RunLocationChecksAsync(connection, "user:test-operator", default), default))!;
         Assert.Equal(ReconciliationResultStatus.Clean, Assert.Single(clean.LocationChecks).Status);
     }
 

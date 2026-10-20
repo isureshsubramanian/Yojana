@@ -120,10 +120,10 @@ public static class IntegrationEndpoints
                 CancellationToken ct) =>
             Invoke(() => confirmations.ConfirmAsync(connectionId, itemCode, request, Actor(user), ct)))
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
-        integration.MapPost("/reconciliation/runs", (RunReconciliationRequest request,
+        integration.MapPost("/reconciliation/runs", (RunReconciliationRequest request, ClaimsPrincipal user,
             ReconciliationService service, CancellationToken ct) => Invoke(async () =>
             new RunReconciliationResponse(await service.RunAsync(request.ConnectionId, request.RangeStart, request.RangeEnd,
-                ReconciliationTrigger.OnDemand, includeEntityDays: true, ct))));
+                ReconciliationTrigger.OnDemand, includeEntityDays: true, Actor(user), ct))));
         integration.MapGet("/reconciliation/runs/{runId:guid}/entity-days", (Guid runId, string? cursor, int? take,
             ReconciliationService service, CancellationToken ct) => Invoke(() => service.EntityDaysAsync(runId, cursor, take ?? 12, ct)));
         integration.MapGet("/reconciliation/runs/{runId:guid}/locations", (Guid runId, string? cursor, int? take, bool? differences,
@@ -135,9 +135,9 @@ public static class IntegrationEndpoints
             ReconciliationService service, CancellationToken ct) =>
             await service.DetailAsync(runId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
         integration.MapPost("/reconciliation/location-checks", (RunLocationReconciliationRequest request,
-            ReconciliationService service, CancellationToken ct) => Invoke(async () =>
+            ClaimsPrincipal user, ReconciliationService service, CancellationToken ct) => Invoke(async () =>
         {
-            var runId = await service.RunLocationChecksAsync(request.ConnectionId, ct);
+            var runId = await service.RunLocationChecksAsync(request.ConnectionId, Actor(user), ct);
             return await service.DetailAsync(runId, ct)
                 ?? throw new InvalidOperationException("The completed reconciliation run was not found.");
         }));

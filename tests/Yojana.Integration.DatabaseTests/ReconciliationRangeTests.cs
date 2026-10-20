@@ -30,7 +30,7 @@ public sealed class ReconciliationRangeTests(IntegrationHostFixture fixture)
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var failure = await Assert.ThrowsAsync<ReconciliationRuleException>(() =>
                 scope.ServiceProvider.GetRequiredService<ReconciliationService>().RunAsync(connection,
-                    Day, Day.AddDays(3), ReconciliationTrigger.OnDemand, true, timeout.Token));
+                    Day, Day.AddDays(3), ReconciliationTrigger.OnDemand, true, "user:test-operator", timeout.Token));
             Assert.Equal("reconciliation_range_too_wide", failure.Rule);
             Assert.Contains("3-day", failure.Message);
         }
@@ -42,7 +42,7 @@ public sealed class ReconciliationRangeTests(IntegrationHostFixture fixture)
         Assert.Equal(3, detail.ReconciliationWindowDays);
         Assert.Equal(ConnectionStatus.Active, detail.LifecycleStatus);
         var run = await scope.ServiceProvider.GetRequiredService<ReconciliationService>().RunAsync(connection,
-            Day, Day.AddDays(2), ReconciliationTrigger.OnDemand, true, CancellationToken.None);
+            Day, Day.AddDays(2), ReconciliationTrigger.OnDemand, true, "user:test-operator", CancellationToken.None);
         Assert.Equal(ReconciliationRunStatus.Clean, (await db.ReconciliationRuns.SingleAsync(x => x.ReconciliationRunId == run)).Status);
     }
 
@@ -61,7 +61,7 @@ public sealed class ReconciliationRangeTests(IntegrationHostFixture fixture)
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var failure = await Assert.ThrowsAsync<ReconciliationRuleException>(() =>
                 scope.ServiceProvider.GetRequiredService<ReconciliationService>().RunAsync(connection,
-                    today, today.AddDays(1), ReconciliationTrigger.OnDemand, true, timeout.Token));
+                    today, today.AddDays(1), ReconciliationTrigger.OnDemand, true, "user:test-operator", timeout.Token));
             Assert.Equal("reconciliation_range_in_future", failure.Rule);
         }
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
@@ -69,7 +69,7 @@ public sealed class ReconciliationRangeTests(IntegrationHostFixture fixture)
         Assert.False(await db.BackfillCursors.AnyAsync(x => x.ConnectionId == connection));
         Assert.NotEqual(connection, fixture.ReconciliationSource.LastOnHandRequest?.ConnectionId);
         await scope.ServiceProvider.GetRequiredService<ReconciliationService>().RunAsync(connection,
-            today, today, ReconciliationTrigger.OnDemand, true, CancellationToken.None);
+            today, today, ReconciliationTrigger.OnDemand, true, "user:test-operator", CancellationToken.None);
     }
 
     [DatabaseFact]
@@ -82,7 +82,7 @@ public sealed class ReconciliationRangeTests(IntegrationHostFixture fixture)
         await scope.ServiceProvider.GetRequiredService<ITenantSettings>().SetAsync(ReconciliationSettings.TenantKey, "1", CancellationToken.None);
         var failure = await Assert.ThrowsAsync<ReconciliationRuleException>(() =>
             scope.ServiceProvider.GetRequiredService<ReconciliationService>().RunAsync(connection,
-                Day, Day.AddDays(1), ReconciliationTrigger.Scheduled, true, CancellationToken.None));
+                Day, Day.AddDays(1), ReconciliationTrigger.Scheduled, true, null, CancellationToken.None));
         Assert.Equal("reconciliation_range_too_wide", failure.Rule);
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
         (await db.Connections.SingleAsync(x => x.ConnectionId == connection)).Status = ConnectionStatus.Paused;

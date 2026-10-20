@@ -7,6 +7,7 @@ using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.DeadLetters;
 using Yojana.Platform.Contracts.Identifiers;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
@@ -23,7 +24,8 @@ public sealed partial class ReconciliationService(
     ILocationNamePort locationNames,
     ReconciliationSettings settings,
     IReconciliationBackfillScheduler backfills,
-    DeadLetterService deadLetters)
+    DeadLetterService deadLetters,
+    IUserDirectory people)
 {
     public async Task<IReadOnlyList<Guid>> RunScheduledAsync(CancellationToken cancellationToken)
     {
@@ -36,20 +38,20 @@ public sealed partial class ReconciliationService(
             var days = await settings.WindowDaysAsync(connectionId, cancellationToken);
             var end = DateOnly.FromDateTime(clock.UtcNow.Date);
             runs.Add(await RunAsync(connectionId, end.AddDays(-(days - 1)), end,
-                ReconciliationTrigger.Scheduled, includeEntityDays: true, cancellationToken));
+                ReconciliationTrigger.Scheduled, includeEntityDays: true, requestedBy: null, cancellationToken));
         }
         return runs;
     }
 
-    public Task<Guid> RunLocationChecksAsync(Guid connectionId, CancellationToken cancellationToken)
+    public Task<Guid> RunLocationChecksAsync(Guid connectionId, string requestedBy, CancellationToken cancellationToken)
     {
         var day = DateOnly.FromDateTime(clock.UtcNow.Date);
         return RunAsync(connectionId, day, day, ReconciliationTrigger.OnDemand,
-            includeEntityDays: false, cancellationToken);
+            includeEntityDays: false, requestedBy, cancellationToken);
     }
 
     public async Task<Guid> RunAsync(Guid connectionId, DateOnly rangeStart, DateOnly rangeEnd,
-        string trigger, bool includeEntityDays, CancellationToken cancellationToken)
+        string trigger, bool includeEntityDays, string? requestedBy, CancellationToken cancellationToken)
     {
         if (connectionId == Guid.Empty)
             throw new ReconciliationRuleException("connection_required", "A connection is required.");
@@ -81,6 +83,7 @@ public sealed partial class ReconciliationService(
             Trigger = trigger,
             Status = ReconciliationRunStatus.Running,
             StartedAt = clock.UtcNow,
+            RequestedBy = requestedBy,
         };
         db.ReconciliationRuns.Add(run);
         await db.SaveChangesAsync(cancellationToken);
@@ -146,10 +149,13 @@ public sealed partial class ReconciliationService(
                     CompletedAt = run.CompletedAt,
                     MismatchCount = run.MismatchCount,
                     LocationMismatchCount = run.LocationMismatchCount,
+                    RequestedBy = run.RequestedBy,
                 }).OrderByDescending(row => row.StartedAt).ThenByDescending(row => row.RunId)
             .Take(take + 1).ToListAsync(cancellationToken);
         var more = rows.Count > take;
-        var page = rows.Take(take).Select(View).ToList();
+        var names = await people.DisplayNamesAsync(rows.Take(take).Where(row => row.RequestedBy is not null)
+            .Select(row => row.RequestedBy!).Distinct().ToList(), cancellationToken);
+        var page = rows.Take(take).Select(row => View(row, names)).ToList();
         return new(page, more && page.Count != 0
             ? Encode(new(page[^1].StartedAt, page[^1].RunId)) : null);
     }
@@ -169,9 +175,11 @@ public sealed partial class ReconciliationService(
         var locations = await db.ReconciliationLocationResults.AsNoTracking()
             .Where(row => row.TenantId == tenant.TenantId && row.ReconciliationRunId == runId)
             .OrderBy(row => row.LocationCode).ThenBy(row => row.ItemCode).ToListAsync(cancellationToken);
+        var names = run.RequestedBy is null ? new Dictionary<string, string>()
+            : await people.DisplayNamesAsync([run.RequestedBy], cancellationToken);
         return new(new(run.ReconciliationRunId, run.ConnectionId, connectionName, run.RangeStart,
                 run.RangeEnd, run.Trigger, run.Status, run.StartedAt, run.CompletedAt,
-                run.MismatchCount, run.LocationMismatchCount), run.Failure,
+                run.MismatchCount, run.LocationMismatchCount, RequestedByName(run.Trigger, run.RequestedBy, names)), run.Failure,
             entityRows.Select(row => new ReconciliationEntityDayView(row.ReconciliationEntityDayResultId,
                 row.Entity, row.BusinessDate, row.SourceCount, row.ModuleCount, row.SourceQuantity,
                 row.ModuleQuantity, row.SourceDistinctSerials, row.ModuleDistinctSerials,
@@ -327,9 +335,16 @@ public sealed partial class ReconciliationService(
         && left.DistinctSerials == right.DistinctSerials
         && StringComparer.OrdinalIgnoreCase.Equals(left.KeyFieldHash, right.KeyFieldHash);
 
-    private static ReconciliationRunRow View(RunProjection row) => new(row.RunId, row.ConnectionId,
-        row.ConnectionName, row.RangeStart, row.RangeEnd, row.Trigger, row.Status, row.StartedAt,
-        row.CompletedAt, row.MismatchCount, row.LocationMismatchCount);
+    private static ReconciliationRunRow View(RunProjection row, IReadOnlyDictionary<string, string> names) => new(
+        row.RunId, row.ConnectionId, row.ConnectionName, row.RangeStart, row.RangeEnd, row.Trigger, row.Status,
+        row.StartedAt, row.CompletedAt, row.MismatchCount, row.LocationMismatchCount,
+        RequestedByName(row.Trigger, row.RequestedBy, names));
+
+    // Never a raw user reference on screen: a name, "Scheduled", or "Not recorded" for runs from before the column.
+    private static string RequestedByName(string trigger, string? requestedBy, IReadOnlyDictionary<string, string> names) =>
+        requestedBy is null
+            ? trigger == ReconciliationTrigger.Scheduled ? "Scheduled" : "Not recorded"
+            : names.GetValueOrDefault(requestedBy) ?? "Unknown user";
 
     private static string Encode(Cursor cursor) => Convert.ToBase64String(Encoding.UTF8.GetBytes(
         $"{cursor.StartedAt.Ticks}|{cursor.RunId:D}"));
@@ -368,6 +383,7 @@ public sealed partial class ReconciliationService(
         public DateTime StartedAt { get; init; }
         public DateTime? CompletedAt { get; init; }
         public int MismatchCount { get; init; }
+        public string? RequestedBy { get; init; }
         public int LocationMismatchCount { get; init; }
     }
 }
