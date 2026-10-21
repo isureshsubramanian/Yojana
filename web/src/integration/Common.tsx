@@ -11,13 +11,15 @@ const tabs = [
   ["/integration/manual-tasks", "ERP entries to make by hand"],
   ["/integration/daily-check", "Daily check"],
   ["/integration/history-loads", "History loads"],
+  ["/integration/migration", "Migration"],
 ] as const;
 
 export function IntegrationTabs({ attention, manual }: { attention?: number | undefined; manual?: number | undefined }) {
   const { pathname } = useLocation();
-  const operator = mayOperateIntegration(useSession().roles);
+  const roles = useSession().roles;
+  const operator = mayOperateIntegration(roles);
   return <nav className="tabs integration-subnav" aria-label="Integration">
-    {tabs.filter(([to]) => operator || to === "/integration").map(([to, label]) => {
+    {tabs.filter(([to]) => (operator || to === "/integration") && (to !== "/integration/migration" || roles.includes("tenant_administrator"))).map(([to, label]) => {
       const active = pathname === to;
       const count = label === "Messages needing attention" ? attention : label === "ERP entries to make by hand" ? manual : undefined;
       return <Link key={to} to={to} aria-current={active ? "page" : undefined}>{label}{count !== undefined && <span className={`n${count > 0 ? " warn" : ""}`}>{count.toLocaleString()}</span>}</Link>;

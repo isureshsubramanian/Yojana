@@ -198,6 +198,7 @@ public sealed class MigrationProfilingTests(IntegrationHostFixture fixture)
             Serial("MATCH-SERVER", 50, "MATCH-1"),
             Serial("LATEST-SERVER", 51, "LATEST-1"),
             Serial("STATUS-NETWORK", 60, "STATUS-1", null),
+            Serial("CANCEL-SERVER", 70, "CANCEL-1"),
         }) await MigrationExtractionTests.SourceFixture.InsertAsync<SerialMasterStagingRow>(SourceDatabase, row);
 
         foreach (var row in new[]
@@ -237,6 +238,14 @@ public sealed class MigrationProfilingTests(IntegrationHostFixture fixture)
             Header(102, 15, 1002, "CUSTOMER-NEW"),
             Header(103, 15, 1003, "CUSTOMER-OLDER", new DateTime(2026, 8, 1)),
             Header(104, 15, 1004, "CUSTOMER-LATEST", new DateTime(2026, 9, 1)),
+            // Cancelled deliveries: the cancellation is a second row of the same type, opposite sign, based on
+            // the original. Neither serial is shipped, and neither delivery is the latest one.
+            Header(105, 15, 1005, "CUSTOMER-X", new DateTime(2026, 9, 10), documentEntry: 1005),
+            Header(106, 15, 1006, "CUSTOMER-X", new DateTime(2026, 9, 10), documentEntry: 1006,
+                baseType: 15, baseEntry: 1005),
+            Header(107, 15, 1007, "CUSTOMER-WRONG", new DateTime(2026, 9, 15), documentEntry: 1007),
+            Header(108, 15, 1008, "CUSTOMER-WRONG", new DateTime(2026, 9, 15), documentEntry: 1008,
+                baseType: 15, baseEntry: 1007),
         }) await MigrationExtractionTests.SourceFixture.InsertAsync<TransactionLogHeaderStagingRow>(SourceDatabase, row);
         foreach (var row in new[]
         {
@@ -245,6 +254,10 @@ public sealed class MigrationProfilingTests(IntegrationHostFixture fixture)
             Line(102, "MATCH-SERVER", 50),
             Line(103, "LATEST-SERVER", 51),
             Line(104, "LATEST-SERVER", 51),
+            Line(105, "CANCEL-SERVER", 70),
+            Line(106, "CANCEL-SERVER", 70, 1m),
+            Line(107, "LATEST-SERVER", 51),
+            Line(108, "LATEST-SERVER", 51, 1m),
         }) await MigrationExtractionTests.SourceFixture.InsertAsync<TransactionLogLineStagingRow>(SourceDatabase, row);
 
         await MigrationExtractionTests.SourceFixture.InsertAsync<ServiceContractStagingRow>(SourceDatabase,
@@ -264,10 +277,14 @@ public sealed class MigrationProfilingTests(IntegrationHostFixture fixture)
     };
 
     private static Dictionary<string, object?> Header(int logEntry, int documentType, int documentNumber,
-        string party, DateTime? documentDate = null) => new()
+        string party, DateTime? documentDate = null, int? documentEntry = null, int? baseType = null,
+        int? baseEntry = null) => new()
     {
         [nameof(TransactionLogHeaderStagingRow.LogEntry)] = logEntry,
         [nameof(TransactionLogHeaderStagingRow.DocumentType)] = documentType,
+        [nameof(TransactionLogHeaderStagingRow.DocumentEntry)] = documentEntry,
+        [nameof(TransactionLogHeaderStagingRow.BaseType)] = baseType,
+        [nameof(TransactionLogHeaderStagingRow.BaseEntry)] = baseEntry,
         [nameof(TransactionLogHeaderStagingRow.DocumentNumber)] = documentNumber,
         [nameof(TransactionLogHeaderStagingRow.DocumentDate)] = documentDate ?? new DateTime(2026, 9, 1),
         [nameof(TransactionLogHeaderStagingRow.CreatedDate)] = documentDate ?? new DateTime(2026, 9, 1),
@@ -275,12 +292,13 @@ public sealed class MigrationProfilingTests(IntegrationHostFixture fixture)
         [nameof(TransactionLogHeaderStagingRow.PartyCode)] = party,
     };
 
-    private static Dictionary<string, object?> Line(int logEntry, string item, int systemNumber) => new()
+    private static Dictionary<string, object?> Line(int logEntry, string item, int systemNumber,
+        decimal quantity = -1m) => new()
     {
         [nameof(TransactionLogLineStagingRow.LogEntry)] = logEntry,
         [nameof(TransactionLogLineStagingRow.ItemCode)] = item,
         [nameof(TransactionLogLineStagingRow.SystemNumber)] = systemNumber,
-        [nameof(TransactionLogLineStagingRow.Quantity)] = -1m,
+        [nameof(TransactionLogLineStagingRow.Quantity)] = quantity,
     };
 
     private static Dictionary<string, object?> Contract(int id, string status, DateTime end,
