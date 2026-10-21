@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using System.Security.Claims;
 using Yojana.Integration.DeadLetters;
 using Yojana.Integration.Backfills;
 using Yojana.Integration.Reconciliation;
@@ -10,6 +11,7 @@ using Yojana.Platform.Contracts.Security;
 using Yojana.Integration.LegacyMigration;
 using Yojana.Integration.LegacyMigration.Templates;
 using Yojana.Integration.LegacyMigration.Profiling;
+using Yojana.Integration.LegacyMigration.Canonicalisation;
 
 namespace Yojana.Integration.Tests;
 
@@ -124,24 +126,43 @@ public sealed class IntegrationEndpointTests
     }
 
     [Fact]
-    public void Migration_endpoints_are_tenant_administrator_only_and_never_expose_the_secret()
+    public async Task Migration_endpoints_split_administration_from_migration_review_and_never_expose_the_secret()
     {
         var builder = WebApplication.CreateBuilder();
-        builder.Services.AddAuthorization(options => options.AddPolicy(YojanaPolicy.TenantAdministrator,
-            policy => policy.RequireAuthenticatedUser()));
+        builder.Services.AddAuthorization(options =>
+        {
+            options.AddPolicy(YojanaPolicy.TenantAdministrator, policy => policy.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId)
+                .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator));
+            options.AddPolicy(YojanaPolicy.MigrationReview, policy => policy.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId)
+                .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator, YojanaRole.MigrationLead));
+        });
         builder.Services.AddScoped<MigrationSourceService>();
         builder.Services.AddScoped<MigrationBatchService>();
         builder.Services.AddScoped<TemplateMappingService>();
         builder.Services.AddScoped<TemplateKeywordRules>();
         builder.Services.AddScoped<MigrationProfileService>();
         builder.Services.AddScoped<MigrationProfileOutcomeSettings>();
+        builder.Services.AddScoped<CanonicalisationService>();
+        builder.Services.AddScoped<CanonicalFamilySettings>();
         var app = builder.Build();
         app.MapMigrationEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
-        Assert.Equal(21, endpoints.Count);
+        Assert.Equal(28, endpoints.Count);
+        var readPaths = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "/api/migration/batches", "/api/migration/batches/{batchId:guid}",
+            "/api/migration/templates", "/api/migration/templates/{templateKey}",
+            "/api/migration/batches/{batchId:guid}/profile",
+            "/api/migration/batches/{batchId:guid}/profile/{classCode}/samples",
+            "/api/migration/batches/{batchId:guid}/canonicalisation", "/api/migration/review",
+            "/api/migration/review/{itemId:guid}", "/api/migration/review/{itemId:guid}/decision",
+        };
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
-            policy => policy.Policy == YojanaPolicy.TenantAdministrator));
+            policy => policy.Policy == (IsReviewEndpoint(endpoint)
+                ? YojanaPolicy.MigrationReview : YojanaPolicy.TenantAdministrator)));
         foreach (var type in new[] { typeof(CreateMigrationSourceRequest), typeof(UpdateMigrationSourceRequest),
                      typeof(UpdateMigrationLicenceRequest), typeof(StartMigrationBatchRequest) })
             Assert.DoesNotContain(type.GetProperties(), property => property.Name.Contains("Actor",
@@ -164,5 +185,29 @@ public sealed class IntegrationEndpointTests
             "/api/migration/profiling/outcomes"));
         Assert.DoesNotContain(typeof(UpdateMigrationProfileOutcomeSettings).GetProperties(), property =>
             property.Name.Contains("Actor", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(typeof(MigrationReviewDecisionRequest).GetProperties(), property =>
+            property.Name.Contains("Actor", StringComparison.OrdinalIgnoreCase));
+        Assert.True(YojanaRole.IsKnown(YojanaRole.MigrationLead));
+        var migrationLead = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(YojanaClaim.TenantId, Guid.NewGuid().ToString("D")),
+            new Claim(YojanaClaim.Role, YojanaRole.MigrationLead),
+        ], "test"));
+        var authorisation = app.Services.GetRequiredService<IAuthorizationService>();
+        Assert.True((await authorisation.AuthorizeAsync(migrationLead, null, YojanaPolicy.MigrationReview)).Succeeded);
+        Assert.False((await authorisation.AuthorizeAsync(migrationLead, null,
+            YojanaPolicy.TenantAdministrator)).Succeeded);
+        Assert.Contains(endpoints, endpoint => endpoint.RoutePattern.RawText ==
+            "/api/migration/batches/{batchId:guid}/canonicalise" &&
+            endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(policy =>
+                policy.Policy == YojanaPolicy.TenantAdministrator));
+
+        bool IsReviewEndpoint(RouteEndpoint endpoint)
+        {
+            var methods = endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods;
+            return (methods.Contains("GET") && readPaths.Contains(endpoint.RoutePattern.RawText!)) ||
+                (methods.Contains("POST") && endpoint.RoutePattern.RawText ==
+                    "/api/migration/review/{itemId:guid}/decision");
+        }
     }
 }

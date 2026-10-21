@@ -42,6 +42,7 @@ export function initials(name: string): string {
 }
 
 export function roleLabel(role: string): string {
+  if (role === "migration_lead") return "Migration lead";
   const words = role.replace(/_/g, " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 }

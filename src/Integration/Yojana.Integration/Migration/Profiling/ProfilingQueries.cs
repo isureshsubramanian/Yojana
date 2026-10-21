@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.LegacyMigration.Staging;
+using Yojana.Integration.LegacyMigration.Canonicalisation;
 
 // Culture-aware overloads and StringComparison are not translated by the SQL Server EF provider. These expressions
 // execute in SQL under the database collation; the binary collation below is explicit where case must be observed.
@@ -176,17 +177,10 @@ internal sealed class SerialFormatVariantsProfileQuery : IMigrationProfileQuery
                 Family = row.ItemCode!.Contains('-')
                     ? row.ItemCode.Substring(0, row.ItemCode.IndexOf('-')) : row.ItemCode,
                 Stored = row.SerialNumber!.Trim().ToUpper(),
-                Stripped = row.SerialNumber.Trim().ToUpper().Replace("-", "").Replace(" ", ""),
+                Normalised = CanonicalSerialNormalisation.Apply(row.SerialNumber, true, true, true),
                 row.ItemCode,
             })
-            .Select(row => new
-            {
-                row.Family,
-                row.Stored,
-                Normalised = EF.Functions.PatIndex("%[^0]%", row.Stripped) == 0
-                    ? "" : row.Stripped.Substring((int)EF.Functions.PatIndex("%[^0]%", row.Stripped) - 1),
-                row.ItemCode,
-            });
+            .Where(row => row.Normalised != null);
         var query = candidates.GroupBy(row => new { row.Family, row.Normalised })
             .Where(group => group.Select(row => row.Stored).Distinct().Count() > 1)
             .Select(group => new
