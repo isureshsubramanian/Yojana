@@ -3,11 +3,13 @@ import type {
   CanonicalisationRun, MigrationBatch, MigrationBatchPage, MigrationOutcomeChoice, MigrationOutcomeSettings,
   MigrationProfile, MigrationProfileSamples, MigrationReviewDecision, MigrationReviewDecisionResponse,
   MigrationReviewDetail, MigrationReviewKind, MigrationReviewPage, MigrationReviewStatus, MigrationSource,
-  MigrationSourcePage, MigrationSourceTestResult, StartMigrationBatchResponse,
+  MigrationSourcePage, MigrationSourceTestResult, PolicyCatalogue, StartMigrationBatchResponse,
+  TemplateKeywordRule, TemplateKeywordRules, TemplateMappingDetail, TemplateMappingState,
+  TemplateMappingSummaryView, TemplatePatternPage,
 } from "./migrationTypes";
 
 const root = "/api/migration";
-function query(values: Record<string, string | number | undefined>) {
+function query(values: Record<string, string | number | boolean | undefined>) {
   const result = new URLSearchParams();
   for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== "") result.set(key, String(value));
   return `?${result}`;
@@ -33,4 +35,17 @@ export const migrationApi = {
   reviewDetail: (itemId: string, signal?: AbortSignal) => api<MigrationReviewDetail>(`${root}/review/${itemId}`, { signal }),
   decideReview: (itemId: string, decision: MigrationReviewDecision, keepSourceKey: string | null, reason: string, note?: string) =>
     api<MigrationReviewDecisionResponse>(`${root}/review/${itemId}/decision`, { method: "POST", body: { decision, keepSourceKey, reason, note: note?.trim() || null } }),
+  templateSummary: (signal?: AbortSignal) => api<TemplateMappingSummaryView>(`${root}/templates/summary`, { signal }),
+  templatePatterns: (filters: { state?: TemplateMappingState | ""; deletedInSource?: boolean; cursor?: string; take?: number }, signal?: AbortSignal) =>
+    api<TemplatePatternPage>(`${root}/templates${query({ ...filters, take: filters.take ?? 25 })}`, { signal }),
+  templateDetail: (templateKey: string, signal?: AbortSignal) =>
+    api<TemplateMappingDetail>(`${root}/templates/${encodeURIComponent(templateKey)}`, { signal }),
+  templateCatalogue: (signal?: AbortSignal) => api<PolicyCatalogue>(`${root}/templates/catalogue`, { signal }),
+  proposeTemplates: (templateKeys?: string[]) => api<{ requested: number; proposed: number; unchanged: number; superseded: number }>(`${root}/templates/propose`, { method: "POST", body: { templateKeys: templateKeys ?? null } }),
+  updateTemplate: (templateKey: string, blocks: { familyCode: string; policyId: string | null }[], expectedVersion: string) =>
+    api<TemplateMappingDetail>(`${root}/templates/${encodeURIComponent(templateKey)}`, { method: "PUT", body: { blocks, expectedVersion } }),
+  approveTemplate: (templateKey: string) => api<TemplateMappingDetail>(`${root}/templates/${encodeURIComponent(templateKey)}/approve`, { method: "POST" }),
+  approveTemplatePattern: (patternKey: string) => api<{ patternKey: string; approved: number }>(`${root}/templates/approve-pattern`, { method: "POST", body: { patternKey } }),
+  templateKeywordRules: (signal?: AbortSignal) => api<TemplateKeywordRules>(`${root}/templates/keyword-rules`, { signal }),
+  saveTemplateKeywordRules: (rules: TemplateKeywordRule[], expectedVersion: string) => api<TemplateKeywordRules>(`${root}/templates/keyword-rules`, { method: "PUT", body: { rules, expectedVersion } }),
 };

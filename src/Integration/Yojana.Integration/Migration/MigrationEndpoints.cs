@@ -46,8 +46,13 @@ public static class MigrationEndpoints
         review.MapGet("/batches/{batchId:guid}", async (Guid batchId, MigrationBatchService service,
             CancellationToken ct) => await service.DetailAsync(batchId, ct) is { } result
                 ? Results.Ok(result) : Results.NotFound());
-        review.MapGet("/templates", (string? cursor, int? take, TemplateMappingService service,
-            CancellationToken ct) => Invoke(() => service.ListAsync(cursor, take ?? 25, ct)));
+        review.MapGet("/templates", (string? state, bool? deletedInSource, string? cursor, int? take,
+            TemplateMappingService service, CancellationToken ct) =>
+            Invoke(() => service.ListAsync(state, deletedInSource, cursor, take ?? 25, ct)));
+        review.MapGet("/templates/summary", (TemplateMappingService service, CancellationToken ct) =>
+            Invoke(() => service.SummaryAsync(ct)));
+        review.MapGet("/templates/catalogue", (TemplateMappingService service, CancellationToken ct) =>
+            Invoke(() => service.CatalogueAsync(ct)));
         review.MapGet("/templates/{templateKey}", async (string templateKey, TemplateMappingService service,
             CancellationToken ct) => await service.DetailAsync(templateKey, ct) is { } result
                 ? Results.Ok(result) : Results.NotFound());
@@ -60,13 +65,13 @@ public static class MigrationEndpoints
             }
             catch (TemplateMappingRuleException ex) { return Problem(ex); }
         });
-        admin.MapPut("/templates/{templateKey}", (string templateKey, UpdateTemplateMappingRequest request,
+        review.MapPut("/templates/{templateKey}", (string templateKey, UpdateTemplateMappingRequest request,
             TemplateMappingService service, CancellationToken ct) =>
             Invoke(() => service.UpdateAsync(templateKey, request, ct)));
-        admin.MapPost("/templates/{templateKey}/approve", (string templateKey, ClaimsPrincipal user,
+        review.MapPost("/templates/{templateKey}/approve", (string templateKey, ClaimsPrincipal user,
             TemplateMappingService service, CancellationToken ct) =>
             Invoke(() => service.ApproveAsync(templateKey, Actor(user), ct)));
-        admin.MapPost("/templates/approve-pattern", (ApprovePatternRequest request, ClaimsPrincipal user,
+        review.MapPost("/templates/approve-pattern", (ApprovePatternRequest request, ClaimsPrincipal user,
             TemplateMappingService service, CancellationToken ct) =>
             Invoke(() => service.ApprovePatternAsync(request.PatternKey, Actor(user), ct)));
         admin.MapGet("/templates/keyword-rules", (TemplateKeywordRules settings, CancellationToken ct) =>

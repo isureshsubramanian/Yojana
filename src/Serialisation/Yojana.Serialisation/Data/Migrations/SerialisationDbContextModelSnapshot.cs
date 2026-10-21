@@ -9996,6 +9996,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(20)")
                         .HasColumnName("assurance_or_service");
 
+                    b.Property<Guid?>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
                     b.Property<string>("Coverage")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
@@ -10188,6 +10192,11 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasKey("TenantId", "PolicyVersionId")
                         .HasName("pk_warranty_policy_version");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_warranty_policy_version_tenant_id_command_id")
+                        .HasFilter("[command_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "CoverageFamily", "Status")
                         .HasDatabaseName("ix_warranty_policy_version_tenant_id_coverage_family_status");

@@ -9,6 +9,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
+using Wolverine;
 
 namespace Yojana.Integration.DatabaseTests;
 
@@ -26,7 +27,8 @@ public sealed class TemplateDecompositionTests(IntegrationHostFixture fixture)
         using var scope = fixture.ScopeFor(tenant);
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
         AddTemplate(db, tenant, "RS-1100 36M NBD", "RS-1100 servers with next business day response");
-        AddTemplate(db, tenant, "ST-44 36M NBD", "ST-44 storage with next-business-day response");
+        AddTemplate(db, tenant, "ST-44 36M NBD", "ST-44 storage with next-business-day response",
+            responseValue: 24, responseUnit: "hours");
         AddContract(db, tenant, 101, "RS-1100 36M NBD", active: true, lineCount: 2);
         AddContract(db, tenant, 102, "RS-1100 36M NBD", active: false, lineCount: 1);
         AddContract(db, tenant, 201, "ST-44 36M NBD", active: true, lineCount: 1);
@@ -37,7 +39,7 @@ public sealed class TemplateDecompositionTests(IntegrationHostFixture fixture)
         var service = scope.ServiceProvider.GetRequiredService<TemplateMappingService>();
         var result = await service.ProposeAsync(new(), default);
         Assert.Equal((2, 2, 0), (result.Requested, result.Proposed, result.Superseded));
-        var page = await service.ListAsync(null, 25, default);
+        var page = await service.ListAsync(null, null, null, 25, default);
         var pattern = Assert.Single(page.Items);
         Assert.Equal(2, pattern.TemplateCount);
         Assert.Equal(new TemplateUsageCounts(3, 4, 2, 3), pattern.Usage);
@@ -69,36 +71,76 @@ public sealed class TemplateDecompositionTests(IntegrationHostFixture fixture)
     }
 
     [DatabaseFact]
-    public async Task Policy_to_create_blocks_cannot_be_approved_until_an_existing_policy_is_selected()
+    public async Task Pattern_approval_creates_one_idempotent_draft_and_waits_for_publication_before_load()
     {
         var tenant = await fixture.NewTenantAsync("tmplresolve");
-        var policies = await SeedCatalogueAsync(tenant, includeAccidental: false);
+        _ = await SeedCatalogueAsync(tenant, includeAccidental: false);
         using var scope = fixture.ScopeFor(tenant);
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
         AddTemplate(db, tenant, "RS-1100 damage", "RS-1100 accidental damage protection",
             responseValue: null, responseUnit: null);
+        AddTemplate(db, tenant, "ST-44 damage", "ST-44 accidental damage protection",
+            responseValue: null, responseUnit: null);
+        AddContract(db, tenant, 301, "RS-1100 damage", active: true, lineCount: 1);
+        AddContract(db, tenant, 302, "ST-44 damage", active: true, lineCount: 1);
+        db.Set<ServiceContractStagingRow>().Local.Single(row => row.ContractId == 302).StartDate =
+            new DateTime(2025, 11, 1);
         await db.SaveChangesAsync();
         var service = scope.ServiceProvider.GetRequiredService<TemplateMappingService>();
         await service.ProposeAsync(new(), default);
-        var summary = Assert.Single(Assert.Single((await service.ListAsync(null, 25, default)).Items).Templates);
-        var detail = await service.DetailAsync(summary.TemplateKey, default);
-        Assert.NotNull(detail);
-        Assert.Contains(detail.Blocks, block => block.FamilyCode == "accidental_damage"
+        var pattern = Assert.Single((await service.ListAsync(null, null, null, 25, default)).Items);
+        Assert.Equal(2, pattern.TemplateCount);
+        Assert.All(pattern.Templates, template => Assert.False(template.NeedsPerson));
+        var before = await service.DetailAsync(pattern.Templates[0].TemplateKey, default);
+        Assert.NotNull(before);
+        Assert.Contains(before.Blocks, block => block.FamilyCode == "accidental_damage"
             && block.Resolution == TemplateBlockResolution.PolicyToCreate);
-        var refused = await Assert.ThrowsAsync<TemplateMappingRuleException>(() => service.ApproveAsync(
-            summary.TemplateKey, Guid.NewGuid().ToString("D"), default));
-        Assert.Equal("template_policy_unresolved", refused.Rule);
+        Assert.Equal(2, (await service.ApprovePatternAsync(pattern.PatternKey, "migration-reviewer", default)).Approved);
 
-        var accidentalId = await AddPublishedPolicyAsync(tenant, "accidental_damage", "ADP-36",
-            "RS-1100 accidental damage 36 months", responseHours: null);
-        detail = await service.UpdateAsync(summary.TemplateKey, new(
-        [
-            new("base", policies.Base),
-            new("accidental_damage", accidentalId),
-        ], detail.Version), default);
-        Assert.All(detail.Blocks, block => Assert.Equal(TemplateBlockResolution.ExistingPolicy, block.Resolution));
-        Assert.Equal(TemplateMappingState.Approved, (await service.ApproveAsync(summary.TemplateKey,
-            Guid.NewGuid().ToString("D"), default)).State);
+        var waiting = await service.DetailAsync(pattern.Templates[0].TemplateKey, default);
+        Assert.NotNull(waiting);
+        Assert.Equal(TemplateMappingState.WaitingForPolicyPublication, waiting.State);
+        var draftBlock = Assert.Single(waiting.Blocks, block => block.FamilyCode == "accidental_damage");
+        Assert.Equal("draft", draftBlock.PolicyStatus);
+        var waitingSummary = await service.SummaryAsync(default);
+        Assert.Equal((2, 1, 2), (waitingSummary.WaitingForPolicyPublication.Templates,
+            waitingSummary.WaitingForPolicyPublication.Patterns,
+            waitingSummary.WaitingForPolicyPublication.ActiveContracts));
+        Assert.Equal(1, waitingSummary.PoliciesToCreate);
+        Assert.Single((await service.ListAsync(TemplateMappingState.WaitingForPolicyPublication,
+            null, null, 25, default)).Items);
+        Assert.Null(await scope.ServiceProvider.GetRequiredService<IApprovedTemplateDecompositionQuery>()
+            .ForStagedContractLineAsync(Source, "301|0", default));
+
+        var serialisation = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var draft = Assert.Single(await serialisation.PolicyVersions.AsNoTracking()
+            .Where(row => row.TenantId == tenant && row.PolicyCode.StartsWith("MIG-"))
+            .ToListAsync());
+        Assert.Equal(draft.PolicyVersionId, draftBlock.PolicyId);
+        Assert.Equal(new DateOnly(2025, 11, 1), draft.AppliesToContractsFrom);
+        Assert.StartsWith("MIG-ACCIDENTAL-DAMAGE-36M-", draft.PolicyCode, StringComparison.Ordinal);
+        Assert.Equal("Accidental damage · 36 months", draft.Name);
+        var coverage = JsonSerializer.Deserialize<CoverageTerms>(draft.Coverage, LedgerJson.Options)!;
+        Assert.Equal((100m, 100m, 100m, "return_to_base"),
+            (coverage.PartsPct, coverage.LabourPct, coverage.TravelPct, coverage.ServiceMode));
+
+        Assert.Equal(2, (await service.ApprovePatternAsync(pattern.PatternKey, "migration-reviewer", default)).Approved);
+        _ = await service.ApproveAsync(pattern.Templates[0].TemplateKey, "migration-reviewer", default);
+        Assert.Equal(1, await serialisation.PolicyVersions.CountAsync(row => row.TenantId == tenant
+            && row.PolicyCode.StartsWith("MIG-")));
+
+        await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<PolicyDraftResult>(
+            new PublishPolicyVersion(draft.PolicyVersionId, "policy-publisher"),
+            new DeliveryOptions { TenantId = tenant.ToString() }, default);
+        var loadable = await scope.ServiceProvider.GetRequiredService<IApprovedTemplateDecompositionQuery>()
+            .ForStagedContractLineAsync(Source, "301|0", default);
+        Assert.NotNull(loadable);
+        Assert.Equal(TemplateMappingState.Approved,
+            (await service.DetailAsync(pattern.Templates[0].TemplateKey, default))!.State);
+        var summary = await service.SummaryAsync(default);
+        Assert.Equal((2, 1, 2), (summary.Approved.Templates, summary.Approved.Patterns,
+            summary.Approved.ActiveContracts));
+        Assert.Equal(0, summary.PoliciesToCreate);
     }
 
     [DatabaseFact]
@@ -113,7 +155,7 @@ public sealed class TemplateDecompositionTests(IntegrationHostFixture fixture)
         await db.SaveChangesAsync();
         var service = scope.ServiceProvider.GetRequiredService<TemplateMappingService>();
         await service.ProposeAsync(new(), default);
-        var key = Assert.Single(Assert.Single((await service.ListAsync(null, 25, default)).Items).Templates).TemplateKey;
+        var key = Assert.Single(Assert.Single((await service.ListAsync(null, null, null, 25, default)).Items).Templates).TemplateKey;
         await service.ApproveAsync(key, Guid.NewGuid().ToString("D"), default);
 
         var source = await db.Set<ContractTemplateStagingRow>().SingleAsync(row => row.TemplateName == "ST-44 standard");
@@ -126,7 +168,7 @@ public sealed class TemplateDecompositionTests(IntegrationHostFixture fixture)
         Assert.Equal(1, reproposed.Superseded);
         var current = await service.DetailAsync(key, default);
         Assert.NotNull(current);
-        Assert.Equal(TemplateMappingState.Draft, current.State);
+        Assert.Equal(TemplateMappingState.Waiting, current.State);
         Assert.Equal(48, current.SourceTerms.DurationValue);
         Assert.Equal(2, await db.TemplateMappings.CountAsync(row => row.TemplateKey == key));
         Assert.Equal(1, await db.TemplateMappings.CountAsync(row => row.TemplateKey == key
@@ -150,10 +192,15 @@ public sealed class TemplateDecompositionTests(IntegrationHostFixture fixture)
         await db.SaveChangesAsync();
         var service = scope.ServiceProvider.GetRequiredService<TemplateMappingService>();
         await service.ProposeAsync(new(), default);
-        var before = (await service.ListAsync(null, 25, default)).Items.SelectMany(group => group.Templates).ToList();
+        var before = (await service.ListAsync(null, null, null, 25, default)).Items.SelectMany(group => group.Templates).ToList();
         var shieldKey = before.Single(item => item.TemplateName == "RS-1100 shield").TemplateKey;
         Assert.Single((await service.DetailAsync(shieldKey, default))!.Blocks);
         Assert.True(before.Single(item => item.TemplateName == "ST-44 vague").NeedsPerson);
+        var needsPattern = (await service.ListAsync(TemplateMappingState.NeedsPerson, null, null, 25, default))
+            .Items.Single();
+        var refused = await Assert.ThrowsAsync<TemplateMappingRuleException>(() =>
+            service.ApprovePatternAsync(needsPattern.PatternKey, "migration-reviewer", default));
+        Assert.Equal("template_mapping_needs_review", refused.Rule);
 
         var rules = scope.ServiceProvider.GetRequiredService<TemplateKeywordRules>();
         var currentRules = await rules.GetAsync(default);
@@ -163,6 +210,31 @@ public sealed class TemplateDecompositionTests(IntegrationHostFixture fixture)
         var after = await service.DetailAsync(shieldKey, default);
         Assert.NotNull(after);
         Assert.Equal(["base", "accidental_damage"], after.Blocks.Select(block => block.FamilyCode));
+    }
+
+    [DatabaseFact]
+    public async Task Deleted_source_templates_are_flagged_filterable_and_included_in_summary_counts()
+    {
+        var tenant = await fixture.NewTenantAsync("tmpldeleted");
+        _ = await SeedCatalogueAsync(tenant, includeAccidental: false);
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var deleted = AddTemplate(db, tenant, "PC-7 retired cover", "PC-7 base cover",
+            responseValue: null, responseUnit: null);
+        deleted.Deleted = "TYES";
+        AddContract(db, tenant, 401, "PC-7 retired cover", active: false, lineCount: 1);
+        await db.SaveChangesAsync();
+        var service = scope.ServiceProvider.GetRequiredService<TemplateMappingService>();
+        await service.ProposeAsync(new(), default);
+
+        Assert.Empty((await service.ListAsync(null, false, null, 25, default)).Items);
+        var pattern = Assert.Single((await service.ListAsync(null, true, null, 25, default)).Items);
+        Assert.True(Assert.Single(pattern.Templates).DeletedInSource);
+        Assert.Equal(TemplateMappingState.Waiting, pattern.State);
+        var summary = await service.SummaryAsync(default);
+        Assert.Equal((1, 1, 0), (summary.Templates, summary.Patterns, summary.ActiveContracts));
+        Assert.Equal((1, 1, 0), (summary.WaitingForApproval.Templates,
+            summary.WaitingForApproval.Patterns, summary.WaitingForApproval.ActiveContracts));
     }
 
     private async Task<(Guid Base, Guid Service)> SeedCatalogueAsync(

@@ -178,3 +178,56 @@ export interface MigrationReviewDecisionResponse {
   status: MigrationReviewStatus;
   decidedAt: string;
 }
+
+export type TemplateMappingState = "waiting" | "needs_person" | "approved" | "waiting_for_policy_publication";
+export type TemplateBlockResolution = "existing_policy" | "policy_to_create";
+
+export interface TemplateSourceTerms {
+  durationValue: number | null;
+  durationUnit: string;
+  durationUnitVerified: boolean;
+  partsPct: number | null;
+  labourPct: number | null;
+  travelPct: number | null;
+  responseHours: number | null;
+  responseSource: string | null;
+  coverageHours: string | null;
+  contractType: string | null;
+}
+
+export interface TemplateUsageCounts { contracts: number; serials: number; activeContracts: number; activeSerials: number }
+export interface TemplateMappingSummary {
+  templateKey: string; templateName: string; state: TemplateMappingState; needsPerson: boolean;
+  reviewReason: string | null; deletedInSource: boolean; sourceReference: string | null;
+  sourceTerms: TemplateSourceTerms; usage: TemplateUsageCounts;
+}
+export interface TemplatePattern {
+  patternKey: string; patternLabel: string; state: TemplateMappingState; templateCount: number;
+  usage: TemplateUsageCounts; templates: TemplateMappingSummary[];
+}
+export interface TemplatePatternPage { items: TemplatePattern[]; nextCursor: string | null }
+export interface TemplateStateSummary { templates: number; patterns: number; activeContracts: number }
+export interface TemplateMappingSummaryView {
+  templates: number; patterns: number; activeContracts: number; approved: TemplateStateSummary;
+  waitingForApproval: TemplateStateSummary; needsPerson: TemplateStateSummary;
+  waitingForPolicyPublication: TemplateStateSummary; policiesToCreate: number;
+}
+export interface TemplateWording { kind: string; text: string }
+export interface TemplateBlock {
+  familyCode: string; familyName: string; stacking: boolean; resolution: TemplateBlockResolution;
+  policyId: string | null; policyCode: string | null; policyVersion: number | null; policyName: string | null;
+  policyStatus: string | null; proposedTerms: TemplateSourceTerms;
+}
+export interface TemplateMappingDetail extends TemplateMappingSummary {
+  sourceSystem: string; templateSourceKey: string; extractionBatchId: string; extractedAt: string;
+  patternKey: string; patternLabel: string; wordingToReview: TemplateWording[]; blocks: TemplateBlock[];
+  approvedBy: string | null; approvedAt: string | null; version: string;
+}
+export interface PolicyCatalogueFamily { familyCode: string; familyName: string; stacking: boolean; active: boolean }
+export interface PolicyCataloguePolicy {
+  familyCode: string; policyId: string; policyCode: string; version: number; policyName: string;
+  terms: { durationValue: number; durationUnit: string; partsPct: number; labourPct: number; travelPct: number; serviceMode: string; responseHours: number | null; coverageHours: string | null };
+}
+export interface PolicyCatalogue { families: PolicyCatalogueFamily[]; policies: PolicyCataloguePolicy[] }
+export interface TemplateKeywordRule { keyword: string; familyCode: string }
+export interface TemplateKeywordRules { rules: TemplateKeywordRule[]; version: string }

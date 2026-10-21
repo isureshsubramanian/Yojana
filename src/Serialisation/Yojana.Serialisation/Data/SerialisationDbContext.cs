@@ -701,6 +701,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
         modelBuilder.Entity<WarrantyPolicyVersion>(b =>
         {
+            b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique().HasFilter("[command_id] IS NOT NULL");
             b.ToTable("warranty_policy_version", t =>
             {
                 t.IsTemporal(h => h.UseHistoryTable("warranty_policy_version_history"));
