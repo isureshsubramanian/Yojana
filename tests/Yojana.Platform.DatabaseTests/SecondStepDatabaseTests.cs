@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -19,10 +21,27 @@ using Yojana.Platform.Tenancy;
 namespace Yojana.Platform.DatabaseTests;
 
 [Collection("platform host")]
-public sealed class SecondStepDatabaseTests(PlatformHostFixture fixture)
+public sealed class SecondStepDatabaseTests(PlatformHostFixture fixture) : IAsyncLifetime
 {
     private const string Password = "Fictional-Second-Step-Password-2026";
     private static readonly DateTime Start = new(2026, 9, 1, 14, 0, 0, DateTimeKind.Utc);
+
+    // These tests sign in over HTTP from the loopback address on a clock fixed at Start, so the address's failure
+    // count would carry from one test (and one run) into the next and lock out unrelated sign-ins. Each test starts
+    // and ends with that address clear; other tests' own addresses are left alone.
+    public Task InitializeAsync() => ResetLoopbackThrottleAsync();
+
+    public Task DisposeAsync() => ResetLoopbackThrottleAsync();
+
+    private async Task ResetLoopbackThrottleAsync()
+    {
+        var hashes = new[] { "127.0.0.1", "::1", "::ffff:127.0.0.1", "unknown" }
+            .Select(address => SHA256.HashData(Encoding.UTF8.GetBytes("address\0" + address))).ToList();
+        using var scope = fixture.Services.CreateScope();
+        var throttles = scope.ServiceProvider.GetRequiredService<PlatformDbContext>().SignInThrottles;
+        foreach (var hash in hashes)
+            await throttles.Where(row => row.KeyKind == "address" && row.KeyHash == hash).ExecuteDeleteAsync();
+    }
 
     [DatabaseFact]
     public async Task Required_user_enrols_before_a_session_and_then_completes_sign_in_with_totp()
