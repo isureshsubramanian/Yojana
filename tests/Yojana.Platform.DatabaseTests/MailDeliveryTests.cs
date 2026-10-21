@@ -52,6 +52,78 @@ public sealed class MailDeliveryTests(PlatformHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Copies_and_attachments_reach_the_transport_and_the_body_still_stays_out_of_the_log()
+    {
+        var tenant = await AddTenantAsync("mailcc");
+        var to = Recipient();
+        var pdf = "%PDF-1.7 fictional"u8.ToArray();
+        Guid id;
+        using (var scope = ScopeFor(tenant))
+        {
+            id = await scope.ServiceProvider.GetRequiredService<IMailOutbox>().QueueAsync(Mail(tenant, to) with
+            {
+                Cc = [new MailRecipient("facilities@example.invalid", "Facilities desk")],
+                Attachments = [new MailAttachment("What's covered · RS11-0001.pdf", "application/pdf", pdf)],
+            }, CancellationToken.None);
+        }
+
+        Assert.Equal(MailStatus.Sent, (await WaitForSettledAsync(id)).Status);
+        var sent = Assert.Single(fixture.Mail.AttemptsFor(to));
+        Assert.Equal("facilities@example.invalid", Assert.Single(sent.Mail.Cc!).Address);
+        Assert.Equal(pdf, Assert.Single(sent.Mail.Attachments!).Content);
+        var message = MailMessageFactory.Build(sent, fixture.Services.GetRequiredService<MailOptions>());
+        Assert.Equal("facilities@example.invalid", Assert.Single(message.Cc.Mailboxes).Address);
+        Assert.Equal("What's covered · RS11-0001.pdf", Assert.Single(message.Attachments).ContentDisposition!.FileName);
+    }
+
+    [DatabaseFact]
+    public async Task Every_attempt_of_a_tenant_mail_is_announced_in_that_tenant_and_global_mail_is_not()
+    {
+        var tenant = await AddTenantAsync("mailannounce");
+        var to = Recipient();
+        fixture.Mail.Script(to, MailSendResult.Transient("smtp 421: try later"));
+        var id = await QueueAsync(tenant, to);
+        await WaitForSettledAsync(id);
+
+        var deadline = DateTime.UtcNow + Settle;
+        while (MailDeliveryRecordedHandler.For(id).Count < 2 && DateTime.UtcNow < deadline) await Task.Delay(100);
+        var announced = MailDeliveryRecordedHandler.For(id);
+        Assert.Equal([MailStatus.Retrying, MailStatus.Sent], announced.Select(x => x.Event.Status));
+        Assert.Equal([1, 2], announced.Select(x => x.Event.Attempts));
+        Assert.All(announced, x => Assert.Equal(tenant, x.ScopeTenant));
+        Assert.All(announced, x => Assert.Equal(tenant, x.Event.Tenant));
+        Assert.Equal("smtp 421: try later", announced[0].Event.Error);
+        Assert.NotNull(announced[1].Event.SentAt);
+
+        var global = Recipient();
+        Guid globalId;
+        using (var scope = fixture.Services.CreateScope())
+            globalId = await scope.ServiceProvider.GetRequiredService<IMailOutbox>().QueueAsync(Mail(null, global), CancellationToken.None);
+        await WaitForSettledAsync(globalId);
+        await Task.Delay(500);
+        Assert.Empty(MailDeliveryRecordedHandler.For(globalId));
+    }
+
+    [Fact]
+    public void Copies_and_attachments_are_checked_before_queueing()
+    {
+        var mail = Mail(null, "person@example.invalid");
+        MailOutbox.Validate(mail with { Attachments = [new("sheet.pdf", "application/pdf", [1])] });
+        Assert.Throws<ArgumentException>(() => MailOutbox.Validate(mail with { Cc = [new("not an address")] }));
+        Assert.Throws<ArgumentException>(() => MailOutbox.Validate(mail with
+        {
+            Cc = Enumerable.Range(0, MailLimits.MaxCc + 1).Select(i => new MailRecipient($"cc{i}@example.invalid")).ToList(),
+        }));
+        Assert.Throws<ArgumentException>(() => MailOutbox.Validate(mail with { Attachments = [new("run.exe", "application/octet-stream", [1])] }));
+        Assert.Throws<ArgumentException>(() => MailOutbox.Validate(mail with { Attachments = [new("../sheet.pdf", "application/pdf", [1])] }));
+        Assert.Throws<ArgumentException>(() => MailOutbox.Validate(mail with { Attachments = [new("empty.pdf", "application/pdf", [])] }));
+        Assert.Throws<ArgumentException>(() => MailOutbox.Validate(mail with
+        {
+            Attachments = [new("big.pdf", "application/pdf", new byte[MailLimits.MaxAttachmentBytes + 1])],
+        }));
+    }
+
+    [DatabaseFact]
     public async Task A_transient_failure_is_retried_and_the_attempts_are_recorded()
     {
         var tenant = await AddTenantAsync("mailretry");
@@ -261,4 +333,16 @@ public sealed class MailDeliveryTests(PlatformHostFixture fixture)
         scope.ServiceProvider.GetRequiredService<ITenantContextSetter>().Set(tenant);
         return scope;
     }
+}
+
+/// <summary>Test-only subscriber: records each announcement with the tenant its handler scope ran under.</summary>
+public static class MailDeliveryRecordedHandler
+{
+    private static readonly System.Collections.Concurrent.ConcurrentQueue<(MailDeliveryRecorded Event, TenantId? ScopeTenant)> Seen = new();
+
+    public static void Handle(MailDeliveryRecorded message, ITenantContext tenant) =>
+        Seen.Enqueue((message, tenant.HasTenant ? tenant.TenantId : null));
+
+    public static IReadOnlyList<(MailDeliveryRecorded Event, TenantId? ScopeTenant)> For(Guid mailId) =>
+        Seen.Where(x => x.Event.MailId == mailId).OrderBy(x => x.Event.Attempts).ToList();
 }

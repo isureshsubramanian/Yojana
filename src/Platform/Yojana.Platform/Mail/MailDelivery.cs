@@ -68,6 +68,31 @@ public sealed class MailOutbox(IMessageBus bus, ITenantSettings settings, ITenan
             throw new ArgumentException("A subject is 1 to 300 printable characters on one line.", nameof(mail));
         if (string.IsNullOrWhiteSpace(mail.TextBody) || string.IsNullOrWhiteSpace(mail.HtmlBody))
             throw new ArgumentException("A mail needs both a plain-text and an HTML body.", nameof(mail));
+        var cc = mail.Cc ?? [];
+        if (cc.Count > MailLimits.MaxCc)
+            throw new ArgumentException($"A mail has at most {MailLimits.MaxCc} copy recipients.", nameof(mail));
+        foreach (var copy in cc)
+        {
+            if (!TenantMailSettings.IsSingleAddress(copy.Address))
+                throw new ArgumentException("Every copy recipient must be a single e-mail address.", nameof(mail));
+            if (copy.DisplayName is { } copyName && (copyName.Length > 200 || copyName.Any(char.IsControl)))
+                throw new ArgumentException("A copy recipient's name must be at most 200 printable characters.", nameof(mail));
+        }
+        var attachments = mail.Attachments ?? [];
+        if (attachments.Count > MailLimits.MaxAttachments)
+            throw new ArgumentException($"A mail has at most {MailLimits.MaxAttachments} attachments.", nameof(mail));
+        if (attachments.Sum(file => (long)file.Content.Length) > MailLimits.MaxAttachmentBytes)
+            throw new ArgumentException($"Attachments total at most {MailLimits.MaxAttachmentBytes} bytes.", nameof(mail));
+        foreach (var file in attachments)
+        {
+            if (!MailLimits.AttachmentMediaTypes.Contains(file.MediaType))
+                throw new ArgumentException($"Attachment type '{file.MediaType}' is not allowed.", nameof(mail));
+            if (string.IsNullOrWhiteSpace(file.FileName) || file.FileName.Length > 150
+                || file.FileName.Any(c => char.IsControl(c) || c is '/' or '\\' or '"' or ':'))
+                throw new ArgumentException("An attachment name is 1 to 150 characters without slashes, colons or quotes.", nameof(mail));
+            if (file.Content.Length == 0)
+                throw new ArgumentException("An attachment cannot be empty.", nameof(mail));
+        }
     }
 }
 
@@ -142,6 +167,12 @@ public static class DeliverMailHandler
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        if (row.TenantId is { } tenantId)
+        {
+            // Cascaded inside this handler's transaction: the announcement leaves only if the recorded outcome commits.
+            outgoing.Add(new MailDeliveryRecorded(row.Id, row.Kind, tenantId, row.Status, row.Attempts, now, row.SentAt,
+                row.NextAttemptAt, row.LastError, row.Transport));
+        }
         return outgoing;
     }
 
