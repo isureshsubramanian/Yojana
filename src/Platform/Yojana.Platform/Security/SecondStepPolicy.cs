@@ -47,9 +47,9 @@ public sealed class SecondStepPolicy(
         var memberships = await db.Memberships.AsNoTracking()
             .Where(row => row.TenantId == tenantId && row.DeactivatedAt == null)
             .Select(row => new { row.UserId, row.Roles }).ToListAsync(cancellationToken);
-        var enrolled = await db.UserAuthenticators.AsNoTracking()
-            .Where(row => row.Status == Data.Platform.Entities.UserAuthenticatorStatus.Active)
-            .Select(row => row.UserId).Distinct().ToListAsync(cancellationToken);
+        var memberIds = memberships.Select(row => row.UserId).Distinct().ToList();
+        var enrolled = (await SecondStepEnrolment.EnrolledUsers(db).Where(id => memberIds.Contains(id))
+            .ToListAsync(cancellationToken)).ToHashSet();
         var roleViews = Roles.Select(role => new SecondStepRoleSetting(role, Label(role),
             memberships.Count(row => row.Roles.Contains(role)), ModeFor(role, modes))).ToList();
         var notSetUp = memberships.Where(row => SecondStepMode.Strictest(row.Roles.Select(role =>

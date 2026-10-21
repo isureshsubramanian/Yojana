@@ -217,6 +217,54 @@ namespace Yojana.Platform.Data.Platform.Migrations
                     b.ToTable("mail_message", "platform");
                 });
 
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.PasskeyCeremony", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("OptionsJson")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("options_json");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("purpose");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_passkey_ceremony");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_passkey_ceremony_expires_at");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_passkey_ceremony_user_id");
+
+                    b.ToTable("passkey_ceremony", "platform");
+                });
+
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.PasswordResetToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -640,6 +688,77 @@ namespace Yojana.Platform.Data.Platform.Migrations
                     b.ToTable("user_invitation", "platform");
                 });
 
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.UserPasskey", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("Aaguid")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("aaguid");
+
+                    b.Property<bool>("BackedUp")
+                        .HasColumnType("bit")
+                        .HasColumnName("backed_up");
+
+                    b.Property<bool>("BackupEligible")
+                        .HasColumnType("bit")
+                        .HasColumnName("backup_eligible");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<byte[]>("CredentialId")
+                        .IsRequired()
+                        .HasMaxLength(1023)
+                        .HasColumnType("varbinary(1023)")
+                        .HasColumnName("credential_id");
+
+                    b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_used_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("name");
+
+                    b.Property<byte[]>("PublicKey")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("varbinary(2048)")
+                        .HasColumnName("public_key");
+
+                    b.Property<long>("SignCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("sign_count");
+
+                    b.Property<string>("Transports")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("transports");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_user_passkey");
+
+                    b.HasIndex("CredentialId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_user_passkey_credential_id");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_user_passkey_user_id_created_at");
+
+                    b.ToTable("user_passkey", "platform");
+                });
+
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.UserRecoveryCode", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -730,6 +849,15 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasConstraintName("fk_mail_message_user_id");
                 });
 
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.PasskeyCeremony", b =>
+                {
+                    b.HasOne("Yojana.Platform.Data.Platform.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_passkey_ceremony_user_id");
+                });
+
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.PasswordResetToken", b =>
                 {
                     b.HasOne("Yojana.Platform.Data.Platform.Entities.AppUser", null)
@@ -800,6 +928,16 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasConstraintName("fk_user_invitation_tenant_id");
 
                     b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.UserPasskey", b =>
+                {
+                    b.HasOne("Yojana.Platform.Data.Platform.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_passkey_user_id");
                 });
 
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.UserRecoveryCode", b =>

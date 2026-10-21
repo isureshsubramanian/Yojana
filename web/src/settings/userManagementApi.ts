@@ -6,7 +6,7 @@ export interface TenantUserRow {
   signInMethods: string[]; lastSignInAt: string | null; status: "active" | "invited" | "deactivated" | "locked";
   invitationExpiresAt: string | null; deactivatedAt: string | null; deactivatedBy: string | null;
   lockedUntil: string | null; version: string | null;
-  secondStepRequired: boolean; recoveryCodesLeft: number;
+  secondStepRequired: boolean; recoveryCodesLeft: number; passkeys: number;
 }
 export interface TenantUserPage { items: TenantUserRow[]; nextCursor: string | null }
 export interface TenantUserSummary { active: number; invited: number; deactivated: number; secondStepOn: number; requiredNotSetUp: number }

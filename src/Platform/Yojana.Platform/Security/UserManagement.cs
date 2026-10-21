@@ -23,7 +23,8 @@ public sealed record TenantUserRow(
     DateTime? LockedUntil,
     string? Version,
     bool SecondStepRequired,
-    int RecoveryCodesLeft);
+    int RecoveryCodesLeft,
+    int Passkeys = 0);
 
 public sealed record TenantUserPage(IReadOnlyList<TenantUserRow> Items, string? NextCursor);
 public sealed record TenantUserSummary(int Active, int Invited, int Deactivated, int SecondStepOn,
@@ -66,8 +67,7 @@ public sealed class UserManagementService(
             if (status == "active") users = users.Where(m => m.DeactivatedAt == null);
             if (status == "deactivated") users = users.Where(m => m.DeactivatedAt != null);
             if (status == "no_second_step") users = users.Where(m => m.DeactivatedAt == null &&
-                !db.UserAuthenticators.Any(a => a.UserId == m.UserId &&
-                    a.Status == Data.Platform.Entities.UserAuthenticatorStatus.Active));
+                !SecondStepEnrolment.EnrolledUsers(db).Contains(m.UserId));
             if (!string.IsNullOrWhiteSpace(role)) users = users.Where(m => m.Roles.Contains(role));
             if (!string.IsNullOrWhiteSpace(search))
                 users = users.Where(m => m.User!.DisplayName.Contains(search) || m.User.Email.Contains(search));
@@ -117,13 +117,16 @@ public sealed class UserManagementService(
                 row.UsedAt == null).GroupBy(row => row.UserId)
             .Select(group => new { UserId = group.Key, Count = group.Count() })
             .ToDictionaryAsync(row => row.UserId, row => row.Count, cancellationToken);
+        var passkeys = await PasskeyCountsAsync(userIds, cancellationToken);
         var enriched = new List<Candidate>(ordered.Count);
         foreach (var row in ordered)
         {
             if (row.UserId is not { } userId) { enriched.Add(row); continue; }
             var methods = row.SignInMethods.ToList();
             if (authenticators.Contains(userId)) methods.Add("app");
-            enriched.Add(row with { SignInMethods = methods,
+            var passkeyCount = passkeys.GetValueOrDefault(userId);
+            if (passkeyCount > 0) methods.Add("passkey");
+            enriched.Add(row with { SignInMethods = methods, Passkeys = passkeyCount,
                 SecondStepRequired = await secondStepPolicy.EffectiveForUserAsync(userId, cancellationToken) == SecondStepMode.Required,
                 RecoveryCodesLeft = recovery.GetValueOrDefault(userId) });
         }
@@ -156,13 +159,12 @@ public sealed class UserManagementService(
             i.AcceptedAt == null && i.RevokedAt == null && i.ExpiresAt > clock.UtcNow, cancellationToken);
         var activeIds = await staff.Where(row => row.DeactivatedAt == null).Select(row => row.UserId)
             .ToListAsync(cancellationToken);
-        var enrolled = await db.UserAuthenticators.AsNoTracking().Where(row => activeIds.Contains(row.UserId) &&
-                row.Status == Data.Platform.Entities.UserAuthenticatorStatus.Active)
-            .Select(row => row.UserId).Distinct().CountAsync(cancellationToken);
+        var enrolledIds = (await SecondStepEnrolment.EnrolledUsers(db).Where(id => activeIds.Contains(id))
+            .ToListAsync(cancellationToken)).ToHashSet();
+        var enrolled = enrolledIds.Count;
         var requiredNotSetUp = 0;
         foreach (var userId in activeIds)
-            if (!await db.UserAuthenticators.AsNoTracking().AnyAsync(row => row.UserId == userId &&
-                    row.Status == Data.Platform.Entities.UserAuthenticatorStatus.Active, cancellationToken) &&
+            if (!enrolledIds.Contains(userId) &&
                 await secondStepPolicy.EffectiveForUserAsync(userId, cancellationToken) == SecondStepMode.Required)
                 requiredNotSetUp++;
         return new TenantUserSummary(active, invited, deactivated, enrolled, requiredNotSetUp);
@@ -188,9 +190,12 @@ public sealed class UserManagementService(
             row.Status == Data.Platform.Entities.UserAuthenticatorStatus.Active, cancellationToken);
         var recoveryCodes = await db.UserRecoveryCodes.AsNoTracking().CountAsync(row => row.UserId == userId &&
             row.UsedAt == null, cancellationToken);
+        var passkeyCount = await db.UserPasskeys.AsNoTracking().CountAsync(row => row.UserId == userId, cancellationToken);
         candidate = candidate with
         {
-            SignInMethods = candidate.SignInMethods.Concat(authenticator ? ["app"] : []).ToList(),
+            SignInMethods = candidate.SignInMethods.Concat(authenticator ? ["app"] : [])
+                .Concat(passkeyCount > 0 ? ["passkey"] : []).ToList(),
+            Passkeys = passkeyCount,
             SecondStepRequired = await secondStepPolicy.EffectiveForUserAsync(userId, cancellationToken) == SecondStepMode.Required,
             RecoveryCodesLeft = recoveryCodes,
         };
@@ -307,6 +312,12 @@ public sealed class UserManagementService(
             m.CustomerPartyRef == null && !m.Roles.Contains(CustomerPortalRole) &&
             m.Roles.Contains(YojanaRole.TenantAdministrator), cancellationToken);
 
+    private async Task<Dictionary<Guid, int>> PasskeyCountsAsync(IReadOnlyCollection<Guid> userIds,
+        CancellationToken cancellationToken) => await db.UserPasskeys.AsNoTracking()
+        .Where(row => userIds.Contains(row.UserId)).GroupBy(row => row.UserId)
+        .Select(group => new { UserId = group.Key, Count = group.Count() })
+        .ToDictionaryAsync(row => row.UserId, row => row.Count, cancellationToken);
+
     private static TenantUserRow ToView(Candidate row, Dictionary<Guid, DateTime> lastSignIns,
         IReadOnlyDictionary<Guid, string> actorNames, IReadOnlyDictionary<string, DateTime> locks,
         bool hasLastSignIn = true)
@@ -321,7 +332,7 @@ public sealed class UserManagementService(
             row.SignInMethods, last, status, row.InvitationExpiresAt, row.DeactivatedAt,
             row.DeactivatedByUserId is { } actor ? actorNames.GetValueOrDefault(actor) : null,
             locked ? until : null, row.Version is null ? null : Convert.ToBase64String(row.Version),
-            row.SecondStepRequired, row.RecoveryCodesLeft);
+            row.SecondStepRequired, row.RecoveryCodesLeft, row.Passkeys);
     }
 
     private static string RoleChangeReason(IReadOnlyCollection<string> before, IReadOnlyCollection<string> after)
@@ -352,7 +363,7 @@ public sealed class UserManagementService(
     private sealed record Candidate(Guid? UserId, Guid? InvitationId, string DisplayName, string Email,
         IReadOnlyList<string> Roles, IReadOnlyList<string> SignInMethods, DateTime? DeactivatedAt,
         Guid? DeactivatedByUserId, DateTime? InvitationExpiresAt, byte[]? Version,
-        bool SecondStepRequired, int RecoveryCodesLeft)
+        bool SecondStepRequired, int RecoveryCodesLeft, int Passkeys = 0)
     {
         public Guid Id => UserId ?? InvitationId!.Value;
     }

@@ -251,3 +251,50 @@ public sealed class UserRecoveryCode
     public DateTime? UsedAt { get; set; }
     public Guid BatchId { get; set; }
 }
+
+/// <summary>
+/// A global user's passkey (WebAuthn credential, P9-T27). Global like <see cref="UserAuthenticator"/>: a passkey signs a
+/// person in before any tenant is chosen. Only the public key is stored; the private key never leaves the device.
+/// </summary>
+public sealed class UserPasskey
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    /// <summary>The authenticator's credential id, unique across every user (WebAuthn §6.1: at most 1023 bytes).</summary>
+    public required byte[] CredentialId { get; set; }
+    /// <summary>COSE-encoded public key, as verified at registration.</summary>
+    public required byte[] PublicKey { get; set; }
+    public long SignCount { get; set; }
+    public required string Name { get; set; }
+    public Guid? Aaguid { get; set; }
+    /// <summary>Comma-separated transports the browser reported (usb, nfc, ble, internal, hybrid), used as hints only.</summary>
+    public string? Transports { get; set; }
+    public bool BackupEligible { get; set; }
+    public bool BackedUp { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? LastUsedAt { get; set; }
+}
+
+/// <summary>
+/// One passkey ceremony in progress: the options (and so the challenge) sent to the browser, kept on the server and
+/// consumed by the first answer so a signed answer can never be replayed. Expired rows are purged by maintenance.
+/// </summary>
+public sealed class PasskeyCeremony
+{
+    public Guid Id { get; set; }
+    public required string Purpose { get; set; }
+    /// <summary>Null for a passwordless sign-in, where the person is only known from the passkey's answer.</summary>
+    public Guid? UserId { get; set; }
+    public required string OptionsJson { get; set; }
+    /// <summary>The name the person gave a passkey being registered.</summary>
+    public string? Name { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+}
+
+public static class PasskeyCeremonyPurpose
+{
+    public const string Register = "register";
+    public const string SecondStep = "second_step";
+    public const string Passwordless = "passwordless";
+}

@@ -4,7 +4,7 @@ export type IconName =
   | "home" | "plus" | "filter" | "print" | "x" | "down" | "search" | "range" | "tree" | "check" | "panel"
   | "campaign" | "recover" | "policy" | "layers" | "upload" | "coins" | "sliders" | "list" | "grid" | "returns"
   | "swap" | "refurb" | "cycle" | "label" | "sun" | "moon" | "templates" | "globe"
-  | "cover" | "lookup" | "reconcile" | "report" | "disclosure" | "converted" | "mail";
+  | "cover" | "lookup" | "reconcile" | "report" | "disclosure" | "converted" | "mail" | "key";
 
 export function IconSprite() {
   return (
@@ -62,6 +62,7 @@ export function IconSprite() {
       <symbol id="i-converted" viewBox="0 0 24 24"><path d="M6 3h9l5 5v13H6z" /><path d="M15 3v5h5" /><path d="M9 13a3 3 0 0 1 5.2-2" /><path d="M14.5 9v2.2h-2.2" /><path d="M15 15a3 3 0 0 1-5.2 2" /><path d="M9.5 19v-2.2h2.2" /></symbol>
       {/* End P7 upload history icon block. */}
       <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" /></symbol>
+      <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4" /><path d="M11 12l9-9M17 6l3 3M15 8l2 2" /></symbol>
       <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></symbol>
     </svg>
   );
