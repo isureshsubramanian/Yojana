@@ -6,6 +6,7 @@ using Yojana.Platform.Data;
 using Yojana.Platform.Tenancy;
 using Yojana.Integration.LegacyMigration;
 using Yojana.Integration.LegacyMigration.Templates;
+using Yojana.Integration.LegacyMigration.Canonicalisation;
 
 namespace Yojana.Integration.Data;
 
@@ -65,6 +66,13 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<TemplateMappingBlock> TemplateMappingBlocks => Set<TemplateMappingBlock>();
     public DbSet<MigrationProfileRun> MigrationProfileRuns => Set<MigrationProfileRun>();
     public DbSet<MigrationProfileResult> MigrationProfileResults => Set<MigrationProfileResult>();
+    public DbSet<MigrationCanonRun> MigrationCanonRuns => Set<MigrationCanonRun>();
+    public DbSet<MigrationUnitCandidate> MigrationUnitCandidates => Set<MigrationUnitCandidate>();
+    public DbSet<MigrationUnitCandidateSource> MigrationUnitCandidateSources => Set<MigrationUnitCandidateSource>();
+    public DbSet<MigrationEventCandidate> MigrationEventCandidates => Set<MigrationEventCandidate>();
+    public DbSet<MigrationEntitlementCandidate> MigrationEntitlementCandidates => Set<MigrationEntitlementCandidate>();
+    public DbSet<MigrationReviewItem> MigrationReviewItems => Set<MigrationReviewItem>();
+    public DbSet<MigrationReviewDecision> MigrationReviewDecisions => Set<MigrationReviewDecision>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

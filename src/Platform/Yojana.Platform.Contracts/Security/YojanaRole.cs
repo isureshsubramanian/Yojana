@@ -25,6 +25,7 @@ public static class YojanaRole
     public const string CustomerService = "customer_service";
     public const string WarehouseLead = "warehouse_lead";
     public const string IntegrationOperator = "integration_operator";
+    public const string MigrationLead = "migration_lead";
 
     /// <summary>Tenant administration (user and connector setup); a platform role, not an ADR approval role.</summary>
     public const string TenantAdministrator = "tenant_administrator";
@@ -33,7 +34,7 @@ public static class YojanaRole
     [
         SerialAdministrator, ServiceDesk, ServiceSupervisor, ServiceManager, ShippingSupervisor, ProductionSupervisor,
         ItemMasterOwner, Quality, InventoryController, OrderDeskSupervisor, LabelAdministrator, CertificateAdministrator, LegalReviewer, FinanceReview,
-        Technician, CustomerService, WarehouseLead, IntegrationOperator, TenantAdministrator,
+        Technician, CustomerService, WarehouseLead, IntegrationOperator, MigrationLead, TenantAdministrator,
     ];
 
     public static bool IsKnown(string role) => All.Contains(role, StringComparer.Ordinal);
@@ -65,12 +66,16 @@ public static class YojanaPolicy
     public const string WarehouseLead = Prefix + YojanaRole.WarehouseLead;
     public const string TenantAdministrator = Prefix + YojanaRole.TenantAdministrator;
     public const string IntegrationOperator = Prefix + YojanaRole.IntegrationOperator;
+    public const string MigrationLead = Prefix + YojanaRole.MigrationLead;
 
     /// <summary>Tenant administrators and integration operators may work integration exceptions.</summary>
     public const string IntegrationOperations = "integration_operations";
 
     /// <summary>Read-only top-bar integration state for administrators, operators and service managers.</summary>
     public const string IntegrationIndicator = "integration_indicator";
+
+    /// <summary>Tenant administrators and migration leads may read migration work and decide review items.</summary>
+    public const string MigrationReview = "migration_review";
 
     /// <summary>Operational label printing across service, warehouse, shipping and production roles.</summary>
     public const string LabelPrinter = "label_printer";

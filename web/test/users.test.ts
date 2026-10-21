@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { passwordResetApi } from "../src/settings/passwordResetApi.ts";
-import { roleLabel } from "../src/settings/roles.ts";
+import { roleLabel, STAFF_ROLES } from "../src/settings/roles.ts";
 
 const users = readFileSync(new URL("../src/settings/Users.tsx", import.meta.url), "utf8");
 const accept = readFileSync(new URL("../src/pages/AcceptInvitation.tsx", import.meta.url), "utf8");
@@ -18,6 +18,8 @@ test("Users screen keeps the approved staff-only, KPI, filter, grid and tab stru
   assert.match(users, /\/settings\/sign-in-policy/);
   assert.match(users, /\/settings\/security-events/);
   assert.equal(roleLabel("certificate_administrator"), "Certificate administrator");
+  assert.equal(roleLabel("migration_lead"), "Migration lead");
+  assert.ok(STAFF_ROLES.includes("migration_lead"));
 });
 
 test("drawer and invitation actions use house dialogs and never browser confirm", () => {

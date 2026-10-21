@@ -92,6 +92,7 @@ internal static class MigrationModel
                 .OnDelete(DeleteBehavior.Cascade);
         });
         Templates.TemplateModel.Configure(modelBuilder);
+        Canonicalisation.CanonicalisationModel.Configure(modelBuilder);
         Staging.SourceProtocol.Configure(modelBuilder);
     }
 }

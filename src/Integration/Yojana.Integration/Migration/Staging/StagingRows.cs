@@ -239,6 +239,7 @@ public sealed class AttachmentStagingRow : StagingRow
 public sealed class ItemSerialSettingStagingRow : StagingRow
 {
     public string? ItemCode { get; set; }
+    public string? ItemName { get; set; }
     public string? ManagesSerialNumbers { get; set; }
     public string? ManagementMethod { get; set; }
     public string? WarrantyTemplateName { get; set; }

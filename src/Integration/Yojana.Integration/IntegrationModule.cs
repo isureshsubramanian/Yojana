@@ -33,6 +33,7 @@ using Yojana.Integration.LegacyMigration.Staging;
 using Yojana.Integration.LegacyMigration.Templates;
 using Yojana.Integration.Contracts;
 using Yojana.Integration.LegacyMigration.Profiling;
+using Yojana.Integration.LegacyMigration.Canonicalisation;
 
 namespace Yojana.Integration;
 
@@ -214,6 +215,9 @@ public static class IntegrationModule
             services.GetRequiredService<MigrationProfileService>());
         builder.Services.AddScoped<IMigrationProfileStatus>(services =>
             services.GetRequiredService<MigrationProfileService>());
+        builder.Services.AddScoped<CanonicalFamilySettings>();
+        builder.Services.AddScoped<CanonicalisationWriter>();
+        builder.Services.AddScoped<CanonicalisationService>();
         builder.Services.AddSingleton(RecurringTenantJob.For<MigrationExtractionJob>(
             MigrationExtractionJob.JobName, MigrationExtractionJob.Cron));
 

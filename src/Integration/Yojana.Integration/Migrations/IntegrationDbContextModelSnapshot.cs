@@ -2536,6 +2536,643 @@ namespace Yojana.Integration.Migrations
                     b.ToTable("tenant_data_key_rewrap_checkpoint", "integration");
                 });
 
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationCanonRun", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<long>("CarriedOverCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("carried_over_count");
+
+                    b.Property<long>("ExactCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("exact_count");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("failure_code");
+
+                    b.Property<long>("FamilyNormalisedCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("family_normalised_count");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("finished_at");
+
+                    b.Property<long>("FixInIncumbentCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("fix_in_incumbent_count");
+
+                    b.Property<long>("KeptApartCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("kept_apart_count");
+
+                    b.Property<long>("MergedCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("merged_count");
+
+                    b.Property<Guid>("ProfileRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("profile_run_id");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("requested_at");
+
+                    b.Property<long>("SourceSerialCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("source_serial_count");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<long>("TrimmedUpperCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("trimmed_upper_count");
+
+                    b.Property<long>("WaitingCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("waiting_count");
+
+                    b.HasKey("TenantId", "RunId")
+                        .HasName("pk_migration_canon_run");
+
+                    b.HasIndex("TenantId", "ProfileRunId", "RunId")
+                        .HasDatabaseName("ix_migration_canon_run_tenant_id_profile_run_id_run_id");
+
+                    b.HasIndex("TenantId", "BatchId", "RequestedAt", "RunId")
+                        .HasDatabaseName("ix_migration_canon_run_tenant_id_batch_id_requested_at_run_id");
+
+                    b.HasIndex("TenantId", "Status", "RequestedAt", "RunId")
+                        .HasDatabaseName("ix_migration_canon_run_tenant_id_status_requested_at_run_id");
+
+                    b.ToTable("migration_canon_run", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_canon_run_status", "status IN ('queued','running','completed','failed')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationEntitlementCandidate", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("EntitlementCandidateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entitlement_candidate_id");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("candidate_id");
+
+                    b.Property<DateTime?>("EndDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("end_date");
+
+                    b.Property<string>("MatchRule")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("match_rule");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("provenance");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<string>("SerialMasterSourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("serial_master_source_key");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_key");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("source_kind");
+
+                    b.Property<DateTime?>("StartDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("start_date");
+
+                    b.HasKey("TenantId", "EntitlementCandidateId")
+                        .HasName("pk_migration_entitlement_candidate");
+
+                    b.HasIndex("TenantId", "CandidateId")
+                        .HasDatabaseName("ix_migration_entitlement_candidate_tenant_id_candidate_id");
+
+                    b.HasIndex("TenantId", "RunId", "CandidateId")
+                        .HasDatabaseName("ix_migration_entitlement_candidate_tenant_id_run_id_candidate_id");
+
+                    b.HasIndex("TenantId", "RunId", "CandidateId", "SourceKind", "SourceKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_entitlement_candidate_tenant_id_run_id_candidate_id_source_kind_source_key");
+
+                    b.ToTable("migration_entitlement_candidate", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_entitlement_candidate_provenance", "provenance IN ('source','unverified')");
+
+                            t.HasCheckConstraint("ck_migration_entitlement_candidate_rule", "match_rule IN ('exact','trimmed_upper','family_normalised','reviewed')");
+
+                            t.HasCheckConstraint("ck_migration_entitlement_candidate_source_kind", "source_kind IN ('equipment_card','contract','contract_line')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationEventCandidate", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("EventCandidateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_candidate_id");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("candidate_id");
+
+                    b.Property<string>("MatchRule")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("match_rule");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("provenance");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<string>("SerialMasterSourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("serial_master_source_key");
+
+                    b.Property<string>("TransactionSourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("transaction_source_key");
+
+                    b.HasKey("TenantId", "EventCandidateId")
+                        .HasName("pk_migration_event_candidate");
+
+                    b.HasIndex("TenantId", "CandidateId")
+                        .HasDatabaseName("ix_migration_event_candidate_tenant_id_candidate_id");
+
+                    b.HasIndex("TenantId", "RunId", "CandidateId")
+                        .HasDatabaseName("ix_migration_event_candidate_tenant_id_run_id_candidate_id");
+
+                    b.HasIndex("TenantId", "RunId", "TransactionSourceKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_event_candidate_tenant_id_run_id_transaction_source_key");
+
+                    b.ToTable("migration_event_candidate", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_event_candidate_provenance", "provenance IN ('source','unverified')");
+
+                            t.HasCheckConstraint("ck_migration_event_candidate_rule", "match_rule IN ('exact','trimmed_upper','family_normalised','reviewed')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationReviewDecision", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("DecisionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("decision_id");
+
+                    b.Property<string>("CorrelationKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("correlation_key")
+                        .IsFixedLength();
+
+                    b.Property<DateTime>("DecidedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("decided_at");
+
+                    b.Property<string>("DecidedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("decided_by");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("decision");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("fingerprint")
+                        .IsFixedLength();
+
+                    b.Property<string>("KeepSourceKey")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("keep_source_key");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("ReviewItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("review_item_id");
+
+                    b.HasKey("TenantId", "DecisionId")
+                        .HasName("pk_migration_review_decision");
+
+                    b.HasIndex("TenantId", "CorrelationKey", "DecidedAt", "DecisionId")
+                        .HasDatabaseName("ix_migration_review_decision_tenant_id_correlation_key_decided_at_decision_id");
+
+                    b.HasIndex("TenantId", "Fingerprint", "DecidedAt", "DecisionId")
+                        .HasDatabaseName("ix_migration_review_decision_tenant_id_fingerprint_decided_at_decision_id");
+
+                    b.HasIndex("TenantId", "ReviewItemId", "DecidedAt", "DecisionId")
+                        .HasDatabaseName("ix_migration_review_decision_tenant_id_review_item_id_decided_at_decision_id");
+
+                    b.ToTable("migration_review_decision", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_review_decision_kind", "decision IN ('merge_into','keep_apart','fix_in_incumbent')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationReviewItem", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ReviewItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("review_item_id");
+
+                    b.Property<Guid?>("AppliedDecisionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("applied_decision_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<string>("CandidateSourceKeysJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("candidate_source_keys_json");
+
+                    b.Property<string>("CandidateSummary")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("candidate_summary");
+
+                    b.Property<string>("CanonicalKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("canonical_key");
+
+                    b.Property<string>("CorrelationKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("correlation_key")
+                        .IsFixedLength();
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Family")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("family");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("fingerprint")
+                        .IsFixedLength();
+
+                    b.Property<string>("Hint")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("hint");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_code");
+
+                    b.Property<string>("ItemName")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("item_name");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("RuleTried")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("rule_tried");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<string>("SourceKeysJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("source_keys_json");
+
+                    b.Property<string>("SourceSystem")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("StoredSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("stored_serial");
+
+                    b.Property<string>("SuggestedKeepSourceKey")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("suggested_keep_source_key");
+
+                    b.Property<string>("Suggestion")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("suggestion");
+
+                    b.Property<string>("SuggestionReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("suggestion_reason");
+
+                    b.HasKey("TenantId", "ReviewItemId")
+                        .HasName("pk_migration_review_item");
+
+                    b.HasIndex("TenantId", "CorrelationKey", "CreatedAt", "ReviewItemId")
+                        .HasDatabaseName("ix_migration_review_item_tenant_id_correlation_key_created_at_review_item_id");
+
+                    b.HasIndex("TenantId", "Fingerprint", "CreatedAt", "ReviewItemId")
+                        .HasDatabaseName("ix_migration_review_item_tenant_id_fingerprint_created_at_review_item_id");
+
+                    b.HasIndex("TenantId", "BatchId", "Status", "CreatedAt", "ReviewItemId")
+                        .HasDatabaseName("ix_migration_review_item_tenant_id_batch_id_status_created_at_review_item_id");
+
+                    b.HasIndex("TenantId", "RunId", "Kind", "Family", "Status", "CreatedAt", "ReviewItemId")
+                        .HasDatabaseName("ix_migration_review_item_tenant_id_run_id_kind_family_status_created_at_review_item_id");
+
+                    b.ToTable("migration_review_item", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_review_item_kind", "kind IN ('same_serial_one_item','same_serial_different_items','orphan_equipment_card','serial_in_user_field')");
+
+                            t.HasCheckConstraint("ck_migration_review_item_status", "status IN ('waiting','decided','carried_over')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationUnitCandidate", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("candidate_id");
+
+                    b.Property<string>("CanonicalSerial")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("canonical_serial");
+
+                    b.Property<string>("Disposition")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("disposition");
+
+                    b.Property<string>("Family")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("family");
+
+                    b.Property<string>("FamilyNormalisedSerial")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("family_normalised_serial");
+
+                    b.Property<string>("ItemCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_code");
+
+                    b.Property<string>("ItemName")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("item_name");
+
+                    b.Property<string>("MatchRule")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("match_rule");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("PrimarySourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("primary_source_key");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("provenance");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<string>("StoredSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("stored_serial");
+
+                    b.Property<string>("TrimmedSerial")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("trimmed_serial");
+
+                    b.HasKey("TenantId", "CandidateId")
+                        .HasName("pk_migration_unit_candidate");
+
+                    b.HasIndex("TenantId", "RunId", "PrimarySourceKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_unit_candidate_tenant_id_run_id_primary_source_key");
+
+                    b.HasIndex("TenantId", "RunId", "Family", "FamilyNormalisedSerial")
+                        .HasDatabaseName("ix_migration_unit_candidate_tenant_id_run_id_family_family_normalised_serial");
+
+                    b.HasIndex("TenantId", "RunId", "ItemCode", "CanonicalSerial")
+                        .HasDatabaseName("ix_migration_unit_candidate_tenant_id_run_id_item_code_canonical_serial");
+
+                    b.ToTable("migration_unit_candidate", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_unit_candidate_disposition", "disposition IN ('active','review','merged','excluded')");
+
+                            t.HasCheckConstraint("ck_migration_unit_candidate_provenance", "provenance IN ('source','unverified')");
+
+                            t.HasCheckConstraint("ck_migration_unit_candidate_rule", "match_rule IN ('exact','trimmed_upper','family_normalised','reviewed')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationUnitCandidateSource", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CandidateSourceId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("candidate_source_id");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("candidate_id");
+
+                    b.Property<string>("MatchedSerialSourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("matched_serial_source_key");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("role");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_key");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("source_kind");
+
+                    b.HasKey("TenantId", "CandidateSourceId")
+                        .HasName("pk_migration_unit_candidate_source");
+
+                    b.HasIndex("TenantId", "CandidateId")
+                        .HasDatabaseName("ix_migration_unit_candidate_source_tenant_id_candidate_id");
+
+                    b.HasIndex("TenantId", "RunId", "CandidateId")
+                        .HasDatabaseName("ix_migration_unit_candidate_source_tenant_id_run_id_candidate_id");
+
+                    b.HasIndex("TenantId", "RunId", "CandidateId", "SourceKind", "SourceKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_unit_candidate_source_tenant_id_run_id_candidate_id_source_kind_source_key");
+
+                    b.ToTable("migration_unit_candidate_source", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_unit_candidate_source_kind", "source_kind IN ('serial_master','equipment_card','contract','contract_line')");
+
+                            t.HasCheckConstraint("ck_migration_unit_candidate_source_role", "role IN ('kept','merged')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.MigrationBatch", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -3576,6 +4213,11 @@ namespace Yojana.Integration.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("item_code");
+
+                    b.Property<string>("ItemName")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("item_name");
 
                     b.Property<string>("ManagementMethod")
                         .HasMaxLength(10)
@@ -4982,6 +5624,83 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_reconciliation_location_tenant_id_reconciliation_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationCanonRun", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.MigrationBatch", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "BatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_canon_run_tenant_id_batch_id");
+
+                    b.HasOne("Yojana.Integration.LegacyMigration.MigrationProfileRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProfileRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_canon_run_tenant_id_profile_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationEntitlementCandidate", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationUnitCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CandidateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_entitlement_candidate_tenant_id_candidate_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationEventCandidate", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationUnitCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CandidateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_event_candidate_tenant_id_candidate_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationReviewDecision", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationReviewItem", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ReviewItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_review_decision_tenant_id_review_item_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationReviewItem", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationCanonRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_review_item_tenant_id_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationUnitCandidate", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationCanonRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_unit_candidate_tenant_id_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationUnitCandidateSource", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationUnitCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CandidateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_unit_candidate_source_tenant_id_candidate_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.MigrationBatch", b =>

@@ -205,7 +205,9 @@ internal static class SourceProtocol
          T("FileExt", nameof(AttachmentStagingRow.FileExtension), length: 40), I("FileSize", nameof(AttachmentStagingRow.FileSize)),
          D("Date", nameof(AttachmentStagingRow.AttachedAt))]),
         new("OITM", "stg_src_oitm", typeof(ItemSerialSettingStagingRow),
-        [T("ItemCode", nameof(ItemSerialSettingStagingRow.ItemCode), true, 100), T("ManSerNum", nameof(ItemSerialSettingStagingRow.ManagesSerialNumbers), length: 10),
+        [T("ItemCode", nameof(ItemSerialSettingStagingRow.ItemCode), true, 100),
+         T("ItemName", nameof(ItemSerialSettingStagingRow.ItemName), length: 500),
+         T("ManSerNum", nameof(ItemSerialSettingStagingRow.ManagesSerialNumbers), length: 10),
          T("MngMethod", nameof(ItemSerialSettingStagingRow.ManagementMethod), length: 10), T("WarrntTmpl", nameof(ItemSerialSettingStagingRow.WarrantyTemplateName), length: 500)]),
     ];
 
