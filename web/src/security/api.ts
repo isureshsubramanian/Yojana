@@ -4,6 +4,7 @@ import type { Session } from "../api/types";
 export interface PasswordSettings {
   resetLinkMinutes: number;
   adminTemporaryPasswordAllowed: boolean;
+  invitationValidDays: number;
   version: string;
 }
 

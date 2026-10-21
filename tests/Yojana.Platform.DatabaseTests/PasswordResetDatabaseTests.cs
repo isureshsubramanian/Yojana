@@ -276,6 +276,80 @@ public sealed class PasswordResetDatabaseTests(PlatformHostFixture fixture)
         var current = (await client.GetFromJsonAsync<PasswordSecuritySettingsView>("/api/security/settings/passwords"))!;
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/security/settings/passwords",
             current with { ResetLinkMinutes = 9 })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/security/settings/passwords",
+            current with { InvitationValidDays = 31 })).StatusCode);
+    }
+
+    [DatabaseFact]
+    public async Task Invitation_expiry_is_a_tenant_setting_on_the_sign_in_policy_and_changes_are_audited()
+    {
+        var tenant = await AddTenantAsync("invite-days");
+        var actor = await AddUserAsync("invite-days-admin", [tenant], roles: [YojanaRole.TenantAdministrator]);
+        using var client = fixture.Client(); await SignInAsync(client, actor);
+        var initial = (await client.GetFromJsonAsync<PasswordSecuritySettingsView>("/api/security/settings/passwords"))!;
+        Assert.Equal(InvitationService.DefaultValidDays, initial.InvitationValidDays);
+
+        (await client.PutAsJsonAsync("/api/security/settings/passwords", initial with { InvitationValidDays = 14 }))
+            .EnsureSuccessStatusCode();
+        var invited = await client.PostAsJsonAsync("/api/security/invitations", new
+        {
+            email = $"invitee-{Guid.NewGuid():N}@example.invalid", displayName = "Fictional invitee",
+            roles = new[] { YojanaRole.ServiceDesk },
+        });
+        invited.EnsureSuccessStatusCode();
+        var created = (await invited.Content.ReadFromJsonAsync<InvitationCreated>())!;
+        Assert.Equal(fixture.Clock.UtcNow.AddDays(14), created.ExpiresAt);
+
+        using var scope = fixture.Services.CreateScope();
+        var audit = await scope.ServiceProvider.GetRequiredService<PlatformDbContext>().SecurityEvents
+            .Where(row => row.TenantId == tenant && row.Kind == SecurityEventKind.SettingsChanged).ToListAsync();
+        Assert.Equal(InvitationService.ValidDaysSetting, Assert.Single(audit).Reason);
+        Assert.Equal(actor.Id, audit[0].ActorUserId);
+    }
+
+    [DatabaseFact]
+    public async Task Company_settings_are_validated_versioned_audited_and_end_every_account_mail()
+    {
+        var tenant = await AddTenantAsync("company");
+        var actor = await AddUserAsync("company-admin", [tenant], roles: [YojanaRole.TenantAdministrator]);
+        var member = await AddUserAsync("company-member", [tenant]);
+        using var client = fixture.Client(); await SignInAsync(client, actor);
+        var initial = (await client.GetFromJsonAsync<CompanyMailSettingsView>("/api/platform/company/mail"))!;
+        Assert.Equal("Fictional company company", initial.CompanyName);
+        Assert.Equal("", initial.FooterLine);
+
+        Assert.Equal("footer_line_invalid", await ProblemTitleAsync(await client.PutAsJsonAsync(
+            "/api/platform/company/mail", initial with { FooterLine = new string('x', 121) })));
+        Assert.Equal("reply_to_invalid", await ProblemTitleAsync(await client.PutAsJsonAsync(
+            "/api/platform/company/mail", initial with { ReplyTo = "a@example.invalid, b@example.invalid" })));
+        var saved = await client.PutAsJsonAsync("/api/platform/company/mail", initial with
+        {
+            FooterLine = " Service operations · Bengaluru, India ", SenderName = "Fictional Service Desk",
+        });
+        saved.EnsureSuccessStatusCode();
+        Assert.Equal("Service operations · Bengaluru, India",
+            (await saved.Content.ReadFromJsonAsync<CompanyMailSettingsView>())!.FooterLine);
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PutAsJsonAsync("/api/platform/company/mail",
+            initial with { FooterLine = "Stale" })).StatusCode);
+
+        using (var scope = fixture.Services.CreateScope())
+        {
+            var audit = await scope.ServiceProvider.GetRequiredService<PlatformDbContext>().SecurityEvents
+                .Where(row => row.TenantId == tenant && row.Kind == SecurityEventKind.SettingsChanged).ToListAsync();
+            Assert.Equal($"{CompanyMailIdentity.FooterLineKey},{TenantMailSettings.SenderNameKey}",
+                Assert.Single(audit).Reason);
+        }
+
+        // A self-service reset is written before any tenant is selected; the line still comes from the user's company.
+        using var anonymous = fixture.Client();
+        await RequestAsync(anonymous, member.Email);
+        await WaitForMailAsync(member.Email, 1);
+        var mail = fixture.Mail.AttemptsFor(member.Email).Single();
+        Assert.Contains("Fictional company company · Service operations · Bengaluru, India", mail.Mail.TextBody);
+        Assert.Contains("Fictional company company &#183; Service operations &#183; Bengaluru, India<br>Delivered by Yojana",
+            mail.Mail.HtmlBody);
+        // The mail itself belongs to no tenant until one is selected, so it keeps the service's sender name.
+        Assert.Null(mail.SenderName);
     }
 
     [DatabaseFact]

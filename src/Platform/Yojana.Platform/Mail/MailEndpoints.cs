@@ -11,6 +11,7 @@ using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Data.Platform;
+using Yojana.Platform.Security;
 
 namespace Yojana.Platform.Mail;
 
@@ -22,12 +23,19 @@ public static class MailEndpoints
             .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         mail.MapPost("/test", SendTestAsync);
         mail.MapGet("/messages/{id:guid}", MessageAsync);
+
+        var company = endpoints.MapGroup("/api/platform/company")
+            .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+        company.MapGet("/mail", async (CompanyMailIdentity identity, CancellationToken cancellationToken) =>
+            Results.Ok(await identity.GetCurrentAsync(cancellationToken)));
+        company.MapPut("/mail", PutCompanyMailAsync);
         return endpoints;
     }
 
     /// <summary>Sends a test message to the signed-in administrator's own address, so the transport can be checked without a real reset.</summary>
     private static async Task<IResult> SendTestAsync(ClaimsPrincipal user, PlatformDbContext db, IMailOutbox outbox,
-        ITenantContext tenant, ITenantSettings settings, MailOptions options, IClock clock, CancellationToken cancellationToken)
+        ITenantContext tenant, ITenantSettings settings, CompanyMailIdentity identity, MailOptions options, IClock clock,
+        CancellationToken cancellationToken)
     {
         var userId = Guid.Parse(user.FindFirstValue(YojanaClaim.UserId)!);
         var account = await db.Users.AsNoTracking().Where(row => row.Id == userId)
@@ -47,10 +55,42 @@ public static class MailEndpoints
             [$"This test message was sent for {tenantName} to check that Yojana can deliver e-mail. It arrived, so password resets, invitations and sign-in notices will too."],
             facts, null,
             ["No action is needed. If this message landed in your junk folder, mark it as safe: account e-mails come from the same address."],
-            $"Sent by Yojana for {tenantName} because a tenant administrator asked for a test."));
+            $"Sent by Yojana for {tenantName} because a tenant administrator asked for a test.",
+            await identity.CompanyLineAsync(tenant.TenantId, tenantName, cancellationToken)));
         var id = await outbox.QueueAsync(new OutgoingMail(MailKind.TransportTest, tenant.TenantId, userId,
             new MailRecipient(account.Email, account.DisplayName), "Yojana test message", html, text), cancellationToken);
         return Results.Accepted($"/api/platform/mail/messages/{id}", new { mailId = id });
+    }
+
+    private static async Task<IResult> PutCompanyMailAsync(CompanyMailSettingsRequest request,
+        CompanyMailIdentity identity, SecurityEventWriter events, PlatformDbContext db, ITenantContext tenant,
+        HttpContext http, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var (view, changed) = await identity.UpdateCurrentAsync(request.FooterLine, request.SenderName,
+                request.ReplyTo, request.Version ?? string.Empty, cancellationToken);
+            if (changed.Count > 0)
+            {
+                var actor = Guid.Parse(http.User.FindFirstValue(YojanaClaim.UserId)!);
+                events.Add(SecurityEventKind.SettingsChanged, null, tenant.TenantId, actor,
+                    new SecurityRequestContext(http.Connection.RemoteIpAddress?.ToString(),
+                        http.Request.Headers.UserAgent.ToString()), string.Join(',', changed));
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            return Results.Ok(view);
+        }
+        catch (CompanyMailSettingsException exception)
+        {
+            return Results.Problem(title: exception.Code, detail: exception.Message,
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+        catch (TenantSettingVersionConflictException)
+        {
+            return Results.Problem(title: "company_settings_conflict",
+                detail: "The company settings changed after they were loaded. Reload and try again.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
     }
 
     private static string TransportDescription(MailOptions options) => options.Transport switch
@@ -74,6 +114,9 @@ public static class MailEndpoints
         return row is null ? Results.NotFound() : Results.Ok(row);
     }
 }
+
+public sealed record CompanyMailSettingsRequest(string? FooterLine, string? SenderName, string? ReplyTo,
+    string? Version);
 
 public sealed record MailMessageView(Guid Id, string Kind, string Recipient, string Subject, string Status,
     string Transport, int Attempts, DateTime QueuedAt, DateTime? LastAttemptAt, DateTime? NextAttemptAt,

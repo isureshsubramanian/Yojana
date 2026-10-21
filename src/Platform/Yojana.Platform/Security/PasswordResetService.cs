@@ -27,6 +27,7 @@ public sealed class PasswordResetService(
     IMailOutbox mail,
     MailOptions mailOptions,
     SignInService signIn,
+    CompanyMailIdentity company,
     IClock clock)
 {
     // Temporary passwords are a short-lived administrative recovery bridge, not a second durable credential.
@@ -62,7 +63,8 @@ public sealed class PasswordResetService(
             : (await Task.WhenAll(memberships.Select(row => settings.ForTenantAsync(row.TenantId,
                 cancellationToken)))).Min();
         var tenantName = memberships.Count == 1 ? memberships[0].Name : "Yojana";
-        await IssueLinkAsync(user, null, tenantName, minutes, request, null, cancellationToken);
+        await IssueLinkAsync(user, null, tenantName, memberships.Count == 1 ? memberships[0].TenantId : null, minutes,
+            request, null, cancellationToken);
     }
 
     public async Task<(PasswordResetCompletion? Completion, PasswordPolicyResult? Policy)> CompleteAsync(
@@ -103,7 +105,8 @@ public sealed class PasswordResetService(
         events.Add(SecurityEventKind.PasswordResetCompleted, user.Id, null, user.Id, request,
             "reset_link_completed");
         await db.SaveChangesAsync(cancellationToken);
-        await QueueChangedMailAsync(user, null, await IdentityTenantNameAsync(user.Id, cancellationToken),
+        var identity = await IdentityCompanyAsync(user.Id, cancellationToken);
+        await QueueChangedMailAsync(user, null, identity.Name, identity.TenantId,
             "With a reset link sent to this address", request, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return (new PasswordResetCompletion(user, await signIn.TenantsForAsync(user.Id, cancellationToken)), null);
@@ -132,8 +135,11 @@ public sealed class PasswordResetService(
         await throttles.ResetAccountAsync(user.Email, cancellationToken);
         events.Add(SecurityEventKind.PasswordChanged, user.Id, tenantId, user.Id, request, "changed_by_user");
         await db.SaveChangesAsync(cancellationToken);
-        await QueueChangedMailAsync(user, tenantId, tenantName ?? await IdentityTenantNameAsync(user.Id,
-            cancellationToken), "Changed in Yojana", request, cancellationToken);
+        var identity = tenantId is { } current && tenantName is not null
+            ? (TenantId: (TenantId?)current, Name: tenantName)
+            : await IdentityCompanyAsync(user.Id, cancellationToken);
+        await QueueChangedMailAsync(user, tenantId, identity.Name, identity.TenantId, "Changed in Yojana", request,
+            cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return (user, null, false);
     }
@@ -159,7 +165,7 @@ public sealed class PasswordResetService(
             return null;
         if (mode == "link")
         {
-            var id = await IssueLinkAsync(target, tenantId, tenantName,
+            var id = await IssueLinkAsync(target, tenantId, tenantName, tenantId,
                 await settings.ForTenantAsync(tenantId, cancellationToken), request, actorId, cancellationToken);
             return new AdminPasswordResetResult("link", id, null);
         }
@@ -181,13 +187,14 @@ public sealed class PasswordResetService(
         await db.SaveChangesAsync(cancellationToken);
         var actorName = await db.Users.AsNoTracking().Where(row => row.Id == actorId)
             .Select(row => row.DisplayName).SingleAsync(cancellationToken);
-        await QueueChangedMailAsync(target, tenantId, tenantName, $"Set by an administrator, {actorName}",
+        await QueueChangedMailAsync(target, tenantId, tenantName, tenantId, $"Set by an administrator, {actorName}",
             request, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new AdminPasswordResetResult("temporary", null, temporaryPassword);
     }
 
-    private async Task<Guid> IssueLinkAsync(AppUser user, TenantId? tenantId, string tenantName, int minutes,
+    private async Task<Guid> IssueLinkAsync(AppUser user, TenantId? tenantId, string tenantName, TenantId? companyId,
+        int minutes,
         SecurityRequestContext request, Guid? actorId, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable,
@@ -213,7 +220,7 @@ public sealed class PasswordResetService(
             ("Choose a new password", link),
             [$"The link works once and stops working at {FormatUtc(now.AddMinutes(minutes))} ({minutes} minutes).",
                 "If you did not ask, ignore this e-mail. Your password stays as it is and nobody can use this link without access to your mailbox."],
-            Footer(tenantName)));
+            Footer(tenantName), await CompanyLineAsync(companyId, tenantName, cancellationToken)));
         var mailId = await mail.QueueAsync(new OutgoingMail(MailKind.PasswordReset, tenantId, user.Id,
             new MailRecipient(user.Email, user.DisplayName), "Reset your Yojana password", rendered.Html,
             rendered.Text), cancellationToken);
@@ -221,7 +228,8 @@ public sealed class PasswordResetService(
         return mailId;
     }
 
-    private async Task QueueChangedMailAsync(AppUser user, TenantId? tenantId, string tenantName, string how,
+    private async Task QueueChangedMailAsync(AppUser user, TenantId? tenantId, string tenantName, TenantId? companyId,
+        string how,
         SecurityRequestContext request, CancellationToken cancellationToken)
     {
         var rendered = AccountMailLayout.Render(new AccountMailContent(tenantName, "Security notice",
@@ -231,7 +239,7 @@ public sealed class PasswordResetService(
             ("Reset my password", mailOptions.Link("/forgot-password")),
             ["Was this you? Then there is nothing to do.",
                 "If not, reset your password now and tell your administrator. Someone may have access to your mailbox."],
-            Footer(tenantName)));
+            Footer(tenantName), await CompanyLineAsync(companyId, tenantName, cancellationToken)));
         await mail.QueueAsync(new OutgoingMail(MailKind.PasswordChanged, tenantId, user.Id,
             new MailRecipient(user.Email, user.DisplayName), "Your Yojana password was changed", rendered.Html,
             rendered.Text), cancellationToken);
@@ -261,11 +269,17 @@ public sealed class PasswordResetService(
         return rows.Select(row => (row.TenantId, row.Name)).ToList();
     }
 
-    private async Task<string> IdentityTenantNameAsync(Guid userId, CancellationToken cancellationToken)
+    private async Task<(TenantId? TenantId, string Name)> IdentityCompanyAsync(Guid userId,
+        CancellationToken cancellationToken)
     {
         var memberships = await ActiveMembershipsAsync(userId, cancellationToken);
-        return memberships.Count == 1 ? memberships[0].Name : "Yojana";
+        return memberships.Count == 1 ? (memberships[0].TenantId, memberships[0].Name) : (null, "Yojana");
     }
+
+    private async Task<string?> CompanyLineAsync(TenantId? companyId, string companyName,
+        CancellationToken cancellationToken) => companyId is { } id
+        ? await company.CompanyLineAsync(id, companyName, cancellationToken)
+        : null;
 
     private static string NormaliseEmail(string? value) => (value ?? string.Empty).Trim().ToLowerInvariant();
     private static string FormatUtc(DateTime value) => value.ToUniversalTime()

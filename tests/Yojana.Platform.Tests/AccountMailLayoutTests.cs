@@ -45,4 +45,25 @@ public sealed class AccountMailLayoutTests
     [InlineData("(Gridloom) Systems", "GS")]
     public void The_monogram_is_up_to_two_initials_of_the_tenant_name(string name, string expected) =>
         Assert.Equal(expected, AccountMailLayout.Monogram(name));
+
+    [Fact]
+    public void The_company_line_closes_both_parts_and_is_encoded()
+    {
+        var (html, text) = AccountMailLayout.Render(Content() with
+        {
+            CompanyLine = CompanyMailIdentity.Compose("Asterra Compute Works", " Service <operations> · Bengaluru "),
+        });
+
+        Assert.Contains("Asterra Compute Works &#183; Service &lt;operations&gt; &#183; Bengaluru<br>Delivered by Yojana", html);
+        Assert.EndsWith("Asterra Compute Works · Service <operations> · Bengaluru\n", text);
+    }
+
+    [Fact]
+    public void Without_a_company_line_only_the_service_line_closes_the_mail()
+    {
+        var (html, _) = AccountMailLayout.Render(Content());
+
+        Assert.Contains("color:#94a3b8\">Delivered by Yojana", html);
+        Assert.Equal("Asterra Compute Works", CompanyMailIdentity.Compose("Asterra Compute Works", "  "));
+    }
 }

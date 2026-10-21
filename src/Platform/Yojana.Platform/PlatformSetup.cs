@@ -127,6 +127,7 @@ public static class PlatformSetup
         builder.Services.AddScoped<PasswordSecuritySettings>();
         builder.Services.AddSecurityRateLimiting(signInOptions);
         builder.Services.AddScoped<IMailOutbox, MailOutbox>();
+        builder.Services.AddScoped<CompanyMailIdentity>();
         builder.Services.AddScoped<MailLogMaintenance>();
         builder.Services.AddScoped<IPresenceService, PresenceService>();
         // A factory for the same reason as ITenantCurrency above: it keeps PlatformDbContext out of the generated graph of

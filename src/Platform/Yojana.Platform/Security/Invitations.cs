@@ -28,10 +28,13 @@ public sealed class InvitationService(
     MailOptions mailOptions,
     IPasswordPolicy passwordPolicy,
     SecurityEventWriter events,
-    SignInService signIn)
+    SignInService signIn,
+    CompanyMailIdentity company)
 {
     public const string ValidDaysSetting = "security.invitation.valid_days";
-    private const int DefaultValidDays = 7;
+    public const int DefaultValidDays = 7;
+    public const int MinimumValidDays = 1;
+    public const int MaximumValidDays = 30;
 
     public async Task<InvitationCreated> CreateAsync(string? email, string? displayName, IReadOnlyList<string>? roles,
         Guid actorUserId, SecurityRequestContext request, CancellationToken cancellationToken)
@@ -182,7 +185,7 @@ public sealed class InvitationService(
     {
         var value = await settings.GetAsync(ValidDaysSetting, cancellationToken);
         if (value is null) return DefaultValidDays;
-        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var days) || days is < 1 or > 30)
+        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var days) || days is < MinimumValidDays or > MaximumValidDays)
             throw new InvalidOperationException($"Tenant setting {ValidDaysSetting} must be an integer from 1 to 30.");
         return days;
     }
@@ -204,7 +207,8 @@ public sealed class InvitationService(
             ("Set up my account", mailOptions.Link("/accept-invitation", "t=" + token)),
             ["Setting up takes about two minutes: choose a password.",
                 $"The invitation works once and expires on {expiry}. Not expecting it? Ignore this e-mail; no account is created until you accept."],
-            $"Sent by Yojana for {facts.TenantName} at the request of {inviter} (tenant administrator). Replies reach the {facts.TenantName} service desk.");
+            $"Sent by Yojana for {facts.TenantName} at the request of {inviter} (tenant administrator). Replies reach the {facts.TenantName} service desk.",
+            await company.CompanyLineAsync(invitation.TenantId, facts.TenantName, cancellationToken));
         var rendered = AccountMailLayout.Render(content);
         return await mail.QueueAsync(new OutgoingMail(MailKind.Invitation, invitation.TenantId, null,
             new MailRecipient(invitation.Email, invitation.DisplayName),

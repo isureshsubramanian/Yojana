@@ -7,8 +7,9 @@ import { ErrorNote } from "../units/common";
 import { numberingApi, type NumberingMode, type NumberingSeriesSetting } from "./numberingApi";
 
 const sections = [
+  ["Company", "Footer line, sender name and reply-to on every e-mail", "/settings/company"],
   ["Users", "Staff memberships, invitations and tenant roles", "/settings/users"],
-  ["Sign-in policy", "Password reset links and temporary passwords", "/settings/sign-in-policy"],
+  ["Sign-in policy", "Password reset links, temporary passwords and invitations", "/settings/sign-in-policy"],
   ["Time zone", "Document time plus issuing-entity overrides", "/settings/time-zone"],
   ["Import files", "Active storage and long-term archive", "/settings/import-files"],
   ["Currencies", "Working and accepted currencies", "/settings/currencies"],

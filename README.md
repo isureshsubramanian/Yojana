@@ -85,8 +85,10 @@ deployment choose `smtp` (`Smtp:Host`, `Port`, `Security` `starttls` or `tls`; `
 identity or `Credential: client_secret` with `TenantId`, `ClientId` and `YOJANA_MAIL_GRAPH_CLIENT_SECRET`; the app
 needs the `Mail.Send` application permission). `LinkBaseUrl` is the https address people open the product at; every link in a mail is built from it, never from the
 request. `FromAddress` must belong to a domain whose SPF and DKIM records cover
-that transport. A tenant chooses only its sender name and reply-to address (tenant settings `mail.sender_name`,
-`mail.reply_to`). A tenant administrator checks the transport with `POST /api/platform/mail/test`, which sends to their
+that transport. A tenant chooses only its sender name, reply-to address and the footer line shown after its name on
+every e-mail (tenant settings `mail.sender_name`, `mail.reply_to`, `company.mail_footer_line`), under Settings › Company;
+e-mail carries no logo or images. Invitation expiry (`security.invitation.valid_days`, 1 to 30, default 7) is on
+Settings › Sign-in policy. A tenant administrator checks the transport with `POST /api/platform/mail/test`, which sends to their
 own address, then `GET /api/platform/mail/messages/{id}`. Failed attempts retry for about four hours
 (`MaxAttempts`, default 8); the delivery log keeps no message bodies and is purged after `LogRetentionDays` (90).
 
