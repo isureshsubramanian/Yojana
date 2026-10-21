@@ -12,7 +12,7 @@ using Yojana.Integration.Data;
 namespace Yojana.Integration.Migrations
 {
     [DbContext(typeof(IntegrationDbContext))]
-    [Migration("20261021183417_P9T15TemplateDecomposition")]
+    [Migration("20261021191314_P9T15TemplateDecomposition")]
     partial class P9T15TemplateDecomposition
     {
         /// <inheritdoc />
@@ -2667,6 +2667,104 @@ namespace Yojana.Integration.Migrations
                     b.ToTable("migration_batch_table", "migration");
                 });
 
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.MigrationProfileResult", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<string>("ClassCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("class_code");
+
+                    b.Property<long?>("Change")
+                        .HasColumnType("bigint")
+                        .HasColumnName("change");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("outcome");
+
+                    b.Property<long?>("PreviousRowCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("previous_row_count");
+
+                    b.Property<long?>("RowCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("row_count");
+
+                    b.Property<string>("SamplesJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("samples_json");
+
+                    b.HasKey("TenantId", "RunId", "ClassCode")
+                        .HasName("pk_migration_profile_result");
+
+                    b.HasIndex("TenantId", "RunId", "ClassCode")
+                        .HasDatabaseName("ix_migration_profile_result_tenant_id_run_id_class_code");
+
+                    b.ToTable("migration_profile_result", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_profile_result_outcome", "outcome IN ('stop_load','needs_person','fixed_by_rule','loaded_with_note')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.MigrationProfileRun", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("finished_at");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("TenantId", "RunId")
+                        .HasName("pk_migration_profile_run");
+
+                    b.HasIndex("TenantId", "Status", "RunId")
+                        .HasDatabaseName("ix_migration_profile_run_tenant_id_status_run_id");
+
+                    b.HasIndex("TenantId", "BatchId", "StartedAt", "RunId")
+                        .HasDatabaseName("ix_migration_profile_run_tenant_id_batch_id_started_at_run_id");
+
+                    b.ToTable("migration_profile_run", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_profile_run_status", "status IN ('queued','running','completed','blocked','failed')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.MigrationSource", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -4331,6 +4429,9 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "BatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_oitl_tenant_id_batch_id_source_pk");
 
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "DocumentType", "LogEntry")
+                        .HasDatabaseName("ix_stg_src_oitl_tenant_id_batch_id_source_system_document_type_log_entry");
+
                     b.ToTable("stg_src_oitl", "migration");
                 });
 
@@ -4408,6 +4509,9 @@ namespace Yojana.Integration.Migrations
 
                     b.HasIndex("TenantId", "BatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_itl1_tenant_id_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "ItemCode", "SystemNumber", "LogEntry")
+                        .HasDatabaseName("ix_stg_src_itl1_tenant_id_batch_id_source_system_item_code_system_number_log_entry");
 
                     b.ToTable("stg_src_itl1", "migration");
                 });
@@ -4901,6 +5005,26 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_migration_batch_table_tenant_id_batch_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.MigrationProfileResult", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.MigrationProfileRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_profile_result_tenant_id_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.MigrationProfileRun", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.MigrationBatch", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "BatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_profile_run_tenant_id_batch_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.Templates.TemplateMappingBlock", b =>

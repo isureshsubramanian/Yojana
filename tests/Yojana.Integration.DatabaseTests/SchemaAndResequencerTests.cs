@@ -33,6 +33,7 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "reconciliation_location", "backfill_cursor");
         var migrationTables = await db.Database.SqlQueryRaw<string>("SELECT TABLE_NAME AS Value FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'migration'").ToListAsync();
         AssertSuperset(migrationTables, "migration_source", "migration_batch", "migration_batch_table",
+            "migration_profile_run", "migration_profile_result",
             "stg_src_osrn", "stg_src_osrq", "stg_src_osbq", "stg_src_oitl", "stg_src_itl1",
             "stg_src_oins", "stg_src_ains", "stg_src_ins1", "stg_src_octr", "stg_src_ctr1",
             "stg_src_octt", "stg_src_oscl", "stg_src_orrr", "stg_src_marketing_document_headers",
