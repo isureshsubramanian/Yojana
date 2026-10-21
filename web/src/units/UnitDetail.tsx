@@ -3,6 +3,7 @@ import { coverItemsApi, unitTab, type WhatsCoveredPage } from "../entitlements/c
 import { entitlementApi } from "../entitlements/api";
 import { coverApi } from "../entitlements/coverApi";
 import { UnitTabBar } from "./UnitTabBar";
+import { UnitCustomerMail } from "../mail/UnitCustomerMail";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { units, DEFAULT_LEGAL_ENTITY, newCommandId, now, type HistoryRow, type Page, type UnitDetail } from "../api/units";
@@ -239,6 +240,7 @@ export function Component() {
               </div>
               <div className="card-footer"><span>{detail?.buildRecords.length ? `${detail.buildRecords.length} build record${detail.buildRecords.length === 1 ? "" : "s"} · latest hash ${detail.buildRecords[0]?.payloadHash.slice(0, 12)}…` : "As-maintained equals as-built until a release freezes it"}</span><Link to={`/units/completeness?serials=${encodeURIComponent(title)}`}>Completeness query</Link></div>
             </section>
+            <UnitCustomerMail unitId={unitId} />
           </div>
         </div>}
       </main>
