@@ -8,7 +8,7 @@ using Yojana.Platform.Data.Platform;
 namespace Yojana.Platform.Security;
 
 public sealed record SecurityMaintenanceResult(int ThrottleRows, int EventRows, int TokenRows, int InvitationRows,
-    int Batches);
+    int AuthenticatorRows, int RecoveryCodeRows, int Batches);
 
 public sealed class SecurityMaintenance(PlatformDbContext db, IClock clock, SignInOptions options)
 {
@@ -18,6 +18,8 @@ public sealed class SecurityMaintenance(PlatformDbContext db, IClock clock, Sign
         var eventRows = 0;
         var tokenRows = 0;
         var invitationRows = 0;
+        var authenticatorRows = 0;
+        var recoveryCodeRows = 0;
         var batches = 0;
         int deleted;
         do
@@ -26,6 +28,27 @@ public sealed class SecurityMaintenance(PlatformDbContext db, IClock clock, Sign
                 .OrderBy(row => row.ExpiresAt).Take(options.MaintenanceBatchSize)
                 .ExecuteDeleteAsync(cancellationToken);
             throttleRows += deleted;
+            if (deleted > 0) batches++;
+        } while (deleted == options.MaintenanceBatchSize);
+
+        var secondStepCutoff = clock.UtcNow.AddDays(-90);
+        do
+        {
+            deleted = await db.UserAuthenticators.Where(row =>
+                    row.Status == Data.Platform.Entities.UserAuthenticatorStatus.Pending && row.ExpiresAt <= clock.UtcNow ||
+                    row.Status == Data.Platform.Entities.UserAuthenticatorStatus.Replaced && row.ReplacedAt < secondStepCutoff)
+                .OrderBy(row => row.CreatedAt).Take(options.MaintenanceBatchSize)
+                .ExecuteDeleteAsync(cancellationToken);
+            authenticatorRows += deleted;
+            if (deleted > 0) batches++;
+        } while (deleted == options.MaintenanceBatchSize);
+
+        do
+        {
+            deleted = await db.UserRecoveryCodes.Where(row => row.UsedAt < secondStepCutoff)
+                .OrderBy(row => row.UsedAt).Take(options.MaintenanceBatchSize)
+                .ExecuteDeleteAsync(cancellationToken);
+            recoveryCodeRows += deleted;
             if (deleted > 0) batches++;
         } while (deleted == options.MaintenanceBatchSize);
 
@@ -62,7 +85,8 @@ public sealed class SecurityMaintenance(PlatformDbContext db, IClock clock, Sign
             if (deleted > 0) batches++;
         } while (deleted == options.MaintenanceBatchSize);
 
-        return new SecurityMaintenanceResult(throttleRows, eventRows, tokenRows, invitationRows, batches);
+        return new SecurityMaintenanceResult(throttleRows, eventRows, tokenRows, invitationRows,
+            authenticatorRows, recoveryCodeRows, batches);
     }
 }
 

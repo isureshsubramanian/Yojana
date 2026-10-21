@@ -412,6 +412,9 @@ public sealed class SignInSecurityTests(PlatformHostFixture fixture)
             UserId = user.Id, TenantId = tenant, Roles = [YojanaRole.TenantAdministrator],
         });
         using var scope = fixture.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<ITenantContextSetter>().Set(tenant);
+        await scope.ServiceProvider.GetRequiredService<ITenantSettings>().SetAsync(SecondStepPolicy.SettingKey,
+            "{\"tenant_administrator\":\"optional\"}", CancellationToken.None);
         scope.ServiceProvider.GetRequiredService<PlatformDbContext>().Users.Add(user);
         await scope.ServiceProvider.GetRequiredService<PlatformDbContext>().SaveChangesAsync();
         return (tenant, user, password);

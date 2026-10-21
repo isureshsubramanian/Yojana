@@ -414,6 +414,12 @@ public sealed class PasswordResetDatabaseTests(PlatformHostFixture fixture)
         using var scope = fixture.Services.CreateScope();
         scope.ServiceProvider.GetRequiredService<PlatformDbContext>().Users.Add(user);
         await scope.ServiceProvider.GetRequiredService<PlatformDbContext>().SaveChangesAsync();
+        // These pre-existing password-reset tests exercise administrator sessions, not second-step enrolment.
+        // Give their fixture tenants the former password-only behaviour explicitly now that OD-40 defaults admins.
+        if (roles?.Contains(YojanaRole.TenantAdministrator) == true)
+            foreach (var tenant in tenants)
+                await SetAsync(tenant, SecondStepPolicy.SettingKey,
+                    "{\"tenant_administrator\":\"optional\"}");
         return user;
     }
 

@@ -215,3 +215,39 @@ public sealed class UserInvitation
     public Guid? RevokedByUserId { get; set; }
     public Tenant? Tenant { get; set; }
 }
+
+/// <summary>
+/// A global user's authenticator enrolment. This deliberately has no tenant id: sign-in and enrolment happen before
+/// tenant selection and one identity may span tenants. Tenant policy is consulted through active memberships.
+/// </summary>
+public sealed class UserAuthenticator
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public required byte[] SealedSecret { get; set; }
+    public required string Status { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? ConfirmedAt { get; set; }
+    public DateTime? ExpiresAt { get; set; }
+    public long? LastUsedStep { get; set; }
+    public DateTime? ReplacedAt { get; set; }
+}
+
+public static class UserAuthenticatorStatus
+{
+    public const string Pending = "pending";
+    public const string Active = "active";
+    public const string Replaced = "replaced";
+}
+
+/// <summary>
+/// One global, single-use recovery code. Only a salted PBKDF2 digest is stored; the friendly eight-character display
+/// format has 40 bits, so a deliberately slow hash protects it from cheap offline enumeration.
+/// </summary>
+public sealed class UserRecoveryCode
+{
+    public Guid UserId { get; set; }
+    public required byte[] CodeHash { get; set; }
+    public DateTime? UsedAt { get; set; }
+    public Guid BatchId { get; set; }
+}

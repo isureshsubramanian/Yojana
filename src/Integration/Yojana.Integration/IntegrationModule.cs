@@ -17,6 +17,7 @@ using Yojana.Integration.DeadLetters;
 using Yojana.Platform.Scheduling;
 using Yojana.Integration.Data;
 using Yojana.Platform;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Integration.Security.Audit;
 using Yojana.Integration.Security.Credentials;
 using Yojana.Integration.Security.Cryptography;
@@ -229,6 +230,7 @@ public static class IntegrationModule
             var options = LocalKeyEncryptionOptions.From(builder.Configuration, builder.Environment);
             builder.Services.AddSingleton(options);
             builder.Services.TryAddSingleton<IKeyEncryptionKeyProvider, LocalKeyEncryptionKeyProvider>();
+            builder.Services.TryAddSingleton<IUserSecretProtector, UserSecretProtector>();
         }
         else if (StringComparer.OrdinalIgnoreCase.Equals(keyProvider, "AzureKeyVault"))
         {
@@ -241,6 +243,7 @@ public static class IntegrationModule
             builder.Services.TryAddSingleton<IKeyEncryptionKeyProvider>(services =>
                 new AzureKeyVaultKeyEncryptionKeyProvider(options,
                     services.GetRequiredService<IAzureKeyVaultCryptography>()));
+            builder.Services.TryAddSingleton<IUserSecretProtector, UserSecretProtector>();
         }
         else if (!string.IsNullOrWhiteSpace(keyProvider))
             throw new InvalidOperationException(

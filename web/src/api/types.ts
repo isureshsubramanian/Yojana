@@ -10,6 +10,7 @@ export interface Session {
   roles: string[];
   tenants: TenantChoice[];
   passwordChangeRequired: boolean;
+  recoveryCodesLow?: boolean;
 }
 
 export type Badge = "ok" | "warn" | "bad" | "info" | "neutral";

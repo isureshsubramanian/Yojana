@@ -39,12 +39,15 @@ test("new-password screens show the live approved rules and server policy reason
   assert.match(change, /PasswordChangeForm/);
 });
 
-test("mandatory change, account security and sign-in policy stay within their task sections", () => {
+test("mandatory change, account security and sign-in policy include their completed task sections", () => {
   assert.match(change, /temporary password worked/);
   assert.match(account, /id="account-password">Password/);
-  assert.doesNotMatch(account, /Passkey|Second step|Recovery code/);
+  assert.match(account, /Second step/);
+  assert.match(account, /Recovery codes/);
+  assert.doesNotMatch(account, /Passkey/);
   assert.match(policy, /id="password-policy">Passwords/);
   assert.match(policy, /id="temporary-password-policy">Temporary passwords/);
-  assert.doesNotMatch(policy, /Passkeys|Failed attempts|Second step by role/);
+  assert.match(policy, /Second step by role/);
+  assert.doesNotMatch(policy, /Passkeys|Failed attempts/);
   assert.match(policy, /min=\{10\} max=\{1440\}/);
 });

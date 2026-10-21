@@ -29,7 +29,8 @@ public sealed class InvitationService(
     IPasswordPolicy passwordPolicy,
     SecurityEventWriter events,
     SignInService signIn,
-    CompanyMailIdentity company)
+    CompanyMailIdentity company,
+    SecondStepPolicy secondStepPolicy)
 {
     public const string ValidDaysSetting = "security.invitation.valid_days";
     public const int DefaultValidDays = 7;
@@ -198,14 +199,21 @@ public sealed class InvitationService(
         var inviter = await db.Users.AsNoTracking().Where(u => u.Id == actorUserId).Select(u => u.DisplayName)
             .SingleAsync(cancellationToken);
         var expiry = invitation.ExpiresAt.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
+        var modes = (await secondStepPolicy.GetCurrentAsync(cancellationToken)).Roles
+            .ToDictionary(row => row.Role, row => row.Mode, StringComparer.Ordinal);
+        var secondStep = SecondStepMode.Strictest(invitation.Roles.Select(role =>
+            modes.GetValueOrDefault(role, SecondStepPolicy.DefaultFor(role))));
         var content = new AccountMailContent(
             facts.TenantName,
             "Invitation",
             $"You are invited to {facts.TenantName}",
             [$"{inviter} invited you to work in Yojana, where {facts.TenantName} tracks its serial numbers, warranty cover, claims and returns."],
-            [("Your role", string.Join(", ", invitation.Roles.Select(RoleLabel))), ("Sign in with", invitation.Email)],
+            [("Your role", string.Join(", ", invitation.Roles.Select(RoleLabel))), ("Sign in with", invitation.Email),
+                ("Second step", secondStep == SecondStepMode.Required ? "Required for your role" : "Optional")],
             ("Set up my account", mailOptions.Link("/accept-invitation", "t=" + token)),
-            ["Setting up takes about two minutes: choose a password.",
+            [secondStep == SecondStepMode.Required
+                ? "Setting up takes about two minutes: choose a password, then add an authenticator app."
+                : "Setting up takes about two minutes: choose a password.",
                 $"The invitation works once and expires on {expiry}. Not expecting it? Ignore this e-mail; no account is created until you accept."],
             $"Sent by Yojana for {facts.TenantName} at the request of {inviter} (tenant administrator). Replies reach the {facts.TenantName} service desk.",
             await company.CompanyLineAsync(invitation.TenantId, facts.TenantName, cancellationToken));

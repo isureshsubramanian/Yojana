@@ -28,6 +28,7 @@ public sealed class PasswordResetService(
     MailOptions mailOptions,
     SignInService signIn,
     CompanyMailIdentity company,
+    MembershipAdministration administration,
     IClock clock)
 {
     // Temporary passwords are a short-lived administrative recovery bridge, not a second durable credential.
@@ -250,13 +251,8 @@ public sealed class PasswordResetService(
     {
         if (target.PasswordHash is null) return "no_password_sign_in";
         if (!await settings.TemporaryAllowedForCurrentAsync(cancellationToken)) return "tenant_setting_off";
-        var targetTenants = await db.Memberships.AsNoTracking().Where(row => row.UserId == target.Id)
-            .Select(row => row.TenantId).ToListAsync(cancellationToken);
-        var administered = await db.Memberships.AsNoTracking()
-            .Where(row => row.UserId == actorId && row.DeactivatedAt == null &&
-                          row.Roles.Contains(YojanaRole.TenantAdministrator))
-            .Select(row => row.TenantId).ToListAsync(cancellationToken);
-        return targetTenants.All(administered.Contains) ? null : "other_memberships";
+        return await administration.AdministersEveryMembershipAsync(actorId, target.Id, cancellationToken)
+            ? null : "other_memberships";
     }
 
     private async Task<List<(TenantId TenantId, string Name)>> ActiveMembershipsAsync(Guid userId,

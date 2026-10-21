@@ -21,12 +21,15 @@ public sealed record TenantUserRow(
     DateTime? DeactivatedAt,
     string? DeactivatedBy,
     DateTime? LockedUntil,
-    string? Version);
+    string? Version,
+    bool SecondStepRequired,
+    int RecoveryCodesLeft);
 
 public sealed record TenantUserPage(IReadOnlyList<TenantUserRow> Items, string? NextCursor);
-public sealed record TenantUserSummary(int Active, int Invited, int Deactivated);
+public sealed record TenantUserSummary(int Active, int Invited, int Deactivated, int SecondStepOn,
+    int RequiredNotSetUp);
 public sealed record TenantUserDetail(TenantUserRow User, IReadOnlyList<string> AlsoMemberOf,
-    int OtherMembershipCount, DateTime? PasswordChangedAt);
+    int OtherMembershipCount, DateTime? PasswordChangedAt, bool SecondStepResetAllowed);
 
 public sealed class UserManagementService(
     PlatformDbContext db,
@@ -34,6 +37,8 @@ public sealed class UserManagementService(
     SignInThrottleService throttles,
     SecurityEventWriter events,
     ISecurityStampService stamps,
+    SecondStepPolicy secondStepPolicy,
+    MembershipAdministration administration,
     Contracts.Time.IClock clock)
 {
     private const string CustomerPortalRole = "customer_portal";
@@ -43,8 +48,8 @@ public sealed class UserManagementService(
     {
         if (take is < 1 or > 100) throw new UserManagementInputException("take_invalid", "Take must be from 1 to 100.");
         status = string.IsNullOrWhiteSpace(status) ? "all" : status.Trim().ToLowerInvariant();
-        if (status is not ("all" or "active" or "invited" or "deactivated"))
-            throw new UserManagementInputException("status_invalid", "Status must be all, active, invited or deactivated.");
+        if (status is not ("all" or "active" or "invited" or "deactivated" or "no_second_step"))
+            throw new UserManagementInputException("status_invalid", "Status must be all, active, invited, no_second_step or deactivated.");
         if (!string.IsNullOrWhiteSpace(role) && !YojanaRole.IsKnown(role))
             throw new UserManagementInputException("role_invalid", "The role is unknown.");
 
@@ -53,13 +58,16 @@ public sealed class UserManagementService(
         var search = q?.Trim();
         var candidates = new List<Candidate>(take * 2 + 2);
 
-        if (status is "all" or "active" or "deactivated")
+        if (status is "all" or "active" or "deactivated" or "no_second_step")
         {
             var users = db.Memberships.AsNoTracking()
                 .Where(m => m.TenantId == tenantId && m.CustomerPartyRef == null &&
                             !m.Roles.Contains(CustomerPortalRole));
             if (status == "active") users = users.Where(m => m.DeactivatedAt == null);
             if (status == "deactivated") users = users.Where(m => m.DeactivatedAt != null);
+            if (status == "no_second_step") users = users.Where(m => m.DeactivatedAt == null &&
+                !db.UserAuthenticators.Any(a => a.UserId == m.UserId &&
+                    a.Status == Data.Platform.Entities.UserAuthenticatorStatus.Active));
             if (!string.IsNullOrWhiteSpace(role)) users = users.Where(m => m.Roles.Contains(role));
             if (!string.IsNullOrWhiteSpace(search))
                 users = users.Where(m => m.User!.DisplayName.Contains(search) || m.User.Email.Contains(search));
@@ -74,7 +82,7 @@ public sealed class UserManagementService(
                 }).ToListAsync(cancellationToken);
             candidates.AddRange(rows.Select(row => new Candidate(row.UserId, null, row.DisplayName, row.Email,
                 row.Roles, row.PasswordHash is null ? [] : ["password"], row.DeactivatedAt,
-                row.DeactivatedByUserId, null, row.Version)));
+                row.DeactivatedByUserId, null, row.Version, false, 0)));
         }
 
         if (status is "all" or "invited")
@@ -91,7 +99,7 @@ public sealed class UserManagementService(
             var rows = await invitations.OrderBy(i => i.DisplayName).ThenBy(i => i.Id).Take(take + 1)
                 .Select(i => new { i.Id, i.DisplayName, i.Email, i.Roles, i.ExpiresAt }).ToListAsync(cancellationToken);
             candidates.AddRange(rows.Select(row => new Candidate(null, row.Id, row.DisplayName, row.Email,
-                row.Roles, [], null, null, row.ExpiresAt, null)));
+                row.Roles, [], null, null, row.ExpiresAt, null, false, 0)));
         }
 
         // The tie-break must order ids as SQL Server does (SqlGuid), or equal names at a page boundary are skipped or
@@ -102,6 +110,24 @@ public sealed class UserManagementService(
         if (hasMore) ordered.RemoveAt(ordered.Count - 1);
 
         var userIds = ordered.Where(row => row.UserId is not null).Select(row => row.UserId!.Value).ToList();
+        var authenticators = await db.UserAuthenticators.AsNoTracking().Where(row => userIds.Contains(row.UserId) &&
+                row.Status == Data.Platform.Entities.UserAuthenticatorStatus.Active)
+            .Select(row => row.UserId).Distinct().ToListAsync(cancellationToken);
+        var recovery = await db.UserRecoveryCodes.AsNoTracking().Where(row => userIds.Contains(row.UserId) &&
+                row.UsedAt == null).GroupBy(row => row.UserId)
+            .Select(group => new { UserId = group.Key, Count = group.Count() })
+            .ToDictionaryAsync(row => row.UserId, row => row.Count, cancellationToken);
+        var enriched = new List<Candidate>(ordered.Count);
+        foreach (var row in ordered)
+        {
+            if (row.UserId is not { } userId) { enriched.Add(row); continue; }
+            var methods = row.SignInMethods.ToList();
+            if (authenticators.Contains(userId)) methods.Add("app");
+            enriched.Add(row with { SignInMethods = methods,
+                SecondStepRequired = await secondStepPolicy.EffectiveForUserAsync(userId, cancellationToken) == SecondStepMode.Required,
+                RecoveryCodesLeft = recovery.GetValueOrDefault(userId) });
+        }
+        ordered = enriched;
         var lastSignIns = await db.SecurityEvents.AsNoTracking()
             .Where(row => row.Kind == SecurityEventKind.SignInSucceeded && row.UserId != null &&
                           userIds.Contains(row.UserId.Value))
@@ -128,7 +154,18 @@ public sealed class UserManagementService(
         // user_invitation has no RLS; this predicate is the tenant boundary.
         var invited = await db.UserInvitations.AsNoTracking().CountAsync(i => i.TenantId == tenantId &&
             i.AcceptedAt == null && i.RevokedAt == null && i.ExpiresAt > clock.UtcNow, cancellationToken);
-        return new TenantUserSummary(active, invited, deactivated);
+        var activeIds = await staff.Where(row => row.DeactivatedAt == null).Select(row => row.UserId)
+            .ToListAsync(cancellationToken);
+        var enrolled = await db.UserAuthenticators.AsNoTracking().Where(row => activeIds.Contains(row.UserId) &&
+                row.Status == Data.Platform.Entities.UserAuthenticatorStatus.Active)
+            .Select(row => row.UserId).Distinct().CountAsync(cancellationToken);
+        var requiredNotSetUp = 0;
+        foreach (var userId in activeIds)
+            if (!await db.UserAuthenticators.AsNoTracking().AnyAsync(row => row.UserId == userId &&
+                    row.Status == Data.Platform.Entities.UserAuthenticatorStatus.Active, cancellationToken) &&
+                await secondStepPolicy.EffectiveForUserAsync(userId, cancellationToken) == SecondStepMode.Required)
+                requiredNotSetUp++;
+        return new TenantUserSummary(active, invited, deactivated, enrolled, requiredNotSetUp);
     }
 
     public async Task<TenantUserDetail?> DetailAsync(Guid userId, Guid actorUserId,
@@ -146,7 +183,17 @@ public sealed class UserManagementService(
 
         var candidate = new Candidate(membership.UserId, null, membership.DisplayName, membership.Email,
             membership.Roles, membership.PasswordHash is null ? [] : ["password"], membership.DeactivatedAt,
-            membership.DeactivatedByUserId, null, membership.Version);
+            membership.DeactivatedByUserId, null, membership.Version, false, 0);
+        var authenticator = await db.UserAuthenticators.AsNoTracking().AnyAsync(row => row.UserId == userId &&
+            row.Status == Data.Platform.Entities.UserAuthenticatorStatus.Active, cancellationToken);
+        var recoveryCodes = await db.UserRecoveryCodes.AsNoTracking().CountAsync(row => row.UserId == userId &&
+            row.UsedAt == null, cancellationToken);
+        candidate = candidate with
+        {
+            SignInMethods = candidate.SignInMethods.Concat(authenticator ? ["app"] : []).ToList(),
+            SecondStepRequired = await secondStepPolicy.EffectiveForUserAsync(userId, cancellationToken) == SecondStepMode.Required,
+            RecoveryCodesLeft = recoveryCodes,
+        };
         var last = await db.SecurityEvents.AsNoTracking().Where(e => e.UserId == userId &&
                 e.Kind == SecurityEventKind.SignInSucceeded)
             .MaxAsync(e => (DateTime?)e.OccurredAt, cancellationToken);
@@ -172,7 +219,9 @@ public sealed class UserManagementService(
                 new Dictionary<Guid, DateTime> { [userId] = last ?? default },
                 membership.DeactivatedByUserId is { } id && actorName is not null
                     ? new Dictionary<Guid, string> { [id] = actorName } : new Dictionary<Guid, string>(), locks,
-                last is not null), named, hiddenCount, passwordChanged);
+                last is not null), named, hiddenCount, passwordChanged,
+            actorUserId != userId && await administration.AdministersEveryMembershipAsync(actorUserId, userId,
+                cancellationToken));
     }
 
     public async Task<TenantUserRow> ChangeRolesAsync(Guid userId, IReadOnlyList<string>? requestedRoles,
@@ -271,7 +320,8 @@ public sealed class UserManagementService(
         return new TenantUserRow(row.UserId, row.InvitationId, row.DisplayName, row.Email, row.Roles,
             row.SignInMethods, last, status, row.InvitationExpiresAt, row.DeactivatedAt,
             row.DeactivatedByUserId is { } actor ? actorNames.GetValueOrDefault(actor) : null,
-            locked ? until : null, row.Version is null ? null : Convert.ToBase64String(row.Version));
+            locked ? until : null, row.Version is null ? null : Convert.ToBase64String(row.Version),
+            row.SecondStepRequired, row.RecoveryCodesLeft);
     }
 
     private static string RoleChangeReason(IReadOnlyCollection<string> before, IReadOnlyCollection<string> after)
@@ -301,7 +351,8 @@ public sealed class UserManagementService(
 
     private sealed record Candidate(Guid? UserId, Guid? InvitationId, string DisplayName, string Email,
         IReadOnlyList<string> Roles, IReadOnlyList<string> SignInMethods, DateTime? DeactivatedAt,
-        Guid? DeactivatedByUserId, DateTime? InvitationExpiresAt, byte[]? Version)
+        Guid? DeactivatedByUserId, DateTime? InvitationExpiresAt, byte[]? Version,
+        bool SecondStepRequired, int RecoveryCodesLeft)
     {
         public Guid Id => UserId ?? InvitationId!.Value;
     }
