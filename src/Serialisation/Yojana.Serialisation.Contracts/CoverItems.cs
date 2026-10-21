@@ -32,7 +32,10 @@ public sealed record UnitCoverItem(string Key, string CustomerWording, string? C
     bool Covered, IReadOnlyList<CoverItemContribution> Grants, IReadOnlyList<CoverItemContribution> Excludes, string CanBeCovered, IReadOnlyList<string>? CauseNames = null);
 public sealed record WhatsCoveredPage(Guid UnitId, string Serial, string ItemName, string? CustomerName,
     DateOnly AsOf, IReadOnlyList<ItemCover> Covers, IReadOnlyList<UnitCoverItem> Items,
-    int CoveredCount, int ExcludedCount, int Total, int Skip, int Take, string? Notice, bool CustomerEmailEnabled = false, int CoveredTotal = 0, int ExcludedTotal = 0);
+    int CoveredCount, int ExcludedCount, int Total, int Skip, int Take, string? Notice, bool CustomerEmailEnabled = false, int CoveredTotal = 0, int ExcludedTotal = 0,
+    IReadOnlyList<CoverOffer>? Offers = null);
+/// <summary>A policy offered on the unit's item that it does not hold yet and could be bought today, with the end it would have.</summary>
+public sealed record CoverOffer(string PolicyCode, string PolicyName, string FamilyCode, DateOnly? Until);
 public sealed record GuidanceUsage(string MeterType, string Period, decimal Now, decimal? AfterThisClaim);
 public sealed record GuidedCover(ItemCover Cover, IReadOnlyList<GuidanceUsage> Usage, IReadOnlyList<CoverItemContribution> Items,
     DateOnly? WaitingPeriodUntil = null);

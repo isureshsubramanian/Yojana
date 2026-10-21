@@ -73,6 +73,18 @@ public sealed class InMemoryPartyNamePort : IPartyNamePort
             label => label.Code, label => label.Name));
 }
 
+/// <summary>Development and test contacts until the party owner's connector supplies them.</summary>
+public sealed class InMemoryPartyContactPort : IPartyContactPort
+{
+    private readonly ConcurrentDictionary<Guid, IReadOnlyList<PartyContactLabel>> contacts = new();
+
+    public void Register(PartyContactLabel contact) => contacts.AddOrUpdate(contact.PartyRef, [contact],
+        (_, existing) => existing.Where(x => !x.Email.Equals(contact.Email, StringComparison.OrdinalIgnoreCase)).Append(contact).ToList());
+
+    public Task<IReadOnlyList<PartyContactLabel>> ContactsAsync(Guid partyRef, CancellationToken cancellationToken) =>
+        Task.FromResult(contacts.TryGetValue(partyRef, out var found) ? found : (IReadOnlyList<PartyContactLabel>)[]);
+}
+
 /// <summary>Registered location labels shared by default location-port scopes in development and tests.</summary>
 public sealed class InMemoryLocationNameRegistry
 {

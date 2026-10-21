@@ -26,8 +26,8 @@ public static class EmailLayout
     public static string Paragraph(string encodedHtml, int size = 15, string colour = Body) =>
         $"<p style=\"margin:0 0 16px;font:{size}px/1.65 {Font};color:{colour}\">{encodedHtml}</p>";
 
-    public static string SubHeading(string text) =>
-        $"<h2 style=\"margin:22px 0 10px;font:600 17px/1.35 {Font};color:{Navy}\">{Encode(text)}</h2>";
+    public static string SubHeading(string encodedHtml) =>
+        $"<h2 style=\"margin:22px 0 10px;font:600 17px/1.35 {Font};color:{Navy}\">{encodedHtml}</h2>";
 
     /// <summary>The grey details panel: label column in small capitals, value column in body text.</summary>
     public static string FactsPanel(IEnumerable<(string Label, string EncodedValue)> facts)
@@ -38,16 +38,18 @@ public static class EmailLayout
         return html.Append("</table></td></tr></table>").ToString();
     }
 
-    /// <summary>A plain data table: a header row and body rows, each cell already encoded.</summary>
-    public static string Table(IReadOnlyList<string> headers, IEnumerable<IReadOnlyList<string>> encodedRows)
+    /// <summary>A plain data table: encoded header cells and the body rows' markup (see <see cref="TableRow"/>).</summary>
+    public static string Table(IReadOnlyList<string> encodedHeaders, string bodyRowsHtml)
     {
         var html = new StringBuilder($"<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"margin:8px 0 20px;border-collapse:collapse\"><tr>");
-        foreach (var header in headers)
-            html.Append($"<td style=\"padding:8px 10px 8px 0;border-bottom:2px solid {Rule};font:600 11px {Font};color:{Muted};text-transform:uppercase;letter-spacing:0.06em\">{Encode(header)}</td>");
-        html.Append("</tr>");
-        foreach (var row in encodedRows) html.Append(TableRow(row));
-        return html.Append("</table>").ToString();
+        foreach (var header in encodedHeaders)
+            html.Append($"<td style=\"padding:8px 10px 8px 0;border-bottom:2px solid {Rule};font:600 11px {Font};color:{Muted};text-transform:uppercase;letter-spacing:0.06em\">{header}</td>");
+        return html.Append("</tr>").Append(bodyRowsHtml).Append("</table>").ToString();
     }
+
+    /// <summary>One row spanning the table, for the sentence shown when a list is empty.</summary>
+    public static string TableNote(int columns, string encodedHtml) =>
+        $"<tr><td colspan=\"{columns}\" style=\"padding:9px 0;border-bottom:1px solid {Rule};font:14px/1.5 {Font};color:{Body}\">{encodedHtml}</td></tr>";
 
     public static string TableRow(IReadOnlyList<string> encodedCells)
     {
@@ -57,18 +59,21 @@ public static class EmailLayout
         return html.Append("</tr>").ToString();
     }
 
-    public static string Button(string label, string encodedUrl) =>
-        $"<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:26px 0 10px\"><tr><td style=\"border-radius:6px;background:{Navy}\"><a href=\"{encodedUrl}\" style=\"display:inline-block;padding:13px 28px;font:600 14px {Font};color:#ffffff;text-decoration:none;border-radius:6px;letter-spacing:0.02em\">{Encode(label)}</a></td></tr></table>";
+    public static string Button(string encodedLabel, string encodedUrl) =>
+        $"<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:26px 0 10px\"><tr><td style=\"border-radius:6px;background:{Navy}\"><a href=\"{encodedUrl}\" style=\"display:inline-block;padding:13px 28px;font:600 14px {Font};color:#ffffff;text-decoration:none;border-radius:6px;letter-spacing:0.02em\">{encodedLabel}</a></td></tr></table>";
 
     public static string ButtonFallback(string encodedUrl) =>
         Paragraph($"Button not working? Paste this address into your browser:<br><span style=\"color:#1d4ed8;word-break:break-all\">{encodedUrl}</span>", size: 12, colour: Muted);
 
+    public const string AccountClosingLine = "Delivered by Yojana. This is an automated message; please do not forward it.";
+
     /// <summary>
     /// The whole message around a body. <paramref name="preheader"/> is the line an inbox shows next to the subject;
-    /// null leaves it out. <paramref name="companyLine"/> is the company's line from Settings › Company.
+    /// null leaves it out. <paramref name="companyLine"/> is the company's line from Settings › Company;
+    /// <paramref name="closingLine"/> the last line under it (account mail by default).
     /// </summary>
     public static string Document(string tenantName, string category, string heading, string bodyHtml, string footer,
-        string? companyLine, string? preheader = null, string language = "en")
+        string? companyLine, string? preheader = null, string language = "en", string closingLine = AccountClosingLine)
     {
         var company = companyLine is null ? string.Empty : Encode(companyLine) + "<br>";
         var hidden = preheader is null ? string.Empty
@@ -102,7 +107,7 @@ public static class EmailLayout
                   {bodyHtml}
                 </td></tr>
                 <tr><td style="padding:0 40px"><div style="border-top:1px solid {Rule};height:1px;line-height:1px;font-size:0">&nbsp;</div></td></tr>
-                <tr><td style="padding:20px 40px 30px;font:12px/1.65 {Font};color:{Muted}">{Encode(footer)}<div style="margin-top:12px;color:#94a3b8">{company}Delivered by Yojana. This is an automated message; please do not forward it.</div></td></tr>
+                <tr><td style="padding:20px 40px 30px;font:12px/1.65 {Font};color:{Muted}">{Encode(footer)}<div style="margin-top:12px;color:#94a3b8">{company}{Encode(closingLine)}</div></td></tr>
               </table>
             </td></tr>
             </table>
@@ -111,9 +116,10 @@ public static class EmailLayout
             """;
     }
 
-    /// <summary>The plain-text footer every message ends with.</summary>
-    public static string TextFooter(string footer, string? companyLine) =>
-        "-- \n" + footer + "\n" + (companyLine is null ? string.Empty : companyLine + "\n");
+    /// <summary>The plain-text footer every message ends with (account mail leaves the closing line out).</summary>
+    public static string TextFooter(string footer, string? companyLine, string? closingLine = null) =>
+        "-- \n" + footer + "\n" + (companyLine is null ? string.Empty : companyLine + "\n")
+        + (closingLine is null ? string.Empty : closingLine + "\n");
 
     /// <summary>Up to two initials from the company's name ("Asterra Compute Works" → "AC").</summary>
     public static string Monogram(string name)

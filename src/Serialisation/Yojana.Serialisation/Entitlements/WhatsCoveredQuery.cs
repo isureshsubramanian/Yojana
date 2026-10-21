@@ -85,6 +85,23 @@ public sealed class WhatsCoveredQuery(SerialisationDbContext db, ITenantContext 
         });
         var lines = coveredLines.Concat(excludedLines).OrderBy(x => x.CustomerWording).ToList();
 
+        // Whether an offered policy could be bought today and until when: null when it cannot (eligibility), an
+        // unknown end ("—") when the answer needs data the read model does not hold.
+        (bool Known, DateOnly? Until)? Offer(WarrantyPolicyVersion policy)
+        {
+            var scope = JsonSerializer.Deserialize<List<string>>(policy.RegionScope, LedgerJson.Options) ?? [];
+            // The unit read model has no country. WORLD needs no country; scoped offers remain explicitly unknown.
+            if (!scope.Contains("WORLD")) return (false, null);
+            var rule = policy.Eligibility is null ? null : JsonSerializer.Deserialize<EligibilityRule>(policy.Eligibility, LedgerJson.Options);
+            var baseCover = rows.Select(x => x.Entitlement).FirstOrDefault(x => x.CoverageFamily == (rule?.BaseFamily ?? CoverageFamilyCode.Base));
+            var day = baseCover is null ? today : TermArithmetic.LocalDay(asOfInstant, baseCover.StartTimeZone);
+            if (rule is not null && (baseCover?.StartDate is null || baseCover.StartDate > day
+                || ExtendedPlanArithmetic.Ineligible(rule, new(baseCover.EntitlementId, baseCover.Status, baseCover.StartDate, baseCover.EndDate), day) is not null)) return null;
+            var start = policy.StartTrigger == StartTrigger.BaseExpiry ? baseCover?.EndDate?.AddDays(1) : day;
+            if (start is null) return (false, null);
+            return (true, TermArithmetic.EndDate(start.Value, new(policy.DurationValue, policy.DurationUnit, policy.EndOfMonthRule, policy.EndInclusive)));
+        }
+
         string Availability(IReadOnlyList<string> answeredCauses)
         {
             if (offered.Count == 0) return "No · not offered on this item";
@@ -93,28 +110,28 @@ public sealed class WhatsCoveredQuery(SerialisationDbContext db, ITenantContext 
             {
                 var coveredCodes = itemRows.Where(x => x.PolicyVersionId == policy.PolicyVersionId && x.Type == "covered").Select(x => x.Code).ToHashSet();
                 if (!causes.Any(x => x.PolicyVersionId == policy.PolicyVersionId && coveredCodes.Contains(x.ItemCode) && answeredCauses.Contains(x.CauseCode))) continue;
-                var scope = JsonSerializer.Deserialize<List<string>>(policy.RegionScope, LedgerJson.Options) ?? [];
-                // The unit read model has no country. WORLD needs no country; scoped offers remain explicitly unknown.
-                if (!scope.Contains("WORLD")) { results.Add("—"); continue; }
-                var rule = policy.Eligibility is null ? null : JsonSerializer.Deserialize<EligibilityRule>(policy.Eligibility, LedgerJson.Options);
-                var baseCover = rows.Select(x => x.Entitlement).FirstOrDefault(x => x.CoverageFamily == (rule?.BaseFamily ?? CoverageFamilyCode.Base));
-                var day = baseCover is null ? today : TermArithmetic.LocalDay(asOfInstant, baseCover.StartTimeZone);
-                if (rule is not null && (baseCover?.StartDate is null || baseCover.StartDate > day
-                    || ExtendedPlanArithmetic.Ineligible(rule, new(baseCover.EntitlementId, baseCover.Status, baseCover.StartDate, baseCover.EndDate), day) is not null)) continue;
-                var start = policy.StartTrigger == StartTrigger.BaseExpiry ? baseCover?.EndDate?.AddDays(1) : day;
-                if (start is null) { results.Add("—"); continue; }
-                var end = TermArithmetic.EndDate(start.Value, new(policy.DurationValue, policy.DurationUnit, policy.EndOfMonthRule, policy.EndInclusive));
-                results.Add($"Yes · {policy.Name}, until {end:yyyy-MM-dd}");
+                switch (Offer(policy))
+                {
+                    case null: continue;
+                    case { Known: false }: results.Add("—"); break;
+                    case { Until: var end }: results.Add($"Yes · {policy.Name}, until {end:yyyy-MM-dd}"); break;
+                }
             }
             return results.Count == 0 ? "No" : string.Join("; ", results.Distinct());
         }
+        var heldCodes = rows.Select(x => x.Policy.PolicyCode).ToHashSet();
+        var offers = offered.Where(policy => !heldCodes.Contains(policy.PolicyCode))
+            .Select(policy => (Policy: policy, Offer: Offer(policy))).Where(x => x.Offer is { Known: true })
+            .Select(x => new CoverOffer(x.Policy.PolicyCode, x.Policy.Name, x.Policy.CoverageFamily, x.Offer!.Value.Until))
+            .OrderBy(x => x.PolicyName).ToList();
         var serial = await db.Identifiers.AsNoTracking().Where(x => x.TenantId == tenant.TenantId && x.UnitId == unitId && x.ValidTo == null)
             .OrderBy(x => x.Type == IdentifierType.InternalSerial ? 0 : 1).ThenBy(x => x.Type).Select(x => x.RawValue).FirstOrDefaultAsync(ct) ?? "Serial not recorded";
         var itemNames = await items.NamesAsync([unit.ItemId], ct);
         IReadOnlyDictionary<Guid, PartyLabel> partyNames = unit.OwnerPartyRef is { } owner ? await parties.NamesAsync([owner], ct) : new Dictionary<Guid, PartyLabel>();
         return new(unitId, serial, itemNames.TryGetValue(unit.ItemId, out var itemName) ? itemName.Name ?? itemName.Code : "Item unavailable",
             unit.OwnerPartyRef is { } party && partyNames.TryGetValue(party, out var name) ? name.Name ?? name.Code : null,
-            today, covers, lines, lines.Count(x => x.Covered), lines.Count(x => !x.Covered), lines.Count, 0, lines.Count, ApplicabilityNotice);
+            today, covers, lines, lines.Count(x => x.Covered), lines.Count(x => !x.Covered), lines.Count, 0, lines.Count, ApplicabilityNotice,
+            Offers: offers);
     }
 
     public static WhatsCoveredPage Page(WhatsCoveredPage all, string? type, string? search, int skip, int take)

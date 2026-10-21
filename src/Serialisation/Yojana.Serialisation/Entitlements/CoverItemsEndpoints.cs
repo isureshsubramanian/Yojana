@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -18,11 +19,15 @@ public static class CoverItemsEndpoints
     public static void MapCoverItemsEndpoints(this IEndpointRouteBuilder app)
     {
         var units = app.MapGroup("/api/units/{unitId:guid}").RequireAuthorization(YojanaPolicy.TenantMember);
-        units.MapGet("/whats-covered", async (Guid unitId, [AsParameters] WhatsCoveredRequest request, WhatsCoveredQuery query, CancellationToken ct) =>
+        units.MapGet("/whats-covered", async (Guid unitId, [AsParameters] WhatsCoveredRequest request, WhatsCoveredQuery query,
+            HttpContext http, IAuthorizationService authorization, CustomerMail.CoverageMailCompose mail, CancellationToken ct) =>
         {
             if (request.Type is not (null or "" or "covered" or "excluded")) return InvalidType();
-            return await query.ReadAsync(unitId, ct) is { } result
-                ? Results.Ok(request.SectionPages ? WhatsCoveredQuery.Sections(result, request) : WhatsCoveredQuery.Page(result, string.IsNullOrWhiteSpace(request.Type) ? null : request.Type, request.Search, request.Skip ?? 0, request.Take ?? 25)) : Results.NotFound();
+            if (await query.ReadAsync(unitId, ct) is not { } result) return Results.NotFound();
+            // "E-mail to customer…" shows only for people who may send and once a What's covered template is published.
+            var email = (await authorization.AuthorizeAsync(http.User, YojanaPolicy.CustomerMailSender)).Succeeded && await mail.AvailableAsync(ct);
+            result = result with { CustomerEmailEnabled = email };
+            return Results.Ok(request.SectionPages ? WhatsCoveredQuery.Sections(result, request) : WhatsCoveredQuery.Page(result, string.IsNullOrWhiteSpace(request.Type) ? null : request.Type, request.Search, request.Skip ?? 0, request.Take ?? 25));
         });
         units.MapGet("/claim-guidance", async (Guid unitId, [AsParameters] ClaimGuidanceRequest request, WhatsCoveredQuery query, CancellationToken ct) =>
             await query.GuidanceAsync(unitId, request.Cause, request.ClaimDate, request.OccurredDate, ct) is { } result ? Results.Ok(result) : Results.NotFound());

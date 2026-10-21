@@ -23,12 +23,15 @@ public sealed class DevReferenceCatalogueTests
         var familyPort = new InMemoryItemFamilyNamePort();
         var warranties = new InMemoryWarrantyPorts();
         var partyPort = new InMemoryPartyNamePort();
+        var contactPort = new InMemoryPartyContactPort();
         var documents = new InMemoryDocumentNumberRegistry();
         var locations = new InMemoryLocationNameRegistry();
 
-        var counts = DevReferenceCatalogue.Load(new TestEnvironment(Environments.Development), path, itemProfiles, itemPort, familyPort, warranties, partyPort, documents, locations);
+        var counts = DevReferenceCatalogue.Load(new TestEnvironment(Environments.Development), path, itemProfiles, itemPort, familyPort, warranties, partyPort, contactPort, documents, locations);
 
         Assert.Equal(new DevReferenceCatalogueCounts(expected.Items.Count, expected.Parties.Count, expected.Documents.Count, expected.Locations.Count), counts);
+        var torrenfold = Assert.Single(await contactPort.ContactsAsync(Guid.Parse("20000000-0000-0000-0000-000000000010"), CancellationToken.None));
+        Assert.Equal(("Jonas Weber", "j.weber@torrenfold.example", "de"), (torrenfold.Name, torrenfold.Email, torrenfold.Language));
         var itemLabels = await itemPort.NamesAsync(expected.Items.Select(row => row.Id).ToList(), CancellationToken.None);
         var partyLabels = await partyPort.NamesAsync(expected.Parties.Select(row => row.Id).ToList(), CancellationToken.None);
         Assert.All(expected.Items, row => Assert.Equal((row.Code, row.Name), (itemLabels[row.Id].Code, itemLabels[row.Id].Name)));
@@ -65,10 +68,11 @@ public sealed class DevReferenceCatalogueTests
         var familyPort = new InMemoryItemFamilyNamePort();
         var warranties = new InMemoryWarrantyPorts();
         var partyPort = new InMemoryPartyNamePort();
+        var contactPort = new InMemoryPartyContactPort();
         var documents = new InMemoryDocumentNumberRegistry();
         var locations = new InMemoryLocationNameRegistry();
 
-        var counts = DevReferenceCatalogue.Load(new TestEnvironment(environmentName), "file-must-not-be-opened.json", itemProfiles, itemPort, familyPort, warranties, partyPort, documents, locations);
+        var counts = DevReferenceCatalogue.Load(new TestEnvironment(environmentName), "file-must-not-be-opened.json", itemProfiles, itemPort, familyPort, warranties, partyPort, contactPort, documents, locations);
 
         Assert.Equal(new DevReferenceCatalogueCounts(0, 0, 0, 0), counts);
         Assert.Null((await itemPort.NamesAsync([unknown], CancellationToken.None))[unknown].Name);

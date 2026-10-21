@@ -191,6 +191,23 @@ public static class SerialisationModule
         builder.Services.AddScoped<Entitlements.ClaimCauseCatalogue>();
         builder.Services.AddScoped<Entitlements.WhatsCoveredQuery>();
         builder.Services.AddScoped<IUnitCustomerDocument, Entitlements.UnitCustomerDocument>();
+        // Customer e-mail (P9-T20). Factories, coupled to SendCoverageMailHandler: these services reach PlatformDbContext
+        // (company identity and tenant settings), and Wolverine must not see it in that handler's graph, or the handler loses
+        // its SerialisationDbContext transaction and the host refuses to start ("multiple DbContext types detected").
+        builder.Services.AddScoped<CustomerMail.ICustomerMailKind>(sp => new CustomerMail.CoverageSheetMailKind(
+            sp.GetRequiredService<SerialisationDbContext>(), sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>(),
+            sp.GetRequiredService<Entitlements.WhatsCoveredQuery>(), sp.GetRequiredService<IUnitCustomerDocument>(),
+            sp.GetRequiredService<Yojana.Platform.Mail.MailOptions>()));
+        builder.Services.AddScoped(sp => new CustomerMail.CustomerMailKinds(sp.GetServices<CustomerMail.ICustomerMailKind>()));
+        builder.Services.AddSingleton(sp => new CustomerMail.MailTemplateComposer(sp.GetRequiredService<CertificateTemplateEngine>()));
+        builder.Services.AddScoped(sp => new CustomerMail.CustomerMailRendering(sp.GetRequiredService<CustomerMail.MailTemplateComposer>(),
+            sp.GetRequiredService<Yojana.Platform.Mail.CompanyMailIdentity>(), sp.GetRequiredService<TimeZones.TenantTimeZoneSettings>()));
+        builder.Services.AddScoped(sp => new CustomerMail.CoverageMailCompose(sp.GetRequiredService<SerialisationDbContext>(),
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>(), sp.GetRequiredService<CustomerMail.CustomerMailKinds>(),
+            sp.GetRequiredService<CustomerMail.CustomerMailRendering>(), sp.GetRequiredService<IPartyContactPort>(),
+            sp.GetRequiredService<Yojana.Platform.Mail.CompanyMailIdentity>(), sp.GetRequiredService<Yojana.Platform.Mail.MailOptions>()));
+        builder.Services.AddScoped<CustomerMail.MailTemplateService>();
+        builder.Services.AddScoped<CustomerMail.SentMailQueries>();
         builder.Services.AddScoped<Entitlements.PolicyQueries>();
         builder.Services.AddScoped<IPublishedWarrantyPolicyPort, Entitlements.PublishedWarrantyPolicyPort>();
         builder.Services.AddScoped<Entitlements.PolicyResolver>();
@@ -359,6 +376,8 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<IItemNamePort>(sp => sp.GetRequiredService<InMemoryItemNamePort>());
         builder.Services.AddSingleton<InMemoryItemFamilyNamePort>();
         builder.Services.TryAddSingleton<IItemFamilyNamePort>(sp => sp.GetRequiredService<InMemoryItemFamilyNamePort>());
+        builder.Services.AddSingleton<InMemoryPartyContactPort>();
+        builder.Services.TryAddSingleton<IPartyContactPort>(sp => sp.GetRequiredService<InMemoryPartyContactPort>());
         builder.Services.AddSingleton<InMemoryPartyNamePort>();
         builder.Services.TryAddSingleton<IPartyNamePort>(sp => sp.GetRequiredService<InMemoryPartyNamePort>());
         builder.Services.AddSingleton<InMemoryLocationNameRegistry>();
@@ -404,6 +423,7 @@ public static class SerialisationModule
         builder.Services.TryAddScoped<ICertificatePresentationPort, TenantAssetCertificatePresentationPort>();
         builder.Services.TryAddSingleton<ICertificateTemplateLanguageCatalogue, BuiltInCertificateTemplateLanguageCatalogue>();
         builder.Services.AddSingleton<CertificateTemplateEngine>();
+        builder.Services.AddSingleton<IDocumentTemplateEngine>(sp => sp.GetRequiredService<CertificateTemplateEngine>());
         builder.Services.AddSingleton<CertificateTemplateValidator>();
         var certificateRuns = builder.Configuration.GetSection(CertificateRunOptions.SectionName).Get<CertificateRunOptions>()
             ?? new CertificateRunOptions();

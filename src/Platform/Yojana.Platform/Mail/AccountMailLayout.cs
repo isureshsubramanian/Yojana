@@ -32,7 +32,7 @@ public static class AccountMailLayout
         var body = new StringBuilder();
         foreach (var paragraph in content.Before) body.Append(EmailLayout.Paragraph(E(paragraph)));
         if (content.Facts.Count > 0) body.Append(EmailLayout.FactsPanel(content.Facts.Select(fact => (fact.Label, E(fact.Value)))));
-        if (content.Action is { } action) body.Append(EmailLayout.Button(action.Label, E(action.Url)));
+        if (content.Action is { } action) body.Append(EmailLayout.Button(E(action.Label), E(action.Url)));
         foreach (var paragraph in content.After) body.Append(EmailLayout.Paragraph(E(paragraph), size: 14));
         if (content.Action is { } link) body.Append(EmailLayout.ButtonFallback(E(link.Url)));
 

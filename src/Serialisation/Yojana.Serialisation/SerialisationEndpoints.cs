@@ -10,6 +10,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Tenancy;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.CustomerMail;
 using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
@@ -565,6 +566,7 @@ public static class SerialisationEndpoints
         // member: the handler checks the committer's roles against the tenant's approval policy for the reason and days.
         app.MapCoverDeviationEndpoints();
         app.MapCoverItemsEndpoints();
+        app.MapCustomerMailEndpoints();
         var entitlements = app.MapGroup("/api/entitlements").RequireAuthorization(YojanaPolicy.TenantMember);
         var desk = YojanaPolicy.ForRole(YojanaRole.ServiceDesk);
         units.MapGet("/{unitId:guid}/entitlements", async (Guid unitId, DateOnly? on, EntitlementQueries queries, IClock clock, CancellationToken ct) =>
@@ -1802,7 +1804,7 @@ public static class SerialisationEndpoints
         ITabularExporter exporter, IAsyncEnumerable<IReadOnlyList<string?>> rows)
         => DirectExport(format, fileName, http, exporter, ExistingListExports.Headers<T>(), rows);
 
-    private static IResult DirectExport(string? format, string fileName, HttpContext http,
+    internal static IResult DirectExport(string? format, string fileName, HttpContext http,
         ITabularExporter exporter, IReadOnlyList<string> headers, IAsyncEnumerable<IReadOnlyList<string?>> rows)
     {
         var selected = ExportFormat(format);
