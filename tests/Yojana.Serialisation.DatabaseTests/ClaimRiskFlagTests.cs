@@ -172,7 +172,9 @@ public sealed class ClaimRiskFlagTests(SerialisationHostFixture fixture)
                 report.Single(row => row.RuleCode == ClaimRiskRuleCode.ChannelMismatch).Cleared,
                 report.Single(row => row.RuleCode == ClaimRiskRuleCode.ChannelMismatch).ConfirmationRate));
             var confirmed = report.Single(row => row.RuleCode == ClaimRiskRuleCode.RepeatFault);
-            Assert.Equal((1, 1, 1, 1m), (confirmed.Hits, confirmed.Confirmed, confirmed.ConfirmedClaimsDeniedAfterReview, confirmed.ConfirmationRate));
+            Assert.Equal((1, 1, 1, 1, 1m), (confirmed.Hits, confirmed.Confirmed,
+                confirmed.ConfirmedClaimsDeniedAfterReview, confirmed.DistinctClaimsDeniedAfterConfirmedFlag,
+                confirmed.ConfirmationRate));
             var firstPage = await scope.ServiceProvider.GetRequiredService<ClaimRiskQueries>()
                 .ListAsync("decided", null, null, null, null, 1, CancellationToken.None);
             Assert.True(firstPage.HasMore);
@@ -199,6 +201,87 @@ public sealed class ClaimRiskFlagTests(SerialisationHostFixture fixture)
             new DecideClaimRiskFlag(sameReviewerClaim, sameReviewerFlag, ClaimRiskFlagStatus.Cleared,
                 "Independent source records checked", At.AddMinutes(4), "same-reviewer", [YojanaRole.ServiceManager]));
         Assert.Equal(ClaimRiskFlagStatus.Cleared, allowed.Status);
+    }
+
+    [DatabaseFact]
+    public async Task Review_queue_pages_by_claim_once_and_applies_flag_filters()
+    {
+        var scenario = await NewScenarioAsync("risk-queue", 4);
+        var firstClaim = await AddClaimAsync(scenario.Tenant, scenario.Units[0], new DateOnly(2026, 8, 1), Guid.NewGuid());
+        var secondClaim = await AddClaimAsync(scenario.Tenant, scenario.Units[1], new DateOnly(2026, 8, 2), Guid.NewGuid());
+        var decidedClaim = await AddClaimAsync(scenario.Tenant, scenario.Units[2], new DateOnly(2026, 8, 3), Guid.NewGuid());
+        var earlierClaim = await AddClaimAsync(scenario.Tenant, scenario.Units[3], new DateOnly(2026, 7, 1), Guid.NewGuid());
+        await AddFlagAsync(scenario.Tenant, firstClaim, ClaimRiskRuleCode.RepeatFault,
+            new DateTime(2026, 8, 2, 10, 0, 0, DateTimeKind.Utc));
+        await AddFlagAsync(scenario.Tenant, firstClaim, ClaimRiskRuleCode.ChannelMismatch,
+            new DateTime(2026, 8, 3, 10, 0, 0, DateTimeKind.Utc), ClaimRiskFlagStatus.Confirmed,
+            new DateTime(2026, 8, 3, 12, 0, 0, DateTimeKind.Utc));
+        await AddFlagAsync(scenario.Tenant, secondClaim, ClaimRiskRuleCode.ChannelMismatch,
+            new DateTime(2026, 8, 4, 10, 0, 0, DateTimeKind.Utc));
+        await AddFlagAsync(scenario.Tenant, decidedClaim, ClaimRiskRuleCode.RecentCoverPurchase,
+            new DateTime(2026, 8, 5, 10, 0, 0, DateTimeKind.Utc), ClaimRiskFlagStatus.Cleared,
+            new DateTime(2026, 8, 5, 11, 0, 0, DateTimeKind.Utc));
+        await AddFlagAsync(scenario.Tenant, earlierClaim, ClaimRiskRuleCode.RepeatFault,
+            new DateTime(2026, 7, 2, 10, 0, 0, DateTimeKind.Utc));
+
+        using var scope = fixture.ScopeFor(scenario.Tenant);
+        var queries = scope.ServiceProvider.GetRequiredService<ClaimRiskQueries>();
+        var from = new DateOnly(2026, 8, 1);
+        var to = new DateOnly(2026, 8, 31);
+        var firstPage = await queries.ReviewAsync("open", null, from, to, null, 1, CancellationToken.None);
+        var first = Assert.Single(firstPage.Items);
+        Assert.Equal(firstClaim, first.ClaimId);
+        Assert.Equal(2, first.Flags.Count);
+        Assert.True(firstPage.HasMore);
+
+        var secondPage = await queries.ReviewAsync("open", null, from, to, firstPage.NextCursor, 1, CancellationToken.None);
+        Assert.Equal(secondClaim, Assert.Single(secondPage.Items).ClaimId);
+        Assert.False(secondPage.HasMore);
+        Assert.Equal([firstClaim, secondClaim], (await queries.ReviewAsync("all", ClaimRiskRuleCode.ChannelMismatch,
+            from, to, null, 20, CancellationToken.None)).Items.Select(row => row.ClaimId).ToList());
+        Assert.Equal([firstClaim, decidedClaim], (await queries.ReviewAsync("decided", null,
+            from, to, null, 20, CancellationToken.None)).Items.Select(row => row.ClaimId).ToList());
+        Assert.Equal([secondClaim, decidedClaim], (await queries.ReviewAsync("all", null,
+            new DateOnly(2026, 8, 4), to, null, 20, CancellationToken.None)).Items.Select(row => row.ClaimId).ToList());
+    }
+
+    [DatabaseFact]
+    public async Task Review_summary_calculates_each_figure_and_continuous_median()
+    {
+        var scenario = await NewScenarioAsync("risk-summary", 4);
+        var held = await AddClaimAsync(scenario.Tenant, scenario.Units[0], new DateOnly(2026, 8, 1), Guid.NewGuid());
+        var deniedTwoHours = await AddClaimAsync(scenario.Tenant, scenario.Units[1], new DateOnly(2026, 8, 4), Guid.NewGuid());
+        var deniedSixHours = await AddClaimAsync(scenario.Tenant, scenario.Units[2], new DateOnly(2026, 8, 6), Guid.NewGuid());
+        await AddClaimAsync(scenario.Tenant, scenario.Units[3], new DateOnly(2026, 8, 8), Guid.NewGuid());
+        var oldest = new DateTime(2026, 8, 2, 10, 0, 0, DateTimeKind.Utc);
+        await AddFlagAsync(scenario.Tenant, held, ClaimRiskRuleCode.RepeatFault, oldest);
+        await AddFlagAsync(scenario.Tenant, held, ClaimRiskRuleCode.ChannelMismatch, oldest.AddHours(1));
+        var twoHourRaised = new DateTime(2026, 8, 5, 10, 0, 0, DateTimeKind.Utc);
+        var sixHourRaised = new DateTime(2026, 8, 7, 10, 0, 0, DateTimeKind.Utc);
+        await AddFlagAsync(scenario.Tenant, deniedTwoHours, ClaimRiskRuleCode.RepeatFault, twoHourRaised,
+            ClaimRiskFlagStatus.Confirmed, twoHourRaised.AddHours(2));
+        await AddFlagAsync(scenario.Tenant, deniedSixHours, ClaimRiskRuleCode.ChannelMismatch, sixHourRaised,
+            ClaimRiskFlagStatus.Confirmed, sixHourRaised.AddHours(6));
+        using (var update = fixture.ScopeFor(scenario.Tenant))
+        {
+            var db = update.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var claims = await db.Claims.Where(row => row.ClaimId == deniedTwoHours || row.ClaimId == deniedSixHours).ToListAsync();
+            foreach (var claim in claims)
+            {
+                claim.Status = ClaimStatus.Denied;
+                claim.AdjudicatedAt = claim.ClaimId == deniedTwoHours ? twoHourRaised.AddHours(3) : sixHourRaised.AddHours(7);
+            }
+            await db.SaveChangesAsync();
+        }
+
+        using var scope = fixture.ScopeFor(scenario.Tenant);
+        var summary = await scope.ServiceProvider.GetRequiredService<ClaimRiskQueries>()
+            .SummaryAsync(new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), CancellationToken.None);
+        Assert.Equal((1, 2, oldest), (summary.HeldClaims, summary.OpenFlags, summary.OldestOpenFlagRaisedAt));
+        Assert.Equal((4, 3, 0.75m), (summary.ClaimsSubmitted, summary.ClaimsFlagged, summary.ClaimsFlaggedRate));
+        Assert.Equal((4, 2, 0.5m), (summary.FlagsRaised, summary.FlagsConfirmed, summary.ConfirmationRate));
+        Assert.Equal(2, summary.ClaimsDeniedAfterConfirmedFlag);
+        Assert.Equal(4m, summary.MedianHoursToDecision);
     }
 
     [DatabaseFact]
@@ -442,7 +525,8 @@ public sealed class ClaimRiskFlagTests(SerialisationHostFixture fixture)
         await db.SaveChangesAsync();
     }
 
-    private async Task<Guid> AddFlagAsync(TenantId tenant, Guid claimId, string rule)
+    private async Task<Guid> AddFlagAsync(TenantId tenant, Guid claimId, string rule, DateTime? raisedAt = null,
+        string status = ClaimRiskFlagStatus.Open, DateTime? decidedAt = null)
     {
         using var scope = fixture.ScopeFor(tenant);
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
@@ -450,8 +534,11 @@ public sealed class ClaimRiskFlagTests(SerialisationHostFixture fixture)
         db.ClaimRiskFlags.Add(new ClaimRiskFlag
         {
             TenantId = tenant, FlagId = id, ClaimId = claimId, RuleCode = rule,
-            ThresholdSnapshot = "{}", Evidence = "{}", RaisedAt = At,
-            RaisedByEvaluation = ClaimRiskEvaluation.Submission, Status = ClaimRiskFlagStatus.Open,
+            ThresholdSnapshot = "{}", Evidence = "{}", RaisedAt = raisedAt ?? At,
+            RaisedByEvaluation = ClaimRiskEvaluation.Submission, Status = status,
+            DecidedAt = decidedAt,
+            DecidedBy = status == ClaimRiskFlagStatus.Open ? null : "risk-fixture-reviewer",
+            DecisionReason = status == ClaimRiskFlagStatus.Open ? null : "Fixture review decision",
         });
         await db.SaveChangesAsync();
         return id;

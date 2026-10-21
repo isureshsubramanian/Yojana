@@ -100,9 +100,24 @@ export interface ClaimRiskFlagRow {
   decidedAt: string | null; reviewerName: string | null; decisionReason: string | null;
 }
 export interface ClaimRiskFlagPage { items: ClaimRiskFlagRow[]; nextCursor: string | null; hasMore: boolean; take: number }
+export interface ClaimRiskReviewFlag {
+  flagId: string; ruleCode: ClaimRiskRuleCode; status: ClaimRiskFlagStatus; raisedAt: string;
+}
+export interface ClaimRiskReviewRow {
+  claimId: string; claimNumber: string; unitId: string; serial: string | null; itemId: string | null;
+  claimantPartyRef: string; remedy: string; currency: string; requestedAmount: number;
+  flags: ClaimRiskReviewFlag[]; firstRaisedAt: string;
+}
+export interface ClaimRiskReviewPage { items: ClaimRiskReviewRow[]; nextCursor: string | null; hasMore: boolean; take: number }
+export interface ClaimRiskReviewSummary {
+  heldClaims: number; openFlags: number; oldestOpenFlagRaisedAt: string | null;
+  claimsSubmitted: number; claimsFlagged: number; claimsFlaggedRate: number;
+  flagsRaised: number; flagsConfirmed: number; confirmationRate: number;
+  claimsDeniedAfterConfirmedFlag: number; medianHoursToDecision: number | null;
+}
 export interface ClaimRiskFlagReportRow {
   ruleCode: ClaimRiskRuleCode; hits: number; cleared: number; confirmed: number; confirmationRate: number;
-  confirmedClaimsDeniedAfterReview: number;
+  confirmedClaimsDeniedAfterReview: number; distinctClaimsDeniedAfterConfirmedFlag: number;
 }
 export interface ClaimRiskFlagDecisionResult {
   flagId: string; claimId: string; claimNumber: string; ruleCode: ClaimRiskRuleCode; status: ClaimRiskDecision;

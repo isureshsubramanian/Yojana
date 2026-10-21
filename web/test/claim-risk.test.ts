@@ -85,16 +85,21 @@ test("risk chips and the adjudication hold stay text-led and link to the request
   } finally { router.dispose(); }
 });
 
-test("the risk-review screen uses the approved filters, paged grid, report and per-flag decision contract", () => {
+test("the risk-review screen uses the claim queue, four summary KPIs, report and per-flag decision contract", () => {
   const screen = source("claims/ClaimRiskReview.tsx");
   const api = source("claims/api.ts");
+  const types = source("claims/types.ts");
   const routes = source("routes.tsx");
   const claims = source("claims/Claims.tsx");
-  for (const text of ["Risk review", "Held claims", "How the rules are doing", "Open flags", "Decided", "Last 30 days", "Last 90 days"]) assert.ok(screen.includes(text), text);
-  assert.match(screen, /<DataGrid/); assert.match(screen, /nextCursor/); assert.match(screen, /keyset paged/);
+  for (const text of ["Risk review", "Held claims", "How the rules are doing", "Open flags", "Decided", "Last 30 days", "Last 90 days", "Held for review", "Flagged, last", "Concern confirmed", "Typical wait"]) assert.ok(screen.includes(text), text);
+  assert.match(screen, /<DataGrid/); assert.match(screen, /nextCursor/); assert.match(screen, /keyset paged by claim/);
+  assert.match(screen, /claimsApi\.riskReview\(/); assert.match(screen, /claimsApi\.riskReviewSummary\(/);
+  assert.doesNotMatch(screen, /firstMatch|new Map<string, ClaimRiskFlagRow>|Promise\.all\(ids/);
   assert.match(screen, /useReferenceNames/); assert.match(screen, /claimsApi\.detail/); assert.match(screen, /claimsApi\.claimRiskFlags/);
   assert.match(screen, /for \(const flag of open\)/); assert.match(screen, /claimsApi\.decideRiskFlag/); assert.match(screen, /reason\.trim\(\)/);
-  assert.match(api, /\/api\/claims\/risk-flags/); assert.match(api, /risk-flags\/report/); assert.match(api, /risk-rules/);
+  assert.match(screen, /riskCount=\{summary\?\.heldClaims\}/); assert.match(screen, /distinctClaimsDeniedAfterConfirmedFlag/);
+  assert.match(api, /\/api\/claims\/risk-review/); assert.match(api, /risk-review\/summary/); assert.match(api, /risk-flags\/report/); assert.match(api, /risk-rules/);
+  assert.match(types, /interface ClaimRiskReviewPage/); assert.match(types, /interface ClaimRiskReviewSummary/);
   assert.match(routes, /claims\/risk-review/); assert.match(claims, /<ClaimsTabs current="claims"/);
 });
 

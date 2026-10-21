@@ -12,17 +12,17 @@ import { claimsApi, type ClaimRiskFilters } from "./api";
 import { ClaimRiskFlagChip } from "./ClaimRiskUi";
 import { ClaimsTabs } from "./ClaimsTabs";
 import {
-  claimRiskDecisionLabel, claimRiskEvidence, claimRiskRuleLabel, claimRiskThresholdLabel, humanise,
+  claimRiskDecisionLabel, claimRiskEvidence, claimRiskRuleLabel, claimRiskThresholdLabel, humanise, money,
 } from "./format";
 import {
-  CLAIM_RISK_RULE_CODES, type ClaimDetail, type ClaimRiskDecision, type ClaimRiskFlagPage, type ClaimRiskFlagReportRow,
-  type ClaimRiskFlagRow, type ClaimRiskRulesPolicy,
+  CLAIM_RISK_RULE_CODES, type ClaimDetail, type ClaimRiskDecision, type ClaimRiskFlagReportRow,
+  type ClaimRiskFlagRow, type ClaimRiskReviewPage, type ClaimRiskReviewRow, type ClaimRiskReviewSummary,
+  type ClaimRiskRulesPolicy,
 } from "./types";
 import "./claims.css";
 
 const TAKE = 25;
 type Period = "30" | "90";
-type ClaimRow = { claimId: string; claimNumber: string; detail: ClaimDetail; flags: ClaimRiskFlagRow[]; flaggedAt: string };
 type Draft = { decision: ClaimRiskDecision | ""; reason: string };
 
 export function Component() {
@@ -34,9 +34,8 @@ export function Component() {
   const [period, setPeriod] = useState<Period>("90");
   const [pageNumber, setPageNumber] = useState(1);
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
-  const [page, setPage] = useState<ClaimRiskFlagPage | null>(null);
-  const [details, setDetails] = useState<Record<string, ClaimDetail>>({});
-  const [claimFlags, setClaimFlags] = useState<Record<string, ClaimRiskFlagRow[]>>({});
+  const [page, setPage] = useState<ClaimRiskReviewPage | null>(null);
+  const [summary, setSummary] = useState<ClaimRiskReviewSummary | null>(null);
   const [report, setReport] = useState<ClaimRiskFlagReportRow[] | null>(null);
   const [policy, setPolicy] = useState<ClaimRiskRulesPolicy | null>(null);
   const [active, setActive] = useState<string | null>(null);
@@ -47,15 +46,8 @@ export function Component() {
   const loadPage = useCallback(async (target: number, cursor?: string, signal?: AbortSignal) => {
     setLoading(true); setError(null);
     try {
-      const next = await claimsApi.riskFlags({ status, rule, from: range.from, to: range.to, cursor, take: TAKE }, signal);
-      const ids = [...new Set(next.items.map((flag) => flag.claimId))];
-      const loaded = await Promise.all(ids.map(async (claimId) => {
-        const [detail, flags] = await Promise.all([claimsApi.detail(claimId, signal), claimsApi.claimRiskFlags(claimId, signal)]);
-        return { claimId, detail, flags };
-      }));
+      const next = await claimsApi.riskReview({ status, rule, from: range.from, to: range.to, cursor, take: TAKE }, signal);
       setPage(next); setPageNumber(target);
-      setDetails(Object.fromEntries(loaded.map((entry) => [entry.claimId, entry.detail])));
-      setClaimFlags(Object.fromEntries(loaded.map((entry) => [entry.claimId, entry.flags])));
     } catch (reason) {
       if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason);
     } finally { setLoading(false); }
@@ -68,12 +60,23 @@ export function Component() {
     return () => controller.abort();
   }, [loadPage]);
 
+  const loadFigures = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const [nextSummary, nextReport] = await Promise.all([
+        claimsApi.riskReviewSummary(range.from, range.to, signal),
+        claimsApi.riskReport(range.from, range.to, signal),
+      ]);
+      setSummary(nextSummary); setReport(nextReport);
+    } catch (reason) {
+      if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason);
+    }
+  }, [range.from, range.to]);
+
   useEffect(() => {
     const controller = new AbortController();
-    claimsApi.riskReport(range.from, range.to, controller.signal).then(setReport)
-      .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
+    void loadFigures(controller.signal);
     return () => controller.abort();
-  }, [range.from, range.to]);
+  }, [loadFigures]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -82,15 +85,16 @@ export function Component() {
     return () => controller.abort();
   }, []);
 
-  const refresh = useCallback(() => loadPage(pageNumber, cursors[pageNumber - 1]), [cursors, loadPage, pageNumber]);
-  const openClaim = useCallback(async (claimId: string, knownDetail?: ClaimDetail, knownFlags?: ClaimRiskFlagRow[]) => {
+  const refresh = useCallback(async () => {
+    await Promise.all([loadPage(pageNumber, cursors[pageNumber - 1]), loadFigures()]);
+  }, [cursors, loadFigures, loadPage, pageNumber]);
+  const openClaim = useCallback(async (claimId: string, knownNumber?: string) => {
     setActive(claimId);
-    const number = knownDetail?.claimNumber ?? knownFlags?.[0]?.claimNumber ?? "Claim";
+    const number = knownNumber ?? "Claim";
     openDrawer({ eyebrow: "Risk review", title: number, mono: true }, <p className="muted">Loading risk flags…</p>);
     try {
       const [detail, flags] = await Promise.all([
-        knownDetail ? Promise.resolve(knownDetail) : claimsApi.detail(claimId),
-        knownFlags ? Promise.resolve(knownFlags) : claimsApi.claimRiskFlags(claimId),
+        claimsApi.detail(claimId), claimsApi.claimRiskFlags(claimId),
       ]);
       openDrawer({ eyebrow: "Risk review", title: detail.claimNumber, mono: true }, <RiskReviewDrawer detail={detail} initialFlags={flags} onSaved={refresh} />);
     } catch (reason) {
@@ -104,24 +108,14 @@ export function Component() {
     void openClaim(claimParam);
   }, [claimParam, openClaim]);
 
-  const rows = useMemo(() => {
-    const firstMatch = new Map<string, ClaimRiskFlagRow>();
-    for (const flag of page?.items ?? []) if (!firstMatch.has(flag.claimId)) firstMatch.set(flag.claimId, flag);
-    const next: ClaimRow[] = [];
-    for (const [claimId, first] of firstMatch) {
-      const detail = details[claimId];
-      if (!detail) continue;
-      next.push({ claimId, claimNumber: first.claimNumber, detail, flags: claimFlags[claimId] ?? [first], flaggedAt: first.raisedAt });
-    }
-    return next;
-  }, [claimFlags, details, page?.items]);
-  const names = useReferenceNames({ parties: rows.map((row) => row.detail.claimantPartyRef), items: rows.map((row) => row.detail.itemId) });
-  const columns = useMemo<GridColumn<ClaimRow>[]>(() => [
-    { key: "claim", label: "Claim", width: 16, render: (row) => <span className="primary"><span className="t serial">{row.claimNumber}</span><span className="sub">{humanise(row.detail.remedy)} · {humanise(row.detail.status)}</span></span> },
-    { key: "unit", label: "Unit", width: 20, render: (row) => <><UnitLink unitId={row.detail.unitId}>{row.detail.serial ?? "No serial recorded"}</UnitLink><span className="sub">{names.item(row.detail.itemId)}</span></> },
-    { key: "claimant", label: "Claimant", width: 20, render: (row) => names.party(row.detail.claimantPartyRef) },
+  const rows = page?.items ?? [];
+  const names = useReferenceNames({ parties: rows.map((row) => row.claimantPartyRef), items: rows.map((row) => row.itemId) });
+  const columns = useMemo<GridColumn<ClaimRiskReviewRow>[]>(() => [
+    { key: "claim", label: "Claim", width: 16, render: (row) => <span className="primary"><span className="t serial">{row.claimNumber}</span><span className="sub">{humanise(row.remedy)} · {money(row.requestedAmount, row.currency)}</span></span> },
+    { key: "unit", label: "Unit", width: 20, render: (row) => <><UnitLink unitId={row.unitId}>{row.serial ?? "No serial recorded"}</UnitLink><span className="sub">{names.item(row.itemId)}</span></> },
+    { key: "claimant", label: "Claimant", width: 20, render: (row) => names.party(row.claimantPartyRef) },
     { key: "flags", label: "Flags", width: 32, render: (row) => <div className="claim-risk-chips">{row.flags.map((flag) => <ClaimRiskFlagChip flag={flag} key={flag.flagId} />)}</div> },
-    { key: "flagged", label: "Flagged", width: 12, render: (row) => fmtDateTime(row.flaggedAt) },
+    { key: "flagged", label: "Flagged", width: 12, render: (row) => fmtDateTime(row.firstRaisedAt) },
   ], [names]);
 
   const go = (target: number) => {
@@ -132,31 +126,28 @@ export function Component() {
     void loadPage(target, cursor);
   };
   const reportRows = report ?? [];
-  const hits = reportRows.reduce((sum, row) => sum + row.hits, 0);
-  const cleared = reportRows.reduce((sum, row) => sum + row.cleared, 0);
-  const confirmed = reportRows.reduce((sum, row) => sum + row.confirmed, 0);
-  const denied = reportRows.reduce((sum, row) => sum + row.confirmedClaimsDeniedAfterReview, 0);
-  const decided = cleared + confirmed;
 
   return <><main className="content" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Claims", to: "/claims" }, { label: "Risk review" }]} />
     <div className="page-header"><div><div className="eyebrow">Claims · rules only, no scoring model · a flag holds approval, it never denies</div><h1>Risk review</h1><p className="sub">Claims that a rule flagged for a second look before approval. Clear each flag or confirm the concern; the adjudicator still decides the claim.</p></div><div className="actions"><Link className="btn" to="/settings/claim-risk">Rule settings</Link></div></div>
-    <ClaimsTabs current="risk" />
+    <ClaimsTabs current="risk" riskCount={summary?.heldClaims} />
     <ErrorNote error={error} />
     <div className="stack" style={{ marginTop: error ? 16 : 0 }}>
       <KpiStrip label="Risk review figures" kpis={[
-        { label: `Flags · last ${period} days`, value: report ? hits.toLocaleString() : "—", detail: report ? `${reportRows.filter((row) => row.hits > 0).length} of 8 rules triggered` : "Loading report…" },
-        { label: "Concern confirmed", value: report && decided ? new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 0 }).format(confirmed / decided) : "—", detail: report ? `${confirmed.toLocaleString()} of ${decided.toLocaleString()} decided flags · ${denied.toLocaleString()} confirmed flags on claims then denied` : "Loading report…" },
+        { label: "Held for review", value: summary?.heldClaims.toLocaleString() ?? "—", detail: summary ? `${summary.openFlags.toLocaleString()} open flags · ${oldestText(summary.oldestOpenFlagRaisedAt)}` : "Loading summary…" },
+        { label: `Flagged, last ${period} days`, value: summary ? percentage(summary.claimsFlaggedRate) : "—", detail: summary ? `${summary.claimsFlagged.toLocaleString()} of ${summary.claimsSubmitted.toLocaleString()} claims · ${summary.flagsRaised.toLocaleString()} flags` : "Loading summary…" },
+        { label: "Concern confirmed", value: summary ? percentage(summary.confirmationRate) : "—", detail: summary ? `${summary.flagsConfirmed.toLocaleString()} of ${summary.flagsRaised.toLocaleString()} flags · ${summary.claimsDeniedAfterConfirmedFlag.toLocaleString()} claims then denied` : "Loading summary…" },
+        { label: "Typical wait", value: hoursText(summary?.medianHoursToDecision), detail: "from flag to decision" },
       ]} />
-      <section className="card claim-risk-queue" aria-labelledby="risk-queue"><div className="card-header"><h2 id="risk-queue">{status === "open" ? "Held claims" : status === "decided" ? "Decided flags" : "Risk-flagged claims"} <span className="meta">oldest matching flag first</span></h2></div>
+      <section className="card claim-risk-queue" aria-labelledby="risk-queue"><div className="card-header"><h2 id="risk-queue">{status === "open" ? "Held claims" : status === "decided" ? "Decided claims" : "Risk-flagged claims"} <span className="meta">{status === "open" && !rule ? `${summary?.heldClaims.toLocaleString() ?? "—"} · ` : ""}oldest first</span></h2></div>
         <div className="card-body"><div className="toolbar">
-          <select className="chip-select on" aria-label="State" value={status} onChange={(event) => setStatus(event.target.value as ClaimRiskFilters["status"])}><option value="open">State · Open flags</option><option value="decided">State · Decided</option><option value="">State · All</option></select>
+          <select className="chip-select on" aria-label="State" value={status} onChange={(event) => setStatus(event.target.value as ClaimRiskFilters["status"])}><option value="open">State · Open flags</option><option value="decided">State · Decided</option><option value="all">State · All</option></select>
           <select className={`chip-select${rule ? " on" : ""}`} aria-label="Rule" value={rule} onChange={(event) => setRule(event.target.value)}><option value="">Rule · Any rule</option>{CLAIM_RISK_RULE_CODES.map((code) => <option value={code} key={code}>Rule · {claimRiskRuleLabel(code)}</option>)}</select>
           <select className="chip-select on" aria-label="Period" value={period} onChange={(event) => setPeriod(event.target.value as Period)}><option value="30">Period · Last 30 days</option><option value="90">Period · Last 90 days</option></select>
         </div></div>
-        <DataGrid columns={columns} page={{ rows, total: rows.length, page: pageNumber, pageSize: Math.max(1, rows.length), continuation: page?.nextCursor ?? null, totalIsExact: false, hasMore: page?.hasMore ?? false }} rowId={(row) => row.claimId} onPage={go} onRowClick={(row) => void openClaim(row.claimId, row.detail, row.flags)} activeRowId={active} loading={loading} viewportHeight={520} emptyText="No claims have flags matching this view." footer={<><span>{rows.length.toLocaleString()} {rows.length === 1 ? "claim" : "claims"} represented by {(page?.items.length ?? 0).toLocaleString()} matching flag records · keyset paged</span><span className="grow" /><div className="pager"><button type="button" className="btn sm" disabled={pageNumber === 1 || loading} onClick={() => go(pageNumber - 1)}>Previous</button><span className="pg">Page {pageNumber}</span><button type="button" className="btn sm" disabled={!page?.hasMore || loading} onClick={() => go(pageNumber + 1)}>Next</button></div></>} />
+        <DataGrid columns={columns} page={{ rows, total: rows.length, page: pageNumber, pageSize: Math.max(1, rows.length), continuation: page?.nextCursor ?? null, totalIsExact: false, hasMore: page?.hasMore ?? false }} rowId={(row) => row.claimId} onPage={go} onRowClick={(row) => void openClaim(row.claimId, row.claimNumber)} activeRowId={active} loading={loading} viewportHeight={520} emptyText="No claims have flags matching this view." footer={<><span>{rows.length.toLocaleString()} {rows.length === 1 ? "claim" : "claims"} on this page · keyset paged by claim</span><span className="grow" /><div className="pager"><button type="button" className="btn sm" disabled={pageNumber === 1 || loading} onClick={() => go(pageNumber - 1)}>Previous</button><span className="pg">Page {pageNumber}</span><button type="button" className="btn sm" disabled={!page?.hasMore || loading} onClick={() => go(pageNumber + 1)}>Next</button></div></>} />
       </section>
-      <section className="card claim-risk-report" aria-labelledby="risk-report"><div className="card-header"><h2 id="risk-report">How the rules are doing <span className="meta">last {period} days · tune a threshold when a rule is mostly cleared</span></h2><Link className="btn sm" to="/settings/claim-risk">Edit rules</Link></div><div className="grid-viewport"><table className="table"><colgroup><col style={{ width: "25%" }} /><col style={{ width: "35%" }} /><col style={{ width: "8%" }} /><col style={{ width: "8%" }} /><col style={{ width: "8%" }} /><col style={{ width: "9%" }} /><col style={{ width: "7%" }} /></colgroup><thead><tr><th>Rule</th><th>Current threshold</th><th className="num">Flags</th><th className="num">Cleared</th><th className="num">Confirmed</th><th className="num">Confirmed %</th><th className="num">Then denied</th></tr></thead><tbody>{reportRows.map((row) => <tr key={row.ruleCode}><td className="primary">{claimRiskRuleLabel(row.ruleCode)}</td><td>{claimRiskThresholdLabel(row.ruleCode, policy)}</td><td className="num">{row.hits.toLocaleString()}</td><td className="num">{row.cleared.toLocaleString()}</td><td className="num">{row.confirmed.toLocaleString()}</td><td className="num">{new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 0 }).format(row.confirmationRate)}</td><td className="num">{row.confirmedClaimsDeniedAfterReview.toLocaleString()}</td></tr>)}</tbody></table></div></section>
+      <section className="card claim-risk-report" aria-labelledby="risk-report"><div className="card-header"><h2 id="risk-report">How the rules are doing <span className="meta">last {period} days · tune a threshold when a rule is mostly cleared</span></h2><Link className="btn sm" to="/settings/claim-risk">Edit rules</Link></div><div className="grid-viewport"><table className="table"><colgroup><col style={{ width: "25%" }} /><col style={{ width: "35%" }} /><col style={{ width: "8%" }} /><col style={{ width: "8%" }} /><col style={{ width: "8%" }} /><col style={{ width: "9%" }} /><col style={{ width: "7%" }} /></colgroup><thead><tr><th>Rule</th><th>Current threshold</th><th className="num">Flags</th><th className="num">Cleared</th><th className="num">Confirmed</th><th className="num">Confirmed %</th><th className="num">Then denied<span className="sub">claims</span></th></tr></thead><tbody>{reportRows.map((row) => <tr key={row.ruleCode}><td className="primary">{claimRiskRuleLabel(row.ruleCode)}</td><td>{claimRiskThresholdLabel(row.ruleCode, policy)}</td><td className="num">{row.hits.toLocaleString()}</td><td className="num">{row.cleared.toLocaleString()}</td><td className="num">{row.confirmed.toLocaleString()}</td><td className="num">{percentage(row.confirmationRate)}</td><td className="num">{row.distinctClaimsDeniedAfterConfirmedFlag.toLocaleString()}</td></tr>)}</tbody></table></div></section>
     </div>
   </main><Rail label="Risk review"><Section title="Second review"><p className="muted">A rule flag holds approval until it has a final decision. Confirming a concern records the review; it does not deny the claim.</p></Section></Rail></>;
 }
@@ -206,6 +197,21 @@ function RiskReviewDrawer({ detail, initialFlags, onSaved }: { detail: ClaimDeta
     </div>)}
     <div className="section"><p className="muted">Each flag is decided separately. Decisions are kept and cannot be changed.</p>{open.length > 0 ? <button type="button" className="btn primary block" disabled={busy || !ready} aria-busy={busy} onClick={() => void save()}>{busy ? "Saving…" : `Save ${open.length} ${open.length === 1 ? "decision" : "decisions"}`}</button> : <p className="ok-text"><strong>Every flag has a final decision.</strong></p>}</div>
   </>;
+}
+
+function percentage(value: number): string {
+  return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(value);
+}
+
+function hoursText(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)} h`;
+}
+
+function oldestText(value: string | null): string {
+  if (!value) return "no open flags";
+  const days = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000));
+  return days === 0 ? "oldest today" : `oldest ${days} ${days === 1 ? "day" : "days"}`;
 }
 
 function periodRange(period: Period): { from: string; to: string } {

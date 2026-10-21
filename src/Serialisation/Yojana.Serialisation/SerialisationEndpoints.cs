@@ -657,6 +657,18 @@ public static class SerialisationEndpoints
             try { return Results.Ok(await queries.ListAsync(status, rule, from, to, cursor, take ?? 50, ct)); }
             catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
         });
+        claims.MapGet("/risk-review", async (string? status, string? rule, DateOnly? from, DateOnly? to, string? cursor,
+            int? take, ClaimRiskQueries queries, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await queries.ReviewAsync(status, rule, from, to, cursor, take ?? 50, ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        });
+        claims.MapGet("/risk-review/summary", async (DateOnly from, DateOnly to, ClaimRiskQueries queries,
+            CancellationToken ct) =>
+        {
+            try { return Results.Ok(await queries.SummaryAsync(from, to, ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        });
         claims.MapGet("/{claimId:guid}/risk-flags", async (Guid claimId, ClaimRiskQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.ForClaimAsync(claimId, ct)));
         claims.MapPost("/{claimId:guid}/risk-flags/{flagId:guid}/decision", (Guid claimId, Guid flagId,

@@ -1,7 +1,8 @@
 import { api } from "../api/client";
 import type {
   ClaimAdjudicationPreview, ClaimCampaignOption, ClaimChangeResult, ClaimDetail, ClaimPage, ClaimRiskDecision,
-  ClaimRiskFlagDecisionResult, ClaimRiskFlagPage, ClaimRiskFlagReportRow, ClaimRiskFlagRow, ClaimRiskRulesPolicy,
+  ClaimRiskFlagDecisionResult, ClaimRiskFlagPage, ClaimRiskFlagReportRow, ClaimRiskFlagRow, ClaimRiskReviewPage,
+  ClaimRiskReviewSummary, ClaimRiskRulesPolicy,
   ClaimSummary, CoverageFamily, CurrencyInfo, SubmitClaim, SubmitClaimResult, TenantCurrency,
 } from "./types";
 
@@ -10,7 +11,7 @@ export interface ClaimFilters {
 }
 
 export interface ClaimRiskFilters {
-  status: "open" | "decided" | ""; rule: string; from: string; to: string; cursor?: string | undefined; take: number;
+  status: "open" | "decided" | "all"; rule: string; from: string; to: string; cursor?: string | undefined; take: number;
 }
 
 function query(values: Record<string, string | number | null | undefined>): string {
@@ -38,6 +39,8 @@ export const claimsApi = {
   riskRules: (signal?: AbortSignal) => api<ClaimRiskRulesPolicy>("/api/claims/risk-rules", { signal }),
   saveRiskRules: (body: ClaimRiskRulesPolicy) => api<ClaimRiskRulesPolicy>("/api/claims/risk-rules", { method: "PUT", body }),
   riskFlags: (filters: ClaimRiskFilters, signal?: AbortSignal) => api<ClaimRiskFlagPage>(`/api/claims/risk-flags${query({ ...filters })}`, { signal }),
+  riskReview: (filters: ClaimRiskFilters, signal?: AbortSignal) => api<ClaimRiskReviewPage>(`/api/claims/risk-review${query({ ...filters })}`, { signal }),
+  riskReviewSummary: (from: string, to: string, signal?: AbortSignal) => api<ClaimRiskReviewSummary>(`/api/claims/risk-review/summary${query({ from, to })}`, { signal }),
   claimRiskFlags: (claimId: string, signal?: AbortSignal) => api<ClaimRiskFlagRow[]>(`/api/claims/${claimId}/risk-flags`, { signal }),
   decideRiskFlag: (claimId: string, flagId: string, decision: ClaimRiskDecision, reason: string) =>
     api<ClaimRiskFlagDecisionResult>(`/api/claims/${claimId}/risk-flags/${flagId}/decision`, { method: "POST", body: { decision, reason } }),
