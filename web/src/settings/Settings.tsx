@@ -14,6 +14,7 @@ const sections = [
   ["Import files", "Active storage and long-term archive", "/settings/import-files"],
   ["Currencies", "Working and accepted currencies", "/settings/currencies"],
   ["Supplier recovery", "Claim lines and vendor answer timing", "/settings/recovery"],
+  ["Claims risk rules", "Second-review checks, thresholds and reviewer role", "/settings/claim-risk"],
   ["Refurbishment policy", "Identity outcomes and cycle limits", "/settings/refurbishment"],
   ["Workbench choices", "Correction choices and permissions", "/settings/workbench-choices"],
   ["Certificates", "Issue point plus date and time presentation", "/settings/certificates"],

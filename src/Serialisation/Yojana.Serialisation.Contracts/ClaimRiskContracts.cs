@@ -85,6 +85,44 @@ public sealed record ClaimRiskFlagPage(
     bool HasMore,
     int Take);
 
+public sealed record ClaimRiskReviewFlag(
+    Guid FlagId,
+    string RuleCode,
+    string Status,
+    DateTime RaisedAt);
+
+public sealed record ClaimRiskReviewRow(
+    Guid ClaimId,
+    string ClaimNumber,
+    Guid UnitId,
+    string? Serial,
+    Guid? ItemId,
+    Guid ClaimantPartyRef,
+    string Remedy,
+    string Currency,
+    decimal RequestedAmount,
+    IReadOnlyList<ClaimRiskReviewFlag> Flags,
+    DateTime FirstRaisedAt);
+
+public sealed record ClaimRiskReviewPage(
+    IReadOnlyList<ClaimRiskReviewRow> Items,
+    string? NextCursor,
+    bool HasMore,
+    int Take);
+
+public sealed record ClaimRiskReviewSummary(
+    int HeldClaims,
+    int OpenFlags,
+    DateTime? OldestOpenFlagRaisedAt,
+    int ClaimsSubmitted,
+    int ClaimsFlagged,
+    decimal ClaimsFlaggedRate,
+    int FlagsRaised,
+    int FlagsConfirmed,
+    decimal ConfirmationRate,
+    int ClaimsDeniedAfterConfirmedFlag,
+    decimal? MedianHoursToDecision);
+
 public sealed record ClaimRiskFlagDecisionResult(
     Guid FlagId,
     Guid ClaimId,
@@ -94,11 +132,16 @@ public sealed record ClaimRiskFlagDecisionResult(
     DateTime DecidedAt,
     string Reason);
 
+/// <summary>
+/// Per-rule outcomes. <see cref="ConfirmedClaimsDeniedAfterReview"/> retains the original flag-row count;
+/// <see cref="DistinctClaimsDeniedAfterConfirmedFlag"/> is the distinct claim count shown as "Then denied".
+/// </summary>
 public sealed record ClaimRiskFlagReportRow(
     string RuleCode,
     int Hits,
     int Cleared,
     int Confirmed,
     decimal ConfirmationRate,
-    int ConfirmedClaimsDeniedAfterReview);
+    int ConfirmedClaimsDeniedAfterReview,
+    int DistinctClaimsDeniedAfterConfirmedFlag);
 

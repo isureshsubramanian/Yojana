@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
+import { ApiError } from "../api/client";
 import { PresenceAdvisory, PresenceChips, Shortcut, StatusBadge, useDocumentPresence, useModEnter } from "../components";
 import { campaignApi } from "../campaigns/api";
 import { useReferenceNames } from "../corrections/ReferenceFields";
@@ -12,6 +13,7 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDate, fmtDateTime } from "../units/format";
 import { claimsApi } from "./api";
+import { ClaimRiskHoldNotice } from "./ClaimRiskUi";
 import { campaignCoverNote, checkLabel, checkValue, claimTone, denialReasonLabel, humanise, money, stackOutcome } from "./format";
 import type { ClaimAdjudicationPreview, ClaimDetail, ClaimLinePreview, CurrencyInfo } from "./types";
 import "./claims.css";
@@ -31,6 +33,7 @@ export function Component() {
   const [dialog, setDialog] = useState<DialogState>(null);
   const [note, setNote] = useState("");
   const [denialReason, setDenialReason] = useState("");
+  const [heldRules, setHeldRules] = useState<string[]>([]);
   const presence = useDocumentPresence("claim", claimId, dialog !== null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -38,6 +41,7 @@ export function Component() {
     try {
       const [nextDetail, nextPreview, nextCatalogue] = await Promise.all([claimsApi.detail(claimId, signal), claimsApi.preview(claimId, signal), claimsApi.currencyCatalogue(signal)]);
       setDetail(nextDetail); setPreview(nextPreview); setCatalogue(nextCatalogue);
+      setHeldRules(nextPreview.openRiskFlags?.map((flag) => flag.ruleCode) ?? []);
       setDenialReason(nextPreview.manualDenialReasons[0] ?? "");
       setCampaignRunsUntil(null);
       if (nextDetail.campaignId && nextDetail.campaignCoverReason === "campaign_ended") {
@@ -60,11 +64,25 @@ export function Component() {
     setBusy(true); setError(null);
     try { await action(); setDialog(null); setNote(""); await load(); } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
-  const approve = () => preview?.refusal ? Promise.resolve() : act(() => claimsApi.adjudicate(claimId));
+  const approve = async () => {
+    if (!preview || heldRules.length > 0 || preview.refusal) return;
+    setBusy(true); setError(null);
+    try { await claimsApi.adjudicate(claimId); setDialog(null); setNote(""); await load(); }
+    catch (reason) {
+      if (reason instanceof ApiError && reason.rule === "claim_risk_review_pending") {
+        let rules = [...reason.openRules];
+        if (rules.length === 0) {
+          try { rules = (await claimsApi.claimRiskFlags(claimId)).filter((flag) => flag.status === "open").map((flag) => flag.ruleCode); }
+          catch { /* retain the approval refusal below */ }
+        }
+        if (rules.length > 0) setHeldRules(rules); else setError(reason);
+      } else setError(reason);
+    } finally { setBusy(false); }
+  };
   const requestEvidence = () => act(() => claimsApi.requestEvidence(claimId, note.trim(), detail!.version));
   const deny = () => act(() => claimsApi.adjudicate(claimId, denialReason, note.trim()));
   const change = (kind: "settle" | "close") => act(() => kind === "settle" ? claimsApi.settle(claimId) : claimsApi.close(claimId));
-  useModEnter(approve, !detail || !preview || !OPEN.has(detail.status) || !!preview.refusal || busy);
+  useModEnter(approve, !detail || !preview || !OPEN.has(detail.status) || heldRules.length > 0 || !!preview.refusal || busy);
 
   if (loading && !detail) return <main className="content"><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Claims", to: "/claims" }, { label: "Loading…" }]} /><p className="muted">Loading claim…</p></main>;
   if (!detail || !preview) return <main className="content"><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Claims", to: "/claims" }, { label: "Claim" }]} /><ErrorNote error={error ?? new Error("Claim not found.")} /></main>;
@@ -75,13 +93,14 @@ export function Component() {
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Claims", to: "/claims" }, { label: detail.claimNumber }]} />
       <div className="page-header"><div><div className="eyebrow">Claim {detail.claimNumber} · {humanise(decided ? detail.coverageSource : preview.coverageSource)} · {humanise(detail.status)} · submitted {fmtDate(detail.submittedAt)} by {person(detail.submittedBy)}</div><h1>{detail.serial ?? "No serial recorded"} · {fault}</h1><p className="sub">{names.party(detail.claimantPartyRef)} claims, {names.party(detail.settlementPartyRef)} settles · each line is decided against the policy stack on the claim date{decided ? " · recorded decisions are read-only" : " · approving publishes Claim.Adjudicated"}</p>{detail.campaignId && <div className="claims-header-facts"><span><strong>Campaign</strong> {detail.campaignCode} · {detail.campaignName}</span>{(detail.reserveTag ?? preview.reserveTag) && <span><strong>Reserve</strong> {detail.reserveTag ?? preview.reserveTag}</span>}</div>}{detail.campaignCode && detail.campaignCoverReason && <p className="muted claims-campaign-cover-note">{campaignCoverNote(detail.campaignCode, detail.campaignCoverReason, campaignRunsUntil)}</p>}<PresenceChips users={presence} /></div><div className="actions">
         {detail.remedy === "replacement" && detail.lines.find((line) => line.entitlementId) && ["approved", "partially_approved", "settled"].includes(detail.status) && <Link className="btn" to={`/replacements/new?sourceKind=claim&sourceId=${detail.claimId}&sourceEntitlementId=${detail.lines.find((line) => line.entitlementId)!.entitlementId}`}>Create replacement</Link>}
-        {!decided && <><button type="button" className="btn" onClick={() => { setNote(""); setDialog("evidence"); }}>Ask for evidence</button><button type="button" className="btn" onClick={() => { setNote(""); setDialog("deny"); }}>Deny…</button><button type="button" className="btn primary" disabled={busy || !!preview.refusal} title={preview.refusal ? humanise(preview.refusal) : undefined} onClick={() => void approve()}><Icon name="check" />Approve {approvedLines} of {preview.lines.length} lines<Shortcut keys="mod+enter" /></button></>}
+        {!decided && <><button type="button" className="btn" onClick={() => { setNote(""); setDialog("evidence"); }}>Ask for evidence</button><button type="button" className="btn" onClick={() => { setNote(""); setDialog("deny"); }}>Deny…</button><button type="button" className="btn primary" disabled={busy || heldRules.length > 0 || !!preview.refusal} title={heldRules.length > 0 ? "Decide every open risk flag before approval" : preview.refusal ? humanise(preview.refusal) : undefined} onClick={() => void approve()}><Icon name="check" />Approve {approvedLines} of {preview.lines.length} lines<Shortcut keys="mod+enter" /></button></>}
         {["approved", "partially_approved", "denied"].includes(detail.status) && <button type="button" className="btn primary" disabled={busy} onClick={() => void change("settle")}>Settle claim</button>}
         {detail.status === "settled" && <button type="button" className="btn primary" disabled={busy} onClick={() => void change("close")}>Close claim</button>}
       </div></div>
       <PresenceAdvisory users={presence} editing={dialog !== null} documentLabel="claim" />
       <ErrorNote error={error} onReload={() => { setDialog(null); setNote(""); void load(); }} />
-      {preview.refusal && <div className="note bad" style={{ marginBottom: 16 }}><strong>Approval refused · {humanise(preview.refusal)}.</strong>&nbsp;{preview.refusalStep ? `To unblock: ${preview.refusalStep}.` : "Review the claim lines before approving."}</div>}
+      {heldRules.length > 0 && <ClaimRiskHoldNotice claimId={claimId} rules={heldRules} />}
+      {preview.refusal && preview.refusal !== "claim_risk_review_pending" && <div className="note bad" style={{ marginBottom: 16 }}><strong>Approval refused · {humanise(preview.refusal)}.</strong>&nbsp;{preview.refusalStep ? `To unblock: ${preview.refusalStep}.` : "Review the claim lines before approving."}</div>}
       {preview.requiredReviewerRole && !decided && <div className="note warn" style={{ marginBottom: 16 }}><strong>Reviewer role required.</strong>&nbsp;Approval must be made by a user with the {humanise(preview.requiredReviewerRole).toLowerCase()} role because this claim uses low-confidence cover.</div>}
       <div className="cols-3-2">
         <div className="stack">
