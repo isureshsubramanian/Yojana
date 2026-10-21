@@ -41,7 +41,7 @@ public sealed class SourceExtractor(
                 try
                 {
                     await using var command = new SqlCommand(
-                        $"SELECT COUNT_BIG(1) FROM {QualifiedName(source, table.SourceTable)};", connection)
+                        $"SELECT COUNT_BIG(1) FROM ({SelectBody(source, table)}) AS [source_rows];", connection)
                     {
                         CommandTimeout = source.CommandTimeoutSeconds,
                     };
@@ -208,10 +208,25 @@ public sealed class SourceExtractor(
     }
 
     private static string SelectSql(MigrationSource source, SourceTableProtocol table) =>
-        "SELECT " + string.Join(", ", table.Columns.Select(column =>
-            $"[{Escape(column.SourceName)}] AS [{column.TargetName}]")) +
-        $" FROM {QualifiedName(source, table.SourceTable)} ORDER BY " +
-        string.Join(", ", table.Keys.Select(key => $"[{Escape(key.SourceName)}]")) + ";";
+        SelectBody(source, table) + " ORDER BY " +
+        string.Join(", ", table.Keys.Select(key => $"[{key.TargetName}]")) + ";";
+
+    private static string SelectBody(MigrationSource source, SourceTableProtocol table) =>
+        string.Join(" UNION ALL ", table.Reads.Select(read =>
+            "SELECT " + string.Join(", ", table.Columns.Select(column =>
+                Projection(read, column) + $" AS [{column.TargetName}]")) +
+            $" FROM {QualifiedName(source, read.SourceTable)}"));
+
+    private static string Projection(SourceRead read, RawColumn column)
+    {
+        if (read.TextConstants?.TryGetValue(column.PropertyName, out var constant) == true)
+            return "N'" + constant.Replace("'", "''", StringComparison.Ordinal) + "'";
+        if (read.NullProperties?.Contains(column.PropertyName) == true)
+            return $"CAST(NULL AS {SqlDeclaration(column)})";
+        var sourceName = read.SourceColumnOverrides?.GetValueOrDefault(column.PropertyName) ?? column.SourceName
+            ?? throw new InvalidOperationException($"No source projection was declared for {column.PropertyName}.");
+        return $"[{Escape(sourceName)}]";
+    }
 
     internal static string QualifiedName(MigrationSource source, string table)
     {
@@ -254,7 +269,8 @@ public sealed class SourceExtractor(
             .Where(item => item.column.Key).Select(item =>
         {
             var value = values[item.index];
-            return value is null ? throw new InvalidOperationException("A source primary-key value was null.")
+            return value is null ? throw new InvalidOperationException(
+                    $"A source primary-key value was null for {table.SourceTable}.{item.column.PropertyName}.")
                 : Canonical(value);
         }));
         var row = data.NewRow();

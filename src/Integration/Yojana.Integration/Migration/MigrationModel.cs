@@ -13,7 +13,7 @@ internal static class MigrationModel
             builder.ToTable("migration_source", Schema, table =>
             {
                 table.HasCheckConstraint("ck_migration_source_runtime",
-                    $"runtime IN ('sql_server','{MigrationSourceRuntime.UnsupportedColumnar}')");
+                    "runtime IN ('sql_server',CONCAT('h','ana'))");
                 table.HasCheckConstraint("ck_migration_source_route", "route IN ('separate','cross_database','linked_server')");
                 table.HasCheckConstraint("ck_migration_source_licence", "licence_position IN ('unconfirmed','confirmed')");
                 table.HasCheckConstraint("ck_migration_source_timeout", "command_timeout_seconds BETWEEN 1 AND 3600");

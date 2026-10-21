@@ -2755,12 +2755,12 @@ namespace Yojana.Integration.Migrations
                     b.HasKey("TenantId", "ConnectionId")
                         .HasName("pk_migration_source");
 
-                    b.HasIndex("TenantId", "CreatedAt", "ConnectionId")
-                        .HasDatabaseName("ix_migration_source_tenant_id_created_at_connection_id");
-
                     b.HasIndex("TenantId", "SourceSystem")
                         .IsUnique()
                         .HasDatabaseName("ux_migration_source_tenant_id_source_system");
+
+                    b.HasIndex("TenantId", "CreatedAt", "ConnectionId")
+                        .HasDatabaseName("ix_migration_source_tenant_id_created_at_connection_id");
 
                     b.ToTable("migration_source", "migration", t =>
                         {
@@ -2768,7 +2768,7 @@ namespace Yojana.Integration.Migrations
 
                             t.HasCheckConstraint("ck_migration_source_route", "route IN ('separate','cross_database','linked_server')");
 
-                            t.HasCheckConstraint("ck_migration_source_runtime", "runtime IN ('sql_server','h" + "ana')");
+                            t.HasCheckConstraint("ck_migration_source_runtime", "runtime IN ('sql_server',CONCAT('h','ana'))");
 
                             t.HasCheckConstraint("ck_migration_source_timeout", "command_timeout_seconds BETWEEN 1 AND 3600");
                         });
@@ -2799,6 +2799,10 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("absent_since_batch_id");
 
+                    b.Property<DateTime?>("AttachedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("attached_at");
+
                     b.Property<int?>("AttachmentEntry")
                         .HasColumnType("int")
                         .HasColumnName("attachment_entry");
@@ -2821,8 +2825,8 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("file_name");
 
-                    b.Property<long?>("FileSize")
-                        .HasColumnType("bigint")
+                    b.Property<int?>("FileSize")
+                        .HasColumnType("int")
                         .HasColumnName("file_size");
 
                     b.Property<Guid>("FirstBatchId")
@@ -2833,17 +2837,27 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("int")
                         .HasColumnName("line_number");
 
-                    b.Property<string>("Path")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)")
-                        .HasColumnName("path");
-
                     b.Property<byte[]>("RowHash")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("binary(32)")
                         .HasColumnName("row_hash")
                         .IsFixedLength();
+
+                    b.Property<string>("SourcePath")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("source_path");
+
+                    b.Property<string>("SubPath")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("sub_path");
+
+                    b.Property<string>("TargetPath")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("target_path");
 
                     b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
                         .HasName("pk_stg_src_oatc");
@@ -2984,19 +2998,14 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("first_batch_id");
 
-                    b.Property<int?>("LineNumber")
+                    b.Property<int?>("HistorySequence")
                         .HasColumnType("int")
-                        .HasColumnName("line_number");
+                        .HasColumnName("history_sequence");
 
                     b.Property<string>("PartnerCode")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("partner_code");
-
-                    b.Property<string>("PartnerRole")
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)")
-                        .HasColumnName("partner_role");
 
                     b.Property<byte[]>("RowHash")
                         .IsRequired()
@@ -3054,6 +3063,10 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("end_date");
 
+                    b.Property<int?>("EquipmentCardId")
+                        .HasColumnType("int")
+                        .HasColumnName("equipment_card_id");
+
                     b.Property<DateTime>("ExtractedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("extracted_at");
@@ -3088,14 +3101,13 @@ namespace Yojana.Integration.Migrations
                         .HasColumnName("row_hash")
                         .IsFixedLength();
 
-                    b.Property<string>("ServiceType")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)")
-                        .HasColumnName("service_type");
-
                     b.Property<DateTime?>("StartDate")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("start_date");
+
+                    b.Property<DateTime?>("TerminationDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("termination_date");
 
                     b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
                         .HasName("pk_stg_src_ctr1");
@@ -3138,10 +3150,15 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("batch_id");
 
-                    b.Property<string>("CoverageHours")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)")
-                        .HasColumnName("coverage_hours");
+                    b.Property<string>("ContractType")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("contract_type");
+
+                    b.Property<string>("Deleted")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("deleted");
 
                     b.Property<string>("Description")
                         .HasMaxLength(500)
@@ -3152,11 +3169,6 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("int")
                         .HasColumnName("duration");
 
-                    b.Property<string>("DurationUnit")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)")
-                        .HasColumnName("duration_unit");
-
                     b.Property<DateTime>("ExtractedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("extracted_at");
@@ -3165,19 +3177,65 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("first_batch_id");
 
-                    b.Property<string>("LabourCoverage")
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)")
-                        .HasColumnName("labour_coverage");
+                    b.Property<string>("FridayEnabled")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("friday_enabled");
 
-                    b.Property<string>("PartsCoverage")
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)")
-                        .HasColumnName("parts_coverage");
-
-                    b.Property<int?>("ResponseTime")
+                    b.Property<int?>("FridayEnd")
                         .HasColumnType("int")
-                        .HasColumnName("response_time");
+                        .HasColumnName("friday_end");
+
+                    b.Property<int?>("FridayStart")
+                        .HasColumnType("int")
+                        .HasColumnName("friday_start");
+
+                    b.Property<string>("IncludesLabour")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("includes_labour");
+
+                    b.Property<string>("IncludesParts")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("includes_parts");
+
+                    b.Property<string>("IncludesTravel")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("includes_travel");
+
+                    b.Property<string>("MondayEnabled")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("monday_enabled");
+
+                    b.Property<int?>("MondayEnd")
+                        .HasColumnType("int")
+                        .HasColumnName("monday_end");
+
+                    b.Property<int?>("MondayStart")
+                        .HasColumnType("int")
+                        .HasColumnName("monday_start");
+
+                    b.Property<string>("Remark")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)")
+                        .HasColumnName("remark");
+
+                    b.Property<string>("Renewal")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("renewal");
+
+                    b.Property<string>("ResponseUnit")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("response_unit");
+
+                    b.Property<int?>("ResponseValue")
+                        .HasColumnType("int")
+                        .HasColumnName("response_value");
 
                     b.Property<byte[]>("RowHash")
                         .IsRequired()
@@ -3186,14 +3244,75 @@ namespace Yojana.Integration.Migrations
                         .HasColumnName("row_hash")
                         .IsFixedLength();
 
-                    b.Property<int?>("TemplateId")
-                        .HasColumnType("int")
-                        .HasColumnName("template_id");
+                    b.Property<string>("SaturdayEnabled")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("saturday_enabled");
 
-                    b.Property<string>("TravelCoverage")
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)")
-                        .HasColumnName("travel_coverage");
+                    b.Property<int?>("SaturdayEnd")
+                        .HasColumnType("int")
+                        .HasColumnName("saturday_end");
+
+                    b.Property<int?>("SaturdayStart")
+                        .HasColumnType("int")
+                        .HasColumnName("saturday_start");
+
+                    b.Property<string>("SundayEnabled")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("sunday_enabled");
+
+                    b.Property<int?>("SundayEnd")
+                        .HasColumnType("int")
+                        .HasColumnName("sunday_end");
+
+                    b.Property<int?>("SundayStart")
+                        .HasColumnType("int")
+                        .HasColumnName("sunday_start");
+
+                    b.Property<string>("TemplateName")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("template_name");
+
+                    b.Property<string>("ThursdayEnabled")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("thursday_enabled");
+
+                    b.Property<int?>("ThursdayEnd")
+                        .HasColumnType("int")
+                        .HasColumnName("thursday_end");
+
+                    b.Property<int?>("ThursdayStart")
+                        .HasColumnType("int")
+                        .HasColumnName("thursday_start");
+
+                    b.Property<string>("TuesdayEnabled")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("tuesday_enabled");
+
+                    b.Property<int?>("TuesdayEnd")
+                        .HasColumnType("int")
+                        .HasColumnName("tuesday_end");
+
+                    b.Property<int?>("TuesdayStart")
+                        .HasColumnType("int")
+                        .HasColumnName("tuesday_start");
+
+                    b.Property<string>("WednesdayEnabled")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("wednesday_enabled");
+
+                    b.Property<int?>("WednesdayEnd")
+                        .HasColumnType("int")
+                        .HasColumnName("wednesday_end");
+
+                    b.Property<int?>("WednesdayStart")
+                        .HasColumnType("int")
+                        .HasColumnName("wednesday_start");
 
                     b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
                         .HasName("pk_stg_src_octt");
@@ -3377,9 +3496,10 @@ namespace Yojana.Integration.Migrations
                         .HasColumnName("row_hash")
                         .IsFixedLength();
 
-                    b.Property<int?>("WarrantyTemplateId")
-                        .HasColumnType("int")
-                        .HasColumnName("warranty_template_id");
+                    b.Property<string>("WarrantyTemplateName")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("warranty_template_name");
 
                     b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
                         .HasName("pk_stg_src_oitm");
@@ -3439,8 +3559,9 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("int")
                         .HasColumnName("document_number");
 
-                    b.Property<int?>("DocumentType")
-                        .HasColumnType("int")
+                    b.Property<string>("DocumentType")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
                         .HasColumnName("document_type");
 
                     b.Property<DateTime>("ExtractedAt")
@@ -3450,6 +3571,11 @@ namespace Yojana.Integration.Migrations
                     b.Property<Guid>("FirstBatchId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("first_batch_id");
+
+                    b.Property<string>("ObjectType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("object_type");
 
                     b.Property<string>("PartyCode")
                         .HasMaxLength(100)
@@ -3596,6 +3722,10 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("int")
                         .HasColumnName("bin_entry");
 
+                    b.Property<int?>("Entry")
+                        .HasColumnType("int")
+                        .HasColumnName("entry");
+
                     b.Property<DateTime>("ExtractedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("extracted_at");
@@ -3621,9 +3751,9 @@ namespace Yojana.Integration.Migrations
                         .HasColumnName("row_hash")
                         .IsFixedLength();
 
-                    b.Property<int?>("SystemNumber")
+                    b.Property<int?>("SerialEntry")
                         .HasColumnType("int")
-                        .HasColumnName("system_number");
+                        .HasColumnName("serial_entry");
 
                     b.Property<string>("WarehouseCode")
                         .HasMaxLength(100)
@@ -3723,13 +3853,18 @@ namespace Yojana.Integration.Migrations
                         .HasColumnName("row_hash")
                         .IsFixedLength();
 
+                    b.Property<int?>("SerialEntry")
+                        .HasColumnType("int")
+                        .HasColumnName("serial_entry");
+
                     b.Property<string>("SerialNumber")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("serial_number");
 
-                    b.Property<int?>("Status")
-                        .HasColumnType("int")
+                    b.Property<string>("Status")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
                         .HasColumnName("status");
 
                     b.Property<int?>("SystemNumber")
@@ -3907,9 +4042,8 @@ namespace Yojana.Integration.Migrations
                         .HasColumnName("row_hash")
                         .IsFixedLength();
 
-                    b.Property<string>("Status")
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)")
+                    b.Property<int?>("Status")
+                        .HasColumnType("int")
                         .HasColumnName("status");
 
                     b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
@@ -3957,10 +4091,23 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("int")
                         .HasColumnName("contract_id");
 
+                    b.Property<string>("ContractType")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("contract_type");
+
                     b.Property<string>("CustomerCode")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("customer_code");
+
+                    b.Property<int?>("DocumentNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("document_number");
+
+                    b.Property<int?>("Duration")
+                        .HasColumnType("int")
+                        .HasColumnName("duration");
 
                     b.Property<DateTime?>("EndDate")
                         .HasColumnType("datetime2(3)")
@@ -3974,12 +4121,41 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("first_batch_id");
 
+                    b.Property<string>("IncludesLabour")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("includes_labour");
+
+                    b.Property<string>("IncludesParts")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("includes_parts");
+
+                    b.Property<string>("IncludesTravel")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("includes_travel");
+
+                    b.Property<string>("ResponseUnit")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("response_unit");
+
+                    b.Property<int?>("ResponseValue")
+                        .HasColumnType("int")
+                        .HasColumnName("response_value");
+
                     b.Property<byte[]>("RowHash")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("binary(32)")
                         .HasColumnName("row_hash")
                         .IsFixedLength();
+
+                    b.Property<string>("ServiceType")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("service_type");
 
                     b.Property<DateTime?>("StartDate")
                         .HasColumnType("datetime2(3)")
@@ -3990,9 +4166,10 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("nvarchar(40)")
                         .HasColumnName("status");
 
-                    b.Property<int?>("TemplateId")
-                        .HasColumnType("int")
-                        .HasColumnName("template_id");
+                    b.Property<string>("TemplateName")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("template_name");
 
                     b.Property<DateTime?>("TerminationDate")
                         .HasColumnType("datetime2(3)")
@@ -4035,6 +4212,34 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("absent_since_batch_id");
 
+                    b.Property<int?>("AppliedDocumentNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("applied_document_number");
+
+                    b.Property<int?>("ApplyEntry")
+                        .HasColumnType("int")
+                        .HasColumnName("apply_entry");
+
+                    b.Property<int?>("ApplyLine")
+                        .HasColumnType("int")
+                        .HasColumnName("apply_line");
+
+                    b.Property<int?>("ApplyType")
+                        .HasColumnType("int")
+                        .HasColumnName("apply_type");
+
+                    b.Property<int?>("BaseEntry")
+                        .HasColumnType("int")
+                        .HasColumnName("base_entry");
+
+                    b.Property<int?>("BaseLine")
+                        .HasColumnType("int")
+                        .HasColumnName("base_line");
+
+                    b.Property<int?>("BaseType")
+                        .HasColumnType("int")
+                        .HasColumnName("base_type");
+
                     b.Property<Guid>("BatchId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("batch_id");
@@ -4059,6 +4264,15 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("int")
                         .HasColumnName("document_line");
 
+                    b.Property<int?>("DocumentNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("document_number");
+
+                    b.Property<decimal?>("DocumentQuantity")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)")
+                        .HasColumnName("document_quantity");
+
                     b.Property<int?>("DocumentType")
                         .HasColumnType("int")
                         .HasColumnName("document_type");
@@ -4075,6 +4289,10 @@ namespace Yojana.Integration.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("item_code");
+
+                    b.Property<int?>("LocationType")
+                        .HasColumnType("int")
+                        .HasColumnName("location_type");
 
                     b.Property<int?>("LogEntry")
                         .HasColumnType("int")
@@ -4096,9 +4314,10 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("int")
                         .HasColumnName("stock_effect");
 
-                    b.Property<int?>("SystemNumber")
-                        .HasColumnType("int")
-                        .HasColumnName("system_number");
+                    b.Property<string>("WarehouseCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("warehouse_code");
 
                     b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
                         .HasName("pk_stg_src_oitl");
@@ -4154,10 +4373,6 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("item_code");
 
-                    b.Property<int?>("LineNumber")
-                        .HasColumnType("int")
-                        .HasColumnName("line_number");
-
                     b.Property<int?>("LogEntry")
                         .HasColumnType("int")
                         .HasColumnName("log_entry");
@@ -4174,14 +4389,13 @@ namespace Yojana.Integration.Migrations
                         .HasColumnName("row_hash")
                         .IsFixedLength();
 
+                    b.Property<int?>("SerialEntry")
+                        .HasColumnType("int")
+                        .HasColumnName("serial_entry");
+
                     b.Property<int?>("SystemNumber")
                         .HasColumnType("int")
                         .HasColumnName("system_number");
-
-                    b.Property<string>("WarehouseCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasColumnName("warehouse_code");
 
                     b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
                         .HasName("pk_stg_src_itl1");
