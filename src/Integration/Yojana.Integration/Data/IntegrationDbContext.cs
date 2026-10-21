@@ -4,6 +4,7 @@ using Yojana.Integration.Data.Entities;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Data;
 using Yojana.Platform.Tenancy;
+using Yojana.Integration.LegacyMigration;
 
 namespace Yojana.Integration.Data;
 
@@ -56,6 +57,9 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<ReconciliationLocationResult> ReconciliationLocationResults => Set<ReconciliationLocationResult>();
     public DbSet<BackfillCursor> BackfillCursors => Set<BackfillCursor>();
     public DbSet<Cx01SurveyRecord> Cx01SurveyRecords => Set<Cx01SurveyRecord>();
+    public DbSet<MigrationSource> MigrationSources => Set<MigrationSource>();
+    public DbSet<MigrationBatch> MigrationBatches => Set<MigrationBatch>();
+    public DbSet<MigrationBatchTable> MigrationBatchTables => Set<MigrationBatchTable>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -521,6 +525,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
                 x.CreatedAt, x.BackfillCursorId });
         });
         Yojana.Integration.Relays.RelayModel.Configure(modelBuilder);
+        MigrationModel.Configure(modelBuilder);
         base.OnModelCreating(modelBuilder);
     }
 

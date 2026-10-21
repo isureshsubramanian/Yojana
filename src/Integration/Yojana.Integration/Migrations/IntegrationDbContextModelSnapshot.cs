@@ -2536,6 +2536,1665 @@ namespace Yojana.Integration.Migrations
                     b.ToTable("tenant_data_key_rewrap_checkpoint", "integration");
                 });
 
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.MigrationBatch", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<string>("FailureText")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("failure_text");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("finished_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("requested_at");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("requested_by");
+
+                    b.Property<string>("SourceSystem")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("TenantId", "BatchId")
+                        .HasName("pk_migration_batch");
+
+                    b.HasIndex("TenantId", "ConnectionId")
+                        .HasDatabaseName("ix_migration_batch_tenant_id_connection_id");
+
+                    b.HasIndex("TenantId", "SourceSystem")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_batch_tenant_id_source_system")
+                        .HasFilter("[status] = 'running'");
+
+                    b.HasIndex("TenantId", "RequestedAt", "BatchId")
+                        .HasDatabaseName("ix_migration_batch_tenant_id_requested_at_batch_id");
+
+                    b.HasIndex("TenantId", "Status", "RequestedAt", "BatchId")
+                        .HasDatabaseName("ix_migration_batch_tenant_id_status_requested_at_batch_id");
+
+                    b.ToTable("migration_batch", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_batch_kind", "kind = 'full'");
+
+                            t.HasCheckConstraint("ck_migration_batch_status", "status IN ('queued','running','succeeded','failed','refused')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.MigrationBatchTable", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<long>("Absent")
+                        .HasColumnType("bigint")
+                        .HasColumnName("absent");
+
+                    b.Property<long>("DurationMilliseconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("duration_milliseconds");
+
+                    b.Property<long>("Inserted")
+                        .HasColumnType("bigint")
+                        .HasColumnName("inserted");
+
+                    b.Property<long>("RowsRead")
+                        .HasColumnType("bigint")
+                        .HasColumnName("rows_read");
+
+                    b.Property<long>("Unchanged")
+                        .HasColumnType("bigint")
+                        .HasColumnName("unchanged");
+
+                    b.Property<long>("Updated")
+                        .HasColumnType("bigint")
+                        .HasColumnName("updated");
+
+                    b.HasKey("TenantId", "BatchId", "SourceTable")
+                        .HasName("pk_migration_batch_table");
+
+                    b.HasIndex("TenantId", "BatchId", "SourceTable")
+                        .HasDatabaseName("ix_migration_batch_table_tenant_id_batch_id_source_table");
+
+                    b.ToTable("migration_batch_table", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.MigrationSource", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<int>("CommandTimeoutSeconds")
+                        .HasColumnType("int")
+                        .HasColumnName("command_timeout_seconds");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DatabaseName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasColumnName("database_name");
+
+                    b.Property<string>("DisplayLabel")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("display_label");
+
+                    b.Property<DateTime?>("LicenceConfirmedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("licence_confirmed_at");
+
+                    b.Property<string>("LicenceConfirmedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("licence_confirmed_by");
+
+                    b.Property<string>("LicenceContractReference")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("licence_contract_reference");
+
+                    b.Property<string>("LicenceNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("licence_note");
+
+                    b.Property<string>("LicencePosition")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("licence_position");
+
+                    b.Property<string>("LinkedServerName")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasColumnName("linked_server_name");
+
+                    b.Property<string>("Route")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("route");
+
+                    b.Property<string>("Runtime")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("runtime");
+
+                    b.Property<string>("SchemaName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasColumnName("schema_name");
+
+                    b.Property<string>("SourceSystem")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("TenantId", "ConnectionId")
+                        .HasName("pk_migration_source");
+
+                    b.HasIndex("TenantId", "CreatedAt", "ConnectionId")
+                        .HasDatabaseName("ix_migration_source_tenant_id_created_at_connection_id");
+
+                    b.HasIndex("TenantId", "SourceSystem")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_source_tenant_id_source_system");
+
+                    b.ToTable("migration_source", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_source_licence", "licence_position IN ('unconfirmed','confirmed')");
+
+                            t.HasCheckConstraint("ck_migration_source_route", "route IN ('separate','cross_database','linked_server')");
+
+                            t.HasCheckConstraint("ck_migration_source_runtime", "runtime IN ('sql_server','h" + "ana')");
+
+                            t.HasCheckConstraint("ck_migration_source_timeout", "command_timeout_seconds BETWEEN 1 AND 3600");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.AttachmentStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<int?>("AttachmentEntry")
+                        .HasColumnType("int")
+                        .HasColumnName("attachment_entry");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<string>("FileExtension")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("file_extension");
+
+                    b.Property<string>("FileName")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("file_name");
+
+                    b.Property<long?>("FileSize")
+                        .HasColumnType("bigint")
+                        .HasColumnName("file_size");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<int?>("LineNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("line_number");
+
+                    b.Property<string>("Path")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("path");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_oatc");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oatc_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oatc_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_oatc", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.CardHistoryStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<int?>("CardId")
+                        .HasColumnType("int")
+                        .HasColumnName("card_id");
+
+                    b.Property<DateTime?>("ChangedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("changed_at");
+
+                    b.Property<string>("CustomerCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("customer_code");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<int?>("HistorySequence")
+                        .HasColumnType("int")
+                        .HasColumnName("history_sequence");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime?>("WarrantyEnd")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("warranty_end");
+
+                    b.Property<DateTime?>("WarrantyStart")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("warranty_start");
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_ains");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_ains_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_ains_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_ains", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.CardPartnerStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<int?>("CardId")
+                        .HasColumnType("int")
+                        .HasColumnName("card_id");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<int?>("LineNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("line_number");
+
+                    b.Property<string>("PartnerCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("partner_code");
+
+                    b.Property<string>("PartnerRole")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("partner_role");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_ins1");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_ins1_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_ins1_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_ins1", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.ContractLineStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<int?>("ContractId")
+                        .HasColumnType("int")
+                        .HasColumnName("contract_id");
+
+                    b.Property<DateTime?>("EndDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("end_date");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<string>("InternalSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("internal_serial");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_code");
+
+                    b.Property<int?>("LineNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("line_number");
+
+                    b.Property<string>("ManufacturerSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("manufacturer_serial");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("ServiceType")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("service_type");
+
+                    b.Property<DateTime?>("StartDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("start_date");
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_ctr1");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_ctr1_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_ctr1_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_ctr1", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.ContractTemplateStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<string>("CoverageHours")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("coverage_hours");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("description");
+
+                    b.Property<int?>("Duration")
+                        .HasColumnType("int")
+                        .HasColumnName("duration");
+
+                    b.Property<string>("DurationUnit")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("duration_unit");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<string>("LabourCoverage")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("labour_coverage");
+
+                    b.Property<string>("PartsCoverage")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("parts_coverage");
+
+                    b.Property<int?>("ResponseTime")
+                        .HasColumnType("int")
+                        .HasColumnName("response_time");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.Property<int?>("TemplateId")
+                        .HasColumnType("int")
+                        .HasColumnName("template_id");
+
+                    b.Property<string>("TravelCoverage")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("travel_coverage");
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_octt");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_octt_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_octt_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_octt", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.EquipmentCardStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<int?>("CardId")
+                        .HasColumnType("int")
+                        .HasColumnName("card_id");
+
+                    b.Property<string>("CustomerCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("customer_code");
+
+                    b.Property<string>("DirectCustomerCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("direct_customer_code");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<string>("InternalSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("internal_serial");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_code");
+
+                    b.Property<string>("ManufacturerSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("manufacturer_serial");
+
+                    b.Property<string>("PersonalDataStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("personal_data_status");
+
+                    b.Property<int?>("ReplacedByCardId")
+                        .HasColumnType("int")
+                        .HasColumnName("replaced_by_card_id");
+
+                    b.Property<int?>("ReplacesCardId")
+                        .HasColumnType("int")
+                        .HasColumnName("replaces_card_id");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime?>("WarrantyEnd")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("warranty_end");
+
+                    b.Property<DateTime?>("WarrantyStart")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("warranty_start");
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_oins");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oins_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oins_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_oins", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.ItemSerialSettingStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_code");
+
+                    b.Property<string>("ManagementMethod")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("management_method");
+
+                    b.Property<string>("ManagesSerialNumbers")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("manages_serial_numbers");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.Property<int?>("WarrantyTemplateId")
+                        .HasColumnType("int")
+                        .HasColumnName("warranty_template_id");
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_oitm");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oitm_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oitm_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_oitm", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.MarketingDocumentHeaderStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<string>("Cancelled")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("cancelled");
+
+                    b.Property<DateTime?>("DocumentDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("document_date");
+
+                    b.Property<int?>("DocumentEntry")
+                        .HasColumnType("int")
+                        .HasColumnName("document_entry");
+
+                    b.Property<int?>("DocumentNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("document_number");
+
+                    b.Property<int?>("DocumentType")
+                        .HasColumnType("int")
+                        .HasColumnName("document_type");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<string>("PartyCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("party_code");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("SourceDocumentTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_document_table");
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_marketing_document_headers");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_marketing_document_headers_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_marketing_document_headers_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_marketing_document_headers", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.ReturnStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<string>("Cancelled")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("cancelled");
+
+                    b.Property<string>("CustomerCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("customer_code");
+
+                    b.Property<DateTime?>("DocumentDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("document_date");
+
+                    b.Property<int?>("DocumentEntry")
+                        .HasColumnType("int")
+                        .HasColumnName("document_entry");
+
+                    b.Property<int?>("DocumentNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("document_number");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_orrr");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_orrr_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_orrr_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_orrr", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.SerialBinStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<int?>("BinEntry")
+                        .HasColumnType("int")
+                        .HasColumnName("bin_entry");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_code");
+
+                    b.Property<decimal?>("Quantity")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)")
+                        .HasColumnName("quantity");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.Property<int?>("SystemNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("system_number");
+
+                    b.Property<string>("WarehouseCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("warehouse_code");
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_osbq");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_osbq_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_osbq_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_osbq", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.SerialMasterStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<string>("DataSource")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("data_source");
+
+                    b.Property<DateTime?>("ExpiryDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("expiry_date");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<DateTime?>("InboundDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("inbound_date");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_code");
+
+                    b.Property<string>("LotNumber")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("lot_number");
+
+                    b.Property<DateTime?>("ManufactureDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("manufacture_date");
+
+                    b.Property<string>("ManufacturerSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("manufacturer_serial");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)")
+                        .HasColumnName("notes");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("SerialNumber")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("serial_number");
+
+                    b.Property<int?>("Status")
+                        .HasColumnType("int")
+                        .HasColumnName("status");
+
+                    b.Property<int?>("SystemNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("system_number");
+
+                    b.Property<DateTime?>("WarrantyEnd")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("warranty_end");
+
+                    b.Property<DateTime?>("WarrantyStart")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("warranty_start");
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_osrn");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_osrn_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_osrn_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_osrn", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.SerialQuantityStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_code");
+
+                    b.Property<decimal?>("Quantity")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)")
+                        .HasColumnName("quantity");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.Property<int?>("SystemNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("system_number");
+
+                    b.Property<string>("WarehouseCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("warehouse_code");
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_osrq");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_osrq_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_osrq_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_osrq", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.ServiceCallStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<int?>("CallId")
+                        .HasColumnType("int")
+                        .HasColumnName("call_id");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("closed_at");
+
+                    b.Property<string>("CustomerCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("customer_code");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<string>("InternalSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("internal_serial");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_code");
+
+                    b.Property<string>("ManufacturerSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("manufacturer_serial");
+
+                    b.Property<DateTime?>("OpenedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("opened_at");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("status");
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_oscl");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oscl_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oscl_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_oscl", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.ServiceContractStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<int?>("ContractId")
+                        .HasColumnType("int")
+                        .HasColumnName("contract_id");
+
+                    b.Property<string>("CustomerCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("customer_code");
+
+                    b.Property<DateTime?>("EndDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("end_date");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.Property<DateTime?>("StartDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("start_date");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("status");
+
+                    b.Property<int?>("TemplateId")
+                        .HasColumnType("int")
+                        .HasColumnName("template_id");
+
+                    b.Property<DateTime?>("TerminationDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("termination_date");
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_octr");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_octr_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_octr_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_octr", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.TransactionLogHeaderStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_date");
+
+                    b.Property<int?>("CreatedTime")
+                        .HasColumnType("int")
+                        .HasColumnName("created_time");
+
+                    b.Property<DateTime?>("DocumentDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("document_date");
+
+                    b.Property<int?>("DocumentEntry")
+                        .HasColumnType("int")
+                        .HasColumnName("document_entry");
+
+                    b.Property<int?>("DocumentLine")
+                        .HasColumnType("int")
+                        .HasColumnName("document_line");
+
+                    b.Property<int?>("DocumentType")
+                        .HasColumnType("int")
+                        .HasColumnName("document_type");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_code");
+
+                    b.Property<int?>("LogEntry")
+                        .HasColumnType("int")
+                        .HasColumnName("log_entry");
+
+                    b.Property<string>("PartyCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("party_code");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.Property<int?>("StockEffect")
+                        .HasColumnType("int")
+                        .HasColumnName("stock_effect");
+
+                    b.Property<int?>("SystemNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("system_number");
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_oitl");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oitl_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oitl_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_oitl", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Staging.TransactionLogLineStagingRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTable")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("source_table");
+
+                    b.Property<string>("SourcePk")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_pk");
+
+                    b.Property<Guid?>("AbsentSinceBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("absent_since_batch_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("FirstBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("first_batch_id");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_code");
+
+                    b.Property<int?>("LineNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("line_number");
+
+                    b.Property<int?>("LogEntry")
+                        .HasColumnType("int")
+                        .HasColumnName("log_entry");
+
+                    b.Property<decimal?>("Quantity")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)")
+                        .HasColumnName("quantity");
+
+                    b.Property<byte[]>("RowHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .HasColumnName("row_hash")
+                        .IsFixedLength();
+
+                    b.Property<int?>("SystemNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("system_number");
+
+                    b.Property<string>("WarehouseCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("warehouse_code");
+
+                    b.HasKey("TenantId", "SourceSystem", "SourceTable", "SourcePk")
+                        .HasName("pk_stg_src_itl1");
+
+                    b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_itl1_tenant_id_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_itl1_tenant_id_batch_id_source_pk");
+
+                    b.ToTable("stg_src_itl1", "migration");
+                });
+
             modelBuilder.Entity("Yojana.Integration.Relays.RelayNonce", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -2764,6 +4423,26 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_reconciliation_location_tenant_id_reconciliation_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.MigrationBatch", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.MigrationSource", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ConnectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_batch_tenant_id_connection_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.MigrationBatchTable", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.MigrationBatch", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "BatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_batch_table_tenant_id_batch_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.Relays.RelayRequestRow", b =>

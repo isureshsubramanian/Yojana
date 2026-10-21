@@ -1,0 +1,86 @@
+namespace Yojana.Integration.LegacyMigration;
+
+public sealed record CreateMigrationSourceRequest(
+    string DisplayLabel,
+    string SourceSystem,
+    string Runtime,
+    string Route,
+    string DatabaseName,
+    string SchemaName = "dbo",
+    string? LinkedServerName = null,
+    int CommandTimeoutSeconds = 120,
+    string? ConnectionString = null,
+    string? LicenceContractReference = null,
+    string? LicenceNote = null);
+
+public sealed record UpdateMigrationSourceRequest(
+    Guid SourceId,
+    string DisplayLabel,
+    string SourceSystem,
+    string Runtime,
+    string Route,
+    string DatabaseName,
+    string SchemaName = "dbo",
+    string? LinkedServerName = null,
+    int CommandTimeoutSeconds = 120,
+    string? ConnectionString = null);
+
+public sealed record MigrationSourceView(
+    Guid SourceId,
+    string DisplayLabel,
+    string SourceSystem,
+    string Runtime,
+    string Route,
+    string DatabaseName,
+    string SchemaName,
+    string? LinkedServerName,
+    int CommandTimeoutSeconds,
+    bool HasConnectionString,
+    string LicencePosition,
+    string? LicenceConfirmedByName,
+    DateTime? LicenceConfirmedAt,
+    string? LicenceContractReference,
+    string? LicenceNote,
+    DateTime CreatedAt,
+    DateTime UpdatedAt);
+
+public sealed record MigrationSourcePage(IReadOnlyList<MigrationSourceView> Items, string? NextCursor);
+
+public sealed record UpdateMigrationLicenceRequest(bool Confirmed, string? ContractReference, string? Note);
+
+public sealed record MigrationSourceTestTable(string Table, long? RowCount, string? Error);
+
+public sealed record MigrationSourceTestResult(Guid SourceId, IReadOnlyList<MigrationSourceTestTable> Tables);
+
+public sealed record StartMigrationBatchRequest(Guid SourceId);
+
+public sealed record StartMigrationBatchResponse(Guid BatchId, string Status, string? Failure);
+
+public sealed record MigrationBatchTableView(
+    string Table,
+    long RowsRead,
+    long Inserted,
+    long Updated,
+    long Unchanged,
+    long Absent,
+    long DurationMilliseconds);
+
+public sealed record MigrationBatchView(
+    Guid BatchId,
+    Guid SourceId,
+    string SourceSystem,
+    string Kind,
+    string RequestedByName,
+    DateTime RequestedAt,
+    DateTime? StartedAt,
+    DateTime? FinishedAt,
+    string Status,
+    string? Failure,
+    IReadOnlyList<MigrationBatchTableView>? Tables = null);
+
+public sealed record MigrationBatchPage(IReadOnlyList<MigrationBatchView> Items, string? NextCursor);
+
+public sealed class MigrationRuleException(string rule, string message) : InvalidOperationException(message)
+{
+    public string Rule { get; } = rule;
+}
