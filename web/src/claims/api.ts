@@ -1,11 +1,16 @@
 import { api } from "../api/client";
 import type {
-  ClaimAdjudicationPreview, ClaimCampaignOption, ClaimChangeResult, ClaimDetail, ClaimPage, ClaimSummary, CoverageFamily,
-  CurrencyInfo, SubmitClaim, SubmitClaimResult, TenantCurrency,
+  ClaimAdjudicationPreview, ClaimCampaignOption, ClaimChangeResult, ClaimDetail, ClaimPage, ClaimRiskDecision,
+  ClaimRiskFlagDecisionResult, ClaimRiskFlagPage, ClaimRiskFlagReportRow, ClaimRiskFlagRow, ClaimRiskRulesPolicy,
+  ClaimSummary, CoverageFamily, CurrencyInfo, SubmitClaim, SubmitClaimResult, TenantCurrency,
 } from "./types";
 
 export interface ClaimFilters {
   status: string; coverageSource: string; serviceCountry: string; recovery: string; q: string; campaignId: string;
+}
+
+export interface ClaimRiskFilters {
+  status: "open" | "decided" | ""; rule: string; from: string; to: string; cursor?: string | undefined; take: number;
 }
 
 function query(values: Record<string, string | number | null | undefined>): string {
@@ -30,5 +35,12 @@ export const claimsApi = {
   currencyCatalogue: (signal?: AbortSignal) => api<CurrencyInfo[]>("/api/tenant/currency/catalogue", { signal }),
   saveCurrency: (currency: string, accepted: string[]) => api<TenantCurrency>("/api/tenant/currency", { method: "PUT", body: { currency, accepted } }),
   coverageFamilies: (signal?: AbortSignal) => api<CoverageFamily[]>("/api/warranty-reference/coverage-families", { signal }),
+  riskRules: (signal?: AbortSignal) => api<ClaimRiskRulesPolicy>("/api/claims/risk-rules", { signal }),
+  saveRiskRules: (body: ClaimRiskRulesPolicy) => api<ClaimRiskRulesPolicy>("/api/claims/risk-rules", { method: "PUT", body }),
+  riskFlags: (filters: ClaimRiskFilters, signal?: AbortSignal) => api<ClaimRiskFlagPage>(`/api/claims/risk-flags${query({ ...filters })}`, { signal }),
+  claimRiskFlags: (claimId: string, signal?: AbortSignal) => api<ClaimRiskFlagRow[]>(`/api/claims/${claimId}/risk-flags`, { signal }),
+  decideRiskFlag: (claimId: string, flagId: string, decision: ClaimRiskDecision, reason: string) =>
+    api<ClaimRiskFlagDecisionResult>(`/api/claims/${claimId}/risk-flags/${flagId}/decision`, { method: "POST", body: { decision, reason } }),
+  riskReport: (from: string, to: string, signal?: AbortSignal) => api<ClaimRiskFlagReportRow[]>(`/api/claims/risk-flags/report${query({ from, to })}`, { signal }),
 };
 

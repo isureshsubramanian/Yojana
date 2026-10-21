@@ -13,6 +13,7 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDate } from "../units/format";
 import { claimsApi, type ClaimFilters } from "./api";
+import { ClaimsTabs } from "./ClaimsTabs";
 import { CLAIM_STATUSES, COVERAGE_SOURCES, ageBucketLabel, claimTone, coverageSourceLabel, csvCell, evidenceCue, humanise, money, moneyTotals } from "./format";
 import type { ClaimDetail, ClaimListRow, ClaimPage, ClaimSummary, CurrencyInfo } from "./types";
 import "./claims.css";
@@ -142,6 +143,7 @@ export function Component() {
         <button type="button" className="btn" disabled={exporting} aria-busy={exporting} onClick={() => void exportCurrent()}><Icon name="down" />Export</button>
         <Link className="btn primary" to="/claims/new"><Icon name="plus" />New claim<kbd className="key">N</kbd></Link>
       </div></div>
+      <ClaimsTabs current="claims" />
       <ErrorNote error={error} />
       <div className="stack" style={{ marginTop: error ? 16 : 0 }}>
         <KpiStrip label="Claim figures" kpis={[

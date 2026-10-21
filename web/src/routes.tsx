@@ -86,10 +86,11 @@ export const router = createBrowserRouter([
           { path: "corrections/merge", lazy: () => import("./corrections/MergeUnits") },
           { path: "corrections/vendor-serials", lazy: () => import("./corrections/VendorSerials") },
           { path: "claims", lazy: () => import("./claims/Claims") },
-          // Claim collection routes (new, campaigns, recovery) stay above the id route. React Router ranks literals first
-          // too; the order documents the boundary so "campaigns" or "recovery" is never treated as a claim id.
+          // Claim collection routes (new, campaigns, recovery, risk review) stay above the id route. React Router ranks
+          // literals first too; the order documents the boundary so collection names are never treated as a claim id.
           { path: "claims/new", lazy: () => import("./claims/ClaimIntake") },
           { path: "claims/recovery", lazy: () => import("./recovery/RecoveryClaims") },
+          { path: "claims/risk-review", lazy: () => import("./claims/ClaimRiskReview") },
           // P6 OD-26 numbering settings route block.
           { path: "settings", lazy: () => import("./settings/Settings") },
           { path: "settings/users", lazy: () => import("./settings/Users") },
@@ -100,6 +101,7 @@ export const router = createBrowserRouter([
           { path: "settings/import-files", lazy: () => import("./settings/ImportFileSettings") },
           { path: "settings/currencies", lazy: () => import("./settings/Currencies") },
           { path: "settings/recovery", lazy: () => import("./settings/SupplierRecovery") },
+          { path: "settings/claim-risk", lazy: () => import("./settings/ClaimRiskRules") },
           { path: "settings/refurbishment", lazy: () => import("./settings/RefurbishmentPolicy") },
           { path: "settings/workbench-choices", lazy: () => import("./corrections/WorkbenchChoices") },
           { path: "settings/certificates", lazy: () => import("./settings/CertificateSettings") },

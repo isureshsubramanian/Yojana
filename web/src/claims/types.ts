@@ -66,7 +66,49 @@ export interface ClaimAdjudicationPreview {
   recoveryNotRaisedReason: RecoveryNotRaisedReason | null;
   campaignId: string | null; campaignCode: string | null; campaignName: string | null; reserveTag: string | null;
   campaignCoverReason: CampaignCoverReason | null;
+  openRiskFlags: ClaimRiskOpenFlag[] | null;
 }
+
+export const CLAIM_RISK_RULE_CODES = [
+  "recent_cover_purchase", "repeat_unit_claims", "repeat_fault", "claimant_rate", "channel_mismatch",
+  "recent_ownership_change", "part_not_returned", "duplicate_open_claim",
+] as const;
+export type ClaimRiskRuleCode = typeof CLAIM_RISK_RULE_CODES[number];
+export type ClaimRiskFlagStatus = "open" | "cleared" | "confirmed";
+export type ClaimRiskDecision = Exclude<ClaimRiskFlagStatus, "open">;
+
+export interface ClaimRiskEnabledRule { enabled: boolean }
+export interface ClaimRiskDaysRule extends ClaimRiskEnabledRule { days: number }
+export interface ClaimRiskRepeatRule extends ClaimRiskDaysRule { minimumEarlierClaims: number }
+export interface ClaimRiskRateRule extends ClaimRiskDaysRule { rateMultiplier: number; minimumClaims: number; minimumUnits: number }
+export interface ClaimRiskRulesPolicy {
+  recentCoverPurchase: ClaimRiskDaysRule;
+  repeatUnitClaims: ClaimRiskRepeatRule;
+  repeatFault: ClaimRiskDaysRule;
+  claimantRate: ClaimRiskRateRule;
+  channelMismatch: ClaimRiskEnabledRule;
+  recentOwnershipChange: ClaimRiskDaysRule;
+  partNotReturned: ClaimRiskEnabledRule;
+  duplicateOpenClaim: ClaimRiskEnabledRule;
+  reviewerRole: string;
+  requireDifferentReviewer: boolean;
+}
+
+export interface ClaimRiskFlagRow {
+  flagId: string; claimId: string; claimNumber: string; ruleCode: ClaimRiskRuleCode; status: ClaimRiskFlagStatus;
+  thresholds: Record<string, unknown>; evidence: Record<string, unknown>; raisedAt: string; raisedByEvaluation: string;
+  decidedAt: string | null; reviewerName: string | null; decisionReason: string | null;
+}
+export interface ClaimRiskFlagPage { items: ClaimRiskFlagRow[]; nextCursor: string | null; hasMore: boolean; take: number }
+export interface ClaimRiskFlagReportRow {
+  ruleCode: ClaimRiskRuleCode; hits: number; cleared: number; confirmed: number; confirmationRate: number;
+  confirmedClaimsDeniedAfterReview: number;
+}
+export interface ClaimRiskFlagDecisionResult {
+  flagId: string; claimId: string; claimNumber: string; ruleCode: ClaimRiskRuleCode; status: ClaimRiskDecision;
+  decidedAt: string; reason: string;
+}
+export interface ClaimRiskOpenFlag { flagId: string; ruleCode: ClaimRiskRuleCode; raisedAt: string }
 
 export interface ClaimLineInput {
   kind: string; coverageFamily: string; requestedAmount: number; unitId: string | null; description: string | null;
