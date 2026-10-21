@@ -26,5 +26,34 @@
 .migration-outcome-row .sub { margin-top: 3px; }
 .migration-drawer-form { display: grid; gap: 14px; }
 .migration-drawer-form textarea { min-height: 90px; resize: vertical; }
+.migration-tabs .n.warn { color: var(--warning); background: var(--warning-soft); }
+.migration-review-toolbar { align-items: end; }
+.migration-review-card .table { min-width: 980px; }
+.migration-review-card .table td { white-space: normal; line-height: 1.35; }
+.migration-family-filter { flex: 0 1 250px; }
+.migration-family-filter .input { width: 100%; }
+.migration-canonical-state .card-body { display: flex; gap: 14px; align-items: center; justify-content: space-between; }
+.migration-review-candidates { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.migration-candidate { min-width: 0; padding: 11px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-s); }
+.migration-candidate.suggested { border-color: var(--accent); background: var(--accent-soft); }
+.migration-candidate .k { margin-bottom: 5px; color: var(--text-3); font-size: 11px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; }
+.migration-candidate .serial { overflow-wrap: anywhere; }
+.migration-candidate p { margin: 8px 0 0; font-size: 12px; line-height: 1.45; }
+.migration-review-why { margin: 4px 0 0; }
+.migration-review-decisions { margin: 0; padding: 0; border: 0; }
+.migration-review-decisions legend { margin-bottom: 8px; font-size: 13px; font-weight: 650; }
+.migration-review-options { display: grid; gap: 8px; }
+.migration-review-options label { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 9px; align-items: start; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-s); cursor: pointer; }
+.migration-review-options label.on { border-color: var(--accent); background: var(--accent-soft); }
+.migration-review-options input { margin: 3px 0 0; accent-color: var(--accent); }
+.migration-review-options .help { display: block; margin-top: 2px; color: var(--text-3); font-size: 12px; }
+.migration-suggested { margin-left: 8px; color: var(--accent); font-size: 11px; font-weight: 600; }
+.migration-review-options + .field, .migration-review-options ~ .field { margin-top: 12px; }
+.migration-review-actions { display: flex; gap: 8px; margin-top: 12px; }
+.migration-earlier-decisions { display: grid; gap: 10px; }
+.migration-earlier-decisions article { padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.migration-earlier-decisions article:last-child { border-bottom: 0; }
+.migration-earlier-decisions strong { display: block; margin-top: 6px; }
+.migration-earlier-decisions p { margin: 6px 0 0; font-size: 13px; }
 @media (max-width: 1100px) { .migration-phases { grid-template-columns: repeat(3, minmax(0, 1fr)); } .migration-phase:nth-child(4) { border-left: 0; border-top: 1px solid var(--border); } .migration-phase:nth-child(5), .migration-phase:nth-child(6) { border-top: 1px solid var(--border); } }
-@media (max-width: 720px) { .migration-phases { grid-template-columns: 1fr; } .migration-phase + .migration-phase { border-left: 0; border-top: 1px solid var(--border); } .migration-licence, .migration-outcome-row { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; } }
+@media (max-width: 720px) { .migration-phases { grid-template-columns: 1fr; } .migration-phase + .migration-phase { border-left: 0; border-top: 1px solid var(--border); } .migration-licence, .migration-outcome-row, .migration-canonical-state .card-body { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; } .migration-family-filter { flex-basis: 100%; } }

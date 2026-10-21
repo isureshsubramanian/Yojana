@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DataGrid, KpiStrip, StatusBadge, type GridColumn } from "../components";
 import { ApiError } from "../api/client";
+import { useSession } from "../session/session";
 import { Rail } from "../shell/Drawer";
 import { openDrawer, updateDrawer } from "../shell/drawerStore";
 import { ErrorNote, Section } from "../units/common";
@@ -8,20 +9,22 @@ import { date, useCursorPage } from "./AdminCommon";
 import { MigrationAccess, MigrationPage } from "./MigrationCommon";
 import { migrationApi } from "./migrationApi";
 import {
-  OUTCOMES, batchLabel, factLabel, factValue, outcomeLabel, outcomeTone, profileClass, profileStatusLabel,
+  OUTCOMES, batchLabel, factLabel, factValue, mayAdministerMigration, outcomeLabel, outcomeTone, profileClass, profileStatusLabel,
   profileTotals, sampleExample, signedChange, statusTone,
 } from "./migrationModel";
 import type {
-  MigrationBatch, MigrationBatchPage, MigrationOutcome, MigrationOutcomeChoice, MigrationOutcomeSettings,
-  MigrationProfile, MigrationProfileClass, MigrationProfileSample,
+  CanonicalisationRun, MigrationBatch, MigrationBatchPage, MigrationOutcome, MigrationOutcomeChoice,
+  MigrationOutcomeSettings, MigrationProfile, MigrationProfileClass, MigrationProfileSample,
 } from "./migrationTypes";
 
 export function Component() { return <MigrationAccess><ProfilingScreen /></MigrationAccess>; }
 
 function ProfilingScreen() {
+  const admin = mayAdministerMigration(useSession().roles);
   const fetchBatches = useCallback((cursor?: string, signal?: AbortSignal) => migrationApi.batches(cursor, signal), []);
   const batches = useCursorPage<MigrationBatch, MigrationBatchPage>(fetchBatches);
   const [batchId, setBatchId] = useState(""); const [profile, setProfile] = useState<MigrationProfile | null>(null);
+  const [canonicalisation, setCanonicalisation] = useState<CanonicalisationRun | null>(null);
   const [samples, setSamples] = useState<Record<string, MigrationProfileSample[]>>({});
   const [loading, setLoading] = useState(false); const [error, setError] = useState<unknown>(null);
   const [outcome, setOutcome] = useState<MigrationOutcome | "">(""); const [rerunBusy, setRerunBusy] = useState(false); const [notice, setNotice] = useState("");
@@ -30,11 +33,20 @@ function ProfilingScreen() {
     if (batches.result?.items[0] && !batches.result.items.some(row => row.batchId === batchId)) setBatchId(batches.result.items[0].batchId);
   }, [batchId, batches.result]);
   useEffect(() => {
-    if (!batchId) { setProfile(null); setSamples({}); return; }
+    if (!batchId) { setProfile(null); setCanonicalisation(null); setSamples({}); return; }
     const controller = new AbortController(); setLoading(true); setError(null); setSamples({});
     migrationApi.profile(batchId, controller.signal).then(next => { if (!controller.signal.aborted) setProfile(next); }).catch(reason => {
       if (!controller.signal.aborted) { if (reason instanceof ApiError && reason.status === 404) setProfile(null); else setError(reason); }
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [batchId]);
+  useEffect(() => {
+    if (!batchId) return;
+    const controller = new AbortController();
+    setCanonicalisation(null);
+    migrationApi.canonicalisation(batchId, controller.signal).then(setCanonicalisation).catch(reason => {
+      if (!controller.signal.aborted && reason instanceof ApiError && reason.status === 404) setCanonicalisation(null);
+    });
     return () => controller.abort();
   }, [batchId]);
   useEffect(() => {
@@ -74,8 +86,8 @@ function ProfilingScreen() {
     catch (reason) { updateDrawer({ eyebrow: "Profiling", title: "Change outcomes" }, <ErrorNote error={reason} />); }
   };
 
-  const actions = <><button type="button" className="btn" onClick={() => void openOutcomes()}>Change outcomes</button><button type="button" className="btn primary" disabled={!batchId || rerunBusy} onClick={() => void rerun()}>{rerunBusy ? "Queuing…" : "Re-run profiling"}</button></>;
-  return <><MigrationPage title="Profiling results" eyebrow={currentBatch ? <>{batchLabel(currentBatch, batches.grid.page === 1 && batches.result?.items[0]?.batchId === currentBatch.batchId)} · {date(currentBatch.requestedAt)} · fixed query pack, run after every extraction</> : "Fixed query pack, run after every extraction"} sub="What is wrong with the source data before anything is loaded. Each class says what the load will do with it." actions={actions} flaggedClasses={flaggedClasses}>
+  const actions = admin ? <><button type="button" className="btn" onClick={() => void openOutcomes()}>Change outcomes</button><button type="button" className="btn primary" disabled={!batchId || rerunBusy} onClick={() => void rerun()}>{rerunBusy ? "Queuing…" : "Re-run profiling"}</button></> : undefined;
+  return <><MigrationPage title="Profiling results" eyebrow={currentBatch ? <>{batchLabel(currentBatch, batches.grid.page === 1 && batches.result?.items[0]?.batchId === currentBatch.batchId)} · {date(currentBatch.requestedAt)} · fixed query pack, run after every extraction</> : "Fixed query pack, run after every extraction"} sub="What is wrong with the source data before anything is loaded. Each class says what the load will do with it." actions={actions} flaggedClasses={flaggedClasses} waitingReviews={canonicalisation?.waitingForPerson}>
     <div className="toolbar"><label className="field"><span className="lbl">Extraction</span><select className="select" value={batchId} onChange={event => setBatchId(event.target.value)}><option value="">Choose an extraction</option>{batches.result?.items.map((row, index) => <option value={row.batchId} key={row.batchId}>{batchLabel(row, batches.grid.page === 1 && index === 0)} · {date(row.requestedAt)}</option>)}</select></label><button type="button" className="btn sm" disabled={batches.grid.page === 1 || batches.busy} onClick={() => batches.onPage(batches.grid.page - 1)}>Newer extractions</button><button type="button" className="btn sm" disabled={!batches.grid.hasMore || batches.busy} onClick={() => batches.onPage(batches.grid.page + 1)}>Older extractions</button></div>
     <ErrorNote error={batches.error ?? error} />{notice && <div className="note" role="status">{notice}</div>}
     {profile?.status === "blocked" && <div className="note bad" role="alert"><strong>The load is stopped:</strong>&nbsp;{blockers.map(row => profileClass(row.code).label).join(", ") || "the profiling run found a blocking anomaly"}.</div>}

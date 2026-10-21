@@ -86,3 +86,95 @@ export interface MigrationProfileSamples { runId: string; classCode: string; sam
 export type MigrationOutcome = "stop_load" | "needs_person" | "fixed_by_rule" | "loaded_with_note";
 export interface MigrationOutcomeChoice { classCode: string; outcome: MigrationOutcome }
 export interface MigrationOutcomeSettings { classes: MigrationOutcomeChoice[]; version: string }
+
+export type MigrationReviewKind = "same_serial_one_item" | "same_serial_different_items" | "orphan_equipment_card" | "serial_in_user_field";
+export type MigrationReviewStatus = "waiting" | "decided" | "carried_over";
+export type MigrationReviewDecision = "merge_into" | "keep_apart" | "fix_in_incumbent";
+
+export interface CanonicalisationGap { kind: MigrationReviewKind; reason: string }
+export interface CanonicalisationRun {
+  runId: string;
+  batchId: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  status: string;
+  failure: string | null;
+  serialsInSource: number;
+  exact: number;
+  trimmedUpper: number;
+  familyNormalised: number;
+  waitingForPerson: number;
+  merged: number;
+  keptApart: number;
+  fixInIncumbent: number;
+  carriedOver: number;
+  unverifiedDates: number;
+  gaps: CanonicalisationGap[];
+}
+
+export interface MigrationReviewRow {
+  itemId: string;
+  serialAsStored: string | null;
+  itemCode: string | null;
+  itemName: string | null;
+  family: string | null;
+  kind: MigrationReviewKind;
+  ruleTried: string;
+  candidateSummary: string;
+  suggestion: MigrationReviewDecision | null;
+  suggestionReason: string | null;
+  hint: string | null;
+  status: MigrationReviewStatus;
+  carriedOver: boolean;
+}
+
+export interface MigrationReviewPage { items: MigrationReviewRow[]; nextCursor: string | null }
+
+export interface MigrationCandidateLineage {
+  sourceKey: string;
+  serialAsStored: string | null;
+  itemCode: string;
+  itemName: string | null;
+  transactions: number;
+  firstReceipt: string | null;
+  lastDelivery: string | null;
+  lastDeliveryParty: string | null;
+  hasEquipmentCard: boolean;
+  hasContract: boolean;
+  disposition: string;
+}
+
+export interface MigrationReviewDecisionView {
+  decisionId: string;
+  decision: MigrationReviewDecision;
+  keepSourceKey: string | null;
+  reason: string;
+  note: string | null;
+  decidedByName: string;
+  decidedAt: string;
+  appliedToThisBatch: boolean;
+}
+
+export interface MigrationReviewDetail {
+  itemId: string;
+  kind: MigrationReviewKind;
+  status: MigrationReviewStatus;
+  serialAsStored: string | null;
+  itemCode: string | null;
+  itemName: string | null;
+  ruleTried: string;
+  candidates: MigrationCandidateLineage[];
+  suggestion: MigrationReviewDecision | null;
+  suggestedKeepSourceKey: string | null;
+  suggestionReason: string | null;
+  hint: string | null;
+  earlierDecisions: MigrationReviewDecisionView[];
+}
+
+export interface MigrationReviewDecisionResponse {
+  decisionId: string;
+  itemId: string;
+  decision: MigrationReviewDecision;
+  status: MigrationReviewStatus;
+  decidedAt: string;
+}
