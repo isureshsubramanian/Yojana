@@ -1846,6 +1846,101 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ClaimRiskFlag", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("FlagId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("flag_id");
+
+                    b.Property<Guid>("ClaimId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("claim_id");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("decided_at");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("decided_by");
+
+                    b.Property<string>("DecisionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("decision_reason");
+
+                    b.Property<string>("Evidence")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("evidence");
+
+                    b.Property<DateTime>("RaisedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("raised_at");
+
+                    b.Property<string>("RaisedByEvaluation")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("raised_by_evaluation");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("RuleCode")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(60)")
+                        .HasColumnName("rule_code");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("ThresholdSnapshot")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("threshold_snapshot");
+
+                    b.HasKey("TenantId", "FlagId")
+                        .HasName("pk_claim_risk_flag");
+
+                    b.HasIndex("TenantId", "ClaimId", "RuleCode")
+                        .IsUnique()
+                        .HasDatabaseName("ux_claim_risk_flag_tenant_id_claim_id_rule_code");
+
+                    b.HasIndex("TenantId", "RuleCode", "RaisedAt", "Status")
+                        .HasDatabaseName("ix_claim_risk_flag_tenant_id_rule_code_raised_at_status");
+
+                    b.HasIndex("TenantId", "Status", "RaisedAt", "FlagId")
+                        .HasDatabaseName("ix_claim_risk_flag_tenant_id_status_raised_at_flag_id");
+
+                    b.ToTable("claim_risk_flag", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_claim_risk_flag_decision", "(status = 'open' AND decided_at IS NULL AND decided_by IS NULL AND decision_reason IS NULL) OR (status IN ('cleared', 'confirmed') AND decided_at IS NOT NULL AND decided_by IS NOT NULL AND decision_reason IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_claim_risk_flag_evidence_json", "ISJSON(evidence) = 1");
+
+                            t.HasCheckConstraint("ck_claim_risk_flag_status", "status IN ('open', 'cleared', 'confirmed')");
+
+                            t.HasCheckConstraint("ck_claim_risk_flag_threshold_snapshot_json", "ISJSON(threshold_snapshot) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ColumnMapping", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -10696,6 +10791,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_claim_line_tenant_id_claim_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ClaimRiskFlag", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.Claim", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ClaimId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_claim_risk_flag_tenant_id_claim_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CorrectionRecordUnit", b =>

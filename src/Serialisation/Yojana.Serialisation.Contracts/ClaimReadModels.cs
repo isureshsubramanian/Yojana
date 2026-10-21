@@ -140,6 +140,8 @@ public sealed record ClaimCheck(string Key, string Value, string Outcome);
 
 public sealed record RecoveryPreview(Guid ChildUnitId, string? ChildSerial, Guid VendorPartyRef, decimal RequestedAmount, DateOnly? TermStart, DateOnly? TermEnd, int? TermMonths, int? MonthOfTerm);
 
+public sealed record ClaimRiskOpenFlag(Guid FlagId, string RuleCode, DateTime RaisedAt);
+
 /// <summary>
 /// The adjudication screen's model: the decision per line exactly as approve would record it, the checks behind it,
 /// the facts approve will publish, and the refusal approve would meet (mixed sources, cohorts or obligors) if any.
@@ -168,4 +170,5 @@ public sealed record ClaimAdjudicationPreview(
     string? CampaignCode = null,
     string? CampaignName = null,
     string? ReserveTag = null,
-    string? CampaignCoverReason = null);
+    string? CampaignCoverReason = null,
+    IReadOnlyList<ClaimRiskOpenFlag>? OpenRiskFlags = null);

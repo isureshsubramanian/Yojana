@@ -88,7 +88,9 @@ public sealed record AdjudicateClaimResult(
     IReadOnlyList<Guid> RecoveryClaimIds,
     Guid EventId,
     bool Replayed,
-    Guid? SuccessorItemId = null);
+    Guid? SuccessorItemId = null,
+    string? Refusal = null,
+    IReadOnlyList<string>? OpenRiskRules = null);
 
 public sealed record ApproveRecoveryClaim(
     Guid CommandId,
