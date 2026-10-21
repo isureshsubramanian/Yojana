@@ -86,6 +86,7 @@ export const mailApi = {
 
   sent: (filter: SentMailFilter, cursor: string | null, signal?: AbortSignal) =>
     api<SentMailPage>(`/api/customer-mail${query({ ...filter, cursor, take: 25 })}`, options(signal)),
+  aboutUnit: (unitId: string, signal?: AbortSignal) => api<SentMailPage>(`/api/customer-mail${query({ unitId, take: 5 })}`, options(signal)),
   sentMessage: (id: string, signal?: AbortSignal) => api<SentMailDetail>(`/api/customer-mail/${id}`, options(signal)),
   exportUrl: (filter: SentMailFilter) => `/api/customer-mail/export${query({ format: "csv", status: filter.status, kind: filter.kind, sentBy: filter.sentBy, q: filter.q })}`,
 };

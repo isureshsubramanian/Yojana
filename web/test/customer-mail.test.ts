@@ -125,3 +125,13 @@ test("the role lists mirror the server's mail policies", () => {
     assert.deepEqual(clientRoles, serverRoles, name);
   }
 });
+
+test("the unit shows its customer e-mail beside the history, never inside the event rail", () => {
+  const unit = source("units/UnitDetail.tsx");
+  const card = source("mail/UnitCustomerMail.tsx");
+  assert.match(unit, /<UnitCustomerMail unitId=\{unitId\} \/>/);
+  assert.doesNotMatch(unit, /customer-mail|mailApi/);
+  assert.match(card, /holds\(useSession\(\)\.roles, SENDER_ROLES\)/);
+  assert.match(card, /if \(!permitted \|\| !page \|\| page\.total === 0\) return null;/);
+  assert.match(card, /\/mail\/sent\?unitId=\$\{unitId\}/);
+});
