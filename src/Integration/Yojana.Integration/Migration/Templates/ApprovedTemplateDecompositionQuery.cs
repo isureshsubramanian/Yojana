@@ -6,7 +6,8 @@ using Yojana.Platform.Contracts.Tenancy;
 
 namespace Yojana.Integration.LegacyMigration.Templates;
 
-public sealed class ApprovedTemplateDecompositionQuery(IntegrationDbContext db, ITenantContext tenant)
+public sealed class ApprovedTemplateDecompositionQuery(IntegrationDbContext db, ITenantContext tenant,
+    Yojana.Serialisation.Contracts.IPolicyCatalogueQuery policies)
     : IApprovedTemplateDecompositionQuery
 {
     public async Task<ApprovedTemplateDecomposition?> ForStagedContractLineAsync(string sourceSystem,
@@ -29,11 +30,17 @@ public sealed class ApprovedTemplateDecompositionQuery(IntegrationDbContext db, 
             .Select(row => new { row.TemplateMappingId, row.TemplateKey, row.TemplateName })
             .SingleOrDefaultAsync(cancellationToken);
         if (mapping is null) return null;
-        var blocks = await db.TemplateMappingBlocks.AsNoTracking().Where(block => block.TenantId == tenantId
+        var blockRows = await db.TemplateMappingBlocks.AsNoTracking().Where(block => block.TenantId == tenantId
                 && block.TemplateMappingId == mapping.TemplateMappingId)
             .OrderBy(block => block.Position)
-            .Select(block => new ApprovedTemplateBlock(block.FamilyCode, block.PolicyId!.Value,
-                block.PolicyVersion!.Value)).ToListAsync(cancellationToken);
+            .Select(block => new { block.FamilyCode, block.PolicyId, block.PolicyVersion })
+            .ToListAsync(cancellationToken);
+        var published = (await policies.ReadAsync(cancellationToken)).Policies
+            .Select(policy => policy.PolicyId).ToHashSet();
+        if (blockRows.Count == 0 || blockRows.Any(block => block.PolicyId is null
+                || block.PolicyVersion is null || !published.Contains(block.PolicyId.Value))) return null;
+        var blocks = blockRows.Select(block => new ApprovedTemplateBlock(block.FamilyCode,
+            block.PolicyId!.Value, block.PolicyVersion!.Value)).ToList();
         return new(mapping.TemplateKey, mapping.TemplateName, blocks);
     }
 }

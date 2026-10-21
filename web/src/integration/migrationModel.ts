@@ -2,6 +2,7 @@ import type { Tone } from "../components/types";
 import type {
   MigrationBatch, MigrationBatchTable, MigrationOutcome, MigrationProfile, MigrationProfileSample,
   MigrationReviewDecision, MigrationReviewDetail, MigrationReviewKind, MigrationReviewStatus,
+  TemplateBlockResolution, TemplateMappingState, TemplateSourceTerms,
 } from "./migrationTypes";
 
 export const OUTCOMES: readonly MigrationOutcome[] = ["stop_load", "needs_person", "fixed_by_rule", "loaded_with_note"];
@@ -56,6 +57,15 @@ export const REVIEW_STATUSES: readonly MigrationReviewStatus[] = ["waiting", "de
 export function mayReadMigration(roles: readonly string[]): boolean { return roles.some(role => role === "tenant_administrator" || role === "migration_lead"); }
 export function mayAdministerMigration(roles: readonly string[]): boolean { return roles.includes("tenant_administrator"); }
 
+export const TEMPLATE_STATES: readonly TemplateMappingState[] = ["waiting", "needs_person", "approved", "waiting_for_policy_publication"];
+const templateStateLabels: Record<TemplateMappingState, string> = {
+  waiting: "Waiting", needs_person: "Needs a person", approved: "Approved",
+  waiting_for_policy_publication: "Waiting for policy publication",
+};
+const templateResolutionLabels: Record<TemplateBlockResolution, string> = {
+  existing_policy: "Published policy", policy_to_create: "Create a new policy from these terms",
+};
+
 const reviewKindLabels: Record<MigrationReviewKind, string> = {
   same_serial_one_item: "Same serial on one item",
   same_serial_different_items: "Same serial on different items",
@@ -89,6 +99,23 @@ const refusalRuleLabels: Record<string, string> = {
   migration_review_decision_invalid: "Decision is not valid",
   migration_cursor_invalid: "Review page is no longer available",
   audit_actor_required: "Signed-in person is required",
+  template_mapping_needs_review: "A person must resolve this template",
+  template_pattern_not_draft: "The pattern cannot be approved together",
+  template_policy_unresolved: "A published policy must be selected",
+  template_policy_terms_incomplete: "The source terms are incomplete",
+  template_mapping_changed: "The template changed",
+  template_mapping_immutable: "The approved template cannot be edited",
+  template_blocks_invalid: "Cover blocks are not valid",
+  template_base_family_required: "One base warranty is required",
+  template_family_unknown: "Coverage family is not available",
+  template_policy_not_published: "Policy is not published",
+  template_policy_family_mismatch: "Policy belongs to another family",
+  template_state_invalid: "Template state is not available",
+  template_cursor_invalid: "Template page is no longer available",
+  template_keyword_family_unknown: "Keyword family is not available",
+  template_keyword_rules_empty: "At least one keyword rule is required",
+  template_keyword_rule_too_long: "Keyword rule is too long",
+  template_keyword_duplicate: "Each keyword can appear only once",
 };
 
 export function outcomeLabel(value: MigrationOutcome): string { return outcomeLabels[value]; }
@@ -108,6 +135,30 @@ export function matchRuleLabel(value: string | null | undefined): string { retur
 export function canonicalisationStatusLabel(value: string): string { return canonicalisationStatusLabels[value] ?? readable(value); }
 export function refusalRuleLabel(value: string | null | undefined): string { return value ? refusalRuleLabels[value] ?? readable(value) : "Request refused"; }
 export function statusTone(value: string): Tone { return /^(succeeded|completed)$/.test(value) ? "ok" : /^(failed|refused|blocked)$/.test(value) ? "bad" : /^(queued|running)$/.test(value) ? "info" : "neutral"; }
+export function templateStateLabel(value: TemplateMappingState): string { return templateStateLabels[value]; }
+export function templateStateTone(value: TemplateMappingState): Tone { return value === "approved" ? "ok" : value === "needs_person" ? "warn" : "info"; }
+export function templateResolutionLabel(value: TemplateBlockResolution): string { return templateResolutionLabels[value]; }
+export function templateFamilyLabel(code: string, supplied?: string): string { return supplied?.trim() || readable(code); }
+
+export function templateTermsLabel(terms: TemplateSourceTerms): string {
+  const duration = terms.durationValue === null ? "Duration not recorded" : `${terms.durationValue.toLocaleString()} ${terms.durationUnit}${terms.durationUnitVerified ? "" : " (assumed)"}`;
+  const cover = [["parts", terms.partsPct], ["labour", terms.labourPct], ["travel", terms.travelPct]] as const;
+  const inclusions = cover.map(([name, value]) => value === null ? `${name} not recorded` : value === 100 ? `${name} included` : value === 0 ? `${name} excluded` : `${name} ${value.toLocaleString()}%`).join(", ");
+  const response = terms.responseHours === null ? null : terms.responseSource
+    ? `response ${terms.responseSource}${terms.responseSource.toLowerCase() === `${terms.responseHours} hours` ? "" : ` (read as ${terms.responseHours.toLocaleString()} hours)`}`
+    : `response ${terms.responseHours.toLocaleString()} hours`;
+  return [duration, inclusions, response, coverageHoursLabel(terms.coverageHours)].filter(Boolean).join(" · ");
+}
+
+export function coverageHoursLabel(value: string | null): string | null {
+  if (!value) return null;
+  const days: Record<string, string> = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
+  const clock = (part: string) => /^\d{4}$/.test(part) ? `${part.slice(0, 2)}:${part.slice(2)}` : part;
+  return value.split(";").map(entry => {
+    const [day, range] = entry.split("=", 2); const [start, end] = (range ?? "").split("-", 2);
+    return `${days[day ?? ""] ?? readable(day ?? "day")} ${clock(start ?? "")}–${clock(end ?? "")}`;
+  }).join(", ");
+}
 
 export function serialAsStored(value: string | null | undefined): string {
   if (value === null || value === undefined || value === "") return "No serial recorded";

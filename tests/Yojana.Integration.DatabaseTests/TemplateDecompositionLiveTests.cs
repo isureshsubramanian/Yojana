@@ -49,7 +49,7 @@ public sealed class TemplateDecompositionLiveTests(IntegrationHostFixture fixtur
         string? cursor = null;
         do
         {
-            var page = await mappings.ListAsync(cursor, 100, default);
+            var page = await mappings.ListAsync(null, null, cursor, 100, default);
             patterns.AddRange(page.Items);
             cursor = page.NextCursor;
         } while (cursor is not null);

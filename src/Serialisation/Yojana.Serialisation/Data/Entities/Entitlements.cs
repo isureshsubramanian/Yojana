@@ -61,6 +61,9 @@ public sealed class WarrantyPolicyVersion : ITenantScoped
 
     public Guid PolicyVersionId { get; set; }
 
+    /// <summary>The CreatePolicyDraft command that created this version; a retry with the same id replays it.</summary>
+    public Guid? CommandId { get; set; }
+
     /// <summary>Groups the versions of one policy, for example <c>VX220-STD-24</c>.</summary>
     public required string PolicyCode { get; set; }
 

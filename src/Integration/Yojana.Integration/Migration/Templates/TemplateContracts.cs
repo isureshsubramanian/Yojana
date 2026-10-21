@@ -23,6 +23,7 @@ public sealed record TemplateBlockView(
     string? PolicyCode,
     int? PolicyVersion,
     string? PolicyName,
+    string? PolicyStatus,
     TemplateSourceTerms ProposedTerms);
 
 public sealed record TemplateUsageCounts(
@@ -37,6 +38,9 @@ public sealed record TemplateMappingSummary(
     string State,
     bool NeedsPerson,
     string? ReviewReason,
+    bool DeletedInSource,
+    string? SourceReference,
+    TemplateSourceTerms SourceTerms,
     TemplateUsageCounts Usage);
 
 public sealed record TemplatePatternView(
@@ -49,6 +53,18 @@ public sealed record TemplatePatternView(
 
 public sealed record TemplatePatternPage(IReadOnlyList<TemplatePatternView> Items, string? NextCursor);
 
+public sealed record TemplateStateSummary(int Templates, int Patterns, int ActiveContracts);
+
+public sealed record TemplateMappingSummaryView(
+    int Templates,
+    int Patterns,
+    int ActiveContracts,
+    TemplateStateSummary Approved,
+    TemplateStateSummary WaitingForApproval,
+    TemplateStateSummary NeedsPerson,
+    TemplateStateSummary WaitingForPolicyPublication,
+    int PoliciesToCreate);
+
 public sealed record TemplateMappingDetail(
     string TemplateKey,
     string TemplateName,
@@ -59,6 +75,8 @@ public sealed record TemplateMappingDetail(
     string State,
     bool NeedsPerson,
     string? ReviewReason,
+    bool DeletedInSource,
+    string? SourceReference,
     string PatternKey,
     string PatternLabel,
     TemplateSourceTerms SourceTerms,
