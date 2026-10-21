@@ -65,6 +65,32 @@ internal static class MigrationModel
             builder.HasOne<MigrationBatch>().WithMany().HasForeignKey(x => new { x.TenantId, x.BatchId })
                 .OnDelete(DeleteBehavior.Cascade);
         });
+        modelBuilder.Entity<MigrationProfileRun>(builder =>
+        {
+            builder.ToTable("migration_profile_run", Schema, table =>
+                table.HasCheckConstraint("ck_migration_profile_run_status",
+                    "status IN ('queued','running','completed','blocked','failed')"));
+            builder.HasKey(x => new { x.TenantId, x.RunId });
+            builder.Property(x => x.Status).HasMaxLength(20);
+            builder.HasIndex(x => new { x.TenantId, x.BatchId, x.StartedAt, x.RunId });
+            builder.HasIndex(x => new { x.TenantId, x.Status, x.RunId });
+            builder.HasOne<MigrationBatch>().WithMany().HasForeignKey(x => new { x.TenantId, x.BatchId })
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<MigrationProfileResult>(builder =>
+        {
+            builder.ToTable("migration_profile_result", Schema, table =>
+                table.HasCheckConstraint("ck_migration_profile_result_outcome",
+                    "outcome IN ('stop_load','needs_person','fixed_by_rule','loaded_with_note')"));
+            builder.HasKey(x => new { x.TenantId, x.RunId, x.ClassCode });
+            builder.Property(x => x.ClassCode).HasMaxLength(80);
+            builder.Property(x => x.Outcome).HasMaxLength(32);
+            builder.Property(x => x.Note).HasMaxLength(2000);
+            builder.Property(x => x.SamplesJson).HasColumnType("nvarchar(max)");
+            builder.HasIndex(x => new { x.TenantId, x.RunId, x.ClassCode });
+            builder.HasOne<MigrationProfileRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.RunId })
+                .OnDelete(DeleteBehavior.Cascade);
+        });
         Staging.SourceProtocol.Configure(modelBuilder);
     }
 }

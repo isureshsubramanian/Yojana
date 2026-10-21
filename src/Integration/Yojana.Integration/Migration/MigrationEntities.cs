@@ -78,3 +78,35 @@ public sealed class MigrationBatchTable : ITenantScoped
     public long Absent { get; set; }
     public long DurationMilliseconds { get; set; }
 }
+
+public static class MigrationProfileRunStatus
+{
+    public const string Queued = "queued";
+    public const string Running = "running";
+    public const string Completed = "completed";
+    public const string Blocked = "blocked";
+    public const string Failed = "failed";
+}
+
+public sealed class MigrationProfileRun : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid RunId { get; set; }
+    public Guid BatchId { get; set; }
+    public DateTime? StartedAt { get; set; }
+    public DateTime? FinishedAt { get; set; }
+    public required string Status { get; set; }
+}
+
+public sealed class MigrationProfileResult : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid RunId { get; set; }
+    public required string ClassCode { get; set; }
+    public required string Outcome { get; set; }
+    public long? RowCount { get; set; }
+    public long? PreviousRowCount { get; set; }
+    public long? Change { get; set; }
+    public string? Note { get; set; }
+    public required string SamplesJson { get; set; }
+}

@@ -30,6 +30,7 @@ using Yojana.Integration.Backfills;
 using Yojana.Integration.Connectors;
 using Yojana.Integration.LegacyMigration;
 using Yojana.Integration.LegacyMigration.Staging;
+using Yojana.Integration.LegacyMigration.Profiling;
 
 namespace Yojana.Integration;
 
@@ -188,6 +189,26 @@ public static class IntegrationModule
         builder.Services.AddScoped<SourceExtractor>();
         builder.Services.AddScoped<MigrationSourceService>();
         builder.Services.AddScoped<MigrationBatchService>();
+        builder.Services.AddScoped<MigrationProfileOutcomeSettings>();
+        builder.Services.AddScoped<IMigrationProfileQuery, SerialInMultipleWarehousesProfileQuery>();
+        builder.Services.AddScoped<IMigrationProfileQuery, NegativeQuantityProfileQuery>();
+        builder.Services.AddScoped<IMigrationProfileQuery, DuplicateSerialSameItemProfileQuery>();
+        builder.Services.AddScoped<IMigrationProfileQuery, DuplicateSerialDifferentItemsProfileQuery>();
+        builder.Services.AddScoped<IMigrationProfileQuery, SerialWhitespaceOrCaseProfileQuery>();
+        builder.Services.AddScoped<IMigrationProfileQuery, SerialFormatVariantsProfileQuery>();
+        builder.Services.AddScoped<IMigrationProfileQuery, PlaceholderSerialProfileQuery>();
+        builder.Services.AddScoped<IMigrationProfileQuery, EquipmentCardWithoutSerialProfileQuery>();
+        builder.Services.AddScoped<IMigrationProfileQuery, ShippedSerialWithoutCardProfileQuery>();
+        builder.Services.AddScoped<IMigrationProfileQuery, CardCustomerDeliveryMismatchProfileQuery>();
+        builder.Services.AddScoped<IMigrationProfileQuery, ActiveContractPastEndProfileQuery>();
+        builder.Services.AddScoped<IMigrationProfileQuery, AmbiguousDatesProfileQuery>();
+        builder.Services.AddScoped<IMigrationProfileQuery, SerialsInUserFieldsProfileQuery>();
+        builder.Services.AddScoped<IMigrationProfileQuery, EmptyStatusProfileQuery>();
+        builder.Services.AddScoped<MigrationProfileService>();
+        builder.Services.AddScoped<IMigrationProfileQueue>(services =>
+            services.GetRequiredService<MigrationProfileService>());
+        builder.Services.AddScoped<IMigrationProfileStatus>(services =>
+            services.GetRequiredService<MigrationProfileService>());
         builder.Services.AddSingleton(RecurringTenantJob.For<MigrationExtractionJob>(
             MigrationExtractionJob.JobName, MigrationExtractionJob.Cron));
 
