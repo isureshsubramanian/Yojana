@@ -6,13 +6,15 @@ import {
   canonicalisationStatusLabel, duration, factLabel, factValue, matchRuleLabel, mayAdministerMigration,
   mayReadMigration, outcomeLabel, profileClass, profileStatusLabel, profileTotals, refusalRuleLabel,
   reviewDecisionLabel, reviewDecisionOptions, reviewKindLabel, reviewStatusLabel, routeLabel, runtimeLabel,
-  sampleExample, sampleFacts, serialAsStored, signedChange,
+  sampleExample, sampleFacts, serialAsStored, signedChange, templateResolutionLabel, templateStateLabel,
+  templateStateTone, templateTermsLabel,
 } from "../src/integration/migrationModel.ts";
-import type { MigrationBatch, MigrationProfile, MigrationReviewDetail } from "../src/integration/migrationTypes.ts";
+import type { MigrationBatch, MigrationProfile, MigrationReviewDetail, TemplateSourceTerms } from "../src/integration/migrationTypes.ts";
 
 const consoleScreen = readFileSync(new URL("../src/integration/MigrationConsole.tsx", import.meta.url), "utf8");
 const profilingScreen = readFileSync(new URL("../src/integration/MigrationProfiling.tsx", import.meta.url), "utf8");
 const reviewScreen = readFileSync(new URL("../src/integration/MigrationReview.tsx", import.meta.url), "utf8");
+const templateScreen = readFileSync(new URL("../src/integration/MigrationTemplates.tsx", import.meta.url), "utf8");
 const common = readFileSync(new URL("../src/integration/MigrationCommon.tsx", import.meta.url), "utf8");
 const api = readFileSync(new URL("../src/integration/migrationApi.ts", import.meta.url), "utf8");
 const routes = readFileSync(new URL("../src/routes.tsx", import.meta.url), "utf8");
@@ -41,6 +43,7 @@ test("migration routes and the Integration-area link admit administrators and Mi
   assert.match(routes, /integration\/migration.*MigrationConsole/);
   assert.match(routes, /integration\/migration\/profiling.*MigrationProfiling/);
   assert.match(routes, /integration\/migration\/review.*MigrationReview/);
+  assert.match(routes, /integration\/migration\/templates.*MigrationTemplates/);
   assert.match(integrationTabs, /\["\/integration\/migration", "Migration"\]/);
   assert.match(integrationTabs, /mayReadMigration\(roles\)/);
   assert.match(common, /Tenant administrator or Migration lead access is required/);
@@ -55,6 +58,8 @@ test("review queue is enabled while later migration tabs remain disabled", () =>
   for (const title of ["Arrives with P9-T08", "Arrives with P9-T11"]) assert.match(common, new RegExp(title));
   assert.match(common, /aria-disabled="true"/);
   assert.match(common, /\/integration\/migration\/review", "Review queue"/);
+  assert.match(common, /\/integration\/migration\/templates", "Contract templates"/);
+  assert.match(common, /templateSummary/); assert.match(common, /needsPerson\.templates/);
   assert.doesNotMatch(common, /Review queue", "Arrives/);
 });
 
@@ -82,6 +87,44 @@ test("Migration leads see read screens and decisions, but administrator actions 
   assert.match(profilingScreen, /const actions = admin \?/);
   assert.match(reviewScreen, /admin && <button/); assert.match(reviewScreen, /Run canonicalisation/);
   assert.match(reviewScreen, /migrationApi\.decideReview/);
+  assert.match(templateScreen, /const actions = admin \?/);
+  assert.match(templateScreen, /Keyword rules/); assert.match(templateScreen, /Propose again/);
+  assert.match(templateScreen, /Approve \{pattern\.templateCount/);
+  assert.match(templateScreen, /Approve this template/);
+});
+
+test("contract templates screen maps every approved mockup element to server data", () => {
+  for (const text of ["Contract templates", "Patterns", "Templates in", "Nothing is loaded from a template until it is approved", "Templates", "Approved", "Waiting for approval", "Needs a person", "Policies to create", "All source templates", "Deleted in source"]) assert.ok(templateScreen.includes(text), text);
+  assert.match(templateScreen, /<DataGrid/g); assert.match(templateScreen, /<KpiStrip/); assert.match(templateScreen, /<Rail/);
+  assert.match(templateScreen, /templatePatterns/); assert.match(templateScreen, /templateSummary/); assert.match(templateScreen, /approveTemplatePattern/);
+  assert.match(templateScreen, /nextCursor/); assert.match(templateScreen, /keyset paged/);
+  assert.doesNotMatch(templateScreen, />\{(?:row|detail)\.(?:templateKey|templateSourceKey|extractionBatchId)\}</);
+});
+
+test("template drawer edits one readable policy choice per block and keeps the pattern warning", () => {
+  for (const text of ["As stored in the source", "Wording to read", "Cover blocks", "Policy choice", "Create a new policy from these terms", "Add a block", "Remove block", "Approve this template", "Save without approving", "Changing a block moves this template out of its pattern"]) assert.ok(templateScreen.includes(text), text);
+  assert.match(templateScreen, /catalogue\.policies\.filter\(policy => policy\.familyCode === block\.familyCode\)/);
+  assert.match(templateScreen, /updateTemplate\(detail\.templateKey, blocks, detail\.version\)/);
+  assert.match(templateScreen, /approveTemplate\(detail\.templateKey\)/);
+  assert.match(templateScreen, /assumed: no unit in the source/);
+});
+
+test("keyword rules are an administrator-only tenant-setting form", () => {
+  assert.match(templateScreen, /admin \? <>.*showKeywordRules.*proposeAgain/s);
+  assert.match(templateScreen, /Rules are a tenant setting/);
+  assert.match(templateScreen, /Add keyword/); assert.match(templateScreen, /Save keyword rules/);
+  assert.match(templateScreen, /saveTemplateKeywordRules\(rules, version\)/);
+  assert.doesNotMatch(api, /actor|approvedBy|requestedBy/i);
+});
+
+test("template states, resolutions, refusals and source terms are always readable", () => {
+  for (const state of ["waiting", "needs_person", "approved", "waiting_for_policy_publication"] as const) {
+    assert.doesNotMatch(templateStateLabel(state), /_/); assert.ok(templateStateTone(state));
+  }
+  for (const resolution of ["existing_policy", "policy_to_create"] as const) assert.doesNotMatch(templateResolutionLabel(resolution), /_/);
+  for (const rule of ["template_mapping_needs_review", "template_pattern_not_draft", "template_policy_terms_incomplete", "template_mapping_changed", "template_keyword_duplicate"]) assert.doesNotMatch(refusalRuleLabel(rule), /_/);
+  const terms: TemplateSourceTerms = { durationValue: 36, durationUnit: "months", durationUnitVerified: false, partsPct: 100, labourPct: 100, travelPct: 0, responseHours: 24, responseSource: "1 day", coverageHours: "mon=0800-1700;fri=0800-1700", contractType: "serial" };
+  assert.equal(templateTermsLabel(terms), "36 months (assumed) · parts included, labour included, travel excluded · response 1 day (read as 24 hours) · Mon 08:00–17:00, Fri 08:00–17:00");
 });
 
 test("console uses the house grid, KPI, drawer, source test and licence form", () => {

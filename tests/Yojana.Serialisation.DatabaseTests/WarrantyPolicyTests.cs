@@ -31,6 +31,25 @@ public sealed class WarrantyPolicyTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Creating_a_policy_draft_replays_by_command_id_without_a_second_version()
+    {
+        var tenant = await TenantWithReferenceDataAsync("wpidem");
+        var commandId = Guid.NewGuid();
+        var command = new CreatePolicyDraft(commandId, "MIG-BASE-24M-A1B2C3D4",
+            "Base warranty · 24 months", "base_warranty", EntitlementType.Manufacturer,
+            new DateOnly(2026, 1, 1), PolicyValidatorTestsTerms.Standard24(), "migration-reviewer");
+        var first = await InvokeAsync<PolicyDraftResult>(tenant, command);
+        var replay = await InvokeAsync<PolicyDraftResult>(tenant, command);
+        Assert.NotEqual(commandId, first.PolicyVersionId);
+        Assert.Equal((first.PolicyVersionId, first.PolicyCode, first.Version, first.Status),
+            (replay.PolicyVersionId, replay.PolicyCode, replay.Version, replay.Status));
+        using var scope = fixture.ScopeFor(tenant);
+        Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>()
+            .PolicyVersions.CountAsync(row => row.TenantId == tenant
+                && row.PolicyCode == "MIG-BASE-24M-A1B2C3D4"));
+    }
+
+    [DatabaseFact]
     public async Task A_policy_is_a_series_of_versions_by_contract_date_and_a_published_version_is_never_edited()
     {
         var tenant = await TenantWithReferenceDataAsync("wp");

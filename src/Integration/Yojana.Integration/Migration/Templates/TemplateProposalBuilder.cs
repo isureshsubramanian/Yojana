@@ -164,10 +164,27 @@ internal static class TemplateProposalBuilder
             return false;
         if (family.FamilyCode == "service_level")
             return source.ResponseHours == policy.ResponseHours
-                && Same(source.CoverageHours, policy.CoverageHours);
+                && Same(source.CoverageHours, policy.CoverageHours)
+                && policy.ServiceMode == ServiceMode(family.FamilyCode);
         return source.PartsPct == policy.PartsPct && source.LabourPct == policy.LabourPct
-            && source.TravelPct == policy.TravelPct;
+            && source.TravelPct == policy.TravelPct && policy.ServiceMode == ServiceMode(family.FamilyCode);
     }
+
+    public static string ServiceMode(string familyCode) => familyCode == "service_level"
+        ? "on_site" : "return_to_base";
+
+    public static string PolicyTermsKey(string familyCode, TemplateSourceTerms terms) =>
+        JsonSerializer.Serialize(new
+        {
+            terms.DurationValue,
+            terms.DurationUnit,
+            terms.PartsPct,
+            terms.LabourPct,
+            terms.TravelPct,
+            terms.ResponseHours,
+            terms.CoverageHours,
+            service_mode = ServiceMode(familyCode),
+        }, Json);
 
     private static PolicyCatalogueFamily? BaseFamily(IEnumerable<PolicyCatalogueFamily> families)
     {
@@ -248,7 +265,7 @@ internal static class TemplateProposalBuilder
                 block.Resolution,
                 policy_id = block.Policy?.PolicyId,
                 policy_version = block.Policy?.Version,
-                block.Terms,
+                policy_terms = PolicyTermsKey(block.Family.FamilyCode, block.Terms),
             }),
             reasons = reasons.OrderBy(reason => reason, StringComparer.Ordinal),
         }, Json);

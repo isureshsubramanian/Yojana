@@ -7,6 +7,9 @@ public static class TemplateMappingState
     public const string Draft = "draft";
     public const string Approved = "approved";
     public const string Superseded = "superseded";
+    public const string Waiting = "waiting";
+    public const string NeedsPerson = "needs_person";
+    public const string WaitingForPolicyPublication = "waiting_for_policy_publication";
 }
 
 public static class TemplateBlockResolution

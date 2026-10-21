@@ -152,11 +152,12 @@ public sealed class IntegrationEndpointTests
         app.MapMigrationEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
-        Assert.Equal(31, endpoints.Count);
+        Assert.Equal(33, endpoints.Count);
         var readPaths = new HashSet<string>(StringComparer.Ordinal)
         {
             "/api/migration/batches", "/api/migration/batches/{batchId:guid}",
-            "/api/migration/templates", "/api/migration/templates/{templateKey}",
+            "/api/migration/templates", "/api/migration/templates/summary",
+            "/api/migration/templates/catalogue", "/api/migration/templates/{templateKey}",
             "/api/migration/batches/{batchId:guid}/profile",
             "/api/migration/batches/{batchId:guid}/profile/{classCode}/samples",
             "/api/migration/batches/{batchId:guid}/canonicalisation", "/api/migration/review",
@@ -183,6 +184,16 @@ public sealed class IntegrationEndpointTests
             && endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Contains("GET"));
         Assert.Contains(endpoints, endpoint => endpoint.RoutePattern.RawText ==
             "/api/migration/templates/{templateKey}/approve");
+        foreach (var path in new[] { "/api/migration/templates/{templateKey}",
+                     "/api/migration/templates/{templateKey}/approve", "/api/migration/templates/approve-pattern" })
+            Assert.Contains(endpoints, endpoint => endpoint.RoutePattern.RawText == path
+                && endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(policy =>
+                    policy.Policy == YojanaPolicy.MigrationReview));
+        foreach (var path in new[] { "/api/migration/templates/propose",
+                     "/api/migration/templates/keyword-rules" })
+            Assert.Contains(endpoints, endpoint => endpoint.RoutePattern.RawText == path
+                && endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(policy =>
+                    policy.Policy == YojanaPolicy.TenantAdministrator));
         Assert.Single(endpoints, endpoint => endpoint.RoutePattern.RawText ==
             "/api/migration/batches/{batchId:guid}/profile/{classCode}/samples");
         Assert.Equal(2, endpoints.Count(endpoint => endpoint.RoutePattern.RawText ==
@@ -210,6 +221,11 @@ public sealed class IntegrationEndpointTests
         {
             var methods = endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods;
             return (methods.Contains("GET") && readPaths.Contains(endpoint.RoutePattern.RawText!)) ||
+                (methods.Contains("PUT") && endpoint.RoutePattern.RawText ==
+                    "/api/migration/templates/{templateKey}") ||
+                (methods.Contains("POST") && endpoint.RoutePattern.RawText is
+                    "/api/migration/templates/{templateKey}/approve" or
+                    "/api/migration/templates/approve-pattern") ||
                 (methods.Contains("POST") && endpoint.RoutePattern.RawText ==
                     "/api/migration/review/{itemId:guid}/decision");
         }

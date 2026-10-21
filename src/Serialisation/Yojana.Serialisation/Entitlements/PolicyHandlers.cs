@@ -19,6 +19,20 @@ public static class CreatePolicyDraftHandler
     public static async Task<PolicyDraftResult> Handle(CreatePolicyDraft command, SerialisationDbContext db, PolicyStore store, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
+        if (command.CommandId == Guid.Empty)
+            throw new CommandRefusedException("command_id_required", "CommandId is required.");
+        if (await db.PolicyVersions.FirstOrDefaultAsync(v => v.TenantId == tenantId
+                && v.CommandId == command.CommandId, cancellationToken) is { } replay)
+        {
+            if (replay.PolicyCode != command.PolicyCode.Trim()
+                || replay.CoverageFamily != command.CoverageFamily
+                || replay.EntitlementType != command.EntitlementType)
+                throw new CommandRefusedException("command_id_reused",
+                    "This command id already created a different policy draft.", "send a new command id");
+            var replayTerms = await store.ReadTermsAsync(replay, cancellationToken, includeItems: true);
+            return new PolicyDraftResult(replay.PolicyVersionId, replay.PolicyCode, replay.Version, replay.Status,
+                await store.ValidateAsync(replay, replayTerms, cancellationToken));
+        }
         var code = command.PolicyCode.Trim();
         if (code.Length is 0 or > 60) throw new CommandRefusedException("policy_code_invalid", "A policy code is 1 to 60 characters.");
         var versions = await db.PolicyVersions.Where(v => v.TenantId == tenantId && v.PolicyCode == code).OrderByDescending(v => v.Version).ToListAsync(cancellationToken);
@@ -40,7 +54,7 @@ public static class CreatePolicyDraftHandler
         var now = clock.UtcNow;
         var row = new WarrantyPolicyVersion
         {
-            TenantId = tenantId, PolicyVersionId = TimeOrderedId.New(now), PolicyCode = code, Version = version, Name = command.Name, CoverageFamily = command.CoverageFamily, EntitlementType = command.EntitlementType,
+            TenantId = tenantId, PolicyVersionId = TimeOrderedId.New(now), CommandId = command.CommandId, PolicyCode = code, Version = version, Name = command.Name, CoverageFamily = command.CoverageFamily, EntitlementType = command.EntitlementType,
             AppliesToContractsFrom = command.AppliesToContractsFrom, Status = PolicyVersionStatus.Draft, RuleVersion = PolicyStore.RuleVersionFor(version), DurationUnit = "", EndOfMonthRule = "", DurationBasis = "", StartTrigger = "",
             Transferable = "", SettlementFormula = "", AssuranceOrService = "", ReferenceTimeZoneRule = "", CreatedAt = now, CreatedBy = command.ActorRef,
             LastModifiedAt = now, LastModifiedBy = command.ActorRef,

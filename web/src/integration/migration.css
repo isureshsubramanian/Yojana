@@ -55,5 +55,21 @@
 .migration-earlier-decisions article:last-child { border-bottom: 0; }
 .migration-earlier-decisions strong { display: block; margin-top: 6px; }
 .migration-earlier-decisions p { margin: 6px 0 0; font-size: 13px; }
+.migration-template-card .table { min-width: 1040px; }
+.migration-template-header { align-items: center; gap: 12px; }
+.migration-template-header .right { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.migration-template-filters { flex-wrap: wrap; }
+.migration-deleted-filter { min-width: 170px; }
+.migration-template-state { display: flex; align-items: flex-start; gap: 6px; flex-wrap: wrap; }
+.migration-template-state .sub { flex-basis: 100%; max-width: 260px; }
+.migration-template-deleted { color: var(--text-3); }
+.migration-template-help { margin: 8px 0 0; font-size: 12px; line-height: 1.45; }
+.migration-template-block { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.migration-template-block.readonly { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.migration-template-block .select { width: 100%; }
+.migration-template-block > .btn { justify-self: start; }
+.migration-template-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.migration-keyword-rule { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: end; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.migration-keyword-rule .input, .migration-keyword-rule .select { width: 100%; }
 @media (max-width: 1100px) { .migration-phases { grid-template-columns: repeat(3, minmax(0, 1fr)); } .migration-phase:nth-child(4) { border-left: 0; border-top: 1px solid var(--border); } .migration-phase:nth-child(5), .migration-phase:nth-child(6) { border-top: 1px solid var(--border); } }
-@media (max-width: 720px) { .migration-phases { grid-template-columns: 1fr; } .migration-phase + .migration-phase { border-left: 0; border-top: 1px solid var(--border); } .migration-licence, .migration-outcome-row, .migration-canonical-state .card-body { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; } .migration-family-filter { flex-basis: 100%; } }
+@media (max-width: 720px) { .migration-phases { grid-template-columns: 1fr; } .migration-phase + .migration-phase { border-left: 0; border-top: 1px solid var(--border); } .migration-licence, .migration-outcome-row, .migration-canonical-state .card-body, .migration-template-header .right { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; } .migration-family-filter { flex-basis: 100%; } .migration-keyword-rule { grid-template-columns: 1fr; } }
