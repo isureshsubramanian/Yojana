@@ -91,6 +91,7 @@ internal static class MigrationModel
             builder.HasOne<MigrationProfileRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.RunId })
                 .OnDelete(DeleteBehavior.Cascade);
         });
+        Templates.TemplateModel.Configure(modelBuilder);
         Staging.SourceProtocol.Configure(modelBuilder);
     }
 }

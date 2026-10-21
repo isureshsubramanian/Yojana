@@ -30,6 +30,8 @@ using Yojana.Integration.Backfills;
 using Yojana.Integration.Connectors;
 using Yojana.Integration.LegacyMigration;
 using Yojana.Integration.LegacyMigration.Staging;
+using Yojana.Integration.LegacyMigration.Templates;
+using Yojana.Integration.Contracts;
 using Yojana.Integration.LegacyMigration.Profiling;
 
 namespace Yojana.Integration;
@@ -189,6 +191,9 @@ public static class IntegrationModule
         builder.Services.AddScoped<SourceExtractor>();
         builder.Services.AddScoped<MigrationSourceService>();
         builder.Services.AddScoped<MigrationBatchService>();
+        builder.Services.AddScoped<TemplateKeywordRules>();
+        builder.Services.AddScoped<TemplateMappingService>();
+        builder.Services.AddScoped<IApprovedTemplateDecompositionQuery, ApprovedTemplateDecompositionQuery>();
         builder.Services.AddScoped<MigrationProfileOutcomeSettings>();
         builder.Services.AddScoped<IMigrationProfileQuery, SerialInMultipleWarehousesProfileQuery>();
         builder.Services.AddScoped<IMigrationProfileQuery, NegativeQuantityProfileQuery>();

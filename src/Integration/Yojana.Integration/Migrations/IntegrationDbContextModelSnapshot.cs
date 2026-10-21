@@ -4513,6 +4513,247 @@ namespace Yojana.Integration.Migrations
                     b.ToTable("stg_src_itl1", "migration");
                 });
 
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Templates.TemplateMapping", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TemplateMappingId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_mapping_id");
+
+                    b.Property<int>("ActiveContractCount")
+                        .HasColumnType("int")
+                        .HasColumnName("active_contract_count");
+
+                    b.Property<int>("ActiveSerialCount")
+                        .HasColumnType("int")
+                        .HasColumnName("active_serial_count");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("approved_at");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("approved_by");
+
+                    b.Property<int>("ContractCount")
+                        .HasColumnType("int")
+                        .HasColumnName("contract_count");
+
+                    b.Property<string>("DecompositionFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .HasColumnName("decomposition_fingerprint");
+
+                    b.Property<DateTime>("ExtractedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("extracted_at");
+
+                    b.Property<Guid>("ExtractionBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("extraction_batch_id");
+
+                    b.Property<bool>("NeedsPerson")
+                        .HasColumnType("bit")
+                        .HasColumnName("needs_person");
+
+                    b.Property<string>("PatternKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .HasColumnName("pattern_key");
+
+                    b.Property<string>("PatternLabel")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("pattern_label");
+
+                    b.Property<DateTime>("ProposedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("proposed_at");
+
+                    b.Property<string>("ReviewReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("review_reason");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<int>("SerialCount")
+                        .HasColumnType("int")
+                        .HasColumnName("serial_count");
+
+                    b.Property<string>("SourceFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .HasColumnName("source_fingerprint");
+
+                    b.Property<string>("SourceSystem")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("SourceTermsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("source_terms_json");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("state");
+
+                    b.Property<DateTime?>("SupersededAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("superseded_at");
+
+                    b.Property<Guid?>("SupersededByMappingId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("superseded_by_mapping_id");
+
+                    b.Property<string>("TemplateKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .HasColumnName("template_key");
+
+                    b.Property<string>("TemplateName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("template_name");
+
+                    b.Property<string>("TemplateSourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("template_source_key");
+
+                    b.Property<string>("WordingToReviewJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("wording_to_review_json");
+
+                    b.HasKey("TenantId", "TemplateMappingId")
+                        .HasName("pk_template_mapping");
+
+                    b.HasIndex("TenantId", "TemplateKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_template_mapping_tenant_id_template_key")
+                        .HasFilter("[state] <> 'superseded'");
+
+                    b.HasIndex("TenantId", "TemplateKey", "State")
+                        .HasDatabaseName("ix_template_mapping_tenant_id_template_key_state");
+
+                    b.HasIndex("TenantId", "PatternKey", "State", "TemplateKey")
+                        .HasDatabaseName("ix_template_mapping_tenant_id_pattern_key_state_template_key");
+
+                    b.ToTable("template_mapping", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_template_mapping_state", "state IN ('draft','approved','superseded')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Templates.TemplateMappingBlock", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TemplateMappingBlockId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_mapping_block_id");
+
+                    b.Property<string>("FamilyCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("family_code");
+
+                    b.Property<string>("FamilyName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("family_name");
+
+                    b.Property<string>("PolicyCode")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("policy_code");
+
+                    b.Property<Guid?>("PolicyId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("policy_id");
+
+                    b.Property<string>("PolicyName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("policy_name");
+
+                    b.Property<int?>("PolicyVersion")
+                        .HasColumnType("int")
+                        .HasColumnName("policy_version");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("int")
+                        .HasColumnName("position");
+
+                    b.Property<string>("ProposedTermsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("proposed_terms_json");
+
+                    b.Property<string>("Resolution")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(24)")
+                        .HasColumnName("resolution");
+
+                    b.Property<bool>("Stacking")
+                        .HasColumnType("bit")
+                        .HasColumnName("stacking");
+
+                    b.Property<Guid>("TemplateMappingId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_mapping_id");
+
+                    b.HasKey("TenantId", "TemplateMappingBlockId")
+                        .HasName("pk_template_mapping_block");
+
+                    b.HasIndex("TenantId", "TemplateMappingId", "FamilyCode")
+                        .IsUnique()
+                        .HasDatabaseName("ux_template_mapping_block_tenant_id_template_mapping_id_family_code");
+
+                    b.HasIndex("TenantId", "TemplateMappingId", "Position")
+                        .IsUnique()
+                        .HasDatabaseName("ux_template_mapping_block_tenant_id_template_mapping_id_position");
+
+                    b.ToTable("template_mapping_block", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_template_mapping_block_resolution", "resolution IN ('existing_policy','policy_to_create')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Integration.Relays.RelayNonce", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -4781,6 +5022,16 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_migration_profile_run_tenant_id_batch_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Templates.TemplateMappingBlock", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Templates.TemplateMapping", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TemplateMappingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_template_mapping_block_tenant_id_template_mapping_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.Relays.RelayRequestRow", b =>
