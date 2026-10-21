@@ -38,5 +38,20 @@ public sealed class MigrationTests
         Assert.All(SourceProtocol.Tables, table => Assert.NotEmpty(table.Keys));
         Assert.Equal(SourceProtocol.Tables.Count,
             SourceProtocol.Tables.Select(table => table.StagingTable).Distinct(StringComparer.Ordinal).Count());
+        foreach (var table in SourceProtocol.Tables)
+        foreach (var read in table.Reads)
+        foreach (var column in table.Columns)
+        {
+            var projected = column.SourceName is not null ||
+                read.SourceColumnOverrides?.ContainsKey(column.PropertyName) == true ||
+                read.TextConstants?.ContainsKey(column.PropertyName) == true ||
+                read.NullProperties?.Contains(column.PropertyName) == true;
+            Assert.True(projected, $"{table.SourceTable}.{column.PropertyName} has no source projection.");
+            if (column.Key)
+                Assert.False(read.NullProperties?.Contains(column.PropertyName) == true,
+                    $"{table.SourceTable}.{column.PropertyName} is a nullable source key projection.");
+        }
+        Assert.Equal(10, SourceProtocol.Tables.Single(table =>
+            table.RowType == typeof(MarketingDocumentHeaderStagingRow)).Reads.Count);
     }
 }

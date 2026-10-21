@@ -14,7 +14,7 @@ namespace Yojana.Integration.DatabaseTests;
 [Collection("integration host")]
 public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
 {
-    private const string SourceDatabase = "yojana_src_p9t02";
+    private const string SourceDatabase = "yojana_src_p9t02fix";
     private const string Actor = "fictional-migration-admin";
     private const string SecretMarker = "P9T02-secret-marker";
 
@@ -57,11 +57,11 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
             Assert.DoesNotContain(SecretMarker, JsonSerializer.Serialize(tested));
 
             var first = await RunAsync(batches, source.SourceId);
-            Assert.Equal(20, first.Tables!.Sum(x => x.Inserted));
+            Assert.Equal(SourceFixture.ExpectedRows, first.Tables!.Sum(x => x.Inserted));
             Assert.Equal(0, first.Tables!.Sum(x => x.Updated + x.Unchanged + x.Absent));
 
             var second = await RunAsync(batches, source.SourceId);
-            Assert.Equal(20, second.Tables!.Sum(x => x.Unchanged));
+            Assert.Equal(SourceFixture.ExpectedRows, second.Tables!.Sum(x => x.Unchanged));
             Assert.Equal(0, second.Tables!.Sum(x => x.Inserted + x.Updated + x.Absent));
 
             await SourceFixture.UpdateAsync<SerialMasterStagingRow>(SourceDatabase,
@@ -73,7 +73,7 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
                 });
             var changed = await RunAsync(batches, source.SourceId);
             Assert.Equal(1, changed.Tables!.Sum(x => x.Updated));
-            Assert.Equal(19, changed.Tables!.Sum(x => x.Unchanged));
+            Assert.Equal(SourceFixture.ExpectedRows - 1, changed.Tables!.Sum(x => x.Unchanged));
 
             await SourceFixture.DeleteAsync<SerialMasterStagingRow>(SourceDatabase, new Dictionary<string, object?>
             {
@@ -103,7 +103,7 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
             cross = await sources.SetLicenceAsync(cross.SourceId,
                 new(true, "FICTIONAL-CONTRACT-2026-09", "Same-server read-only extraction confirmed."), Actor, default);
             var crossBatch = await RunAsync(batches, cross.SourceId);
-            Assert.Equal(20, crossBatch.Tables!.Sum(x => x.Inserted));
+            Assert.Equal(SourceFixture.ExpectedRows, crossBatch.Tables!.Sum(x => x.Inserted));
             await sources.SetLicenceAsync(cross.SourceId,
                 new(false, null, "Contract review reopened by customer counsel."), Actor, default);
             var withdrawn = await batches.StartAsync(new(cross.SourceId), Actor, default);
@@ -193,6 +193,8 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
 
     private static class SourceFixture
     {
+        public static int ExpectedRows => SourceProtocol.Tables.Sum(table => table.Reads.Count) + 4;
+
         public static async Task RecreateAsync(string database)
         {
             await DropAsync(database);
@@ -206,15 +208,19 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
             await using var source = new SqlConnection(ConnectionString(database));
             await source.OpenAsync();
             foreach (var table in SourceProtocol.Tables)
+            foreach (var read in table.Reads)
             {
-                var columns = string.Join(", ", table.Columns.Select(column =>
-                    $"[{Escape(column.SourceName)}] {Declaration(column)} NULL"));
+                var columns = string.Join(", ", table.Columns
+                    .Select(column => (Column: column, Name: SourceColumn(read, column)))
+                    .Where(item => item.Name is not null)
+                    .Select(item => $"[{Escape(item.Name!)}] {Declaration(item.Column)} NULL"));
                 await using var command = new SqlCommand(
-                    $"CREATE TABLE [dbo].[{Escape(table.SourceTable)}] ({columns});", source);
+                    $"CREATE TABLE [dbo].[{Escape(read.SourceTable)}] ({columns});", source);
                 await command.ExecuteNonQueryAsync();
             }
             foreach (var table in SourceProtocol.Tables)
-                await InsertAsync(source, table, DefaultRow(table));
+            foreach (var read in table.Reads)
+                await InsertAsync(source, table, read, DefaultRow(table));
             await InsertAsync<SerialMasterStagingRow>(database,
                 Serial("STORAGE-ARRAY-02", 2, "Storage-Mixed-002", "Media retention service"));
             await InsertAsync<SerialMasterStagingRow>(database,
@@ -227,13 +233,14 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
         {
             [nameof(SerialMasterStagingRow.ItemCode)] = item,
             [nameof(SerialMasterStagingRow.SystemNumber)] = number,
+            [nameof(SerialMasterStagingRow.SerialEntry)] = number,
             [nameof(SerialMasterStagingRow.SerialNumber)] = serial,
             [nameof(SerialMasterStagingRow.ManufacturerSerial)] = $"Mnf-{number}",
             [nameof(SerialMasterStagingRow.LotNumber)] = $"LOT-{number}",
             [nameof(SerialMasterStagingRow.InboundDate)] = new DateTime(2026, 9, 1),
             [nameof(SerialMasterStagingRow.WarrantyStart)] = new DateTime(2026, 9, 1),
             [nameof(SerialMasterStagingRow.WarrantyEnd)] = new DateTime(2029, 9, 1),
-            [nameof(SerialMasterStagingRow.Status)] = 0,
+            [nameof(SerialMasterStagingRow.Status)] = "0",
             [nameof(SerialMasterStagingRow.Notes)] = notes,
             [nameof(SerialMasterStagingRow.DataSource)] = "N",
         };
@@ -252,20 +259,22 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
             var table = SourceProtocol.Tables.Single(x => x.RowType == typeof(TRow));
             await using var connection = new SqlConnection(ConnectionString(database));
             await connection.OpenAsync();
-            await InsertAsync(connection, table, values);
+            await InsertAsync(connection, table, table.Reads[0], values);
         }
 
-        private static async Task InsertAsync(SqlConnection connection, SourceTableProtocol table,
+        private static async Task InsertAsync(SqlConnection connection, SourceTableProtocol table, SourceRead read,
             IReadOnlyDictionary<string, object?> values)
         {
-            var names = table.Columns.Select(x => $"[{Escape(x.SourceName)}]").ToList();
-            var parameters = table.Columns.Select((_, index) => $"@p{index}").ToList();
+            var projected = table.Columns.Select(column => (Column: column, Name: SourceColumn(read, column)))
+                .Where(item => item.Name is not null).ToList();
+            var names = projected.Select(x => $"[{Escape(x.Name!)}]").ToList();
+            var parameters = projected.Select((_, index) => $"@p{index}").ToList();
             await using var command = new SqlCommand(
-                $"INSERT [dbo].[{Escape(table.SourceTable)}] ({string.Join(',', names)}) VALUES ({string.Join(',', parameters)});",
+                $"INSERT [dbo].[{Escape(read.SourceTable)}] ({string.Join(',', names)}) VALUES ({string.Join(',', parameters)});",
                 connection);
-            for (var index = 0; index < table.Columns.Count; index++)
+            for (var index = 0; index < projected.Count; index++)
             {
-                var column = table.Columns[index];
+                var column = projected[index].Column;
                 command.Parameters.AddWithValue(parameters[index], values.GetValueOrDefault(column.PropertyName)
                     ?? DBNull.Value);
             }
@@ -279,10 +288,10 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
             await using var connection = new SqlConnection(ConnectionString(database));
             await connection.OpenAsync();
             var updateColumns = updates.Keys.Select((property, index) =>
-                $"[{Escape(Column(table, property).SourceName)}] = @u{index}").ToList();
+                $"[{Escape(SourceColumn(table.Reads[0], Column(table, property))!)}] = @u{index}").ToList();
             var keyColumns = keys.Keys.Select((property, index) =>
-                $"[{Escape(Column(table, property).SourceName)}] = @k{index}").ToList();
-            await using var command = new SqlCommand($"UPDATE [dbo].[{Escape(table.SourceTable)}] SET " +
+                $"[{Escape(SourceColumn(table.Reads[0], Column(table, property))!)}] = @k{index}").ToList();
+            await using var command = new SqlCommand($"UPDATE [dbo].[{Escape(table.Reads[0].SourceTable)}] SET " +
                 string.Join(',', updateColumns) + " WHERE " + string.Join(" AND ", keyColumns) + ";", connection);
             var index = 0;
             foreach (var value in updates.Values) command.Parameters.AddWithValue($"@u{index++}", value ?? DBNull.Value);
@@ -298,8 +307,8 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
             await using var connection = new SqlConnection(ConnectionString(database));
             await connection.OpenAsync();
             var keyColumns = keys.Keys.Select((property, index) =>
-                $"[{Escape(Column(table, property).SourceName)}] = @k{index}").ToList();
-            await using var command = new SqlCommand($"DELETE [dbo].[{Escape(table.SourceTable)}] WHERE " +
+                $"[{Escape(SourceColumn(table.Reads[0], Column(table, property))!)}] = @k{index}").ToList();
+            await using var command = new SqlCommand($"DELETE [dbo].[{Escape(table.Reads[0].SourceTable)}] WHERE " +
                 string.Join(" AND ", keyColumns) + ";", connection);
             var index = 0;
             foreach (var value in keys.Values) command.Parameters.AddWithValue($"@k{index++}", value ?? DBNull.Value);
@@ -345,7 +354,9 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
         {
             var result = new Dictionary<string, object?>();
             foreach (var column in table.Columns)
-                result[column.PropertyName] = column.Kind switch
+                result[column.PropertyName] = table.RowType == typeof(CardPartnerStagingRow) &&
+                    column.PropertyName == nameof(CardPartnerStagingRow.HistorySequence)
+                    ? null : column.Kind switch
                 {
                     RawColumnKind.Text => TextValue(column.PropertyName),
                     RawColumnKind.Int32 => column.PropertyName.Contains("Line", StringComparison.Ordinal) ? 0 : 1,
@@ -365,7 +376,7 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
             nameof(SerialMasterStagingRow.ManufacturerSerial) => "Mnf-1",
             nameof(SerialMasterStagingRow.Notes) => "Next-business-day service",
             nameof(EquipmentCardStagingRow.CustomerCode) or nameof(ServiceContractStagingRow.CustomerCode) => "ASTER-COMPUTE",
-            nameof(AttachmentStagingRow.Path) => @"C:\Fictional\Attachments",
+            nameof(AttachmentStagingRow.TargetPath) or nameof(AttachmentStagingRow.SourcePath) => @"C:\Fictional\Attachments",
             nameof(AttachmentStagingRow.FileName) => "server-warranty",
             nameof(AttachmentStagingRow.FileExtension) => "pdf",
             nameof(MarketingDocumentHeaderStagingRow.SourceDocumentTable) => "delivery",
@@ -374,6 +385,12 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
 
         private static RawColumn Column(SourceTableProtocol table, string property) =>
             table.Columns.Single(x => x.PropertyName == property);
+        private static string? SourceColumn(SourceRead read, RawColumn column)
+        {
+            if (read.TextConstants?.ContainsKey(column.PropertyName) == true ||
+                read.NullProperties?.Contains(column.PropertyName) == true) return null;
+            return read.SourceColumnOverrides?.GetValueOrDefault(column.PropertyName) ?? column.SourceName;
+        }
         private static string Declaration(RawColumn column) => column.Kind switch
         {
             RawColumnKind.Int32 => "int",
