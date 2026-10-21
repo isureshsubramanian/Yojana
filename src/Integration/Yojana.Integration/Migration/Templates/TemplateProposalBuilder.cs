@@ -162,7 +162,7 @@ internal static class TemplateProposalBuilder
             return source.ResponseHours == policy.ResponseHours
                 && Same(source.CoverageHours, policy.CoverageHours);
         return source.PartsPct == policy.PartsPct && source.LabourPct == policy.LabourPct
-            && source.TravelPct == policy.TravelPct && Same(source.CoverageHours, policy.CoverageHours);
+            && source.TravelPct == policy.TravelPct;
     }
 
     private static PolicyCatalogueFamily? BaseFamily(IEnumerable<PolicyCatalogueFamily> families)

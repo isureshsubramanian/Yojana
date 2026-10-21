@@ -58,6 +58,28 @@ public sealed class TemplateProposalTests
     }
 
     [Fact]
+    public void Service_hours_do_not_prevent_an_otherwise_exact_base_policy_match()
+    {
+        var template = Template("RS-1100 weekday response", "One day response");
+        template.MondayEnabled = "Y";
+        template.MondayStart = 800;
+        template.MondayEnd = 1700;
+        var baseId = Guid.NewGuid();
+        var serviceId = Guid.NewGuid();
+
+        var draft = TemplateProposalBuilder.Build(template, Catalogue(
+                Policy("base", baseId, "BASE", "Base cover", null),
+                Policy("service_level", serviceId, "ONE-DAY", "One-day weekday response", 24,
+                    "mon=0800-1700")),
+            TemplateKeywordRules.Defaults);
+
+        Assert.False(draft.NeedsPerson);
+        Assert.Equal(baseId, draft.Blocks.Single(block => block.Family.FamilyCode == "base").Policy!.PolicyId);
+        Assert.Equal(serviceId,
+            draft.Blocks.Single(block => block.Family.FamilyCode == "service_level").Policy!.PolicyId);
+    }
+
+    [Fact]
     public void A_single_total_duration_never_guesses_the_extended_portion()
     {
         var template = Template("ST-44 extended", "Extended storage warranty");
@@ -100,7 +122,8 @@ public sealed class TemplateProposalTests
             new("extended_term", "Extended term", true, true),
         ], policies);
 
-    private static PolicyCataloguePolicy Policy(string family, Guid id, string code, string name, int? response) =>
+    private static PolicyCataloguePolicy Policy(string family, Guid id, string code, string name, int? response,
+        string? coverageHours = null) =>
         new(family, id, code, 1, name, new(36, DurationRule.Months, 100, 100, 100,
-            family == "service_level" ? "on_site" : "return_to_base", response, null));
+            family == "service_level" ? "on_site" : "return_to_base", response, coverageHours));
 }
