@@ -14,7 +14,7 @@ function ReconciliationScreen() {
   const { detail, error } = useConnectionDetail(connection);
   const inactiveReason = !connection ? "Select a connection above to run either check." : !detail ? "Loading connection settings."
     : detail.lifecycleStatus !== "active" ? "Checks require an active connection. Saved results remain available below." : null;
-  const range = reconciliationRange(start, end, detail?.reconciliationWindowDays ?? 0, new Date().toISOString().slice(0, 10));
+  const range = reconciliationRange(start, end, detail?.reconciliationWindowDays ?? 0, detail?.reconciliationToday ?? new Date().toISOString().slice(0, 10));
   const columns: GridColumn<Run>[] = [
     { key: "connection", label: "Connection", width: 25, render: x => <span className="primary">{x.connectionName}</span> },
     { key: "range", label: "Business date range", width: 22, render: x => `${x.rangeStart} – ${x.rangeEnd}` },

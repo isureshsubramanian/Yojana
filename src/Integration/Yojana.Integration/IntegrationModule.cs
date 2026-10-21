@@ -172,6 +172,7 @@ public static class IntegrationModule
         builder.Services.TryAddScoped<IReconciliationBackfillScheduler, NullReconciliationBackfillScheduler>();
         builder.Services.AddScoped(sp => new ReconciliationSettings(
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped<ReconciliationBusinessDay>();
         builder.Services.AddScoped<ReconciliationService>();
         builder.Services.AddSingleton(RecurringTenantJob.For<ReconciliationJob>(
             ReconciliationJob.JobName, ReconciliationJob.Cron));

@@ -108,7 +108,7 @@ export function reconciliationRange(start: string, end: string, windowDays: numb
   const error = !windowDays ? "Loading the connection's check window."
     : !start || !end ? "Choose both business dates."
     : end < start ? "The end date must not precede the start date."
-    : end > today ? "The end date must not be in the future (UTC)."
+    : end > today ? "The end date must not be after today in the connection's time zone."
     : start < shift(end, -(days - 1)) ? `Choose at most ${days} days, including both dates.` : null;
   return { startMin: end ? shift(end, -(days - 1)) : undefined, startMax: end && end < today ? end : today,
     endMin: start || undefined, endMax: last < today ? last : today, error };

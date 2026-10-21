@@ -17,6 +17,7 @@ namespace Yojana.Integration.Connections;
 
 public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext tenant, IClock clock,
     ConnectionHealthSettings healthSettings, ReconciliationSettings reconciliationSettings,
+    ReconciliationBusinessDay reconciliationDay,
     ConnectorOnboardingChecklistGenerator checklist,
     IConnectionThrottleProfileStore throttles, IUserDirectory people, IServiceProvider services,
     Coexistence.WarrantyContractMaintenanceSettings warrantyContracts)
@@ -106,7 +107,7 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
                 gateway.OrderingWaitMinutes, await healthSettings.GetAsync(id, ct),
                 (await throttles.GetAsync(new(tenant.TenantId, id), ct))?.Profile, connectorSettings, rules), secrets,
             await checklist.GenerateAsync(id, ct), connection.Status,
-            await reconciliationSettings.WindowDaysAsync(id, ct));
+            await reconciliationSettings.WindowDaysAsync(id, ct), await reconciliationDay.TodayAsync(id, ct));
     }
 
     public async Task<ConnectionHealthDetail> HealthAsync(Guid id, CancellationToken ct)
