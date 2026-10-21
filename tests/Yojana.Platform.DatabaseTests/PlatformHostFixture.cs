@@ -47,10 +47,17 @@ public sealed class PlatformHostFixture : IAsyncLifetime
         builder.Configuration["Platform:ServiceName"] = "yojana-tests";
         builder.Configuration["Platform:SignIn:AuditHmacKey"] = "platform-database-tests-only-hmac-key";
         builder.Configuration["Platform:SignIn:MaintenanceBatchSize"] = "2";
+        // Every test class signs in from this one loopback address within about a minute, which the production limit
+        // (120 a minute per address) would refuse with 429 part-way through the run. The limiter itself is tested on its
+        // own host with its own limit (SignInSecurityTests).
+        builder.Configuration["Platform:SignIn:RequestLimitPerMinute"] = "100000";
         builder.Configuration["Platform:Mail:MaxAttempts"] = "3";
         builder.Configuration["Platform:Mail:RetryDelaySeconds:0"] = "1";
         builder.Configuration["Platform:Mail:MaintenanceBatchSize"] = "2";
         builder.Configuration["Platform:Mail:LinkBaseUrl"] = "http://127.0.0.1:5080";
+        // Browsers refuse an IP address as a passkey's relying party, so passkey tests sign for localhost (SoftwarePasskey).
+        builder.Configuration["Platform:Passkeys:RelyingPartyId"] = "localhost";
+        builder.Configuration["Platform:Passkeys:Origins:0"] = SoftwarePasskey.Origin;
         // The recorder handler for MailDeliveryRecorded lives in this test assembly (MailDeliveryRecordedHandler).
         PlatformSetup.IncludeHandlers(typeof(PlatformHostFixture).Assembly);
         builder.AddYojanaPlatform();
@@ -64,6 +71,7 @@ public sealed class PlatformHostFixture : IAsyncLifetime
         Host.UseYojanaPlatform();
         Host.MapYojanaSecurityEndpoints();
         Host.MapYojanaSecondStepEndpoints();
+        Host.MapYojanaPasskeyEndpoints();
         Host.MapYojanaPasswordResetEndpoints();
         Host.MapYojanaUserManagementEndpoints();
         Host.MapYojanaInvitationEndpoints();

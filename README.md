@@ -92,6 +92,16 @@ Settings › Sign-in policy. A tenant administrator checks the transport with `P
 own address, then `GET /api/platform/mail/messages/{id}`. Failed attempts retry for about four hours
 (`MaxAttempts`, default 8); the delivery log keeps no message bodies and is purged after `LogRetentionDays` (90).
 
+Passkeys (fingerprint, face or device PIN; WebAuthn checked by Fido2NetLib) belong to one host name, the relying party
+id under `Platform:Passkeys`. By default it is the host of `Platform:Mail:LinkBaseUrl` and the only accepted origin is
+that address; set `RelyingPartyId` and `Origins` when people reach the product at more than one address on the same
+domain. Choose it before anyone adds a passkey: every passkey is bound to the id it was created for, so changing it
+later means everyone adds their passkeys again. Without either setting the passkey endpoints answer
+`passkey_unavailable`. Development accepts `http://localhost:5080` and the live-reload client on `5173`. A tenant
+administrator allows passkeys (on by default) and passwordless sign-in with a passkey alone (off by default) under
+Settings › Sign-in policy; a person in several companies follows the strictest, and a passkey always counts as the
+second step.
+
 Seeded users are `<role>@dev.yojana.local` (for example `serial_administrator@dev.yojana.local`) and
 `admin@dev.yojana.local`, password `YOJANA_SEED_PASSWORD` from `.env` (change it there and rerun `make seed` to
 reset every seeded user to it). Sign in with

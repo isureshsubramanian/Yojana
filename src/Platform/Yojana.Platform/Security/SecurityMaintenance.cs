@@ -8,7 +8,7 @@ using Yojana.Platform.Data.Platform;
 namespace Yojana.Platform.Security;
 
 public sealed record SecurityMaintenanceResult(int ThrottleRows, int EventRows, int TokenRows, int InvitationRows,
-    int AuthenticatorRows, int RecoveryCodeRows, int Batches);
+    int AuthenticatorRows, int RecoveryCodeRows, int Batches, int PasskeyCeremonyRows = 0);
 
 public sealed class SecurityMaintenance(PlatformDbContext db, IClock clock, SignInOptions options)
 {
@@ -20,6 +20,7 @@ public sealed class SecurityMaintenance(PlatformDbContext db, IClock clock, Sign
         var invitationRows = 0;
         var authenticatorRows = 0;
         var recoveryCodeRows = 0;
+        var ceremonyRows = 0;
         var batches = 0;
         int deleted;
         do
@@ -85,8 +86,17 @@ public sealed class SecurityMaintenance(PlatformDbContext db, IClock clock, Sign
             if (deleted > 0) batches++;
         } while (deleted == options.MaintenanceBatchSize);
 
+        do
+        {
+            deleted = await db.PasskeyCeremonies.Where(row => row.ExpiresAt <= clock.UtcNow)
+                .OrderBy(row => row.ExpiresAt).Take(options.MaintenanceBatchSize)
+                .ExecuteDeleteAsync(cancellationToken);
+            ceremonyRows += deleted;
+            if (deleted > 0) batches++;
+        } while (deleted == options.MaintenanceBatchSize);
+
         return new SecurityMaintenanceResult(throttleRows, eventRows, tokenRows, invitationRows,
-            authenticatorRows, recoveryCodeRows, batches);
+            authenticatorRows, recoveryCodeRows, batches, ceremonyRows);
     }
 }
 

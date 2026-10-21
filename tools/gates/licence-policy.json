@@ -124,6 +124,16 @@
       "raised": "2026-10-15",
       "approvedBy": "owner (chat message, product to be released as open source; the component is fetched from the package feed at build time and is never stored in the repository)",
       "approvedOn": "2026-10-15"
+    },
+    {
+      "package": "libsodium",
+      "licence": "ISC (LICENSE inside the package: Copyright (c) 2013-2024 Frank Denis; permissive, the copyright and permission notice must appear in all copies)",
+      "why": "Native cryptography library under NSec.Cryptography, which Fido2 uses to verify passkey (WebAuthn) signatures (P9-T27). ISC is permissive with an attribution duty, equivalent to MIT; it is not on the allow list only because no earlier package used it. Excepted for this package alone rather than allowing ISC everywhere.",
+      "decision": "approved",
+      "decisionRef": "OD-39",
+      "raised": "2026-10-21",
+      "approvedBy": "owner (chat message 2026-10-21 approving the passkey route with its dependencies named, libsodium ISC among them)",
+      "approvedOn": "2026-10-21"
     }
   ]
 }

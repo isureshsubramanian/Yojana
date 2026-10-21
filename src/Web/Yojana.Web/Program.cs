@@ -139,6 +139,7 @@ app.MapGet("/notices", () =>
 
 app.MapYojanaSecurityEndpoints();
 app.MapYojanaSecondStepEndpoints();
+app.MapYojanaPasskeyEndpoints();
 app.MapYojanaPasswordResetEndpoints();
 app.MapYojanaUserManagementEndpoints();
 app.MapYojanaInvitationEndpoints();

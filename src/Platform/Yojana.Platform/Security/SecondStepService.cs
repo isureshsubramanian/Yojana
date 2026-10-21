@@ -3,14 +3,11 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Yojana.Platform.Contracts.Mail;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
-using Yojana.Platform.Mail;
-using Yojana.Platform.Tenancy;
 
 namespace Yojana.Platform.Security;
 
@@ -21,7 +18,7 @@ public sealed record SecondStepEnrolmentStart(Guid EnrolmentId, string OtpAuthUr
 public sealed record SecondStepConfirmation(IReadOnlyList<string> RecoveryCodes, AppUser User,
     bool Replaced);
 public sealed record SecondStepAccountView(string Mode, bool Enrolled, bool Required, DateTime? AddedAt,
-    int RecoveryCodesLeft);
+    int RecoveryCodesLeft, int Passkeys = 0);
 public sealed record SecondStepVerification(AppUser? User, bool Wrong, bool Locked, bool RecoveryCodesLow);
 
 public sealed class SecondStepUnavailableException : Exception;
@@ -36,27 +33,32 @@ public sealed class SecondStepService(
     SignInThrottleService throttles,
     SecurityEventWriter events,
     ISecurityStampService stamps,
-    IMailOutbox mail,
-    MailOptions mailOptions,
-    CompanyMailIdentity company,
+    SignInMethodNotices notices,
+    PasskeyPolicy passkeyPolicy,
     IServiceProvider services,
-    IServiceScopeFactory scopes,
     IClock clock)
 {
     public const string AuthenticatorMethod = "authenticator";
     public const string RecoveryCodeMethod = "recovery_code";
+    /// <summary>Offered as a second step only; the passkey ceremony itself runs through <see cref="PasskeyService"/>.</summary>
+    public const string PasskeyMethod = "passkey";
     private const string SecretPurpose = "user-authenticator-totp";
 
     public async Task<SecondStepChallenge> ChallengeAsync(Guid userId, CancellationToken cancellationToken)
     {
         var mode = await policy.EffectiveForUserAsync(userId, cancellationToken);
-        var enrolled = await db.UserAuthenticators.AsNoTracking().AnyAsync(row => row.UserId == userId &&
+        var authenticator = await db.UserAuthenticators.AsNoTracking().AnyAsync(row => row.UserId == userId &&
             row.Status == UserAuthenticatorStatus.Active, cancellationToken);
+        // A passkey counts as the second step (mockup set 3), but only while every tenant of the person allows passkeys.
+        var passkey = await db.UserPasskeys.AsNoTracking().AnyAsync(row => row.UserId == userId, cancellationToken) &&
+            (await passkeyPolicy.EffectiveForUserAsync(userId, cancellationToken)).Allowed;
         if (mode == SecondStepMode.Off) return new SecondStepChallenge(false, false, [], mode);
-        if (!enrolled) return new SecondStepChallenge(mode == SecondStepMode.Required,
+        if (!authenticator && !passkey) return new SecondStepChallenge(mode == SecondStepMode.Required,
             mode == SecondStepMode.Required,
             mode == SecondStepMode.Required ? [AuthenticatorMethod] : [], mode);
-        return new SecondStepChallenge(true, false, [AuthenticatorMethod, RecoveryCodeMethod], mode);
+        List<string> methods = authenticator ? [AuthenticatorMethod, RecoveryCodeMethod] : [];
+        if (passkey) methods.Add(PasskeyMethod);
+        return new SecondStepChallenge(true, false, methods, mode);
     }
 
     public async Task<SecondStepVerification> VerifyAsync(Guid userId, string? method, string? code,
@@ -207,7 +209,7 @@ public sealed class SecondStepService(
         await db.SaveChangesAsync(cancellationToken);
         if (replaced) await stamps.RotateSecurityStampAsync(userId, "authenticator_replaced", cancellationToken);
         var user = await db.Users.AsNoTracking().SingleAsync(row => row.Id == userId, cancellationToken);
-        await QueueMethodMailAsync(user, tenantId,
+        await notices.QueueAsync(user, tenantId,
             replaced ? "Authenticator app (replaced)" : "Authenticator app", false, request,
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -243,8 +245,9 @@ public sealed class SecondStepService(
             row.UserId == userId && row.Status == UserAuthenticatorStatus.Active, cancellationToken);
         var remaining = await db.UserRecoveryCodes.CountAsync(row => row.UserId == userId && row.UsedAt == null,
             cancellationToken);
+        var passkeys = await db.UserPasskeys.CountAsync(row => row.UserId == userId, cancellationToken);
         return new SecondStepAccountView(mode, authenticator is not null, mode == SecondStepMode.Required,
-            authenticator?.ConfirmedAt, remaining);
+            authenticator?.ConfirmedAt, remaining, passkeys);
     }
 
     public async Task<AppUser> RemoveAsync(Guid userId, string? password, TenantId? tenantId,
@@ -253,12 +256,12 @@ public sealed class SecondStepService(
         if (await policy.EffectiveForUserAsync(userId, cancellationToken) != SecondStepMode.Optional)
             throw new SecondStepRemovalNotAllowedException();
         var user = await RequirePasswordAsync(userId, password, cancellationToken);
-        await RemoveDataAsync(userId, cancellationToken);
+        await RemoveAuthenticatorAsync(userId, cancellationToken);
         events.Add(SecurityEventKind.SecondStepRemoved, userId, tenantId, userId, request,
             "removed_by_user");
         await db.SaveChangesAsync(cancellationToken);
         await stamps.RotateSecurityStampAsync(userId, "second_step_removed", cancellationToken);
-        await QueueMethodMailAsync(user, tenantId, "Authenticator app", true, request, cancellationToken);
+        await notices.QueueAsync(user, tenantId, "Authenticator app", true, request, cancellationToken);
         return user;
     }
 
@@ -266,12 +269,17 @@ public sealed class SecondStepService(
         string actorName, SecurityRequestContext request, CancellationToken cancellationToken)
     {
         var user = await db.Users.SingleAsync(row => row.Id == userId, cancellationToken);
-        await RemoveDataAsync(userId, cancellationToken);
+        var passkeys = await db.UserPasskeys.CountAsync(row => row.UserId == userId, cancellationToken);
+        // A reset is for a lost device, and a passkey is a second step too, so it removes the person's passkeys as well.
+        await RemoveAuthenticatorAsync(userId, cancellationToken);
+        await db.UserPasskeys.Where(row => row.UserId == userId).ExecuteDeleteAsync(cancellationToken);
         events.Add(SecurityEventKind.SecondStepRemoved, userId, tenantId, actorId, request,
             reason[..Math.Min(reason.Length, 100)]);
         await db.SaveChangesAsync(cancellationToken);
         await stamps.RotateSecurityStampAsync(userId, "admin_second_step_reset", cancellationToken);
-        await QueueMethodMailAsync(user, tenantId, $"Authenticator app · Removed by an administrator, {actorName}",
+        var removed = passkeys == 0 ? "Authenticator app" : passkeys == 1 ? "Authenticator app and 1 passkey"
+            : $"Authenticator app and {passkeys} passkeys";
+        await notices.QueueAsync(user, tenantId, $"{removed} · Removed by an administrator, {actorName}",
             true, request, cancellationToken);
     }
 
@@ -285,7 +293,7 @@ public sealed class SecondStepService(
         throw new SecondStepPasswordWrongException();
     }
 
-    private async Task RemoveDataAsync(Guid userId, CancellationToken cancellationToken)
+    private async Task RemoveAuthenticatorAsync(Guid userId, CancellationToken cancellationToken)
     {
         await db.UserRecoveryCodes.Where(row => row.UserId == userId).ExecuteDeleteAsync(cancellationToken);
         await db.UserAuthenticators.Where(row => row.UserId == userId).ExecuteDeleteAsync(cancellationToken);
@@ -306,40 +314,4 @@ public sealed class SecondStepService(
 
     private IUserSecretProtector Protector() => services.GetService<IUserSecretProtector>()
         ?? throw new SecondStepUnavailableException();
-
-    private async Task QueueMethodMailAsync(AppUser user, TenantId? tenantId, string method, bool removed,
-        SecurityRequestContext request, CancellationToken cancellationToken)
-    {
-        var tenantName = tenantId is { } selected
-            ? await db.Tenants.AsNoTracking().Where(row => row.Id == selected).Select(row => row.Name)
-                .SingleAsync(cancellationToken) : "Yojana";
-        var line = tenantId is { } companyId
-            ? await company.CompanyLineAsync(companyId, tenantName, cancellationToken) : null;
-        var rendered = AccountMailLayout.Render(new AccountMailContent(tenantName, "Security notice",
-            removed ? "A sign-in method was removed" : "A new sign-in method was added",
-            [removed ? "A way to complete sign-in was removed from your Yojana account." :
-                "A new way to complete sign-in was added to your Yojana account."],
-            [("Method", method), (removed ? "Removed" : "Added", clock.UtcNow.ToString("d MMM yyyy, HH:mm 'UTC'")),
-                ("From", string.IsNullOrWhiteSpace(request.ClientAddress) ? "Unknown address" : request.ClientAddress!),
-                ("Your sign-in methods", removed ? "Password" : "Password, authenticator app")],
-            ("Review my sign-in methods", mailOptions.Link("/account/security")),
-            ["Was this you? Then there is nothing to do.",
-                "If not, change your password and tell your administrator."],
-            $"Security notice for {tenantName}.", line));
-        var outgoing = new OutgoingMail(removed ? MailKind.SignInMethodRemoved : MailKind.SignInMethodAdded,
-            tenantId, user.Id, new MailRecipient(user.Email, user.DisplayName),
-            removed ? "A Yojana sign-in method was removed" : "A Yojana sign-in method was added",
-            rendered.Html, rendered.Text);
-        if (tenantId is not { } selectedTenant)
-        {
-            await mail.QueueAsync(outgoing, cancellationToken);
-            return;
-        }
-
-        // MailOutbox deliberately enforces tenant scope so sender identity cannot leak between companies. A
-        // pre-tenant second-step flow must establish that scope explicitly before it queues the notification.
-        using var scope = scopes.CreateScope();
-        scope.ServiceProvider.GetRequiredService<ITenantContextSetter>().Set(selectedTenant);
-        await scope.ServiceProvider.GetRequiredService<IMailOutbox>().QueueAsync(outgoing, cancellationToken);
-    }
 }

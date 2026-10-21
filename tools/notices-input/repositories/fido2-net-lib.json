@@ -1,0 +1,11 @@
+{
+  "name": "passwordless-lib/fido2-net-lib (P9-T27 passkeys)",
+  "matchRepositoryUrls": [],
+  "matchPackages": [
+    "Fido2/4.3.1",
+    "Fido2.Models/4.3.1"
+  ],
+  "licenceFile": "texts/fido2-4.3.1-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/passwordless-lib/fido2-net-lib/ce2736d7f4cad247212091c8379c08ce81974e65/LICENSE.txt",
+  "takenOn": "2026-10-21"
+}

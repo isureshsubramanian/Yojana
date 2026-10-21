@@ -44,10 +44,10 @@ test("mandatory change, account security and sign-in policy include their comple
   assert.match(account, /id="account-password">Password/);
   assert.match(account, /Second step/);
   assert.match(account, /Recovery codes/);
-  assert.doesNotMatch(account, /Passkey/);
+  assert.match(account, /id="account-passkeys">Passkeys/);
   assert.match(policy, /id="password-policy">Passwords/);
   assert.match(policy, /id="temporary-password-policy">Temporary passwords/);
   assert.match(policy, /Second step by role/);
-  assert.doesNotMatch(policy, /Passkeys|Failed attempts/);
+  assert.match(policy, /id="passkey-policy">Passkeys/); assert.doesNotMatch(policy, /Failed attempts/);
   assert.match(policy, /min=\{10\} max=\{1440\}/);
 });

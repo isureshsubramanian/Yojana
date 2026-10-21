@@ -67,6 +67,19 @@ public static class PlatformSetup
         mailOptions.Validate();
         builder.Services.AddSingleton(mailOptions);
         AddMailTransport(builder.Services, mailOptions);
+        var passkeyOptions = (builder.Configuration.GetSection(PasskeyOptions.SectionName).Get<PasskeyOptions>()
+            ?? new PasskeyOptions()).Resolve(mailOptions);
+        builder.Services.AddSingleton(passkeyOptions);
+        // Without a relying party (no Platform:Passkeys and no Platform:Mail:LinkBaseUrl) there is no IFido2, and the
+        // passkey endpoints answer passkey_unavailable instead of the host refusing to start.
+        if (passkeyOptions.Configured)
+            builder.Services.AddSingleton<Fido2NetLib.IFido2>(new Fido2NetLib.Fido2(new Fido2NetLib.Fido2Configuration
+            {
+                RPID = passkeyOptions.RelyingPartyId,
+                RPName = passkeyOptions.RelyingPartyName,
+                Origins = passkeyOptions.Origins!.ToHashSet(StringComparer.Ordinal),
+                ChallengeSize = 32,
+            }, null!));
         var forwardedHeaders = builder.Configuration.GetSection(PlatformForwardedHeadersOptions.SectionName)
             .Get<PlatformForwardedHeadersOptions>() ?? new PlatformForwardedHeadersOptions();
         forwardedHeaders.Validate();
@@ -128,6 +141,9 @@ public static class PlatformSetup
         builder.Services.AddScoped<PasswordSecuritySettings>();
         builder.Services.AddScoped<SecondStepPolicy>();
         builder.Services.AddScoped<SecondStepService>();
+        builder.Services.AddScoped<SignInMethodNotices>();
+        builder.Services.AddScoped<PasskeyPolicy>();
+        builder.Services.AddScoped<PasskeyService>();
         builder.Services.AddScoped<PendingSecondStepCookie>();
         builder.Services.AddScoped<MembershipAdministration>();
         builder.Services.AddSecurityRateLimiting(signInOptions);

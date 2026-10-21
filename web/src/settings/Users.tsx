@@ -61,7 +61,7 @@ export function Component() {
     { key: "person", label: "User", width: 17, render: (row) => <span className="primary">{row.displayName}</span> },
     { key: "email", label: "E-mail", width: 20, render: (row) => row.email },
     { key: "roles", label: "Roles", width: 23, render: (row) => row.roles.map(roleLabel).join(", ") },
-    { key: "methods", label: "Sign-in methods", width: 13, render: (row) => row.signInMethods.length ? row.signInMethods.map((method) => method === "app" ? "App" : roleLabel(method)).join(", ") : "Not set up" },
+    { key: "methods", label: "Sign-in methods", width: 13, render: (row) => row.signInMethods.length ? row.signInMethods.map((method) => method === "app" ? "App" : method === "passkey" ? passkeyCount(row.passkeys) : roleLabel(method)).join(", ") : "Not set up" },
     { key: "last", label: "Last sign-in", width: 14, render: (row) => when(row.lastSignInAt), muted: true },
     { key: "status", label: "Status", width: 17, render: (row) => <StatusBadge tone={statusTone(row.status)}>{statusLabel(row)}</StatusBadge> },
   ], []);
@@ -138,10 +138,10 @@ function UserDrawer({ row, onChanged, onDeactivate, onTemporary, onSecondStepRes
   });
   return <>
     {current.status === "locked" && <div className="note warn"><strong>Sign-in is temporarily locked.</strong>&nbsp;Locked until {when(current.lockedUntil)}.</div>}
-    <Section title="Details"><Kv rows={[["E-mail", current.email], ["Second step", current.signInMethods.includes("app") ? `Authenticator app · ${current.recoveryCodesLeft} recovery codes left` : "Not set up"], ["Also a member of", other.length ? other.join(", ") : "No other company visible to you"], ["Password changed", when(detail?.passwordChangedAt ?? null)]]} /><p className="muted">You can name only companies where you are also a tenant administrator.</p></Section>
+    <Section title="Details"><Kv rows={[["E-mail", current.email], ["Second step", secondStepLine(current)], ["Also a member of", other.length ? other.join(", ") : "No other company visible to you"], ["Password changed", when(detail?.passwordChangedAt ?? null)]]} /><p className="muted">You can name only companies where you are also a tenant administrator.</p></Section>
     <Section title="Roles"><div className="stack">{STAFF_ROLES.map((role) => <label className="checkrow" key={role}><input type="checkbox" checked={roles.includes(role)} onChange={(event) => setRoles((values) => event.target.checked ? [...values, role] : values.filter((value) => value !== role))} />{roleLabel(role)}</label>)}</div><button type="button" className="btn primary block" disabled={busy || roles.length === 0 || !detail || roles.slice().sort().join() === current.roles.slice().sort().join()} onClick={() => void saveRoles()}>Save roles</button></Section>
     <Section title="Password"><div className="act"><button type="button" className="btn primary block" disabled={busy || reset?.canSendLink === false} onClick={() => void passwordReset("link")}>Send password reset link</button><button type="button" className="btn block" disabled={busy || !reset?.canSetTemporary} title={!reset?.canSetTemporary ? unavailable : undefined} onClick={() => void passwordReset("temporary")}>Set a temporary password</button></div><p className="hint">You can reset a user only when you administer every company they belong to. For anyone else, the reset link goes to their own e-mail and nothing else is offered.</p></Section>
-    <Section title="Second step"><button type="button" className="btn block" disabled={busy || !current.signInMethods.includes("app") || !detail?.secondStepResetAllowed} title={!detail?.secondStepResetAllowed ? "You can reset the second step only when you administer every company this user belongs to; use your account page for yourself." : undefined} onClick={onSecondStepReset}>Reset second step…</button></Section>
+    <Section title="Second step"><button type="button" className="btn block" disabled={busy || !(current.signInMethods.includes("app") || current.signInMethods.includes("passkey")) || !detail?.secondStepResetAllowed} title={!detail?.secondStepResetAllowed ? "You can reset the second step only when you administer every company this user belongs to; use your account page for yourself." : undefined} onClick={onSecondStepReset}>Reset second step…</button></Section>
     <Section title="Membership"><div className="act">{current.status === "deactivated" ? <button type="button" className="btn block" disabled={busy} onClick={() => current.userId && void run(() => userManagementApi.reactivate(current.userId!))}>Reactivate</button> : <button type="button" className="btn block" disabled={busy} onClick={onDeactivate}>Deactivate…</button>}</div></Section>
     <ErrorNote error={error} />
   </>;
@@ -177,4 +177,12 @@ function SecondStepResetDialog({ row, onCancel, onSaved }: { row: TenantUserRow;
   const [reason, setReason] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
   const save = async () => { if (!row.userId) return; setBusy(true); setError(null); try { await userManagementApi.resetSecondStep(row.userId, reason); onSaved(); } catch (value) { setError(value); } finally { setBusy(false); } };
   return <ActionDialog title={`Reset second step for ${row.displayName}`} onCancel={onCancel} actions={<button type="button" className="btn primary" disabled={busy || !reason.trim()} onClick={() => void save()}>Reset second step</button>}><p className="muted">This removes the authenticator and all recovery codes, ends the user’s sessions and tells them by e-mail.</p><label className="field"><span className="lbl">Reason</span><textarea className="textarea" value={reason} onChange={(event) => setReason(event.target.value)} /></label><ErrorNote error={error} /></ActionDialog>;
+}
+
+const passkeyCount = (count: number) => count === 1 ? "1 passkey" : `${count} passkeys`;
+
+/** The authenticator app and passkeys both count; a reset removes both. */
+function secondStepLine(row: TenantUserRow) {
+  const parts = [row.signInMethods.includes("app") ? `Authenticator app · ${row.recoveryCodesLeft} recovery codes left` : null, row.passkeys > 0 ? passkeyCount(row.passkeys) : null].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "Not set up";
 }

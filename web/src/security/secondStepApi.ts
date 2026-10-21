@@ -3,14 +3,14 @@ import type { Session, TenantChoice } from "../api/types";
 
 export interface PendingSecondStep {
   secondStepRequired: true;
-  methods: Array<"authenticator" | "recovery_code">;
+  methods: Array<"authenticator" | "recovery_code" | "passkey">;
   enrolmentRequired: boolean;
   userName: string;
   tenantSummary: TenantChoice[];
 }
 export interface EnrolmentStart { enrolmentId: string; otpAuthUri: string; manualKey: string; qrSvg: string }
 export interface Confirmation { recoveryCodes: string[]; session: Session | null }
-export interface SecondStepState { mode: "required" | "optional" | "off"; enrolled: boolean; required: boolean; addedAt: string | null; recoveryCodesLeft: number }
+export interface SecondStepState { mode: "required" | "optional" | "off"; enrolled: boolean; required: boolean; addedAt: string | null; recoveryCodesLeft: number; passkeys: number }
 export interface SecondStepRole { role: string; label: string; users: number; mode: "required" | "optional" | "off" }
 export interface SecondStepSettings { roles: SecondStepRole[]; notSetUpCount: number; version: string }
 

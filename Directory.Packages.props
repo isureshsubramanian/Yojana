@@ -25,6 +25,10 @@
          BouncyCastle.Cryptography 2.7.0 (MIT) arrive transitively. No NOTICE files. MailKit also compiles in MIT files
          from Mono (NTLM) and Xamarin-copyright files whose notices are generator inputs (tools/notices-input/components). -->
     <PackageVersion Include="MailKit" Version="4.18.1" />
+    <!-- Passkeys (P9-T27, OD-39): Fido2 and Fido2.Models 4.3.1 (MIT, passwordless-lib/fido2-net-lib) check the WebAuthn
+         ceremonies; NSec.Cryptography 25.4.0 (MIT) with the native libsodium (ISC), System.Formats.Cbor, Microsoft.Bcl.Memory
+         and Microsoft.IdentityModel.JsonWebTokens (MIT, Microsoft) arrive transitively. Credited in THIRD-PARTY-NOTICES. -->
+    <PackageVersion Include="Fido2" Version="4.3.1" />
     <!-- Messaging: MIT (JasperFx/wolverine) -->
     <PackageVersion Include="WolverineFx" Version="6.51.1" />
     <PackageVersion Include="WolverineFx.AzureServiceBus" Version="6.51.1" />

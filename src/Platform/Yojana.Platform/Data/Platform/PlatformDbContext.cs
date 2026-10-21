@@ -36,6 +36,8 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
     public DbSet<UserInvitation> UserInvitations => Set<UserInvitation>();
     public DbSet<UserAuthenticator> UserAuthenticators => Set<UserAuthenticator>();
     public DbSet<UserRecoveryCode> UserRecoveryCodes => Set<UserRecoveryCode>();
+    public DbSet<UserPasskey> UserPasskeys => Set<UserPasskey>();
+    public DbSet<PasskeyCeremony> PasskeyCeremonies => Set<PasskeyCeremony>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -154,6 +156,30 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             b.HasKey(c => new { c.UserId, c.CodeHash });
             b.Property(c => c.CodeHash).HasMaxLength(32).IsFixedLength();
             b.HasIndex(c => new { c.UserId, c.BatchId, c.UsedAt });
+            b.HasOne<AppUser>().WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<UserPasskey>(b =>
+        {
+            b.ToTable("user_passkey");
+            b.HasKey(p => p.Id);
+            b.Property(p => p.CredentialId).HasMaxLength(1023);
+            b.Property(p => p.PublicKey).HasMaxLength(2048);
+            b.Property(p => p.Name).HasMaxLength(60);
+            b.Property(p => p.Transports).HasMaxLength(100);
+            b.HasIndex(p => p.CredentialId).IsUnique();
+            b.HasIndex(p => new { p.UserId, p.CreatedAt });
+            b.HasOne<AppUser>().WithMany().HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PasskeyCeremony>(b =>
+        {
+            b.ToTable("passkey_ceremony");
+            b.HasKey(c => c.Id);
+            b.Property(c => c.Purpose).HasMaxLength(20);
+            b.Property(c => c.OptionsJson).HasMaxLength(8000);
+            b.Property(c => c.Name).HasMaxLength(60);
+            b.HasIndex(c => c.ExpiresAt);
             b.HasOne<AppUser>().WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
