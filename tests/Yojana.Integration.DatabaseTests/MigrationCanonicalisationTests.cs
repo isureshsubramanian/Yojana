@@ -168,6 +168,26 @@ public sealed class MigrationCanonicalisationTests(IntegrationHostFixture fixtur
             Assert.Equal(1, secondStatus!.CarriedOver);
             Assert.Equal(1, secondStatus.KeptApart);
 
+            // Same rows, new lineage: one candidate now has an equipment card, so the decision is not replayed.
+            await MigrationExtractionTests.SourceFixture.InsertAsync<EquipmentCardStagingRow>(SourceDatabase, new()
+            {
+                [nameof(EquipmentCardStagingRow.CardId)] = 51300,
+                [nameof(EquipmentCardStagingRow.ItemCode)] = "SERVER-TRIM",
+                [nameof(EquipmentCardStagingRow.InternalSerial)] = "TRIM-1",
+                [nameof(EquipmentCardStagingRow.CustomerCode)] = "FIC-CUSTOMER-B",
+            });
+            fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddMinutes(1);
+            var lineageBatch = await ProfileAsync(scope, sourceId);
+            await canonical.EnqueueEligibleAsync(default);
+            await canonical.RunPendingAsync(default);
+            var lineagePage = await canonical.ListAsync(lineageBatch, MigrationReviewKind.SameSerialOneItem,
+                null, null, null, 25, default);
+            var requeued = Assert.Single(lineagePage.Items, row => row.RuleTried == CanonicalMatchRule.TrimmedUpper);
+            Assert.Equal(MigrationReviewStatus.Waiting, requeued.Status);
+            var requeuedDetail = await canonical.DetailAsync(requeued.ItemId, default);
+            Assert.Contains(requeuedDetail!.EarlierDecisions, decision =>
+                decision.Decision == MigrationReviewDecisionKind.KeepApart && !decision.AppliedToThisBatch);
+
             await MigrationExtractionTests.SourceFixture.InsertAsync<SerialMasterStagingRow>(SourceDatabase,
                 Serial("SERVER-TRIM", 22, "trim-1"));
             fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddMinutes(1);

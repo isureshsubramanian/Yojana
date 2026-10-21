@@ -290,7 +290,7 @@ public sealed class CanonicalisationService(
             AddReviewItem(run, sourceSystem, MigrationReviewKind.SameSerialOneItem,
                 candidates[0].MatchRule, group.Key.CanonicalSerial, candidates, suggestion,
                 strongest?.SourceKey, strongest is null ? "The strongest-lineage comparison is tied, so no merge is suggested."
-                    : StrongestReason(strongest), null);
+                    : StrongestReason(strongest), null, ranked);
         }
         await db.SaveChangesAsync(cancellationToken);
 
@@ -336,12 +336,18 @@ public sealed class CanonicalisationService(
 
     private void AddReviewItem(MigrationCanonRun run, string sourceSystem, string kind, string rule,
         string canonicalKey, List<MigrationUnitCandidate> candidates, string? suggestion,
-        string? keepSourceKey, string? reason, string? hint)
+        string? keepSourceKey, string? reason, string? hint, IReadOnlyList<CandidateFacts>? lineage = null)
     {
         var sourceKeys = candidates.Select(row => row.PrimarySourceKey).Order(StringComparer.Ordinal).ToList();
         var itemCodes = candidates.Select(row => row.ItemCode).Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal).ToList();
-        var fingerprint = Fingerprint(sourceSystem, kind, canonicalKey, itemCodes, sourceKeys);
+        // A merge decided on one lineage must not be replayed on another: when a candidate gains or loses
+        // transactions, a card, a contract or its first receipt, the item returns to a person (the earlier
+        // decision is still shown through the correlation key).
+        var lineageKeys = lineage?.OrderBy(fact => fact.SourceKey, StringComparer.Ordinal).Select(fact =>
+            $"{fact.SourceKey}:{fact.Transactions}:{fact.HasCard}:{fact.HasContract}:{fact.FirstReceipt:O}:{fact.ReceiptKey}")
+            .ToList() ?? [];
+        var fingerprint = Fingerprint(sourceSystem, kind, canonicalKey, itemCodes, [.. sourceKeys, .. lineageKeys]);
         db.MigrationReviewItems.Add(new()
         {
             TenantId = tenant.TenantId,
