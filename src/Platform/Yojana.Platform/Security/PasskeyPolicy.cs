@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Data.Platform;
-using Yojana.Platform.Mail;
 using Yojana.Platform.Tenancy;
 
 namespace Yojana.Platform.Security;
@@ -103,19 +102,20 @@ public sealed class PasskeyOptions
     public const string SectionName = "Platform:Passkeys";
 
     /// <summary>
-    /// The host name passkeys belong to, for example yojana.example.com. Empty means the host of
-    /// Platform:Mail:LinkBaseUrl. Changing it later makes every registered passkey stop working, because the
-    /// authenticator signs for the id it was created with: people would have to add their passkeys again.
+    /// The host name passkeys belong to, for example yojana.example.com, set in appsettings.json and never worked
+    /// out from another setting. Empty means passkeys are off. Changing it later makes every registered passkey
+    /// stop working, because the authenticator signs for the id it was created with: people would have to add
+    /// their passkeys again.
     /// </summary>
     public string RelyingPartyId { get; set; } = "";
     public string RelyingPartyName { get; set; } = "Yojana";
-    /// <summary>Origins that may answer (scheme, host and port). Empty means the origin of Platform:Mail:LinkBaseUrl.</summary>
+    /// <summary>Origins that may answer (scheme, host and port), each on the relying party id. Empty means passkeys are off.</summary>
     public string[]? Origins { get; set; }
 
     public bool Configured => RelyingPartyId.Length > 0 && Origins is { Length: > 0 };
 
-    /// <summary>Fills the defaults from the product link and checks every origin belongs to the relying party id.</summary>
-    public PasskeyOptions Resolve(MailOptions mail)
+    /// <summary>Normalises the settings and checks every origin belongs to the relying party id.</summary>
+    public PasskeyOptions Resolve()
     {
         var resolved = new PasskeyOptions
         {
@@ -124,11 +124,6 @@ public sealed class PasskeyOptions
             Origins = Origins?.Where(origin => !string.IsNullOrWhiteSpace(origin))
                 .Select(origin => origin.Trim().TrimEnd('/')).ToArray(),
         };
-        if (Uri.TryCreate(mail.LinkBaseUrl, UriKind.Absolute, out var link))
-        {
-            if (resolved.RelyingPartyId.Length == 0) resolved.RelyingPartyId = link.Host.ToLowerInvariant();
-            if (resolved.Origins is not { Length: > 0 }) resolved.Origins = [link.GetLeftPart(UriPartial.Authority)];
-        }
         if (!resolved.Configured) return resolved;
         foreach (var origin in resolved.Origins!)
         {

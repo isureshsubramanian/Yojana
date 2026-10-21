@@ -1,5 +1,4 @@
 using Xunit;
-using Yojana.Platform.Mail;
 using Yojana.Platform.Security;
 
 namespace Yojana.Platform.Tests;
@@ -7,18 +6,18 @@ namespace Yojana.Platform.Tests;
 public sealed class PasskeyOptionsTests
 {
     [Fact]
-    public void The_product_link_gives_the_relying_party_and_its_one_origin_by_default()
+    public void Passkeys_stay_off_until_appsettings_names_the_host_and_its_origins()
     {
-        var resolved = new PasskeyOptions().Resolve(new MailOptions { LinkBaseUrl = "https://Yojana.Example.com/app/" });
-        Assert.True(resolved.Configured);
-        Assert.Equal("yojana.example.com", resolved.RelyingPartyId);
-        Assert.Equal(["https://yojana.example.com"], resolved.Origins!);
+        Assert.False(new PasskeyOptions().Resolve().Configured);
+        Assert.False(new PasskeyOptions { RelyingPartyId = "example.com" }.Resolve().Configured);
     }
 
     [Fact]
-    public void Without_a_link_or_settings_passkeys_are_simply_not_configured()
+    public void The_host_name_is_normalised()
     {
-        Assert.False(new PasskeyOptions().Resolve(new MailOptions()).Configured);
+        var resolved = new PasskeyOptions { RelyingPartyId = " Yojana.Example.com ", Origins = ["https://yojana.example.com/"] }.Resolve();
+        Assert.Equal("yojana.example.com", resolved.RelyingPartyId);
+        Assert.Equal(["https://yojana.example.com"], resolved.Origins!);
     }
 
     [Fact]
@@ -27,7 +26,7 @@ public sealed class PasskeyOptionsTests
         var resolved = new PasskeyOptions
         {
             RelyingPartyId = "example.com", Origins = ["https://yojana.example.com/", "https://service.example.com"],
-        }.Resolve(new MailOptions());
+        }.Resolve();
         Assert.Equal(["https://yojana.example.com", "https://service.example.com"], resolved.Origins!);
     }
 
@@ -39,14 +38,14 @@ public sealed class PasskeyOptionsTests
     public void An_origin_the_browser_would_never_accept_stops_the_host_at_startup(string origin)
     {
         var options = new PasskeyOptions { RelyingPartyId = "example.com", Origins = [origin] };
-        Assert.Throws<InvalidOperationException>(() => options.Resolve(new MailOptions()));
+        Assert.Throws<InvalidOperationException>(() => options.Resolve());
     }
 
     [Fact]
     public void Http_is_accepted_only_on_this_computer()
     {
         var resolved = new PasskeyOptions { RelyingPartyId = "localhost", Origins = ["http://localhost:5173"] }
-            .Resolve(new MailOptions());
+            .Resolve();
         Assert.True(resolved.Configured);
     }
 

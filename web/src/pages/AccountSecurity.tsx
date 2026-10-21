@@ -3,6 +3,7 @@ import { ApiError } from "../api/client";
 import { ActionDialog } from "../components";
 import { PasswordChangeForm } from "../security/PasswordChangeForm";
 import { passkeyApi, type PasskeyAccount } from "../security/passkeyApi";
+import { rememberPasskeyFirst } from "../security/passkeyHint";
 import { cancelled, passkeysSupported } from "../security/webauthn";
 import { secondStepApi, type EnrolmentStart, type SecondStepState } from "../security/secondStepApi";
 import { Icon } from "../shell/Icons";
@@ -42,7 +43,7 @@ function EnrolmentDialog({ replacing, onCancel, onSaved }: { replacing: boolean;
 
 function PasskeysCard() {
   const [account, setAccount] = useState<PasskeyAccount | null>(null); const [error, setError] = useState<string | null>(null); const [dialog, setDialog] = useState<"add" | { remove: string; name: string } | null>(null);
-  const load = () => passkeyApi.account().then(setAccount).catch(() => setError("Passkeys could not be loaded."));
+  const load = () => passkeyApi.account().then((value) => { rememberPasskeyFirst(value.allowed && value.passwordless && value.passkeys.length > 0); setAccount(value); }).catch(() => setError("Passkeys could not be loaded."));
   useEffect(() => { void load(); }, []);
   if (!account) return <section className="card"><div className="card-body">{error ?? "Loading passkeys…"}</div></section>;
   const supported = passkeysSupported();
