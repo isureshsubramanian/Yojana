@@ -12,6 +12,7 @@ using Yojana.Platform.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.CustomerMail;
 using Yojana.Serialisation.Claims;
+using Yojana.Serialisation.Claims.Risk;
 using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Documents;
@@ -638,6 +639,30 @@ public static class SerialisationEndpoints
                 campaign.RunsUntil, campaign.CoversOn(claimDate), campaign.NotCoveredReason(claimDate), campaign.PartsPct, campaign.LabourPct, campaign.TravelPct))));
         claims.MapGet("/summary", async (ClaimQueries queries, ClaimReviewSettings settings, IClock clock, CancellationToken ct) =>
             Results.Ok(await queries.SummaryAsync(DateOnly.FromDateTime(clock.UtcNow), (await settings.GetAsync(ct)).AdjudicationTargetWorkingDays, ct)));
+        claims.MapGet("/risk-rules", async (ClaimRiskRulesSettings settings, CancellationToken ct) =>
+            Results.Ok(await settings.GetAsync(ct)));
+        claims.MapPut("/risk-rules", async (ClaimRiskRulesPolicy policy, ClaimRiskRulesSettings settings, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await settings.SetAsync(policy, ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+        claims.MapGet("/risk-flags/report", async (DateOnly from, DateOnly to, ClaimRiskQueries queries, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await queries.ReportAsync(from, to, ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        });
+        claims.MapGet("/risk-flags", async (string? status, string? rule, DateOnly? from, DateOnly? to, string? cursor,
+            int? take, ClaimRiskQueries queries, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await queries.ListAsync(status, rule, from, to, cursor, take ?? 50, ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        });
+        claims.MapGet("/{claimId:guid}/risk-flags", async (Guid claimId, ClaimRiskQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.ForClaimAsync(claimId, ct)));
+        claims.MapPost("/{claimId:guid}/risk-flags/{flagId:guid}/decision", (Guid claimId, Guid flagId,
+            ClaimRiskDecisionRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, IClock clock,
+            CancellationToken ct) => Invoke<ClaimRiskFlagDecisionResult>(bus, tenant,
+                new DecideClaimRiskFlag(claimId, flagId, request.Decision, request.Reason, clock.UtcNow, Actor(user), Roles(user)), ct));
         claims.MapGet("/{claimId:guid}/adjudication-preview", async (Guid claimId, ClaimAdjudicationPreviewQuery preview, ClaimReviewSettings settings, CancellationToken ct) =>
             await preview.PreviewAsync(claimId, (await settings.GetAsync(ct)).LowConfidenceReviewerRole, ct) is { } model ? Results.Ok(model) : Results.NotFound());
         claims.MapPost("/{claimId:guid}/request-evidence", (Guid claimId, RequestClaimEvidence command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
@@ -691,7 +716,7 @@ public static class SerialisationEndpoints
         claims.MapPost("/", (SubmitClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<SubmitClaimResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
         claims.MapPost("/{claimId:guid}/adjudicate", (Guid claimId, AdjudicateClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
-            Invoke<AdjudicateClaimResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user), ReviewedBy = ClaimReviewer(user) }, ct));
+            InvokeAdjudicate(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user), ReviewedBy = ClaimReviewer(user) }, ct));
         claims.MapPost("/{claimId:guid}/settle", (Guid claimId, SettleClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
         claims.MapPost("/{claimId:guid}/close", (Guid claimId, CloseClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
@@ -1748,6 +1773,36 @@ public static class SerialisationEndpoints
         catch (CommandRefusedException ex)
         {
             return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict, extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Results.Problem(title: "document_changed", detail: "The document changed while this edit was being saved.",
+                statusCode: StatusCodes.Status409Conflict, extensions: new Dictionary<string, object?>
+                { ["rule"] = "document_changed", ["unblockingStep"] = DocumentVersionRules.Reload });
+        }
+    }
+
+    private static async Task<IResult> InvokeAdjudicate(IMessageBus bus, ITenantContext tenant, AdjudicateClaim command,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await bus.InvokeAsync<AdjudicateClaimResult>(command,
+                new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, cancellationToken);
+            return result.Refusal == "claim_risk_review_pending"
+                ? Results.Problem(title: result.Refusal, detail: "Approval is held until every open claim risk flag has a second-review decision.",
+                    statusCode: StatusCodes.Status409Conflict, extensions: new Dictionary<string, object?>
+                    {
+                        ["rule"] = result.Refusal,
+                        ["unblockingStep"] = "decide every open claim risk flag",
+                        ["openRules"] = result.OpenRiskRules,
+                    })
+                : Results.Ok(result);
+        }
+        catch (CommandRefusedException ex)
+        {
+            return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict,
+                extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });
         }
         catch (DbUpdateConcurrencyException)
         {

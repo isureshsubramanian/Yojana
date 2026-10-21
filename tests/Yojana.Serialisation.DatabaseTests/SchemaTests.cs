@@ -30,7 +30,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
         using var scope = fixture.ScopeFor(null);
         var db = Db(scope);
         var expected = db.Model.GetEntityTypes().Where(e => typeof(ITenantScoped).IsAssignableFrom(e.ClrType)).Select(e => e.GetTableName()!).ToHashSet();
-        Assert.Equal(108, expected.Count);
+        Assert.Equal(109, expected.Count);
         var covered = await db.Database.SqlQueryRaw<string>($"""
             SELECT OBJECT_NAME(p.target_object_id) AS [Value]
             FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
@@ -39,7 +39,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
         Assert.Equal(expected.OrderBy(x => x), covered.OrderBy(x => x));
         Assert.Subset(covered.ToHashSet(), new HashSet<string>
         {
-            "claim", "claim_line", "claim_evidence", "recovery_claim", "rma", "rma_line", "return_receipt", "return_reason",
+            "claim", "claim_line", "claim_evidence", "claim_risk_flag", "recovery_claim", "rma", "rma_line", "return_receipt", "return_reason",
             "refurbishment_work_order", "refurbishment_operation", "refurbishment_part", "refurbishment_labour", "refurbishment_cost", "coverage_decision",
             "certificate_template", "certificate_template_version", "certificate_instance", "certificate_trigger", "certificate_signature", "reprint_log",
             "tenant_asset",

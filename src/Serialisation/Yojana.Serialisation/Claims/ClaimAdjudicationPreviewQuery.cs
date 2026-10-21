@@ -83,6 +83,13 @@ public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext
         var outcomeStatus = decided ? claim.Status
             : outcomes.All(o => o.Outcome.DenialReason is null && o.Outcome.ApprovedAmount == o.Line.RequestedAmount) ? ClaimStatus.Approved
             : approved > 0 ? ClaimStatus.PartiallyApproved : ClaimStatus.Denied;
+        var openFlagRows = await db.ClaimRiskFlags.AsNoTracking()
+            .Where(row => row.TenantId == tenantId && row.ClaimId == claim.ClaimId && row.Status == ClaimRiskFlagStatus.Open)
+            .OrderBy(row => row.RaisedAt).ThenBy(row => row.FlagId)
+            .Select(row => new { row.FlagId, row.RuleCode, row.RaisedAt }).ToListAsync(cancellationToken);
+        var openFlags = openFlagRows.Select(row => new ClaimRiskOpenFlag(row.FlagId, row.RuleCode, row.RaisedAt)).ToList();
+        if (!decided && refusal is null && outcomeStatus is ClaimStatus.Approved or ClaimStatus.PartiallyApproved && openFlags.Count > 0)
+            (refusal, step) = ("claim_risk_review_pending", "decide every open claim risk flag");
         var source = sources.Count == 1 ? sources[0] : decided ? claim.CoverageSource : ClaimCoverageSource.Chargeable;
         var campaignCoverReason = decided ? claim.CampaignCoverReason : claim.CampaignId is null || liveCampaign is not null
             ? null : namedCampaign?.NotCoveredReason(claim.ClaimDate) ?? ClaimCampaignCoverReason.Closed;
@@ -128,7 +135,7 @@ public sealed partial class ClaimAdjudicationPreviewQuery(SerialisationDbContext
             recoveryPreviews, requested - approved, refusal, step, lowConfidence ? lowConfidenceReviewerRole : null,
             ClaimAdjudicationRules.IsDiscontinued(item, claim.ClaimDate) ? item?.SuccessorItemId : null, ClaimManualDenialReason.All.Order(StringComparer.Ordinal).ToList(),
             recoveryPreviews.Count == 0 ? notRaisedReason : null, claim.CampaignId, namedCampaign?.Code, namedCampaign?.Name,
-            decided ? claim.ReserveTag : liveCampaign?.ReserveTag, campaignCoverReason);
+            decided ? claim.ReserveTag : liveCampaign?.ReserveTag, campaignCoverReason, openFlags);
     }
 
     private static List<ClaimCheck> Checks(Claim claim, ClaimUnitFact root, ItemSerialisationProfile? item,

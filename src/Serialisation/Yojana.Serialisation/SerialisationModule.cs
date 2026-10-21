@@ -247,6 +247,8 @@ public static class SerialisationModule
         builder.Services.AddScoped<NumberingSettings>();
         builder.Services.AddScoped<ClaimLineDecider>();
         builder.Services.AddScoped<ClaimAdjudicationPreviewQuery>();
+        builder.Services.AddScoped<Claims.Risk.ClaimRiskEvaluator>();
+        builder.Services.AddScoped<Claims.Risk.ClaimRiskQueries>();
         builder.Services.AddScoped<ClaimUnitFacts>();
         builder.Services.AddScoped<ClaimQueries>();
         builder.Services.AddScoped<Campaigns.CampaignCoverQueries>();
@@ -266,10 +268,11 @@ public static class SerialisationModule
         builder.Services.AddScoped<CoverageDecisionQueries>();
         builder.Services.TryAddScoped<IServiceOrderQueryPort, DefaultServiceOrderQueryPort>();
         // End P5 coverage block.
-        // Coupled to ClaimReviewSettings and RecoverySettings for the same Wolverine constraint as entitlement approval settings: the
-        // factory hides ITenantSettings' PlatformDbContext from AdjudicateClaimHandler's transactional graph.
+        // Coupled to ClaimReviewSettings, ClaimRiskRulesSettings and RecoverySettings for the same Wolverine constraint as entitlement
+        // approval settings: these factories hide ITenantSettings' PlatformDbContext from claim handlers' transactional graphs.
         builder.Services.AddScoped(sp => new ClaimReviewSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped(sp => new ClaimWaitingPeriodSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped(sp => new Claims.Risk.ClaimRiskRulesSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped(sp => new RecoverySettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.TryAddScoped<IWarrantyClaimsPort, WarrantyClaimsPort>();
         builder.Services.TryAddScoped<ISettlementFormulaPort, FullSettlementFormula>();

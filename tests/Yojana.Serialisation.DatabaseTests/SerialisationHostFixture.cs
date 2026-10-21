@@ -19,6 +19,7 @@ using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Tenancy;
 using Yojana.Serialisation;
 using Yojana.Serialisation.Certificates;
+using Yojana.Serialisation.Claims.Risk;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Jurisdictions;
 using Wolverine;
@@ -233,6 +234,23 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         // Existing scenarios use EU-scoped policies and therefore opt into the starter through their common tenant
         // arrangement. Jurisdiction catalogue tests pass false when they need to prove a genuinely neutral tenant.
         if (importJurisdictionStarter) await ImportEuStarterAsync(id);
+        // Existing scenario tests pre-date P9-T18 and assert claim adjudication in isolation. Risk-specific tests opt
+        // individual rules back in; keeping the common fixture neutral avoids turning every older claim into review data.
+        using (var scope = ScopeFor(id))
+        {
+            var defaults = ClaimRiskRulesSettings.DefaultPolicy;
+            await scope.ServiceProvider.GetRequiredService<ClaimRiskRulesSettings>().SetAsync(defaults with
+            {
+                RecentCoverPurchase = defaults.RecentCoverPurchase with { Enabled = false },
+                RepeatUnitClaims = defaults.RepeatUnitClaims with { Enabled = false },
+                RepeatFault = defaults.RepeatFault with { Enabled = false },
+                ClaimantRate = defaults.ClaimantRate with { Enabled = false },
+                ChannelMismatch = defaults.ChannelMismatch with { Enabled = false },
+                RecentOwnershipChange = defaults.RecentOwnershipChange with { Enabled = false },
+                PartNotReturned = defaults.PartNotReturned with { Enabled = false },
+                DuplicateOpenClaim = defaults.DuplicateOpenClaim with { Enabled = false },
+            }, CancellationToken.None);
+        }
         return id;
     }
 

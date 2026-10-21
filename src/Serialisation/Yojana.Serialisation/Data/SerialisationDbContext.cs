@@ -137,6 +137,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<ClaimEvidence> ClaimEvidence => Set<ClaimEvidence>();
 
+    public DbSet<ClaimRiskFlag> ClaimRiskFlags => Set<ClaimRiskFlag>();
+
     public DbSet<CoverageDecision> CoverageDecisions => Set<CoverageDecision>();
 
     public DbSet<RecoveryClaim> RecoveryClaims => Set<RecoveryClaim>();
@@ -1037,6 +1039,28 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(e => e.ActorRef).HasMaxLength(200);
             b.HasIndex(e => new { e.TenantId, e.ClaimId, e.RecordedAt });
             b.HasOne<Claim>().WithMany().HasForeignKey(e => new { e.TenantId, e.ClaimId }).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ClaimRiskFlag>(b =>
+        {
+            b.ToTable("claim_risk_flag", t =>
+            {
+                t.HasCheckConstraint("ck_claim_risk_flag_threshold_snapshot_json", "ISJSON(threshold_snapshot) = 1");
+                t.HasCheckConstraint("ck_claim_risk_flag_evidence_json", "ISJSON(evidence) = 1");
+                t.HasCheckConstraint("ck_claim_risk_flag_status", "status IN ('open', 'cleared', 'confirmed')");
+                t.HasCheckConstraint("ck_claim_risk_flag_decision", "(status = 'open' AND decided_at IS NULL AND decided_by IS NULL AND decision_reason IS NULL) OR (status IN ('cleared', 'confirmed') AND decided_at IS NOT NULL AND decided_by IS NOT NULL AND decision_reason IS NOT NULL)");
+            });
+            b.HasKey(f => new { f.TenantId, f.FlagId });
+            b.Property(f => f.RuleCode).HasMaxLength(60).IsUnicode(false);
+            b.Property(f => f.RaisedByEvaluation).HasMaxLength(30).IsUnicode(false);
+            b.Property(f => f.Status).HasMaxLength(20).IsUnicode(false);
+            b.Property(f => f.DecidedBy).HasMaxLength(200);
+            b.Property(f => f.DecisionReason).HasMaxLength(1000);
+            b.Property(f => f.RowVersion).IsRowVersion();
+            b.HasIndex(f => new { f.TenantId, f.ClaimId, f.RuleCode }).IsUnique();
+            b.HasIndex(f => new { f.TenantId, f.Status, f.RaisedAt, f.FlagId });
+            b.HasIndex(f => new { f.TenantId, f.RuleCode, f.RaisedAt, f.Status });
+            b.HasOne<Claim>().WithMany().HasForeignKey(f => new { f.TenantId, f.ClaimId }).OnDelete(DeleteBehavior.Cascade);
         });
 
         // P5-T15: policy re-adjudication history. Work references remain logical because RMA, Claims and the future

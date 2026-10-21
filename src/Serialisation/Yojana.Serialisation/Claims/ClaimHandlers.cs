@@ -5,6 +5,7 @@ using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Commands;
+using Yojana.Serialisation.Claims.Risk;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
@@ -19,7 +20,8 @@ public static class SubmitClaimHandler
 {
     public static async Task<SubmitClaimResult> Handle(SubmitClaim command, SerialisationDbContext db, UnitQueries units, ClaimUnitFacts facts,
         ClaimLedger ledger, LegacyUnknownClaimUnitCreator legacyUnits, DocumentNumbers numbers, ICampaignCoverPort campaigns,
-        ITenantCurrency currencies, ITenantContext tenant, IClock clock, ClaimCauseCatalogue causes, CancellationToken cancellationToken)
+        ITenantCurrency currencies, ITenantContext tenant, IClock clock, ClaimCauseCatalogue causes, IItemQueryPort items,
+        ClaimLineDecider decider, ClaimRiskEvaluator risk, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         if (await db.Claims.AsNoTracking().FirstOrDefaultAsync(c => c.TenantId == tenantId && c.CommandId == command.CommandId, cancellationToken) is { } replay)
@@ -68,7 +70,7 @@ public static class SubmitClaimHandler
             unitId = await legacyUnits.CreateAsync(command, claimId, cancellationToken);
         }
 
-        await facts.ReadAsync(unitId.Value, cancellationToken);
+        var root = await facts.ReadAsync(unitId.Value, cancellationToken);
 
         if (command.CampaignId is { } campaignId)
         {
@@ -118,6 +120,17 @@ public static class SubmitClaimHandler
         evidence.Add(NewEvidence(tenantId, claimId, ClaimEvidenceKind.ConsumerRemedyChoice, command.ConsumerChoiceEvidenceRef, command.Remedy, command));
         db.ClaimEvidence.AddRange(evidence);
 
+        var namedCampaign = claim.CampaignId is { } selectedCampaign
+            ? await campaigns.FindAsync(selectedCampaign, claim.UnitId, claim.ClaimDate, cancellationToken)
+            : null;
+        var liveCampaign = namedCampaign is { Selected: true } && namedCampaign.CoversOn(claim.ClaimDate) ? namedCampaign : null;
+        var item = await items.GetAsync(root.ItemId, cancellationToken);
+        var riskLines = new List<ClaimRiskLineEvaluation>(claimLines.Count);
+        foreach (var line in claimLines)
+            riskLines.Add(new(line, await decider.DecideAsync(claim, root, item, line, liveCampaign, cancellationToken)));
+        await risk.EvaluateAsync(claim, riskLines, ClaimRiskEvaluation.Submission, command.EventTime,
+            includeUncommittedCurrentClaim: true, cancellationToken);
+
         await ledger.AppendAsync(
         [
             new UnitEventDraft
@@ -141,7 +154,8 @@ public static class AdjudicateClaimHandler
 {
     public static async Task<AdjudicateClaimResult> Handle(AdjudicateClaim command, SerialisationDbContext db, ClaimLedger ledger, ClaimUnitFacts facts,
         ClaimLineDecider decider, IItemQueryPort items, IEntitlementRecoveryQuery recoveries, ClaimReviewSettings reviewSettings,
-        RecoverySettings recoverySettings, DocumentNumbers numbers, ICampaignCoverPort campaigns, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        RecoverySettings recoverySettings, DocumentNumbers numbers, ICampaignCoverPort campaigns, ClaimRiskEvaluator risk,
+        ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var claim = await ledger.LoadAsync(command.ClaimId, cancellationToken);
@@ -156,37 +170,79 @@ public static class AdjudicateClaimHandler
             ? await campaigns.FindAsync(campaignId, claim.UnitId, claim.ClaimDate, cancellationToken)
             : null;
         var liveCampaign = namedCampaign is { Selected: true } && namedCampaign.CoversOn(claim.ClaimDate) ? namedCampaign : null;
-        // The reserve belongs to the campaign's cover: a claim that falls back to the policy stack posts to warranty, not to the campaign reserve.
-        claim.ReserveTag = liveCampaign?.ReserveTag;
-        claim.CampaignCoverReason = claim.CampaignId is null || liveCampaign is not null
-            ? null
-            : namedCampaign?.NotCoveredReason(claim.ClaimDate) ?? ClaimCampaignCoverReason.Closed;
         var item = await items.GetAsync(root.ItemId, cancellationToken);
+        Guid? successorItemId = null;
         if (claim.Remedy == ClaimRemedy.Replacement && ClaimAdjudicationRules.IsDiscontinued(item, claim.ClaimDate))
         {
-            if (item?.SuccessorItemId is not { } successorItemId)
+            if (item?.SuccessorItemId is not { } successor)
             {
                 throw new CommandRefusedException("replacement_successor_required", "A discontinued item cannot be replaced without a successor item.",
                     "choose repair or goodwill");
             }
 
-            claim.SuccessorItemId = successorItemId;
+            successorItemId = successor;
         }
-        else if (item is { SuccessorItemId: { } successorItemId } && ClaimAdjudicationRules.IsDiscontinued(item, claim.ClaimDate))
+        else if (item is { SuccessorItemId: { } successor } && ClaimAdjudicationRules.IsDiscontinued(item, claim.ClaimDate))
         {
-            claim.SuccessorItemId = successorItemId;
+            successorItemId = successor;
         }
 
-        ClaimLedger.Transition(claim, ClaimEventType.Adjudicating);
         var lines = await db.ClaimLines.Where(l => l.TenantId == tenantId && l.ClaimId == claim.ClaimId).OrderBy(l => l.Sequence).ToListAsync(cancellationToken);
+        var evaluatedLines = new List<ClaimRiskLineEvaluation>(lines.Count);
+        foreach (var line in lines)
+            evaluatedLines.Add(new(line, await decider.DecideAsync(claim, root, item, line, liveCampaign, cancellationToken)));
+        var raised = await risk.EvaluateAsync(claim, evaluatedLines, ClaimRiskEvaluation.Adjudication, command.EventTime,
+            includeUncommittedCurrentClaim: false, cancellationToken);
+
         var coveredSources = new HashSet<string>(StringComparer.Ordinal);
         var cohorts = new HashSet<Guid>();
         var obligors = new HashSet<Guid>();
+        if (command.DenialReason is null)
+        {
+            foreach (var evaluated in evaluatedLines.Where(row => row.Outcome.ApprovedAmount > 0))
+            {
+                coveredSources.Add(evaluated.Outcome.CoverageSource);
+                if (evaluated.Outcome.AccrualCohortId is { } cohort) cohorts.Add(cohort);
+                if (evaluated.Outcome.ObligorEntityId is { } obligor) obligors.Add(obligor);
+            }
+        }
 
+        if (coveredSources.Count > 1) throw new CommandRefusedException("mixed_coverage_sources", "One claim cannot post against more than one coverage source.", "split the lines into one claim per coverage source");
+        if (cohorts.Count > 1) throw new CommandRefusedException("multiple_accrual_cohorts", "One claim cannot draw down more than one warranty accrual cohort.", "split the lines by accrual cohort");
+        if (obligors.Count > 1) throw new CommandRefusedException("multiple_obligors", "One claim cannot be posted to more than one obligor.", "split the lines by obligor");
+
+        var totalApproved = command.DenialReason is null ? evaluatedLines.Sum(row => row.Outcome.ApprovedAmount) : 0;
+        var fullyCovered = command.DenialReason is null && evaluatedLines.All(row => row.Outcome.DenialReason is null
+            && row.Outcome.ApprovedAmount == row.Line.RequestedAmount);
+        var outcome = fullyCovered ? ClaimStatus.Approved : totalApproved > 0 ? ClaimStatus.PartiallyApproved : ClaimStatus.Denied;
+        if (outcome is ClaimStatus.Approved or ClaimStatus.PartiallyApproved)
+        {
+            var openRules = await db.ClaimRiskFlags.AsNoTracking()
+                .Where(row => row.TenantId == tenantId && row.ClaimId == claim.ClaimId && row.Status == ClaimRiskFlagStatus.Open)
+                .Select(row => row.RuleCode).ToListAsync(cancellationToken);
+            openRules = openRules.Concat(raised.Where(row => row.Status == ClaimRiskFlagStatus.Open).Select(row => row.RuleCode))
+                .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+            if (openRules.Count > 0)
+            {
+                var lineDecisions = evaluatedLines.Select(row => Decision(row.Line, row.Outcome)).ToList();
+                var denialReason = outcome == ClaimStatus.PartiallyApproved ? "partially_uncovered" : null;
+                return new(claim.ClaimId, outcome, coveredSources.SingleOrDefault() ?? ClaimCoverageSource.Chargeable,
+                    denialReason, evaluatedLines.Max(row => row.Outcome.ChainLength), lineDecisions, [], Guid.Empty, false,
+                    successorItemId, "claim_risk_review_pending", openRules);
+            }
+        }
+
+        ClaimLedger.Transition(claim, ClaimEventType.Adjudicating);
+        // The reserve belongs to the campaign's cover: a claim that falls back to the policy stack posts to warranty, not to the campaign reserve.
+        claim.ReserveTag = liveCampaign?.ReserveTag;
+        claim.CampaignCoverReason = claim.CampaignId is null || liveCampaign is not null
+            ? null
+            : namedCampaign?.NotCoveredReason(claim.ClaimDate) ?? ClaimCampaignCoverReason.Closed;
+        claim.SuccessorItemId = successorItemId;
         if (command.DenialReason is { } manualReason)
         {
             // A finding by the adjudicator (unauthorised parts, misuse, no fault found) denies the whole claim (MOD-07
-            // invariant 1); the policy stack is not asked, and the note is kept as claim evidence.
+            // invariant 1); risk flags never turn this finding into an automatic denial and do not hold it.
             if (!ClaimManualDenialReason.All.Contains(manualReason)) throw new CommandRefusedException("claim_denial_reason_invalid", $"'{manualReason}' is not a claim denial reason.");
             if (string.IsNullOrWhiteSpace(command.DenialNote)) throw new CommandRefusedException("claim_denial_note_required", "A claim denied by the adjudicator needs a note saying what was found.");
             foreach (var line in lines) ClaimLineDecider.Apply(line, ClaimLineOutcome.Denied(manualReason));
@@ -198,20 +254,8 @@ public static class AdjudicateClaimHandler
         }
         else
         {
-            foreach (var line in lines)
-            {
-                var decided = await decider.DecideAsync(claim, root, item, line, liveCampaign, cancellationToken);
-                ClaimLineDecider.Apply(line, decided);
-                if (decided.ApprovedAmount <= 0) continue;
-                coveredSources.Add(decided.CoverageSource);
-                if (decided.AccrualCohortId is { } cohort) cohorts.Add(cohort);
-                if (decided.ObligorEntityId is { } obligor) obligors.Add(obligor);
-            }
+            foreach (var evaluated in evaluatedLines) ClaimLineDecider.Apply(evaluated.Line, evaluated.Outcome);
         }
-
-        if (coveredSources.Count > 1) throw new CommandRefusedException("mixed_coverage_sources", "One claim cannot post against more than one coverage source.", "split the lines into one claim per coverage source");
-        if (cohorts.Count > 1) throw new CommandRefusedException("multiple_accrual_cohorts", "One claim cannot draw down more than one warranty accrual cohort.", "split the lines by accrual cohort");
-        if (obligors.Count > 1) throw new CommandRefusedException("multiple_obligors", "One claim cannot be posted to more than one obligor.", "split the lines by obligor");
 
         var selectedEntitlementIds = lines.Select(l => l.EntitlementId).OfType<Guid>().Distinct().ToList();
         var lowConfidence = selectedEntitlementIds.Count > 0 && await db.Entitlements.AsNoTracking()
@@ -240,9 +284,6 @@ public static class AdjudicateClaimHandler
             }
         }
 
-        var totalApproved = lines.Sum(l => l.ApprovedAmount);
-        var fullyCovered = lines.All(l => l.DenialReason is null && l.ApprovedAmount == l.RequestedAmount);
-        var outcome = fullyCovered ? ClaimStatus.Approved : totalApproved > 0 ? ClaimStatus.PartiallyApproved : ClaimStatus.Denied;
         claim.Status = ClaimStateMachine.Next(claim.Status, outcome)
             ?? throw new CommandRefusedException("claim_transition_not_allowed", $"Claim {claim.ClaimId} cannot finish adjudication as {outcome}.");
         claim.CoverageSource = coveredSources.SingleOrDefault() ?? ClaimCoverageSource.Chargeable;
@@ -335,6 +376,12 @@ public static class AdjudicateClaimHandler
         return new(claim.ClaimId, claim.Status, claim.CoverageSource, claim.DenialReason, claim.ChainLength, lines.Select(ClaimQueries.Decision).ToList(), recoveryIds, eventId, false,
             SuccessorItemId: claim.SuccessorItemId);
     }
+
+    private static ClaimLineDecision Decision(ClaimLine line, ClaimLineOutcome outcome) =>
+        new(line.ClaimLineId, line.UnitId, line.CoverageFamily, line.RequestedAmount, outcome.CoveragePct,
+            outcome.ApprovedAmount, outcome.CoverageSource, outcome.EntitlementId, outcome.DenialReason,
+            outcome.ChainLength, outcome.WaitingPeriodPurchaseDate, outcome.FirstClaimableDate,
+            outcome.WaitingPeriodNotAppliedReason);
 
     private static async Task<AdjudicateClaimResult> ResultAsync(SerialisationDbContext db, TenantId tenantId, Claim claim, Guid eventId, bool replayed, CancellationToken cancellationToken)
     {
