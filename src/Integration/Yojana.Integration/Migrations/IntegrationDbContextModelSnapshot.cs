@@ -2849,7 +2849,7 @@ namespace Yojana.Integration.Migrations
 
                     b.ToTable("migration_review_decision", "migration", t =>
                         {
-                            t.HasCheckConstraint("ck_migration_review_decision_kind", "decision IN ('merge_into','keep_apart','fix_in_incumbent')");
+                            t.HasCheckConstraint("ck_migration_review_decision_kind", "decision IN ('merge_into','keep_apart','fix_in_incumbent','accept_as_recorded','exclude_from_history')");
                         });
                 });
 
@@ -2998,7 +2998,7 @@ namespace Yojana.Integration.Migrations
 
                     b.ToTable("migration_review_item", "migration", t =>
                         {
-                            t.HasCheckConstraint("ck_migration_review_item_kind", "kind IN ('same_serial_one_item','same_serial_different_items','orphan_equipment_card','serial_in_user_field')");
+                            t.HasCheckConstraint("ck_migration_review_item_kind", "kind IN ('same_serial_one_item','same_serial_different_items','orphan_equipment_card','serial_in_user_field','history_needs_review')");
 
                             t.HasCheckConstraint("ck_migration_review_item_status", "status IN ('waiting','decided','carried_over')");
                         });
@@ -3037,6 +3037,11 @@ namespace Yojana.Integration.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("family_normalised_serial");
+
+                    b.Property<string>("HistoryDepth")
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("history_depth");
 
                     b.Property<string>("ItemCode")
                         .IsRequired()
@@ -3103,6 +3108,8 @@ namespace Yojana.Integration.Migrations
                     b.ToTable("migration_unit_candidate", "migration", t =>
                         {
                             t.HasCheckConstraint("ck_migration_unit_candidate_disposition", "disposition IN ('active','review','merged','excluded')");
+
+                            t.HasCheckConstraint("ck_migration_unit_candidate_history_depth", "history_depth IS NULL OR history_depth IN ('full','partial','opening_balance_only')");
 
                             t.HasCheckConstraint("ck_migration_unit_candidate_provenance", "provenance IN ('source','unverified')");
 
@@ -3506,6 +3513,288 @@ namespace Yojana.Integration.Migrations
                             t.HasCheckConstraint("ck_migration_source_runtime", "runtime IN ('sql_server',CONCAT('h','ana'))");
 
                             t.HasCheckConstraint("ck_migration_source_timeout", "command_timeout_seconds BETWEEN 1 AND 3600");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Reconstruction.MigrationHistoryEvent", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("HistoryEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("history_event_id");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("candidate_id");
+
+                    b.Property<int?>("DocumentNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("document_number");
+
+                    b.Property<DateTime>("EffectiveDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("effective_date");
+
+                    b.Property<Guid?>("EventCandidateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_candidate_id");
+
+                    b.Property<string>("MovementKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("movement_kind");
+
+                    b.Property<string>("PartyCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("party_code");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("provenance");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(19, 6)
+                        .HasColumnType("decimal(19,6)")
+                        .HasColumnName("quantity");
+
+                    b.Property<Guid>("ReconstructionRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reconstruction_run_id");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("int")
+                        .HasColumnName("sequence");
+
+                    b.Property<string>("SourceDocumentTypeLabel")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("source_document_type_label");
+
+                    b.Property<string>("Warehouse")
+                        .HasMaxLength(240)
+                        .HasColumnType("nvarchar(240)")
+                        .HasColumnName("warehouse");
+
+                    b.HasKey("TenantId", "HistoryEventId")
+                        .HasName("pk_migration_history_event");
+
+                    b.HasIndex("TenantId", "CandidateId")
+                        .HasDatabaseName("ix_migration_history_event_tenant_id_candidate_id");
+
+                    b.HasIndex("TenantId", "EventCandidateId")
+                        .HasDatabaseName("ix_migration_history_event_tenant_id_event_candidate_id");
+
+                    b.HasIndex("TenantId", "ReconstructionRunId", "MovementKind")
+                        .HasDatabaseName("ix_migration_history_event_tenant_id_reconstruction_run_id_movement_kind");
+
+                    b.HasIndex("TenantId", "ReconstructionRunId", "CandidateId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_history_event_tenant_id_reconstruction_run_id_candidate_id_sequence");
+
+                    b.ToTable("migration_history_event", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_history_event_kind", "movement_kind IN ('opening_balance','received','produced','consumed','shipped','customer_returned','vendor_returned','transferred','issued_out','unknown')");
+
+                            t.HasCheckConstraint("ck_migration_history_event_provenance", "provenance IN ('source','reconstructed')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Reconstruction.MigrationOwnershipEpisode", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("OwnershipEpisodeId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("ownership_episode_id");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("candidate_id");
+
+                    b.Property<string>("CloseReason")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("close_reason");
+
+                    b.Property<Guid>("FromHistoryEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("from_history_event_id");
+
+                    b.Property<string>("OpenReason")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("open_reason");
+
+                    b.Property<string>("PartyCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("party_code");
+
+                    b.Property<Guid>("ReconstructionRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reconstruction_run_id");
+
+                    b.Property<Guid?>("ToHistoryEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("to_history_event_id");
+
+                    b.HasKey("TenantId", "OwnershipEpisodeId")
+                        .HasName("pk_migration_ownership_episode");
+
+                    b.HasIndex("TenantId", "FromHistoryEventId")
+                        .HasDatabaseName("ix_migration_ownership_episode_tenant_id_from_history_event_id");
+
+                    b.HasIndex("TenantId", "ToHistoryEventId")
+                        .HasDatabaseName("ix_migration_ownership_episode_tenant_id_to_history_event_id");
+
+                    b.HasIndex("TenantId", "CandidateId", "ToHistoryEventId")
+                        .HasDatabaseName("ix_migration_ownership_episode_tenant_id_candidate_id_to_history_event_id");
+
+                    b.HasIndex("TenantId", "ReconstructionRunId", "CandidateId", "FromHistoryEventId")
+                        .HasDatabaseName("ix_migration_ownership_episode_tenant_id_reconstruction_run_id_candidate_id_from_history_event_id");
+
+                    b.ToTable("migration_ownership_episode", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Reconstruction.MigrationReconstructionLog", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("LogId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("log_id");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("candidate_id");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("reason_code");
+
+                    b.Property<Guid>("ReconstructionRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reconstruction_run_id");
+
+                    b.Property<string>("RelatedSourceKey")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("related_source_key");
+
+                    b.Property<string>("SourceKey")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_key");
+
+                    b.HasKey("TenantId", "LogId")
+                        .HasName("pk_migration_reconstruction_log");
+
+                    b.HasIndex("TenantId", "CandidateId")
+                        .HasDatabaseName("ix_migration_reconstruction_log_tenant_id_candidate_id");
+
+                    b.HasIndex("TenantId", "ReconstructionRunId", "CandidateId", "LogId")
+                        .HasDatabaseName("ix_migration_reconstruction_log_tenant_id_reconstruction_run_id_candidate_id_log_id");
+
+                    b.HasIndex("TenantId", "ReconstructionRunId", "ReasonCode", "CandidateId")
+                        .HasDatabaseName("ix_migration_reconstruction_log_tenant_id_reconstruction_run_id_reason_code_candidate_id");
+
+                    b.ToTable("migration_reconstruction_log", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Reconstruction.MigrationReconstructionRun", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<long>("CancellationPairsRemoved")
+                        .HasColumnType("bigint")
+                        .HasColumnName("cancellation_pairs_removed");
+
+                    b.Property<long>("CandidatesQueuedForReview")
+                        .HasColumnType("bigint")
+                        .HasColumnName("candidates_queued_for_review");
+
+                    b.Property<long>("CandidatesReconstructed")
+                        .HasColumnType("bigint")
+                        .HasColumnName("candidates_reconstructed");
+
+                    b.Property<long>("CandidatesSkippedByDisposition")
+                        .HasColumnType("bigint")
+                        .HasColumnName("candidates_skipped_by_disposition");
+
+                    b.Property<Guid>("CanonicalisationRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("canonicalisation_run_id");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("failure_code");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("finished_at");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("requested_at");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("TenantId", "RunId")
+                        .HasName("pk_migration_reconstruction_run");
+
+                    b.HasIndex("TenantId", "BatchId", "RequestedAt", "RunId")
+                        .HasDatabaseName("ix_migration_reconstruction_run_tenant_id_batch_id_requested_at_run_id");
+
+                    b.HasIndex("TenantId", "CanonicalisationRunId", "RequestedAt", "RunId")
+                        .HasDatabaseName("ix_migration_reconstruction_run_tenant_id_canonicalisation_run_id_requested_at_run_id");
+
+                    b.HasIndex("TenantId", "Status", "RequestedAt", "RunId")
+                        .HasDatabaseName("ix_migration_reconstruction_run_tenant_id_status_requested_at_run_id");
+
+                    b.ToTable("migration_reconstruction_run", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_reconstruction_run_status", "status IN ('queued','running','completed','failed')");
                         });
                 });
 
@@ -5741,6 +6030,86 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_migration_profile_run_tenant_id_batch_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Reconstruction.MigrationHistoryEvent", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationUnitCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CandidateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_history_event_tenant_id_candidate_id");
+
+                    b.HasOne("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationEventCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EventCandidateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_migration_history_event_tenant_id_event_candidate_id");
+
+                    b.HasOne("Yojana.Integration.LegacyMigration.Reconstruction.MigrationReconstructionRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ReconstructionRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_history_event_tenant_id_reconstruction_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Reconstruction.MigrationOwnershipEpisode", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationUnitCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CandidateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_ownership_episode_tenant_id_candidate_id");
+
+                    b.HasOne("Yojana.Integration.LegacyMigration.Reconstruction.MigrationHistoryEvent", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "FromHistoryEventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_ownership_episode_tenant_id_from_history_event_id");
+
+                    b.HasOne("Yojana.Integration.LegacyMigration.Reconstruction.MigrationReconstructionRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ReconstructionRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_ownership_episode_tenant_id_reconstruction_run_id");
+
+                    b.HasOne("Yojana.Integration.LegacyMigration.Reconstruction.MigrationHistoryEvent", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ToHistoryEventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_migration_ownership_episode_tenant_id_to_history_event_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Reconstruction.MigrationReconstructionLog", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationUnitCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CandidateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_reconstruction_log_tenant_id_candidate_id");
+
+                    b.HasOne("Yojana.Integration.LegacyMigration.Reconstruction.MigrationReconstructionRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ReconstructionRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_reconstruction_log_tenant_id_reconstruction_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Reconstruction.MigrationReconstructionRun", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationCanonRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CanonicalisationRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_reconstruction_run_tenant_id_canonicalisation_run_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.Templates.TemplateMappingBlock", b =>

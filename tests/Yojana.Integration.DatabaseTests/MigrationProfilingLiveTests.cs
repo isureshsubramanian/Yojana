@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Yojana.Integration.Data;
 using Yojana.Integration.LegacyMigration;
 using Yojana.Integration.LegacyMigration.Profiling;
 
@@ -19,6 +21,8 @@ public sealed class MigrationProfilingLiveTests(IntegrationHostFixture fixture)
         var database = new SqlConnectionStringBuilder(connectionString).InitialCatalog;
         var tenant = await fixture.NewTenantAsync("proflive");
         using var scope = fixture.ScopeFor(tenant);
+        scope.ServiceProvider.GetRequiredService<IntegrationDbContext>().Database
+            .SetCommandTimeout(TimeSpan.FromMinutes(2));
         var sources = scope.ServiceProvider.GetRequiredService<MigrationSourceService>();
         var batches = scope.ServiceProvider.GetRequiredService<MigrationBatchService>();
         var profiles = scope.ServiceProvider.GetRequiredService<MigrationProfileService>();

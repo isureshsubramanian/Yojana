@@ -42,6 +42,7 @@ public sealed record MigrationReviewRow(
     string? ItemName,
     string? Family,
     string Kind,
+    string KindLabel,
     string RuleTried,
     string CandidateSummary,
     string? Suggestion,
@@ -78,6 +79,7 @@ public sealed record MigrationReviewDecisionView(
 public sealed record MigrationReviewDetail(
     Guid ItemId,
     string Kind,
+    string KindLabel,
     string Status,
     string? SerialAsStored,
     string? ItemCode,

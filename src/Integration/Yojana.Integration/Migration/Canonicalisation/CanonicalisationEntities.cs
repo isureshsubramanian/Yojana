@@ -52,6 +52,7 @@ public static class MigrationReviewKind
     public const string SameSerialDifferentItems = "same_serial_different_items";
     public const string OrphanEquipmentCard = "orphan_equipment_card";
     public const string SerialInUserField = "serial_in_user_field";
+    public const string HistoryNeedsReview = "history_needs_review";
 }
 
 public static class MigrationReviewStatus
@@ -66,6 +67,8 @@ public static class MigrationReviewDecisionKind
     public const string MergeInto = "merge_into";
     public const string KeepApart = "keep_apart";
     public const string FixInIncumbent = "fix_in_incumbent";
+    public const string AcceptAsRecorded = "accept_as_recorded";
+    public const string ExcludeFromHistory = "exclude_from_history";
 }
 
 public sealed class MigrationCanonRun : ITenantScoped
@@ -106,6 +109,7 @@ public sealed class MigrationUnitCandidate : ITenantScoped
     public required string MatchRule { get; set; }
     public required string Provenance { get; set; }
     public required string Disposition { get; set; }
+    public string? HistoryDepth { get; set; }
     public string? Note { get; set; }
 }
 

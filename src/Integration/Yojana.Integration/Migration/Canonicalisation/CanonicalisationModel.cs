@@ -35,6 +35,8 @@ internal static class CanonicalisationModel
                     "provenance IN ('source','unverified')");
                 table.HasCheckConstraint("ck_migration_unit_candidate_disposition",
                     "disposition IN ('active','review','merged','excluded')");
+                table.HasCheckConstraint("ck_migration_unit_candidate_history_depth",
+                    "history_depth IS NULL OR history_depth IN ('full','partial','opening_balance_only')");
             });
             builder.HasKey(x => new { x.TenantId, x.CandidateId });
             builder.Property(x => x.PrimarySourceKey).HasMaxLength(1000);
@@ -48,6 +50,7 @@ internal static class CanonicalisationModel
             builder.Property(x => x.MatchRule).HasMaxLength(32);
             builder.Property(x => x.Provenance).HasMaxLength(20);
             builder.Property(x => x.Disposition).HasMaxLength(20);
+            builder.Property(x => x.HistoryDepth).HasMaxLength(24);
             builder.Property(x => x.Note).HasMaxLength(2000);
             builder.HasIndex(x => new { x.TenantId, x.RunId, x.PrimarySourceKey }).IsUnique();
             builder.HasIndex(x => new { x.TenantId, x.RunId, x.ItemCode, x.CanonicalSerial });
@@ -120,7 +123,7 @@ internal static class CanonicalisationModel
             builder.ToTable("migration_review_item", MigrationModel.Schema, table =>
             {
                 table.HasCheckConstraint("ck_migration_review_item_kind",
-                    "kind IN ('same_serial_one_item','same_serial_different_items','orphan_equipment_card','serial_in_user_field')");
+                    "kind IN ('same_serial_one_item','same_serial_different_items','orphan_equipment_card','serial_in_user_field','history_needs_review')");
                 table.HasCheckConstraint("ck_migration_review_item_status",
                     "status IN ('waiting','decided','carried_over')");
             });
@@ -155,7 +158,7 @@ internal static class CanonicalisationModel
         {
             builder.ToTable("migration_review_decision", MigrationModel.Schema, table =>
                 table.HasCheckConstraint("ck_migration_review_decision_kind",
-                    "decision IN ('merge_into','keep_apart','fix_in_incumbent')"));
+                    "decision IN ('merge_into','keep_apart','fix_in_incumbent','accept_as_recorded','exclude_from_history')"));
             builder.HasKey(x => new { x.TenantId, x.DecisionId });
             builder.Property(x => x.Fingerprint).HasMaxLength(64).IsFixedLength().IsUnicode(false);
             builder.Property(x => x.CorrelationKey).HasMaxLength(64).IsFixedLength().IsUnicode(false);

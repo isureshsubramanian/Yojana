@@ -1,5 +1,4 @@
 using System.Data;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +11,11 @@ using Yojana.Platform.Contracts.Time;
 
 namespace Yojana.Integration.LegacyMigration.Canonicalisation;
 
+public interface IMigrationReviewCarryOver
+{
+    Task ApplyCarryOversAsync(Guid canonicalisationRunId, CancellationToken cancellationToken);
+}
+
 public sealed class CanonicalisationService(
     IntegrationDbContext db,
     ITenantContext tenant,
@@ -19,7 +23,7 @@ public sealed class CanonicalisationService(
     IMigrationProfileStatus profileStatus,
     CanonicalFamilySettings familySettings,
     CanonicalisationWriter writer,
-    IUserDirectory people)
+    IUserDirectory people) : IMigrationReviewCarryOver
 {
     private const string BinaryCollation = "Latin1_General_100_BIN2";
 
@@ -67,7 +71,7 @@ public sealed class CanonicalisationService(
                 var rules = await familySettings.ResolveAsync(cancellationToken);
                 await writer.WriteAsync(run, batch.SourceSystem, rules, cancellationToken);
                 await BuildReviewQueueAsync(run, batch.SourceSystem, cancellationToken);
-                await ApplyCarryOversAsync(run, cancellationToken);
+                await ApplyCarryOversAsync(run.RunId, cancellationToken);
                 run.Status = CanonicalisationRunStatus.Completed;
                 run.FinishedAt = clock.UtcNow;
                 await db.SaveChangesAsync(cancellationToken);
@@ -148,7 +152,8 @@ public sealed class CanonicalisationService(
             .ToListAsync(cancellationToken);
         var names = await people.DisplayNamesAsync(decisions.Select(row => row.DecidedBy).Distinct().ToList(),
             cancellationToken);
-        return new(item.ReviewItemId, item.Kind, item.Status, item.StoredSerial, item.ItemCode, item.ItemName,
+        return new(item.ReviewItemId, item.Kind, KindLabel(item.Kind), item.Status, item.StoredSerial,
+            item.ItemCode, item.ItemName,
             item.RuleTried, candidates, item.Suggestion, item.SuggestedKeepSourceKey, item.SuggestionReason,
             item.Hint, decisions.Select(row => new MigrationReviewDecisionView(row.DecisionId, row.Decision,
                 row.KeepSourceKey, row.Reason, row.Note, names.GetValueOrDefault(row.DecidedBy) ?? row.DecidedBy,
@@ -166,7 +171,7 @@ public sealed class CanonicalisationService(
         var item = await db.MigrationReviewItems.SingleOrDefaultAsync(row => row.TenantId == tenant.TenantId &&
             row.ReviewItemId == itemId, cancellationToken)
             ?? throw new MigrationRuleException("migration_review_item_not_found", "The review item was not found.");
-        ValidateDecision(request.Decision);
+        ValidateDecision(request.Decision, item.Kind);
         if (request.Decision == MigrationReviewDecisionKind.FixInIncumbent && note is null)
             throw new MigrationRuleException("migration_review_note_required",
                 "A note is required when the issue will be fixed in the incumbent system.");
@@ -347,7 +352,8 @@ public sealed class CanonicalisationService(
         var lineageKeys = lineage?.OrderBy(fact => fact.SourceKey, StringComparer.Ordinal).Select(fact =>
             $"{fact.SourceKey}:{fact.Transactions}:{fact.HasCard}:{fact.HasContract}:{fact.FirstReceipt:O}:{fact.ReceiptKey}")
             .ToList() ?? [];
-        var fingerprint = Fingerprint(sourceSystem, kind, canonicalKey, itemCodes, [.. sourceKeys, .. lineageKeys]);
+        var fingerprint = MigrationReviewIdentity.Fingerprint(sourceSystem, kind, canonicalKey, itemCodes,
+            [.. sourceKeys, .. lineageKeys]);
         db.MigrationReviewItems.Add(new()
         {
             TenantId = tenant.TenantId,
@@ -358,7 +364,7 @@ public sealed class CanonicalisationService(
             Kind = kind,
             Status = MigrationReviewStatus.Waiting,
             Fingerprint = fingerprint,
-            CorrelationKey = Correlation(sourceSystem, kind, canonicalKey, itemCodes),
+            CorrelationKey = MigrationReviewIdentity.Correlation(sourceSystem, kind, canonicalKey, itemCodes),
             CanonicalKey = canonicalKey,
             ItemCode = itemCodes.Count == 1 ? itemCodes[0] : null,
             ItemName = candidates.Select(row => row.ItemName).Where(value => value is not null)
@@ -395,9 +401,10 @@ public sealed class CanonicalisationService(
             SourceSystem = sourceSystem,
             Kind = MigrationReviewKind.OrphanEquipmentCard,
             Status = MigrationReviewStatus.Waiting,
-            Fingerprint = Fingerprint(sourceSystem, MigrationReviewKind.OrphanEquipmentCard, canonical,
-                itemCodes, sourceKeys),
-            CorrelationKey = Correlation(sourceSystem, MigrationReviewKind.OrphanEquipmentCard, canonical, itemCodes),
+            Fingerprint = MigrationReviewIdentity.Fingerprint(sourceSystem,
+                MigrationReviewKind.OrphanEquipmentCard, canonical, itemCodes, sourceKeys),
+            CorrelationKey = MigrationReviewIdentity.Correlation(sourceSystem,
+                MigrationReviewKind.OrphanEquipmentCard, canonical, itemCodes),
             CanonicalKey = canonical,
             ItemCode = card.ItemCode,
             ItemName = nearest?.ItemName,
@@ -414,10 +421,11 @@ public sealed class CanonicalisationService(
         });
     }
 
-    private async Task ApplyCarryOversAsync(MigrationCanonRun run, CancellationToken cancellationToken)
+    public async Task ApplyCarryOversAsync(Guid canonicalisationRunId, CancellationToken cancellationToken)
     {
         var items = await db.MigrationReviewItems.Where(row => row.TenantId == tenant.TenantId &&
-            row.RunId == run.RunId && row.Status == MigrationReviewStatus.Waiting).ToListAsync(cancellationToken);
+            row.RunId == canonicalisationRunId && row.Status == MigrationReviewStatus.Waiting)
+            .ToListAsync(cancellationToken);
         foreach (var item in items)
         {
             var decision = await db.MigrationReviewDecisions.AsNoTracking().Where(row =>
@@ -444,8 +452,22 @@ public sealed class CanonicalisationService(
     private async Task ApplyDecisionAsync(MigrationReviewItem item, string decision, string? keepSourceKey,
         bool carriedOver, CancellationToken cancellationToken)
     {
-        ValidateDecision(decision);
+        ValidateDecision(decision, item.Kind);
         var candidateKeys = JsonSerializer.Deserialize<List<string>>(item.CandidateSourceKeysJson) ?? [];
+        if (item.Kind == MigrationReviewKind.HistoryNeedsReview)
+        {
+            var candidate = await db.MigrationUnitCandidates.SingleAsync(row =>
+                row.TenantId == tenant.TenantId && row.RunId == item.RunId &&
+                candidateKeys.Contains(row.PrimarySourceKey), cancellationToken);
+            if (decision == MigrationReviewDecisionKind.FixInIncumbent)
+                candidate.Disposition = CandidateDisposition.Excluded;
+            else if (decision == MigrationReviewDecisionKind.AcceptAsRecorded)
+                candidate.Disposition = CandidateDisposition.Active;
+            // exclude_from_history is an append-only instruction consumed by the mapping phase; source evidence
+            // remains visible here so a later decision can be made without destroying reconstructed history.
+            if (!carriedOver) item.Status = MigrationReviewStatus.Decided;
+            return;
+        }
         if (item.Kind != MigrationReviewKind.OrphanEquipmentCard)
             await ResetCandidatesAsync(item.RunId, candidateKeys, cancellationToken);
         if (decision == MigrationReviewDecisionKind.MergeInto)
@@ -843,28 +865,36 @@ public sealed class CanonicalisationService(
         return true;
     }
 
-    private static string Fingerprint(string sourceSystem, string kind, string canonicalKey,
-        IReadOnlyList<string> itemCodes, IReadOnlyList<string> sourceKeys) => Hash(string.Join('\n',
-        [sourceSystem, kind, canonicalKey, .. itemCodes, "--", .. sourceKeys]));
-
-    private static string Correlation(string sourceSystem, string kind, string canonicalKey,
-        IReadOnlyList<string> itemCodes) => Hash(string.Join('\n',
-        [sourceSystem, kind, canonicalKey, .. itemCodes]));
-
-    private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)))
-        .ToLowerInvariant();
-
     private static MigrationReviewRow Row(MigrationReviewItem row) => new(row.ReviewItemId, row.StoredSerial,
-        row.ItemCode, row.ItemName, row.Family, row.Kind, row.RuleTried, row.CandidateSummary, row.Suggestion,
-        row.SuggestionReason, row.Hint, row.Status, row.Status == MigrationReviewStatus.CarriedOver);
+        row.ItemCode, row.ItemName, row.Family, row.Kind, KindLabel(row.Kind), row.RuleTried,
+        row.CandidateSummary, row.Suggestion, row.SuggestionReason, row.Hint, row.Status,
+        row.Status == MigrationReviewStatus.CarriedOver);
 
-    private static void ValidateDecision(string decision)
+    private static void ValidateDecision(string decision, string kind)
     {
+        if (kind == MigrationReviewKind.HistoryNeedsReview)
+        {
+            if (decision is MigrationReviewDecisionKind.AcceptAsRecorded or
+                MigrationReviewDecisionKind.ExcludeFromHistory or MigrationReviewDecisionKind.FixInIncumbent)
+                return;
+            throw new MigrationRuleException("migration_review_decision_invalid",
+                "Choose accept_as_recorded, exclude_from_history, or fix_in_incumbent.");
+        }
         if (decision is not (MigrationReviewDecisionKind.MergeInto or MigrationReviewDecisionKind.KeepApart or
             MigrationReviewDecisionKind.FixInIncumbent))
             throw new MigrationRuleException("migration_review_decision_invalid",
                 "Choose merge_into, keep_apart, or fix_in_incumbent.");
     }
+
+    private static string KindLabel(string kind) => kind switch
+    {
+        MigrationReviewKind.SameSerialOneItem => "Same serial on one item",
+        MigrationReviewKind.SameSerialDifferentItems => "Same serial on different items",
+        MigrationReviewKind.OrphanEquipmentCard => "Equipment card without a serial",
+        MigrationReviewKind.SerialInUserField => "Serial in a custom field",
+        MigrationReviewKind.HistoryNeedsReview => "History needs review",
+        _ => kind,
+    };
 
     private static void GuardActor(string actor)
     {
