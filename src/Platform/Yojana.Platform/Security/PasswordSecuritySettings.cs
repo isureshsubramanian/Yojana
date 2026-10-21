@@ -7,7 +7,7 @@ using Yojana.Platform.Tenancy;
 namespace Yojana.Platform.Security;
 
 public sealed record PasswordSecuritySettingsView(int ResetLinkMinutes, bool AdminTemporaryPasswordAllowed,
-    string Version);
+    int InvitationValidDays, string Version);
 
 public sealed class PasswordSecuritySettings(
     ITenantSettings current,
@@ -24,17 +24,24 @@ public sealed class PasswordSecuritySettings(
     {
         var reset = await current.GetVersionedAsync(ResetLinkMinutesKey, cancellationToken);
         var temporary = await current.GetVersionedAsync(AdminTemporaryPasswordAllowedKey, cancellationToken);
+        var invitation = await current.GetVersionedAsync(InvitationService.ValidDaysSetting, cancellationToken);
         return new PasswordSecuritySettingsView(ParseMinutes(reset?.Value), ParseBoolean(temporary?.Value),
-            JoinVersions(reset?.Version, temporary?.Version));
+            ParseDays(invitation?.Value), JoinVersions(reset?.Version, temporary?.Version, invitation?.Version));
     }
 
-    public async Task<PasswordSecuritySettingsView> UpdateCurrentAsync(int resetLinkMinutes,
-        bool adminTemporaryPasswordAllowed, string version, CancellationToken cancellationToken)
+    /// <summary>Saves all three or none; returns the changed keys for the audit record.</summary>
+    public async Task<(PasswordSecuritySettingsView View, IReadOnlyList<string> Changed)> UpdateCurrentAsync(
+        int resetLinkMinutes, bool adminTemporaryPasswordAllowed, int invitationValidDays, string version,
+        CancellationToken cancellationToken)
     {
+        if (invitationValidDays is < InvitationService.MinimumValidDays or > InvitationService.MaximumValidDays)
+            throw new ArgumentOutOfRangeException(nameof(invitationValidDays),
+                $"Invitations must work for {InvitationService.MinimumValidDays} to {InvitationService.MaximumValidDays} days.");
         if (resetLinkMinutes is < MinimumResetLinkMinutes or > MaximumResetLinkMinutes)
             throw new ArgumentOutOfRangeException(nameof(resetLinkMinutes),
                 $"Reset links must work for {MinimumResetLinkMinutes} to {MaximumResetLinkMinutes} minutes.");
         var versions = SplitVersions(version);
+        var before = await GetCurrentAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         try
         {
@@ -42,9 +49,16 @@ public sealed class PasswordSecuritySettings(
                 resetLinkMinutes.ToString(CultureInfo.InvariantCulture), versions.Reset, cancellationToken);
             var temporary = await current.SetAsync(AdminTemporaryPasswordAllowedKey,
                 adminTemporaryPasswordAllowed ? "true" : "false", versions.Temporary, cancellationToken);
+            var invitation = await current.SetAsync(InvitationService.ValidDaysSetting,
+                invitationValidDays.ToString(CultureInfo.InvariantCulture), versions.Invitation, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new PasswordSecuritySettingsView(resetLinkMinutes, adminTemporaryPasswordAllowed,
-                JoinVersions(reset.Version, temporary.Version));
+            var changed = new List<string>();
+            if (before.ResetLinkMinutes != resetLinkMinutes) changed.Add(ResetLinkMinutesKey);
+            if (before.AdminTemporaryPasswordAllowed != adminTemporaryPasswordAllowed)
+                changed.Add(AdminTemporaryPasswordAllowedKey);
+            if (before.InvitationValidDays != invitationValidDays) changed.Add(InvitationService.ValidDaysSetting);
+            return (new PasswordSecuritySettingsView(resetLinkMinutes, adminTemporaryPasswordAllowed,
+                invitationValidDays, JoinVersions(reset.Version, temporary.Version, invitation.Version)), changed);
         }
         catch
         {
@@ -70,17 +84,22 @@ public sealed class PasswordSecuritySettings(
         && parsed is >= MinimumResetLinkMinutes and <= MaximumResetLinkMinutes
             ? parsed : DefaultResetLinkMinutes;
 
+    private static int ParseDays(string? value) =>
+        int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
+        && parsed is >= InvitationService.MinimumValidDays and <= InvitationService.MaximumValidDays
+            ? parsed : InvitationService.DefaultValidDays;
+
     private static bool ParseBoolean(string? value) =>
         bool.TryParse(value, out var parsed) && parsed;
 
-    private static string JoinVersions(string? reset, string? temporary) =>
-        $"{reset ?? ITenantSettings.MissingVersion};{temporary ?? ITenantSettings.MissingVersion}";
+    private static string JoinVersions(params string?[] versions) =>
+        string.Join(';', versions.Select(value => value ?? ITenantSettings.MissingVersion));
 
-    private static (string Reset, string Temporary) SplitVersions(string value)
+    private static (string Reset, string Temporary, string Invitation) SplitVersions(string value)
     {
         var parts = value.Split(';');
-        if (parts.Length != 2 || parts.Any(string.IsNullOrWhiteSpace))
+        if (parts.Length != 3 || parts.Any(string.IsNullOrWhiteSpace))
             throw new TenantSettingVersionConflictException(ResetLinkMinutesKey, value, "unknown");
-        return (parts[0], parts[1]);
+        return (parts[0], parts[1], parts[2]);
     }
 }

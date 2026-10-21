@@ -6,6 +6,8 @@ namespace Yojana.Platform.Mail;
 /// <summary>
 /// What an account e-mail says, as plain text: the layout encodes every value, so no caller can put markup into a
 /// message. <paramref name="Before"/> paragraphs come before the details panel, <paramref name="After"/> after the button.
+/// <paramref name="CompanyLine"/> is the company's line from Settings › Company (<see cref="CompanyMailIdentity"/>); null
+/// when the mail belongs to no single company.
 /// </summary>
 public sealed record AccountMailContent(
     string TenantName,
@@ -15,7 +17,8 @@ public sealed record AccountMailContent(
     IReadOnlyList<(string Label, string Value)> Facts,
     (string Label, string Url)? Action,
     IReadOnlyList<string> After,
-    string Footer);
+    string Footer,
+    string? CompanyLine = null);
 
 /// <summary>
 /// The approved account e-mail look (PHASE-09 mockup set 4, owner-approved 2026-10-21): navy header band with the
@@ -49,6 +52,7 @@ public static class AccountMailLayout
         if (content.Action is { } link)
             body.Append(Paragraph($"Button not working? Paste this address into your browser:<br><span style=\"color:#1d4ed8;word-break:break-all\">{E(link.Url)}</span>", size: 12, colour: "#64748b"));
 
+        var companyLine = content.CompanyLine is null ? string.Empty : E(content.CompanyLine) + "<br>";
         var html = $"""
             <!DOCTYPE html>
             <html lang="en">
@@ -78,7 +82,7 @@ public static class AccountMailLayout
                   {body}
                 </td></tr>
                 <tr><td style="padding:0 40px"><div style="border-top:1px solid {Rule};height:1px;line-height:1px;font-size:0">&nbsp;</div></td></tr>
-                <tr><td style="padding:20px 40px 30px;font:12px/1.65 {Font};color:#64748b">{E(content.Footer)}<div style="margin-top:12px;color:#94a3b8">Delivered by Yojana. This is an automated message; please do not forward it.</div></td></tr>
+                <tr><td style="padding:20px 40px 30px;font:12px/1.65 {Font};color:#64748b">{E(content.Footer)}<div style="margin-top:12px;color:#94a3b8">{companyLine}Delivered by Yojana. This is an automated message; please do not forward it.</div></td></tr>
               </table>
             </td></tr>
             </table>
@@ -93,6 +97,7 @@ public static class AccountMailLayout
         if (content.Action is { } textAction) text.Append(textAction.Label).Append(":\n").Append(textAction.Url).Append("\n\n");
         foreach (var paragraph in content.After) text.Append(paragraph).Append("\n\n");
         text.Append("-- \n").Append(content.Footer).Append('\n');
+        if (content.CompanyLine is not null) text.Append(content.CompanyLine).Append('\n');
         return (html, text.ToString());
     }
 

@@ -35,13 +35,15 @@ public static class SecurityEventKind
     public const string UserDeactivated = "user_deactivated";
     public const string UserReactivated = "user_reactivated";
     public const string RolesChanged = "roles_changed";
+    /// <summary>A tenant administrator changed a security or company setting; the reason lists the changed keys.</summary>
+    public const string SettingsChanged = "settings_changed";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         SignInSucceeded, SignInFailed, LockedOut, SignedOut, SecurityStampRotated, PasswordChanged,
         PasswordResetRequested, PasswordResetCompleted, AdminPasswordReset, SecondStepEnrolled,
         SecondStepRemoved, PasskeyAdded, PasskeyRemoved, UserInvited, UserDeactivated,
-        UserReactivated, RolesChanged,
+        UserReactivated, RolesChanged, SettingsChanged,
     };
 }
 

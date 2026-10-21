@@ -7,6 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 
+using Yojana.Platform.Data.Platform;
+
 namespace Yojana.Platform.Security;
 
 public static class PasswordResetEndpoints
@@ -132,12 +134,21 @@ public static class PasswordResetEndpoints
         CancellationToken cancellationToken) => Results.Ok(await settings.GetCurrentAsync(cancellationToken));
 
     private static async Task<IResult> PutSettingsAsync(PasswordSecuritySettingsRequest request,
-        PasswordSecuritySettings settings, CancellationToken cancellationToken)
+        PasswordSecuritySettings settings, SecurityEventWriter events, PlatformDbContext db, HttpContext http,
+        CancellationToken cancellationToken)
     {
         try
         {
-            return Results.Ok(await settings.UpdateCurrentAsync(request.ResetLinkMinutes,
-                request.AdminTemporaryPasswordAllowed, request.Version ?? string.Empty, cancellationToken));
+            var (view, changed) = await settings.UpdateCurrentAsync(request.ResetLinkMinutes,
+                request.AdminTemporaryPasswordAllowed, request.InvitationValidDays, request.Version ?? string.Empty,
+                cancellationToken);
+            if (changed.Count > 0)
+            {
+                events.Add(SecurityEventKind.SettingsChanged, null, SelectedTenantId(http.User), UserId(http.User),
+                    RequestContext(http), string.Join(',', changed));
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            return Results.Ok(view);
         }
         catch (ArgumentOutOfRangeException exception)
         {
@@ -174,4 +185,4 @@ public sealed record PasswordResetCompleteRequest(string? Token, string? NewPass
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
 public sealed record AdminPasswordResetRequest(string? Mode);
 public sealed record PasswordSecuritySettingsRequest(int ResetLinkMinutes, bool AdminTemporaryPasswordAllowed,
-    string? Version);
+    int InvitationValidDays, string? Version);
