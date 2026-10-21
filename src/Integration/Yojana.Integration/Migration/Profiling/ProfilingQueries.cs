@@ -14,8 +14,56 @@ internal static class ProfilingQuery
             row.BatchId == context.BatchId && row.SourceSystem == context.SourceSystem &&
             row.AbsentSinceBatchId == null);
 
+    // Outgoing delivery and invoice rows of the transaction log that still stand. Cancelling a document in the
+    // source keeps the original outgoing row and adds a second row of the same document type with the opposite
+    // sign whose base is the original (verified on a real incumbent demo company 2026-10-22,
+    // docs/plan/research/P9-T06-transaction-log-cancellations.md); such a pair is not a shipment.
+    public static IQueryable<StandingDelivery> StandingDeliveries(this MigrationProfileQueryContext context)
+    {
+        var logged = from line in context.Active<TransactionLogLineStagingRow>()
+                     join header in context.Active<TransactionLogHeaderStagingRow>()
+                         on line.LogEntry equals header.LogEntry
+                     where header.LogEntry != null
+                     select new { line, header };
+        return from row in logged
+               where (row.header.DocumentType == 13 || row.header.DocumentType == 15) &&
+                     (row.line.Quantity ?? 0m) < 0m &&
+                     !logged.Any(cancel => cancel.header.DocumentType == row.header.DocumentType &&
+                         cancel.header.BaseType == row.header.DocumentType &&
+                         cancel.header.BaseEntry == row.header.DocumentEntry &&
+                         cancel.line.ItemCode == row.line.ItemCode &&
+                         cancel.line.SystemNumber == row.line.SystemNumber &&
+                         (cancel.line.Quantity ?? 0m) > 0m)
+               select new StandingDelivery
+               {
+                   ItemCode = row.line.ItemCode,
+                   SystemNumber = row.line.SystemNumber,
+                   PartyCode = row.header.PartyCode,
+                   DocumentType = row.header.DocumentType,
+                   DocumentNumber = row.header.DocumentNumber,
+                   DocumentDate = row.header.DocumentDate,
+                   CreatedDate = row.header.CreatedDate,
+                   CreatedTime = row.header.CreatedTime,
+                   LogEntry = row.header.LogEntry,
+               };
+    }
+
     public static IReadOnlyDictionary<string, string?> Facts(params (string Key, object? Value)[] facts) =>
         facts.ToDictionary(item => item.Key, item => item.Value?.ToString(), StringComparer.Ordinal);
+}
+
+// A member-init class, not a positional record: EF must filter and order on it inside later queries.
+internal sealed class StandingDelivery
+{
+    public string? ItemCode { get; init; }
+    public int? SystemNumber { get; init; }
+    public string? PartyCode { get; init; }
+    public int? DocumentType { get; init; }
+    public int? DocumentNumber { get; init; }
+    public DateTime? DocumentDate { get; init; }
+    public DateTime? CreatedDate { get; init; }
+    public int? CreatedTime { get; init; }
+    public int? LogEntry { get; init; }
 }
 
 internal sealed class SerialInMultipleWarehousesProfileQuery : IMigrationProfileQuery
@@ -259,15 +307,12 @@ internal sealed class ShippedSerialWithoutCardProfileQuery : IMigrationProfileQu
     public async Task<MigrationProfileQueryAnswer> ExecuteAsync(MigrationProfileQueryContext context,
         CancellationToken cancellationToken)
     {
-        var headers = context.Active<TransactionLogHeaderStagingRow>()
-            .Where(row => row.LogEntry != null && (row.DocumentType == 13 || row.DocumentType == 15));
         var cards = context.Active<EquipmentCardStagingRow>();
-        var query = (from line in context.Active<TransactionLogLineStagingRow>()
-                     join header in headers on line.LogEntry equals header.LogEntry
+        var query = (from line in context.StandingDeliveries()
                      join master in context.Active<SerialMasterStagingRow>()
                          on new { line.ItemCode, line.SystemNumber } equals
                          new { master.ItemCode, master.SystemNumber }
-                     where (line.Quantity ?? 0m) < 0m && !cards.Any(card => card.ItemCode == master.ItemCode &&
+                     where !cards.Any(card => card.ItemCode == master.ItemCode &&
                          ((card.InternalSerial != null && master.SerialNumber != null &&
                            card.InternalSerial.Trim().ToUpper() == master.SerialNumber.Trim().ToUpper()) ||
                           (card.ManufacturerSerial != null && master.ManufacturerSerial != null &&
@@ -277,9 +322,9 @@ internal sealed class ShippedSerialWithoutCardProfileQuery : IMigrationProfileQu
                          line.ItemCode,
                          line.SystemNumber,
                          master.SerialNumber,
-                         header.DocumentType,
-                         header.DocumentNumber,
-                         header.PartyCode,
+                         line.DocumentType,
+                         line.DocumentNumber,
+                         line.PartyCode,
                      }).Distinct();
         var count = await query.LongCountAsync(cancellationToken);
         var rows = await query.OrderBy(row => row.ItemCode).ThenBy(row => row.SystemNumber).Take(20)
@@ -298,24 +343,7 @@ internal sealed class CardCustomerDeliveryMismatchProfileQuery : IMigrationProfi
     public async Task<MigrationProfileQueryAnswer> ExecuteAsync(MigrationProfileQueryContext context,
         CancellationToken cancellationToken)
     {
-        var headers = context.Active<TransactionLogHeaderStagingRow>()
-            .Where(row => row.LogEntry != null && row.PartyCode != null &&
-                (row.DocumentType == 13 || row.DocumentType == 15));
-        var deliveries = from line in context.Active<TransactionLogLineStagingRow>()
-                         join header in headers on line.LogEntry equals header.LogEntry
-                         where (line.Quantity ?? 0m) < 0m
-                         select new
-                         {
-                             line.ItemCode,
-                             line.SystemNumber,
-                             header.PartyCode,
-                             header.DocumentType,
-                             header.DocumentNumber,
-                             header.DocumentDate,
-                             header.CreatedDate,
-                             header.CreatedTime,
-                             header.LogEntry,
-                         };
+        var deliveries = context.StandingDeliveries().Where(row => row.PartyCode != null);
         var query = from card in context.Active<EquipmentCardStagingRow>()
                     from master in context.Active<SerialMasterStagingRow>().Where(master =>
                         master.ItemCode == card.ItemCode &&
