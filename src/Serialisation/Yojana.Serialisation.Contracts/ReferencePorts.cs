@@ -40,6 +40,18 @@ public interface IPartyNamePort
     Task<IReadOnlyList<PartyLabel>> SearchAsync(string text, int take, CancellationToken cancellationToken);
 }
 
+/// <summary>A business partner's contact person with an e-mail address, supplied by the party-owning module or a connector.</summary>
+public sealed record PartyContactLabel(Guid PartyRef, string Name, string Email, string? Role = null, string? Language = null);
+
+/// <summary>
+/// Serialisation's read contract for the people at a business partner that customer e-mail may go to (P9-T20). The party
+/// owner (the ERP through a connector) holds contacts; Serialisation never stores them and only offers them as recipients.
+/// </summary>
+public interface IPartyContactPort
+{
+    Task<IReadOnlyList<PartyContactLabel>> ContactsAsync(Guid partyRef, CancellationToken cancellationToken);
+}
+
 /// <summary>A stock-location label supplied by the location-owning module or a connector.</summary>
 public sealed record LocationLabel(Guid LocationId, string Code, string? Name, string? Kind);
 

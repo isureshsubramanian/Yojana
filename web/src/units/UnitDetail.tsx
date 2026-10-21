@@ -3,6 +3,7 @@ import { coverItemsApi, unitTab, type WhatsCoveredPage } from "../entitlements/c
 import { entitlementApi } from "../entitlements/api";
 import { coverApi } from "../entitlements/coverApi";
 import { UnitTabBar } from "./UnitTabBar";
+import { UnitCustomerMail } from "../mail/UnitCustomerMail";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { units, DEFAULT_LEGAL_ENTITY, newCommandId, now, type HistoryRow, type Page, type UnitDetail } from "../api/units";
@@ -144,7 +145,7 @@ export function Component() {
           <div className="actions">
             <button type="button" className="btn" onClick={() => { if (tab === "whats-covered") window.open(`/api/units/${unitId}/whats-covered/sheet.pdf`, "_blank", "noopener"); else window.print(); }}><Icon name="print" />Print</button>
             {tab !== "whats-covered" && <Link className="btn" to={`/corrections?unit=${unitId}&q=${encodeURIComponent(primary?.rawValue ?? "")}`}>Something is wrong…</Link>}
-            {tab === "whats-covered" ? <>{whatsCovered?.customerEmailEnabled && <button type="button" className="btn">E-mail to customer…</button>}<Link className="btn primary" to={`/claims/new?unit=${unitId}`}>Start a claim</Link></> : tab === "entitlements" ? <><button type="button" className="btn" onClick={() => openAttachEntitlement(unitId, entitlementDetail, reloadEntitlements)}>Attach extended or add-on…</button><button type="button" className="btn primary" onClick={() => openAmendEntitlement(entitlementDetail, reloadEntitlements)}><Icon name="corr" />Amend entitlement…</button></> : <><button type="button" className="btn" onClick={flag}>Overlay flag…</button><button type="button" className="btn primary" onClick={correct}><Icon name="corr" />Correct identifier…</button></>}
+            {tab === "whats-covered" ? <>{whatsCovered?.customerEmailEnabled && <Link className="btn" to={`/units/${unitId}/email`}>E-mail to customer…</Link>}<Link className="btn primary" to={`/claims/new?unit=${unitId}`}>Start a claim</Link></> : tab === "entitlements" ? <><button type="button" className="btn" onClick={() => openAttachEntitlement(unitId, entitlementDetail, reloadEntitlements)}>Attach extended or add-on…</button><button type="button" className="btn primary" onClick={() => openAmendEntitlement(entitlementDetail, reloadEntitlements)}><Icon name="corr" />Amend entitlement…</button></> : <><button type="button" className="btn" onClick={flag}>Overlay flag…</button><button type="button" className="btn primary" onClick={correct}><Icon name="corr" />Correct identifier…</button></>}
           </div>
         </div>
         <ErrorNote error={error} />
@@ -239,6 +240,7 @@ export function Component() {
               </div>
               <div className="card-footer"><span>{detail?.buildRecords.length ? `${detail.buildRecords.length} build record${detail.buildRecords.length === 1 ? "" : "s"} · latest hash ${detail.buildRecords[0]?.payloadHash.slice(0, 12)}…` : "As-maintained equals as-built until a release freezes it"}</span><Link to={`/units/completeness?serials=${encodeURIComponent(title)}`}>Completeness query</Link></div>
             </section>
+            <UnitCustomerMail unitId={unitId} />
           </div>
         </div>}
       </main>

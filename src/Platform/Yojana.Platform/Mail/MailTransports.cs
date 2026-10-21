@@ -51,13 +51,16 @@ public static class MailMessageFactory
         message.From.Add(new MailboxAddress(prepared.SenderName ?? options.FromName, options.FromAddress));
         if (prepared.ReplyTo is not null) message.ReplyTo.Add(MailboxAddress.Parse(prepared.ReplyTo));
         message.To.Add(new MailboxAddress(mail.To.DisplayName ?? "", mail.To.Address));
+        foreach (var copy in mail.Cc ?? []) message.Cc.Add(new MailboxAddress(copy.DisplayName ?? "", copy.Address));
         message.Subject = mail.Subject;
         message.Date = DateTimeOffset.UtcNow;
         message.MessageId = MimeUtils.GenerateMessageId(options.FromAddress[(options.FromAddress.IndexOf('@') + 1)..]);
         message.Headers.Add(MailIdHeader, prepared.MailId.ToString("D"));
         // RFC 3834: tells mail systems not to send out-of-office replies back to an address nobody reads.
         message.Headers.Add("Auto-Submitted", "auto-generated");
-        message.Body = new BodyBuilder { TextBody = mail.TextBody, HtmlBody = mail.HtmlBody }.ToMessageBody();
+        var body = new BodyBuilder { TextBody = mail.TextBody, HtmlBody = mail.HtmlBody };
+        foreach (var file in mail.Attachments ?? []) body.Attachments.Add(file.FileName, file.Content, MimeKit.ContentType.Parse(file.MediaType));
+        message.Body = body.ToMessageBody();
         return message;
     }
 }
@@ -178,6 +181,14 @@ public sealed class GraphMailTransport(MailOptions options, HttpClient http, Tok
                     subject = content.Subject,
                     body = new { contentType = "HTML", content = content.HtmlBody },
                     toRecipients = new[] { new { emailAddress = new { address = content.To.Address, name = content.To.DisplayName } } },
+                    ccRecipients = (content.Cc ?? []).Select(copy => new { emailAddress = new { address = copy.Address, name = copy.DisplayName } }).ToArray(),
+                    attachments = (content.Attachments ?? []).Select(file => new Dictionary<string, object>
+                    {
+                        ["@odata.type"] = "#microsoft.graph.fileAttachment",
+                        ["name"] = file.FileName,
+                        ["contentType"] = file.MediaType,
+                        ["contentBytes"] = Convert.ToBase64String(file.Content),
+                    }).ToArray(),
                     replyTo = mail.ReplyTo is null ? null : new[] { new { emailAddress = new { address = mail.ReplyTo } } },
                     internetMessageHeaders = new[] { new { name = MailMessageFactory.MailIdHeader, value = mail.MailId.ToString("D") } },
                 },

@@ -51,6 +51,8 @@ public sealed class PlatformHostFixture : IAsyncLifetime
         builder.Configuration["Platform:Mail:RetryDelaySeconds:0"] = "1";
         builder.Configuration["Platform:Mail:MaintenanceBatchSize"] = "2";
         builder.Configuration["Platform:Mail:LinkBaseUrl"] = "http://127.0.0.1:5080";
+        // The recorder handler for MailDeliveryRecorded lives in this test assembly (MailDeliveryRecordedHandler).
+        PlatformSetup.IncludeHandlers(typeof(PlatformHostFixture).Assembly);
         builder.AddYojanaPlatform();
         // Test-only adapters: production composition supplies envelope encryption from Integration and QR rendering
         // from Serialisation. Platform database tests must never make plaintext persistence look like a valid fallback.

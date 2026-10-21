@@ -1,3 +1,4 @@
+using Yojana.Platform.Contracts.Mail;
 using Yojana.Platform.Contracts.Tenancy;
 
 namespace Yojana.Platform.Data.Platform.Entities;
@@ -169,11 +170,12 @@ public sealed class MailMessage
     public string? LastError { get; set; }
 }
 
+/// <summary>The stored values are the published ones, so <see cref="MailDeliveryRecorded"/> carries them unchanged.</summary>
 public static class MailStatus
 {
-    public const string Retrying = "retrying";
-    public const string Sent = "sent";
-    public const string Failed = "failed";
+    public const string Retrying = MailDeliveryStatus.Retrying;
+    public const string Sent = MailDeliveryStatus.Sent;
+    public const string Failed = MailDeliveryStatus.Failed;
 }
 
 /// <summary>

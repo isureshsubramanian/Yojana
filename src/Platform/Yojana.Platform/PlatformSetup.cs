@@ -131,8 +131,13 @@ public static class PlatformSetup
         builder.Services.AddScoped<PendingSecondStepCookie>();
         builder.Services.AddScoped<MembershipAdministration>();
         builder.Services.AddSecurityRateLimiting(signInOptions);
-        builder.Services.AddScoped<IMailOutbox, MailOutbox>();
-        builder.Services.AddScoped<CompanyMailIdentity>();
+        // Factories for the same reason as ITenantCurrency above: ITenantSettings brings PlatformDbContext, and a module
+        // handler that queues mail (Serialisation's SendCoverageMailHandler) must keep its own DbContext as the only one
+        // in its generated graph. A plain registration makes that host refuse to start ("multiple DbContext types detected").
+        builder.Services.AddScoped<IMailOutbox>(sp => new MailOutbox(sp.GetRequiredService<IMessageBus>(),
+            sp.GetRequiredService<ITenantSettings>(), sp.GetRequiredService<ITenantContext>(), sp.GetRequiredService<IClock>()));
+        builder.Services.AddScoped(sp => new CompanyMailIdentity(sp.GetRequiredService<ITenantSettings>(),
+            sp.GetRequiredService<ITenantContext>(), sp.GetRequiredService<IServiceScopeFactory>(), sp.GetRequiredService<PlatformDbContext>()));
         builder.Services.AddScoped<MailLogMaintenance>();
         builder.Services.AddScoped<IPresenceService, PresenceService>();
         // A factory for the same reason as ITenantCurrency above: it keeps PlatformDbContext out of the generated graph of
@@ -185,6 +190,14 @@ public static class PlatformSetup
             auth.AddPolicy(YojanaPolicy.CertificateIssuer, p => p.RequireAuthenticatedUser()
                 .RequireClaim(YojanaClaim.TenantId)
                 .RequireClaim(YojanaClaim.Role, YojanaRole.CertificateAdministrator, YojanaRole.Quality));
+            auth.AddPolicy(YojanaPolicy.CustomerMailDesigner, p => p.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId)
+                .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator, YojanaRole.CertificateAdministrator,
+                    YojanaRole.ServiceManager, YojanaRole.CustomerService));
+            auth.AddPolicy(YojanaPolicy.CustomerMailSender, p => p.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId)
+                .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator, YojanaRole.ServiceDesk,
+                    YojanaRole.ServiceSupervisor, YojanaRole.ServiceManager, YojanaRole.CustomerService));
         });
 
         builder.Services.AddQuartz(q =>

@@ -38,6 +38,8 @@ export const navigation: NavEntry[] = [
   { path: "/labels/print-jobs", label: "Labels", icon: "label", section: "Work" },
   { path: "/templates", label: "Templates", icon: "templates", section: "Data" },
   // End P6 certificates and labels.
+  // P9-T20: the union of YojanaPolicy.CustomerMailDesigner and CustomerMailSender (mail/format.ts keeps the two lists).
+  { path: "/mail", label: "Customer e-mail", icon: "mail", section: "Data", roles: ["tenant_administrator", "certificate_administrator", "service_manager", "customer_service", "service_desk", "service_supervisor"] },
   { path: "/lookup", label: "Lookup", icon: "lookup", section: "Data" },
   { path: "/imports", label: "Imports", icon: "upload", section: "Data" },
   { path: "/imports/history", label: "Upload history", icon: "scan", section: "Data", roles: ["serial_administrator", "production_supervisor", "quality", "inventory_controller", "warehouse_lead"] },

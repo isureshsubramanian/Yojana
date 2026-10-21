@@ -21,6 +21,7 @@ public static class DevReferenceCatalogue
         InMemoryItemFamilyNamePort itemFamilies,
         InMemoryWarrantyPorts warranties,
         InMemoryPartyNamePort parties,
+        InMemoryPartyContactPort contacts,
         InMemoryDocumentNumberRegistry documents,
         InMemoryLocationNameRegistry locations)
     {
@@ -62,6 +63,11 @@ public static class DevReferenceCatalogue
             Require(party.Code, "party code");
             Require(party.PartyType, "party type");
             parties.Register(new PartyLabel(party.Id, party.Code, party.Name, party.PartyType));
+            foreach (var contact in party.Contacts ?? [])
+            {
+                Require(contact.Email, "contact e-mail");
+                contacts.Register(new PartyContactLabel(party.Id, contact.Name, contact.Email, contact.Role, contact.Language));
+            }
         }
 
         foreach (var document in catalogue.Documents)
@@ -129,7 +135,10 @@ public static class DevReferenceCatalogue
         string PolicyCode,
         bool EntitlementRequiredOnSale = true);
 
-    public sealed record DevPartyLabel(Guid Id, string Code, string? Name, string PartyType);
+    /// <param name="Contacts">Customer contacts for customer e-mail (P9-T20); only the host reads them, the demo loader ignores them.</param>
+    public sealed record DevPartyLabel(Guid Id, string Code, string? Name, string PartyType, IReadOnlyList<DevPartyContact>? Contacts = null);
+
+    public sealed record DevPartyContact(string Name, string Email, string? Role = null, string? Language = null);
 
     public sealed record DevDocumentLabel(Guid Id, string Type, string Number, string? Status = null, Guid? ItemId = null);
 

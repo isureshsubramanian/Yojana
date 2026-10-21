@@ -92,6 +92,7 @@ var referenceCounts = DevReferenceCatalogue.Load(
     app.Services.GetRequiredService<InMemoryItemFamilyNamePort>(),
     app.Services.GetRequiredService<InMemoryWarrantyPorts>(),
     app.Services.GetRequiredService<InMemoryPartyNamePort>(),
+    app.Services.GetRequiredService<InMemoryPartyContactPort>(),
     app.Services.GetRequiredService<InMemoryDocumentNumberRegistry>(),
     app.Services.GetRequiredService<InMemoryLocationNameRegistry>());
 if (app.Environment.IsDevelopment())

@@ -127,6 +127,10 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<PolicyCoverItemRow> PolicyCoverItems => Set<PolicyCoverItemRow>();
     public DbSet<PolicyCoverItemCause> PolicyCoverItemCauses => Set<PolicyCoverItemCause>();
     public DbSet<ClaimCauseRow> ClaimCauses => Set<ClaimCauseRow>();
+    public DbSet<MailTemplate> MailTemplates => Set<MailTemplate>();
+    public DbSet<MailTemplateVersion> MailTemplateVersions => Set<MailTemplateVersion>();
+    public DbSet<MailTemplateDefault> MailTemplateDefaults => Set<MailTemplateDefault>();
+    public DbSet<CustomerMailMessage> CustomerMailMessages => Set<CustomerMailMessage>();
     public DbSet<Claim> Claims => Set<Claim>();
 
     public DbSet<ClaimLine> ClaimLines => Set<ClaimLine>();
@@ -742,6 +746,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
         Yojana.Serialisation.Entitlements.CoverDeviationModel.Configure(modelBuilder);
         Yojana.Serialisation.Entitlements.CoverItemsModel.Configure(modelBuilder);
+        Yojana.Serialisation.CustomerMail.CustomerMailModel.Configure(modelBuilder);
 
         modelBuilder.Entity<Entitlement>(b =>
         {

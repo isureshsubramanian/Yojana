@@ -100,6 +100,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
         await StepAsync("load import, reconciliation and portal stories", CreatePhaseSevenScenariosAsync, cancellationToken);
         await StepAsync("load integration attention and hand-entry stories", CreatePhaseEightScreenScenariosAsync,
             cancellationToken);
+        await StepAsync("publish customer e-mail templates", CreateCustomerMailTemplatesAsync, cancellationToken);
         await PrintSummaryAsync(cancellationToken);
     }
 
