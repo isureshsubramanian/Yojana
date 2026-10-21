@@ -48,7 +48,8 @@ public sealed record MigrationSourcePage(IReadOnlyList<MigrationSourceView> Item
 
 public sealed record UpdateMigrationLicenceRequest(bool Confirmed, string? ContractReference, string? Note);
 
-public sealed record MigrationSourceTestTable(string Table, long? RowCount, string? Error);
+public sealed record MigrationSourceTestTable(string Table, long? RowCount, string? Error,
+    string Role = "unknown", string? Label = null);
 
 public sealed record MigrationSourceTestResult(Guid SourceId, IReadOnlyList<MigrationSourceTestTable> Tables);
 
@@ -56,8 +57,11 @@ public sealed record StartMigrationBatchRequest(Guid SourceId);
 
 public sealed record StartMigrationBatchResponse(Guid BatchId, string Status, string? Failure);
 
+// Table is the source's own name, shown as data under Label; Role is the stable key screens select on.
 public sealed record MigrationBatchTableView(
     string Table,
+    string Role,
+    string Label,
     long RowsRead,
     long Inserted,
     long Updated,

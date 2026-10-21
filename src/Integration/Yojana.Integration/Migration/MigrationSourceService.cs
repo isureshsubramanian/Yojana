@@ -139,11 +139,17 @@ public sealed class MigrationSourceService(
     {
         var row = await SourceAsync(sourceId, cancellationToken);
         if (row.Runtime != MigrationSourceRuntime.SqlServer)
-            return new(sourceId, Staging.SourceProtocol.Tables.Select(table =>
-                new MigrationSourceTestTable(table.SourceTable, null,
-                    "migration_source_runtime_unsupported")).ToList());
-        return new(sourceId, await extractor.CountAsync(row, cancellationToken));
+            return new(sourceId, Described(Staging.SourceProtocol.Tables.Select(table =>
+                new MigrationSourceTestTable(table.SourceTable, null, "migration_source_runtime_unsupported"))));
+        return new(sourceId, Described(await extractor.CountAsync(row, cancellationToken)));
     }
+
+    private static List<MigrationSourceTestTable> Described(IEnumerable<MigrationSourceTestTable> tables) =>
+        tables.Select(table =>
+        {
+            var (role, label) = Staging.SourceProtocol.Describe(table.Table);
+            return table with { Role = role, Label = label };
+        }).ToList();
 
     internal async Task<MigrationSource> SourceAsync(Guid sourceId, CancellationToken cancellationToken) =>
         await db.MigrationSources.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId &&

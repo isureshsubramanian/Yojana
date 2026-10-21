@@ -76,11 +76,19 @@ public sealed class MigrationBatchService(
         if (batch is null) return null;
         var tables = await db.MigrationBatchTables.AsNoTracking().Where(x =>
                 x.TenantId == tenant.TenantId && x.BatchId == batchId)
-            .OrderBy(x => x.SourceTable).Select(x => new MigrationBatchTableView(x.SourceTable, x.RowsRead,
-                x.Inserted, x.Updated, x.Unchanged, x.Absent, x.DurationMilliseconds))
+            .OrderBy(x => x.SourceTable).Select(x => new
+            {
+                x.SourceTable, x.RowsRead, x.Inserted, x.Updated, x.Unchanged, x.Absent, x.DurationMilliseconds,
+            })
             .ToListAsync(cancellationToken);
+        var tableViews = tables.Select(x =>
+        {
+            var (role, label) = Staging.SourceProtocol.Describe(x.SourceTable);
+            return new MigrationBatchTableView(x.SourceTable, role, label, x.RowsRead, x.Inserted, x.Updated,
+                x.Unchanged, x.Absent, x.DurationMilliseconds);
+        }).ToList();
         var names = await people.DisplayNamesAsync([batch.RequestedBy], cancellationToken);
-        return View(batch, names.GetValueOrDefault(batch.RequestedBy) ?? batch.RequestedBy, tables);
+        return View(batch, names.GetValueOrDefault(batch.RequestedBy) ?? batch.RequestedBy, tableViews);
     }
 
     public async Task<int> RunPendingAsync(CancellationToken cancellationToken)

@@ -4,5 +4,5 @@
   "scanRoots": ["src", "tests", "tools", "web", "scripts", ".github", "Makefile", "README.md", "docker-compose.yml", "Directory.Build.props", "Directory.Packages.props", ".editorconfig", ".gitignore"],
   "excludeDirectories": ["bin", "obj", "node_modules", "dist", ".browser", ".git"],
   "excludeFiles": ["src/Web/Yojana.Web/Notices/THIRD-PARTY-NOTICES.txt", "src/Relay/Yojana.Relay/Notices/THIRD-PARTY-NOTICES.txt"],
-  "allowedPathPrefixes": ["src/Integration/Yojana.Integration/Connectors/", "src/Migration/Yojana.Migration/Staging/"]
+  "allowedPathPrefixes": ["src/Integration/Yojana.Integration/Connectors/", "src/Integration/Yojana.Integration/Migration/Staging/"]
 }

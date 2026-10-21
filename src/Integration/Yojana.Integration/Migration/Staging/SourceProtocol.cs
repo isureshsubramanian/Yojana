@@ -62,11 +62,42 @@ internal static class SourceProtocol
         new(source, property, RawColumnKind.Int32, key);
     private static RawColumn N(string source, string property) => new(source, property, RawColumnKind.Decimal);
     private static RawColumn D(string source, string property) => new(source, property, RawColumnKind.DateTime);
-    private static string P(params char[] value) => new(value);
+
+    // Readable names and stable keys for screens and reports, so nothing outside this boundary has to know the
+    // source's physical table names to label them. Keyed by staging row type: one entry per protocol table.
+    private static readonly Dictionary<Type, (string Role, string Label)> Descriptions =
+        new Dictionary<Type, (string Role, string Label)>
+        {
+            [typeof(SerialMasterStagingRow)] = ("serial_master", "Serial master"),
+            [typeof(SerialQuantityStagingRow)] = ("serial_quantity", "Serial quantity by warehouse"),
+            [typeof(SerialBinStagingRow)] = ("serial_bins", "Serial bins"),
+            [typeof(TransactionLogHeaderStagingRow)] = ("transaction_log_headers", "Transaction log headers"),
+            [typeof(TransactionLogLineStagingRow)] = ("transaction_log_lines", "Transaction log lines"),
+            [typeof(EquipmentCardStagingRow)] = ("equipment_cards", "Equipment cards"),
+            [typeof(CardHistoryStagingRow)] = ("equipment_card_history", "Equipment card history"),
+            [typeof(CardPartnerStagingRow)] = ("equipment_card_partners", "Equipment card customers"),
+            [typeof(ServiceContractStagingRow)] = ("service_contracts", "Service contracts"),
+            [typeof(ContractLineStagingRow)] = ("service_contract_lines", "Service contract lines"),
+            [typeof(ContractTemplateStagingRow)] = ("service_contract_templates", "Service contract templates"),
+            [typeof(ServiceCallStagingRow)] = ("service_calls", "Service calls"),
+            [typeof(ReturnStagingRow)] = ("returns", "Returns"),
+            [typeof(MarketingDocumentHeaderStagingRow)] = ("document_headers",
+                "Document headers: deliveries, invoices, returns, receipts, production"),
+            [typeof(AttachmentStagingRow)] = ("attachments", "Attachments: file names and paths only"),
+            [typeof(ItemSerialSettingStagingRow)] = ("item_serial_settings", "Item serial settings"),
+        };
+
+    /// <summary>The stable key and readable name of a protocol table, or the raw name when it is not ours.</summary>
+    public static (string Role, string Label) Describe(string sourceTable)
+    {
+        var table = Tables.FirstOrDefault(row => string.Equals(row.SourceTable, sourceTable, StringComparison.Ordinal));
+        return table is not null && Descriptions.TryGetValue(table.RowType, out var description)
+            ? description : ("unknown", sourceTable);
+    }
 
     public static IReadOnlyList<SourceTableProtocol> Tables { get; } =
     [
-        new(P('O','S','R','N'), "stg_src_osrn", typeof(SerialMasterStagingRow),
+        new("OSRN", "stg_src_osrn", typeof(SerialMasterStagingRow),
         [T("ItemCode", nameof(SerialMasterStagingRow.ItemCode), true, 100), I("SysNumber", nameof(SerialMasterStagingRow.SystemNumber), true),
          I("AbsEntry", nameof(SerialMasterStagingRow.SerialEntry)), T("DistNumber", nameof(SerialMasterStagingRow.SerialNumber), length: 500),
          T("MnfSerial", nameof(SerialMasterStagingRow.ManufacturerSerial), length: 500), T("LotNumber", nameof(SerialMasterStagingRow.LotNumber), length: 500),
@@ -74,14 +105,14 @@ internal static class SourceProtocol
          D("InDate", nameof(SerialMasterStagingRow.InboundDate)), D("GrntStart", nameof(SerialMasterStagingRow.WarrantyStart)),
          D("GrntExp", nameof(SerialMasterStagingRow.WarrantyEnd)), T("Status", nameof(SerialMasterStagingRow.Status), length: 10),
          T("Notes", nameof(SerialMasterStagingRow.Notes), length: 4000), T("DataSource", nameof(SerialMasterStagingRow.DataSource), length: 20)]),
-        new(P('O','S','R','Q'), "stg_src_osrq", typeof(SerialQuantityStagingRow),
+        new("OSRQ", "stg_src_osrq", typeof(SerialQuantityStagingRow),
         [T("ItemCode", nameof(SerialQuantityStagingRow.ItemCode), true, 100), I("SysNumber", nameof(SerialQuantityStagingRow.SystemNumber), true),
          T("WhsCode", nameof(SerialQuantityStagingRow.WarehouseCode), true, 100), N("Quantity", nameof(SerialQuantityStagingRow.Quantity))]),
-        new(P('O','S','B','Q'), "stg_src_osbq", typeof(SerialBinStagingRow),
+        new("OSBQ", "stg_src_osbq", typeof(SerialBinStagingRow),
         [I("AbsEntry", nameof(SerialBinStagingRow.Entry), true), T("ItemCode", nameof(SerialBinStagingRow.ItemCode), length: 100),
          I("SnBMDAbs", nameof(SerialBinStagingRow.SerialEntry)), T("WhsCode", nameof(SerialBinStagingRow.WarehouseCode), length: 100),
          I("BinAbs", nameof(SerialBinStagingRow.BinEntry)), N("OnHandQty", nameof(SerialBinStagingRow.Quantity))]),
-        new(P('O','I','T','L'), "stg_src_oitl", typeof(TransactionLogHeaderStagingRow),
+        new("OITL", "stg_src_oitl", typeof(TransactionLogHeaderStagingRow),
         [I("LogEntry", nameof(TransactionLogHeaderStagingRow.LogEntry), true), T("ItemCode", nameof(TransactionLogHeaderStagingRow.ItemCode), length: 100),
          I("DocType", nameof(TransactionLogHeaderStagingRow.DocumentType)), I("DocEntry", nameof(TransactionLogHeaderStagingRow.DocumentEntry)),
          I("DocLine", nameof(TransactionLogHeaderStagingRow.DocumentLine)), I("DocNum", nameof(TransactionLogHeaderStagingRow.DocumentNumber)),
@@ -93,28 +124,28 @@ internal static class SourceProtocol
          I("CreateTime", nameof(TransactionLogHeaderStagingRow.CreatedTime)), I("StockEff", nameof(TransactionLogHeaderStagingRow.StockEffect)),
          I("LocType", nameof(TransactionLogHeaderStagingRow.LocationType)), T("LocCode", nameof(TransactionLogHeaderStagingRow.WarehouseCode), length: 100),
          T("CardCode", nameof(TransactionLogHeaderStagingRow.PartyCode), length: 100)]),
-        new(P('I','T','L','1'), "stg_src_itl1", typeof(TransactionLogLineStagingRow),
+        new("ITL1", "stg_src_itl1", typeof(TransactionLogLineStagingRow),
         [I("LogEntry", nameof(TransactionLogLineStagingRow.LogEntry), true), T("ItemCode", nameof(TransactionLogLineStagingRow.ItemCode), true, 100),
          I("SysNumber", nameof(TransactionLogLineStagingRow.SystemNumber), true), N("Quantity", nameof(TransactionLogLineStagingRow.Quantity)),
          I("MdAbsEntry", nameof(TransactionLogLineStagingRow.SerialEntry))]),
-        new(P('O','I','N','S'), "stg_src_oins", typeof(EquipmentCardStagingRow),
+        new("OINS", "stg_src_oins", typeof(EquipmentCardStagingRow),
         [I("insID", nameof(EquipmentCardStagingRow.CardId), true), T("itemCode", nameof(EquipmentCardStagingRow.ItemCode), length: 100),
          T("internalSN", nameof(EquipmentCardStagingRow.InternalSerial), length: 500), T("manufSN", nameof(EquipmentCardStagingRow.ManufacturerSerial), length: 500),
          T("customer", nameof(EquipmentCardStagingRow.CustomerCode), length: 100), T("directCsmr", nameof(EquipmentCardStagingRow.DirectCustomerCode), length: 100),
          I("replcIns", nameof(EquipmentCardStagingRow.ReplacesCardId)), I("repByIns", nameof(EquipmentCardStagingRow.ReplacedByCardId)),
          T("DPPStatus", nameof(EquipmentCardStagingRow.PersonalDataStatus), length: 20), D("wrrntyStrt", nameof(EquipmentCardStagingRow.WarrantyStart)),
          D("wrrntyEnd", nameof(EquipmentCardStagingRow.WarrantyEnd)), T("status", nameof(EquipmentCardStagingRow.Status), length: 40)]),
-        new(P('A','I','N','S'), "stg_src_ains", typeof(CardHistoryStagingRow),
+        new("AINS", "stg_src_ains", typeof(CardHistoryStagingRow),
         [I("insID", nameof(CardHistoryStagingRow.CardId), true), I("logInstanc", nameof(CardHistoryStagingRow.HistorySequence), true),
          T("customer", nameof(CardHistoryStagingRow.CustomerCode), length: 100), D("wrrntyStrt", nameof(CardHistoryStagingRow.WarrantyStart)),
          D("wrrntyEnd", nameof(CardHistoryStagingRow.WarrantyEnd)), T("status", nameof(CardHistoryStagingRow.Status), length: 40),
          D("updateDate", nameof(CardHistoryStagingRow.ChangedAt))]),
         // The demo has 245 rows, LogInstanc is NULL on every row, and (InsID, BpCode) is unique. That stable pair is
         // therefore the source identity; extraction deliberately fails on a future source that repeats it.
-        new(P('I','N','S','1'), "stg_src_ins1", typeof(CardPartnerStagingRow),
+        new("INS1", "stg_src_ins1", typeof(CardPartnerStagingRow),
         [I("InsID", nameof(CardPartnerStagingRow.CardId), true), T("BpCode", nameof(CardPartnerStagingRow.PartnerCode), true, 100),
          I("LogInstanc", nameof(CardPartnerStagingRow.HistorySequence))]),
-        new(P('O','C','T','R'), "stg_src_octr", typeof(ServiceContractStagingRow),
+        new("OCTR", "stg_src_octr", typeof(ServiceContractStagingRow),
         [I("ContractID", nameof(ServiceContractStagingRow.ContractId), true), T("CstmrCode", nameof(ServiceContractStagingRow.CustomerCode), length: 100),
          D("StartDate", nameof(ServiceContractStagingRow.StartDate)), D("EndDate", nameof(ServiceContractStagingRow.EndDate)),
          D("TermDate", nameof(ServiceContractStagingRow.TerminationDate)), T("Status", nameof(ServiceContractStagingRow.Status), length: 40),
@@ -123,13 +154,13 @@ internal static class SourceProtocol
          I("ResponsVal", nameof(ServiceContractStagingRow.ResponseValue)), T("ResponsUnt", nameof(ServiceContractStagingRow.ResponseUnit), length: 20),
          T("InclParts", nameof(ServiceContractStagingRow.IncludesParts), length: 10), T("InclWork", nameof(ServiceContractStagingRow.IncludesLabour), length: 10),
          T("InclTravel", nameof(ServiceContractStagingRow.IncludesTravel), length: 10), I("DocNum", nameof(ServiceContractStagingRow.DocumentNumber))]),
-        new(P('C','T','R','1'), "stg_src_ctr1", typeof(ContractLineStagingRow),
+        new("CTR1", "stg_src_ctr1", typeof(ContractLineStagingRow),
         [I("ContractID", nameof(ContractLineStagingRow.ContractId), true), I("Line", nameof(ContractLineStagingRow.LineNumber), true),
          T("ItemCode", nameof(ContractLineStagingRow.ItemCode), length: 100), T("InternalSN", nameof(ContractLineStagingRow.InternalSerial), length: 500),
          T("ManufSN", nameof(ContractLineStagingRow.ManufacturerSerial), length: 500), I("InsID", nameof(ContractLineStagingRow.EquipmentCardId)),
          D("StartDate", nameof(ContractLineStagingRow.StartDate)), D("EndDate", nameof(ContractLineStagingRow.EndDate)),
          D("TermDate", nameof(ContractLineStagingRow.TerminationDate))]),
-        new(P('O','C','T','T'), "stg_src_octt", typeof(ContractTemplateStagingRow),
+        new("OCTT", "stg_src_octt", typeof(ContractTemplateStagingRow),
         [T("TmpltName", nameof(ContractTemplateStagingRow.TemplateName), true, 500), T("Descriptio", nameof(ContractTemplateStagingRow.Description), length: 500),
          // The source has no duration-unit column. Per the ADR inference and the demo's value 24, downstream mapping treats Duration as months.
          I("Duration", nameof(ContractTemplateStagingRow.Duration)), I("ResponsVal", nameof(ContractTemplateStagingRow.ResponseValue)),
@@ -144,16 +175,16 @@ internal static class SourceProtocol
          T("FriEnabled", nameof(ContractTemplateStagingRow.FridayEnabled), length: 10), I("FriStart", nameof(ContractTemplateStagingRow.FridayStart)), I("FriEnd", nameof(ContractTemplateStagingRow.FridayEnd)),
          T("SatEnabled", nameof(ContractTemplateStagingRow.SaturdayEnabled), length: 10), I("SatStart", nameof(ContractTemplateStagingRow.SaturdayStart)), I("SatEnd", nameof(ContractTemplateStagingRow.SaturdayEnd)),
          T("SunEnabled", nameof(ContractTemplateStagingRow.SundayEnabled), length: 10), I("SunStrart", nameof(ContractTemplateStagingRow.SundayStart)), I("SunEnd", nameof(ContractTemplateStagingRow.SundayEnd))]),
-        new(P('O','S','C','L'), "stg_src_oscl", typeof(ServiceCallStagingRow),
+        new("OSCL", "stg_src_oscl", typeof(ServiceCallStagingRow),
         [I("callID", nameof(ServiceCallStagingRow.CallId), true), T("customer", nameof(ServiceCallStagingRow.CustomerCode), length: 100),
          T("itemCode", nameof(ServiceCallStagingRow.ItemCode), length: 100), T("internalSN", nameof(ServiceCallStagingRow.InternalSerial), length: 500),
          T("manufSN", nameof(ServiceCallStagingRow.ManufacturerSerial), length: 500), I("status", nameof(ServiceCallStagingRow.Status)),
          D("createDate", nameof(ServiceCallStagingRow.OpenedAt)), D("closeDate", nameof(ServiceCallStagingRow.ClosedAt))]),
-        new(P('O','R','R','R'), "stg_src_orrr", typeof(ReturnStagingRow),
+        new("ORRR", "stg_src_orrr", typeof(ReturnStagingRow),
         [I("DocEntry", nameof(ReturnStagingRow.DocumentEntry), true), I("DocNum", nameof(ReturnStagingRow.DocumentNumber)),
          T("CardCode", nameof(ReturnStagingRow.CustomerCode), length: 100), D("DocDate", nameof(ReturnStagingRow.DocumentDate)),
          T("DocStatus", nameof(ReturnStagingRow.Status), length: 20), T("CANCELED", nameof(ReturnStagingRow.Cancelled), length: 10)]),
-        new(P('M','A','R','K','E','T','I','N','G','_','D','O','C','U','M','E','N','T','_','H','E','A','D','E','R','S'),
+        new("MARKETING_DOCUMENT_HEADERS",
             "stg_src_marketing_document_headers", typeof(MarketingDocumentHeaderStagingRow),
         [T(null, nameof(MarketingDocumentHeaderStagingRow.SourceDocumentTable), true, 100),
          I("DocEntry", nameof(MarketingDocumentHeaderStagingRow.DocumentEntry), true),
@@ -163,17 +194,17 @@ internal static class SourceProtocol
          T("CardCode", nameof(MarketingDocumentHeaderStagingRow.PartyCode), length: 100),
          D("DocDate", nameof(MarketingDocumentHeaderStagingRow.DocumentDate)),
          T("CANCELED", nameof(MarketingDocumentHeaderStagingRow.Cancelled), length: 10)],
-        [Marketing(P('O','D','L','N')), Marketing(P('O','I','N','V')), Marketing(P('O','R','D','N')),
-         Marketing(P('O','R','I','N')), Marketing(P('O','P','D','N')), Marketing(P('O','R','P','D')),
-         Marketing(P('O','I','G','N')), Marketing(P('O','I','G','E')), Marketing(P('O','W','T','R')),
-         Marketing(P('O','W','O','R'), documentType: false, documentDate: "PostDate", cancelled: false)]),
-        new(P('A','T','C','1'), "stg_src_oatc", typeof(AttachmentStagingRow),
+        [Marketing("ODLN"), Marketing("OINV"), Marketing("ORDN"),
+         Marketing("ORIN"), Marketing("OPDN"), Marketing("ORPD"),
+         Marketing("OIGN"), Marketing("OIGE"), Marketing("OWTR"),
+         Marketing("OWOR", documentType: false, documentDate: "PostDate", cancelled: false)]),
+        new("ATC1", "stg_src_oatc", typeof(AttachmentStagingRow),
         [I("AbsEntry", nameof(AttachmentStagingRow.AttachmentEntry), true), I("Line", nameof(AttachmentStagingRow.LineNumber), true),
          T("trgtPath", nameof(AttachmentStagingRow.TargetPath), length: 2000), T("srcPath", nameof(AttachmentStagingRow.SourcePath), length: 2000),
          T("subPath", nameof(AttachmentStagingRow.SubPath), length: 500), T("FileName", nameof(AttachmentStagingRow.FileName), length: 500),
          T("FileExt", nameof(AttachmentStagingRow.FileExtension), length: 40), I("FileSize", nameof(AttachmentStagingRow.FileSize)),
          D("Date", nameof(AttachmentStagingRow.AttachedAt))]),
-        new(P('O','I','T','M'), "stg_src_oitm", typeof(ItemSerialSettingStagingRow),
+        new("OITM", "stg_src_oitm", typeof(ItemSerialSettingStagingRow),
         [T("ItemCode", nameof(ItemSerialSettingStagingRow.ItemCode), true, 100), T("ManSerNum", nameof(ItemSerialSettingStagingRow.ManagesSerialNumbers), length: 10),
          T("MngMethod", nameof(ItemSerialSettingStagingRow.ManagementMethod), length: 10), T("WarrntTmpl", nameof(ItemSerialSettingStagingRow.WarrantyTemplateName), length: 500)]),
     ];
