@@ -3180,6 +3180,789 @@ namespace Yojana.Integration.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationMapRun", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<bool>("AllowedWaitingReviews")
+                        .HasColumnType("bit")
+                        .HasColumnName("allowed_waiting_reviews");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<DateOnly>("CutoverDate")
+                        .HasColumnType("date")
+                        .HasColumnName("cutover_date");
+
+                    b.Property<long>("EventCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("event_count");
+
+                    b.Property<long>("ExcludedCandidateCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("excluded_candidate_count");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("failure_code");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("finished_at");
+
+                    b.Property<Guid>("ReconstructionRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reconstruction_run_id");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("requested_at");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<long>("UnitCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("unit_count");
+
+                    b.Property<long>("WaitingCandidateCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("waiting_candidate_count");
+
+                    b.HasKey("TenantId", "RunId")
+                        .HasName("pk_migration_map_run");
+
+                    b.HasIndex("TenantId", "BatchId", "RequestedAt", "RunId")
+                        .HasDatabaseName("ix_migration_map_run_tenant_id_batch_id_requested_at_run_id");
+
+                    b.HasIndex("TenantId", "ReconstructionRunId", "RequestedAt", "RunId")
+                        .HasDatabaseName("ix_migration_map_run_tenant_id_reconstruction_run_id_requested_at_run_id");
+
+                    b.HasIndex("TenantId", "Status", "RequestedAt", "RunId")
+                        .HasDatabaseName("ix_migration_map_run_tenant_id_status_requested_at_run_id");
+
+                    b.ToTable("migration_map_run", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_map_run_status", "status IN ('queued','running','completed','failed')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanAttachment", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PlanAttachmentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_attachment_id");
+
+                    b.Property<string>("ContentHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasColumnName("content_hash");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("file_name");
+
+                    b.Property<long?>("FileSize")
+                        .HasColumnType("bigint")
+                        .HasColumnName("file_size");
+
+                    b.Property<Guid>("MapRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("map_run_id");
+
+                    b.Property<string>("Path")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("path");
+
+                    b.Property<Guid?>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_key");
+
+                    b.HasKey("TenantId", "PlanAttachmentId")
+                        .HasName("pk_migration_plan_attachment");
+
+                    b.HasIndex("TenantId", "PlanUnitId")
+                        .HasDatabaseName("ix_migration_plan_attachment_tenant_id_plan_unit_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "PlanUnitId", "PlanAttachmentId")
+                        .HasDatabaseName("ix_migration_plan_attachment_tenant_id_map_run_id_plan_unit_id_plan_attachment_id");
+
+                    b.ToTable("migration_plan_attachment", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanCertificate", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PlanCertificateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_certificate_id");
+
+                    b.Property<Guid>("MapRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("map_run_id");
+
+                    b.Property<Guid>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("provenance");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int")
+                        .HasColumnName("version");
+
+                    b.HasKey("TenantId", "PlanCertificateId")
+                        .HasName("pk_migration_plan_certificate");
+
+                    b.HasIndex("TenantId", "PlanUnitId")
+                        .HasDatabaseName("ix_migration_plan_certificate_tenant_id_plan_unit_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "PlanUnitId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_plan_certificate_tenant_id_map_run_id_plan_unit_id");
+
+                    b.ToTable("migration_plan_certificate", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanEntitlement", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PlanEntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_entitlement_id");
+
+                    b.Property<string>("CoverageFamily")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("coverage_family");
+
+                    b.Property<string>("DateSource")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("date_source");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("direction");
+
+                    b.Property<DateOnly?>("EndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("end_date");
+
+                    b.Property<bool>("Expired")
+                        .HasColumnType("bit")
+                        .HasColumnName("expired");
+
+                    b.Property<Guid>("MapRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("map_run_id");
+
+                    b.Property<Guid>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<Guid?>("PolicyId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("policy_id");
+
+                    b.Property<int?>("PolicyVersion")
+                        .HasColumnType("int")
+                        .HasColumnName("policy_version");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("provenance");
+
+                    b.Property<int>("RemainingDays")
+                        .HasColumnType("int")
+                        .HasColumnName("remaining_days");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_key");
+
+                    b.Property<DateOnly?>("StartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("start_date");
+
+                    b.Property<DateOnly?>("TerminationDate")
+                        .HasColumnType("date")
+                        .HasColumnName("termination_date");
+
+                    b.HasKey("TenantId", "PlanEntitlementId")
+                        .HasName("pk_migration_plan_entitlement");
+
+                    b.HasIndex("TenantId", "PlanUnitId")
+                        .HasDatabaseName("ix_migration_plan_entitlement_tenant_id_plan_unit_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "PlanUnitId", "CoverageFamily", "PlanEntitlementId")
+                        .HasDatabaseName("ix_migration_plan_entitlement_tenant_id_map_run_id_plan_unit_id_coverage_family_plan_entitlement_id");
+
+                    b.ToTable("migration_plan_entitlement", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanEvent", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PlanEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_event_id");
+
+                    b.Property<int?>("DocumentNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("document_number");
+
+                    b.Property<string>("DocumentTypeLabel")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("document_type_label");
+
+                    b.Property<DateTime>("EffectiveDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("effective_date");
+
+                    b.Property<Guid>("HistoryEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("history_event_id");
+
+                    b.Property<Guid>("MapRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("map_run_id");
+
+                    b.Property<string>("MovementKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("movement_kind");
+
+                    b.Property<string>("PartyCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("party_code");
+
+                    b.Property<Guid>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("provenance");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(19, 6)
+                        .HasColumnType("decimal(19,6)")
+                        .HasColumnName("quantity");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("int")
+                        .HasColumnName("sequence");
+
+                    b.Property<string>("WarehouseCode")
+                        .HasMaxLength(240)
+                        .HasColumnType("nvarchar(240)")
+                        .HasColumnName("warehouse_code");
+
+                    b.HasKey("TenantId", "PlanEventId")
+                        .HasName("pk_migration_plan_event");
+
+                    b.HasIndex("TenantId", "PlanUnitId")
+                        .HasDatabaseName("ix_migration_plan_event_tenant_id_plan_unit_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "PlanUnitId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_plan_event_tenant_id_map_run_id_plan_unit_id_sequence");
+
+                    b.HasIndex("TenantId", "MapRunId", "Provenance", "PlanEventId")
+                        .HasDatabaseName("ix_migration_plan_event_tenant_id_map_run_id_provenance_plan_event_id");
+
+                    b.ToTable("migration_plan_event", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanGap", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PlanGapId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_gap_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("MapRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("map_run_id");
+
+                    b.Property<Guid?>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("SourceKey")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_key");
+
+                    b.HasKey("TenantId", "PlanGapId")
+                        .HasName("pk_migration_plan_gap");
+
+                    b.HasIndex("TenantId", "PlanUnitId")
+                        .HasDatabaseName("ix_migration_plan_gap_tenant_id_plan_unit_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "Kind", "PlanGapId")
+                        .HasDatabaseName("ix_migration_plan_gap_tenant_id_map_run_id_kind_plan_gap_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "PlanUnitId", "PlanGapId")
+                        .HasDatabaseName("ix_migration_plan_gap_tenant_id_map_run_id_plan_unit_id_plan_gap_id");
+
+                    b.ToTable("migration_plan_gap", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanIdentifier", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PlanIdentifierId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_identifier_id");
+
+                    b.Property<string>("IdentifierType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("identifier_type");
+
+                    b.Property<string>("IssuerKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("issuer_kind");
+
+                    b.Property<Guid>("MapRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("map_run_id");
+
+                    b.Property<Guid>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("provenance");
+
+                    b.Property<string>("RawValue")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("raw_value");
+
+                    b.Property<string>("SourceDataValue")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("source_data_value");
+
+                    b.HasKey("TenantId", "PlanIdentifierId")
+                        .HasName("pk_migration_plan_identifier");
+
+                    b.HasIndex("TenantId", "PlanUnitId")
+                        .HasDatabaseName("ix_migration_plan_identifier_tenant_id_plan_unit_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "PlanUnitId", "PlanIdentifierId")
+                        .HasDatabaseName("ix_migration_plan_identifier_tenant_id_map_run_id_plan_unit_id_plan_identifier_id");
+
+                    b.ToTable("migration_plan_identifier", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanLog", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PlanLogId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_log_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("MapRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("map_run_id");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<Guid?>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<string>("RelatedSourceKey")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("related_source_key");
+
+                    b.Property<string>("SourceKey")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_key");
+
+                    b.HasKey("TenantId", "PlanLogId")
+                        .HasName("pk_migration_plan_log");
+
+                    b.HasIndex("TenantId", "PlanUnitId")
+                        .HasDatabaseName("ix_migration_plan_log_tenant_id_plan_unit_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "PlanUnitId", "PlanLogId")
+                        .HasDatabaseName("ix_migration_plan_log_tenant_id_map_run_id_plan_unit_id_plan_log_id");
+
+                    b.ToTable("migration_plan_log", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanOwnership", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PlanOwnershipId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_ownership_id");
+
+                    b.Property<DateTime?>("EvidenceDate")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("evidence_date");
+
+                    b.Property<string>("EvidenceSource")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("evidence_source");
+
+                    b.Property<bool>("IsCurrent")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_current");
+
+                    b.Property<Guid>("MapRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("map_run_id");
+
+                    b.Property<string>("PartyCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("party_code");
+
+                    b.Property<string>("PartyName")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("party_name");
+
+                    b.Property<string>("PartyReference")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("party_reference");
+
+                    b.Property<Guid>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<bool>("Pseudonymised")
+                        .HasColumnType("bit")
+                        .HasColumnName("pseudonymised");
+
+                    b.Property<string>("Tier")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("tier");
+
+                    b.HasKey("TenantId", "PlanOwnershipId")
+                        .HasName("pk_migration_plan_ownership");
+
+                    b.HasIndex("TenantId", "PlanUnitId")
+                        .HasDatabaseName("ix_migration_plan_ownership_tenant_id_plan_unit_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "PlanUnitId", "PlanOwnershipId")
+                        .HasDatabaseName("ix_migration_plan_ownership_tenant_id_map_run_id_plan_unit_id_plan_ownership_id");
+
+                    b.ToTable("migration_plan_ownership", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanReplacementLink", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PlanReplacementLinkId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_replacement_link_id");
+
+                    b.Property<Guid>("MapRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("map_run_id");
+
+                    b.Property<string>("PolicyApplied")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("policy_applied");
+
+                    b.Property<Guid>("ReplacedPlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("replaced_plan_unit_id");
+
+                    b.Property<Guid>("ReplacementPlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("replacement_plan_unit_id");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_key");
+
+                    b.HasKey("TenantId", "PlanReplacementLinkId")
+                        .HasName("pk_migration_plan_replacement_link");
+
+                    b.HasIndex("TenantId", "ReplacedPlanUnitId")
+                        .HasDatabaseName("ix_migration_plan_replacement_link_tenant_id_replaced_plan_unit_id");
+
+                    b.HasIndex("TenantId", "ReplacementPlanUnitId")
+                        .HasDatabaseName("ix_migration_plan_replacement_link_tenant_id_replacement_plan_unit_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "ReplacedPlanUnitId", "ReplacementPlanUnitId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_plan_replacement_link_tenant_id_map_run_id_replaced_plan_unit_id_replacement_plan_unit_id");
+
+                    b.ToTable("migration_plan_replacement_link", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanUnit", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("candidate_id");
+
+                    b.Property<string>("ConditionGrade")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("condition_grade");
+
+                    b.Property<string>("ConditionProvenance")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("condition_provenance");
+
+                    b.Property<string>("CustodyLocationKind")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("custody_location_kind");
+
+                    b.Property<string>("HistoryDepth")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("history_depth");
+
+                    b.Property<string>("ItemCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_code");
+
+                    b.Property<string>("ItemName")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("item_name");
+
+                    b.Property<string>("LocationState")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("location_state");
+
+                    b.Property<Guid>("MapRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("map_run_id");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("origin");
+
+                    b.Property<string>("WarehouseCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("warehouse_code");
+
+                    b.HasKey("TenantId", "PlanUnitId")
+                        .HasName("pk_migration_plan_unit");
+
+                    b.HasIndex("TenantId", "MapRunId", "CandidateId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_plan_unit_tenant_id_map_run_id_candidate_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "ItemCode", "PlanUnitId")
+                        .HasDatabaseName("ix_migration_plan_unit_tenant_id_map_run_id_item_code_plan_unit_id");
+
+                    b.ToTable("migration_plan_unit", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanWarrantyEvidence", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PlanWarrantyEvidenceId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_warranty_evidence_id");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("direction");
+
+                    b.Property<DateOnly?>("EndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("end_date");
+
+                    b.Property<Guid>("MapRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("map_run_id");
+
+                    b.Property<Guid>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<bool>("SelectedForEntitlement")
+                        .HasColumnType("bit")
+                        .HasColumnName("selected_for_entitlement");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_key");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("source_kind");
+
+                    b.Property<DateOnly?>("StartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("start_date");
+
+                    b.Property<DateOnly?>("TerminationDate")
+                        .HasColumnType("date")
+                        .HasColumnName("termination_date");
+
+                    b.HasKey("TenantId", "PlanWarrantyEvidenceId")
+                        .HasName("pk_migration_plan_warranty_evidence");
+
+                    b.HasIndex("TenantId", "PlanUnitId")
+                        .HasDatabaseName("ix_migration_plan_warranty_evidence_tenant_id_plan_unit_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "PlanUnitId", "SourceKind", "PlanWarrantyEvidenceId")
+                        .HasDatabaseName("ix_migration_plan_warranty_evidence_tenant_id_map_run_id_plan_unit_id_source_kind_plan_warranty_evidence_id");
+
+                    b.ToTable("migration_plan_warranty_evidence", "migration");
+                });
+
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.MigrationBatch", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -5990,6 +6773,130 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_migration_unit_candidate_source_tenant_id_candidate_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationMapRun", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Reconstruction.MigrationReconstructionRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ReconstructionRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_map_run_tenant_id_reconstruction_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanAttachment", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanUnit", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PlanUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_migration_plan_attachment_tenant_id_plan_unit_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanCertificate", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanUnit", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PlanUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_plan_certificate_tenant_id_plan_unit_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanEntitlement", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanUnit", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PlanUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_plan_entitlement_tenant_id_plan_unit_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanEvent", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanUnit", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PlanUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_plan_event_tenant_id_plan_unit_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanGap", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanUnit", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PlanUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_migration_plan_gap_tenant_id_plan_unit_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanIdentifier", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanUnit", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PlanUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_plan_identifier_tenant_id_plan_unit_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanLog", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanUnit", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PlanUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_migration_plan_log_tenant_id_plan_unit_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanOwnership", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanUnit", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PlanUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_plan_ownership_tenant_id_plan_unit_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanReplacementLink", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanUnit", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ReplacedPlanUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_plan_replacement_link_tenant_id_replaced_plan_unit_id");
+
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanUnit", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ReplacementPlanUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_plan_replacement_link_tenant_id_replacement_plan_unit_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanUnit", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationMapRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "MapRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_plan_unit_tenant_id_map_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanWarrantyEvidence", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanUnit", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PlanUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_plan_warranty_evidence_tenant_id_plan_unit_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.MigrationBatch", b =>

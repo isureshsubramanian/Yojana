@@ -41,7 +41,11 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "migration_canon_run", "migration_unit_candidate", "migration_unit_candidate_source",
             "migration_event_candidate", "migration_entitlement_candidate", "migration_review_item",
             "migration_review_decision", "migration_reconstruction_run", "migration_history_event",
-            "migration_ownership_episode", "migration_reconstruction_log");
+            "migration_ownership_episode", "migration_reconstruction_log", "migration_map_run",
+            "migration_plan_unit", "migration_plan_identifier", "migration_plan_event",
+            "migration_plan_ownership", "migration_plan_replacement_link", "migration_plan_entitlement",
+            "migration_plan_warranty_evidence", "migration_plan_attachment", "migration_plan_certificate",
+            "migration_plan_gap", "migration_plan_log");
         var columns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'manual_outbound_task'").ToListAsync();
         Assert.Contains("desk", columns);
         var healthColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'connection_health'").ToListAsync();
