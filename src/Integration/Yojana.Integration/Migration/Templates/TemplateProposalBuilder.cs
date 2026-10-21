@@ -35,6 +35,10 @@ internal static class TemplateProposalBuilder
     {
         var reasons = new List<string>();
         var terms = Terms(row, reasons);
+        // Owner decision 2026-10-22: a template that includes no parts, labour or travel promises nothing the
+        // catalogue can express, so a person decides what it means rather than the builder guessing.
+        if (terms.PartsPct == 0m && terms.LabourPct == 0m && terms.TravelPct == 0m)
+            reasons.Add("Parts, labour and travel are all excluded; a person must decide what this template covers.");
         var families = catalogue.Families.Where(family => family.Active)
             .ToDictionary(family => family.FamilyCode, StringComparer.Ordinal);
         var selected = new HashSet<string>(StringComparer.Ordinal);

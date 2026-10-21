@@ -94,6 +94,25 @@ public sealed class TemplateProposalTests
         Assert.Null(draft.Blocks.Single(block => block.Family.FamilyCode == "extended_term").Policy);
     }
 
+    [Fact]
+    public void A_template_with_every_inclusion_excluded_always_needs_a_person()
+    {
+        var template = Template("RS-1100 response only", "Response only");
+        template.IncludesParts = "N";
+        template.IncludesLabour = "N";
+        template.IncludesTravel = "N";
+        var draft = TemplateProposalBuilder.Build(template, Catalogue(
+                Policy("base", Guid.NewGuid(), "BASE", "Base cover", null)),
+            TemplateKeywordRules.Defaults);
+
+        Assert.True(draft.NeedsPerson);
+        Assert.Contains("all excluded", draft.ReviewReason);
+
+        template.IncludesTravel = "Y";
+        Assert.DoesNotContain("all excluded", TemplateProposalBuilder.Build(template, Catalogue(),
+            TemplateKeywordRules.Defaults).ReviewReason ?? string.Empty);
+    }
+
     private static ContractTemplateStagingRow Template(string name, string description) => new()
     {
         BatchId = Guid.NewGuid(),
