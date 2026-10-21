@@ -16,6 +16,8 @@ public sealed record StartCanonicalisationResponse(Guid RunId, Guid BatchId, str
 
 public sealed record CanonicalisationGap(string Kind, string Reason);
 
+public sealed record MigrationReviewCount(string Key, long Count);
+
 public sealed record CanonicalisationView(
     Guid RunId,
     Guid BatchId,
@@ -23,17 +25,24 @@ public sealed record CanonicalisationView(
     DateTime? FinishedAt,
     string Status,
     string? Failure,
-    long SerialsInSource,
-    long Exact,
-    long TrimmedUpper,
-    long FamilyNormalised,
-    long WaitingForPerson,
-    long Merged,
-    long KeptApart,
-    long FixInIncumbent,
-    long CarriedOver,
+    long CandidateRowsTotal,
+    long CandidateRowsExact,
+    long CandidateRowsTrimmedUpper,
+    long CandidateRowsFamilyNormalised,
+    long CandidateRowsMerged,
+    long WaitingReviewItems,
+    long WaitingSameItemReviewItems,
+    long WaitingAcrossItemsReviewItems,
+    IReadOnlyList<MigrationReviewCount> WaitingReviewItemsByKind,
+    long DecidedReviewItems,
+    IReadOnlyList<MigrationReviewCount> DecidedReviewItemsByDecision,
+    long CarriedOverReviewItems,
     long UnverifiedDates,
     IReadOnlyList<CanonicalisationGap> Gaps);
+
+public sealed record CanonicalFamilyCatalogueItem(string Code, string Label);
+
+public sealed record CanonicalFamilyCatalogue(IReadOnlyList<CanonicalFamilyCatalogueItem> Families);
 
 public sealed record MigrationReviewRow(
     Guid ItemId,
@@ -46,6 +55,8 @@ public sealed record MigrationReviewRow(
     string RuleTried,
     string CandidateSummary,
     string? Suggestion,
+    string? SuggestedKeepSourceKey,
+    string? SuggestedKeepLabel,
     string? SuggestionReason,
     string? Hint,
     string Status,
@@ -63,7 +74,11 @@ public sealed record MigrationCandidateLineage(
     DateTime? LastDelivery,
     string? LastDeliveryParty,
     bool HasEquipmentCard,
+    string? CardNumber,
     bool HasContract,
+    string? ContractNumber,
+    int? ReceiptDocumentNumber,
+    int? ReceiptDocumentLine,
     string Disposition);
 
 public sealed record MigrationReviewDecisionView(

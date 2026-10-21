@@ -9,6 +9,7 @@ using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Mapping;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.LegacyMigration;
 
@@ -180,15 +181,34 @@ public static class MigrationEndpoints
         admin.MapPut("/mapping/settings", (UpdateMappingSettingsRequest request,
             MappingSettings mappingSettings, CancellationToken ct) =>
             InvokeMapping(() => mappingSettings.SetAsync(request, ct)));
-        review.MapGet("/review", (Guid batchId, string? kind, string? family, string? status,
+        review.MapGet("/review", (Guid batchId, string? kind, string? family, string? status, string? find,
             string? cursor, int? take, CanonicalisationService service, CancellationToken ct) =>
-            Invoke(() => service.ListAsync(batchId, kind, family, status, cursor, take ?? 25, ct)));
+            Invoke(() => service.ListAsync(batchId, kind, family, status, find, cursor, take ?? 25, ct)));
+        review.MapGet("/review/export.csv", async (Guid batchId, string? kind, string? family, string? status,
+            string? find, HttpContext http, CanonicalisationService service,
+            [Microsoft.AspNetCore.Mvc.FromServices] ITabularExporter exporter,
+            CancellationToken ct) =>
+        {
+            if (await service.ExportTooLargeAsync(batchId, kind, family, status, find, ct))
+                return Results.Problem(title: "migration_review_export_too_large",
+                    detail: $"Export exceeds {CanonicalisationService.MaximumExportRows:N0} review items. Narrow the filters.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            http.Response.Headers["X-Export-Row-Limit"] =
+                CanonicalisationService.MaximumExportRows.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return Results.Stream(stream => exporter.WriteAsync("csv", new TabularExport(
+                ["Serial as stored", "Item code", "Item", "Item family", "Kind", "Rule tried",
+                    "Candidates", "Suggested", "Status"],
+                service.ExportAsync(batchId, kind, family, status, find, http.RequestAborted)),
+                stream, http.RequestAborted), exporter.ContentType("csv"), "migration-review.csv");
+        });
         review.MapGet("/review/{itemId:guid}", async (Guid itemId, CanonicalisationService service,
             CancellationToken ct) => await service.DetailAsync(itemId, ct) is { } result
                 ? Results.Ok(result) : Results.NotFound());
         review.MapPost("/review/{itemId:guid}/decision", (Guid itemId,
             MigrationReviewDecisionRequest request, ClaimsPrincipal user, CanonicalisationService service,
             CancellationToken ct) => Invoke(() => service.DecideAsync(itemId, request, Actor(user), ct)));
+        review.MapGet("/canonicalisation/families/catalogue", (CanonicalisationService service,
+            CancellationToken ct) => Invoke(() => service.FamilyCatalogueAsync(ct)));
         admin.MapGet("/canonicalisation/families", (CanonicalFamilySettings settings, CancellationToken ct) =>
             Invoke(() => settings.GetAsync(ct)));
         admin.MapPut("/canonicalisation/families", (UpdateCanonicalFamilySettingsRequest request,
