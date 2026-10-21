@@ -7,6 +7,7 @@ using Yojana.Platform.Tenancy;
 using Yojana.Integration.LegacyMigration;
 using Yojana.Integration.LegacyMigration.Templates;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
+using Yojana.Integration.LegacyMigration.Reconstruction;
 
 namespace Yojana.Integration.Data;
 
@@ -73,6 +74,10 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<MigrationEntitlementCandidate> MigrationEntitlementCandidates => Set<MigrationEntitlementCandidate>();
     public DbSet<MigrationReviewItem> MigrationReviewItems => Set<MigrationReviewItem>();
     public DbSet<MigrationReviewDecision> MigrationReviewDecisions => Set<MigrationReviewDecision>();
+    public DbSet<MigrationReconstructionRun> MigrationReconstructionRuns => Set<MigrationReconstructionRun>();
+    public DbSet<MigrationHistoryEvent> MigrationHistoryEvents => Set<MigrationHistoryEvent>();
+    public DbSet<MigrationOwnershipEpisode> MigrationOwnershipEpisodes => Set<MigrationOwnershipEpisode>();
+    public DbSet<MigrationReconstructionLog> MigrationReconstructionLogs => Set<MigrationReconstructionLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -12,6 +12,7 @@ using Yojana.Integration.LegacyMigration;
 using Yojana.Integration.LegacyMigration.Templates;
 using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
+using Yojana.Integration.LegacyMigration.Reconstruction;
 
 namespace Yojana.Integration.Tests;
 
@@ -146,11 +147,12 @@ public sealed class IntegrationEndpointTests
         builder.Services.AddScoped<MigrationProfileOutcomeSettings>();
         builder.Services.AddScoped<CanonicalisationService>();
         builder.Services.AddScoped<CanonicalFamilySettings>();
+        builder.Services.AddScoped<ReconstructionService>();
         var app = builder.Build();
         app.MapMigrationEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
-        Assert.Equal(28, endpoints.Count);
+        Assert.Equal(31, endpoints.Count);
         var readPaths = new HashSet<string>(StringComparer.Ordinal)
         {
             "/api/migration/batches", "/api/migration/batches/{batchId:guid}",
@@ -159,6 +161,8 @@ public sealed class IntegrationEndpointTests
             "/api/migration/batches/{batchId:guid}/profile/{classCode}/samples",
             "/api/migration/batches/{batchId:guid}/canonicalisation", "/api/migration/review",
             "/api/migration/review/{itemId:guid}", "/api/migration/review/{itemId:guid}/decision",
+            "/api/migration/batches/{batchId:guid}/reconstruction",
+            "/api/migration/candidates/{candidateId:guid}/history",
         };
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             policy => policy.Policy == (IsReviewEndpoint(endpoint)

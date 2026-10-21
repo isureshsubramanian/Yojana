@@ -34,6 +34,7 @@ using Yojana.Integration.LegacyMigration.Templates;
 using Yojana.Integration.Contracts;
 using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
+using Yojana.Integration.LegacyMigration.Reconstruction;
 
 namespace Yojana.Integration;
 
@@ -191,6 +192,7 @@ public static class IntegrationModule
         builder.Services.AddScoped<MigrationSourceSecret>();
         builder.Services.AddScoped<SourceExtractor>();
         builder.Services.AddScoped<MigrationSourceService>();
+        builder.Services.AddScoped<SourceHistoryReader>();
         builder.Services.AddScoped<MigrationBatchService>();
         builder.Services.AddScoped<TemplateKeywordRules>();
         builder.Services.AddScoped<TemplateMappingService>();
@@ -218,6 +220,9 @@ public static class IntegrationModule
         builder.Services.AddScoped<CanonicalFamilySettings>();
         builder.Services.AddScoped<CanonicalisationWriter>();
         builder.Services.AddScoped<CanonicalisationService>();
+        builder.Services.AddScoped<IMigrationReviewCarryOver>(services =>
+            services.GetRequiredService<CanonicalisationService>());
+        builder.Services.AddScoped<ReconstructionService>();
         builder.Services.AddSingleton(RecurringTenantJob.For<MigrationExtractionJob>(
             MigrationExtractionJob.JobName, MigrationExtractionJob.Cron));
 

@@ -7,6 +7,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Integration.LegacyMigration.Templates;
 using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
+using Yojana.Integration.LegacyMigration.Reconstruction;
 
 namespace Yojana.Integration.LegacyMigration;
 
@@ -126,6 +127,29 @@ public static class MigrationEndpoints
         review.MapGet("/batches/{batchId:guid}/canonicalisation", async (Guid batchId,
             CanonicalisationService service, CancellationToken ct) =>
             await service.GetAsync(batchId, ct) is { } result ? Results.Ok(result) : Results.NotFound());
+        admin.MapPost("/batches/{batchId:guid}/reconstruct", async (Guid batchId,
+            ReconstructionService service, CancellationToken ct) =>
+        {
+            try
+            {
+                var result = await service.EnqueueAsync(batchId, ct);
+                return Results.Accepted($"/api/migration/batches/{batchId:D}/reconstruction", result);
+            }
+            catch (MigrationRuleException ex) { return Problem(ex); }
+        });
+        review.MapGet("/batches/{batchId:guid}/reconstruction", async (Guid batchId,
+            ReconstructionService service, CancellationToken ct) =>
+            await service.GetAsync(batchId, ct) is { } result ? Results.Ok(result) : Results.NotFound());
+        review.MapGet("/candidates/{candidateId:guid}/history", async (Guid candidateId, string? cursor,
+            int? take, ReconstructionService service, CancellationToken ct) =>
+        {
+            try
+            {
+                return await service.HistoryAsync(candidateId, cursor, take ?? 100, ct) is { } result
+                    ? Results.Ok(result) : Results.NotFound();
+            }
+            catch (MigrationRuleException ex) { return Problem(ex); }
+        });
         review.MapGet("/review", (Guid batchId, string? kind, string? family, string? status,
             string? cursor, int? take, CanonicalisationService service, CancellationToken ct) =>
             Invoke(() => service.ListAsync(batchId, kind, family, status, cursor, take ?? 25, ct)));
