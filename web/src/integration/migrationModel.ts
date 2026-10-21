@@ -1,5 +1,8 @@
 import type { Tone } from "../components/types";
-import type { MigrationBatch, MigrationBatchTable, MigrationOutcome, MigrationProfile, MigrationProfileSample } from "./migrationTypes";
+import type {
+  MigrationBatch, MigrationBatchTable, MigrationOutcome, MigrationProfile, MigrationProfileSample,
+  MigrationReviewDecision, MigrationReviewDetail, MigrationReviewKind, MigrationReviewStatus,
+} from "./migrationTypes";
 
 export const OUTCOMES: readonly MigrationOutcome[] = ["stop_load", "needs_person", "fixed_by_rule", "loaded_with_note"];
 
@@ -48,6 +51,46 @@ const failureLabels: Record<string, string> = {
   migration_extraction_cancelled: "The extraction was cancelled.",
 };
 
+export const REVIEW_KINDS: readonly MigrationReviewKind[] = ["same_serial_one_item", "same_serial_different_items", "orphan_equipment_card", "serial_in_user_field"];
+export const REVIEW_STATUSES: readonly MigrationReviewStatus[] = ["waiting", "decided", "carried_over"];
+export function mayReadMigration(roles: readonly string[]): boolean { return roles.some(role => role === "tenant_administrator" || role === "migration_lead"); }
+export function mayAdministerMigration(roles: readonly string[]): boolean { return roles.includes("tenant_administrator"); }
+
+const reviewKindLabels: Record<MigrationReviewKind, string> = {
+  same_serial_one_item: "Same serial on one item",
+  same_serial_different_items: "Same serial on different items",
+  orphan_equipment_card: "Orphan equipment card",
+  serial_in_user_field: "Serial in a user field",
+};
+const reviewStatusLabels: Record<MigrationReviewStatus, string> = { waiting: "Waiting", decided: "Decided", carried_over: "Carried over" };
+const reviewDecisionLabels: Record<MigrationReviewDecision, string> = { merge_into: "Merge into", keep_apart: "Keep apart", fix_in_incumbent: "Fix in the incumbent" };
+const matchRuleLabels: Record<string, string> = {
+  exact: "Exact",
+  trimmed_upper: "Trimmed and upper-cased",
+  family_normalised: "Normalised for the item family",
+  reviewed: "Reviewed by a person",
+  no_serial_match: "No serial match",
+};
+const canonicalisationStatusLabels: Record<string, string> = { queued: "Queued", running: "Running", completed: "Completed", failed: "Failed", not_run: "Not run" };
+const refusalRuleLabels: Record<string, string> = {
+  migration_canonicalisation_already_running: "Canonicalisation is already running",
+  migration_batch_not_found: "Extraction not found",
+  migration_canonicalisation_batch_not_succeeded: "Extraction has not succeeded",
+  migration_canonicalisation_profile_blocked: "Profiling blocks canonicalisation",
+  migration_canonicalisation_profile_missing: "Profiling has not run",
+  migration_canonicalisation_profile_running: "Profiling is still running",
+  migration_canonicalisation_profile_not_completed: "Profiling did not complete",
+  migration_review_reason_required: "Decision reason required",
+  migration_review_note_too_long: "Decision note is too long",
+  migration_review_item_not_found: "Review item not found",
+  migration_review_note_required: "Correction note required",
+  migration_review_keep_candidate_invalid: "Candidate is not available",
+  migration_cross_item_merge_forbidden: "Merge across items is not allowed",
+  migration_review_decision_invalid: "Decision is not valid",
+  migration_cursor_invalid: "Review page is no longer available",
+  audit_actor_required: "Signed-in person is required",
+};
+
 export function outcomeLabel(value: MigrationOutcome): string { return outcomeLabels[value]; }
 export function outcomeTone(value: MigrationOutcome): Tone { return outcomeTones[value]; }
 export function profileClass(code: string) { return profileClasses[code] ?? { label: readable(code), explanation: "Profiling query result.", action: "Review the sample rows before loading." }; }
@@ -58,7 +101,45 @@ export function runtimeLabel(value: string): string { return value === "sql_serv
 export function routeLabel(value: string): string { return ({ separate: "Separate connection", cross_database: "Cross-database connection", linked_server: "Linked-server connection" })[value] ?? readable(value); }
 export function batchStatusLabel(value: string): string { return ({ queued: "Queued", running: "Running", succeeded: "Succeeded", failed: "Failed", refused: "Refused" })[value] ?? readable(value); }
 export function profileStatusLabel(value: string): string { return ({ queued: "Queued", running: "Running", completed: "Completed", blocked: "Blocked", failed: "Failed" })[value] ?? readable(value); }
+export function reviewKindLabel(value: MigrationReviewKind): string { return reviewKindLabels[value] ?? readable(value); }
+export function reviewStatusLabel(value: MigrationReviewStatus): string { return reviewStatusLabels[value] ?? readable(value); }
+export function reviewDecisionLabel(value: MigrationReviewDecision): string { return reviewDecisionLabels[value] ?? readable(value); }
+export function matchRuleLabel(value: string | null | undefined): string { return value ? matchRuleLabels[value] ?? readable(value) : "—"; }
+export function canonicalisationStatusLabel(value: string): string { return canonicalisationStatusLabels[value] ?? readable(value); }
+export function refusalRuleLabel(value: string | null | undefined): string { return value ? refusalRuleLabels[value] ?? readable(value) : "Request refused"; }
 export function statusTone(value: string): Tone { return /^(succeeded|completed)$/.test(value) ? "ok" : /^(failed|refused|blocked)$/.test(value) ? "bad" : /^(queued|running)$/.test(value) ? "info" : "neutral"; }
+
+export function serialAsStored(value: string | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "No serial recorded";
+  return value.trim() === value && !/[\r\n\t]/.test(value) ? value : JSON.stringify(value);
+}
+
+export function candidateLetter(index: number): string {
+  let value = index + 1; let label = "";
+  while (value > 0) { value--; label = String.fromCharCode(65 + value % 26) + label; value = Math.floor(value / 26); }
+  return label;
+}
+
+export interface ReviewDecisionOption { decision: MigrationReviewDecision; keepSourceKey: string | null; label: string; help: string; suggested: boolean }
+export function reviewDecisionOptions(detail: MigrationReviewDetail): ReviewDecisionOption[] {
+  const sameItem = new Set(detail.candidates.map(candidate => candidate.itemCode)).size === 1;
+  const merge = detail.kind === "same_serial_one_item" && sameItem
+    ? detail.candidates.map((candidate, index) => ({
+      decision: "merge_into" as const, keepSourceKey: candidate.sourceKey,
+      label: `Merge into ${candidateLetter(index)}`, help: "Other rows are re-bound to this candidate.",
+      suggested: detail.suggestion === "merge_into" && detail.suggestedKeepSourceKey === candidate.sourceKey,
+    }))
+    : detail.kind === "orphan_equipment_card" && detail.hint && sameItem
+      ? detail.candidates.slice(0, 1).map((candidate, index) => ({
+        decision: "merge_into" as const, keepSourceKey: candidate.sourceKey,
+        label: `Attach to ${candidateLetter(index)}`, help: "Attach the orphan card to this nearest same-item candidate.",
+        suggested: detail.suggestedKeepSourceKey === candidate.sourceKey,
+      })) : [];
+  return [...merge,
+    { decision: "keep_apart", keepSourceKey: null, label: "Keep apart", help: detail.kind === "orphan_equipment_card" ? "Leave the card unattached." : "Keep these as different units.", suggested: detail.suggestion === "keep_apart" },
+    { decision: "fix_in_incumbent", keepSourceKey: null, label: "Fix in the incumbent", help: "Send the issue back with a note.", suggested: detail.suggestion === "fix_in_incumbent" },
+  ];
+}
 
 export function duration(milliseconds: number | null | undefined): string {
   if (milliseconds === null || milliseconds === undefined || milliseconds < 0) return "—";

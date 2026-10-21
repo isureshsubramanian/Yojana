@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router";
 import { useSession } from "../session/session";
 import { integrationApi } from "./api";
 import { mayOperateIntegration } from "./model";
+import { mayReadMigration } from "./migrationModel";
 
 const tabs = [
   ["/integration", "Health"],
@@ -18,8 +19,9 @@ export function IntegrationTabs({ attention, manual }: { attention?: number | un
   const { pathname } = useLocation();
   const roles = useSession().roles;
   const operator = mayOperateIntegration(roles);
+  const migrationReader = mayReadMigration(roles);
   return <nav className="tabs integration-subnav" aria-label="Integration">
-    {tabs.filter(([to]) => (operator || to === "/integration") && (to !== "/integration/migration" || roles.includes("tenant_administrator"))).map(([to, label]) => {
+    {tabs.filter(([to]) => (operator || to === "/integration" || (to === "/integration/migration" && migrationReader)) && (to !== "/integration/migration" || migrationReader)).map(([to, label]) => {
       const active = pathname === to;
       const count = label === "Messages needing attention" ? attention : label === "ERP entries to make by hand" ? manual : undefined;
       return <Link key={to} to={to} aria-current={active ? "page" : undefined}>{label}{count !== undefined && <span className={`n${count > 0 ? " warn" : ""}`}>{count.toLocaleString()}</span>}</Link>;

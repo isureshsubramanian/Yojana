@@ -10,18 +10,20 @@ import { MigrationAccess, MigrationPage } from "./MigrationCommon";
 import { migrationApi } from "./migrationApi";
 import {
   batchLabel, batchResult, batchStatusLabel, batchTotals, duration, elapsed, failureLabel, profileStatusLabel,
-  profileTotals, routeLabel, runtimeLabel, statusTone,
+  mayAdministerMigration, profileTotals, routeLabel, runtimeLabel, statusTone,
 } from "./migrationModel";
-import type { MigrationBatch, MigrationBatchPage, MigrationBatchTable, MigrationProfile, MigrationSource, MigrationSourceTestResult } from "./migrationTypes";
+import type { CanonicalisationRun, MigrationBatch, MigrationBatchPage, MigrationBatchTable, MigrationProfile, MigrationSource, MigrationSourceTestResult } from "./migrationTypes";
 
 export function Component() { return <MigrationAccess><MigrationConsole /></MigrationAccess>; }
 
 function MigrationConsole() {
   const session = useSession();
+  const admin = mayAdministerMigration(session.roles);
   const [sources, setSources] = useState<MigrationSource[]>([]); const [sourceId, setSourceId] = useState("");
   const [sourceError, setSourceError] = useState<unknown>(null);
   const [details, setDetails] = useState<Record<string, MigrationBatch>>({});
   const [selected, setSelected] = useState<string | null>(null); const [profile, setProfile] = useState<MigrationProfile | null>(null);
+  const [canonicalisation, setCanonicalisation] = useState<CanonicalisationRun | null>(null);
   const [startBusy, setStartBusy] = useState(false); const [startError, setStartError] = useState<unknown>(null); const [startNotice, setStartNotice] = useState("");
   const fetchBatches = useCallback((cursor?: string, signal?: AbortSignal) => migrationApi.batches(cursor, signal), []);
   const batches = useCursorPage<MigrationBatch, MigrationBatchPage>(fetchBatches);
@@ -29,7 +31,7 @@ function MigrationConsole() {
   const loadSources = useCallback((signal?: AbortSignal) => migrationApi.sources(undefined, signal).then(page => {
     setSources(page.items); setSourceId(current => current || page.items[0]?.sourceId || ""); setSourceError(null);
   }).catch(reason => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setSourceError(reason); }), []);
-  useEffect(() => { const controller = new AbortController(); void loadSources(controller.signal); return () => controller.abort(); }, [loadSources]);
+  useEffect(() => { if (!admin) return; const controller = new AbortController(); void loadSources(controller.signal); return () => controller.abort(); }, [admin, loadSources]);
 
   useEffect(() => {
     if (!batches.result) return;
@@ -41,14 +43,18 @@ function MigrationConsole() {
   }, [batches.result]);
 
   const source = sources.find(item => item.sourceId === sourceId) ?? null;
-  const latest = batches.result?.items.find(item => item.sourceId === sourceId) ?? null;
+  const latest = (admin ? batches.result?.items.find(item => item.sourceId === sourceId) : batches.result?.items[0]) ?? null;
   const latestDetail = latest ? details[latest.batchId] ?? null : null;
   const selectedBatch = selected ? details[selected] ?? batches.result?.items.find(item => item.batchId === selected) ?? null : latestDetail;
   useEffect(() => {
-    if (!latest) { setProfile(null); return; }
+    if (!latest) { setProfile(null); setCanonicalisation(null); return; }
     const controller = new AbortController();
+    setCanonicalisation(null);
     migrationApi.profile(latest.batchId, controller.signal).then(setProfile).catch(reason => {
       if (!controller.signal.aborted && reason instanceof ApiError && reason.status === 404) setProfile(null);
+    });
+    migrationApi.canonicalisation(latest.batchId, controller.signal).then(setCanonicalisation).catch(reason => {
+      if (!controller.signal.aborted && reason instanceof ApiError && reason.status === 404) setCanonicalisation(null);
     });
     return () => controller.abort();
   }, [latest?.batchId]);
@@ -57,13 +63,13 @@ function MigrationConsole() {
   const totals = latestDetail?.tables ? batchTotals(latestDetail.tables) : null;
   const serials = latestDetail?.tables?.find(row => row.role === "serial_master")?.rowsRead;
   const columns = useMemo<GridColumn<MigrationBatch>[]>(() => [
-    ...(sources.length > 1 ? [{ key: "source", label: "Source", width: 17, render: (row: MigrationBatch) => sources.find(item => item.sourceId === row.sourceId)?.displayLabel ?? row.sourceSystem }] : []),
+    ...(!admin || sources.length > 1 ? [{ key: "source", label: "Source", width: 17, render: (row: MigrationBatch) => sources.find(item => item.sourceId === row.sourceId)?.displayLabel ?? row.sourceSystem }] : []),
     { key: "started", label: "Started", width: 16, render: row => date(row.startedAt ?? row.requestedAt) },
     { key: "took", label: "Took", width: 12, render: row => elapsed(row.startedAt, row.finishedAt) },
     { key: "by", label: "Started by", width: 18, render: row => row.requestedByName },
     { key: "status", label: "Status", width: 14, render: row => <StatusBadge tone={statusTone(row.status)}>{batchStatusLabel(row.status)}</StatusBadge> },
-    { key: "result", label: "Result", width: sources.length > 1 ? 23 : 40, render: row => batchResult(details[row.batchId] ?? row) },
-  ], [details, sources]);
+    { key: "result", label: "Result", width: !admin || sources.length > 1 ? 23 : 40, render: row => batchResult(details[row.batchId] ?? row) },
+  ], [admin, details, sources]);
 
   const refresh = () => { batches.refresh(); setStartNotice(""); };
   const start = async () => {
@@ -80,17 +86,17 @@ function MigrationConsole() {
     openDrawer({ eyebrow: "Extraction", title: batchLabel(batch) }, <BatchDrawer batch={detail} source={sources.find(item => item.sourceId === batch.sourceId) ?? null} />);
   };
 
-  const eyebrow = source ? <>{session.tenant?.name} · source: {source.displayLabel} · {runtimeLabel(source.runtime)} · {routeLabel(source.route)}</> : "Migration source";
-  const actions = <>
+  const eyebrow = source ? <>{session.tenant?.name} · source: {source.displayLabel} · {runtimeLabel(source.runtime)} · {routeLabel(source.route)}</> : latest ? <>{session.tenant?.name} · source: {latest.sourceSystem}</> : "Migration source";
+  const actions = admin ? <>
     {sources.length > 1 && <select className="select migration-source-picker" aria-label="Migration source" value={sourceId} onChange={event => { setSourceId(event.target.value); setSelected(null); }}><option value="">Choose a source</option>{sources.map(item => <option value={item.sourceId} key={item.sourceId}>{item.displayLabel}</option>)}</select>}
     <button type="button" className="btn" disabled={!source} onClick={() => source && void testSource(source)}>Test the source</button>
     <button type="button" className="btn primary" disabled={!source || startBusy} onClick={() => void start()}>{startBusy ? "Starting…" : "Start a full extraction"}</button>
-  </>;
+  </> : undefined;
 
-  return <><MigrationPage title="Migration" eyebrow={eyebrow} sub="Copy the installed base, cover and history out of the source application, check it, and sign it off. The source is only ever read." actions={actions} flaggedClasses={flaggedClasses}>
+  return <><MigrationPage title="Migration" eyebrow={eyebrow} sub="Copy the installed base, cover and history out of the source application, check it, and sign it off. The source is only ever read." actions={actions} flaggedClasses={flaggedClasses} waitingReviews={canonicalisation?.waitingForPerson}>
     <ErrorNote error={sourceError ?? batches.error ?? startError} />
     {startNotice && <div className={`note${startNotice.startsWith("Extraction refused") ? " bad" : ""}`} role="status">{startNotice}</div>}
-    {source && <LicenceBanner source={source} onSaved={updated => setSources(current => current.map(item => item.sourceId === updated.sourceId ? updated : item))} />}
+    {admin && source && <LicenceBanner source={source} onSaved={updated => setSources(current => current.map(item => item.sourceId === updated.sourceId ? updated : item))} />}
     <PhaseStrip batch={latestDetail ?? latest} profile={profile} />
     {totals && <KpiStrip label="Latest extraction figures" kpis={[
       ...(serials === undefined ? [] : [{ label: "Serials in the source", value: serials.toLocaleString(), detail: "serial-master rows read" }]),
