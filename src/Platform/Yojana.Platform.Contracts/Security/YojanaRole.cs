@@ -78,6 +78,12 @@ public static class YojanaPolicy
     /// <summary>Quality and certificate administrators may sign and reprint certificates.</summary>
     public const string CertificateIssuer = "certificate_issuer";
 
+    /// <summary>Who designs customer e-mail templates and saves drafts (P9-T20); publishing is tenant administrators only.</summary>
+    public const string CustomerMailDesigner = "customer_mail_designer";
+
+    /// <summary>Who e-mails customers from a record, such as the unit's What's covered sheet (P9-T20).</summary>
+    public const string CustomerMailSender = "customer_mail_sender";
+
     /// <summary>Any signed-in user with a selected tenant.</summary>
     public const string TenantMember = "tenant_member";
 

@@ -157,9 +157,30 @@ public sealed class CertificateTemplateValidator(CertificateTemplateEngine engin
             || part.Contains("address", StringComparison.OrdinalIgnoreCase));
 }
 
-/// <summary>A small, inert template language shared by HTML preview and PDF composition.</summary>
-public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalogue languages)
+/// <summary>How rendered values are written: encoded for HTML, or as they are for a plain-text part.</summary>
+public enum TemplateOutput
 {
+    Html,
+    Text,
+}
+
+/// <summary>
+/// The template language shared by certificates and customer mail (P9-T20: one engine behind an interface, not a copy):
+/// <c>{{path}}</c>, the helpers <c>date</c>, <c>datetime</c>, <c>label</c> and <c>money</c>, and <c>#if</c>,
+/// <c>#unless</c> and <c>#each</c> blocks with <c>{{else}}</c>. Inert: no expressions, no includes, no markup from data.
+/// </summary>
+public interface IDocumentTemplateEngine
+{
+    CertificateTemplateAnalysis Analyse(string? template);
+
+    string Render(string? template, JsonElement payload, string language, TemplateOutput output);
+}
+
+/// <summary>A small, inert template language shared by HTML preview and PDF composition.</summary>
+public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalogue languages) : IDocumentTemplateEngine
+{
+    private static readonly CertificateRenderRequest NoCertificate = new("{}", Guid.Empty);
+
     private static readonly HashSet<string> Helpers = new(["date", "datetime", "label", "money"], StringComparer.Ordinal);
     private static readonly HashSet<string> Blocks = new(["each", "if", "unless"], StringComparer.Ordinal);
 
@@ -172,12 +193,20 @@ public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalo
         return new CertificateTemplateAnalysis(fields.Order().ToList(), unknown.Order().ToList(), parsed.Errors);
     }
 
-    public string Render(string? template, JsonElement payload, CertificateRenderRequest request, string language)
+    public string Render(string? template, JsonElement payload, CertificateRenderRequest request, string language) =>
+        Render(template, payload, request, language, TemplateOutput.Html);
+
+    /// <summary>Mail has no certificate metadata or signature, so <c>certificate.*</c> and <c>signature.*</c> render empty.</summary>
+    public string Render(string? template, JsonElement payload, string language, TemplateOutput output) =>
+        Render(template, payload, NoCertificate, language, output);
+
+    private string Render(string? template, JsonElement payload, CertificateRenderRequest request, string language,
+        TemplateOutput output)
     {
         var parsed = Parse(template ?? "");
         if (parsed.Errors.Count > 0) throw new InvalidOperationException(string.Join(' ', parsed.Errors));
         var presentation = Presentation(payload, language);
-        return Render(parsed.Nodes, new RenderScope(payload, payload), request, language,
+        return Render(parsed.Nodes, new RenderScope(payload, payload, output), request, language,
             ResolveTimeZone(presentation.TimeZone), presentation.DatePattern, presentation.TimePattern);
     }
 
@@ -200,10 +229,10 @@ public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalo
                     output.Append(text.Value);
                     break;
                 case ValueNode value:
-                    output.Append(Encode(Value(scope, request, value.Path)));
+                    output.Append(Encode(scope, Value(scope, request, value.Path)));
                     break;
                 case HelperNode helper:
-                    output.Append(Encode(Format(helper, scope, request, language, timeZone, datePattern, timePattern)));
+                    output.Append(Encode(scope, Format(helper, scope, request, language, timeZone, datePattern, timePattern)));
                     break;
                 case BlockNode block:
                     var resolved = IsRawReferencePath(block.Path) ? null : Resolve(scope, request, block.Path);
@@ -367,7 +396,8 @@ public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalo
         return current;
     }
 
-    private static string Encode(string? value) => WebUtility.HtmlEncode(value ?? "");
+    private static string Encode(RenderScope scope, string? value) =>
+        scope.Output == TemplateOutput.Html ? WebUtility.HtmlEncode(value ?? "") : value ?? "";
 
     private static void Analyse(IReadOnlyList<Node> nodes, string? prefix, HashSet<string> fields,
         HashSet<string> unknown)
@@ -504,5 +534,5 @@ public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalo
     private sealed record HelperNode(string Name, IReadOnlyList<string> Arguments) : Node;
     private sealed record BlockNode(string Name, string Path, IReadOnlyList<Node> Body,
         IReadOnlyList<Node> ElseBody) : Node;
-    private readonly record struct RenderScope(JsonElement Root, JsonElement Current);
+    private readonly record struct RenderScope(JsonElement Root, JsonElement Current, TemplateOutput Output);
 }

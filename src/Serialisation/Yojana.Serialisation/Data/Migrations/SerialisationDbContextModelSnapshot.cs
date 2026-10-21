@@ -2521,6 +2521,190 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CustomerMailMessage", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("message_id");
+
+                    b.Property<string>("AboutLabel")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("about_label");
+
+                    b.Property<string>("AttachmentName")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)")
+                        .HasColumnName("attachment_name");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int")
+                        .HasColumnName("attempts");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<string>("Cc")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("cc");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<bool>("CopyToSelf")
+                        .HasColumnType("bit")
+                        .HasColumnName("copy_to_self");
+
+                    b.Property<string>("CustomerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("customer_name");
+
+                    b.Property<Guid?>("CustomerPartyRef")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("customer_party_ref");
+
+                    b.Property<bool>("HasNote")
+                        .HasColumnType("bit")
+                        .HasColumnName("has_note");
+
+                    b.Property<string>("HtmlBody")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("html_body");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(60)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("language");
+
+                    b.Property<DateTime?>("LastAttemptAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_attempt_at");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<DateTime>("QueuedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("queued_at");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("sent_at");
+
+                    b.Property<string>("SentBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("sent_by");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(12)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)")
+                        .HasColumnName("subject");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_id");
+
+                    b.Property<string>("TemplateName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("template_name");
+
+                    b.Property<int>("TemplateVersion")
+                        .HasColumnType("int")
+                        .HasColumnName("template_version");
+
+                    b.Property<Guid>("TemplateVersionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_version_id");
+
+                    b.Property<string>("TextBody")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("text_body");
+
+                    b.Property<string>("ToAddress")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("to_address");
+
+                    b.Property<string>("ToName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("to_name");
+
+                    b.Property<string>("Transport")
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("transport");
+
+                    b.Property<Guid?>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("TenantId", "MessageId")
+                        .HasName("pk_customer_mail_message");
+
+                    b.HasIndex("TenantId", "CommandId")
+                        .HasDatabaseName("ix_customer_mail_message_tenant_id_command_id");
+
+                    b.HasIndex("TenantId", "TemplateVersionId")
+                        .HasDatabaseName("ix_customer_mail_message_tenant_id_template_version_id");
+
+                    b.HasIndex("TenantId", "QueuedAt", "MessageId")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("ix_customer_mail_message_tenant_id_queued_at_message_id");
+
+                    b.HasIndex("TenantId", "Status", "QueuedAt")
+                        .HasDatabaseName("ix_customer_mail_message_tenant_id_status_queued_at");
+
+                    b.HasIndex("TenantId", "UnitId", "QueuedAt")
+                        .HasDatabaseName("ix_customer_mail_message_tenant_id_unit_id_queued_at");
+
+                    b.ToTable("customer_mail_message", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_customer_mail_message_cc", "ISJSON(cc) = 1");
+
+                            t.HasCheckConstraint("ck_customer_mail_message_status", "status IN ('queued','retrying','sent','failed')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CustomerReconciliation", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -4658,6 +4842,194 @@ namespace Yojana.Serialisation.Data.Migrations
                             t.HasCheckConstraint("ck_life_episode_dates", "ended_at IS NULL OR ended_at >= started_at");
 
                             t.HasCheckConstraint("ck_life_episode_kind", "kind IN ('refurbish', 'remanufacture', 'rework')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.MailTemplate", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(60)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("StartedFrom")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("started_from");
+
+                    b.HasKey("TenantId", "TemplateId")
+                        .HasName("pk_mail_template");
+
+                    b.HasIndex("TenantId", "Kind", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ux_mail_template_tenant_id_kind_name");
+
+                    b.ToTable("mail_template", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.MailTemplateDefault", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Kind")
+                        .HasMaxLength(60)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(60)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Language")
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("language");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_id");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("TenantId", "Kind", "Language")
+                        .HasName("pk_mail_template_default");
+
+                    b.HasIndex("TenantId", "TemplateId")
+                        .HasDatabaseName("ix_mail_template_default_tenant_id_template_id");
+
+                    b.ToTable("mail_template_default", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.MailTemplateVersion", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("VersionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("version_id");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("content");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("published_at");
+
+                    b.Property<string>("PublishedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("published_by");
+
+                    b.Property<DateTime?>("RetiredAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("retired_at");
+
+                    b.Property<string>("RetiredBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("retired_by");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(12)")
+                        .HasColumnName("status");
+
+                    b.Property<bool>("SubmittedForReview")
+                        .HasColumnType("bit")
+                        .HasColumnName("submitted_for_review");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("template_id");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("updated_by");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int")
+                        .HasColumnName("version");
+
+                    b.HasKey("TenantId", "VersionId")
+                        .HasName("pk_mail_template_version");
+
+                    b.HasIndex("TenantId", "TemplateId", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("ux_mail_template_version_tenant_id_template_id_version");
+
+                    b.ToTable("mail_template_version", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_mail_template_version_content", "ISJSON(content) = 1");
+
+                            t.HasCheckConstraint("ck_mail_template_version_status", "status IN ('draft','published','retired')");
                         });
                 });
 
@@ -10389,6 +10761,26 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_label_template_version_tenant_id_template_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.MailTemplateDefault", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.MailTemplate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TemplateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_mail_template_default_tenant_id_template_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.MailTemplateVersion", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.MailTemplate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TemplateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_mail_template_version_tenant_id_template_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.PolicyCoverItemCause", b =>

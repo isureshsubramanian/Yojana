@@ -33,6 +33,7 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
 {
     public static readonly string ImportFileRoot = Path.Combine(Path.GetTempPath(), "yojana-import-files-tests");
     public static readonly string ImportFileArchiveRoot = Path.Combine(Path.GetTempPath(), "yojana-import-files-tests-archive");
+    public static readonly string MailPickupDirectory = Path.Combine(Path.GetTempPath(), $"yojana-serialisation-mail-{Guid.NewGuid():N}");
     public static readonly string? ConnectionString = Environment.GetEnvironmentVariable("YOJANA_TEST_SQL");
     public static string? ImportFilesConnectionString => ConnectionString is null ? null : new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(ConnectionString)
     {
@@ -72,6 +73,11 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         builder.Configuration["Platform:StartScheduler"] = "false";
         builder.Configuration["Platform:ServiceName"] = "yojana-serialisation-tests";
         builder.Configuration["Platform:SignIn:AuditHmacKey"] = "serialisation-database-tests-only-hmac-key";
+        // Customer e-mail (P9-T20) is delivered as .eml files, so tests can read what a recipient would receive.
+        builder.Configuration["Platform:Mail:Transport"] = "pickup";
+        builder.Configuration["Platform:Mail:PickupDirectory"] = MailPickupDirectory;
+        builder.Configuration["Platform:Mail:FromAddress"] = "no-reply@example.invalid";
+        builder.Configuration["Platform:Mail:LinkBaseUrl"] = "http://127.0.0.1:5080";
         builder.Configuration[$"{CertificateRunOptions.SectionName}:MaximumSynchronousUnits"] = "120";
         builder.Configuration[$"{Yojana.Serialisation.Ledger.LedgerBaseOrderBackfillOptions.SectionName}:BatchSize"] = "1";
         builder.Configuration[$"{Yojana.Serialisation.Ledger.LedgerBaseOrderBackfillOptions.SectionName}:PauseMilliseconds"] = "0";

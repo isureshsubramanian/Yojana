@@ -71,6 +71,7 @@ export const router = createBrowserRouter([
           { path: "units/completeness", lazy: () => import("./units/Completeness") },
           { path: "units/release", lazy: () => import("./units/Release") },
           { path: "units/:unitId", lazy: () => import("./units/UnitDetail") },
+          { path: "units/:unitId/email", lazy: () => import("./mail/ComposeCoverageMail") },
           { path: "entitlements", lazy: () => import("./entitlements/GapReport") },
           { path: "entitlements/cover-changes", lazy: () => import("./entitlements/CoverChanges") },
           { path: "entitlements/gaps", lazy: () => import("./entitlements/GapReport") },
@@ -134,6 +135,11 @@ export const router = createBrowserRouter([
           { path: "templates", lazy: () => import("./certificates/TemplateCatalogue") },
           { path: "templates/certificates/:id", lazy: () => import("./certificates/CertificateDesigner") },
           // End P6 certificate UI worktree block.
+          // P9-T20 customer e-mail: templates, the designer and the sent log (compose sits with the unit routes).
+          { path: "mail", lazy: () => import("./mail/MailTemplates") },
+          { path: "mail/templates", lazy: () => import("./mail/MailTemplates") },
+          { path: "mail/templates/:id", lazy: () => import("./mail/MailDesigner") },
+          { path: "mail/sent", lazy: () => import("./mail/SentLog") },
           ...patterns,
           ...placeholders,
           { path: "*", lazy: () => import("./pages/Placeholder") },
