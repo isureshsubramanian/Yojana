@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
-  OUTCOMES, batchResult, batchStatusLabel, batchTotals, duration, factLabel, factValue, outcomeLabel,
-  profileClass, profileStatusLabel, profileTotals, routeLabel, runtimeLabel, sampleExample, sampleFacts,
-  signedChange,
+  OUTCOMES, REVIEW_KINDS, REVIEW_STATUSES, batchResult, batchStatusLabel, batchTotals, candidateLetter,
+  canonicalisationStatusLabel, duration, factLabel, factValue, matchRuleLabel, mayAdministerMigration,
+  mayReadMigration, outcomeLabel, profileClass, profileStatusLabel, profileTotals, refusalRuleLabel,
+  reviewDecisionLabel, reviewDecisionOptions, reviewKindLabel, reviewStatusLabel, routeLabel, runtimeLabel,
+  sampleExample, sampleFacts, serialAsStored, signedChange,
 } from "../src/integration/migrationModel.ts";
-import type { MigrationBatch, MigrationProfile } from "../src/integration/migrationTypes.ts";
+import type { MigrationBatch, MigrationProfile, MigrationReviewDetail } from "../src/integration/migrationTypes.ts";
 
 const consoleScreen = readFileSync(new URL("../src/integration/MigrationConsole.tsx", import.meta.url), "utf8");
 const profilingScreen = readFileSync(new URL("../src/integration/MigrationProfiling.tsx", import.meta.url), "utf8");
+const reviewScreen = readFileSync(new URL("../src/integration/MigrationReview.tsx", import.meta.url), "utf8");
 const common = readFileSync(new URL("../src/integration/MigrationCommon.tsx", import.meta.url), "utf8");
 const api = readFileSync(new URL("../src/integration/migrationApi.ts", import.meta.url), "utf8");
 const routes = readFileSync(new URL("../src/routes.tsx", import.meta.url), "utf8");
@@ -34,25 +37,51 @@ const profile: MigrationProfile = {
   ],
 };
 
-test("migration routes and the Integration-area link are registered for tenant administrators", () => {
+test("migration routes and the Integration-area link admit administrators and Migration leads", () => {
   assert.match(routes, /integration\/migration.*MigrationConsole/);
   assert.match(routes, /integration\/migration\/profiling.*MigrationProfiling/);
+  assert.match(routes, /integration\/migration\/review.*MigrationReview/);
   assert.match(integrationTabs, /\["\/integration\/migration", "Migration"\]/);
-  assert.match(integrationTabs, /roles\.includes\("tenant_administrator"\)/);
-  assert.match(common, /Tenant administrator access is required/);
+  assert.match(integrationTabs, /mayReadMigration\(roles\)/);
+  assert.match(common, /Tenant administrator or Migration lead access is required/);
+  assert.equal(mayReadMigration(["tenant_administrator"]), true);
+  assert.equal(mayReadMigration(["migration_lead"]), true);
+  assert.equal(mayReadMigration(["integration_operator"]), false);
+  assert.equal(mayAdministerMigration(["migration_lead"]), false);
+  assert.equal(mayAdministerMigration(["tenant_administrator"]), true);
 });
 
-test("future migration tabs are disabled in place and name their delivery task", () => {
-  for (const title of ["Arrives with P9-T05", "Arrives with P9-T08", "Arrives with P9-T11"]) assert.match(common, new RegExp(title));
+test("review queue is enabled while later migration tabs remain disabled", () => {
+  for (const title of ["Arrives with P9-T08", "Arrives with P9-T11"]) assert.match(common, new RegExp(title));
   assert.match(common, /aria-disabled="true"/);
-  assert.doesNotMatch(common, /Review queue.*to=/);
+  assert.match(common, /\/integration\/migration\/review", "Review queue"/);
+  assert.doesNotMatch(common, /Review queue", "Arrives/);
 });
 
 test("migration API adapter covers the merged endpoints and sends no browser actor", () => {
-  for (const fragment of ["/sources", "/licence", "/test", "/batches", "/profile", "/samples", "/profiling/outcomes"]) assert.match(api, new RegExp(fragment.replace("/", "\\/")));
+  for (const fragment of ["/sources", "/licence", "/test", "/batches", "/profile", "/samples", "/profiling/outcomes", "/canonicalisation", "/canonicalise", "/review"]) assert.match(api, new RegExp(fragment.replace("/", "\\/")));
   assert.match(api, /method: "POST", body: \{ sourceId \}/);
   assert.match(api, /method: "PUT", body: \{ classes, expectedVersion \}/);
   assert.doesNotMatch(api, /actor|requestedBy|confirmedBy/i);
+});
+
+test("review screen maps every answered mockup element to paged API data", () => {
+  for (const text of ["Review queue", "Waiting", "Merged", "Kept apart", "Fix in the incumbent", "Carried over from earlier extractions", "Serial as stored", "Rule tried", "Candidates", "Suggested", "Any item family", "All statuses"]) assert.ok(reviewScreen.includes(text), text);
+  assert.match(reviewScreen, /<DataGrid/); assert.match(reviewScreen, /<KpiStrip/); assert.match(reviewScreen, /<Rail/);
+  assert.match(reviewScreen, /nextCursor/); assert.match(reviewScreen, /keyset paged/);
+  assert.match(reviewScreen, /migrationApi\.canonicalisation/); assert.match(reviewScreen, /migrationApi\.review\(/); assert.match(reviewScreen, /migrationApi\.reviewDetail/);
+  assert.doesNotMatch(reviewScreen, /label: "Decided", value:/);
+  assert.doesNotMatch(reviewScreen, /same item.*across items/i);
+});
+
+test("Migration leads see read screens and decisions, but administrator actions stay hidden", () => {
+  assert.match(consoleScreen, /mayAdministerMigration\(session\.roles\)/);
+  assert.match(consoleScreen, /const actions = admin \?/);
+  assert.match(consoleScreen, /admin && source && <LicenceBanner/);
+  assert.match(consoleScreen, /if \(!admin\) return;.*loadSources/s);
+  assert.match(profilingScreen, /const actions = admin \?/);
+  assert.match(reviewScreen, /admin && <button/); assert.match(reviewScreen, /Run canonicalisation/);
+  assert.match(reviewScreen, /migrationApi\.decideReview/);
 });
 
 test("console uses the house grid, KPI, drawer, source test and licence form", () => {
@@ -111,4 +140,52 @@ test("batch totals and result text use only fields returned by batch detail", ()
 test("profile totals preserve outcomes and derive a previous figure only when the API gives every change", () => {
   assert.deepEqual(profileTotals(profile), { flagged: 7, previous: 6, outcomes: { stop_load: 2, needs_person: 5, fixed_by_rule: 0, loaded_with_note: 0 } });
   assert.equal(profileTotals({ ...profile, classes: profile.classes.map(row => ({ ...row, change: null })) }).previous, null);
+});
+
+const reviewDetail: MigrationReviewDetail = {
+  itemId: "review-internal", kind: "same_serial_one_item", status: "waiting", serialAsStored: " rs-101 ",
+  itemCode: "RS-1100", itemName: "Rack server", ruleTried: "trimmed_upper", suggestion: "merge_into",
+  suggestedKeepSourceKey: "candidate-a", suggestionReason: "A has the stronger lineage.", hint: null,
+  candidates: [
+    { sourceKey: "candidate-a", serialAsStored: "RS-101", itemCode: "RS-1100", itemName: "Rack server", transactions: 12, firstReceipt: "2026-09-01", lastDelivery: "2026-09-03", lastDeliveryParty: "Asterra Compute Works", hasEquipmentCard: true, hasContract: true, disposition: "review" },
+    { sourceKey: "candidate-b", serialAsStored: " rs-101 ", itemCode: "RS-1100", itemName: "Rack server", transactions: 1, firstReceipt: "2026-09-01", lastDelivery: null, lastDeliveryParty: null, hasEquipmentCard: false, hasContract: false, disposition: "review" },
+  ],
+  earlierDecisions: [],
+};
+
+test("drawer decision options offer each same-item merge target and never offer a cross-item merge", () => {
+  const sameItem = reviewDecisionOptions(reviewDetail);
+  assert.deepEqual(sameItem.map(option => option.label), ["Merge into A", "Merge into B", "Keep apart", "Fix in the incumbent"]);
+  assert.equal(sameItem[0]!.suggested, true);
+  const crossItem = reviewDecisionOptions({ ...reviewDetail, kind: "same_serial_different_items", candidates: reviewDetail.candidates.map((candidate, index) => ({ ...candidate, itemCode: index ? "DS-24" : "RS-1100" })) });
+  assert.deepEqual(crossItem.map(option => option.label), ["Keep apart", "Fix in the incumbent"]);
+  const orphanWithoutHint = reviewDecisionOptions({ ...reviewDetail, kind: "orphan_equipment_card", hint: null });
+  assert.doesNotMatch(orphanWithoutHint.map(option => option.label).join(" "), /Attach/);
+  const orphanWithHint = reviewDecisionOptions({ ...reviewDetail, kind: "orphan_equipment_card", hint: "Nearest same-item serial is one edit away." });
+  assert.deepEqual(orphanWithHint.map(option => option.label), ["Attach to A", "Keep apart", "Fix in the incumbent"]);
+});
+
+test("drawer requires a reason, requires a correction note, and keeps refusal rules readable", () => {
+  assert.match(reviewScreen, /!!reason\.trim\(\)/);
+  assert.match(reviewScreen, /decision !== "fix_in_incumbent" \|\| !!note\.trim\(\)/);
+  assert.match(reviewScreen, /const editable = detail\.status === "waiting" && !saved/);
+  assert.match(reviewScreen, /Decision saved\. This item now has a final decision/);
+  assert.match(reviewScreen, /className="form-error" role="alert"/);
+  assert.match(reviewScreen, /Earlier decisions/); assert.match(reviewScreen, /Carried over to this extraction/); assert.match(reviewScreen, /Earlier extraction · not applied/);
+  for (const rule of ["migration_review_reason_required", "migration_review_note_required", "migration_review_keep_candidate_invalid", "migration_cross_item_merge_forbidden", "migration_canonicalisation_profile_blocked"]) assert.doesNotMatch(refusalRuleLabel(rule), /_/);
+  assert.equal(refusalRuleLabel("migration_cross_item_merge_forbidden"), "Merge across items is not allowed");
+});
+
+test("review catalogue and pure formatting never expose stored codes or candidate keys", () => {
+  for (const kind of REVIEW_KINDS) assert.doesNotMatch(reviewKindLabel(kind), /_/);
+  for (const status of REVIEW_STATUSES) assert.doesNotMatch(reviewStatusLabel(status), /_/);
+  for (const decision of ["merge_into", "keep_apart", "fix_in_incumbent"] as const) assert.doesNotMatch(reviewDecisionLabel(decision), /_/);
+  for (const rule of ["exact", "trimmed_upper", "family_normalised", "reviewed", "no_serial_match"]) assert.doesNotMatch(matchRuleLabel(rule), /_/);
+  for (const status of ["queued", "running", "completed", "failed", "not_run"]) assert.doesNotMatch(canonicalisationStatusLabel(status), /_/);
+  assert.equal(serialAsStored(" RS-101 "), '" RS-101 "');
+  assert.equal(serialAsStored("RS-101"), "RS-101");
+  assert.equal(serialAsStored("RS\t101"), '"RS\\t101"');
+  assert.equal(serialAsStored(null), "No serial recorded");
+  assert.equal(candidateLetter(0), "A"); assert.equal(candidateLetter(25), "Z"); assert.equal(candidateLetter(26), "AA");
+  assert.doesNotMatch(reviewScreen, />\{candidate\.sourceKey\}</);
 });

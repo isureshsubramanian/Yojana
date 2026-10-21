@@ -66,6 +66,7 @@ export const router = createBrowserRouter([
           { path: "integration/history-loads", lazy: () => import("./integration/HistoryLoads") },
           { path: "integration/migration", lazy: () => import("./integration/MigrationConsole") },
           { path: "integration/migration/profiling", lazy: () => import("./integration/MigrationProfiling") },
+          { path: "integration/migration/review", lazy: () => import("./integration/MigrationReview") },
           { path: "settings/disclosure", lazy: () => import("./p7/Disclosure") },
           { path: "units", lazy: () => import("./units/UnitSearch") },
           { path: "units/receive", lazy: () => import("./units/Receive") },
