@@ -41,6 +41,39 @@ public interface IPublishedWarrantyPolicyPort
     Task<IReadOnlyList<PublishedWarrantyPolicy>> ListAsync(CancellationToken cancellationToken);
 }
 
+/// <summary>The immutable policy terms needed to compare a migration source template with a published version.</summary>
+public sealed record PolicyCatalogueTerms(
+    int DurationValue,
+    string DurationUnit,
+    decimal PartsPct,
+    decimal LabourPct,
+    decimal TravelPct,
+    string ServiceMode,
+    int? ResponseHours,
+    string? CoverageHours);
+
+/// <summary>A tenant-defined coverage family, including families for which no policy has been published yet.</summary>
+public sealed record PolicyCatalogueFamily(string FamilyCode, string FamilyName, bool Stacking, bool Active);
+
+/// <summary>A published, immutable policy version and the key terms migration is allowed to compare.</summary>
+public sealed record PolicyCataloguePolicy(
+    string FamilyCode,
+    Guid PolicyId,
+    string PolicyCode,
+    int Version,
+    string PolicyName,
+    PolicyCatalogueTerms Terms);
+
+public sealed record PolicyCatalogue(
+    IReadOnlyList<PolicyCatalogueFamily> Families,
+    IReadOnlyList<PolicyCataloguePolicy> Policies);
+
+/// <summary>Narrow read boundary used by migration; no Serialisation persistence type crosses it.</summary>
+public interface IPolicyCatalogueQuery
+{
+    Task<PolicyCatalogue> ReadAsync(CancellationToken cancellationToken);
+}
+
 /// <summary>
 /// A customer contract that grants warranty terms for an item (policy stack level 3). <see cref="Priority"/> is the
 /// administrator's tie-break when several contracts match; the later start wins a tie on priority.

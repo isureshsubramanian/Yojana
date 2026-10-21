@@ -5,6 +5,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Data;
 using Yojana.Platform.Tenancy;
 using Yojana.Integration.LegacyMigration;
+using Yojana.Integration.LegacyMigration.Templates;
 
 namespace Yojana.Integration.Data;
 
@@ -60,6 +61,8 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<MigrationSource> MigrationSources => Set<MigrationSource>();
     public DbSet<MigrationBatch> MigrationBatches => Set<MigrationBatch>();
     public DbSet<MigrationBatchTable> MigrationBatchTables => Set<MigrationBatchTable>();
+    public DbSet<TemplateMapping> TemplateMappings => Set<TemplateMapping>();
+    public DbSet<TemplateMappingBlock> TemplateMappingBlocks => Set<TemplateMappingBlock>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -8,6 +8,7 @@ using Yojana.Integration.Backfills;
 using Yojana.Integration.Reconciliation;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Integration.LegacyMigration;
+using Yojana.Integration.LegacyMigration.Templates;
 
 namespace Yojana.Integration.Tests;
 
@@ -129,11 +130,13 @@ public sealed class IntegrationEndpointTests
             policy => policy.RequireAuthenticatedUser()));
         builder.Services.AddScoped<MigrationSourceService>();
         builder.Services.AddScoped<MigrationBatchService>();
+        builder.Services.AddScoped<TemplateMappingService>();
+        builder.Services.AddScoped<TemplateKeywordRules>();
         var app = builder.Build();
         app.MapMigrationEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
-        Assert.Equal(8, endpoints.Count);
+        Assert.Equal(16, endpoints.Count);
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             policy => policy.Policy == YojanaPolicy.TenantAdministrator));
         foreach (var type in new[] { typeof(CreateMigrationSourceRequest), typeof(UpdateMigrationSourceRequest),
@@ -144,5 +147,13 @@ public sealed class IntegrationEndpointTests
             property.Name == nameof(CreateMigrationSourceRequest.ConnectionString));
         Assert.Contains(typeof(MigrationSourceView).GetProperties(), property =>
             property.Name == nameof(MigrationSourceView.HasConnectionString));
+        foreach (var type in new[] { typeof(ProposeTemplatesRequest), typeof(UpdateTemplateMappingRequest),
+                     typeof(ApprovePatternRequest), typeof(UpdateTemplateKeywordRulesRequest) })
+            Assert.DoesNotContain(type.GetProperties(), property => property.Name.Contains("Actor",
+                StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(endpoints, endpoint => endpoint.RoutePattern.RawText == "/api/migration/templates"
+            && endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Contains("GET"));
+        Assert.Contains(endpoints, endpoint => endpoint.RoutePattern.RawText ==
+            "/api/migration/templates/{templateKey}/approve");
     }
 }

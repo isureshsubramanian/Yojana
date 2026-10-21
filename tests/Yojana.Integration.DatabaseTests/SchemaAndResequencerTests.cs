@@ -36,7 +36,7 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "stg_src_osrn", "stg_src_osrq", "stg_src_osbq", "stg_src_oitl", "stg_src_itl1",
             "stg_src_oins", "stg_src_ains", "stg_src_ins1", "stg_src_octr", "stg_src_ctr1",
             "stg_src_octt", "stg_src_oscl", "stg_src_orrr", "stg_src_marketing_document_headers",
-            "stg_src_oatc", "stg_src_oitm");
+            "stg_src_oatc", "stg_src_oitm", "template_mapping", "template_mapping_block");
         var columns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'manual_outbound_task'").ToListAsync();
         Assert.Contains("desk", columns);
         var healthColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'connection_health'").ToListAsync();

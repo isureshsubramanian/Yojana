@@ -30,6 +30,8 @@ using Yojana.Integration.Backfills;
 using Yojana.Integration.Connectors;
 using Yojana.Integration.LegacyMigration;
 using Yojana.Integration.LegacyMigration.Staging;
+using Yojana.Integration.LegacyMigration.Templates;
+using Yojana.Integration.Contracts;
 
 namespace Yojana.Integration;
 
@@ -188,6 +190,9 @@ public static class IntegrationModule
         builder.Services.AddScoped<SourceExtractor>();
         builder.Services.AddScoped<MigrationSourceService>();
         builder.Services.AddScoped<MigrationBatchService>();
+        builder.Services.AddScoped<TemplateKeywordRules>();
+        builder.Services.AddScoped<TemplateMappingService>();
+        builder.Services.AddScoped<IApprovedTemplateDecompositionQuery, ApprovedTemplateDecompositionQuery>();
         builder.Services.AddSingleton(RecurringTenantJob.For<MigrationExtractionJob>(
             MigrationExtractionJob.JobName, MigrationExtractionJob.Cron));
 

@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Integration.LegacyMigration.Templates;
 
 namespace Yojana.Integration.LegacyMigration;
 
@@ -39,6 +41,33 @@ public static class MigrationEndpoints
         group.MapGet("/batches/{batchId:guid}", async (Guid batchId, MigrationBatchService service,
             CancellationToken ct) => await service.DetailAsync(batchId, ct) is { } result
                 ? Results.Ok(result) : Results.NotFound());
+        group.MapGet("/templates", (string? cursor, int? take, TemplateMappingService service,
+            CancellationToken ct) => Invoke(() => service.ListAsync(cursor, take ?? 25, ct)));
+        group.MapGet("/templates/{templateKey}", async (string templateKey, TemplateMappingService service,
+            CancellationToken ct) => await service.DetailAsync(templateKey, ct) is { } result
+                ? Results.Ok(result) : Results.NotFound());
+        group.MapPost("/templates/propose", async (ProposeTemplatesRequest request,
+            TemplateMappingService service, CancellationToken ct) =>
+        {
+            try
+            {
+                return Results.Accepted(value: await service.ProposeAsync(request, ct));
+            }
+            catch (TemplateMappingRuleException ex) { return Problem(ex); }
+        });
+        group.MapPut("/templates/{templateKey}", (string templateKey, UpdateTemplateMappingRequest request,
+            TemplateMappingService service, CancellationToken ct) =>
+            Invoke(() => service.UpdateAsync(templateKey, request, ct)));
+        group.MapPost("/templates/{templateKey}/approve", (string templateKey, ClaimsPrincipal user,
+            TemplateMappingService service, CancellationToken ct) =>
+            Invoke(() => service.ApproveAsync(templateKey, Actor(user), ct)));
+        group.MapPost("/templates/approve-pattern", (ApprovePatternRequest request, ClaimsPrincipal user,
+            TemplateMappingService service, CancellationToken ct) =>
+            Invoke(() => service.ApprovePatternAsync(request.PatternKey, Actor(user), ct)));
+        group.MapGet("/templates/keyword-rules", (TemplateKeywordRules settings, CancellationToken ct) =>
+            Invoke(() => settings.GetAsync(ct)));
+        group.MapPut("/templates/keyword-rules", (UpdateTemplateKeywordRulesRequest request,
+            TemplateKeywordRules settings, CancellationToken ct) => Invoke(() => settings.UpdateAsync(request, ct)));
         return app;
     }
 
@@ -53,9 +82,20 @@ public static class MigrationEndpoints
             return created ? Results.Json(result, statusCode: StatusCodes.Status201Created) : Results.Ok(result);
         }
         catch (MigrationRuleException ex) { return Problem(ex); }
+        catch (TemplateMappingRuleException ex) { return Problem(ex); }
+        catch (TenantSettingVersionConflictException ex)
+        {
+            return Results.Problem(title: "tenant_setting_changed", detail: ex.Message,
+                statusCode: StatusCodes.Status409Conflict,
+                extensions: new Dictionary<string, object?> { ["rule"] = "tenant_setting_changed" });
+        }
     }
 
     private static IResult Problem(MigrationRuleException ex) => Results.Problem(title: ex.Rule,
+        detail: ex.Message, statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
+        extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+
+    private static IResult Problem(TemplateMappingRuleException ex) => Results.Problem(title: ex.Rule,
         detail: ex.Message, statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
         extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
 }
