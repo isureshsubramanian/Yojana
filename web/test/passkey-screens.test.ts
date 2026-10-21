@@ -51,3 +51,13 @@ test("the sign-in policy has the two passkey settings and Users shows passkeys",
   assert.match(policy, /passkeyApi\.saveSettings/);
   assert.match(users, /passkeyCount/); assert.match(users, /method === "passkey"/);
 });
+
+test("once a passkey alone may sign someone in, this browser's sign-in page leads with it", () => {
+  const signIn = source("pages/SignIn.tsx"); const account = source("pages/AccountSecurity.tsx"); const hint = source("security/passkeyHint.ts");
+  assert.match(signIn, /useState\(\(\) => !\(passkeyFirst\(\) && passkeysSupported\(\)\)\)/);
+  assert.match(signIn, /This browser remembers you last signed in with a passkey/);
+  assert.match(signIn, /rememberPasskeyFirst\(account\.allowed && account\.passwordless && account\.passkeys\.length > 0\)/);
+  assert.match(signIn, /passkey_not_allowed"\) \{ rememberPasskeyFirst\(false\)/);
+  assert.match(account, /rememberPasskeyFirst\(value\.allowed && value\.passwordless && value\.passkeys\.length > 0\)/);
+  assert.match(hint, /try \{/); assert.doesNotMatch(hint, /email\b.*setItem/);
+});

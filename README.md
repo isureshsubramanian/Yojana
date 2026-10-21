@@ -93,11 +93,11 @@ own address, then `GET /api/platform/mail/messages/{id}`. Failed attempts retry 
 (`MaxAttempts`, default 8); the delivery log keeps no message bodies and is purged after `LogRetentionDays` (90).
 
 Passkeys (fingerprint, face or device PIN; WebAuthn checked by Fido2NetLib) belong to one host name, the relying party
-id under `Platform:Passkeys`. By default it is the host of `Platform:Mail:LinkBaseUrl` and the only accepted origin is
-that address; set `RelyingPartyId` and `Origins` when people reach the product at more than one address on the same
-domain. Choose it before anyone adds a passkey: every passkey is bound to the id it was created for, so changing it
-later means everyone adds their passkeys again. Without either setting the passkey endpoints answer
-`passkey_unavailable`. Development accepts `http://localhost:5080` and the live-reload client on `5173`. A tenant
+id. Set it in `appsettings.json` under `Platform:Passkeys`: `RelyingPartyId` (for example `yojana.example.com`) and
+`Origins`, every https address people use to reach the product, each on that host or a subdomain of it. It is never
+taken from another setting. Choose it before anyone adds a passkey: every passkey is bound to the id it was created
+for, so changing it later means everyone adds their passkeys again. While it is empty passkeys are off and the
+passkey endpoints answer `passkey_unavailable`. Development accepts `http://localhost:5080` and the live-reload client on `5173`. A tenant
 administrator allows passkeys (on by default) and passwordless sign-in with a passkey alone (off by default) under
 Settings › Sign-in policy; a person in several companies follows the strictest, and a passkey always counts as the
 second step.

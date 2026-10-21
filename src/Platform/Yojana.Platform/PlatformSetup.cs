@@ -68,9 +68,9 @@ public static class PlatformSetup
         builder.Services.AddSingleton(mailOptions);
         AddMailTransport(builder.Services, mailOptions);
         var passkeyOptions = (builder.Configuration.GetSection(PasskeyOptions.SectionName).Get<PasskeyOptions>()
-            ?? new PasskeyOptions()).Resolve(mailOptions);
+            ?? new PasskeyOptions()).Resolve();
         builder.Services.AddSingleton(passkeyOptions);
-        // Without a relying party (no Platform:Passkeys and no Platform:Mail:LinkBaseUrl) there is no IFido2, and the
+        // Without a relying party (Platform:Passkeys empty in appsettings.json) there is no IFido2, and the
         // passkey endpoints answer passkey_unavailable instead of the host refusing to start.
         if (passkeyOptions.Configured)
             builder.Services.AddSingleton<Fido2NetLib.IFido2>(new Fido2NetLib.Fido2(new Fido2NetLib.Fido2Configuration
