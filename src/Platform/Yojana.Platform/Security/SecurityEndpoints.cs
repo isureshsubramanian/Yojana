@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Claims;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -21,18 +22,22 @@ public static class SecurityEndpoints
             .RequireRateLimiting(SecurityRateLimiting.PolicyName);
         auth.MapPost("/select-tenant", SelectTenantAsync).RequireAuthorization();
         auth.MapGet("/me", MeAsync).RequireAuthorization();
-        auth.MapPost("/sign-out", SignOutAsync).RequireAuthorization();
+        auth.MapPost("/sign-out", SignOutAsync).AllowAnonymous();
 
         endpoints.MapGet("/api/security/events", SecurityEventsAsync)
             .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         return endpoints;
     }
 
-    private static async Task<IResult> SignInAsync(SignInRequest request, SignInService signIn, HttpContext http,
+    private static async Task<IResult> SignInAsync(SignInRequest request, SignInService signIn,
+        SecondStepService secondStep, PendingSecondStepCookie pendingCookie, HttpContext http,
         CancellationToken cancellationToken)
     {
         var context = RequestContext(http);
-        var attempt = await signIn.AuthenticateAsync(request.Email, request.Password, context, cancellationToken);
+        // A correct password is only the first half of an enrolled sign-in. Keep its account-failure history until
+        // the second step succeeds, otherwise repeating the password would erase every bad authenticator attempt.
+        var attempt = await signIn.AuthenticateAsync(request.Email, request.Password, context, cancellationToken,
+            completeSuccess: false);
         if (attempt.User is null)
         {
             if (attempt.AddressRetryAfter is { } retryAfter)
@@ -43,7 +48,17 @@ public static class SecurityEndpoints
             return Results.Unauthorized();
         }
 
+        var challenge = await secondStep.ChallengeAsync(attempt.User.Id, cancellationToken);
         var tenants = await signIn.TenantsForAsync(attempt.User.Id, cancellationToken);
+        if (challenge.Required)
+        {
+            pendingCookie.Issue(http, attempt.User.Id, attempt.User.SecurityStamp, challenge.EnrolmentRequired);
+            return Results.Ok(new PendingSecondStepView(true, challenge.Methods, challenge.EnrolmentRequired,
+                attempt.User.DisplayName, tenants.Select(tenant => new TenantChoiceView(tenant.Code, tenant.Name,
+                    tenant.Roles)).ToList()));
+        }
+        var completion = await signIn.CompleteSuccessAsync(attempt.User, context, cancellationToken);
+        if (completion.AccountLocked || completion.AddressRetryAfter is not null) return Results.Unauthorized();
         var selected = tenants.Count == 1 ? tenants[0] : null;
         await signIn.RecordSignInSucceededAsync(attempt.User, selected?.TenantId, context, cancellationToken);
         await http.SignInAsync(SignInService.PrincipalFor(attempt.User, selected));
@@ -80,9 +95,12 @@ public static class SecurityEndpoints
         return Results.Ok(SessionView.From(user, selected, tenants));
     }
 
-    private static async Task<IResult> SignOutAsync(SignInService signIn, HttpContext http,
+    private static async Task<IResult> SignOutAsync(SignInService signIn, PendingSecondStepCookie pendingCookie,
+        HttpContext http,
         CancellationToken cancellationToken)
     {
+        pendingCookie.Clear(http);
+        if (http.User.Identity?.IsAuthenticated != true) return Results.NoContent();
         var tenantId = TenantId.TryParse(http.User.FindFirstValue(YojanaClaim.TenantId), out var selected)
             ? selected : (TenantId?)null;
         await signIn.RecordSignOutAsync(UserId(http.User), tenantId, RequestContext(http), cancellationToken);
@@ -121,14 +139,20 @@ public sealed record SelectTenantRequest(string TenantCode);
 public sealed record SessionView(SessionUserView User, SessionTenantView? Tenant, IReadOnlyList<string> Roles,
     IReadOnlyList<TenantChoiceView> Tenants, bool PasswordChangeRequired)
 {
-    public static SessionView From(AppUser user, TenantChoice? selected, IReadOnlyList<TenantChoice> tenants) => new(
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool RecoveryCodesLow { get; init; }
+
+    public static SessionView From(AppUser user, TenantChoice? selected, IReadOnlyList<TenantChoice> tenants,
+        bool recoveryCodesLow = false) => new(
         new SessionUserView(user.Id, user.Email, user.DisplayName),
         selected is null ? null : new SessionTenantView(selected.Code, selected.Name),
         selected?.Roles.Where(YojanaRole.IsKnown).ToList() ?? [],
         tenants.Select(tenant => new TenantChoiceView(tenant.Code, tenant.Name, tenant.Roles)).ToList(),
-        user.MustChangePassword);
+        user.MustChangePassword) { RecoveryCodesLow = recoveryCodesLow };
 }
 
 public sealed record SessionUserView(Guid Id, string Email, string DisplayName);
 public sealed record SessionTenantView(string Code, string Name);
 public sealed record TenantChoiceView(string Code, string Name, IReadOnlyList<string> Roles);
+public sealed record PendingSecondStepView(bool SecondStepRequired, IReadOnlyList<string> Methods,
+    bool EnrolmentRequired, string UserName, IReadOnlyList<TenantChoiceView> TenantSummary);

@@ -34,6 +34,8 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
 
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<UserInvitation> UserInvitations => Set<UserInvitation>();
+    public DbSet<UserAuthenticator> UserAuthenticators => Set<UserAuthenticator>();
+    public DbSet<UserRecoveryCode> UserRecoveryCodes => Set<UserRecoveryCode>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -134,6 +136,25 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             b.HasOne<AppUser>().WithMany().HasForeignKey(i => i.CreatedByUserId).OnDelete(DeleteBehavior.NoAction);
             b.HasOne<AppUser>().WithMany().HasForeignKey(i => i.AcceptedUserId).OnDelete(DeleteBehavior.NoAction);
             b.HasOne<AppUser>().WithMany().HasForeignKey(i => i.RevokedByUserId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<UserAuthenticator>(b =>
+        {
+            b.ToTable("user_authenticator");
+            b.HasKey(a => a.Id);
+            b.Property(a => a.SealedSecret).HasMaxLength(4096);
+            b.Property(a => a.Status).HasMaxLength(20);
+            b.HasIndex(a => new { a.UserId, a.Status, a.CreatedAt });
+            b.HasOne<AppUser>().WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<UserRecoveryCode>(b =>
+        {
+            b.ToTable("user_recovery_code");
+            b.HasKey(c => new { c.UserId, c.CodeHash });
+            b.Property(c => c.CodeHash).HasMaxLength(32).IsFixedLength();
+            b.HasIndex(c => new { c.UserId, c.BatchId, c.UsedAt });
+            b.HasOne<AppUser>().WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<SmokeLog>(b =>

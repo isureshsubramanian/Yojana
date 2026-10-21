@@ -29,6 +29,8 @@ public static class SecurityEventKind
     public const string AdminPasswordReset = "admin_password_reset";
     public const string SecondStepEnrolled = "second_step_enrolled";
     public const string SecondStepRemoved = "second_step_removed";
+    public const string RecoveryCodesRegenerated = "recovery_codes_regenerated";
+    public const string RecoveryCodeUsed = "recovery_code_used";
     public const string PasskeyAdded = "passkey_added";
     public const string PasskeyRemoved = "passkey_removed";
     public const string UserInvited = "user_invited";
@@ -42,7 +44,8 @@ public static class SecurityEventKind
     {
         SignInSucceeded, SignInFailed, LockedOut, SignedOut, SecurityStampRotated, PasswordChanged,
         PasswordResetRequested, PasswordResetCompleted, AdminPasswordReset, SecondStepEnrolled,
-        SecondStepRemoved, PasskeyAdded, PasskeyRemoved, UserInvited, UserDeactivated,
+        SecondStepRemoved, RecoveryCodesRegenerated, RecoveryCodeUsed, PasskeyAdded, PasskeyRemoved,
+        UserInvited, UserDeactivated,
         UserReactivated, RolesChanged, SettingsChanged,
     };
 }

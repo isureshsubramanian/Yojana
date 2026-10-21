@@ -26,7 +26,7 @@ public sealed class SignInService(
     private const string DummyHash = "pbkdf2-sha256$600000$f1XI8DREsuAVIc+Ce5CqMQ==$+ueNypHBmhYZEu8VJWXA+8U+fAnGqjRquRGCJOjipzM=";
 
     public async Task<SignInAttemptResult> AuthenticateAsync(string? email, string? password,
-        SecurityRequestContext request, CancellationToken cancellationToken)
+        SecurityRequestContext request, CancellationToken cancellationToken, bool completeSuccess = true)
     {
         var normalised = (email ?? string.Empty).Trim().ToLowerInvariant();
         var clientAddress = string.IsNullOrWhiteSpace(request.ClientAddress) ? "unknown" : request.ClientAddress.Trim();
@@ -85,7 +85,8 @@ public sealed class SignInService(
             return new SignInAttemptResult(null, failed.AddressRetryAfter);
         }
 
-        var completion = await throttles.CompleteSuccessAsync(normalised, clientAddress, cancellationToken);
+        if (!completeSuccess) return new SignInAttemptResult(user);
+        var completion = await CompleteSuccessAsync(user!, request, cancellationToken);
         if (completion.AccountLocked || completion.AddressRetryAfter is not null)
         {
             events.Add(SecurityEventKind.LockedOut, user!.Id, null, null, request,
@@ -96,10 +97,15 @@ public sealed class SignInService(
         return new SignInAttemptResult(user);
     }
 
+    public Task<SignInLockState> CompleteSuccessAsync(AppUser user, SecurityRequestContext request,
+        CancellationToken cancellationToken) => throttles.CompleteSuccessAsync(user.Email,
+        string.IsNullOrWhiteSpace(request.ClientAddress) ? "unknown" : request.ClientAddress.Trim(),
+        cancellationToken);
+
     public async Task RecordSignInSucceededAsync(AppUser user, TenantId? tenantId, SecurityRequestContext request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string method = "password")
     {
-        events.Add(SecurityEventKind.SignInSucceeded, user.Id, tenantId, null, request, "password_accepted");
+        events.Add(SecurityEventKind.SignInSucceeded, user.Id, tenantId, null, request, method);
         await db.SaveChangesAsync(cancellationToken);
     }
 

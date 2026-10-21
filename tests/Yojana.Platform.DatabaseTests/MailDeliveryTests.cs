@@ -235,6 +235,9 @@ public sealed class MailDeliveryTests(PlatformHostFixture fixture)
         };
         user.Memberships.Add(new UserTenantMembership { UserId = user.Id, TenantId = tenant, Roles = [YojanaRole.TenantAdministrator] });
         using var scope = fixture.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<ITenantContextSetter>().Set(tenant);
+        await scope.ServiceProvider.GetRequiredService<ITenantSettings>().SetAsync(SecondStepPolicy.SettingKey,
+            "{\"tenant_administrator\":\"optional\"}", CancellationToken.None);
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         db.Users.Add(user);
         await db.SaveChangesAsync();

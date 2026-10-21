@@ -8,6 +8,9 @@ using Microsoft.Extensions.Hosting;
 using Xunit;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Contracts.Security;
+using System.Security.Cryptography;
+using System.Text;
 using Yojana.Platform.Mail;
 using Yojana.Platform.Security;
 
@@ -49,11 +52,16 @@ public sealed class PlatformHostFixture : IAsyncLifetime
         builder.Configuration["Platform:Mail:MaintenanceBatchSize"] = "2";
         builder.Configuration["Platform:Mail:LinkBaseUrl"] = "http://127.0.0.1:5080";
         builder.AddYojanaPlatform();
+        // Test-only adapters: production composition supplies envelope encryption from Integration and QR rendering
+        // from Serialisation. Platform database tests must never make plaintext persistence look like a valid fallback.
+        builder.Services.AddSingleton<IUserSecretProtector, TestUserSecretProtector>();
+        builder.Services.AddSingleton<IQrCodeRenderer, TestQrCodeRenderer>();
         builder.Services.Replace(ServiceDescriptor.Singleton<IClock>(Clock));
         builder.Services.Replace(ServiceDescriptor.Singleton<IMailTransport>(Mail));
         Host = builder.Build();
         Host.UseYojanaPlatform();
         Host.MapYojanaSecurityEndpoints();
+        Host.MapYojanaSecondStepEndpoints();
         Host.MapYojanaPasswordResetEndpoints();
         Host.MapYojanaUserManagementEndpoints();
         Host.MapYojanaInvitationEndpoints();
@@ -78,6 +86,39 @@ public sealed class PlatformHostFixture : IAsyncLifetime
             .Get<IServerAddressesFeature>()!.Addresses.Single();
         return new HttpClient { BaseAddress = new Uri(address) };
     }
+}
+
+internal sealed class TestUserSecretProtector : IUserSecretProtector
+{
+    private readonly byte[] key = RandomNumberGenerator.GetBytes(32);
+
+    public Task<byte[]> ProtectAsync(ReadOnlyMemory<byte> plaintext, string purpose,
+        CancellationToken cancellationToken)
+    {
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var ciphertext = new byte[plaintext.Length];
+        var tag = new byte[16];
+        using var aes = new AesGcm(key, tag.Length);
+        aes.Encrypt(nonce, plaintext.Span, ciphertext, tag, Encoding.UTF8.GetBytes(purpose));
+        return Task.FromResult(nonce.Concat(tag).Concat(ciphertext).ToArray());
+    }
+
+    public Task<byte[]> UnprotectAsync(ReadOnlyMemory<byte> sealedValue, string purpose,
+        CancellationToken cancellationToken)
+    {
+        var value = sealedValue.Span;
+        var plaintext = new byte[value.Length - 28];
+        using var aes = new AesGcm(key, 16);
+        aes.Decrypt(value[..12], value.Slice(28), value.Slice(12, 16), plaintext,
+            Encoding.UTF8.GetBytes(purpose));
+        return Task.FromResult(plaintext);
+    }
+}
+
+internal sealed class TestQrCodeRenderer : IQrCodeRenderer
+{
+    public Task<string> RenderSvgAsync(string content, CancellationToken cancellationToken) =>
+        Task.FromResult("<svg xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"test QR\"></svg>");
 }
 
 /// <summary>A transport whose outcome each test scripts per recipient address; unscripted recipients are sent.</summary>

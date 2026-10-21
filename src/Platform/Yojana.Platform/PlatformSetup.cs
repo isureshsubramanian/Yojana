@@ -86,6 +86,7 @@ public static class PlatformSetup
             });
         }
         builder.Services.AddProblemDetails();
+        builder.Services.AddDataProtection();
 
         // Hosted services start in registration order: migrations must precede the Quartz job store
         // (which validates its tables on start) and the recurring-job registrar.
@@ -125,6 +126,10 @@ public static class PlatformSetup
         builder.Services.AddScoped<SecurityMaintenance>();
         builder.Services.AddScoped<PasswordResetService>();
         builder.Services.AddScoped<PasswordSecuritySettings>();
+        builder.Services.AddScoped<SecondStepPolicy>();
+        builder.Services.AddScoped<SecondStepService>();
+        builder.Services.AddScoped<PendingSecondStepCookie>();
+        builder.Services.AddScoped<MembershipAdministration>();
         builder.Services.AddSecurityRateLimiting(signInOptions);
         builder.Services.AddScoped<IMailOutbox, MailOutbox>();
         builder.Services.AddScoped<CompanyMailIdentity>();

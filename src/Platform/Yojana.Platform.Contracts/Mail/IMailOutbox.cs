@@ -43,5 +43,6 @@ public static class MailKind
     public const string PasswordChanged = "account.password_changed";
     public const string Invitation = "account.invitation";
     public const string SignInMethodAdded = "account.sign_in_method_added";
+    public const string SignInMethodRemoved = "account.sign_in_method_removed";
     public const string TransportTest = "platform.transport_test";
 }

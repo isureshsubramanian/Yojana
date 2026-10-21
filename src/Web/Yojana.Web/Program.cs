@@ -137,6 +137,7 @@ app.MapGet("/notices", () =>
 }).AllowAnonymous();
 
 app.MapYojanaSecurityEndpoints();
+app.MapYojanaSecondStepEndpoints();
 app.MapYojanaPasswordResetEndpoints();
 app.MapYojanaUserManagementEndpoints();
 app.MapYojanaInvitationEndpoints();
