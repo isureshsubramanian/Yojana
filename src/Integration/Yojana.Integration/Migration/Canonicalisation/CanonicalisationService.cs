@@ -8,6 +8,7 @@ using Yojana.Integration.LegacyMigration.Staging;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.LegacyMigration.Canonicalisation;
 
@@ -23,9 +24,27 @@ public sealed class CanonicalisationService(
     IMigrationProfileStatus profileStatus,
     CanonicalFamilySettings familySettings,
     CanonicalisationWriter writer,
-    IUserDirectory people) : IMigrationReviewCarryOver
+    IUserDirectory people,
+    IItemFamilyNamePort itemFamilies) : IMigrationReviewCarryOver
 {
     private const string BinaryCollation = "Latin1_General_100_BIN2";
+    public const int MaximumExportRows = 100_000;
+    private static readonly string[] MigrationReviewKinds =
+    [
+        MigrationReviewKind.SameSerialOneItem,
+        MigrationReviewKind.SameSerialDifferentItems,
+        MigrationReviewKind.OrphanEquipmentCard,
+        MigrationReviewKind.SerialInUserField,
+        MigrationReviewKind.HistoryNeedsReview,
+    ];
+    private static readonly string[] MigrationReviewDecisions =
+    [
+        MigrationReviewDecisionKind.MergeInto,
+        MigrationReviewDecisionKind.KeepApart,
+        MigrationReviewDecisionKind.FixInIncumbent,
+        MigrationReviewDecisionKind.AcceptAsRecorded,
+        MigrationReviewDecisionKind.ExcludeFromHistory,
+    ];
 
     public async Task<StartCanonicalisationResponse> EnqueueAsync(Guid batchId,
         CancellationToken cancellationToken)
@@ -111,23 +130,44 @@ public sealed class CanonicalisationService(
         var unverified = await db.MigrationEntitlementCandidates.AsNoTracking().LongCountAsync(row =>
             row.TenantId == tenant.TenantId && row.RunId == run.RunId &&
             row.Provenance == CanonicalProvenance.Unverified, cancellationToken);
+        var waitingByKind = await db.MigrationReviewItems.AsNoTracking().Where(row =>
+                row.TenantId == tenant.TenantId && row.RunId == run.RunId &&
+                row.Status == MigrationReviewStatus.Waiting)
+            .GroupBy(row => row.Kind).Select(group => new { Key = group.Key, Count = group.LongCount() })
+            .ToListAsync(cancellationToken);
+        var decidedByDecision = await (from item in db.MigrationReviewItems.AsNoTracking()
+                                       join decision in db.MigrationReviewDecisions.AsNoTracking()
+                                           on new { item.TenantId, DecisionId = item.AppliedDecisionId!.Value }
+                                           equals new { decision.TenantId, decision.DecisionId }
+                                       where item.TenantId == tenant.TenantId && item.RunId == run.RunId &&
+                                             item.Status == MigrationReviewStatus.Decided &&
+                                             item.AppliedDecisionId != null
+                                       group decision by decision.Decision into grouped
+                                       select new { Key = grouped.Key, Count = grouped.LongCount() })
+            .ToListAsync(cancellationToken);
+        var waitingCounts = Counts(MigrationReviewKinds, waitingByKind.Select(row => (row.Key, row.Count)));
+        var decisionCounts = Counts(MigrationReviewDecisions,
+            decidedByDecision.Select(row => (row.Key, row.Count)));
         return new(run.RunId, run.BatchId, run.StartedAt, run.FinishedAt, run.Status, run.FailureCode,
             run.SourceSerialCount, run.ExactCount, run.TrimmedUpperCount, run.FamilyNormalisedCount,
-            run.WaitingCount, run.MergedCount, run.KeptApartCount, run.FixInIncumbentCount,
+            run.MergedCount, run.WaitingCount,
+            waitingCounts.Single(row => row.Key == MigrationReviewKind.SameSerialOneItem).Count,
+            waitingCounts.Single(row => row.Key == MigrationReviewKind.SameSerialDifferentItems).Count,
+            waitingCounts, decisionCounts.Sum(row => row.Count), decisionCounts,
             run.CarriedOverCount, unverified,
             [new(MigrationReviewKind.SerialInUserField,
                 "Not configured: the staging schema has no user-field serial text, so canonicalisation cannot create queue rows for it.")]);
     }
 
+    public Task<MigrationReviewPage> ListAsync(Guid batchId, string? kind, string? family, string? status,
+        string? cursor, int take, CancellationToken cancellationToken) =>
+        ListAsync(batchId, kind, family, status, null, cursor, take, cancellationToken);
+
     public async Task<MigrationReviewPage> ListAsync(Guid batchId, string? kind, string? family, string? status,
-        string? cursor, int take, CancellationToken cancellationToken)
+        string? find, string? cursor, int take, CancellationToken cancellationToken)
     {
         take = Math.Clamp(take, 1, 200);
-        var query = db.MigrationReviewItems.AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
-            row.BatchId == batchId);
-        if (!string.IsNullOrWhiteSpace(kind)) query = query.Where(row => row.Kind == kind);
-        if (!string.IsNullOrWhiteSpace(family)) query = query.Where(row => row.Family == family);
-        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(row => row.Status == status);
+        var query = ReviewQuery(batchId, kind, family, status, find);
         if (Decode(cursor) is { } after)
             query = query.Where(row => row.CreatedAt > after.At ||
                 (row.CreatedAt == after.At && row.ReviewItemId.CompareTo(after.Id) > 0));
@@ -137,6 +177,54 @@ public sealed class CanonicalisationService(
         var next = rows.Count > take && page.Count != 0
             ? Encode(new(rows[take - 1].CreatedAt, rows[take - 1].ReviewItemId)) : null;
         return new(page, next);
+    }
+
+    public async Task<CanonicalFamilyCatalogue> FamilyCatalogueAsync(CancellationToken cancellationToken)
+    {
+        var recorded = await db.MigrationUnitCandidates.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId)
+            .Select(row => row.Family).Distinct().ToListAsync(cancellationToken);
+        var names = await itemFamilies.ListAsync(cancellationToken);
+        var labels = names.ToDictionary(row => row.Code, row => row.Name, StringComparer.OrdinalIgnoreCase);
+        var codes = recorded.Concat(names.Select(row => row.Code)).Where(code => !string.IsNullOrWhiteSpace(code))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return new(codes.Select(code => new CanonicalFamilyCatalogueItem(code,
+                labels.GetValueOrDefault(code) ?? FamilyLabel(code)))
+            .OrderBy(row => row.Label, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(row => row.Code, StringComparer.OrdinalIgnoreCase).ToList());
+    }
+
+    public async Task<bool> ExportTooLargeAsync(Guid batchId, string? kind, string? family, string? status,
+        string? find, CancellationToken cancellationToken) => await ReviewQuery(batchId, kind, family, status, find)
+        .Take(MaximumExportRows + 1).CountAsync(cancellationToken) > MaximumExportRows;
+
+    public async IAsyncEnumerable<IReadOnlyList<string?>> ExportAsync(Guid batchId, string? kind, string? family,
+        string? status, string? find, [System.Runtime.CompilerServices.EnumeratorCancellation]
+        CancellationToken cancellationToken)
+    {
+        var query = ReviewQuery(batchId, kind, family, status, find)
+            .OrderBy(row => row.CreatedAt).ThenBy(row => row.ReviewItemId).Take(MaximumExportRows);
+        await foreach (var entity in query.AsAsyncEnumerable().WithCancellation(cancellationToken))
+        {
+            var row = Row(entity);
+            yield return [row.SerialAsStored, row.ItemCode, row.ItemName, row.Family, row.KindLabel,
+                row.RuleTried, row.CandidateSummary, SuggestionLabel(row), row.Status];
+        }
+    }
+
+    private IQueryable<MigrationReviewItem> ReviewQuery(Guid batchId, string? kind, string? family,
+        string? status, string? find)
+    {
+        var query = db.MigrationReviewItems.AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
+            row.BatchId == batchId);
+        if (!string.IsNullOrWhiteSpace(kind)) query = query.Where(row => row.Kind == kind);
+        if (!string.IsNullOrWhiteSpace(family)) query = query.Where(row => row.Family == family);
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(row => row.Status == status);
+        var search = find?.Trim();
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(row => (row.StoredSerial != null && row.StoredSerial.Contains(search)) ||
+                (row.ItemCode != null && row.ItemCode.Contains(search)));
+        return query;
     }
 
     public async Task<MigrationReviewDetail?> DetailAsync(Guid itemId, CancellationToken cancellationToken)
@@ -707,30 +795,54 @@ public sealed class CanonicalisationService(
                 row.TenantId == tenant.TenantId && row.RunId == item.RunId &&
                 sourceKeys.Contains(row.PrimarySourceKey))
             .OrderBy(row => row.PrimarySourceKey).ToListAsync(cancellationToken);
-        var facts = await LineageFactsAsync(await db.MigrationCanonRuns.AsNoTracking().SingleAsync(row =>
-            row.TenantId == tenant.TenantId && row.RunId == item.RunId, cancellationToken), sourceKeys,
-            cancellationToken);
-        var deliveries = new Dictionary<string, (DateTime? At, string? Party)>(StringComparer.Ordinal);
-        foreach (var sourceKey in sourceKeys)
-        {
-            var delivery = await (from candidateEvent in db.MigrationEventCandidates.AsNoTracking()
-                                  join line in db.Set<TransactionLogLineStagingRow>().AsNoTracking()
-                                      on new { candidateEvent.TenantId, SourceKey = candidateEvent.TransactionSourceKey }
-                                      equals new { line.TenantId, SourceKey = line.SourcePk }
-                                  join header in db.Set<TransactionLogHeaderStagingRow>().AsNoTracking()
-                                      on new { line.TenantId, line.BatchId, line.SourceSystem, line.LogEntry }
-                                      equals new { header.TenantId, header.BatchId, header.SourceSystem, header.LogEntry }
-                                  where candidateEvent.TenantId == tenant.TenantId &&
-                                        candidateEvent.RunId == item.RunId &&
-                                        candidateEvent.SerialMasterSourceKey == sourceKey && (line.Quantity ?? 0) < 0
-                                  orderby header.DocumentDate descending, header.CreatedDate descending,
-                                      header.CreatedTime descending, header.LogEntry descending
-                                  select new { At = header.DocumentDate ?? header.CreatedDate, header.PartyCode })
-                .FirstOrDefaultAsync(cancellationToken);
-            deliveries[sourceKey] = delivery is null ? (null, null) : (delivery.At, delivery.PartyCode);
-        }
-        var partyCodes = deliveries.Values.Where(value => value.Party is not null).Select(value => value.Party!)
-            .Distinct(StringComparer.Ordinal).ToList();
+        var run = await db.MigrationCanonRuns.AsNoTracking().SingleAsync(row =>
+            row.TenantId == tenant.TenantId && row.RunId == item.RunId, cancellationToken);
+        var facts = await LineageFactsAsync(run, sourceKeys, cancellationToken);
+        var movements = await (from candidateEvent in db.MigrationEventCandidates.AsNoTracking()
+                               join line in db.Set<TransactionLogLineStagingRow>().AsNoTracking()
+                                   on new { candidateEvent.TenantId, SourceKey = candidateEvent.TransactionSourceKey }
+                                   equals new { line.TenantId, SourceKey = line.SourcePk }
+                               join header in db.Set<TransactionLogHeaderStagingRow>().AsNoTracking()
+                                   on new { line.TenantId, line.BatchId, line.SourceSystem, line.LogEntry }
+                                   equals new { header.TenantId, header.BatchId, header.SourceSystem, header.LogEntry }
+                               where candidateEvent.TenantId == tenant.TenantId &&
+                                     candidateEvent.RunId == item.RunId &&
+                                     sourceKeys.Contains(candidateEvent.SerialMasterSourceKey)
+                               select new CandidateMovement
+                               {
+                                   SourceKey = candidateEvent.SerialMasterSourceKey,
+                                   Quantity = line.Quantity ?? 0,
+                                   At = header.DocumentDate ?? header.CreatedDate,
+                                   CreatedDate = header.CreatedDate,
+                                   CreatedTime = header.CreatedTime,
+                                   LogEntry = header.LogEntry,
+                                   PartyCode = header.PartyCode,
+                                   DocumentNumber = header.DocumentNumber,
+                                   DocumentLine = header.DocumentLine,
+                               }).ToListAsync(cancellationToken);
+        var links = await db.MigrationUnitCandidateSources.AsNoTracking().Where(row =>
+                row.TenantId == tenant.TenantId && row.RunId == item.RunId &&
+                sourceKeys.Contains(row.MatchedSerialSourceKey))
+            .ToListAsync(cancellationToken);
+        var cardKeys = links.Where(row => row.SourceKind == CandidateSourceKind.EquipmentCard)
+            .Select(row => row.SourceKey).Distinct(StringComparer.Ordinal).ToList();
+        var cards = await db.Set<EquipmentCardStagingRow>().AsNoTracking().Where(row =>
+                row.TenantId == tenant.TenantId && row.BatchId == run.BatchId &&
+                row.SourceSystem == item.SourceSystem && cardKeys.Contains(row.SourcePk))
+            .Select(row => new { row.SourcePk, row.CardId }).ToListAsync(cancellationToken);
+        var cardNumbers = cards.ToDictionary(row => row.SourcePk,
+            row => row.CardId?.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparer.Ordinal);
+        var contractKeys = links.Where(row => row.SourceKind == CandidateSourceKind.Contract)
+            .Select(row => row.SourceKey).Distinct(StringComparer.Ordinal).ToList();
+        var contracts = await db.Set<ServiceContractStagingRow>().AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && row.BatchId == run.BatchId &&
+                row.SourceSystem == item.SourceSystem && contractKeys.Contains(row.SourcePk))
+            .Select(row => new { row.SourcePk, row.DocumentNumber, row.ContractId }).ToListAsync(cancellationToken);
+        var contractNumbers = contracts.ToDictionary(row => row.SourcePk,
+            row => (row.DocumentNumber ?? row.ContractId)?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            StringComparer.Ordinal);
+        var partyCodes = movements.Where(row => row.Quantity < 0 && row.PartyCode is not null)
+            .Select(row => row.PartyCode!).Distinct(StringComparer.Ordinal).ToList();
         var partyRows = await db.ReferenceProjections.AsNoTracking().Where(row =>
                 row.TenantId == tenant.TenantId && row.EntityType == "party" && row.Code != null &&
                 partyCodes.Contains(row.Code))
@@ -740,12 +852,24 @@ public sealed class CanonicalisationService(
         return candidates.Select(candidate =>
         {
             var fact = facts[candidate.PrimarySourceKey];
-            var delivery = deliveries[candidate.PrimarySourceKey];
-            var party = delivery.Party is null ? null
-                : partyNames.GetValueOrDefault(delivery.Party) ?? delivery.Party;
+            var candidateMovements = movements.Where(row => row.SourceKey == candidate.PrimarySourceKey).ToList();
+            var receipt = candidateMovements.Where(row => row.Quantity > 0)
+                .OrderBy(row => row.At).ThenBy(row => row.CreatedDate).ThenBy(row => row.CreatedTime)
+                .ThenBy(row => row.LogEntry).FirstOrDefault();
+            var delivery = candidateMovements.Where(row => row.Quantity < 0)
+                .OrderByDescending(row => row.At).ThenByDescending(row => row.CreatedDate)
+                .ThenByDescending(row => row.CreatedTime).ThenByDescending(row => row.LogEntry).FirstOrDefault();
+            var candidateLinks = links.Where(row => row.MatchedSerialSourceKey == candidate.PrimarySourceKey).ToList();
+            var cardNumber = candidateLinks.Where(row => row.SourceKind == CandidateSourceKind.EquipmentCard)
+                .Select(row => cardNumbers.GetValueOrDefault(row.SourceKey)).FirstOrDefault(value => value is not null);
+            var contractNumber = candidateLinks.Where(row => row.SourceKind == CandidateSourceKind.Contract)
+                .Select(row => contractNumbers.GetValueOrDefault(row.SourceKey)).FirstOrDefault(value => value is not null);
+            var party = delivery?.PartyCode is null ? null
+                : partyNames.GetValueOrDefault(delivery.PartyCode) ?? delivery.PartyCode;
             return new MigrationCandidateLineage(candidate.PrimarySourceKey, candidate.StoredSerial,
-                candidate.ItemCode, candidate.ItemName, fact.Transactions, fact.FirstReceipt, delivery.At,
-                party, fact.HasCard, fact.HasContract, candidate.Disposition);
+                candidate.ItemCode, candidate.ItemName, fact.Transactions, fact.FirstReceipt, delivery?.At,
+                party, fact.HasCard, cardNumber, fact.HasContract, contractNumber,
+                receipt?.DocumentNumber, receipt?.DocumentLine, candidate.Disposition);
         }).ToList();
     }
 
@@ -867,8 +991,54 @@ public sealed class CanonicalisationService(
 
     private static MigrationReviewRow Row(MigrationReviewItem row) => new(row.ReviewItemId, row.StoredSerial,
         row.ItemCode, row.ItemName, row.Family, row.Kind, KindLabel(row.Kind), row.RuleTried,
-        row.CandidateSummary, row.Suggestion, row.SuggestionReason, row.Hint, row.Status,
+        row.CandidateSummary, row.Suggestion, row.SuggestedKeepSourceKey, SuggestedKeepLabel(row),
+        row.SuggestionReason, row.Hint, row.Status,
         row.Status == MigrationReviewStatus.CarriedOver);
+
+    private static string? SuggestedKeepLabel(MigrationReviewItem row)
+    {
+        if (row.SuggestedKeepSourceKey is null) return null;
+        var keys = JsonSerializer.Deserialize<List<string>>(row.CandidateSourceKeysJson) ?? [];
+        var index = keys.FindIndex(key => key == row.SuggestedKeepSourceKey);
+        return index < 0 ? null : CandidateLabel(index);
+    }
+
+    private static string? SuggestionLabel(MigrationReviewRow row) => row.Suggestion switch
+    {
+        MigrationReviewDecisionKind.MergeInto when row.SuggestedKeepLabel is not null =>
+            $"Merge into {row.SuggestedKeepLabel}",
+        MigrationReviewDecisionKind.KeepApart => "Keep apart",
+        MigrationReviewDecisionKind.FixInIncumbent => "Fix in the incumbent",
+        MigrationReviewDecisionKind.AcceptAsRecorded => "Accept as recorded",
+        MigrationReviewDecisionKind.ExcludeFromHistory => "Exclude from history",
+        _ => null,
+    };
+
+    private static string CandidateLabel(int index)
+    {
+        var value = index + 1;
+        var label = "";
+        while (value > 0)
+        {
+            value--;
+            label = (char)('A' + value % 26) + label;
+            value /= 26;
+        }
+        return label;
+    }
+
+    private static List<MigrationReviewCount> Counts(IEnumerable<string> keys,
+        IEnumerable<(string Key, long Count)> found)
+    {
+        var byKey = found.ToDictionary(row => row.Key, row => row.Count, StringComparer.Ordinal);
+        return keys.Select(key => new MigrationReviewCount(key, byKey.GetValueOrDefault(key))).ToList();
+    }
+
+    private static string FamilyLabel(string code)
+    {
+        var words = code.Replace('-', ' ').Replace('_', ' ').ToLowerInvariant();
+        return words.Length == 0 ? code : char.ToUpperInvariant(words[0]) + words[1..];
+    }
 
     private static void ValidateDecision(string decision, string kind)
     {
@@ -930,6 +1100,18 @@ public sealed class CanonicalisationService(
     }
 
     private sealed record Cursor(DateTime At, Guid Id);
+    private sealed class CandidateMovement
+    {
+        public required string SourceKey { get; init; }
+        public decimal Quantity { get; init; }
+        public DateTime? At { get; init; }
+        public DateTime? CreatedDate { get; init; }
+        public int? CreatedTime { get; init; }
+        public int? LogEntry { get; init; }
+        public string? PartyCode { get; init; }
+        public int? DocumentNumber { get; init; }
+        public int? DocumentLine { get; init; }
+    }
     private sealed record CandidateFacts(string SourceKey, long Transactions, bool HasCard, bool HasContract,
         DateTime? FirstReceipt, string? ReceiptKey)
     {

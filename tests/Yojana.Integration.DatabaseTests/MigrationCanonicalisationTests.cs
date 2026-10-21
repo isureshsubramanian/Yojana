@@ -11,7 +11,7 @@ namespace Yojana.Integration.DatabaseTests;
 [Collection("integration host")]
 public sealed class MigrationCanonicalisationTests(IntegrationHostFixture fixture)
 {
-    private const string SourceDatabase = "yojana_src_p9t05";
+    private const string SourceDatabase = "yojana_src_p9t13gaps";
     private const string Actor = "fictional-migration-lead";
 
     [DatabaseFact]
@@ -36,13 +36,20 @@ public sealed class MigrationCanonicalisationTests(IntegrationHostFixture fixtur
             Assert.NotNull(status);
             var page = await canonical.ListAsync(batchId, null, null, null, null, 25, default);
             Assert.Equal(CanonicalisationRunStatus.Completed, status.Status);
-            Assert.Equal(10, status.SerialsInSource);
-            Assert.True(status.Exact >= 5);
-            Assert.Equal(2, status.TrimmedUpper);
-            Assert.Equal(2, status.FamilyNormalised);
-            Assert.True(status.WaitingForPerson == 4,
+            Assert.Equal(10, status.CandidateRowsTotal);
+            Assert.True(status.CandidateRowsExact >= 5);
+            Assert.Equal(2, status.CandidateRowsTrimmedUpper);
+            Assert.Equal(2, status.CandidateRowsFamilyNormalised);
+            Assert.True(status.WaitingReviewItems == 4,
                 $"Unexpected review rows: {string.Join(", ", page.Items.Select(row => $"{row.Kind}/{row.RuleTried}/{row.SerialAsStored}"))}");
-            Assert.Equal(1, status.Merged);
+            Assert.Equal(1, status.CandidateRowsMerged);
+            Assert.Equal(2, status.WaitingSameItemReviewItems);
+            Assert.Equal(1, status.WaitingAcrossItemsReviewItems);
+            Assert.Equal(1, status.WaitingReviewItemsByKind.Single(row =>
+                row.Key == MigrationReviewKind.OrphanEquipmentCard).Count);
+            Assert.Equal(0, status.WaitingReviewItemsByKind.Single(row =>
+                row.Key == MigrationReviewKind.HistoryNeedsReview).Count);
+            Assert.Equal(0, status.DecidedReviewItems);
             Assert.Equal(0, status.UnverifiedDates);
             Assert.Contains(status.Gaps, gap => gap.Kind == MigrationReviewKind.SerialInUserField &&
                 gap.Reason.StartsWith("Not configured", StringComparison.Ordinal));
@@ -52,12 +59,16 @@ public sealed class MigrationCanonicalisationTests(IntegrationHostFixture fixtur
             Assert.Equal(4, page.Items.Count);
             var trimmed = Assert.Single(page.Items, row => row.RuleTried == CanonicalMatchRule.TrimmedUpper);
             Assert.Equal(MigrationReviewDecisionKind.MergeInto, trimmed.Suggestion);
+            Assert.Equal(trimmed.Suggestion is null ? null : "A", trimmed.SuggestedKeepLabel);
+            Assert.NotNull(trimmed.SuggestedKeepSourceKey);
             Assert.NotNull(trimmed.SuggestionReason);
             var family = Assert.Single(page.Items, row => row.RuleTried == CanonicalMatchRule.FamilyNormalised);
             Assert.Null(family.Suggestion);
             Assert.Contains("tied", family.SuggestionReason!, StringComparison.OrdinalIgnoreCase);
             var cross = Assert.Single(page.Items, row => row.Kind == MigrationReviewKind.SameSerialDifferentItems);
             Assert.Equal(MigrationReviewDecisionKind.KeepApart, cross.Suggestion);
+            Assert.Null(cross.SuggestedKeepSourceKey);
+            Assert.Null(cross.SuggestedKeepLabel);
             var orphan = Assert.Single(page.Items, row => row.Kind == MigrationReviewKind.OrphanEquipmentCard);
             Assert.Null(orphan.Suggestion);
             Assert.Contains("one edit", orphan.Hint!, StringComparison.Ordinal);
@@ -77,7 +88,8 @@ public sealed class MigrationCanonicalisationTests(IntegrationHostFixture fixtur
                 (await db.MigrationUnitCandidates.SingleAsync(row => row.RunId == status.RunId &&
                     row.PrimarySourceKey == hintedSource)).Disposition);
             Assert.DoesNotContain(await db.MigrationUnitCandidateSources.Where(row => row.RunId == status.RunId)
-                .ToListAsync(), row => row.SourceKind == CandidateSourceKind.EquipmentCard);
+                .ToListAsync(), row => row.MatchedSerialSourceKey == hintedSource &&
+                    row.SourceKind == CandidateSourceKind.EquipmentCard);
             var exactRows = await db.MigrationUnitCandidates.Where(row => row.RunId == status.RunId &&
                     row.ItemCode == "SERVER-RACK-EXACT")
                 .OrderBy(row => row.PrimarySourceKey).ToListAsync();
@@ -113,6 +125,14 @@ public sealed class MigrationCanonicalisationTests(IntegrationHostFixture fixtur
             Assert.NotNull(trimmedDetail);
             Assert.Equal(2, trimmedDetail.Candidates.Count);
             var keepSource = trimmedDetail.SuggestedKeepSourceKey!;
+            var suggestedCandidate = Assert.Single(trimmedDetail.Candidates,
+                candidate => candidate.SourceKey == keepSource);
+            Assert.Equal("51320", suggestedCandidate.CardNumber);
+            Assert.Equal("82001", suggestedCandidate.ContractNumber);
+            Assert.Equal(7110, suggestedCandidate.ReceiptDocumentNumber);
+            Assert.Equal(0, suggestedCandidate.ReceiptDocumentLine);
+            Assert.Contains(trimmedDetail.Candidates, candidate => candidate.CardNumber is null &&
+                candidate.ContractNumber is null && candidate.ReceiptDocumentNumber == 7111);
             await canonical.DecideAsync(trimmed.ItemId,
                 new(MigrationReviewDecisionKind.MergeInto, keepSource, "The longer source history is authoritative."),
                 Actor, default);
@@ -123,7 +143,37 @@ public sealed class MigrationCanonicalisationTests(IntegrationHostFixture fixtur
             Assert.Equal(2, await db.MigrationUnitCandidates.CountAsync(row => row.RunId == status.RunId &&
                 row.ItemCode == "SERVER-TRIM" && row.Disposition == CandidateDisposition.Active));
 
+            var afterDecisions = await canonical.GetAsync(batchId, default);
+            Assert.Equal(2, afterDecisions!.DecidedReviewItems);
+            Assert.Equal(1, afterDecisions.DecidedReviewItemsByDecision.Single(row =>
+                row.Key == MigrationReviewDecisionKind.KeepApart).Count);
+            Assert.Equal(1, afterDecisions.DecidedReviewItemsByDecision.Single(row =>
+                row.Key == MigrationReviewDecisionKind.FixInIncumbent).Count);
+            Assert.Equal(0, afterDecisions.DecidedReviewItemsByDecision.Single(row =>
+                row.Key == MigrationReviewDecisionKind.MergeInto).Count);
+
+            Assert.Single((await canonical.ListAsync(batchId, null, null, null,
+                "trim-1", null, 25, default)).Items);
+            Assert.Single((await canonical.ListAsync(batchId, null, null, null,
+                "SERVER-TRIM", null, 25, default)).Items);
+            Assert.Empty((await canonical.ListAsync(batchId, null, null, null,
+                "TRIM-9", null, 25, default)).Items);
+            var exported = await ExportAsync(canonical, batchId, "trim-1");
+            Assert.Single(exported);
+            Assert.Equal("SERVER-TRIM", exported[0][1]);
+            Assert.Empty(await ExportAsync(canonical, batchId, "TRIM-9"));
+            Assert.False(await canonical.ExportTooLargeAsync(batchId, null, null, null, null, default));
+
+            var catalogue = await canonical.FamilyCatalogueAsync(default);
+            Assert.Contains(catalogue.Families, family => family.Code == "SERVER" && family.Label == "Server");
+            Assert.Contains(catalogue.Families, family => family.Code == "STORAGE");
+
             using var otherScope = fixture.ScopeFor(otherTenant);
+            var otherCanonical = otherScope.ServiceProvider.GetRequiredService<CanonicalisationService>();
+            Assert.Empty((await otherCanonical.FamilyCatalogueAsync(default)).Families);
+            Assert.Empty((await otherCanonical.ListAsync(batchId, null, null, null,
+                "trim-1", null, 25, default)).Items);
+            Assert.Empty(await ExportAsync(otherCanonical, batchId, "trim-1"));
             var otherDb = otherScope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
             Assert.Equal(0, await otherDb.MigrationCanonRuns.CountAsync());
             Assert.Equal(0, await otherDb.MigrationReviewItems.CountAsync());
@@ -165,8 +215,9 @@ public sealed class MigrationCanonicalisationTests(IntegrationHostFixture fixtur
             Assert.Equal(MigrationReviewStatus.CarriedOver, carried.Status);
             Assert.True(carried.CarriedOver);
             var secondStatus = await canonical.GetAsync(secondBatch, default);
-            Assert.Equal(1, secondStatus!.CarriedOver);
-            Assert.Equal(1, secondStatus.KeptApart);
+            Assert.Equal(1, secondStatus!.CarriedOverReviewItems);
+            Assert.Equal(0, secondStatus.DecidedReviewItemsByDecision.Single(row =>
+                row.Key == MigrationReviewDecisionKind.KeepApart).Count);
 
             // Same rows, new lineage: one candidate now has an equipment card, so the decision is not replayed.
             await MigrationExtractionTests.SourceFixture.InsertAsync<EquipmentCardStagingRow>(SourceDatabase, new()
@@ -240,6 +291,14 @@ public sealed class MigrationCanonicalisationTests(IntegrationHostFixture fixtur
     private static List<string> JsonKeys(MigrationReviewDetail detail) =>
         detail.Candidates.Select(row => row.SourceKey).ToList();
 
+    private static async Task<List<IReadOnlyList<string?>>> ExportAsync(CanonicalisationService service,
+        Guid batchId, string find)
+    {
+        var rows = new List<IReadOnlyList<string?>>();
+        await foreach (var row in service.ExportAsync(batchId, null, null, null, find, default)) rows.Add(row);
+        return rows;
+    }
+
     private async Task<Guid> SourceAsync(IServiceScope scope)
     {
         var sources = scope.ServiceProvider.GetRequiredService<MigrationSourceService>();
@@ -310,6 +369,34 @@ public sealed class MigrationCanonicalisationTests(IntegrationHostFixture fixtur
             Line(110, "SERVER-TRIM", 20, 1m),
             Line(111, "SERVER-TRIM", 21, 1m),
         }) await MigrationExtractionTests.SourceFixture.InsertAsync<TransactionLogLineStagingRow>(SourceDatabase, row);
+
+        await MigrationExtractionTests.SourceFixture.InsertAsync<EquipmentCardStagingRow>(SourceDatabase, new()
+        {
+            [nameof(EquipmentCardStagingRow.CardId)] = 51320,
+            [nameof(EquipmentCardStagingRow.ItemCode)] = "SERVER-TRIM",
+            [nameof(EquipmentCardStagingRow.InternalSerial)] = " trim-1 ",
+            [nameof(EquipmentCardStagingRow.CustomerCode)] = "FIC-CUSTOMER-B",
+        });
+        await MigrationExtractionTests.SourceFixture.InsertAsync<ServiceContractStagingRow>(SourceDatabase, new()
+        {
+            [nameof(ServiceContractStagingRow.ContractId)] = 991,
+            [nameof(ServiceContractStagingRow.CustomerCode)] = "FIC-CUSTOMER-B",
+            [nameof(ServiceContractStagingRow.StartDate)] = new DateTime(2026, 9, 2),
+            [nameof(ServiceContractStagingRow.EndDate)] = new DateTime(2029, 9, 2),
+            [nameof(ServiceContractStagingRow.Status)] = "A",
+            [nameof(ServiceContractStagingRow.ServiceType)] = "W",
+            [nameof(ServiceContractStagingRow.DocumentNumber)] = 82001,
+        });
+        await MigrationExtractionTests.SourceFixture.InsertAsync<ContractLineStagingRow>(SourceDatabase, new()
+        {
+            [nameof(ContractLineStagingRow.ContractId)] = 991,
+            [nameof(ContractLineStagingRow.LineNumber)] = 0,
+            [nameof(ContractLineStagingRow.ItemCode)] = "SERVER-TRIM",
+            [nameof(ContractLineStagingRow.InternalSerial)] = " trim-1 ",
+            [nameof(ContractLineStagingRow.EquipmentCardId)] = 51320,
+            [nameof(ContractLineStagingRow.StartDate)] = new DateTime(2026, 9, 2),
+            [nameof(ContractLineStagingRow.EndDate)] = new DateTime(2029, 9, 2),
+        });
 
         await MigrationExtractionTests.SourceFixture.InsertAsync<EquipmentCardStagingRow>(SourceDatabase, new()
         {

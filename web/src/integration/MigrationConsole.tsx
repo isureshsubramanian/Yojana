@@ -93,7 +93,7 @@ function MigrationConsole() {
     <button type="button" className="btn primary" disabled={!source || startBusy} onClick={() => void start()}>{startBusy ? "Starting…" : "Start a full extraction"}</button>
   </> : undefined;
 
-  return <><MigrationPage title="Migration" eyebrow={eyebrow} sub="Copy the installed base, cover and history out of the source application, check it, and sign it off. The source is only ever read." actions={actions} flaggedClasses={flaggedClasses} waitingReviews={canonicalisation?.waitingForPerson}>
+  return <><MigrationPage title="Migration" eyebrow={eyebrow} sub="Copy the installed base, cover and history out of the source application, check it, and sign it off. The source is only ever read." actions={actions} flaggedClasses={flaggedClasses} waitingReviews={canonicalisation?.waitingReviewItems}>
     <ErrorNote error={sourceError ?? batches.error ?? startError} />
     {startNotice && <div className={`note${startNotice.startsWith("Extraction refused") ? " bad" : ""}`} role="status">{startNotice}</div>}
     {admin && source && <LicenceBanner source={source} onSaved={updated => setSources(current => current.map(item => item.sourceId === updated.sourceId ? updated : item))} />}

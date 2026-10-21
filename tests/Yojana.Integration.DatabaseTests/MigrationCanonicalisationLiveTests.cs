@@ -44,11 +44,13 @@ public sealed class MigrationCanonicalisationLiveTests(IntegrationHostFixture fi
         var view = await canonical.GetAsync(started.BatchId, default);
         Assert.NotNull(view);
         Assert.Equal(CanonicalisationRunStatus.Completed, view.Status);
-        Assert.True(view.SerialsInSource > 0);
-        Console.WriteLine("CANON serials={0} exact={1} trimmed_upper={2} family={3} waiting={4} merged={5} " +
-            "kept_apart={6} fix={7} carried={8} unverified={9} took={10}", view.SerialsInSource, view.Exact,
-            view.TrimmedUpper, view.FamilyNormalised, view.WaitingForPerson, view.Merged, view.KeptApart,
-            view.FixInIncumbent, view.CarriedOver, view.UnverifiedDates, view.FinishedAt - view.StartedAt);
+        Assert.True(view.CandidateRowsTotal > 0);
+        Console.WriteLine("CANON candidate_rows={0} exact={1} trimmed_upper={2} family={3} waiting_items={4} " +
+            "merged_rows={5} decided_items={6} carried_items={7} unverified={8} took={9}",
+            view.CandidateRowsTotal, view.CandidateRowsExact, view.CandidateRowsTrimmedUpper,
+            view.CandidateRowsFamilyNormalised, view.WaitingReviewItems, view.CandidateRowsMerged,
+            view.DecidedReviewItems, view.CarriedOverReviewItems, view.UnverifiedDates,
+            view.FinishedAt - view.StartedAt);
         foreach (var gap in view.Gaps) Console.WriteLine("GAP {0}", gap);
 
         var queue = await canonical.ListAsync(started.BatchId, null, null, null, null, 100, default);
