@@ -170,8 +170,10 @@ public sealed class SiteRelayDatabaseTests(IntegrationHostFixture fixture)
             });
             await Task.WhenAll(tasks);
             Assert.Equal(8, simulator.PatchAttempts);
-            Assert.True(handler1.Calls > 0);
-            Assert.True(handler2.Calls > 0);
+            // Exactly-once is PatchAttempts above and the completed rows below. The handlers also see the agents' other
+            // local traffic, so they only bound it. Leasing is not fair scheduling: one agent may legitimately take all
+            // eight, so requiring both to take part made this test fail at random.
+            Assert.True(handler1.Calls + handler2.Calls >= 8);
             using var check = fixture.ScopeFor(tenant);
             var rows = await check.ServiceProvider.GetRequiredService<IntegrationDbContext>().RelayRequests
                 .AsNoTracking().Where(x => x.ConnectionId == connection).ToListAsync();
