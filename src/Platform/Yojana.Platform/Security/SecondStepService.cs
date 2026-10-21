@@ -28,6 +28,7 @@ public sealed class SecondStepUnavailableException : Exception;
 public sealed class SecondStepCodeWrongException : Exception;
 public sealed class SecondStepEnrolmentNotFoundException : Exception;
 public sealed class SecondStepRemovalNotAllowedException : Exception;
+public sealed class SecondStepPasswordWrongException : Exception;
 
 public sealed class SecondStepService(
     PlatformDbContext db,
@@ -166,9 +167,15 @@ public sealed class SecondStepService(
         finally { CryptographicOperations.ZeroMemory(secret); }
     }
 
+    /// <param name="currentPassword">Required to replace a working authenticator from a signed-in session, so a session
+    /// alone (a stolen cookie) cannot swap the second step; not asked at sign-in, where the password was just given.</param>
     public async Task<SecondStepConfirmation> ConfirmAsync(Guid userId, Guid enrolmentId, string? code,
-        TenantId? tenantId, SecurityRequestContext request, CancellationToken cancellationToken)
+        string? currentPassword, bool passwordToReplace, TenantId? tenantId, SecurityRequestContext request,
+        CancellationToken cancellationToken)
     {
+        if (passwordToReplace && await db.UserAuthenticators.AnyAsync(row => row.UserId == userId &&
+                row.Status == UserAuthenticatorStatus.Active, cancellationToken))
+            await RequirePasswordAsync(userId, currentPassword, cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable,
             cancellationToken);
         var pending = await db.UserAuthenticators.SingleOrDefaultAsync(row => row.Id == enrolmentId &&
@@ -245,9 +252,7 @@ public sealed class SecondStepService(
     {
         if (await policy.EffectiveForUserAsync(userId, cancellationToken) != SecondStepMode.Optional)
             throw new SecondStepRemovalNotAllowedException();
-        var user = await db.Users.SingleAsync(row => row.Id == userId && row.IsActive, cancellationToken);
-        if (!PasswordHasher.Verify(password ?? string.Empty, user.PasswordHash))
-            throw new SecondStepCodeWrongException();
+        var user = await RequirePasswordAsync(userId, password, cancellationToken);
         await RemoveDataAsync(userId, cancellationToken);
         events.Add(SecurityEventKind.SecondStepRemoved, userId, tenantId, userId, request,
             "removed_by_user");
@@ -268,6 +273,16 @@ public sealed class SecondStepService(
         await stamps.RotateSecurityStampAsync(userId, "admin_second_step_reset", cancellationToken);
         await QueueMethodMailAsync(user, tenantId, $"Authenticator app · Removed by an administrator, {actorName}",
             true, request, cancellationToken);
+    }
+
+    /// <summary>A wrong current password counts toward the account lockout, as on change-password, so a signed-in
+    /// session cannot be used to guess the password. Runs outside any transaction so the failure is kept.</summary>
+    private async Task<AppUser> RequirePasswordAsync(Guid userId, string? password, CancellationToken cancellationToken)
+    {
+        var user = await db.Users.SingleAsync(row => row.Id == userId && row.IsActive, cancellationToken);
+        if (PasswordHasher.Verify(password ?? string.Empty, user.PasswordHash)) return user;
+        await throttles.RegisterAccountFailureAsync(user.Email, cancellationToken);
+        throw new SecondStepPasswordWrongException();
     }
 
     private async Task RemoveDataAsync(Guid userId, CancellationToken cancellationToken)

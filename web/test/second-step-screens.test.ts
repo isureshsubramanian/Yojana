@@ -23,3 +23,9 @@ test("policy and Users extend their existing screens with second-step state", ()
   for (const phrase of ["Second step on", "Required but not set up", "No second step", "Sign-in methods", "Authenticator app", "recovery codes left", "Reset second step…"]) assert.match(users, new RegExp(phrase));
   assert.match(users, /resetSecondStep/); assert.doesNotMatch(users, /window\.confirm|confirm\(/);
 });
+
+test("replacing an authenticator asks for the current password", () => {
+  const page = readFileSync(new URL("../src/pages/AccountSecurity.tsx", import.meta.url), "utf8");
+  assert.match(page, /replacing && <label className="field"><span className="lbl">Current password<\/span>/);
+  assert.match(page, /secondStepApi\.confirm\(start\.enrolmentId, code, replacing \? password : undefined\)/);
+});

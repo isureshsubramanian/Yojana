@@ -244,8 +244,22 @@ public sealed class SecondStepDatabaseTests(PlatformHostFixture fixture)
 
         var newCode = AuthenticatorCodes.Totp(replacementSecret,
             new DateTimeOffset(fixture.Clock.UtcNow).ToUnixTimeSeconds());
+        // A signed-in session alone cannot swap a working authenticator: the current password is asked too.
+        foreach (var password in new string?[] { null, "wrong" })
+        {
+            using var refused = await account.PostAsJsonAsync("/api/auth/second-step/enrolment/confirm",
+                new { enrolmentId = replacement.EnrolmentId, code = newCode, currentPassword = password });
+            Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+            Assert.Contains("current_password_wrong", await refused.Content.ReadAsStringAsync());
+        }
+        using (var scope = fixture.Services.CreateScope())
+        {
+            var authenticators = scope.ServiceProvider.GetRequiredService<PlatformDbContext>().UserAuthenticators;
+            Assert.Equal(UserAuthenticatorStatus.Pending, (await authenticators.SingleAsync(row => row.Id == replacement.EnrolmentId)).Status);
+            Assert.Equal(1, await authenticators.CountAsync(row => row.UserId == user.Id && row.Status == UserAuthenticatorStatus.Active));
+        }
         (await account.PostAsJsonAsync("/api/auth/second-step/enrolment/confirm",
-            new { enrolmentId = replacement.EnrolmentId, code = newCode })).EnsureSuccessStatusCode();
+            new { enrolmentId = replacement.EnrolmentId, code = newCode, currentPassword = Password })).EnsureSuccessStatusCode();
         Assert.Equal(HttpStatusCode.OK, (await account.GetAsync("/api/auth/me")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await otherSession.GetAsync("/api/auth/me")).StatusCode);
 
@@ -286,8 +300,11 @@ public sealed class SecondStepDatabaseTests(PlatformHostFixture fixture)
             (await otherTargetSession.PostAsJsonAsync("/api/auth/second-step",
                 new { method = "authenticator", code })).EnsureSuccessStatusCode();
         }
-        Assert.Equal(HttpStatusCode.BadRequest, (await targetSession.PostAsJsonAsync("/api/auth/second-step/remove",
-            new { currentPassword = "wrong" })).StatusCode);
+        using (var wrong = await targetSession.PostAsJsonAsync("/api/auth/second-step/remove", new { currentPassword = "wrong" }))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, wrong.StatusCode);
+            Assert.Contains("current_password_wrong", await wrong.Content.ReadAsStringAsync());
+        }
         (await targetSession.PostAsJsonAsync("/api/auth/second-step/remove",
             new { currentPassword = Password })).EnsureSuccessStatusCode();
         Assert.Equal(HttpStatusCode.OK, (await targetSession.GetAsync("/api/auth/me")).StatusCode);

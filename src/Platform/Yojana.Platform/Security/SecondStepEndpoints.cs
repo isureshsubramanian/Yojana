@@ -22,7 +22,7 @@ public static class SecondStepEndpoints
         auth.MapPost("/enrolment/confirm", ConfirmAsync).AllowAnonymous()
             .RequireRateLimiting(SecurityRateLimiting.PolicyName);
         auth.MapPost("/recovery-codes", RecoveryCodesAsync).RequireAuthorization();
-        auth.MapPost("/remove", RemoveAsync).RequireAuthorization();
+        auth.MapPost("/remove", RemoveAsync).RequireAuthorization().RequireRateLimiting(SecurityRateLimiting.PolicyName);
 
         var settings = endpoints.MapGroup("/api/security/settings/second-step")
             .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
@@ -90,7 +90,7 @@ public static class SecondStepEndpoints
                 cancellationToken);
             var automaticTenant = tenantsBeforeConfirmation?.Count == 1 ? tenantsBeforeConfirmation[0] : null;
             var result = await service.ConfirmAsync(userId, request.EnrolmentId, request.Code,
-                SelectedTenantId(http.User) ?? automaticTenant?.TenantId, RequestContext(http), cancellationToken);
+                request.CurrentPassword, pending is null, SelectedTenantId(http.User) ?? automaticTenant?.TenantId, RequestContext(http), cancellationToken);
             SessionView? session = null;
             if (pending is not null)
             {
@@ -130,6 +130,10 @@ public static class SecondStepEndpoints
         catch (SecondStepEnrolmentNotFoundException)
         {
             return Problem("second_step_enrolment_expired", "Start authenticator enrolment again.", 410);
+        }
+        catch (SecondStepPasswordWrongException)
+        {
+            return Problem("current_password_wrong", "The current password was not accepted.", 400);
         }
     }
 
@@ -172,7 +176,7 @@ public static class SecondStepEndpoints
         {
             return Problem("second_step_required", "Your company requires a second step.", 403);
         }
-        catch (SecondStepCodeWrongException)
+        catch (SecondStepPasswordWrongException)
         {
             return Problem("current_password_wrong", "The current password was not accepted.", 400);
         }
@@ -246,7 +250,7 @@ public static class SecondStepEndpoints
 }
 
 public sealed record SecondStepRequest(string? Method, string? Code);
-public sealed record SecondStepConfirmRequest(Guid EnrolmentId, string? Code);
+public sealed record SecondStepConfirmRequest(Guid EnrolmentId, string? Code, string? CurrentPassword = null);
 public sealed record AuthenticatorCodeRequest(string? Code);
 public sealed record CurrentPasswordRequest(string? CurrentPassword);
 public sealed record SecondStepConfirmView(IReadOnlyList<string> RecoveryCodes, SessionView? Session);

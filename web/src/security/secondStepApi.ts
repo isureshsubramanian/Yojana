@@ -17,7 +17,8 @@ export interface SecondStepSettings { roles: SecondStepRole[]; notSetUpCount: nu
 export const secondStepApi = {
   complete: (method: "authenticator" | "recovery_code", code: string) => api<Session>("/api/auth/second-step", { method: "POST", body: { method, code } }),
   start: () => api<EnrolmentStart>("/api/auth/second-step/enrolment/start", { method: "POST", body: {} }),
-  confirm: (enrolmentId: string, code: string) => api<Confirmation>("/api/auth/second-step/enrolment/confirm", { method: "POST", body: { enrolmentId, code } }),
+  /** Replacing a working authenticator from a signed-in session also needs the current password. */
+  confirm: (enrolmentId: string, code: string, currentPassword?: string) => api<Confirmation>("/api/auth/second-step/enrolment/confirm", { method: "POST", body: { enrolmentId, code, currentPassword: currentPassword ?? null } }),
   state: (signal?: AbortSignal) => api<SecondStepState>("/api/auth/second-step", signal ? { signal } : undefined),
   recoveryCodes: (code: string) => api<{ recoveryCodes: string[] }>("/api/auth/second-step/recovery-codes", { method: "POST", body: { code } }),
   remove: (currentPassword: string) => api<void>("/api/auth/second-step/remove", { method: "POST", body: { currentPassword } }),
