@@ -14,6 +14,7 @@
     <Content Include="Transport/OPERATIONS.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Security/AZURE-DEPLOYMENT.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Coexistence/ROLLBACK.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Migration/OPERATIONS.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Security/SOC2-CONTROL-MAPPING.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Compile Remove="Connectors/CX01/Testing/**/*.cs" />
     <None Remove="Connectors/CX01/Testing/Fixtures/**/*" />

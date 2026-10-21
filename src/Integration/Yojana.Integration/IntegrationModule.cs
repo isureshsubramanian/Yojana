@@ -28,6 +28,8 @@ using Yojana.Integration.Connectors.CX01;
 using Yojana.Integration.Reconciliation;
 using Yojana.Integration.Backfills;
 using Yojana.Integration.Connectors;
+using Yojana.Integration.LegacyMigration;
+using Yojana.Integration.LegacyMigration.Staging;
 
 namespace Yojana.Integration;
 
@@ -181,6 +183,13 @@ public static class IntegrationModule
             sp.GetRequiredService<BackfillService>());
         builder.Services.AddSingleton(RecurringTenantJob.For<BackfillJob>(
             BackfillJob.JobName, BackfillJob.Cron));
+        builder.Services.AddScoped<MigrationLicenceSettings>();
+        builder.Services.AddScoped<MigrationSourceSecret>();
+        builder.Services.AddScoped<SourceExtractor>();
+        builder.Services.AddScoped<MigrationSourceService>();
+        builder.Services.AddScoped<MigrationBatchService>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<MigrationExtractionJob>(
+            MigrationExtractionJob.JobName, MigrationExtractionJob.Cron));
 
         builder.AddIntegrationTransport();
 

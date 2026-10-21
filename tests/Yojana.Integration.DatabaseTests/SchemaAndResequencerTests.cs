@@ -31,6 +31,12 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "connection_notification_watchdog", "outbound_document_receipt");
         AssertSuperset(tables, "reconciliation_run", "reconciliation_entity_day",
             "reconciliation_location", "backfill_cursor");
+        var migrationTables = await db.Database.SqlQueryRaw<string>("SELECT TABLE_NAME AS Value FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'migration'").ToListAsync();
+        AssertSuperset(migrationTables, "migration_source", "migration_batch", "migration_batch_table",
+            "stg_src_osrn", "stg_src_osrq", "stg_src_osbq", "stg_src_oitl", "stg_src_itl1",
+            "stg_src_oins", "stg_src_ains", "stg_src_ins1", "stg_src_octr", "stg_src_ctr1",
+            "stg_src_octt", "stg_src_oscl", "stg_src_orrr", "stg_src_marketing_document_headers",
+            "stg_src_oatc", "stg_src_oitm");
         var columns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'manual_outbound_task'").ToListAsync();
         Assert.Contains("desk", columns);
         var healthColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'connection_health'").ToListAsync();
@@ -44,6 +50,7 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
         var expected = db.Model.GetEntityTypes()
             .Where(entity => typeof(ITenantScoped).IsAssignableFrom(entity.ClrType))
+            .Where(entity => entity.GetSchema() == IntegrationDbContext.SchemaName)
             .Select(entity => entity.GetTableName()!).ToHashSet();
         var covered = await db.Database.SqlQueryRaw<string>($"""
             SELECT OBJECT_NAME(p.target_object_id) AS [Value]
@@ -59,6 +66,24 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
               AND p.predicate_type_desc = 'BLOCK'
             """).SingleAsync();
         Assert.Equal(expected.Count * 2, blocks);
+        var expectedMigration = db.Model.GetEntityTypes()
+            .Where(entity => typeof(ITenantScoped).IsAssignableFrom(entity.ClrType))
+            .Where(entity => entity.GetSchema() == "migration")
+            .Select(entity => entity.GetTableName()!).ToHashSet();
+        var coveredMigration = await db.Database.SqlQueryRaw<string>("""
+            SELECT OBJECT_NAME(p.target_object_id) AS [Value]
+            FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
+            WHERE s.name = 'tenant_policy_migration'
+              AND p.predicate_type_desc = 'FILTER'
+            """).ToListAsync();
+        Assert.Equal(expectedMigration.OrderBy(value => value), coveredMigration.OrderBy(value => value));
+        var migrationBlocks = await db.Database.SqlQueryRaw<int>("""
+            SELECT COUNT(*) AS [Value]
+            FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
+            WHERE s.name = 'tenant_policy_migration'
+              AND p.predicate_type_desc = 'BLOCK'
+            """).SingleAsync();
+        Assert.Equal(expectedMigration.Count * 2, migrationBlocks);
         Assert.Empty(db.ValidateTenantKeyConventions());
     }
 

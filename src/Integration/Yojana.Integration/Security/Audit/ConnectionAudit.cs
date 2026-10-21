@@ -37,6 +37,8 @@ public enum ConnectionAuditEventType
     ParallelRunStarted,
     ParallelRunItemConfirmed,
     DocumentSettingsChanged,
+    MigrationLicenceConfirmed,
+    MigrationLicenceWithdrawn,
 }
 
 public sealed record ConnectionAuditEvent(

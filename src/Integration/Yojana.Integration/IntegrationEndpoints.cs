@@ -14,6 +14,7 @@ using Yojana.Integration.Connectors.CX01;
 using Yojana.Integration.Reconciliation;
 using Yojana.Integration.Backfills;
 using Yojana.Integration.Gateway;
+using Yojana.Integration.LegacyMigration;
 
 namespace Yojana.Integration;
 
@@ -25,6 +26,7 @@ public static class IntegrationEndpoints
         app.MapIntegrationNotificationEndpoints();
         app.MapConnectionEndpoints();
         app.MapCoexistenceEndpoints();
+        app.MapMigrationEndpoints();
         Yojana.Integration.Relays.RelayEndpoints.MapRelayEndpoints(app);
         app.MapIntegrationAttentionEndpoint();
         app.MapCx01WebhookEndpoints();

@@ -7,6 +7,7 @@ using Yojana.Integration.DeadLetters;
 using Yojana.Integration.Backfills;
 using Yojana.Integration.Reconciliation;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Integration.LegacyMigration;
 
 namespace Yojana.Integration.Tests;
 
@@ -118,5 +119,30 @@ public sealed class IntegrationEndpointTests
             Assert.DoesNotContain(type.GetProperties(), property => property.Name.Contains("Actor",
                 StringComparison.OrdinalIgnoreCase));
         Assert.True(YojanaRole.IsKnown(YojanaRole.IntegrationOperator));
+    }
+
+    [Fact]
+    public void Migration_endpoints_are_tenant_administrator_only_and_never_expose_the_secret()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddAuthorization(options => options.AddPolicy(YojanaPolicy.TenantAdministrator,
+            policy => policy.RequireAuthenticatedUser()));
+        builder.Services.AddScoped<MigrationSourceService>();
+        builder.Services.AddScoped<MigrationBatchService>();
+        var app = builder.Build();
+        app.MapMigrationEndpoints();
+        var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>().ToList();
+        Assert.Equal(8, endpoints.Count);
+        Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+            policy => policy.Policy == YojanaPolicy.TenantAdministrator));
+        foreach (var type in new[] { typeof(CreateMigrationSourceRequest), typeof(UpdateMigrationSourceRequest),
+                     typeof(UpdateMigrationLicenceRequest), typeof(StartMigrationBatchRequest) })
+            Assert.DoesNotContain(type.GetProperties(), property => property.Name.Contains("Actor",
+                StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(typeof(MigrationSourceView).GetProperties(), property =>
+            property.Name == nameof(CreateMigrationSourceRequest.ConnectionString));
+        Assert.Contains(typeof(MigrationSourceView).GetProperties(), property =>
+            property.Name == nameof(MigrationSourceView.HasConnectionString));
     }
 }
