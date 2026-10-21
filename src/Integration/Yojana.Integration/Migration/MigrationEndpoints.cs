@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Integration.LegacyMigration.Profiling;
 
 namespace Yojana.Integration.LegacyMigration;
 
@@ -39,6 +41,47 @@ public static class MigrationEndpoints
         group.MapGet("/batches/{batchId:guid}", async (Guid batchId, MigrationBatchService service,
             CancellationToken ct) => await service.DetailAsync(batchId, ct) is { } result
                 ? Results.Ok(result) : Results.NotFound());
+        group.MapGet("/batches/{batchId:guid}/profile", async (Guid batchId,
+            MigrationProfileService service, CancellationToken ct) =>
+            await service.GetAsync(batchId, ct) is { } result ? Results.Ok(result) : Results.NotFound());
+        group.MapGet("/batches/{batchId:guid}/profile/{classCode}/samples", async (Guid batchId, string classCode,
+            MigrationProfileService service, CancellationToken ct) =>
+        {
+            try
+            {
+                return await service.SamplesAsync(batchId, classCode, ct) is { } result
+                    ? Results.Ok(result) : Results.NotFound();
+            }
+            catch (MigrationRuleException ex) { return Problem(ex); }
+        });
+        group.MapPost("/batches/{batchId:guid}/profile", async (Guid batchId,
+            MigrationProfileService service, CancellationToken ct) =>
+        {
+            try
+            {
+                var result = await service.EnqueueAsync(batchId, ct);
+                return Results.Accepted($"/api/migration/batches/{batchId:D}/profile", result);
+            }
+            catch (MigrationRuleException ex) { return Problem(ex); }
+        });
+        group.MapGet("/profiling/outcomes", (MigrationProfileOutcomeSettings settings, CancellationToken ct) =>
+            Invoke(() => settings.GetAsync(ct)));
+        group.MapPut("/profiling/outcomes", async (UpdateMigrationProfileOutcomeSettings request,
+            MigrationProfileOutcomeSettings settings, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await settings.SetAsync(request, ct)); }
+            catch (MigrationRuleException ex) { return Problem(ex); }
+            catch (TenantSettingVersionConflictException ex)
+            {
+                return Results.Problem(title: "document_changed", detail: ex.Message, statusCode: 409,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["rule"] = "document_changed",
+                        ["expectedVersion"] = ex.ExpectedVersion,
+                        ["currentVersion"] = ex.CurrentVersion,
+                    });
+            }
+        });
         return app;
     }
 

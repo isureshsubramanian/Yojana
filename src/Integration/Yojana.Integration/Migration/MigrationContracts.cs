@@ -80,6 +80,46 @@ public sealed record MigrationBatchView(
 
 public sealed record MigrationBatchPage(IReadOnlyList<MigrationBatchView> Items, string? NextCursor);
 
+public sealed record MigrationProfileClassView(
+    string Code,
+    string Name,
+    string Outcome,
+    string OutcomeLabel,
+    long? Count,
+    long? Change,
+    string? Note);
+
+public sealed record MigrationProfileView(
+    Guid RunId,
+    Guid BatchId,
+    DateTime? StartedAt,
+    DateTime? FinishedAt,
+    string Status,
+    IReadOnlyList<MigrationProfileClassView> Classes);
+
+public sealed record StartMigrationProfileResponse(Guid RunId, Guid BatchId, string Status);
+
+public sealed record MigrationProfileSample(
+    string SourceKey,
+    string? Serial,
+    string? Item,
+    IReadOnlyDictionary<string, string?> Facts);
+
+public sealed record MigrationProfileSamplesView(
+    Guid RunId,
+    string ClassCode,
+    IReadOnlyList<MigrationProfileSample> Samples);
+
+public sealed record MigrationProfileOutcomeChoice(string ClassCode, string Outcome);
+
+public sealed record MigrationProfileOutcomeSettingsView(
+    IReadOnlyList<MigrationProfileOutcomeChoice> Classes,
+    string Version);
+
+public sealed record UpdateMigrationProfileOutcomeSettings(
+    IReadOnlyList<MigrationProfileOutcomeChoice> Classes,
+    string ExpectedVersion);
+
 public sealed class MigrationRuleException(string rule, string message) : InvalidOperationException(message)
 {
     public string Rule { get; } = rule;

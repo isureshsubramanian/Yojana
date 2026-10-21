@@ -205,6 +205,14 @@ internal static class SourceProtocol
             builder.Property(nameof(StagingRow.RowHash)).HasMaxLength(32).IsFixedLength();
             builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId), nameof(StagingRow.SourcePk));
             builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.AbsentSinceBatchId), nameof(StagingRow.SourcePk));
+            if (table.RowType == typeof(TransactionLogHeaderStagingRow))
+                builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
+                    nameof(StagingRow.SourceSystem), nameof(TransactionLogHeaderStagingRow.DocumentType),
+                    nameof(TransactionLogHeaderStagingRow.LogEntry));
+            if (table.RowType == typeof(TransactionLogLineStagingRow))
+                builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
+                    nameof(StagingRow.SourceSystem), nameof(TransactionLogLineStagingRow.ItemCode),
+                    nameof(TransactionLogLineStagingRow.SystemNumber), nameof(TransactionLogLineStagingRow.LogEntry));
             foreach (var column in table.Columns.Where(x => x.Kind == RawColumnKind.Text))
                 builder.Property(column.PropertyName).HasMaxLength(column.MaxLength!.Value);
             foreach (var column in table.Columns.Where(x => x.Kind == RawColumnKind.Decimal))

@@ -7,6 +7,7 @@ using Yojana.Integration.Data;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Integration.LegacyMigration.Profiling;
 
 namespace Yojana.Integration.LegacyMigration;
 
@@ -15,7 +16,8 @@ public sealed class MigrationBatchService(
     ITenantContext tenant,
     IClock clock,
     Staging.SourceExtractor extractor,
-    IUserDirectory people)
+    IUserDirectory people,
+    IMigrationProfileQueue profiles)
 {
     public async Task<StartMigrationBatchResponse> StartAsync(StartMigrationBatchRequest request, string actor,
         CancellationToken cancellationToken)
@@ -114,11 +116,16 @@ public sealed class MigrationBatchService(
                 }));
                 batch.Status = MigrationBatchStatus.Succeeded;
                 batch.FinishedAt = clock.UtcNow;
+                // TIGHT COUPLING (successful extraction/profile hand-off): this queue operation shares the success
+                // SaveChanges so no succeeded extraction can exist without its mandatory automatic profile run.
+                // MigrationProfileService documents the matching half; separating the saves can strand a batch.
+                profiles.EnqueueAutomatic(batch);
                 await db.SaveChangesAsync(cancellationToken);
                 completed++;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                profiles.DiscardAutomatic(batch.BatchId);
                 batch.Status = MigrationBatchStatus.Failed;
                 batch.FailureText = "migration_extraction_cancelled";
                 batch.FinishedAt = clock.UtcNow;
@@ -127,6 +134,7 @@ public sealed class MigrationBatchService(
             }
             catch (Exception ex)
             {
+                profiles.DiscardAutomatic(batch.BatchId);
                 batch.Status = ex is MigrationRuleException rule &&
                     rule.Rule is "migration_extraction_licence_unconfirmed" or "migration_source_runtime_unsupported"
                     ? MigrationBatchStatus.Refused : MigrationBatchStatus.Failed;

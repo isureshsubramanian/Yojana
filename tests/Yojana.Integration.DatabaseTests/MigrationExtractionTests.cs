@@ -191,11 +191,27 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
         return detail;
     }
 
-    private static class SourceFixture
+    internal static class SourceFixture
     {
         public static int ExpectedRows => SourceProtocol.Tables.Sum(table => table.Reads.Count) + 4;
 
         public static async Task RecreateAsync(string database)
+        {
+            await RecreateEmptyAsync(database);
+            await using var source = new SqlConnection(ConnectionString(database));
+            await source.OpenAsync();
+            foreach (var table in SourceProtocol.Tables)
+            foreach (var read in table.Reads)
+                await InsertAsync(source, table, read, DefaultRow(table));
+            await InsertAsync<SerialMasterStagingRow>(database,
+                Serial("STORAGE-ARRAY-02", 2, "Storage-Mixed-002", "Media retention service"));
+            await InsertAsync<SerialMasterStagingRow>(database,
+                Serial("NETWORK-SWITCH-03", 3, " switch-003 ", "Next-business-day service"));
+            await InsertAsync<SerialQuantityStagingRow>(database, Quantity("STORAGE-ARRAY-02", 2));
+            await InsertAsync<SerialQuantityStagingRow>(database, Quantity("NETWORK-SWITCH-03", 3));
+        }
+
+        public static async Task RecreateEmptyAsync(string database)
         {
             await DropAsync(database);
             var master = MasterConnectionString();
@@ -218,15 +234,6 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
                     $"CREATE TABLE [dbo].[{Escape(read.SourceTable)}] ({columns});", source);
                 await command.ExecuteNonQueryAsync();
             }
-            foreach (var table in SourceProtocol.Tables)
-            foreach (var read in table.Reads)
-                await InsertAsync(source, table, read, DefaultRow(table));
-            await InsertAsync<SerialMasterStagingRow>(database,
-                Serial("STORAGE-ARRAY-02", 2, "Storage-Mixed-002", "Media retention service"));
-            await InsertAsync<SerialMasterStagingRow>(database,
-                Serial("NETWORK-SWITCH-03", 3, " switch-003 ", "Next-business-day service"));
-            await InsertAsync<SerialQuantityStagingRow>(database, Quantity("STORAGE-ARRAY-02", 2));
-            await InsertAsync<SerialQuantityStagingRow>(database, Quantity("NETWORK-SWITCH-03", 3));
         }
 
         public static Dictionary<string, object?> Serial(string item, int number, string serial, string notes) => new()
@@ -245,12 +252,13 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
             [nameof(SerialMasterStagingRow.DataSource)] = "N",
         };
 
-        private static Dictionary<string, object?> Quantity(string item, int number) => new()
+        public static Dictionary<string, object?> Quantity(string item, int number, string warehouse = "MAIN",
+            decimal quantity = 1m) => new()
         {
             [nameof(SerialQuantityStagingRow.ItemCode)] = item,
             [nameof(SerialQuantityStagingRow.SystemNumber)] = number,
-            [nameof(SerialQuantityStagingRow.WarehouseCode)] = "MAIN",
-            [nameof(SerialQuantityStagingRow.Quantity)] = 1m,
+            [nameof(SerialQuantityStagingRow.WarehouseCode)] = warehouse,
+            [nameof(SerialQuantityStagingRow.Quantity)] = quantity,
         };
 
         public static async Task InsertAsync<TRow>(string database, Dictionary<string, object?> values)

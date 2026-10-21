@@ -60,6 +60,8 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<MigrationSource> MigrationSources => Set<MigrationSource>();
     public DbSet<MigrationBatch> MigrationBatches => Set<MigrationBatch>();
     public DbSet<MigrationBatchTable> MigrationBatchTables => Set<MigrationBatchTable>();
+    public DbSet<MigrationProfileRun> MigrationProfileRuns => Set<MigrationProfileRun>();
+    public DbSet<MigrationProfileResult> MigrationProfileResults => Set<MigrationProfileResult>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
