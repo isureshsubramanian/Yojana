@@ -205,6 +205,9 @@ internal static class Cx01Mapper
         fields ??= Cx01FieldReader.Defaults;
         var key = Text(raw, entity.KeyField) ?? throw new InvalidOperationException("CX01 response has no key.");
         var changed = ChangeMarker(raw, key);
+        // COUPLED to ReconciliationService.ModuleDigestsAsync and Cx01Adapter.EntityDayDigestsAsync: these are calendar
+        // dates in the ERP company's day, kept as that date at 00:00 UTC; reconciliation buckets by the UTC date and
+        // must not convert them to a zone. Only the observed-time fallback is a real instant.
         var occurred = Date(raw, "DocDate") ?? Date(raw, "CreateDate") ?? Date(raw, "UpdateDate")
             ?? new DateTimeOffset(observedUtc, TimeSpan.Zero);
         var missing = new List<Cx01MissingSerialLine>();

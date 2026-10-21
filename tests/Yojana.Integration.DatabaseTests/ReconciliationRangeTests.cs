@@ -73,6 +73,48 @@ public sealed class ReconciliationRangeTests(IntegrationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Today_is_read_in_the_tenant_zone_on_both_sides_of_utc_midnight()
+    {
+        var tenant = await fixture.NewTenantAsync("bizday");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid(), IntegrationHostFixture.FakeConnectorCode);
+        await SeedCatalogueAsync(tenant);
+        var original = fixture.Clock.UtcNow;
+        try
+        {
+            // 20:00 UTC on 14 Sep is 01:30 on 15 Sep in India: the Indian day is already accepted.
+            var east = new DateOnly(2026, 9, 15);
+            fixture.Clock.UtcNow = new(2026, 9, 14, 20, 0, 0, DateTimeKind.Utc);
+            using (var scope = fixture.ScopeFor(tenant))
+            {
+                await SetZoneAsync(scope, "Asia/Kolkata");
+                Assert.Equal(east, (await scope.ServiceProvider.GetRequiredService<ConnectionQueries>()
+                    .DetailAsync(connection, CancellationToken.None)).ReconciliationToday);
+                await scope.ServiceProvider.GetRequiredService<ReconciliationService>().RunAsync(connection, east, east,
+                    ReconciliationTrigger.OnDemand, true, "user:test-operator", CancellationToken.None);
+            }
+
+            // 02:00 UTC on 15 Sep is still 14 Sep in New York: 15 Sep is in the future there. The zone port reads the
+            // tenant setting once per scope, so the new zone is read through a new scope.
+            fixture.Clock.UtcNow = new(2026, 9, 15, 2, 0, 0, DateTimeKind.Utc);
+            using (var scope = fixture.ScopeFor(tenant))
+                await SetZoneAsync(scope, "America/New_York");
+            using (var scope = fixture.ScopeFor(tenant))
+            {
+                var failure = await Assert.ThrowsAsync<ReconciliationRuleException>(() =>
+                    scope.ServiceProvider.GetRequiredService<ReconciliationService>().RunAsync(connection, east, east,
+                        ReconciliationTrigger.OnDemand, true, "user:test-operator", CancellationToken.None));
+                Assert.Equal("reconciliation_range_in_future", failure.Rule);
+                Assert.Equal(new DateOnly(2026, 9, 14), (await scope.ServiceProvider.GetRequiredService<ConnectionQueries>()
+                    .DetailAsync(connection, CancellationToken.None)).ReconciliationToday);
+            }
+        }
+        finally
+        {
+            fixture.Clock.UtcNow = original;
+        }
+    }
+
+    [DatabaseFact]
     public async Task Tenant_window_caps_scheduled_callers_and_paused_connections_retain_their_read_settings()
     {
         var tenant = await fixture.NewTenantAsync("tenantwindow");
@@ -91,6 +133,12 @@ public sealed class ReconciliationRangeTests(IntegrationHostFixture fixture)
         Assert.Equal(1, detail.ReconciliationWindowDays);
         Assert.Equal(ConnectionStatus.Paused, detail.LifecycleStatus);
     }
+    private static async Task SetZoneAsync(IServiceScope scope, string zone)
+    {
+        var zones = scope.ServiceProvider.GetRequiredService<Yojana.Serialisation.TimeZones.TenantTimeZoneSettings>();
+        await zones.SetAsync(new(zone, [], (await zones.GetAsync(default)).Version), "actor", default);
+    }
+
     private async Task SeedCatalogueAsync(TenantId tenant)
     {
         using var scope = fixture.ScopeFor(tenant);

@@ -141,7 +141,7 @@ test("UTC timestamps render consistently with or without the SQL timezone suffix
 });
 
 
-test("daily check ranges use the inclusive connection window and reject future UTC days", () => {
+test("daily check ranges use the inclusive connection window and reject days after the connection's today", () => {
   const today = "2026-09-10";
   const boundary = reconciliationRange("2026-09-01", "2026-09-07", 7, today);
   assert.equal(boundary.error, null);
@@ -149,7 +149,7 @@ test("daily check ranges use the inclusive connection window and reject future U
   assert.equal(boundary.endMax, "2026-09-07");
   assert.match(reconciliationRange("2026-09-01", "2026-09-08", 7, today).error!, /at most 7 days/);
   assert.equal(reconciliationRange("2026-09-01", "2026-09-08", 8, today).error, null);
-  assert.match(reconciliationRange("2026-09-10", "2026-09-11", 7, today).error!, /future/);
+  assert.match(reconciliationRange("2026-09-10", "2026-09-11", 7, today).error!, /after today/);
   assert.equal(reconciliationRange("2026-09-10", "2026-09-10", 1, today).error, null);
   assert.match(reconciliationRange("2026-09-02", "2026-09-01", 7, today).error!, /precede/);
   assert.equal(reconciliationRange("2026-08-30", "2026-09-01", 3, today).error, null);

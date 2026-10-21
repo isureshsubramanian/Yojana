@@ -23,6 +23,7 @@ public sealed partial class ReconciliationService(
     IItemNamePort itemNames,
     ILocationNamePort locationNames,
     ReconciliationSettings settings,
+    ReconciliationBusinessDay businessDay,
     IReconciliationBackfillScheduler backfills,
     DeadLetterService deadLetters,
     IUserDirectory people)
@@ -36,17 +37,18 @@ public sealed partial class ReconciliationService(
         foreach (var connectionId in connections)
         {
             var days = await settings.WindowDaysAsync(connectionId, cancellationToken);
-            var end = DateOnly.FromDateTime(clock.UtcNow.Date);
+            var end = await businessDay.TodayAsync(connectionId, cancellationToken);
             runs.Add(await RunAsync(connectionId, end.AddDays(-(days - 1)), end,
                 ReconciliationTrigger.Scheduled, includeEntityDays: true, requestedBy: null, cancellationToken));
         }
         return runs;
     }
 
-    public Task<Guid> RunLocationChecksAsync(Guid connectionId, string requestedBy, CancellationToken cancellationToken)
+    public async Task<Guid> RunLocationChecksAsync(Guid connectionId, string requestedBy,
+        CancellationToken cancellationToken)
     {
-        var day = DateOnly.FromDateTime(clock.UtcNow.Date);
-        return RunAsync(connectionId, day, day, ReconciliationTrigger.OnDemand,
+        var day = await businessDay.TodayAsync(connectionId, cancellationToken);
+        return await RunAsync(connectionId, day, day, ReconciliationTrigger.OnDemand,
             includeEntityDays: false, requestedBy, cancellationToken);
     }
 
@@ -58,9 +60,9 @@ public sealed partial class ReconciliationService(
         if (rangeEnd < rangeStart)
             throw new ReconciliationRuleException("reconciliation_range_invalid",
                 "The reconciliation end date must not precede its start date.");
-        if (rangeEnd > DateOnly.FromDateTime(clock.UtcNow.Date))
+        if (rangeEnd > await businessDay.TodayAsync(connectionId, cancellationToken))
             throw new ReconciliationRuleException("reconciliation_range_in_future",
-                "The reconciliation end date must not be in the future (UTC).");
+                "The reconciliation end date must not be after today in the connection's time zone.");
         var windowDays = await settings.WindowDaysAsync(connectionId, cancellationToken);
         if (rangeEnd.DayNumber - rangeStart.DayNumber + 1 > windowDays)
             throw new ReconciliationRuleException("reconciliation_range_too_wide",
@@ -305,6 +307,10 @@ public sealed partial class ReconciliationService(
     private async Task<List<ConnectorEntityDayDigest>> ModuleDigestsAsync(Guid connectionId,
         DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken)
     {
+        // COUPLED to each connector's OccurredAt mapping (CX01: Cx01Mapper.Map): connectors carry the ERP's business date
+        // as that calendar date at 00:00 UTC, and the source digests bucket by the same UTC date, so both sides agree
+        // without a zone. Converting OccurredAt to a local zone here would move every date one day back west of UTC.
+        // A connector that ever reports true instants must bucket them itself the same way on both sides.
         var start = rangeStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var endExclusive = rangeEnd.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var rows = await db.InboundMessages.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
