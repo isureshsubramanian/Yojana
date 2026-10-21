@@ -8,6 +8,7 @@ using Yojana.Integration.LegacyMigration;
 using Yojana.Integration.LegacyMigration.Templates;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
+using Yojana.Integration.LegacyMigration.Mapping;
 
 namespace Yojana.Integration.Data;
 
@@ -78,6 +79,18 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<MigrationHistoryEvent> MigrationHistoryEvents => Set<MigrationHistoryEvent>();
     public DbSet<MigrationOwnershipEpisode> MigrationOwnershipEpisodes => Set<MigrationOwnershipEpisode>();
     public DbSet<MigrationReconstructionLog> MigrationReconstructionLogs => Set<MigrationReconstructionLog>();
+    public DbSet<MigrationMapRun> MigrationMapRuns => Set<MigrationMapRun>();
+    public DbSet<MigrationPlanUnit> MigrationPlanUnits => Set<MigrationPlanUnit>();
+    public DbSet<MigrationPlanIdentifier> MigrationPlanIdentifiers => Set<MigrationPlanIdentifier>();
+    public DbSet<MigrationPlanEvent> MigrationPlanEvents => Set<MigrationPlanEvent>();
+    public DbSet<MigrationPlanOwnership> MigrationPlanOwnership => Set<MigrationPlanOwnership>();
+    public DbSet<MigrationPlanReplacementLink> MigrationPlanReplacementLinks => Set<MigrationPlanReplacementLink>();
+    public DbSet<MigrationPlanEntitlement> MigrationPlanEntitlements => Set<MigrationPlanEntitlement>();
+    public DbSet<MigrationPlanWarrantyEvidence> MigrationPlanWarrantyEvidence => Set<MigrationPlanWarrantyEvidence>();
+    public DbSet<MigrationPlanAttachment> MigrationPlanAttachments => Set<MigrationPlanAttachment>();
+    public DbSet<MigrationPlanCertificate> MigrationPlanCertificates => Set<MigrationPlanCertificate>();
+    public DbSet<MigrationPlanGap> MigrationPlanGaps => Set<MigrationPlanGap>();
+    public DbSet<MigrationPlanLog> MigrationPlanLogs => Set<MigrationPlanLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

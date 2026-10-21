@@ -35,6 +35,7 @@ using Yojana.Integration.Contracts;
 using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
+using Yojana.Integration.LegacyMigration.Mapping;
 
 namespace Yojana.Integration;
 
@@ -223,6 +224,8 @@ public static class IntegrationModule
         builder.Services.AddScoped<IMigrationReviewCarryOver>(services =>
             services.GetRequiredService<CanonicalisationService>());
         builder.Services.AddScoped<ReconstructionService>();
+        builder.Services.AddScoped<MappingSettings>();
+        builder.Services.AddScoped<MappingService>();
         builder.Services.AddSingleton(RecurringTenantJob.For<MigrationExtractionJob>(
             MigrationExtractionJob.JobName, MigrationExtractionJob.Cron));
 

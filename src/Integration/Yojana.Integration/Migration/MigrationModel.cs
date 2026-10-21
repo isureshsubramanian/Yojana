@@ -94,6 +94,7 @@ internal static class MigrationModel
         Templates.TemplateModel.Configure(modelBuilder);
         Canonicalisation.CanonicalisationModel.Configure(modelBuilder);
         Reconstruction.ReconstructionModel.Configure(modelBuilder);
+        Mapping.MappingModel.Configure(modelBuilder);
         Staging.SourceProtocol.Configure(modelBuilder);
     }
 }

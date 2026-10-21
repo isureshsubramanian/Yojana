@@ -5,13 +5,14 @@ using Yojana.Platform.Tenancy;
 using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
+using Yojana.Integration.LegacyMigration.Mapping;
 
 namespace Yojana.Integration.LegacyMigration;
 
 [DisallowConcurrentExecution]
 public sealed class MigrationExtractionJob(ITenantContextSetter setter, MigrationBatchService batches,
     MigrationProfileService profiles, CanonicalisationService canonicalisation,
-    ReconstructionService reconstruction)
+    ReconstructionService reconstruction, MappingService mapping)
     : TenantJob(setter)
 {
     public const string JobName = "integration.migration-extraction";
@@ -26,5 +27,7 @@ public sealed class MigrationExtractionJob(ITenantContextSetter setter, Migratio
         await canonicalisation.RunPendingAsync(cancellationToken);
         await reconstruction.EnqueueEligibleAsync(cancellationToken);
         await reconstruction.RunPendingAsync(cancellationToken);
+        await mapping.EnqueueEligibleAsync(cancellationToken);
+        await mapping.RunPendingAsync(cancellationToken);
     }
 }

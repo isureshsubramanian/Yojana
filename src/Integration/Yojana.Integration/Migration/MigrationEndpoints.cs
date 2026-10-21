@@ -8,6 +8,7 @@ using Yojana.Integration.LegacyMigration.Templates;
 using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
+using Yojana.Integration.LegacyMigration.Mapping;
 
 namespace Yojana.Integration.LegacyMigration;
 
@@ -150,6 +151,30 @@ public static class MigrationEndpoints
             }
             catch (MigrationRuleException ex) { return Problem(ex); }
         });
+        admin.MapPost("/batches/{batchId:guid}/map", async (Guid batchId, MappingService service,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                var result = await service.EnqueueAsync(batchId, ct);
+                return Results.Accepted($"/api/migration/batches/{batchId:D}/map", result);
+            }
+            catch (MappingRuleException ex) { return Problem(ex); }
+        });
+        review.MapGet("/batches/{batchId:guid}/map", async (Guid batchId, MappingService service,
+            CancellationToken ct) => await service.GetAsync(batchId, ct) is { } result
+                ? Results.Ok(result) : Results.NotFound());
+        review.MapGet("/batches/{batchId:guid}/map/gaps", (Guid batchId, string? kind, string? cursor,
+            int? take, MappingService service, CancellationToken ct) =>
+            InvokeMapping(() => service.GapsAsync(batchId, kind, cursor, take ?? 50, ct)));
+        review.MapGet("/plan/units/{planUnitId:guid}", async (Guid planUnitId, MappingService service,
+            CancellationToken ct) => await service.UnitAsync(planUnitId, ct) is { } result
+                ? Results.Ok(result) : Results.NotFound());
+        review.MapGet("/mapping/settings", (MappingSettings mappingSettings, CancellationToken ct) =>
+            InvokeMapping(() => mappingSettings.GetAsync(ct)));
+        admin.MapPut("/mapping/settings", (UpdateMappingSettingsRequest request,
+            MappingSettings mappingSettings, CancellationToken ct) =>
+            InvokeMapping(() => mappingSettings.SetAsync(request, ct)));
         review.MapGet("/review", (Guid batchId, string? kind, string? family, string? status,
             string? cursor, int? take, CanonicalisationService service, CancellationToken ct) =>
             Invoke(() => service.ListAsync(batchId, kind, family, status, cursor, take ?? 25, ct)));
@@ -186,6 +211,12 @@ public static class MigrationEndpoints
         }
     }
 
+    private static async Task<IResult> InvokeMapping<T>(Func<Task<T>> action)
+    {
+        try { return Results.Ok(await action()); }
+        catch (MappingRuleException ex) { return Problem(ex); }
+    }
+
     private static IResult Problem(MigrationRuleException ex) => Results.Problem(title: ex.Rule,
         detail: ex.Message, statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
         extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
@@ -193,4 +224,12 @@ public static class MigrationEndpoints
     private static IResult Problem(TemplateMappingRuleException ex) => Results.Problem(title: ex.Rule,
         detail: ex.Message, statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
         extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+
+    private static IResult Problem(MappingRuleException ex) => Results.Problem(title: ex.Rule,
+        detail: ex.Message, statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
+        extensions: new Dictionary<string, object?>
+        {
+            ["rule"] = ex.Rule,
+            ["waitingReviews"] = ex.WaitingReviews,
+        });
 }
