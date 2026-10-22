@@ -12,7 +12,7 @@ using Yojana.Knowledge.Data;
 namespace Yojana.Knowledge.Migrations
 {
     [DbContext(typeof(KnowledgeDbContext))]
-    [Migration("20261022165547_P13T08Entries")]
+    [Migration("20261022171921_P13T08Entries")]
     partial class P13T08Entries
     {
         /// <inheritdoc />
@@ -432,8 +432,15 @@ namespace Yojana.Knowledge.Migrations
                         .HasColumnType("nvarchar(240)")
                         .HasColumnName("title");
 
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
                     b.HasKey("TenantId", "QuestionId")
                         .HasName("pk_question");
+
+                    b.HasIndex("TenantId", "Status", "UpdatedAt", "QuestionId")
+                        .HasDatabaseName("ix_question_tenant_id_status_updated_at_question_id");
 
                     b.HasIndex("TenantId", "AskedBy", "Status", "AskedAt", "QuestionId")
                         .HasDatabaseName("ix_question_tenant_id_asked_by_status_asked_at_question_id");
@@ -454,6 +461,134 @@ namespace Yojana.Knowledge.Migrations
                             t.HasCheckConstraint("ck_question_directed_exactly_one", "(directed_to_user IS NOT NULL AND directed_to_role IS NULL) OR (directed_to_user IS NULL AND directed_to_role IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_question_status", "status IN ('open','answered','closed_without_answer')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionDigest", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateOnly>("DigestDate")
+                        .HasColumnType("date")
+                        .HasColumnName("digest_date");
+
+                    b.Property<Guid>("MailId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("mail_id");
+
+                    b.Property<DateTime>("QueuedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("queued_at");
+
+                    b.HasKey("TenantId", "UserId", "DigestDate")
+                        .HasName("pk_question_digest");
+
+                    b.HasIndex("TenantId", "DigestDate", "UserId")
+                        .HasDatabaseName("ix_question_digest_tenant_id_digest_date_user_id");
+
+                    b.ToTable("question_digest", "knowledge");
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionNotification", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("NotificationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("notification_id");
+
+                    b.Property<string>("DeliveryMode")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("delivery_mode");
+
+                    b.Property<DateOnly?>("DigestDate")
+                        .HasColumnType("date")
+                        .HasColumnName("digest_date");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("EventKind")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("event_kind");
+
+                    b.Property<Guid?>("MailId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("mail_id");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("question_id");
+
+                    b.Property<Guid>("RecipientUserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("recipient_user_id");
+
+                    b.HasKey("TenantId", "NotificationId")
+                        .HasName("pk_question_notification");
+
+                    b.HasIndex("TenantId", "QuestionId")
+                        .HasDatabaseName("ix_question_notification_tenant_id_question_id");
+
+                    b.HasIndex("TenantId", "RecipientUserId", "EventKind", "EventId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_question_notification_tenant_id_recipient_user_id_event_kind_event_id");
+
+                    b.HasIndex("TenantId", "DeliveryMode", "DigestDate", "RecipientUserId", "OccurredAt")
+                        .HasDatabaseName("ix_question_notification_tenant_id_delivery_mode_digest_date_recipient_user_id_occurred_at");
+
+                    b.ToTable("question_notification", "knowledge", t =>
+                        {
+                            t.HasCheckConstraint("ck_question_notification_delivery_mode", "delivery_mode IN ('immediately','daily_digest')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionNotificationPreference", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("mode");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("TenantId", "UserId")
+                        .HasName("pk_question_notification_preference");
+
+                    b.HasIndex("TenantId", "Mode", "UserId")
+                        .HasDatabaseName("ix_question_notification_preference_tenant_id_mode_user_id");
+
+                    b.ToTable("question_notification_preference", "knowledge", t =>
+                        {
+                            t.HasCheckConstraint("ck_question_notification_preference_mode", "mode IN ('immediately','daily_digest','off')");
                         });
                 });
 
@@ -641,6 +776,16 @@ namespace Yojana.Knowledge.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_knowledge_entry_version_tenant_id_entry_id");
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionNotification", b =>
+                {
+                    b.HasOne("Yojana.Knowledge.Data.Entities.Question", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "QuestionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_question_notification_tenant_id_question_id");
                 });
 
             modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionParticipant", b =>

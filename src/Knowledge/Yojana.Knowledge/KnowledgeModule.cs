@@ -4,6 +4,8 @@ using Yojana.Knowledge.Data;
 using Yojana.Knowledge.Questions;
 using Yojana.Knowledge.Entries;
 using Yojana.Platform;
+using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Scheduling;
 
 namespace Yojana.Knowledge;
 
@@ -26,6 +28,11 @@ public static class KnowledgeModule
             sp.GetRequiredService<Yojana.Serialisation.Contracts.IClaimCauseNamePort>()));
         builder.Services.AddScoped<KnowledgeEntryQueries>();
         builder.Services.AddScoped<QuestionQueries>();
+        builder.Services.AddScoped(sp => new QuestionNotificationDefaults(
+            sp.GetRequiredService<ITenantSettings>()));
+        builder.Services.AddScoped<QuestionNotificationService>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<QuestionDailyDigestJob>(
+            QuestionDailyDigestJob.JobName, QuestionDailyDigestJob.Cron));
         return builder;
     }
 }

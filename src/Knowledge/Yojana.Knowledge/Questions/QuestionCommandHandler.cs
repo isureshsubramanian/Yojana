@@ -44,11 +44,12 @@ public static class QuestionCommandHandler
             TenantId = tenant.TenantId, QuestionId = questionId, RecordKind = command.RecordKind,
             RecordId = command.RecordId, Title = command.Title.Trim(), Body = command.Body.Trim(),
             Status = QuestionStatus.Open, DirectedToUser = command.DirectedToUser,
-            DirectedToRole = command.DirectedToRole, AskedBy = command.Actor.UserId, AskedAt = now,
+            DirectedToRole = command.DirectedToRole, AskedBy = command.Actor.UserId, AskedAt = now, UpdatedAt = now,
         });
         db.Participants.Add(new QuestionParticipant
         {
             TenantId = tenant.TenantId, QuestionId = questionId, UserId = command.Actor.UserId, Asked = true,
+            LastReadAt = now,
         });
         if (command.DirectedToUser is { } directed && directed != command.Actor.UserId)
             db.Participants.Add(new QuestionParticipant
@@ -78,8 +79,9 @@ public static class QuestionCommandHandler
             TenantId = tenant.TenantId, ReplyId = replyId, QuestionId = question.QuestionId,
             Body = command.Body.Trim(), Author = command.Actor.UserId, At = now,
         });
+        question.UpdatedAt = now;
         await MarkParticipantAsync(db, tenant.TenantId, question.QuestionId, command.Actor.UserId,
-            participant => participant.Replied = true, cancellationToken);
+            participant => { participant.Replied = true; participant.LastReadAt = now; }, cancellationToken);
         await PublishAsync(bus, tenant, new QuestionReplied(question.QuestionId, replyId, command.Actor.UserId, now), cancellationToken);
         return new ReplyToQuestionResult(question.QuestionId, replyId, question.Status);
     }
@@ -98,6 +100,7 @@ public static class QuestionCommandHandler
             QuestionBody = true, Body = question.Body, RevisedBy = command.Actor.UserId, RevisedAt = clock.UtcNow,
         });
         question.Body = command.Body.Trim();
+        question.UpdatedAt = clock.UtcNow;
         return new QuestionChangeResult(question.QuestionId, question.Status);
     }
 
@@ -121,6 +124,7 @@ public static class QuestionCommandHandler
         });
         reply.Body = command.Body.Trim();
         reply.EditedAt = now;
+        question.UpdatedAt = now;
         return new QuestionChangeResult(command.QuestionId, question.Status);
     }
 
@@ -143,6 +147,7 @@ public static class QuestionCommandHandler
             && x.ReplyId == command.ReplyId, cancellationToken))
             throw new QuestionRuleException("reply_not_found", "The reply does not belong to this question.");
         question.Status = QuestionStatus.Answered;
+        question.UpdatedAt = clock.UtcNow;
         question.AcceptedReplyId = command.ReplyId;
         question.ClosedReason = null;
         question.ClosedBy = null;
@@ -167,6 +172,7 @@ public static class QuestionCommandHandler
         question.ClosedReason = command.Reason.Trim();
         question.ClosedBy = command.Actor.UserId;
         question.ClosedAt = now;
+        question.UpdatedAt = now;
         await PublishAsync(bus, tenant, new QuestionClosed(question.QuestionId, command.Actor.UserId, now,
             question.ClosedReason), cancellationToken);
         return new QuestionChangeResult(question.QuestionId, question.Status);
@@ -186,6 +192,7 @@ public static class QuestionCommandHandler
         question.ClosedBy = null;
         question.ClosedAt = null;
         question.ReopenedCount++;
+        question.UpdatedAt = clock.UtcNow;
         await PublishAsync(bus, tenant, new QuestionReopened(question.QuestionId, command.Actor.UserId,
             clock.UtcNow), cancellationToken);
         return new QuestionChangeResult(question.QuestionId, question.Status);

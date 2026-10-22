@@ -400,6 +400,12 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); ba
 .menu .mi[aria-checked="true"] { color: var(--accent); background: var(--accent-soft); }
 .menu .mi .k { color: var(--text-3); font-size: 12px; }
 .menu hr { margin: 6px 0; border: 0; border-top: 1px solid var(--rule); }
+.notification-menu { width: min(360px, calc(100vw - 24px)); }
+.notification-item { display: grid; gap: 3px; padding: 9px 10px; color: var(--text-1); border-radius: var(--radius-s); text-decoration: none; }
+.notification-item:hover { background: var(--surface-2); text-decoration: none; }
+.notification-item span { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notification-item small, .notification-empty { color: var(--text-3); font-size: 12px; }
+.notification-empty { padding: 14px 10px; }
 .user.button { height: 40px; padding: 0 6px 0 4px; border: 1px solid transparent; border-radius: var(--radius-s); background: transparent; font: inherit; cursor: pointer; text-align: left; }
 .user.button:hover { background: var(--chrome-pill); }
 .pill.link { text-decoration: none; }

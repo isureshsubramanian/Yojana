@@ -10,6 +10,11 @@ const tabs = readFileSync(new URL("../src/questions/RecordQuestionsTabs.tsx", im
 const mine = readFileSync(new URL("../src/questions/MyQuestions.tsx", import.meta.url), "utf8");
 const routes = readFileSync(new URL("../src/routes.tsx", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../src/shell/navigation.ts", import.meta.url), "utf8");
+const topBar = readFileSync(new URL("../src/shell/TopBar.tsx", import.meta.url), "utf8");
+const frame = readFileSync(new URL("../src/shell/Frame.tsx", import.meta.url), "utf8");
+const preferences = readFileSync(new URL("../src/questions/QuestionNotificationPreferences.tsx", import.meta.url), "utf8");
+const account = readFileSync(new URL("../src/pages/AccountSecurity.tsx", import.meta.url), "utf8");
+const notificationPoll = readFileSync(new URL("../src/shell/notificationSource.ts", import.meta.url), "utf8");
 
 test("the reusable record panel receives only the record contract and mounts on all six detail screens", () => {
   assert.match(panel, /QuestionsPanel\(\{ recordKind, recordId \}: \{ recordKind: string; recordId: string \}\)/);
@@ -77,4 +82,26 @@ test("question display helpers keep record labels, status and routes readable", 
   assert.equal(statusLabel("open", 1), "Open · 1 reply");
   assert.equal(statusLabel("answered"), "Answered");
   assert.equal(recordPath({ recordKind: "claim", recordId: "internal" }), "/claims/internal");
+});
+
+test("the shell bell consumes the narrow question source and polls with the presence lifecycle", () => {
+  assert.match(frame, /notificationSources=\{notificationSources\}/);
+  assert.match(topBar, /pollNotifications/);
+  assert.match(notificationPoll, /20_000/);
+  assert.match(topBar, /visibilitychange/);
+  assert.match(topBar, /window\.addEventListener\("focus"/);
+  assert.match(topBar, /summary\.count/);
+  assert.match(topBar, /item\.href/);
+  assert.match(api, /notifications\/bell\?take=5/);
+});
+
+test("account settings expose question e-mail defaults and the three person overrides", () => {
+  assert.match(account, /<QuestionNotificationPreferences \/>/);
+  assert.match(preferences, /Question notifications/);
+  assert.match(preferences, /Use company defaults/);
+  for (const value of ["immediately", "daily_digest", "off"])
+    assert.match(preferences, new RegExp(`value="${value}"`));
+  assert.match(preferences, /personalDefault/);
+  assert.match(preferences, /roleDefault/);
+  assert.match(api, /notifications\/preference/);
 });

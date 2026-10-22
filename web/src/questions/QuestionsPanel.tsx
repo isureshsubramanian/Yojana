@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { StatusBadge } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { ErrorNote } from "../units/common";
@@ -11,11 +11,12 @@ import "./questions.css";
 const dateTime = (value: string) => new Date(value).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 export function QuestionsPanel({ recordKind, recordId }: { recordKind: string; recordId: string }) {
+  const [search] = useSearchParams(); const requestedQuestion = search.get("question");
   const [status, setStatus] = useState(""); const [page, setPage] = useState<QuestionPage | null>(null);
   const [selected, setSelected] = useState<string | null>(null); const [thread, setThread] = useState<QuestionThread | null>(null);
   const [error, setError] = useState<unknown>(null); const [revision, setRevision] = useState(0);
   const load = useCallback((signal?: AbortSignal) => questionsApi.onRecord(recordKind, recordId, status || undefined, undefined, 50, signal), [recordKind, recordId, status]);
-  useEffect(() => { const c = new AbortController(); setError(null); void load(c.signal).then(next => { setPage(next); setSelected(current => next.items.some(item => item.questionId === current) ? current : next.items[0]?.questionId ?? null); }).catch(reason => { if (!c.signal.aborted) setError(reason); }); return () => c.abort(); }, [load, revision]);
+  useEffect(() => { const c = new AbortController(); setError(null); void load(c.signal).then(next => { setPage(next); setSelected(current => next.items.some(item => item.questionId === requestedQuestion) ? requestedQuestion : next.items.some(item => item.questionId === current) ? current : next.items[0]?.questionId ?? null); }).catch(reason => { if (!c.signal.aborted) setError(reason); }); return () => c.abort(); }, [load, requestedQuestion, revision]);
   useEffect(() => { if (!selected) { setThread(null); return; } const c = new AbortController(); void questionsApi.thread(selected, c.signal).then(setThread).catch(reason => { if (!c.signal.aborted) setError(reason); }); return () => c.abort(); }, [selected, revision]);
   const changed = () => setRevision(value => value + 1);
   return <div className="questions-panel">

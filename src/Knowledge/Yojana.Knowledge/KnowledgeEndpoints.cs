@@ -60,6 +60,16 @@ public static class KnowledgeEndpoints
         questions.MapGet("/addressees", async (string? search, string? cursor, int? take,
             QuestionQueries queries, CancellationToken ct) => await Read(async () =>
                 Results.Ok(await queries.AddresseesAsync(search, cursor, take ?? 25, ct))));
+        questions.MapGet("/notifications/bell", async (int? take, ClaimsPrincipal user,
+            QuestionNotificationService notifications, CancellationToken ct) => await Read(async () =>
+                Results.Ok(await notifications.BellAsync(Viewer(user), take ?? 5, ct))));
+        questions.MapGet("/notifications/preference", async (ClaimsPrincipal user,
+            QuestionNotificationService notifications, CancellationToken ct) => Results.Ok(
+                await notifications.PreferenceAsync(Actor(user).UserId, ct)));
+        questions.MapPut("/notifications/preference", async (UpdateQuestionNotificationPreference request,
+            ClaimsPrincipal user, QuestionNotificationService notifications, CancellationToken ct) =>
+            await Read(async () => Results.Ok(await notifications.UpdatePreferenceAsync(
+                Actor(user).UserId, request.Mode, ct))));
         questions.MapGet("/mine", async (string? scope, string? status, string? recordKind, string? age,
             string? search, string? cursor, int? take, ClaimsPrincipal user, QuestionQueries queries,
             CancellationToken ct) => await Read(async () => Results.Ok(await queries.MyAsync(scope, status,
