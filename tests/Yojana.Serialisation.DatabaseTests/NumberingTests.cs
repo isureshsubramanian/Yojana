@@ -108,6 +108,49 @@ public sealed class NumberingTests(SerialisationHostFixture fixture, ITestOutput
         Assert.Equal(sequence.Append(gapFree).Append(sequenceAgain).Count(), sequence.Append(gapFree).Append(sequenceAgain).Distinct().Count());
     }
 
+    [DatabaseFact]
+    public async Task A_range_is_consecutive_and_single_numbers_continue_after_it_in_both_modes()
+    {
+        // P9-T10c: a migration chunk takes one range of certificate numbers instead of one allocation per unit.
+        var tenant = await fixture.NewTenantAsync("numrange");
+        var before = await AllocateAsync(tenant, DocumentNumbers.Certificate);
+        var range = await AllocateRangeAsync(tenant, DocumentNumbers.Certificate, 25);
+        var after = await AllocateAsync(tenant, DocumentNumbers.Certificate);
+        Assert.Equal(Enumerable.Range(Value(range[0]), 25), range.Select(Value));
+        Assert.True(Value(range[0]) > Value(before));
+        Assert.True(Value(after) > Value(range[^1]));
+
+        await SetModeAsync(tenant, DocumentNumbers.Certificate, NumberingMode.GapFree);
+        var gapFreeBefore = await AllocateAsync(tenant, DocumentNumbers.Certificate);
+        var gapFreeRange = await AllocateRangeAsync(tenant, DocumentNumbers.Certificate, 40);
+        var gapFreeAfter = await AllocateAsync(tenant, DocumentNumbers.Certificate);
+        Assert.Equal(Enumerable.Range(Value(gapFreeBefore), 42),
+            new[] { gapFreeBefore }.Concat(gapFreeRange).Append(gapFreeAfter).Select(Value));
+    }
+
+    [DatabaseFact]
+    public async Task A_gap_free_range_rolled_back_with_its_transaction_leaves_no_gap()
+    {
+        var tenant = await fixture.NewTenantAsync("numrangeroll");
+        await SetModeAsync(tenant, DocumentNumbers.Certificate, NumberingMode.GapFree);
+        var first = await AllocateAsync(tenant, DocumentNumbers.Certificate);
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            await scope.ServiceProvider.GetRequiredService<DocumentNumbers>()
+                .NextRangeAsync(DocumentNumbers.Certificate, At, 10, CancellationToken.None);
+            await transaction.RollbackAsync();
+        }
+        Assert.Equal(Value(first) + 1, Value(await AllocateAsync(tenant, DocumentNumbers.Certificate)));
+    }
+
+    private async Task<IReadOnlyList<string>> AllocateRangeAsync(TenantId tenant, string series, int count)
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        return await scope.ServiceProvider.GetRequiredService<DocumentNumbers>().NextRangeAsync(series, At, count, CancellationToken.None);
+    }
+
     private async Task<string> AllocateAsync(TenantId tenant, string series)
     {
         using var scope = fixture.ScopeFor(tenant);
