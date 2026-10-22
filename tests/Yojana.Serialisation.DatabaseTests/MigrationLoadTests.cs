@@ -306,7 +306,9 @@ public sealed class MigrationLoadTests(SerialisationHostFixture fixture)
         var prefix = Prefix();
         var originalPlan = Guid.Parse("00000000-0000-0000-0000-000000000101");
         var replacementPlan = Guid.Parse("00000000-0000-0000-0000-000000000102");
-        var link = new MigratedReplacementLink(Guid.NewGuid(), originalPlan, replacementPlan, "unknown", "PAIR-1");
+        var link = new MigratedReplacementLink(Guid.NewGuid(), originalPlan, replacementPlan, "unknown", "PAIR-1",
+            ReplacementDirection.VendorFacing, ReplacementReason.Goodwill, ReplacementLinkState.ClosedBilled,
+            ReplacementConditionAllowed.New, ReplacementPricePolicy.Difference, 125m, "EUR");
         MigratedUnit Unit(Guid plan, string serial) => ShippedServer(item, serial, Guid.NewGuid()) with
         {
             PlanUnitId = plan,
@@ -329,9 +331,11 @@ public sealed class MigrationLoadTests(SerialisationHostFixture fixture)
             var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
             var stored = await db.ReplacementLinks.SingleAsync(row => row.MigrationLoadId == load);
             Assert.Equal((ReplacementSourceKind.Migrated, (Guid?)null, (Guid?)null,
-                    ReplacementPricePolicy.Zero, 0m, "unknown"),
+                    ReplacementDirection.VendorFacing, ReplacementReason.Goodwill, ReplacementLinkState.ClosedBilled,
+                    ReplacementConditionAllowed.New, ReplacementPricePolicy.Difference, 125m, "EUR", "unknown"),
                 (stored.SourceKind, stored.WarrantyReplacementId, stored.SourceEntitlementId,
-                    stored.PricePolicy, stored.DifferenceAmount, stored.PolicyApplied));
+                    stored.Direction, stored.ReplacementReason, stored.State, stored.ReplacementConditionAllowed,
+                    stored.PricePolicy, stored.DifferenceAmount, stored.Currency, stored.PolicyApplied));
         }
 
         var rolledBack = await InvokeAsync<RollBackMigrationLoadResult>(tenant,
@@ -357,6 +361,17 @@ public sealed class MigrationLoadTests(SerialisationHostFixture fixture)
         Assert.Contains("condition_grade_unknown", refused.Units.Single(row => row.PlanUnitId == originalPlan).Reasons);
         Assert.Contains("replacement_unit_not_loaded", refused.Units.Single(row => row.PlanUnitId == replacementPlan).Reasons);
         Assert.Equal(0, refused.ReplacementLinksWritten);
+
+        var invalidOriginal = Unit(originalPlan, prefix + "-114");
+        var invalidLink = link with { PlanReplacementLinkId = Guid.NewGuid(), Currency = "XXX" };
+        var invalidCarrier = Unit(replacementPlan, prefix + "-115") with { ReplacementLinks = [invalidLink] };
+        var invalid = await InvokeAsync<ApplyMigratedUnitsResult>(tenant,
+            new ApplyMigratedUnits(Guid.NewGuid(), Entity, "user:migration-lead", "migration:test",
+                [invalidOriginal, invalidCarrier], new(2026, 9, 1)));
+        var invalidOutcome = invalid.Units.Single(row => row.PlanUnitId == replacementPlan);
+        Assert.Equal(MigratedUnitOutcome.Refused, invalidOutcome.Outcome);
+        Assert.Contains("replacement_currency_required", invalidOutcome.Reasons);
+        Assert.Equal(0, invalid.ReplacementLinksWritten);
     }
 
     [DatabaseFact]

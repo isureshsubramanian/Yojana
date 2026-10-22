@@ -234,6 +234,20 @@ public interface ICertificateUnitReadPort
     Task<IReadOnlyList<Guid>> FindUnitIdsBySerialAsync(string serial, CancellationToken cancellationToken);
     Task<IReadOnlyDictionary<Guid, string>> PrimarySerialsAsync(IReadOnlyCollection<Guid> unitIds, CancellationToken cancellationToken);
     Task<IReadOnlyDictionary<Guid, Guid>> CurrentItemIdsAsync(IReadOnlyCollection<Guid> unitIds, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Snapshots for many units at once (a migration load records thousands of certificates per chunk). Units that
+    /// <see cref="ReadAsync"/> would answer with null are absent. The default reads one unit at a time; an
+    /// implementation overrides it with a set-based read that must answer exactly what <see cref="ReadAsync"/> would.
+    /// </summary>
+    async Task<IReadOnlyDictionary<Guid, CertificateUnitFact>> ReadManyAsync(IReadOnlyCollection<Guid> unitIds,
+        CancellationToken cancellationToken)
+    {
+        var facts = new Dictionary<Guid, CertificateUnitFact>();
+        foreach (var unitId in unitIds.Distinct())
+            if (await ReadAsync(unitId, cancellationToken) is { } fact) facts[unitId] = fact;
+        return facts;
+    }
 }
 
 public sealed record CertificateConditionFact(string Grade, IReadOnlyList<ReleaseTestSnapshot> Tests,
@@ -241,6 +255,15 @@ public sealed record CertificateConditionFact(string Grade, IReadOnlyList<Releas
 public interface ICertificateConditionReadPort
 {
     Task<CertificateConditionFact> ReadAsync(Guid unitId, CancellationToken cancellationToken);
+
+    /// <summary>One answer per unit, exactly as <see cref="ReadAsync"/> gives it; the default reads one unit at a time.</summary>
+    async Task<IReadOnlyDictionary<Guid, CertificateConditionFact>> ReadManyAsync(IReadOnlyCollection<Guid> unitIds,
+        CancellationToken cancellationToken)
+    {
+        var facts = new Dictionary<Guid, CertificateConditionFact>();
+        foreach (var unitId in unitIds.Distinct()) facts[unitId] = await ReadAsync(unitId, cancellationToken);
+        return facts;
+    }
 }
 
 public sealed record CertificateRefurbishmentFact(int? CycleNumber, string? WorkReference, Guid? RefurbisherRef,
@@ -248,12 +271,30 @@ public sealed record CertificateRefurbishmentFact(int? CycleNumber, string? Work
 public interface ICertificateRefurbishmentReadPort
 {
     Task<CertificateRefurbishmentFact> ReadAsync(Guid unitId, CancellationToken cancellationToken);
+
+    /// <summary>One answer per unit, exactly as <see cref="ReadAsync"/> gives it; the default reads one unit at a time.</summary>
+    async Task<IReadOnlyDictionary<Guid, CertificateRefurbishmentFact>> ReadManyAsync(IReadOnlyCollection<Guid> unitIds,
+        CancellationToken cancellationToken)
+    {
+        var facts = new Dictionary<Guid, CertificateRefurbishmentFact>();
+        foreach (var unitId in unitIds.Distinct()) facts[unitId] = await ReadAsync(unitId, cancellationToken);
+        return facts;
+    }
 }
 
 public sealed record CertificateReplacementFact(IReadOnlyDictionary<Guid, string> Replaces, IReadOnlyDictionary<Guid, string> ReplacedBy);
 public interface ICertificateReplacementReadPort
 {
     Task<CertificateReplacementFact> ReadAsync(Guid unitId, CancellationToken cancellationToken);
+
+    /// <summary>One answer per unit, exactly as <see cref="ReadAsync"/> gives it; the default reads one unit at a time.</summary>
+    async Task<IReadOnlyDictionary<Guid, CertificateReplacementFact>> ReadManyAsync(IReadOnlyCollection<Guid> unitIds,
+        CancellationToken cancellationToken)
+    {
+        var facts = new Dictionary<Guid, CertificateReplacementFact>();
+        foreach (var unitId in unitIds.Distinct()) facts[unitId] = await ReadAsync(unitId, cancellationToken);
+        return facts;
+    }
 }
 
 public sealed record CertificateEntitlementFact(Guid EntitlementId, string CoverageFamily, string Type, string Status,

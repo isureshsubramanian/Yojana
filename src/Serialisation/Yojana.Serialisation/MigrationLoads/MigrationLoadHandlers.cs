@@ -30,7 +30,8 @@ public static class ApplyMigratedUnitsHandler
 
     public static async Task<ApplyMigratedUnitsResult> Handle(ApplyMigratedUnits command, SerialisationDbContext db, BulkIngestion bulk,
         MigrationCoverBulkWriter coverWriter, CertificateVersioningEngine certificates, IdentifierService identifiers,
-        EffectiveItemProfiles items, LedgerPublication publication, ITenantContext tenant, IClock clock,
+        EffectiveItemProfiles items, LedgerPublication publication, ICurrencyCatalogue currencies,
+        ITenantContext tenant, IClock clock,
         CancellationToken cancellationToken)
     {
         if (command.Units.Count > MaxUnitsPerChunk)
@@ -89,6 +90,7 @@ public static class ApplyMigratedUnitsHandler
             }
 
             var reasons = Refusals(unit);
+            reasons.AddRange(ReplacementRefusals(unit, currencies));
             reasons.AddRange(CoverRefusals(unit, cutover, policies, families));
             var profile = profiles[unit.ItemId];
             if (profile is null) reasons.Add("item_unknown");
@@ -412,15 +414,15 @@ public static class ApplyMigratedUnitsHandler
             {
                 TenantId = tenantId, ReplacementLinkId = link.PlanReplacementLinkId,
                 WarrantyReplacementId = null, MigrationLoadId = command.LoadId,
-                Direction = ReplacementDirection.CustomerFacing,
-                ReplacementReason = ReplacementReason.WarrantyDefect, State = ReplacementLinkState.ClosedReturned,
+                Direction = link.Direction,
+                ReplacementReason = link.ReplacementReason, State = link.State,
                 SourceKind = ReplacementSourceKind.Migrated, SourceId = command.LoadId,
                 SourceNumber = link.SourceKey.Length <= 40 ? link.SourceKey : link.SourceKey[..40],
                 OriginalUnitId = original.UnitId, ReplacementUnitId = replacement.UnitId,
                 OriginalItemId = original.ItemId, ReplacementItemId = replacement.ItemId,
                 SourceEntitlementId = null, PolicyApplied = link.PolicyApplied,
-                PricePolicy = ReplacementPricePolicy.Zero, DifferenceAmount = 0, Currency = "XXX",
-                ReplacementConditionAllowed = Yojana.Serialisation.Contracts.ReplacementConditionAllowed.Any,
+                PricePolicy = link.PricePolicy, DifferenceAmount = link.DifferenceAmount, Currency = link.Currency,
+                ReplacementConditionAllowed = link.ReplacementConditionAllowed,
                 CreatedAt = now, CreatedBy = command.ActorRef,
             });
         }
@@ -445,18 +447,25 @@ public static class ApplyMigratedUnitsHandler
                     cancellationToken);
                 eventsWritten += coverEvents.EventsInserted;
             }
-            foreach (var (unit, _) in prepared.Where(row => row.Unit.Certificate is not null))
+            // One batched issue for the chunk (OD-55, P9-T10c): the engine applies the same rules and writes the same
+            // rows as a single issue, with one read per table instead of about fifteen round trips per unit.
+            var certificateUnits = prepared.Where(row => row.Unit.Certificate is not null).Select(row => row.Unit).ToList();
+            var issuedCertificates = await certificates.IssueMigratedReleaseRecordsAsync(certificateUnits.Select(unit =>
             {
                 var certificate = unit.Certificate!;
                 var mapped = planUnits[unit.PlanUnitId];
-                var issued = await certificates.IssueAsync(new IssueCertificateVersion(mapped.CreatedEventId,
+                return new IssueCertificateVersion(mapped.CreatedEventId,
                     mapped.UnitId, CertificateDocumentKind.ReleaseRecord, CertificateFormType.GenericRelease,
                     null, now, command.ActorRef, command.LegalEntityId, certificate.Provenance,
                     certificate.Unknowns, certificate.Evidence, TriggerSchema: "Migration.PlanCertificate",
-                    MigrationLoadId: command.LoadId), cancellationToken);
+                    MigrationLoadId: command.LoadId);
+            }).ToList(), cancellationToken);
+            for (var index = 0; index < certificateUnits.Count; index++)
+            {
+                var issued = issuedCertificates[index];
                 if (!issued.Issued)
                     throw new CommandRefusedException(issued.RefusalRule ?? "migration_certificate_refused",
-                        issued.RefusalDetail ?? $"Certificate for plan unit {unit.PlanUnitId} was refused.");
+                        issued.RefusalDetail ?? $"Certificate for plan unit {certificateUnits[index].PlanUnitId} was refused.");
                 certificatesRecorded++;
                 eventsWritten++;
             }
@@ -551,6 +560,28 @@ public static class ApplyMigratedUnitsHandler
         if (unit.Ownership is { PartyType: var partyType } && partyType == PartyType.Us) reasons.Add("ownership_party_is_us");
         if (unit.Identifiers.GroupBy(i => i.Type).Any(g => g.Count() > 1)) reasons.Add("identifier_type_repeated");
         return reasons;
+    }
+
+    private static IEnumerable<string> ReplacementRefusals(MigratedUnit unit, ICurrencyCatalogue currencies)
+    {
+        foreach (var link in unit.ReplacementLinks ?? [])
+        {
+            if (!ReplacementDirection.All.Contains(link.Direction)) yield return "replacement_direction_unknown";
+            if (!ReplacementReason.All.Contains(link.ReplacementReason)) yield return "replacement_reason_unknown";
+            if (!MigratedReplacementLinkState.All.Contains(link.State)) yield return "replacement_state_not_terminal";
+            if (!Yojana.Serialisation.Contracts.ReplacementConditionAllowed.All.Contains(link.ReplacementConditionAllowed))
+                yield return "replacement_condition_allowed_unknown";
+            if (!ReplacementPricePolicy.All.Contains(link.PricePolicy)) yield return "replacement_price_policy_unknown";
+            if (link.DifferenceAmount < 0) yield return "replacement_difference_amount_negative";
+            if (link.PricePolicy == ReplacementPricePolicy.Zero && link.DifferenceAmount != 0)
+                yield return "replacement_zero_price_difference";
+            if (string.IsNullOrEmpty(link.Currency) || link.Currency.Length != 3 ||
+                link.Currency.Any(character => !char.IsAsciiLetterUpper(character)) ||
+                link.Currency != "XXX" && currencies.Find(link.Currency) is null)
+                yield return "replacement_currency_invalid";
+            if (link.DifferenceAmount > 0 && link.Currency == "XXX")
+                yield return "replacement_currency_required";
+        }
     }
 }
 

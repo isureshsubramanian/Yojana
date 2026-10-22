@@ -5,13 +5,15 @@ using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.LegacyMigration.Mapping;
 
-public sealed class MappingSettings(ITenantSettings settings, IPolicyCatalogueQuery policies)
+public sealed class MappingSettings(ITenantSettings settings, IPolicyCatalogueQuery policies,
+    ReplacementLinkValueValidator linkValidator)
 {
     public const string AllowWaitingReviewsKey = "migration.mapping.allow_waiting_reviews";
     public const string CutoverDateKey = "migration.mapping.cutover_date";
     public const string ConditionMapKey = "migration.mapping.condition_map";
     public const string CardCoverPolicyKey = "migration.mapping.card_cover_policy";
     public const string SerialMasterCoverPolicyKey = "migration.mapping.serial_master_cover_policy";
+    public const string LinkDefaultsKey = "migration.mapping.link_defaults";
 
     private static readonly IReadOnlyList<ConditionMappingRule> Defaults =
     [
@@ -38,7 +40,11 @@ public sealed class MappingSettings(ITenantSettings settings, IPolicyCatalogueQu
             CardCoverPolicyKey);
         var serialMasterPolicy = ParsePolicyId(
             await settings.GetAsync(SerialMasterCoverPolicyKey, cancellationToken), SerialMasterCoverPolicyKey);
-        return new(allow, cutover, map, cardPolicy, serialMasterPolicy);
+        var linkText = await settings.GetAsync(LinkDefaultsKey, cancellationToken);
+        var linkDefaults = linkText is null ? ReplacementLinkValueValidator.AcceptedDefaults
+            : linkValidator.Validate(JsonSerializer.Deserialize<ReplacementLinkValues>(linkText)
+                ?? throw new InvalidOperationException($"Tenant setting '{LinkDefaultsKey}' is invalid."));
+        return new(allow, cutover, map, linkDefaults, cardPolicy, serialMasterPolicy);
     }
 
     public async Task<MappingSettingsView> SetAsync(UpdateMappingSettingsRequest request,
@@ -50,6 +56,9 @@ public sealed class MappingSettings(ITenantSettings settings, IPolicyCatalogueQu
             "equipment-card cover");
         ValidatePolicy(request.SerialMasterCoverPolicyId, CoverageFamilyCode.Supplier, catalogue,
             "serial-master cover");
+        var linkDefaults = request.LinkDefaults is null
+            ? (await GetAsync(cancellationToken)).LinkDefaults
+            : linkValidator.Validate(request.LinkDefaults);
         await settings.SetAsync(AllowWaitingReviewsKey, request.AllowWaitingReviews.ToString(), cancellationToken);
         await settings.SetAsync(CutoverDateKey,
             request.CutoverDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "", cancellationToken);
@@ -58,7 +67,8 @@ public sealed class MappingSettings(ITenantSettings settings, IPolicyCatalogueQu
             cancellationToken);
         await settings.SetAsync(SerialMasterCoverPolicyKey,
             request.SerialMasterCoverPolicyId?.ToString("D") ?? "", cancellationToken);
-        return new(request.AllowWaitingReviews, request.CutoverDate, map, request.CardCoverPolicyId,
+        await settings.SetAsync(LinkDefaultsKey, JsonSerializer.Serialize(linkDefaults), cancellationToken);
+        return new(request.AllowWaitingReviews, request.CutoverDate, map, linkDefaults, request.CardCoverPolicyId,
             request.SerialMasterCoverPolicyId);
     }
 

@@ -70,7 +70,14 @@ public sealed record MigratedReplacementLink(
     Guid ReplacedPlanUnitId,
     Guid ReplacementPlanUnitId,
     string PolicyApplied,
-    string SourceKey);
+    string SourceKey,
+    string Direction,
+    string ReplacementReason,
+    string State,
+    string ReplacementConditionAllowed,
+    string PricePolicy,
+    decimal DifferenceAmount,
+    string Currency);
 
 /// <summary>Version-one release record reconstructed from the plan; rendering stays lazy.</summary>
 public sealed record MigratedCertificate(

@@ -75,12 +75,14 @@ public sealed record MigrationPlanUnitView(
     IReadOnlyList<MigrationPlanLogView> Log);
 
 public sealed record ConditionMappingRule(string? CardStatus, string? LastMovementKind, string Grade);
+public sealed record ReplacementLinkValues(string Direction, string ReplacementReason, string State,
+    string ReplacementConditionAllowed, string PricePolicy, decimal DifferenceAmount, string Currency);
 public sealed record MappingSettingsView(bool AllowWaitingReviews, DateOnly? CutoverDate,
-    IReadOnlyList<ConditionMappingRule> ConditionMap, Guid? CardCoverPolicyId = null,
-    Guid? SerialMasterCoverPolicyId = null);
+    IReadOnlyList<ConditionMappingRule> ConditionMap, ReplacementLinkValues LinkDefaults,
+    Guid? CardCoverPolicyId = null, Guid? SerialMasterCoverPolicyId = null);
 public sealed record UpdateMappingSettingsRequest(bool AllowWaitingReviews, DateOnly? CutoverDate,
-    IReadOnlyList<ConditionMappingRule> ConditionMap, Guid? CardCoverPolicyId = null,
-    Guid? SerialMasterCoverPolicyId = null);
+    IReadOnlyList<ConditionMappingRule> ConditionMap, ReplacementLinkValues? LinkDefaults = null,
+    Guid? CardCoverPolicyId = null, Guid? SerialMasterCoverPolicyId = null);
 
 public sealed class MappingRuleException(string rule, string message,
     IReadOnlyList<MappingWaitingReviewCount>? waitingReviews = null) : InvalidOperationException(message)

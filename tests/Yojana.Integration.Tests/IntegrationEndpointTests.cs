@@ -14,6 +14,7 @@ using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Mapping;
+using Yojana.Integration.LegacyMigration.LinkOverrides;
 using Yojana.Integration.LegacyMigration.Validation;
 
 namespace Yojana.Integration.Tests;
@@ -152,6 +153,8 @@ public sealed class IntegrationEndpointTests
         builder.Services.AddScoped<ReconstructionService>();
         builder.Services.AddScoped<MappingService>();
         builder.Services.AddScoped<MappingSettings>();
+        builder.Services.AddScoped<ReplacementLinkValueValidator>();
+        builder.Services.AddScoped<LinkOverrideService>();
         builder.Services.AddScoped<ValidationService>();
         builder.Services.AddScoped<ValidationSettings>();
         builder.Services.AddScoped<Yojana.Integration.LegacyMigration.Apply.ApplyService>();
@@ -159,7 +162,7 @@ public sealed class IntegrationEndpointTests
         app.MapMigrationEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
-        Assert.Equal(60, endpoints.Count);
+        Assert.Equal(64, endpoints.Count);
         var readPaths = new HashSet<string>(StringComparer.Ordinal)
         {
             "/api/migration/batches", "/api/migration/batches/{batchId:guid}",
@@ -186,6 +189,7 @@ public sealed class IntegrationEndpointTests
             "/api/migration/signoff-records/{recordId:guid}/export.csv",
             "/api/migration/validation/settings",
             "/api/migration/batches/{batchId:guid}/apply", "/api/migration/loads/{loadId:guid}/refusals",
+            "/api/migration/batches/{batchId:guid}/links/export.csv", "/api/migration/link-overrides",
         };
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             policy => policy.Policy == (IsReviewEndpoint(endpoint)
@@ -267,7 +271,9 @@ public sealed class IntegrationEndpointTests
                 (methods.Contains("POST") && endpoint.RoutePattern.RawText is
                     "/api/migration/validation/checks/{checkId:guid}/explain" or
                     "/api/migration/validation/checks/{checkId:guid}/sign" or
-                    "/api/migration/validation/sample/{sampleId:guid}/trace");
+                    "/api/migration/validation/sample/{sampleId:guid}/trace" or
+                    "/api/migration/link-overrides/upload") ||
+                (methods.Contains("DELETE") && endpoint.RoutePattern.RawText == "/api/migration/link-overrides");
         }
     }
 }

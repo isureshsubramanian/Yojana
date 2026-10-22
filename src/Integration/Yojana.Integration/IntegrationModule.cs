@@ -226,6 +226,8 @@ public static class IntegrationModule
             services.GetRequiredService<CanonicalisationService>());
         builder.Services.AddScoped<ReconstructionService>();
         builder.Services.AddScoped<MappingSettings>();
+        builder.Services.AddScoped<ReplacementLinkValueValidator>();
+        builder.Services.AddScoped<LegacyMigration.LinkOverrides.LinkOverrideService>();
         builder.Services.AddScoped<MappingService>();
         builder.Services.AddScoped<ValidationSettings>();
         builder.Services.AddScoped<PlanMigrationValidationTarget>();

@@ -38,7 +38,9 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
             // WHAT: every issue attempt for a (tenant, unit, document kind) takes the same transaction-owned SQL lock.
             // WHY: an empty chain has no database row to lock and SQL Server does not defer the unique version index.
             // WHAT BREAKS IF SEPARATED: concurrent triggers can both choose the same predecessor/version and one is
-            // dead-lettered. The matching model comment documents the receipt/index side of this contract.
+            // dead-lettered. The matching model comment documents the receipt/index side of this contract. The batched
+            // migration path (IssueMigratedReleaseRecordsAsync) takes these same resources through AcquireChainsAsync;
+            // renaming the resource on one side only lets a live issue and a migration chunk build the same chain.
             await databaseLock.AcquireChainAsync(command.UnitId, command.DocumentKind, cancellationToken);
 
             async Task PersistAsync()
@@ -146,33 +148,11 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
                 return await RefuseAsync("certificate_supersede_reason_required", "A later certificate version requires a supersede reason.");
             var issuedAt = clock.UtcNow;
             var tracking = await numbers.NextAsync(DocumentNumbers.Certificate, issuedAt, cancellationToken);
-            var hash = CanonicalJson.Hash(built.CanonicalPayload);
-            var issuer = ResolveIssuerSnapshot(built.CanonicalPayload);
-            var branding = DeserializeSnapshot<CertificateBrandingSnapshot>(built.CanonicalPayload, "branding");
-            var certificate = new CertificateInstance
-            {
-                TenantId = tenantId, CertificateId = TimeOrderedId.New(issuedAt), UnitId = command.UnitId,
-                MigrationLoadId = command.MigrationLoadId,
-                DocumentKind = command.DocumentKind, FormType = command.FormType, Version = version, TrackingNumber = tracking,
-                TemplateVersionId = templateVersionId.Value, AsBuiltRevisionId = built.AsBuiltRevisionId,
-                Payload = built.CanonicalPayload, PayloadHash = hash, FactsHash = factsHash,
-                SupersedesCertificateId = latest?.CertificateId,
-                SupersedeReason = latest is null ? null : command.SupersedeReason, TriggeringEventId = command.TriggeringEventId,
-                IssuerEntityId = command.IssuerEntityId, IssuerSnapshot = CanonicalJson.Serialise(issuer),
-                OwnerSnapshot = built.Owner is null ? null : CanonicalJson.Serialise(built.Owner),
-                BrandingSnapshot = CanonicalJson.Serialise(branding), Language = command.Language, Provenance = command.Provenance,
-                Unknowns = CanonicalJson.Serialise(command.Unknowns ?? []), Evidence = CanonicalJson.Serialise(command.Evidence ?? []),
-                IssuedAt = issuedAt, Status = CertificateStatus.Issued,
-            };
             var printedName = await PrintedNameAsync(command.ActorRef, cancellationToken);
+            var (certificate, signature, issuedDraft) = NewVersion(command, templateVersionId.Value, built, factsHash,
+                version, tracking, issuedAt, latest, previous?.CertificateId, printedName);
             db.CertificateInstances.Add(certificate);
-            db.CertificateSignatures.Add(new CertificateSignature
-            {
-                TenantId = tenantId, SignatureId = TimeOrderedId.New(issuedAt), CertificateId = certificate.CertificateId,
-                SignerIdentity = command.ActorRef, PrintedName = printedName,
-                Meaning = command.DocumentKind == CertificateDocumentKind.ReleaseRecord ? CertificateSignatureMeaning.Release : CertificateSignatureMeaning.Approval,
-                SignedAt = issuedAt, HashSigned = hash, SignatureMethod = command.ActorRef.StartsWith("system:", StringComparison.Ordinal) ? "system_attestation" : "authenticated_user",
-            });
+            db.CertificateSignatures.Add(signature);
             db.CertificateTriggers.Add(Trigger(CertificateTriggerOutcome.Issued, certificate.CertificateId));
             if (previous is not null) previous.Status = CertificateStatus.Superseded;
             var drafts = new List<UnitEventDraft>();
@@ -192,32 +172,13 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
                     ProjectCurrentState = false,
                 });
             }
-            drafts.Add(new UnitEventDraft
-            {
-                UnitId = command.UnitId, EventTime = command.EffectiveAt, EventType = CertificateEventType.Issued,
-                LegalEntityId = command.IssuerEntityId, ActorRef = command.ActorRef,
-                IdempotencyKey = $"cert:issued:{(command.DocumentKind == CertificateDocumentKind.ReleaseRecord ? "rr" : "wc")}:{command.TriggeringEventId:N}",
-                Attributes = JsonObjectText.Of(new
-                {
-                    certificate_id = certificate.CertificateId, document_kind = certificate.DocumentKind, form_type = certificate.FormType,
-                    certificate_version = certificate.Version, tracking_number = certificate.TrackingNumber, payload_hash = certificate.PayloadHash,
-                    triggering_event_id = command.TriggeringEventId, supersedes_certificate_id = previous?.CertificateId,
-                    provenance = certificate.Provenance, migration_load_id = certificate.MigrationLoadId,
-                    issued_at = certificate.IssuedAt,
-                }),
-                ProjectCurrentState = false,
-            });
+            drafts.Add(issuedDraft);
             await events.AppendAsync(drafts, cancellationToken);
             await PersistAsync();
             return new(true, false, certificate.CertificateId, certificate.Version, certificate.TrackingNumber);
 
-            CertificateTrigger Trigger(string outcome, Guid? certificateId = null, string? refusalRule = null, string? refusalDetail = null) => new()
-            {
-                TenantId = tenantId, UnitId = command.UnitId, DocumentKind = command.DocumentKind,
-                TriggeringEventId = command.TriggeringEventId, Outcome = outcome, CertificateId = certificateId,
-                RefusalRule = refusalRule, RefusalDetail = refusalDetail is { Length: > 500 } ? refusalDetail[..500] : refusalDetail,
-                RecordedAt = clock.UtcNow,
-            };
+            CertificateTrigger Trigger(string outcome, Guid? certificateId = null, string? refusalRule = null, string? refusalDetail = null) =>
+                TriggerRow(command, outcome, certificateId, refusalRule, refusalDetail);
         }
         catch
         {
@@ -225,6 +186,180 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
             throw;
         }
     }
+
+    /// <summary>
+    /// Records version-one release records for units a migration load created in the caller's open transaction (OD-55):
+    /// the same rules and rows as <see cref="IssueAsync(IssueCertificateVersion, CancellationToken)"/>, with one read per
+    /// table for the whole chunk instead of about fifteen round trips per unit. Only migrated release records for units
+    /// without a chain or receipt take the batched path; any other command, and any unit that already has a chain or a
+    /// receipt, goes through <see cref="IssueAsync(IssueCertificateVersion, CancellationToken)"/> one at a time, so replay,
+    /// supersede and absorb behaviour stay in one place. Results are in command order.
+    /// </summary>
+    public async Task<IReadOnlyList<IssueCertificateVersionResult>> IssueMigratedReleaseRecordsAsync(
+        IReadOnlyList<IssueCertificateVersion> commands, CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        var results = new IssueCertificateVersionResult?[commands.Count];
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        await using var transaction = ownsTransaction ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
+        try
+        {
+            var candidates = commands.Select((command, index) => (Command: command with
+                {
+                    Language = string.IsNullOrWhiteSpace(command.Language) ? "en" : command.Language,
+                }, Index: index))
+                .Where(row => row.Command.DocumentKind == CertificateDocumentKind.ReleaseRecord
+                    && row.Command.FormType == CertificateFormType.GenericRelease
+                    && row.Command.Provenance == CertificateProvenance.Migrated
+                    && row.Command.Unknowns is { Count: > 0 } && row.Command.Evidence is { Count: > 0 }
+                    && row.Command.SupersedeReason is null)
+                .ToList();
+            if (candidates.Select(row => row.Command.UnitId).Distinct().Count() != candidates.Count)
+                candidates = candidates.GroupBy(row => row.Command.UnitId).Where(group => group.Count() == 1)
+                    .Select(group => group.Single()).ToList();
+            var unitIds = candidates.Select(row => row.Command.UnitId).ToList();
+            // The same per-chain locks IssueAsync takes (see its TIGHT COUPLING note), in one round trip.
+            await databaseLock.AcquireChainsAsync(unitIds, CertificateDocumentKind.ReleaseRecord, cancellationToken);
+            var chained = await db.CertificateInstances.AsNoTracking().Where(row => row.TenantId == tenantId
+                    && unitIds.Contains(row.UnitId) && row.DocumentKind == CertificateDocumentKind.ReleaseRecord)
+                .Select(row => row.UnitId).Distinct().ToListAsync(cancellationToken);
+            var receipted = await db.CertificateTriggers.AsNoTracking().Where(row => row.TenantId == tenantId
+                    && unitIds.Contains(row.UnitId) && row.DocumentKind == CertificateDocumentKind.ReleaseRecord)
+                .Select(row => new { row.UnitId, row.TriggeringEventId }).ToListAsync(cancellationToken);
+            var skip = chained.Concat(receipted.Where(row => candidates.Any(candidate =>
+                    candidate.Command.UnitId == row.UnitId && candidate.Command.TriggeringEventId == row.TriggeringEventId))
+                .Select(row => row.UnitId)).ToHashSet();
+            candidates = candidates.Where(row => !skip.Contains(row.Command.UnitId)).ToList();
+
+            var unitFacts = await units.ReadManyAsync(candidates.Select(row => row.Command.UnitId).ToList(), cancellationToken);
+            var itemClasses = await payloads.ItemClassesAsync(unitFacts.Values.Select(unit => unit.ItemId).ToList(),
+                cancellationToken);
+            var templateVersions = await templates.ActiveVersionsAsync(CertificateDocumentKind.ReleaseRecord,
+                CertificateFormType.GenericRelease, itemClasses.Values.Distinct().ToList(), cancellationToken);
+            var ready = new List<(IssueCertificateVersion Command, int Index, CertificateUnitFact Unit, Guid TemplateVersionId, string? ItemClass)>();
+            foreach (var (command, index) in candidates)
+            {
+                if (!unitFacts.TryGetValue(command.UnitId, out var unit))
+                {
+                    results[index] = Refuse(command, "unit_unknown", $"Unit {command.UnitId} does not exist.");
+                    continue;
+                }
+                if (unit.LifecycleStatus != LifecycleStatus.Released)
+                {
+                    results[index] = Refuse(command, "certificate_unit_not_released",
+                        $"Unit {command.UnitId} is '{unit.LifecycleStatus}'; certificates can be issued only for released units.");
+                    continue;
+                }
+                var itemClass = itemClasses.GetValueOrDefault(unit.ItemId);
+                if (templateVersions.GetValueOrDefault(itemClass ?? "") is not { } templateVersionId)
+                {
+                    results[index] = Refuse(command, "certificate_template_unavailable",
+                        $"No active {command.FormType} template exists for {command.DocumentKind}.");
+                    continue;
+                }
+                ready.Add((command, index, unit, templateVersionId, itemClass));
+            }
+
+            if (ready.Count > 0)
+            {
+                var built = await payloads.BuildReleaseRecordsAsync(
+                    ready.Select(row => (row.Command, row.Unit, row.TemplateVersionId, row.ItemClass)).ToList(), cancellationToken);
+                var issuedAt = clock.UtcNow;
+                var tracking = await numbers.NextRangeAsync(DocumentNumbers.Certificate, issuedAt, ready.Count, cancellationToken);
+                var printedNames = new Dictionary<string, string>(StringComparer.Ordinal);
+                var drafts = new List<UnitEventDraft>(ready.Count);
+                for (var i = 0; i < ready.Count; i++)
+                {
+                    var (command, index, _, templateVersionId, _) = ready[i];
+                    if (!printedNames.TryGetValue(command.ActorRef, out var printedName))
+                        printedNames[command.ActorRef] = printedName = await PrintedNameAsync(command.ActorRef, cancellationToken);
+                    var factsHash = CanonicalJson.HashExcludingRootProperties(built[i].CanonicalPayload, "trigger");
+                    var (certificate, signature, issuedDraft) = NewVersion(command, templateVersionId, built[i], factsHash,
+                        1, tracking[i], issuedAt, null, null, printedName);
+                    db.CertificateInstances.Add(certificate);
+                    db.CertificateSignatures.Add(signature);
+                    db.CertificateTriggers.Add(TriggerRow(command, CertificateTriggerOutcome.Issued, certificate.CertificateId));
+                    drafts.Add(issuedDraft);
+                    results[index] = new(true, false, certificate.CertificateId, certificate.Version, certificate.TrackingNumber);
+                }
+                await events.AppendAsync(drafts, cancellationToken);
+            }
+            await db.SaveChangesAsync(cancellationToken);
+
+            for (var index = 0; index < commands.Count; index++)
+                results[index] ??= await IssueAsync(commands[index], cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+            return results.Select(result => result!).ToList();
+        }
+        catch
+        {
+            if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+
+        IssueCertificateVersionResult Refuse(IssueCertificateVersion command, string rule, string detail)
+        {
+            db.CertificateTriggers.Add(TriggerRow(command, CertificateTriggerOutcome.Refused, null, rule, detail));
+            return Refused(rule, detail);
+        }
+    }
+
+    /// <summary>The instance, its signature and its issued fact: shared by the single and the batched issue paths.</summary>
+    private (CertificateInstance Certificate, CertificateSignature Signature, UnitEventDraft Issued) NewVersion(
+        IssueCertificateVersion command, Guid templateVersionId, PayloadBuildResult built, string factsHash, int version,
+        string tracking, DateTime issuedAt, CertificateInstance? latest, Guid? previousIssuedId, string printedName)
+    {
+        var hash = CanonicalJson.Hash(built.CanonicalPayload);
+        var issuer = ResolveIssuerSnapshot(built.CanonicalPayload);
+        var branding = DeserializeSnapshot<CertificateBrandingSnapshot>(built.CanonicalPayload, "branding");
+        var certificate = new CertificateInstance
+        {
+            TenantId = tenant.TenantId, CertificateId = TimeOrderedId.New(issuedAt), UnitId = command.UnitId,
+            MigrationLoadId = command.MigrationLoadId,
+            DocumentKind = command.DocumentKind, FormType = command.FormType, Version = version, TrackingNumber = tracking,
+            TemplateVersionId = templateVersionId, AsBuiltRevisionId = built.AsBuiltRevisionId,
+            Payload = built.CanonicalPayload, PayloadHash = hash, FactsHash = factsHash,
+            SupersedesCertificateId = latest?.CertificateId,
+            SupersedeReason = latest is null ? null : command.SupersedeReason, TriggeringEventId = command.TriggeringEventId,
+            IssuerEntityId = command.IssuerEntityId, IssuerSnapshot = CanonicalJson.Serialise(issuer),
+            OwnerSnapshot = built.Owner is null ? null : CanonicalJson.Serialise(built.Owner),
+            BrandingSnapshot = CanonicalJson.Serialise(branding), Language = command.Language, Provenance = command.Provenance,
+            Unknowns = CanonicalJson.Serialise(command.Unknowns ?? []), Evidence = CanonicalJson.Serialise(command.Evidence ?? []),
+            IssuedAt = issuedAt, Status = CertificateStatus.Issued,
+        };
+        var signature = new CertificateSignature
+        {
+            TenantId = tenant.TenantId, SignatureId = TimeOrderedId.New(issuedAt), CertificateId = certificate.CertificateId,
+            SignerIdentity = command.ActorRef, PrintedName = printedName,
+            Meaning = command.DocumentKind == CertificateDocumentKind.ReleaseRecord ? CertificateSignatureMeaning.Release : CertificateSignatureMeaning.Approval,
+            SignedAt = issuedAt, HashSigned = hash, SignatureMethod = command.ActorRef.StartsWith("system:", StringComparison.Ordinal) ? "system_attestation" : "authenticated_user",
+        };
+        var issued = new UnitEventDraft
+        {
+            UnitId = command.UnitId, EventTime = command.EffectiveAt, EventType = CertificateEventType.Issued,
+            LegalEntityId = command.IssuerEntityId, ActorRef = command.ActorRef,
+            IdempotencyKey = $"cert:issued:{(command.DocumentKind == CertificateDocumentKind.ReleaseRecord ? "rr" : "wc")}:{command.TriggeringEventId:N}",
+            Attributes = JsonObjectText.Of(new
+            {
+                certificate_id = certificate.CertificateId, document_kind = certificate.DocumentKind, form_type = certificate.FormType,
+                certificate_version = certificate.Version, tracking_number = certificate.TrackingNumber, payload_hash = certificate.PayloadHash,
+                triggering_event_id = command.TriggeringEventId, supersedes_certificate_id = previousIssuedId,
+                provenance = certificate.Provenance, migration_load_id = certificate.MigrationLoadId,
+                issued_at = certificate.IssuedAt,
+            }),
+            ProjectCurrentState = false,
+        };
+        return (certificate, signature, issued);
+    }
+
+    private CertificateTrigger TriggerRow(IssueCertificateVersion command, string outcome, Guid? certificateId = null,
+        string? refusalRule = null, string? refusalDetail = null) => new()
+    {
+        TenantId = tenant.TenantId, UnitId = command.UnitId, DocumentKind = command.DocumentKind,
+        TriggeringEventId = command.TriggeringEventId, Outcome = outcome, CertificateId = certificateId,
+        RefusalRule = refusalRule, RefusalDetail = refusalDetail is { Length: > 500 } ? refusalDetail[..500] : refusalDetail,
+        RecordedAt = clock.UtcNow,
+    };
 
     /// <summary>
     /// Retains every immutable version but removes the active release record when its original sale was corrected away.

@@ -16,23 +16,51 @@ public sealed class ReleaseRecordPayloadBuilder(
 {
     public async Task<ReleaseRecordPayload> BuildAsync(CertificateUnitFact unit, CertificateTriggerSnapshot trigger,
         string formType, CertificatePresentation presentation, CertificateProvenanceSnapshot provenance,
+        CancellationToken cancellationToken) =>
+        (await BuildManyAsync([new(unit, trigger, formType, presentation, provenance)], cancellationToken))[0];
+
+    /// <summary>
+    /// Builds many release records with one read per port for the whole list (a migration chunk records thousands),
+    /// then composes each unit exactly as a single build does: the single build above is this method with one input.
+    /// </summary>
+    public async Task<IReadOnlyList<ReleaseRecordPayload>> BuildManyAsync(IReadOnlyList<ReleaseRecordBuildInput> inputs,
         CancellationToken cancellationToken)
     {
-        var condition = await conditions.ReadAsync(unit.UnitId, cancellationToken);
-        var refurbishment = await refurbishments.ReadAsync(unit.UnitId, cancellationToken);
-        var replacement = await replacements.ReadAsync(unit.UnitId, cancellationToken);
-        var buildAt = unit.Build?.ReleasedAt ?? unit.CommissionedAt;
-        var report = await completeness.CheckAsync(unit.UnitId, unit.ItemId, DateOnly.FromDateTime(buildAt), cancellationToken);
-        var itemIds = unit.Assembly.Select(row => row.ChildItemId).OfType<Guid>().Append(unit.ItemId)
-            .Concat(report.Slots.Select(row => row.ExpectedItemId)).Distinct().ToList();
+        var unitIds = inputs.Select(input => input.Unit.UnitId).Distinct().ToList();
+        var conditionFacts = await conditions.ReadManyAsync(unitIds, cancellationToken);
+        var refurbishmentFacts = await refurbishments.ReadManyAsync(unitIds, cancellationToken);
+        var replacementFacts = await replacements.ReadManyAsync(unitIds, cancellationToken);
+        var reports = await completeness.QueryAsync(inputs.Select(input => (input.Unit.UnitId, input.Unit.ItemId,
+            DateOnly.FromDateTime(input.Unit.Build?.ReleasedAt ?? input.Unit.CommissionedAt))).ToList(), cancellationToken);
+        var itemIds = inputs.SelectMany(input => input.Unit.Assembly.Select(row => row.ChildItemId).OfType<Guid>()
+                .Append(input.Unit.ItemId))
+            .Concat(reports.SelectMany(report => report.Slots.Select(row => row.ExpectedItemId))).Distinct().ToList();
         var itemNames = await items.NamesAsync(itemIds, cancellationToken);
-        var childIds = unit.Assembly.Select(row => row.ChildUnitId).OfType<Guid>().Distinct().ToList();
-        var childSerials = await units.PrimarySerialsAsync(childIds, cancellationToken);
-        var issuerRefs = unit.Identifiers.Select(row => row.IssuerRef).OfType<Guid>()
-            .Append(refurbishment.RefurbisherRef ?? Guid.Empty).Where(id => id != Guid.Empty).Distinct().ToList();
-        var partyNames = await parties.NamesAsync(issuerRefs, cancellationToken);
+        var childIds = inputs.SelectMany(input => input.Unit.Assembly.Select(row => row.ChildUnitId).OfType<Guid>())
+            .Distinct().ToList();
+        var childSerials = childIds.Count == 0 ? new Dictionary<Guid, string>()
+            : await units.PrimarySerialsAsync(childIds, cancellationToken);
+        var partyRefs = inputs.SelectMany(input => input.Unit.Identifiers.Select(row => row.IssuerRef).OfType<Guid>()
+                .Append(refurbishmentFacts[input.Unit.UnitId].RefurbisherRef ?? Guid.Empty))
+            .Where(id => id != Guid.Empty).Distinct().ToList();
+        var partyNames = partyRefs.Count == 0 ? new Dictionary<Guid, PartyLabel>()
+            : await parties.NamesAsync(partyRefs, cancellationToken);
+        var facilityIds = inputs.Select(input => input.Unit.Build?.FacilityId).OfType<Guid>().Distinct().ToList();
+        var facilities = facilityIds.Count == 0 ? new Dictionary<Guid, LocationLabel>()
+            : await locations.NamesAsync(facilityIds, cancellationToken);
+        return inputs.Select((input, index) => Compose(input, conditionFacts[input.Unit.UnitId],
+            refurbishmentFacts[input.Unit.UnitId], replacementFacts[input.Unit.UnitId], reports[index], itemNames,
+            childSerials, partyNames, facilities)).ToList();
+    }
+
+    private static ReleaseRecordPayload Compose(ReleaseRecordBuildInput input, CertificateConditionFact condition,
+        CertificateRefurbishmentFact refurbishment, CertificateReplacementFact replacement, UnitCompleteness report,
+        IReadOnlyDictionary<Guid, ItemLabel> itemNames, IReadOnlyDictionary<Guid, string> childSerials,
+        IReadOnlyDictionary<Guid, PartyLabel> partyNames, IReadOnlyDictionary<Guid, LocationLabel> facilities)
+    {
+        var (unit, trigger, formType, presentation, provenance) = input;
         var facility = unit.Build?.FacilityId is not { } facilityId ? null
-            : (await locations.NamesAsync([facilityId], cancellationToken)).GetValueOrDefault(facilityId) is { } label
+            : facilities.GetValueOrDefault(facilityId) is { } label
                 ? string.IsNullOrWhiteSpace(label.Name) ? label.Code : label.Name : null;
         var identifierById = unit.Identifiers.ToDictionary(row => row.IdentifierId);
         var primaryOpen = unit.Identifiers.Where(row => row.ValidTo == null).OrderBy(row => IdentifierPriority(row.Type)).FirstOrDefault();
@@ -101,6 +129,10 @@ public sealed class ReleaseRecordPayloadBuilder(
         return list.Count == 0 ? null : string.Join(", ", list);
     }
 }
+
+/// <summary>One release record to build: the unit snapshot and what the issuing command supplies.</summary>
+public sealed record ReleaseRecordBuildInput(CertificateUnitFact Unit, CertificateTriggerSnapshot Trigger, string FormType,
+    CertificatePresentation Presentation, CertificateProvenanceSnapshot Provenance);
 
 public sealed class WarrantyCertificatePayloadBuilder(
     ICertificateEntitlementReadPort entitlements,

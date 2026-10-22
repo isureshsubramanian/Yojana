@@ -100,6 +100,7 @@ internal static class MigrationModel
         Mapping.MappingModel.Configure(modelBuilder);
         Validation.ValidationModel.Configure(modelBuilder);
         Apply.ApplyModel.Configure(modelBuilder);
+        LinkOverrides.LinkOverrideModel.Configure(modelBuilder);
         Staging.SourceProtocol.Configure(modelBuilder);
     }
 }

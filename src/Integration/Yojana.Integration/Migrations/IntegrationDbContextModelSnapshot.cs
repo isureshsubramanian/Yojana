@@ -2640,6 +2640,10 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("bit")
                         .HasColumnName("rehearsal");
 
+                    b.Property<long>("ReplacementLinksUsingOverride")
+                        .HasColumnType("bigint")
+                        .HasColumnName("replacement_links_using_override");
+
                     b.Property<long>("ReplacementLinksWritten")
                         .HasColumnType("bigint")
                         .HasColumnName("replacement_links_written");
@@ -3337,6 +3341,82 @@ namespace Yojana.Integration.Migrations
 
                             t.HasCheckConstraint("ck_migration_unit_candidate_source_role", "role IN ('kept','merged')");
                         });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.LinkOverrides.MigrationLinkOverride", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("SourceKey")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("source_key");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(3)
+                        .HasColumnType("nchar(3)")
+                        .HasColumnName("currency")
+                        .IsFixedLength();
+
+                    b.Property<decimal?>("DifferenceAmount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("difference_amount");
+
+                    b.Property<string>("Direction")
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("direction");
+
+                    b.Property<string>("PricePolicy")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("price_policy");
+
+                    b.Property<string>("ReplacementConditionAllowed")
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("replacement_condition_allowed");
+
+                    b.Property<string>("ReplacementReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("replacement_reason");
+
+                    b.Property<string>("State")
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("state");
+
+                    b.Property<string>("UploadFileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)")
+                        .HasColumnName("upload_file_name");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("uploaded_at");
+
+                    b.Property<string>("UploadedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("uploaded_by");
+
+                    b.HasKey("TenantId", "SourceKey")
+                        .HasName("pk_migration_link_override");
+
+                    b.HasIndex("TenantId", "SourceKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_link_override_tenant_id_source_key");
+
+                    b.HasIndex("TenantId", "UploadedAt", "SourceKey")
+                        .HasDatabaseName("ix_migration_link_override_tenant_id_uploaded_at_source_key");
+
+                    b.ToTable("migration_link_override", "migration");
                 });
 
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationMapRun", b =>

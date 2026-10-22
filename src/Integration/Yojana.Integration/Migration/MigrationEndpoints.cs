@@ -11,6 +11,7 @@ using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Integration.LegacyMigration.Validation;
 using Yojana.Integration.LegacyMigration.Apply;
+using Yojana.Integration.LegacyMigration.LinkOverrides;
 using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.LegacyMigration;
@@ -205,6 +206,40 @@ public static class MigrationEndpoints
         admin.MapPut("/mapping/settings", (UpdateMappingSettingsRequest request,
             MappingSettings mappingSettings, CancellationToken ct) =>
             InvokeMapping(() => mappingSettings.SetAsync(request, ct)));
+        review.MapGet("/batches/{batchId:guid}/links/export.csv", async (Guid batchId,
+            LinkOverrideService service, CancellationToken ct) =>
+        {
+            try
+            {
+                return Results.File(await service.ExportAsync(batchId, ct), "text/csv; charset=utf-8",
+                    "migration-replacement-links.csv");
+            }
+            catch (LinkOverrideRuleException ex) { return Problem(ex); }
+        });
+        review.MapPost("/link-overrides/upload", async (HttpRequest request, ClaimsPrincipal user,
+            LinkOverrideService service, CancellationToken ct) =>
+        {
+            try
+            {
+                if (!request.HasFormContentType)
+                    throw new LinkOverrideRuleException("migration_link_override_multipart_required",
+                        "Upload the CSV as multipart form data.");
+                var form = await request.ReadFormAsync(ct);
+                var file = form.Files.Count == 1 ? form.Files[0] : throw new LinkOverrideRuleException(
+                    "migration_link_override_file_required", "Upload exactly one CSV file.");
+                await using var stream = file.OpenReadStream();
+                return Results.Ok(await service.UploadAsync(stream, file.Length, file.FileName, Actor(user), ct));
+            }
+            catch (LinkOverrideRuleException ex) { return Problem(ex); }
+        }).DisableAntiforgery().WithMetadata(new Microsoft.AspNetCore.Mvc.RequestFormLimitsAttribute
+        {
+            MultipartBodyLengthLimit = LinkOverrideService.MaxFileBytes + 65_536,
+        });
+        review.MapGet("/link-overrides", (string? cursor, int? take, LinkOverrideService service,
+            CancellationToken ct) => InvokeLinkOverrides(() => service.ListAsync(cursor, take ?? 50, ct)));
+        review.MapDelete("/link-overrides", ([Microsoft.AspNetCore.Mvc.FromBody] DeleteLinkOverridesRequest request,
+            LinkOverrideService service, CancellationToken ct) =>
+            InvokeLinkOverrides(() => service.DeleteAllAsync(request, ct)));
         admin.MapPost("/batches/{batchId:guid}/validate", async (Guid batchId,
             StartValidationRequest request, ValidationService service, CancellationToken ct) =>
         {
@@ -339,6 +374,12 @@ public static class MigrationEndpoints
         }
     }
 
+    private static async Task<IResult> InvokeLinkOverrides<T>(Func<Task<T>> action)
+    {
+        try { return Results.Ok(await action()); }
+        catch (LinkOverrideRuleException ex) { return Problem(ex); }
+    }
+
     private static async Task<IResult> ValidationExport(Guid batchId, string format, HttpContext http,
         ValidationService service, ITabularExporter exporter, CancellationToken cancellationToken)
     {
@@ -372,6 +413,10 @@ public static class MigrationEndpoints
         });
 
     private static IResult Problem(ValidationRuleException ex) => Results.Problem(title: ex.Rule,
+        detail: ex.Message, statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
+        extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+
+    private static IResult Problem(LinkOverrideRuleException ex) => Results.Problem(title: ex.Rule,
         detail: ex.Message, statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
         extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
 }

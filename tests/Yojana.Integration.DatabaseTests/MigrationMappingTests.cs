@@ -181,17 +181,17 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         var defaults = await settings.GetAsync(default);
 
         var unknown = await Assert.ThrowsAsync<MappingRuleException>(() => settings.SetAsync(
-            new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap, Guid.CreateVersion7(), null), default));
+            new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap, null, Guid.CreateVersion7(), null), default));
         Assert.Equal("migration_mapping_cover_policy_not_published", unknown.Rule);
         var draft = await Assert.ThrowsAsync<MappingRuleException>(() => settings.SetAsync(
-            new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap, draftOnly, null), default));
+            new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap, null, draftOnly, null), default));
         Assert.Equal("migration_mapping_cover_policy_not_published", draft.Rule);
         var wrongFamily = await Assert.ThrowsAsync<MappingRuleException>(() => settings.SetAsync(
-            new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap, supplierV1, null), default));
+            new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap, null, supplierV1, null), default));
         Assert.Equal("migration_mapping_cover_policy_family_mismatch", wrongFamily.Rule);
 
         var accepted = await settings.SetAsync(new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap,
-            baseV1, supplierV1), default);
+            null, baseV1, supplierV1), default);
         Assert.Equal((baseV1, supplierV1), (accepted.CardCoverPolicyId, accepted.SerialMasterCoverPolicyId));
         var cleared = await settings.SetAsync(new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap),
             default);
@@ -216,7 +216,7 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         Assert.Null(Assert.Single(unsetSupplier.Entitlements).PolicyId);
         Assert.Contains(unsetSupplier.Gaps, row => row.Kind == PlanGapKind.SerialMasterCoverPolicyNotSet);
 
-        await settings.SetAsync(new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap, baseV1,
+        await settings.SetAsync(new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap, null, baseV1,
             supplierV1), default);
         var baseV2 = await AddPolicyAsync(tenant, CoverageFamilyCode.Base, "BASE-CARD-12", 2,
             PolicyVersionStatus.Published);

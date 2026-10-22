@@ -5,6 +5,7 @@ using Wolverine;
 using Yojana.Integration.Data;
 using Yojana.Integration.Gateway;
 using Yojana.Integration.LegacyMigration.Mapping;
+using Yojana.Integration.LegacyMigration.LinkOverrides;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Validation;
 using Yojana.Platform.Contracts.Tenancy;
@@ -20,7 +21,7 @@ public sealed record MigrationApplyView(Guid LoadId, Guid BatchId, Guid MapRunId
     long UnitsInPlan, long Applied, long AlreadyApplied, long Refused, long EventsWritten,
     long EntitlementsWritten, long ReplacementLinksWritten, long CertificatesRecorded,
     string? RolledBackBy, DateTime? RolledBackAt, Guid? GapReportRunId = null, int? CoverGaps = null,
-    IReadOnlyList<MigrationGapCount>? GapsByKind = null);
+    long ReplacementLinksUsingOverride = 0, IReadOnlyList<MigrationGapCount>? GapsByKind = null);
 public sealed record MigrationApplyRefusalView(Guid RefusalId, Guid PlanUnitId, string ItemCode, string? Serial,
     IReadOnlyList<string> Reasons);
 public sealed record MigrationApplyRefusalPage(IReadOnlyList<MigrationApplyRefusalView> Items, string? NextCursor);
@@ -41,7 +42,8 @@ public sealed class ApplyRuleException(string rule, string message) : InvalidOpe
 /// completes; nothing is published per unit. A rehearsal load can be rolled back while no unit in it was touched.
 /// </summary>
 public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant, IClock clock, IMessageBus bus,
-    GatewayReferenceStore references, IMigrationSignoffStatus signoff)
+    GatewayReferenceStore references, IMigrationSignoffStatus signoff, MappingSettings mappingSettings,
+    ReplacementLinkValueValidator linkValidator)
 {
     public const int ChunkSize = 500;
 
@@ -192,7 +194,7 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
                     row.MapRunId == run.MapRunId && (cursor == null || row.PlanUnitId.CompareTo(cursor.Value) > 0))
                 .OrderBy(row => row.PlanUnitId).Take(ChunkSize).ToListAsync(cancellationToken);
             if (plans.Count == 0) break;
-            var (units, missing) = await BuildChunkAsync(plans, batch.ConnectionId, cutover, cancellationToken);
+            var (units, missing, overridesUsed) = await BuildChunkAsync(plans, batch.ConnectionId, cutover, cancellationToken);
             // Warehouse and party references created for this chunk commit BEFORE the module sees their ids, so a
             // resumed load resolves the same ids again.
             await db.SaveChangesAsync(cancellationToken);
@@ -222,6 +224,7 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
             run.EventsWritten += result.EventsWritten;
             run.EntitlementsWritten += result.EntitlementsWritten;
             run.ReplacementLinksWritten += result.ReplacementLinksWritten;
+            run.ReplacementLinksUsingOverride += overridesUsed;
             run.CertificatesRecorded += result.CertificatesRecorded;
             run.CursorPlanUnitId = plans[^1].PlanUnitId;
             await db.SaveChangesAsync(cancellationToken);
@@ -248,7 +251,8 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<(List<MigratedUnit> Units, List<(Guid PlanUnitId, IReadOnlyList<string> Reasons)> Missing)>
+    private async Task<(List<MigratedUnit> Units, List<(Guid PlanUnitId, IReadOnlyList<string> Reasons)> Missing,
+        int OverridesUsed)>
         BuildChunkAsync(List<MigrationPlanUnit> plans, Guid connectionId, DateTime cutover,
             CancellationToken cancellationToken)
     {
@@ -280,6 +284,13 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
                     ? row.ReplacedPlanUnitId : row.ReplacementPlanUnitId))
             .ToLookup(row => row.ReplacedPlanUnitId.CompareTo(row.ReplacementPlanUnitId) > 0
                 ? row.ReplacedPlanUnitId : row.ReplacementPlanUnitId);
+        var sourceKeys = linkRows.Select(row => row.SourceKey).Distinct().ToList();
+        var linkOverrides = sourceKeys.Count == 0
+            ? new Dictionary<string, MigrationLinkOverride>(StringComparer.Ordinal)
+            : await db.Set<MigrationLinkOverride>().AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
+                    sourceKeys.Contains(row.SourceKey))
+                .ToDictionaryAsync(row => row.SourceKey, StringComparer.Ordinal, cancellationToken);
+        var linkDefaults = (await mappingSettings.GetAsync(cancellationToken)).LinkDefaults;
         var itemCodes = plans.Select(row => row.ItemCode).Distinct().ToList();
         var items = await db.ExternalIdMaps.AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
                 row.ConnectionId == connectionId && row.EntityType == "item" && row.ValidTo == null &&
@@ -330,9 +341,16 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
             var entitlements = plannedCover.Select(row => new MigratedEntitlement(row.PlanEntitlementId,
                 row.CoverageFamily, row.PolicyId!.Value, row.PolicyVersion!.Value, row.StartDate, row.EndDate,
                 row.TerminationDate, row.Direction, row.DateSource, row.SourceKey, evidence)).ToList();
-            var replacements = links[plan.PlanUnitId].Select(row => new MigratedReplacementLink(
-                row.PlanReplacementLinkId, row.ReplacedPlanUnitId, row.ReplacementPlanUnitId,
-                row.PolicyApplied, row.SourceKey)).ToList();
+            var replacements = links[plan.PlanUnitId].Select(row =>
+            {
+                var values = linkOverrides.TryGetValue(row.SourceKey, out var itemOverride)
+                    ? itemOverride.Effective(linkDefaults) : linkDefaults;
+                values = linkValidator.Validate(values);
+                return new MigratedReplacementLink(row.PlanReplacementLinkId, row.ReplacedPlanUnitId,
+                    row.ReplacementPlanUnitId, row.PolicyApplied, row.SourceKey, values.Direction,
+                    values.ReplacementReason, values.State, values.ReplacementConditionAllowed,
+                    values.PricePolicy, values.DifferenceAmount, values.Currency);
+            }).ToList();
             MigratedCertificate? certificate = null;
             if (planCertificates.TryGetValue(plan.PlanUnitId, out var plannedCertificate))
             {
@@ -355,7 +373,9 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
                 custody, ownership, plan.ConditionGrade, plan.ConditionProvenance, entitlements, replacements,
                 certificate));
         }
-        return (units, missing);
+        return (units, missing, linkRows.Count(row =>
+            ids.Contains(row.ReplacedPlanUnitId.CompareTo(row.ReplacementPlanUnitId) > 0
+                ? row.ReplacedPlanUnitId : row.ReplacementPlanUnitId) && linkOverrides.ContainsKey(row.SourceKey)));
     }
 
     /// <summary>A named party resolves as the gateway resolves it; a pseudonymised one gets a stable id with no name behind it.</summary>
@@ -422,6 +442,6 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
             run.RequestedAt, run.StartedAt, run.FinishedAt, run.FailureCode, run.UnitsInPlan, run.Applied,
             run.AlreadyApplied, run.Refused, run.EventsWritten, run.EntitlementsWritten,
             run.ReplacementLinksWritten, run.CertificatesRecorded, run.RolledBackBy, run.RolledBackAt,
-            run.GapReportRunId, run.CoverGaps, gaps);
+            run.GapReportRunId, run.CoverGaps, run.ReplacementLinksUsingOverride, gaps);
     }
 }
