@@ -362,7 +362,8 @@ public sealed class MappingService(
         var primaryKeys = candidates.Select(row => row.PrimarySourceKey).ToList();
         var masters = await db.Set<SerialMasterStagingRow>().AsNoTracking().Where(row =>
                 row.TenantId == tenant.TenantId && row.BatchId == batch.BatchId &&
-                row.SourceSystem == batch.SourceSystem && primaryKeys.Contains(row.SourcePk))
+                row.SourceSystem == batch.SourceSystem && row.AbsentSinceBatchId == null &&
+                primaryKeys.Contains(row.SourcePk))
             .ToDictionaryAsync(row => row.SourcePk, StringComparer.Ordinal, cancellationToken);
         var sources = await db.MigrationUnitCandidateSources.AsNoTracking().Where(row =>
                 row.TenantId == tenant.TenantId && row.RunId == reconstruction.CanonicalisationRunId &&
@@ -370,11 +371,14 @@ public sealed class MappingService(
         var cardKeys = sources.Where(row => row.SourceKind == CandidateSourceKind.EquipmentCard)
             .Select(row => row.SourceKey).Distinct(StringComparer.Ordinal).ToList();
         var cards = await db.Set<EquipmentCardStagingRow>().AsNoTracking().Where(row =>
-                row.TenantId == tenant.TenantId && row.BatchId == batch.BatchId && cardKeys.Contains(row.SourcePk))
+                row.TenantId == tenant.TenantId && row.BatchId == batch.BatchId &&
+                row.SourceSystem == batch.SourceSystem && row.AbsentSinceBatchId == null &&
+                cardKeys.Contains(row.SourcePk))
             .ToDictionaryAsync(row => row.SourcePk, StringComparer.Ordinal, cancellationToken);
         var cardIds = cards.Values.Where(row => row.CardId is not null).Select(row => row.CardId!.Value).ToList();
         var cardHistory = await db.Set<CardHistoryStagingRow>().AsNoTracking().Where(row =>
-                row.TenantId == tenant.TenantId && row.BatchId == batch.BatchId && row.CardId != null &&
+                row.TenantId == tenant.TenantId && row.BatchId == batch.BatchId &&
+                row.SourceSystem == batch.SourceSystem && row.AbsentSinceBatchId == null && row.CardId != null &&
                 cardIds.Contains(row.CardId.Value)).ToListAsync(cancellationToken);
         var quantities = await (from quantity in db.Set<SerialQuantityStagingRow>().AsNoTracking()
             join master in db.Set<SerialMasterStagingRow>().AsNoTracking()
@@ -386,7 +390,8 @@ public sealed class MappingService(
                 on new { master.TenantId, PrimarySourceKey = master.SourcePk }
                 equals new { candidate.TenantId, candidate.PrimarySourceKey }
             where quantity.TenantId == tenant.TenantId && quantity.BatchId == batch.BatchId &&
-                  quantity.SourceSystem == batch.SourceSystem && candidateIds.Contains(candidate.CandidateId)
+                  quantity.SourceSystem == batch.SourceSystem && quantity.AbsentSinceBatchId == null &&
+                  master.AbsentSinceBatchId == null && candidateIds.Contains(candidate.CandidateId)
             select quantity).ToListAsync(cancellationToken);
         var history = await db.MigrationHistoryEvents.AsNoTracking().Where(row =>
                 row.TenantId == tenant.TenantId && row.ReconstructionRunId == reconstruction.RunId &&
@@ -407,12 +412,14 @@ public sealed class MappingService(
             .Select(row => row.SourceKey).Distinct(StringComparer.Ordinal).ToList();
         var contractLines = await db.Set<ContractLineStagingRow>().AsNoTracking().Where(row =>
                 row.TenantId == tenant.TenantId && row.BatchId == batch.BatchId &&
+                row.SourceSystem == batch.SourceSystem && row.AbsentSinceBatchId == null &&
                 contractLineKeys.Contains(row.SourcePk)).ToDictionaryAsync(row => row.SourcePk,
                 StringComparer.Ordinal, cancellationToken);
         var contractIds = contractLines.Values.Where(row => row.ContractId is not null)
             .Select(row => row.ContractId!.Value).Distinct().ToList();
         var contracts = await db.Set<ServiceContractStagingRow>().AsNoTracking().Where(row =>
-                row.TenantId == tenant.TenantId && row.BatchId == batch.BatchId && row.ContractId != null &&
+                row.TenantId == tenant.TenantId && row.BatchId == batch.BatchId &&
+                row.SourceSystem == batch.SourceSystem && row.AbsentSinceBatchId == null && row.ContractId != null &&
                 contractIds.Contains(row.ContractId.Value)).ToListAsync(cancellationToken);
         var mappings = await db.TemplateMappings.AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
                 row.SourceSystem == batch.SourceSystem).ToListAsync(cancellationToken);
@@ -775,6 +782,7 @@ public sealed class MappingService(
             var cardKeys = cardSources.Select(row => row.SourceKey).ToList();
             var cards = await db.Set<EquipmentCardStagingRow>().AsNoTracking().Where(row =>
                     row.TenantId == tenant.TenantId && row.BatchId == batch.BatchId &&
+                    row.SourceSystem == batch.SourceSystem && row.AbsentSinceBatchId == null &&
                     cardKeys.Contains(row.SourcePk)).ToListAsync(cancellationToken);
             var pairs = new List<(int Replaced, int Replacement)>();
             foreach (var card in cards.Where(row => row.CardId is not null))
@@ -793,6 +801,7 @@ public sealed class MappingService(
                     on new { source.TenantId, source.CandidateId }
                     equals new { unit.TenantId, unit.CandidateId }
                 where card.TenantId == tenant.TenantId && card.BatchId == batch.BatchId &&
+                      card.SourceSystem == batch.SourceSystem && card.AbsentSinceBatchId == null &&
                       card.CardId != null && pairCardIds.Contains(card.CardId.Value) &&
                       source.RunId == reconstruction.CanonicalisationRunId &&
                       source.SourceKind == CandidateSourceKind.EquipmentCard && unit.MapRunId == run.RunId

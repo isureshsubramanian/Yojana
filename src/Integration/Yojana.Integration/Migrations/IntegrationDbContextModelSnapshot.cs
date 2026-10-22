@@ -5127,8 +5127,8 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_oatc_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_oatc_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oatc_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.ToTable("stg_src_oatc", "migration");
                 });
@@ -5213,8 +5213,8 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_ains_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_ains_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_ains_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.ToTable("stg_src_ains", "migration");
                 });
@@ -5282,8 +5282,8 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_ins1_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_ins1_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_ins1_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.ToTable("stg_src_ins1", "migration");
                 });
@@ -5377,8 +5377,8 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_ctr1_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_ctr1_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_ctr1_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.ToTable("stg_src_ctr1", "migration");
                 });
@@ -5582,8 +5582,8 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_octt_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_octt_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_octt_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.ToTable("stg_src_octt", "migration");
                 });
@@ -5654,6 +5654,16 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("manufacturer_serial");
 
+                    b.Property<string>("NormalisedInternalSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("normalised_internal_serial");
+
+                    b.Property<string>("NormalisedManufacturerSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("normalised_manufacturer_serial");
+
                     b.Property<string>("PersonalDataStatus")
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)")
@@ -5693,8 +5703,21 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_oins_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_oins_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "CardId")
+                        .HasDatabaseName("ix_stg_src_oins_tenant_id_batch_id_source_system_card_id");
+
+                    b.HasIndex("TenantId", "SourceSystem", "ItemCode", "NormalisedInternalSerial")
+                        .HasDatabaseName("ix_stg_src_oins_tenant_id_source_system_item_code_normalised_internal_serial");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "SourceSystem", "ItemCode", "NormalisedInternalSerial"), new[] { "BatchId", "AbsentSinceBatchId", "SourcePk", "CardId", "CustomerCode", "InternalSerial", "ManufacturerSerial" });
+
+                    b.HasIndex("TenantId", "SourceSystem", "ItemCode", "NormalisedManufacturerSerial")
+                        .HasDatabaseName("ix_stg_src_oins_tenant_id_source_system_item_code_normalised_manufacturer_serial");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "SourceSystem", "ItemCode", "NormalisedManufacturerSerial"), new[] { "BatchId", "AbsentSinceBatchId", "SourcePk", "CardId", "CustomerCode", "InternalSerial", "ManufacturerSerial" });
+
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oins_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.ToTable("stg_src_oins", "migration");
                 });
@@ -5774,8 +5797,13 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_oitm_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_oitm_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "ItemCode")
+                        .HasDatabaseName("ix_stg_src_oitm_tenant_id_batch_id_source_system_absent_since_batch_id_item_code");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "ItemCode"), new[] { "ManagementMethod" });
+
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oitm_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.ToTable("stg_src_oitm", "migration");
                 });
@@ -5867,8 +5895,8 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_marketing_document_headers_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_marketing_document_headers_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_marketing_document_headers_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.ToTable("stg_src_marketing_document_headers", "migration");
                 });
@@ -5950,8 +5978,8 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_orrr_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_orrr_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_orrr_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.ToTable("stg_src_orrr", "migration");
                 });
@@ -6033,8 +6061,8 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_osbq_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_osbq_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_osbq_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.ToTable("stg_src_osbq", "migration");
                 });
@@ -6108,6 +6136,16 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("manufacturer_serial");
 
+                    b.Property<string>("NormalisedManufacturerSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("normalised_manufacturer_serial");
+
+                    b.Property<string>("NormalisedSerialNumber")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("normalised_serial_number");
+
                     b.Property<string>("Notes")
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)")
@@ -6152,8 +6190,18 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_osrn_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_osrn_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "SourceSystem", "ItemCode", "NormalisedManufacturerSerial")
+                        .HasDatabaseName("ix_stg_src_osrn_tenant_id_source_system_item_code_normalised_manufacturer_serial");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "SourceSystem", "ItemCode", "NormalisedManufacturerSerial"), new[] { "BatchId", "AbsentSinceBatchId", "SourcePk", "SystemNumber", "SerialNumber", "ManufacturerSerial" });
+
+                    b.HasIndex("TenantId", "SourceSystem", "ItemCode", "NormalisedSerialNumber")
+                        .HasDatabaseName("ix_stg_src_osrn_tenant_id_source_system_item_code_normalised_serial_number");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "SourceSystem", "ItemCode", "NormalisedSerialNumber"), new[] { "BatchId", "AbsentSinceBatchId", "SourcePk", "SystemNumber", "SerialNumber", "ManufacturerSerial" });
+
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_osrn_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.ToTable("stg_src_osrn", "migration");
                 });
@@ -6227,8 +6275,13 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_osrq_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_osrq_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_osrq_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "ItemCode", "SystemNumber")
+                        .HasDatabaseName("ix_stg_src_osrq_tenant_id_batch_id_source_system_absent_since_batch_id_item_code_system_number");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "ItemCode", "SystemNumber"), new[] { "SourcePk", "WarehouseCode", "Quantity" });
 
                     b.ToTable("stg_src_osrq", "migration");
                 });
@@ -6319,8 +6372,8 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_oscl_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_oscl_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oscl_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.ToTable("stg_src_oscl", "migration");
                 });
@@ -6448,8 +6501,8 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_octr_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_octr_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_octr_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.ToTable("stg_src_octr", "migration");
                 });
@@ -6592,8 +6645,8 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_oitl_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_oitl_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_oitl_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.HasIndex("TenantId", "BatchId", "SourceSystem", "DocumentType", "LogEntry")
                         .HasDatabaseName("ix_stg_src_oitl_tenant_id_batch_id_source_system_document_type_log_entry");
@@ -6673,8 +6726,8 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_itl1_tenant_id_absent_since_batch_id_source_pk");
 
-                    b.HasIndex("TenantId", "BatchId", "SourcePk")
-                        .HasDatabaseName("ix_stg_src_itl1_tenant_id_batch_id_source_pk");
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
+                        .HasDatabaseName("ix_stg_src_itl1_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.HasIndex("TenantId", "BatchId", "SourceSystem", "ItemCode", "SystemNumber", "LogEntry")
                         .HasDatabaseName("ix_stg_src_itl1_tenant_id_batch_id_source_system_item_code_system_number_log_entry");

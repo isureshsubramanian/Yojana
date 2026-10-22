@@ -21,7 +21,9 @@ public sealed class SerialMasterStagingRow : StagingRow
     public int? SystemNumber { get; set; }
     public int? SerialEntry { get; set; }
     public string? SerialNumber { get; set; }
+    public string? NormalisedSerialNumber { get; set; }
     public string? ManufacturerSerial { get; set; }
+    public string? NormalisedManufacturerSerial { get; set; }
     public string? LotNumber { get; set; }
     public DateTime? ExpiryDate { get; set; }
     public DateTime? ManufactureDate { get; set; }
@@ -90,7 +92,9 @@ public sealed class EquipmentCardStagingRow : StagingRow
     public int? CardId { get; set; }
     public string? ItemCode { get; set; }
     public string? InternalSerial { get; set; }
+    public string? NormalisedInternalSerial { get; set; }
     public string? ManufacturerSerial { get; set; }
+    public string? NormalisedManufacturerSerial { get; set; }
     public string? CustomerCode { get; set; }
     public string? DirectCustomerCode { get; set; }
     public int? ReplacesCardId { get; set; }

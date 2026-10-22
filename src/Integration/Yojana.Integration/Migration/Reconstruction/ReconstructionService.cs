@@ -237,7 +237,8 @@ public sealed class ReconstructionService(
                 .ToListAsync(cancellationToken);
             if (candidates.Count == 0) break;
             var ids = candidates.Select(row => row.CandidateId).ToList();
-            var sourceRows = await sourceHistory.ReadAsync(run.CanonicalisationRunId, ids, cancellationToken);
+            var sourceRows = await sourceHistory.ReadAsync(run.CanonicalisationRunId, run.BatchId,
+                batch.SourceSystem, ids, cancellationToken);
             var sourceMasters = await db.Set<SerialMasterStagingRow>().AsNoTracking().Where(row =>
                     row.TenantId == tenant.TenantId && row.BatchId == run.BatchId &&
                     row.SourceSystem == batch.SourceSystem && row.AbsentSinceBatchId == null &&

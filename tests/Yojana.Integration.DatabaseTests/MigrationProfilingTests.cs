@@ -5,6 +5,10 @@ using Yojana.Integration.LegacyMigration;
 using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Staging;
 
+// These expressions intentionally reproduce the pre-P9T35 SQL definition for equivalence testing. Culture-aware
+// overloads and StringComparison are not translated by the SQL Server provider.
+#pragma warning disable CA1304, CA1311, CA1862
+
 namespace Yojana.Integration.DatabaseTests;
 
 [Collection("integration host")]
@@ -35,6 +39,8 @@ public sealed class MigrationProfilingTests(IntegrationHostFixture fixture)
 
             var firstBatch = await ExtractAsync(batches, source.SourceId);
             var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+            await AssertLegacyMatchQueryEquivalenceAsync(scope.ServiceProvider, db, tenant, firstBatch,
+                source.SourceSystem, fixture.Clock.UtcNow);
             Assert.Equal(MigrationProfileRunStatus.Queued, await db.MigrationProfileRuns
                 .Where(row => row.BatchId == firstBatch).Select(row => row.Status).SingleAsync());
             Assert.Equal(1, await profiles.RunPendingAsync(default));
@@ -54,6 +60,23 @@ public sealed class MigrationProfilingTests(IntegrationHostFixture fixture)
             Assert.NotNull(samples);
             Assert.Single(samples.Samples);
             Assert.True(samples.Samples.Count <= 20);
+
+            using (var otherLoadScope = fixture.ScopeFor(otherTenant))
+            {
+                var otherSources = otherLoadScope.ServiceProvider.GetRequiredService<MigrationSourceService>();
+                var otherSource = await otherSources.CreateAsync(new("Fictional second tenant copy", "profile-source",
+                    MigrationSourceRuntime.SqlServer, MigrationSourceRoute.Separate, SourceDatabase,
+                    ConnectionString: MigrationExtractionTests.SourceFixture.ConnectionString(SourceDatabase)),
+                    Actor, default);
+                await otherSources.SetLicenceAsync(otherSource.SourceId,
+                    new(true, "FICTIONAL-CONTRACT-PROFILE-OTHER", "Read-only extraction confirmed."),
+                    Actor, default);
+                await ExtractAsync(otherLoadScope.ServiceProvider.GetRequiredService<MigrationBatchService>(),
+                    otherSource.SourceId);
+            }
+            var afterOtherTenantLoad = await ExecuteProfileCountsAsync(scope.ServiceProvider, db, tenant,
+                firstBatch, source.SourceSystem, fixture.Clock.UtcNow);
+            foreach (var before in actualCounts) Assert.Equal(before.Value, afterOtherTenantLoad[before.Key]);
 
             await MigrationExtractionTests.SourceFixture.DeleteAsync<SerialQuantityStagingRow>(SourceDatabase,
                 new Dictionary<string, object?>
@@ -102,7 +125,7 @@ public sealed class MigrationProfilingTests(IntegrationHostFixture fixture)
 
             using var otherScope = fixture.ScopeFor(otherTenant);
             var otherDb = otherScope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
-            Assert.Equal(0, await otherDb.MigrationProfileRuns.CountAsync());
+            Assert.Equal(1, await otherDb.MigrationProfileRuns.CountAsync());
             Assert.Equal(0, await otherDb.MigrationProfileResults.CountAsync());
         }
         finally
@@ -169,6 +192,150 @@ public sealed class MigrationProfilingTests(IntegrationHostFixture fixture)
         return started.BatchId;
     }
 
+    private static async Task AssertLegacyMatchQueryEquivalenceAsync(IServiceProvider services,
+        IntegrationDbContext db, Yojana.Platform.Contracts.Tenancy.TenantId tenantId, Guid batchId,
+        string sourceSystem, DateTime extractionDate)
+    {
+        var context = new MigrationProfileQueryContext(db, tenantId, batchId, sourceSystem, extractionDate);
+        var current = services.GetRequiredService<IEnumerable<IMigrationProfileQuery>>()
+            .ToDictionary(query => query.Class.Code, StringComparer.Ordinal);
+        var legacy = new Dictionary<string, MigrationProfileQueryAnswer>(StringComparer.Ordinal)
+        {
+            [MigrationProfileClasses.EquipmentCardWithoutSerial.Code] =
+                await LegacyCardsWithoutSerialAsync(context),
+            [MigrationProfileClasses.ShippedSerialWithoutCard.Code] =
+                await LegacyShippedWithoutCardAsync(context),
+            [MigrationProfileClasses.CardCustomerDeliveryMismatch.Code] =
+                await LegacyCustomerMismatchAsync(context),
+        };
+        foreach (var expected in legacy)
+        {
+            var actual = await current[expected.Key].ExecuteAsync(context, default);
+            Assert.Equal(expected.Value.Count, actual.Count);
+            Assert.Equal(expected.Value.Samples.Select(SampleJson), actual.Samples.Select(SampleJson));
+        }
+    }
+
+    private static async Task<Dictionary<string, long?>> ExecuteProfileCountsAsync(IServiceProvider services,
+        IntegrationDbContext db, Yojana.Platform.Contracts.Tenancy.TenantId tenantId, Guid batchId,
+        string sourceSystem, DateTime extractionDate)
+    {
+        var context = new MigrationProfileQueryContext(db, tenantId, batchId, sourceSystem, extractionDate);
+        var result = new Dictionary<string, long?>(StringComparer.Ordinal);
+        foreach (var query in services.GetRequiredService<IEnumerable<IMigrationProfileQuery>>())
+            result[query.Class.Code] = (await query.ExecuteAsync(context, default)).Count;
+        return result;
+    }
+
+    private static async Task<MigrationProfileQueryAnswer> LegacyCardsWithoutSerialAsync(
+        MigrationProfileQueryContext context)
+    {
+        var masters = context.Active<SerialMasterStagingRow>();
+        var query = context.Active<EquipmentCardStagingRow>().Where(card => !masters.Any(master =>
+            master.TenantId == card.TenantId && master.BatchId == card.BatchId &&
+            master.SourceSystem == card.SourceSystem && master.ItemCode == card.ItemCode &&
+            ((card.InternalSerial != null && master.SerialNumber != null &&
+              card.InternalSerial.Trim().ToUpper() == master.SerialNumber.Trim().ToUpper()) ||
+             (card.ManufacturerSerial != null && master.ManufacturerSerial != null &&
+              card.ManufacturerSerial.Trim().ToUpper() == master.ManufacturerSerial.Trim().ToUpper()))));
+        var count = await query.LongCountAsync();
+        var rows = await query.OrderBy(row => row.SourcePk).Take(20).ToListAsync();
+        return new(count, null, rows.Select(row => new MigrationProfileSample(row.SourcePk,
+            row.InternalSerial ?? row.ManufacturerSerial, row.ItemCode,
+            ProfilingQuery.Facts(("card_id", row.CardId), ("customer", row.CustomerCode),
+                ("reason", "no_serial_master_match")))).ToList());
+    }
+
+    private static async Task<MigrationProfileQueryAnswer> LegacyShippedWithoutCardAsync(
+        MigrationProfileQueryContext context)
+    {
+        var cards = context.Active<EquipmentCardStagingRow>();
+        var query = (from line in context.StandingDeliveries()
+                     join master in context.Active<SerialMasterStagingRow>()
+                         on new { line.TenantId, line.BatchId, line.SourceSystem, line.ItemCode, line.SystemNumber }
+                         equals new { master.TenantId, master.BatchId, master.SourceSystem, master.ItemCode,
+                             master.SystemNumber }
+                     where !cards.Any(card => card.TenantId == master.TenantId &&
+                         card.BatchId == master.BatchId && card.SourceSystem == master.SourceSystem &&
+                         card.ItemCode == master.ItemCode &&
+                         ((card.InternalSerial != null && master.SerialNumber != null &&
+                           card.InternalSerial.Trim().ToUpper() == master.SerialNumber.Trim().ToUpper()) ||
+                          (card.ManufacturerSerial != null && master.ManufacturerSerial != null &&
+                           card.ManufacturerSerial.Trim().ToUpper() == master.ManufacturerSerial.Trim().ToUpper())))
+                     select new { line.ItemCode, line.SystemNumber, master.SerialNumber, line.DocumentType,
+                         line.DocumentNumber, line.PartyCode }).Distinct();
+        var count = await query.LongCountAsync();
+        var rows = await query.OrderBy(row => row.ItemCode).ThenBy(row => row.SystemNumber).Take(20).ToListAsync();
+        return new(count, null, rows.Select(row => new MigrationProfileSample(
+            $"{row.ItemCode}|{row.SystemNumber}", row.SerialNumber, row.ItemCode,
+            ProfilingQuery.Facts(("document_type", row.DocumentType),
+                ("document_number", row.DocumentNumber), ("party", row.PartyCode)))).ToList());
+    }
+
+    private static async Task<MigrationProfileQueryAnswer> LegacyCustomerMismatchAsync(
+        MigrationProfileQueryContext context)
+    {
+        var deliveries = context.StandingDeliveries().Where(row => row.PartyCode != null);
+        var query = from card in context.Active<EquipmentCardStagingRow>()
+                    from master in context.Active<SerialMasterStagingRow>().Where(master =>
+                        master.TenantId == card.TenantId && master.BatchId == card.BatchId &&
+                        master.SourceSystem == card.SourceSystem && master.ItemCode == card.ItemCode &&
+                        ((card.InternalSerial != null && master.SerialNumber != null &&
+                          card.InternalSerial.Trim().ToUpper() == master.SerialNumber.Trim().ToUpper()) ||
+                         (card.ManufacturerSerial != null && master.ManufacturerSerial != null &&
+                          card.ManufacturerSerial.Trim().ToUpper() == master.ManufacturerSerial.Trim().ToUpper())))
+                    join delivery in deliveries on new
+                    {
+                        master.TenantId,
+                        master.BatchId,
+                        master.SourceSystem,
+                        master.ItemCode,
+                        master.SystemNumber,
+                    } equals new
+                    {
+                        delivery.TenantId,
+                        delivery.BatchId,
+                        delivery.SourceSystem,
+                        delivery.ItemCode,
+                        delivery.SystemNumber,
+                    }
+                    where card.CustomerCode != null && delivery.PartyCode != null &&
+                          card.CustomerCode != delivery.PartyCode &&
+                          !deliveries.Any(later => later.TenantId == delivery.TenantId &&
+                              later.BatchId == delivery.BatchId && later.SourceSystem == delivery.SourceSystem &&
+                              later.ItemCode == delivery.ItemCode && later.SystemNumber == delivery.SystemNumber &&
+                              ((later.DocumentDate ?? DateTime.MinValue) >
+                                   (delivery.DocumentDate ?? DateTime.MinValue) ||
+                               ((later.DocumentDate ?? DateTime.MinValue) ==
+                                    (delivery.DocumentDate ?? DateTime.MinValue) &&
+                                (later.CreatedDate ?? DateTime.MinValue) >
+                                    (delivery.CreatedDate ?? DateTime.MinValue)) ||
+                               ((later.DocumentDate ?? DateTime.MinValue) ==
+                                    (delivery.DocumentDate ?? DateTime.MinValue) &&
+                                (later.CreatedDate ?? DateTime.MinValue) ==
+                                    (delivery.CreatedDate ?? DateTime.MinValue) &&
+                                (later.CreatedTime ?? -1) > (delivery.CreatedTime ?? -1)) ||
+                               ((later.DocumentDate ?? DateTime.MinValue) ==
+                                    (delivery.DocumentDate ?? DateTime.MinValue) &&
+                                (later.CreatedDate ?? DateTime.MinValue) ==
+                                    (delivery.CreatedDate ?? DateTime.MinValue) &&
+                                (later.CreatedTime ?? -1) == (delivery.CreatedTime ?? -1) &&
+                                (later.LogEntry ?? -1) > (delivery.LogEntry ?? -1))))
+                    select new { card.SourcePk, card.CardId, card.ItemCode,
+                        Serial = card.InternalSerial ?? card.ManufacturerSerial,
+                        CardCustomer = card.CustomerCode, DeliveredCustomer = delivery.PartyCode,
+                        delivery.DocumentNumber };
+        var count = await query.LongCountAsync();
+        var rows = await query.OrderBy(row => row.SourcePk).Take(20).ToListAsync();
+        return new(count, null, rows.Select(row => new MigrationProfileSample(row.SourcePk, row.Serial,
+            row.ItemCode, ProfilingQuery.Facts(("card_id", row.CardId),
+                ("card_customer", row.CardCustomer), ("last_delivery_customer", row.DeliveredCustomer),
+                ("last_document_number", row.DocumentNumber)))).ToList());
+    }
+
+    private static string SampleJson(MigrationProfileSample sample) =>
+        System.Text.Json.JsonSerializer.Serialize(sample);
+
     private static async Task SeedAsync()
     {
         static Dictionary<string, object?> Serial(string item, int number, string? serial, string? status = "0")
@@ -200,6 +367,10 @@ public sealed class MigrationProfilingTests(IntegrationHostFixture fixture)
             Serial("STATUS-NETWORK", 60, "STATUS-1", null),
             Serial("CANCEL-SERVER", 70, "CANCEL-1"),
         }) await MigrationExtractionTests.SourceFixture.InsertAsync<SerialMasterStagingRow>(SourceDatabase, row);
+        var manufacturerMatched = Serial("MANUFACTURER-SERVER", 80, "INTERNAL-80");
+        manufacturerMatched[nameof(SerialMasterStagingRow.ManufacturerSerial)] = "MFG-80";
+        await MigrationExtractionTests.SourceFixture.InsertAsync<SerialMasterStagingRow>(
+            SourceDatabase, manufacturerMatched);
 
         foreach (var row in new[]
         {
@@ -230,6 +401,13 @@ public sealed class MigrationProfilingTests(IntegrationHostFixture fixture)
             Card(4, "MATCH-SERVER", "MATCH-1", "CUSTOMER-OLD"),
             Card(5, "LATEST-SERVER", "LATEST-1", "CUSTOMER-LATEST"),
         }) await MigrationExtractionTests.SourceFixture.InsertAsync<EquipmentCardStagingRow>(SourceDatabase, row);
+        await MigrationExtractionTests.SourceFixture.InsertAsync<EquipmentCardStagingRow>(SourceDatabase, new()
+        {
+            [nameof(EquipmentCardStagingRow.CardId)] = 6,
+            [nameof(EquipmentCardStagingRow.ItemCode)] = "MANUFACTURER-SERVER",
+            [nameof(EquipmentCardStagingRow.ManufacturerSerial)] = " mfg-80 ",
+            [nameof(EquipmentCardStagingRow.CustomerCode)] = "CUSTOMER-M",
+        });
 
         foreach (var row in new[]
         {

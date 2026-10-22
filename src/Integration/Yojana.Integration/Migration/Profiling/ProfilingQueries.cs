@@ -12,7 +12,8 @@ internal static class ProfilingQuery
 {
     public static IQueryable<TRow> Active<TRow>(this MigrationProfileQueryContext context)
         where TRow : StagingRow => context.Db.Set<TRow>().AsNoTracking().Where(row =>
-            row.BatchId == context.BatchId && row.SourceSystem == context.SourceSystem &&
+            row.TenantId == context.TenantId && row.BatchId == context.BatchId &&
+            row.SourceSystem == context.SourceSystem &&
             row.AbsentSinceBatchId == null);
 
     // Outgoing delivery and invoice rows of the transaction log that still stand. Cancelling a document in the
@@ -23,13 +24,17 @@ internal static class ProfilingQuery
     {
         var logged = from line in context.Active<TransactionLogLineStagingRow>()
                      join header in context.Active<TransactionLogHeaderStagingRow>()
-                         on line.LogEntry equals header.LogEntry
+                         on new { line.TenantId, line.BatchId, line.SourceSystem, line.LogEntry }
+                         equals new { header.TenantId, header.BatchId, header.SourceSystem, header.LogEntry }
                      where header.LogEntry != null
                      select new { line, header };
         return from row in logged
                where (row.header.DocumentType == 13 || row.header.DocumentType == 15) &&
                      (row.line.Quantity ?? 0m) < 0m &&
                      !logged.Any(cancel => cancel.header.DocumentType == row.header.DocumentType &&
+                         cancel.line.TenantId == row.line.TenantId &&
+                         cancel.line.BatchId == row.line.BatchId &&
+                         cancel.line.SourceSystem == row.line.SourceSystem &&
                          cancel.header.BaseType == row.header.DocumentType &&
                          cancel.header.BaseEntry == row.header.DocumentEntry &&
                          cancel.line.ItemCode == row.line.ItemCode &&
@@ -37,6 +42,9 @@ internal static class ProfilingQuery
                          (cancel.line.Quantity ?? 0m) > 0m)
                select new StandingDelivery
                {
+                   TenantId = row.line.TenantId,
+                   BatchId = row.line.BatchId,
+                   SourceSystem = row.line.SourceSystem,
                    ItemCode = row.line.ItemCode,
                    SystemNumber = row.line.SystemNumber,
                    PartyCode = row.header.PartyCode,
@@ -49,6 +57,73 @@ internal static class ProfilingQuery
                };
     }
 
+    public static IQueryable<SerialCardMatch> SerialCardMatches(this MigrationProfileQueryContext context)
+    {
+        var cards = context.Active<EquipmentCardStagingRow>();
+        var masters = context.Active<SerialMasterStagingRow>();
+        var internalMatches = from card in cards
+                              join master in masters on new
+                              {
+                                  card.TenantId,
+                                  card.BatchId,
+                                  card.SourceSystem,
+                                  card.ItemCode,
+                                  MatchSerial = card.NormalisedInternalSerial,
+                              } equals new
+                              {
+                                  master.TenantId,
+                                  master.BatchId,
+                                  master.SourceSystem,
+                                  master.ItemCode,
+                                  MatchSerial = master.NormalisedSerialNumber,
+                              }
+                              where card.NormalisedInternalSerial != null
+                              select new SerialCardMatch
+                              {
+                                  TenantId = card.TenantId,
+                                  BatchId = card.BatchId,
+                                  SourceSystem = card.SourceSystem,
+                                  CardSourcePk = card.SourcePk,
+                                  CardId = card.CardId,
+                                  ItemCode = card.ItemCode,
+                                  Serial = card.InternalSerial ?? card.ManufacturerSerial,
+                                  CardCustomer = card.CustomerCode,
+                                  MasterSourcePk = master.SourcePk,
+                                  SystemNumber = master.SystemNumber,
+                              };
+        var manufacturerMatches = from card in cards
+                                  join master in masters on new
+                                  {
+                                      card.TenantId,
+                                      card.BatchId,
+                                      card.SourceSystem,
+                                      card.ItemCode,
+                                      MatchSerial = card.NormalisedManufacturerSerial,
+                                  } equals new
+                                  {
+                                      master.TenantId,
+                                      master.BatchId,
+                                      master.SourceSystem,
+                                      master.ItemCode,
+                                      MatchSerial = master.NormalisedManufacturerSerial,
+                                  }
+                                  where card.NormalisedManufacturerSerial != null
+                                  select new SerialCardMatch
+                                  {
+                                      TenantId = card.TenantId,
+                                      BatchId = card.BatchId,
+                                      SourceSystem = card.SourceSystem,
+                                      CardSourcePk = card.SourcePk,
+                                      CardId = card.CardId,
+                                      ItemCode = card.ItemCode,
+                                      Serial = card.InternalSerial ?? card.ManufacturerSerial,
+                                      CardCustomer = card.CustomerCode,
+                                      MasterSourcePk = master.SourcePk,
+                                      SystemNumber = master.SystemNumber,
+                                  };
+        return internalMatches.Concat(manufacturerMatches).Distinct();
+    }
+
     public static IReadOnlyDictionary<string, string?> Facts(params (string Key, object? Value)[] facts) =>
         facts.ToDictionary(item => item.Key, item => item.Value?.ToString(), StringComparer.Ordinal);
 }
@@ -56,6 +131,9 @@ internal static class ProfilingQuery
 // A member-init class, not a positional record: EF must filter and order on it inside later queries.
 internal sealed class StandingDelivery
 {
+    public Yojana.Platform.Contracts.Tenancy.TenantId TenantId { get; init; }
+    public Guid BatchId { get; init; }
+    public string SourceSystem { get; init; } = null!;
     public string? ItemCode { get; init; }
     public int? SystemNumber { get; init; }
     public string? PartyCode { get; init; }
@@ -65,6 +143,22 @@ internal sealed class StandingDelivery
     public DateTime? CreatedDate { get; init; }
     public int? CreatedTime { get; init; }
     public int? LogEntry { get; init; }
+}
+
+// A member-init class, not a positional record: EF composes filters and joins over this union projection.
+internal sealed class SerialCardMatch
+{
+    public Yojana.Platform.Contracts.Tenancy.TenantId TenantId { get; init; }
+    public Guid BatchId { get; init; }
+    public string SourceSystem { get; init; } = null!;
+    public string CardSourcePk { get; init; } = null!;
+    public int? CardId { get; init; }
+    public string? ItemCode { get; init; }
+    public string? Serial { get; init; }
+    public string? CardCustomer { get; init; }
+    public string MasterSourcePk { get; init; } = null!;
+    public int? SystemNumber { get; init; }
+
 }
 
 internal sealed class SerialInMultipleWarehousesProfileQuery : IMigrationProfileQuery
@@ -88,8 +182,21 @@ internal sealed class SerialInMultipleWarehousesProfileQuery : IMigrationProfile
         var count = await query.LongCountAsync(cancellationToken);
         var rows = await (from anomaly in query
                           join master in context.Active<SerialMasterStagingRow>()
-                              on new { anomaly.ItemCode, anomaly.SystemNumber } equals
-                              new { master.ItemCode, master.SystemNumber } into masters
+                              on new
+                              {
+                                  context.TenantId,
+                                  context.BatchId,
+                                  context.SourceSystem,
+                                  anomaly.ItemCode,
+                                  anomaly.SystemNumber,
+                              } equals new
+                              {
+                                  master.TenantId,
+                                  master.BatchId,
+                                  master.SourceSystem,
+                                  master.ItemCode,
+                                  master.SystemNumber,
+                              } into masters
                           from master in masters.DefaultIfEmpty()
                           orderby anomaly.ItemCode, anomaly.SystemNumber
                           select new
@@ -119,8 +226,21 @@ internal sealed class NegativeQuantityProfileQuery : IMigrationProfileQuery
         var count = await query.LongCountAsync(cancellationToken);
         var rows = await (from quantity in query
                           join master in context.Active<SerialMasterStagingRow>()
-                              on new { quantity.ItemCode, quantity.SystemNumber } equals
-                              new { master.ItemCode, master.SystemNumber } into masters
+                              on new
+                              {
+                                  quantity.TenantId,
+                                  quantity.BatchId,
+                                  quantity.SourceSystem,
+                                  quantity.ItemCode,
+                                  quantity.SystemNumber,
+                              } equals new
+                              {
+                                  master.TenantId,
+                                  master.BatchId,
+                                  master.SourceSystem,
+                                  master.ItemCode,
+                                  master.SystemNumber,
+                              } into masters
                           from master in masters.DefaultIfEmpty()
                           orderby quantity.SourcePk
                           select new
@@ -146,8 +266,9 @@ internal sealed class DuplicateSerialSameItemProfileQuery : IMigrationProfileQue
         CancellationToken cancellationToken)
     {
         var query = context.Active<SerialMasterStagingRow>()
-            .Where(row => row.ItemCode != null && row.SerialNumber != null && row.SerialNumber.Trim() != "")
-            .GroupBy(row => new { row.ItemCode, Serial = row.SerialNumber!.Trim().ToUpper() })
+            .Where(row => row.ItemCode != null && row.NormalisedSerialNumber != null &&
+                row.NormalisedSerialNumber != "")
+            .GroupBy(row => new { row.ItemCode, Serial = row.NormalisedSerialNumber! })
             .Where(group => group.Count() > 1)
             .Select(group => new
             {
@@ -174,8 +295,9 @@ internal sealed class DuplicateSerialDifferentItemsProfileQuery : IMigrationProf
         CancellationToken cancellationToken)
     {
         var query = context.Active<SerialMasterStagingRow>()
-            .Where(row => row.ItemCode != null && row.SerialNumber != null && row.SerialNumber.Trim() != "")
-            .GroupBy(row => row.SerialNumber!.Trim().ToUpper())
+            .Where(row => row.ItemCode != null && row.NormalisedSerialNumber != null &&
+                row.NormalisedSerialNumber != "")
+            .GroupBy(row => row.NormalisedSerialNumber!)
             .Where(group => group.Select(row => row.ItemCode).Distinct().Count() > 1)
             .Select(group => new
             {
@@ -219,12 +341,13 @@ internal sealed class SerialFormatVariantsProfileQuery : IMigrationProfileQuery
         CancellationToken cancellationToken)
     {
         var candidates = context.Active<SerialMasterStagingRow>()
-            .Where(row => row.ItemCode != null && row.SerialNumber != null && row.SerialNumber.Trim() != "")
+            .Where(row => row.ItemCode != null && row.NormalisedSerialNumber != null &&
+                row.NormalisedSerialNumber != "")
             .Select(row => new
             {
                 Family = row.ItemCode!.Contains('-')
                     ? row.ItemCode.Substring(0, row.ItemCode.IndexOf('-')) : row.ItemCode,
-                Stored = row.SerialNumber!.Trim().ToUpper(),
+                Stored = row.NormalisedSerialNumber!,
                 Normalised = CanonicalSerialNormalisation.Apply(row.SerialNumber, true, true, true),
                 row.ItemCode,
             })
@@ -260,7 +383,19 @@ internal sealed class PlaceholderSerialProfileQuery : IMigrationProfileQuery
         var settings = context.Active<ItemSerialSettingStagingRow>()
             .Where(row => row.ItemCode != null && row.ManagementMethod == "R");
         var query = from master in context.Active<SerialMasterStagingRow>()
-                    join setting in settings on master.ItemCode equals setting.ItemCode
+                    join setting in settings on new
+                    {
+                        master.TenantId,
+                        master.BatchId,
+                        master.SourceSystem,
+                        master.ItemCode,
+                    } equals new
+                    {
+                        setting.TenantId,
+                        setting.BatchId,
+                        setting.SourceSystem,
+                        setting.ItemCode,
+                    }
                     where master.SerialNumber == null || master.SerialNumber.Trim() == ""
                     select master;
         var count = await query.LongCountAsync(cancellationToken);
@@ -279,12 +414,15 @@ internal sealed class EquipmentCardWithoutSerialProfileQuery : IMigrationProfile
         CancellationToken cancellationToken)
     {
         var masters = context.Active<SerialMasterStagingRow>();
-        var query = context.Active<EquipmentCardStagingRow>().Where(card => !masters.Any(master =>
-            master.ItemCode == card.ItemCode &&
-            ((card.InternalSerial != null && master.SerialNumber != null &&
-              card.InternalSerial.Trim().ToUpper() == master.SerialNumber.Trim().ToUpper()) ||
-             (card.ManufacturerSerial != null && master.ManufacturerSerial != null &&
-              card.ManufacturerSerial.Trim().ToUpper() == master.ManufacturerSerial.Trim().ToUpper()))));
+        var query = context.Active<EquipmentCardStagingRow>().Where(card =>
+            (card.NormalisedInternalSerial == null || !masters.Any(master =>
+                master.TenantId == card.TenantId && master.BatchId == card.BatchId &&
+                master.SourceSystem == card.SourceSystem && master.ItemCode == card.ItemCode &&
+                card.NormalisedInternalSerial == master.NormalisedSerialNumber)) &&
+            (card.NormalisedManufacturerSerial == null || !masters.Any(master =>
+                master.TenantId == card.TenantId && master.BatchId == card.BatchId &&
+                master.SourceSystem == card.SourceSystem && master.ItemCode == card.ItemCode &&
+                card.NormalisedManufacturerSerial == master.NormalisedManufacturerSerial)));
         var count = await query.LongCountAsync(cancellationToken);
         var rows = await query.OrderBy(row => row.SourcePk).Take(20).ToListAsync(cancellationToken);
         return new(count, null, rows.Select(row => new MigrationProfileSample(row.SourcePk,
@@ -301,16 +439,25 @@ internal sealed class ShippedSerialWithoutCardProfileQuery : IMigrationProfileQu
     public async Task<MigrationProfileQueryAnswer> ExecuteAsync(MigrationProfileQueryContext context,
         CancellationToken cancellationToken)
     {
-        var cards = context.Active<EquipmentCardStagingRow>();
+        var matchedMasterKeys = context.SerialCardMatches().Select(match => match.MasterSourcePk);
         var query = (from line in context.StandingDeliveries()
                      join master in context.Active<SerialMasterStagingRow>()
-                         on new { line.ItemCode, line.SystemNumber } equals
-                         new { master.ItemCode, master.SystemNumber }
-                     where !cards.Any(card => card.ItemCode == master.ItemCode &&
-                         ((card.InternalSerial != null && master.SerialNumber != null &&
-                           card.InternalSerial.Trim().ToUpper() == master.SerialNumber.Trim().ToUpper()) ||
-                          (card.ManufacturerSerial != null && master.ManufacturerSerial != null &&
-                           card.ManufacturerSerial.Trim().ToUpper() == master.ManufacturerSerial.Trim().ToUpper())))
+                         on new
+                         {
+                             line.TenantId,
+                             line.BatchId,
+                             line.SourceSystem,
+                             line.ItemCode,
+                             line.SystemNumber,
+                         } equals new
+                         {
+                             master.TenantId,
+                             master.BatchId,
+                             master.SourceSystem,
+                             master.ItemCode,
+                             master.SystemNumber,
+                         }
+                     where !matchedMasterKeys.Contains(master.SourcePk)
                      select new
                      {
                          line.ItemCode,
@@ -330,57 +477,18 @@ internal sealed class ShippedSerialWithoutCardProfileQuery : IMigrationProfileQu
     }
 }
 
-internal sealed class CardCustomerDeliveryMismatchProfileQuery : IMigrationProfileQuery
+internal sealed class CardCustomerDeliveryMismatchProfileQuery(StagingMismatchProfileReader reader)
+    : IMigrationProfileQuery
 {
     public MigrationProfileClass Class => MigrationProfileClasses.CardCustomerDeliveryMismatch;
 
     public async Task<MigrationProfileQueryAnswer> ExecuteAsync(MigrationProfileQueryContext context,
         CancellationToken cancellationToken)
     {
-        var deliveries = context.StandingDeliveries().Where(row => row.PartyCode != null);
-        var query = from card in context.Active<EquipmentCardStagingRow>()
-                    from master in context.Active<SerialMasterStagingRow>().Where(master =>
-                        master.ItemCode == card.ItemCode &&
-                        ((card.InternalSerial != null && master.SerialNumber != null &&
-                          card.InternalSerial.Trim().ToUpper() == master.SerialNumber.Trim().ToUpper()) ||
-                         (card.ManufacturerSerial != null && master.ManufacturerSerial != null &&
-                          card.ManufacturerSerial.Trim().ToUpper() == master.ManufacturerSerial.Trim().ToUpper())))
-                    join delivery in deliveries on new { master.ItemCode, master.SystemNumber } equals
-                        new { delivery.ItemCode, delivery.SystemNumber }
-                    where card.CustomerCode != null && delivery.PartyCode != null &&
-                          card.CustomerCode != delivery.PartyCode &&
-                          !deliveries.Any(later => later.ItemCode == delivery.ItemCode &&
-                              later.SystemNumber == delivery.SystemNumber &&
-                              ((later.DocumentDate ?? DateTime.MinValue) >
-                                   (delivery.DocumentDate ?? DateTime.MinValue) ||
-                               ((later.DocumentDate ?? DateTime.MinValue) ==
-                                    (delivery.DocumentDate ?? DateTime.MinValue) &&
-                                (later.CreatedDate ?? DateTime.MinValue) >
-                                    (delivery.CreatedDate ?? DateTime.MinValue)) ||
-                               ((later.DocumentDate ?? DateTime.MinValue) ==
-                                    (delivery.DocumentDate ?? DateTime.MinValue) &&
-                                (later.CreatedDate ?? DateTime.MinValue) ==
-                                    (delivery.CreatedDate ?? DateTime.MinValue) &&
-                                (later.CreatedTime ?? -1) > (delivery.CreatedTime ?? -1)) ||
-                               ((later.DocumentDate ?? DateTime.MinValue) ==
-                                    (delivery.DocumentDate ?? DateTime.MinValue) &&
-                                (later.CreatedDate ?? DateTime.MinValue) ==
-                                    (delivery.CreatedDate ?? DateTime.MinValue) &&
-                                (later.CreatedTime ?? -1) == (delivery.CreatedTime ?? -1) &&
-                                (later.LogEntry ?? -1) > (delivery.LogEntry ?? -1))))
-                    select new
-                    {
-                        card.SourcePk,
-                        card.CardId,
-                        card.ItemCode,
-                        Serial = card.InternalSerial ?? card.ManufacturerSerial,
-                        CardCustomer = card.CustomerCode,
-                        DeliveredCustomer = delivery.PartyCode,
-                        delivery.DocumentNumber,
-                    };
-        var count = await query.LongCountAsync(cancellationToken);
-        var rows = await query.OrderBy(row => row.SourcePk).Take(20).ToListAsync(cancellationToken);
-        return new(count, null, rows.Select(row => new MigrationProfileSample(row.SourcePk, row.Serial, row.ItemCode,
+        var answer = await reader.ReadCardCustomerDeliveryMismatchesAsync(context.TenantId,
+            context.BatchId, context.SourceSystem, cancellationToken);
+        return new(answer.Count, null, answer.Rows.Select(row => new MigrationProfileSample(
+            row.SourcePk, row.Serial, row.ItemCode,
             ProfilingQuery.Facts(("card_id", row.CardId), ("card_customer", row.CardCustomer),
                 ("last_delivery_customer", row.DeliveredCustomer),
                 ("last_document_number", row.DocumentNumber)))).ToList());

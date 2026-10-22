@@ -360,8 +360,8 @@ public sealed class CanonicalisationService(
                     other.CandidateId != candidate.CandidateId))
             .OrderBy(candidate => candidate.ItemCode).ThenBy(candidate => candidate.CanonicalSerial)
             .ThenBy(candidate => candidate.PrimarySourceKey).ToListAsync(cancellationToken);
-        var facts = await LineageFactsAsync(run, duplicates.Select(row => row.PrimarySourceKey).ToList(),
-            cancellationToken);
+        var facts = await LineageFactsAsync(run, sourceSystem,
+            duplicates.Select(row => row.PrimarySourceKey).ToList(), cancellationToken);
         foreach (var group in duplicates.GroupBy(row => new { row.ItemCode, row.CanonicalSerial }))
         {
             var candidates = group.ToList();
@@ -595,7 +595,8 @@ public sealed class CanonicalisationService(
     {
         var cardKey = (JsonSerializer.Deserialize<List<string>>(item.SourceKeysJson) ?? []).Single();
         var card = await db.Set<EquipmentCardStagingRow>().AsNoTracking().SingleAsync(row =>
-            row.TenantId == tenant.TenantId && row.BatchId == item.BatchId && row.SourcePk == cardKey,
+            row.TenantId == tenant.TenantId && row.BatchId == item.BatchId &&
+            row.SourceSystem == item.SourceSystem && row.AbsentSinceBatchId == null && row.SourcePk == cardKey,
             cancellationToken);
         var existing = await db.MigrationUnitCandidateSources.SingleOrDefaultAsync(row =>
             row.TenantId == tenant.TenantId && row.RunId == item.RunId &&
@@ -740,7 +741,7 @@ public sealed class CanonicalisationService(
     }
 
     private async Task<Dictionary<string, CandidateFacts>> LineageFactsAsync(MigrationCanonRun run,
-        List<string> sourceKeys, CancellationToken cancellationToken)
+        string sourceSystem, List<string> sourceKeys, CancellationToken cancellationToken)
     {
         if (sourceKeys.Count == 0) return new(StringComparer.Ordinal);
         var events = await db.MigrationEventCandidates.AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
@@ -761,13 +762,27 @@ public sealed class CanonicalisationService(
             }).ToListAsync(cancellationToken);
         var receipts = await (from candidateEvent in db.MigrationEventCandidates.AsNoTracking()
                               join line in db.Set<TransactionLogLineStagingRow>().AsNoTracking()
-                                  on new { candidateEvent.TenantId, SourceKey = candidateEvent.TransactionSourceKey }
-                                  equals new { line.TenantId, SourceKey = line.SourcePk }
+                                  on new
+                                  {
+                                      candidateEvent.TenantId,
+                                      BatchId = run.BatchId,
+                                      SourceSystem = sourceSystem,
+                                      SourceKey = candidateEvent.TransactionSourceKey,
+                                  }
+                                  equals new
+                                  {
+                                      line.TenantId,
+                                      line.BatchId,
+                                      line.SourceSystem,
+                                      SourceKey = line.SourcePk,
+                                  }
                               join header in db.Set<TransactionLogHeaderStagingRow>().AsNoTracking()
                                   on new { line.TenantId, line.BatchId, line.SourceSystem, line.LogEntry }
                                   equals new { header.TenantId, header.BatchId, header.SourceSystem, header.LogEntry }
                               where candidateEvent.TenantId == tenant.TenantId && candidateEvent.RunId == run.RunId &&
-                                    sourceKeys.Contains(candidateEvent.SerialMasterSourceKey) && (line.Quantity ?? 0) > 0
+                                    sourceKeys.Contains(candidateEvent.SerialMasterSourceKey) &&
+                                    line.AbsentSinceBatchId == null && header.AbsentSinceBatchId == null &&
+                                    (line.Quantity ?? 0) > 0
                               group header by candidateEvent.SerialMasterSourceKey into grouped
                               select new
                               {
@@ -797,17 +812,30 @@ public sealed class CanonicalisationService(
             .OrderBy(row => row.PrimarySourceKey).ToListAsync(cancellationToken);
         var run = await db.MigrationCanonRuns.AsNoTracking().SingleAsync(row =>
             row.TenantId == tenant.TenantId && row.RunId == item.RunId, cancellationToken);
-        var facts = await LineageFactsAsync(run, sourceKeys, cancellationToken);
+        var facts = await LineageFactsAsync(run, item.SourceSystem, sourceKeys, cancellationToken);
         var movements = await (from candidateEvent in db.MigrationEventCandidates.AsNoTracking()
                                join line in db.Set<TransactionLogLineStagingRow>().AsNoTracking()
-                                   on new { candidateEvent.TenantId, SourceKey = candidateEvent.TransactionSourceKey }
-                                   equals new { line.TenantId, SourceKey = line.SourcePk }
+                                   on new
+                                   {
+                                       candidateEvent.TenantId,
+                                       BatchId = run.BatchId,
+                                       SourceSystem = item.SourceSystem,
+                                       SourceKey = candidateEvent.TransactionSourceKey,
+                                   }
+                                   equals new
+                                   {
+                                       line.TenantId,
+                                       line.BatchId,
+                                       line.SourceSystem,
+                                       SourceKey = line.SourcePk,
+                                   }
                                join header in db.Set<TransactionLogHeaderStagingRow>().AsNoTracking()
                                    on new { line.TenantId, line.BatchId, line.SourceSystem, line.LogEntry }
                                    equals new { header.TenantId, header.BatchId, header.SourceSystem, header.LogEntry }
                                where candidateEvent.TenantId == tenant.TenantId &&
                                      candidateEvent.RunId == item.RunId &&
-                                     sourceKeys.Contains(candidateEvent.SerialMasterSourceKey)
+                                     sourceKeys.Contains(candidateEvent.SerialMasterSourceKey) &&
+                                     line.AbsentSinceBatchId == null && header.AbsentSinceBatchId == null
                                select new CandidateMovement
                                {
                                    SourceKey = candidateEvent.SerialMasterSourceKey,
@@ -828,7 +856,8 @@ public sealed class CanonicalisationService(
             .Select(row => row.SourceKey).Distinct(StringComparer.Ordinal).ToList();
         var cards = await db.Set<EquipmentCardStagingRow>().AsNoTracking().Where(row =>
                 row.TenantId == tenant.TenantId && row.BatchId == run.BatchId &&
-                row.SourceSystem == item.SourceSystem && cardKeys.Contains(row.SourcePk))
+                row.SourceSystem == item.SourceSystem && row.AbsentSinceBatchId == null &&
+                cardKeys.Contains(row.SourcePk))
             .Select(row => new { row.SourcePk, row.CardId }).ToListAsync(cancellationToken);
         var cardNumbers = cards.ToDictionary(row => row.SourcePk,
             row => row.CardId?.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparer.Ordinal);
@@ -836,7 +865,8 @@ public sealed class CanonicalisationService(
             .Select(row => row.SourceKey).Distinct(StringComparer.Ordinal).ToList();
         var contracts = await db.Set<ServiceContractStagingRow>().AsNoTracking()
             .Where(row => row.TenantId == tenant.TenantId && row.BatchId == run.BatchId &&
-                row.SourceSystem == item.SourceSystem && contractKeys.Contains(row.SourcePk))
+                row.SourceSystem == item.SourceSystem && row.AbsentSinceBatchId == null &&
+                contractKeys.Contains(row.SourcePk))
             .Select(row => new { row.SourcePk, row.DocumentNumber, row.ContractId }).ToListAsync(cancellationToken);
         var contractNumbers = contracts.ToDictionary(row => row.SourcePk,
             row => (row.DocumentNumber ?? row.ContractId)?.ToString(System.Globalization.CultureInfo.InvariantCulture),
