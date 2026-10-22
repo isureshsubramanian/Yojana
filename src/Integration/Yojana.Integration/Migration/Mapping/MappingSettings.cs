@@ -5,11 +5,12 @@ using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.LegacyMigration.Mapping;
 
-public sealed class MappingSettings(ITenantSettings settings)
+public sealed class MappingSettings(ITenantSettings settings, ReplacementLinkValueValidator linkValidator)
 {
     public const string AllowWaitingReviewsKey = "migration.mapping.allow_waiting_reviews";
     public const string CutoverDateKey = "migration.mapping.cutover_date";
     public const string ConditionMapKey = "migration.mapping.condition_map";
+    public const string LinkDefaultsKey = "migration.mapping.link_defaults";
 
     private static readonly IReadOnlyList<ConditionMappingRule> Defaults =
     [
@@ -32,18 +33,26 @@ public sealed class MappingSettings(ITenantSettings settings)
         var mapText = await settings.GetAsync(ConditionMapKey, cancellationToken);
         var map = mapText is null ? Defaults : Validate(JsonSerializer.Deserialize<List<ConditionMappingRule>>(mapText)
             ?? throw new InvalidOperationException($"Tenant setting '{ConditionMapKey}' is invalid."));
-        return new(allow, cutover, map);
+        var linkText = await settings.GetAsync(LinkDefaultsKey, cancellationToken);
+        var linkDefaults = linkText is null ? ReplacementLinkValueValidator.AcceptedDefaults
+            : linkValidator.Validate(JsonSerializer.Deserialize<ReplacementLinkValues>(linkText)
+                ?? throw new InvalidOperationException($"Tenant setting '{LinkDefaultsKey}' is invalid."));
+        return new(allow, cutover, map, linkDefaults);
     }
 
     public async Task<MappingSettingsView> SetAsync(UpdateMappingSettingsRequest request,
         CancellationToken cancellationToken)
     {
         var map = Validate(request.ConditionMap);
+        var linkDefaults = request.LinkDefaults is null
+            ? (await GetAsync(cancellationToken)).LinkDefaults
+            : linkValidator.Validate(request.LinkDefaults);
         await settings.SetAsync(AllowWaitingReviewsKey, request.AllowWaitingReviews.ToString(), cancellationToken);
         await settings.SetAsync(CutoverDateKey,
             request.CutoverDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "", cancellationToken);
         await settings.SetAsync(ConditionMapKey, JsonSerializer.Serialize(map), cancellationToken);
-        return new(request.AllowWaitingReviews, request.CutoverDate, map);
+        await settings.SetAsync(LinkDefaultsKey, JsonSerializer.Serialize(linkDefaults), cancellationToken);
+        return new(request.AllowWaitingReviews, request.CutoverDate, map, linkDefaults);
     }
 
     public async Task<string> InferConditionAsync(string? cardStatus, string? lastMovement,

@@ -6,6 +6,7 @@ using Yojana.Integration.Data;
 using Yojana.Integration.LegacyMigration;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Mapping;
+using Yojana.Integration.LegacyMigration.LinkOverrides;
 using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Validation;
@@ -66,6 +67,11 @@ public sealed class MigrationMappingLiveTests(IntegrationHostFixture fixture)
         Assert.NotNull(view);
         Assert.Equal(MappingRunStatus.Completed, view.Status);
         Assert.True(view.UnitsByOrigin.Sum(row => row.Count) > 0);
+        var linkCsv = await scope.ServiceProvider.GetRequiredService<LinkOverrideService>()
+            .ExportAsync(batch.BatchId, default);
+        var linkRows = MigrationCsvReader.Read(System.Text.Encoding.UTF8.GetString(linkCsv)).Count - 1;
+        Assert.Equal(view.ReplacementLinks, linkRows);
+        Console.WriteLine("LINK_EXPORT rows={0}", linkRows);
 
         Console.WriteLine("MAP run={0} cutover={1} status={2} excluded={3} waiting_left_out={4} replacements={5} expired={6} took={7}",
             view.RunId, view.CutoverDate, view.Status, view.ExcludedCandidates,
