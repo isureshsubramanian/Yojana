@@ -141,6 +141,8 @@ public sealed class MigrationMappingLiveTests(IntegrationHostFixture fixture)
             load.Status, load.UnitsInPlan, load.Applied, load.Refused, load.EventsWritten,
             load.EntitlementsWritten, load.ReplacementLinksWritten, load.CertificatesRecorded,
             DateTime.UtcNow - started);
+        Console.WriteLine("GAP_REPORT after load: sold migrated units with no base cover={0}", load.CoverGaps);
+        Assert.NotNull(load.GapReportRunId);
         foreach (var refusal in (await apply.RefusalsAsync(load.LoadId, null, 200, default)).Items
                      .GroupBy(row => string.Join(' ', row.Reasons)))
             Console.WriteLine("APPLY_REFUSED {0}: {1}", refusal.Key, refusal.Count());

@@ -4,17 +4,19 @@ import test from "node:test";
 import {
   OUTCOMES, REVIEW_KINDS, REVIEW_STATUSES, batchResult, batchStatusLabel, batchTotals, candidateLetter,
   canonicalisationStatusLabel, duration, factLabel, factValue, matchRuleLabel, mayAdministerMigration,
-  mayReadMigration, outcomeLabel, profileClass, profileStatusLabel, profileTotals, refusalRuleLabel,
+  mayPrepareValidation, mayReadMigration, mayReviewValidation, outcomeLabel, percentage, profileClass, profileStatusLabel, profileTotals, refusalRuleLabel,
   reviewDecisionLabel, reviewDecisionOptions, reviewKindLabel, reviewStatusLabel, routeLabel, runtimeLabel,
-  sampleExample, sampleFacts, serialAsStored, signedChange, templateResolutionLabel, templateStateLabel,
-  templateStateTone, templateTermsLabel,
+  sampleExample, sampleFacts, serialAsStored, signoffDisabledReason, signedChange, templateResolutionLabel, templateStateLabel,
+  templateStateTone, templateTermsLabel, validationAttentionCount, validationCheckLabel, validationDifferenceLabel,
+  validationLimitLabel, validationResultLabel, validationRoleLabel, validationTrail, validationTrailLine,
 } from "../src/integration/migrationModel.ts";
-import type { MigrationBatch, MigrationProfile, MigrationReviewDetail, TemplateSourceTerms } from "../src/integration/migrationTypes.ts";
+import type { MigrationBatch, MigrationProfile, MigrationReviewDetail, MigrationValidation, TemplateSourceTerms } from "../src/integration/migrationTypes.ts";
 
 const consoleScreen = readFileSync(new URL("../src/integration/MigrationConsole.tsx", import.meta.url), "utf8");
 const profilingScreen = readFileSync(new URL("../src/integration/MigrationProfiling.tsx", import.meta.url), "utf8");
 const reviewScreen = readFileSync(new URL("../src/integration/MigrationReview.tsx", import.meta.url), "utf8");
 const templateScreen = readFileSync(new URL("../src/integration/MigrationTemplates.tsx", import.meta.url), "utf8");
+const validationScreen = readFileSync(new URL("../src/integration/MigrationValidation.tsx", import.meta.url), "utf8");
 const common = readFileSync(new URL("../src/integration/MigrationCommon.tsx", import.meta.url), "utf8");
 const api = readFileSync(new URL("../src/integration/migrationApi.ts", import.meta.url), "utf8");
 const routes = readFileSync(new URL("../src/routes.tsx", import.meta.url), "utf8");
@@ -44,6 +46,7 @@ test("migration routes and the Integration-area link admit administrators and Mi
   assert.match(routes, /integration\/migration\/profiling.*MigrationProfiling/);
   assert.match(routes, /integration\/migration\/review.*MigrationReview/);
   assert.match(routes, /integration\/migration\/templates.*MigrationTemplates/);
+  assert.match(routes, /integration\/migration\/validation.*MigrationValidation/);
   assert.match(integrationTabs, /\["\/integration\/migration", "Migration"\]/);
   assert.match(integrationTabs, /mayReadMigration\(roles\)/);
   assert.match(common, /Tenant administrator or Migration lead access is required/);
@@ -54,20 +57,103 @@ test("migration routes and the Integration-area link admit administrators and Mi
   assert.equal(mayAdministerMigration(["tenant_administrator"]), true);
 });
 
-test("review queue is enabled while later migration tabs remain disabled", () => {
-  for (const title of ["Arrives with P9-T08", "Arrives with P9-T11"]) assert.match(common, new RegExp(title));
+test("validation is enabled while the later migration tab remains disabled", () => {
+  assert.match(common, /Arrives with P9-T11/);
+  assert.doesNotMatch(common, /Arrives with P9-T08/);
   assert.match(common, /aria-disabled="true"/);
   assert.match(common, /\/integration\/migration\/review", "Review queue"/);
   assert.match(common, /\/integration\/migration\/templates", "Contract templates"/);
+  assert.match(common, /\/integration\/migration\/validation", "Validation and sign-off"/);
+  assert.match(common, /validationAttentionCount/);
   assert.match(common, /templateSummary/); assert.match(common, /needsPerson\.templates/);
   assert.doesNotMatch(common, /Review queue", "Arrives/);
 });
 
 test("migration API adapter covers the merged endpoints and sends no browser actor", () => {
-  for (const fragment of ["/sources", "/licence", "/test", "/batches", "/profile", "/samples", "/profiling/outcomes", "/canonicalisation", "/canonicalise", "/review", "/review/export.csv", "/canonicalisation/families/catalogue"]) assert.match(api, new RegExp(fragment.replace("/", "\\/")));
+  for (const fragment of ["/sources", "/licence", "/test", "/batches", "/profile", "/samples", "/profiling/outcomes", "/canonicalisation", "/canonicalise", "/review", "/review/export.csv", "/canonicalisation/families/catalogue", "/validate", "/validation/checks", "/differences", "/explain", "/sign", "/sample", "/trace", "/signoff-record", "/validation/settings"]) assert.match(api, new RegExp(fragment.replace("/", "\\/")));
   assert.match(api, /method: "POST", body: \{ sourceId \}/);
   assert.match(api, /method: "PUT", body: \{ classes, expectedVersion \}/);
   assert.doesNotMatch(api, /actor|requestedBy|confirmedBy/i);
+});
+
+const validationRun: MigrationValidation = {
+  runId: "run-internal", batchId: "batch-internal", mapRunId: "map-internal", targetKind: "module",
+  rehearsal: false, status: "completed", startedAt: "2026-09-01T08:00:00Z", finishedAt: "2026-09-01T08:01:00Z",
+  checksTotal: 3, passed: 1, explained: 0, failed: 2, hardFailed: 1, signedChecks: 1,
+  units: 409_118, events: 3_611_402, eventsShortPercent: 0.04, sampleTraced: 199, sampleTotal: 200,
+  hardFailSummary: "One hard fail.", checks: [
+    { checkId: "check-unit", code: "unit_master", label: "Unit master count", limitKind: "zero", sourceTotal: 409_118, targetTotal: 409_118, difference: 0, result: "pass", explanation: null, explainedByName: null, explainedAt: null, howCounted: "After review merges.", ranAt: "2026-09-01T08:00:00Z", durationMilliseconds: 1200, signatures: [{ role: "preparer", actorName: "Anika Iyer", signedAt: "2026-09-01T08:10:00Z", superseded: false, supersededAt: null }, { role: "reviewer", actorName: "Tomas Lindqvist", signedAt: "2026-09-01T08:20:00Z", superseded: false, supersededAt: null }] },
+    { checkId: "check-hard", code: "negative_quantity", label: "Negative quantity", limitKind: "none", sourceTotal: 1, targetTotal: null, difference: null, result: "hard_fail", explanation: null, explainedByName: null, explainedAt: null, howCounted: "Source fact.", ranAt: "2026-09-01T08:00:00Z", durationMilliseconds: 10, signatures: [] },
+    { checkId: "check-sample", code: "stratified_sample", label: "Stratified sample", limitKind: "all", sourceTotal: 200, targetTotal: 199, difference: -1, result: "fail", explanation: null, explainedByName: null, explainedAt: null, howCounted: "By family and age.", ranAt: "2026-09-01T08:00:00Z", durationMilliseconds: 90, signatures: [] },
+  ],
+};
+
+test("validation screen maps fixture fields into the approved grid and KPI structure", () => {
+  for (const text of ["Checks", "Signed off", "Units loaded", "History events", "Sample traced", "Source", "Difference", "Prepared · reviewed", "Signed"]) assert.ok(validationScreen.includes(text), text);
+  assert.match(validationScreen, /<DataGrid/); assert.match(validationScreen, /<KpiStrip/); assert.match(validationScreen, /<Rail/);
+  for (const field of ["checksTotal", "signedChecks", "units", "events", "eventsShortPercent", "sampleTraced", "sampleTotal", "sourceTotal", "targetTotal", "difference"]) assert.match(validationScreen, new RegExp(`run\\.${field}|check\\.${field}`));
+  assert.equal(validationRun.units.toLocaleString("en"), "409,118");
+  assert.equal(percentage(validationRun.eventsShortPercent), "0.04%");
+});
+
+test("hard failures show the approved cutover warning and final sign-off reason", () => {
+  assert.match(validationScreen, /hard fail.*the cutover/s);
+  assert.match(validationScreen, /Fix them in the incumbent; the next extraction and rehearsal will check again/);
+  assert.equal(signoffDisabledReason(validationRun), "1 hard fail and 2 checks are not signed");
+  assert.match(validationScreen, /title=\{disabledReason/);
+});
+
+test("rehearsal sign-off bypasses the final gate and carries a visible stamp", () => {
+  assert.equal(signoffDisabledReason({ ...validationRun, rehearsal: true }), null);
+  assert.match(validationScreen, /record\.rehearsal \? "REHEARSAL" : "FINAL"/);
+  assert.match(validationScreen, /Creates a REHEARSAL record/);
+  assert.match(validationScreen, /signoffExportUrl/);
+  assert.doesNotMatch(validationScreen, /Excel/);
+});
+
+test("validation actions follow preparer and reviewer role gates", () => {
+  assert.equal(mayPrepareValidation(["migration_lead"]), true);
+  assert.equal(mayPrepareValidation(["tenant_administrator"]), true);
+  assert.equal(mayReviewValidation(["migration_lead"]), false);
+  assert.equal(mayReviewValidation(["tenant_administrator"]), true);
+  assert.match(validationScreen, /prepare && !hasSignature.*Sign as preparer/s);
+  assert.match(validationScreen, /review && !hasSignature.*Sign as reviewer/s);
+  assert.match(validationScreen, /const actions = admin \?/);
+});
+
+test("signature refusals and explain rules stay visible and readable", () => {
+  assert.match(validationScreen, /migrationApi\.signValidationCheck/);
+  assert.match(validationScreen, /className="form-error" role="alert"/);
+  assert.equal(refusalRuleLabel("migration_validation_distinct_signers_required"), "The preparer and reviewer must be different people");
+  assert.match(validationScreen, /check\.result === "fail" && <Section title="Explain this difference"/);
+  assert.doesNotMatch(validationScreen, /check\.result === "hard_fail" && <Section title="Explain/);
+  assert.match(validationScreen, /!explanation\.trim\(\)/);
+});
+
+test("sample tracing is keyset-paged and requires a mismatch note", () => {
+  for (const text of ["Sample tracing", "Source trail", "Plan or module events", "Traced", "Mismatch", "Mismatch note"]) assert.ok(validationScreen.includes(text), text);
+  assert.match(validationScreen, /validationSample\(runId, cursor\)/);
+  assert.match(validationScreen, /disabled=\{busy \|\| !note\.trim\(\)\}/);
+  assert.match(validationScreen, /traceValidationSample/);
+  assert.match(validationScreen, /page\.nextCursor/);
+});
+
+test("validation catalogue formats every current code without snake case", () => {
+  for (const code of ["unit_master", "active_cover", "open_service_calls", "stock_by_item_warehouse", "serial_in_multiple_warehouses", "negative_quantity", "historical_events", "status_histogram", "event_per_unit", "one_current_row", "signed_quantity", "stratified_sample", "cover_gap_report", "attachments_by_hash"]) assert.doesNotMatch(validationCheckLabel(code), /_/);
+  for (const result of ["pass", "explained", "fail", "hard_fail", "report"] as const) assert.doesNotMatch(validationResultLabel(result), /_/);
+  for (const limit of ["zero", "none", "all", "< 0.1%"]) assert.doesNotMatch(validationLimitLabel(limit), /_/);
+  for (const role of ["preparer", "reviewer"] as const) assert.doesNotMatch(validationRoleLabel(role), /_/);
+  for (const kind of ["item_warehouse", "status_bucket", "serial_quantity"]) assert.doesNotMatch(validationDifferenceLabel(kind), /_/);
+  for (const rule of ["migration_validation_hard_fail_not_signable", "migration_validation_distinct_signers_required", "migration_validation_explanation_required", "migration_signoff_hard_fail", "migration_signoff_unsigned_checks"]) assert.doesNotMatch(refusalRuleLabel(rule), /_/);
+});
+
+test("validation attention and trail formatting are pure fixture-driven values", () => {
+  assert.equal(validationAttentionCount(validationRun), 2);
+  const json = '[{"effectiveDate":"2026-09-01T00:00:00","movementKind":"goods_receipt","documentNumber":70110,"quantity":1,"warehouse":"Pune Main"}]';
+  const events = validationTrail(json);
+  assert.equal(events.length, 1);
+  assert.equal(validationTrailLine(events[0]!), "2026-09-01 · Goods receipt · document 70110 · quantity 1 · warehouse Pune Main");
+  assert.deepEqual(validationTrail("not json"), []);
 });
 
 test("review screen maps every answered mockup element to paged API data", () => {

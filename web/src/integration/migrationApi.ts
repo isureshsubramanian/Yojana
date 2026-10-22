@@ -5,7 +5,9 @@ import type {
   MigrationReviewDetail, MigrationReviewKind, MigrationReviewPage, MigrationReviewStatus, MigrationSource,
   MigrationSourcePage, MigrationSourceTestResult, PolicyCatalogue, StartMigrationBatchResponse,
   TemplateKeywordRule, TemplateKeywordRules, TemplateMappingDetail, TemplateMappingState,
-  TemplateMappingSummaryView, TemplatePatternPage,
+  TemplateMappingSummaryView, TemplatePatternPage, MigrationValidation, SignoffRecord,
+  StartValidationResponse, ValidationCheck, ValidationCheckDetail, ValidationDifferencePage,
+  ValidationSample, ValidationSampleOutcome, ValidationSamplePage, ValidationSettings, ValidationSignatureRole,
 } from "./migrationTypes";
 
 const root = "/api/migration";
@@ -51,4 +53,16 @@ export const migrationApi = {
   approveTemplatePattern: (patternKey: string) => api<{ patternKey: string; approved: number }>(`${root}/templates/approve-pattern`, { method: "POST", body: { patternKey } }),
   templateKeywordRules: (signal?: AbortSignal) => api<TemplateKeywordRules>(`${root}/templates/keyword-rules`, { signal }),
   saveTemplateKeywordRules: (rules: TemplateKeywordRule[], expectedVersion: string) => api<TemplateKeywordRules>(`${root}/templates/keyword-rules`, { method: "PUT", body: { rules, expectedVersion } }),
+  validation: (batchId: string, signal?: AbortSignal) => api<MigrationValidation>(`${root}/batches/${batchId}/validation`, { signal }),
+  runValidation: (batchId: string, rehearsal: boolean) => api<StartValidationResponse>(`${root}/batches/${batchId}/validate`, { method: "POST", body: { rehearsal } }),
+  validationCheck: (checkId: string, signal?: AbortSignal) => api<ValidationCheckDetail>(`${root}/validation/checks/${checkId}`, { signal }),
+  validationDifferences: (checkId: string, cursor?: string, signal?: AbortSignal) => api<ValidationDifferencePage>(`${root}/validation/checks/${checkId}/differences${query({ cursor, take: 25 })}`, { signal }),
+  explainValidationCheck: (checkId: string, explanation: string) => api<ValidationCheck>(`${root}/validation/checks/${checkId}/explain`, { method: "POST", body: { explanation } }),
+  signValidationCheck: (checkId: string, role: ValidationSignatureRole) => api<ValidationCheck>(`${root}/validation/checks/${checkId}/sign`, { method: "POST", body: { role } }),
+  validationSample: (runId: string, cursor?: string, signal?: AbortSignal) => api<ValidationSamplePage>(`${root}/validation/runs/${runId}/sample${query({ cursor, take: 10 })}`, { signal }),
+  traceValidationSample: (sampleId: string, outcome: ValidationSampleOutcome, note: string | null) => api<ValidationSample>(`${root}/validation/sample/${sampleId}/trace`, { method: "POST", body: { outcome, note } }),
+  validationSettings: (signal?: AbortSignal) => api<ValidationSettings>(`${root}/validation/settings`, { signal }),
+  saveValidationSettings: (historicalTolerancePercent: number, sampleSize: number, ageBandYears: number[], expectedVersion: string) => api<ValidationSettings>(`${root}/validation/settings`, { method: "PUT", body: { historicalTolerancePercent, sampleSize, ageBandYears, expectedVersion } }),
+  createSignoff: (runId: string) => api<SignoffRecord>(`${root}/validation/runs/${runId}/signoff-record`, { method: "POST" }),
+  signoffExportUrl: (recordId: string) => `${root}/signoff-records/${recordId}/export.csv`,
 };

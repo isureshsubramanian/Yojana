@@ -221,6 +221,8 @@ public static class BackfillStartBasis
 {
     public const string DeliveryDocument = "delivery_document";
     public const string VendorShipConfirmation = "vendor_ship_confirmation";
+    /// <summary>The incumbent's delivery document recorded on a migrated ownership fact (P9-T09).</summary>
+    public const string MigratedDelivery = "migrated_delivery";
 }
 
 /// <summary>The fields AmendEntitlement changes, as named on EntitlementAmendment rows and in Entitlement.Amended.</summary>

@@ -6,6 +6,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.MigrationLoads;
 
 namespace Yojana.Serialisation.Entitlements;
 
@@ -32,7 +33,8 @@ public static class BackfillRules
 /// </summary>
 public static class BackfillEntitlementsHandler
 {
-    private sealed record Plan(Guid UnitId, CustodyEpisode Ownership, string StartBasis, DateOnly ContractDate, Guid PolicyVersionId, bool FinanceReviewRequired);
+    private sealed record Plan(Guid UnitId, CustodyEpisode Ownership, string StartBasis, DateOnly ContractDate, Guid PolicyVersionId, bool FinanceReviewRequired,
+        DateTime DeliveredAt);
 
     // Coupled to the RefurbishedGoodsSettings factory in SerialisationModule: exposing ITenantSettings directly makes
     // Wolverine include PlatformDbContext beside SerialisationDbContext and refuse this handler's transaction graph.
@@ -76,10 +78,18 @@ public static class BackfillEntitlementsHandler
                 .Where(e => e.TenantId == tenantId && e.UnitId == unitId && e.Kind == EpisodeKind.Ownership && e.PartyType == PartyType.Customer)
                 .OrderByDescending(e => e.ValidFrom).FirstOrDefaultAsync(cancellationToken);
             if (ownership is null) { outcomes.Add(Skipped(unitId, "not_sold")); continue; }
+            // A migrated owner names no module document; its start evidence is the incumbent's delivery the load
+            // recorded on the opening fact (MigratedDeliveryEvidence). Without one there is no start evidence.
+            DateTime? deliveredAt = null;
             if (ownership.OpeningDocumentId is null || ownership.OpeningDocumentType is null)
             {
-                outcomes.Add(Skipped(unitId, "no_start_evidence"));
-                continue;
+                if (ownership.Source == EpisodeSource.Migration)
+                    deliveredAt = MigratedDeliveryEvidence.ReadAt(await OpeningAttributesAsync(db, tenantId, unitId, ownership.OpeningEventId, cancellationToken));
+                if (deliveredAt is null)
+                {
+                    outcomes.Add(Skipped(unitId, "no_start_evidence"));
+                    continue;
+                }
             }
 
             var itemId = await db.Current.AsNoTracking().Where(c => c.TenantId == tenantId && c.UnitId == unitId).Select(c => c.ItemId).SingleAsync(cancellationToken);
@@ -95,8 +105,10 @@ public static class BackfillEntitlementsHandler
             var terms = await store.ReadTermsAsync(version, cancellationToken);
             var supportsDelivery = new[] { terms.Start.Trigger }.Concat(terms.Start.Fallbacks.Select(f => f.Trigger)).Contains(StartTrigger.Deliver);
             if (!supportsDelivery) { outcomes.Add(Skipped(unitId, "no_start_evidence")); continue; }
-            var basis = unit.Origin == UnitOrigin.VendorAsn ? BackfillStartBasis.VendorShipConfirmation : BackfillStartBasis.DeliveryDocument;
-            plans.Add(new(unitId, ownership, basis, contractDate, policyVersionId, BackfillRules.FinanceReviewRequired(terms.AssuranceOrService)));
+            var basis = deliveredAt is not null ? BackfillStartBasis.MigratedDelivery
+                : unit.Origin == UnitOrigin.VendorAsn ? BackfillStartBasis.VendorShipConfirmation : BackfillStartBasis.DeliveryDocument;
+            plans.Add(new(unitId, ownership, basis, contractDate, policyVersionId, BackfillRules.FinanceReviewRequired(terms.AssuranceOrService),
+                deliveredAt ?? ownership.ValidFrom));
         }
 
         var invalid = outcomes.Where(o => o.Reason is not null).ToList();
@@ -119,7 +131,7 @@ public static class BackfillEntitlementsHandler
 
         foreach (var plan in plans)
         {
-            var evidenceAt = DateTime.SpecifyKind(plan.Ownership.ValidFrom, DateTimeKind.Utc);
+            var evidenceAt = DateTime.SpecifyKind(plan.DeliveredAt, DateTimeKind.Utc);
             var creation = new CreateEntitlement(command.CommandId, plan.UnitId, CoverageFamilyCode.Base, plan.ContractDate, command.ObligorEntityId, command.EventTime, command.ActorRef,
                 new Dictionary<string, DateTime> { [StartTrigger.Deliver] = evidenceAt }, plan.PolicyVersionId, plan.Ownership.PartyRef, plan.Ownership.PartyType,
                 Country: command.Country, SiteLocationId: command.SiteLocationId, StartEvidenceRef: command.EvidenceRefs[0], SourceDocument: command.SourceDocument,
@@ -134,6 +146,14 @@ public static class BackfillEntitlementsHandler
         var ordered = command.UnitIds.Select(id => outcomes.Single(o => o.UnitId == id)).ToList();
         return new(ordered, plans.Count == 0 && ordered.Count > 0 && ordered.All(o => o.EntitlementId is not null));
     }
+
+    // The opening fact may already have moved to the archive; it is read from either store.
+    private static async Task<string?> OpeningAttributesAsync(SerialisationDbContext db, TenantId tenantId, Guid unitId, Guid eventId,
+        CancellationToken cancellationToken) =>
+        await db.Events.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == unitId && e.EventId == eventId)
+            .Select(e => e.Attributes).FirstOrDefaultAsync(cancellationToken)
+        ?? await db.ArchivedEvents.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == unitId && e.EventId == eventId)
+            .Select(e => e.Attributes).FirstOrDefaultAsync(cancellationToken);
 
     private static BackfillUnitResult Skipped(Guid unitId, string reason) => new(unitId, "skipped", reason, null, null, null);
 }

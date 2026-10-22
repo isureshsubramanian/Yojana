@@ -13,6 +13,7 @@ using Yojana.Integration.LegacyMigration.Staging;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.LegacyMigration.Validation;
 
@@ -447,16 +448,17 @@ public sealed class ValidationService(
         await AddSignedQuantityCheckAsync(run, map, cancellationToken);
         await AddSampleAsync(run, map, canon, configured, cancellationToken);
 
-        var coverGaps = await (from gap in db.MigrationPlanGaps.AsNoTracking()
-            join planUnit in db.MigrationPlanUnits.AsNoTracking()
-                on new { gap.TenantId, PlanUnitId = gap.PlanUnitId!.Value } equals
-                new { planUnit.TenantId, planUnit.PlanUnitId }
-            where gap.TenantId == tenant.TenantId && gap.MapRunId == map.RunId && gap.PlanUnitId != null &&
-                planUnit.LocationState == PlanLocationState.Shipped && (gap.Kind == PlanGapKind.NoTemplate ||
-                gap.Kind == PlanGapKind.TemplateNotApproved || gap.Kind == PlanGapKind.PolicyNotPublished)
-            select gap.PlanGapId).LongCountAsync(cancellationToken);
+        // Sold units the load will leave without base cover: no base entitlement naming a policy in the plan, whether
+        // the plan recorded a gap (no template, unapproved template, unpublished policy) or kept dates without a
+        // policy (equipment card). The gap report run after the load lists the same units for backfill (P9-T09).
+        var coverGaps = await db.MigrationPlanUnits.AsNoTracking().LongCountAsync(planUnit =>
+            planUnit.TenantId == tenant.TenantId && planUnit.MapRunId == map.RunId &&
+            planUnit.LocationState == PlanLocationState.Shipped &&
+            !db.MigrationPlanEntitlements.Any(cover => cover.TenantId == planUnit.TenantId &&
+                cover.PlanUnitId == planUnit.PlanUnitId && cover.CoverageFamily == CoverageFamilyCode.Base &&
+                cover.PolicyId != null), cancellationToken);
         AddCheck(run, "cover_gap_report", "Units sold with no base cover", "report", coverGaps, null,
-            ValidationResult.Report, "Plan gap rows that prevent a sold unit from receiving base cover; P9-T09 performs backfill.");
+            ValidationResult.Report, "Sold plan units with no base entitlement naming a published policy; the gap report after the load lists them for backfill.");
         AddCheck(run, "attachments_by_hash", "Attachments by content hash", "report",
             snapshot.AttachmentsListed, snapshot.AttachmentsWithHash, ValidationResult.Report,
             "Plan attachments listed compared with attachments carrying a content hash.");

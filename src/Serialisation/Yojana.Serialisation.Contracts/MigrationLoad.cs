@@ -101,9 +101,14 @@ public sealed record MigratedCustody(Guid LocationId, string LocationKind, DateT
 /// <summary>
 /// The current owner. A pseudonymised party carries a reference with no name behind it. The direct customer of a
 /// two-tier sale (the reseller) is kept as evidence on the ownership fact; the one open ownership row names the end customer.
+/// <see cref="Delivery"/> is the incumbent's delivery to that customer when the plan has one: the start evidence a later
+/// <c>BackfillEntitlements</c> uses for this unit (P9-T09), since a migrated ownership row names no module document.
 /// </summary>
 public sealed record MigratedOwnership(Guid PartyRef, string PartyType, DateTime From, bool Pseudonymised,
-    Guid? DirectCustomerPartyRef = null);
+    Guid? DirectCustomerPartyRef = null, MigratedDelivery? Delivery = null);
+
+/// <summary>The incumbent's delivery document, as the plan read it: when it was delivered and the source's label and number.</summary>
+public sealed record MigratedDelivery(DateTime At, string? DocumentLabel, string? DocumentNumber);
 
 public sealed record MigratedUnitOutcome(Guid PlanUnitId, Guid? UnitId, string Outcome, IReadOnlyList<string> Reasons)
 {
