@@ -96,6 +96,8 @@ public sealed class UserTenantMembership
 
     public TenantId TenantId { get; set; }
 
+    public DateTime CreatedAt { get; set; }
+
     public Guid? CustomerPartyRef { get; set; }
 
     public List<string> Roles { get; set; } = [];

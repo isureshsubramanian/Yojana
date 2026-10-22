@@ -74,6 +74,20 @@ public interface IPolicyCatalogueQuery
     Task<PolicyCatalogue> ReadAsync(CancellationToken cancellationToken);
 }
 
+public sealed record PolicyVersionPickerItem(Guid PolicyVersionId, string Label);
+
+public sealed record PolicyVersionPickerPage(IReadOnlyList<PolicyVersionPickerItem> Items, string? NextCursor);
+
+/// <summary>Server-paged published policy versions for foreign-module reference pickers.</summary>
+public interface IPolicyVersionPickerPort
+{
+    Task<PolicyVersionPickerPage> SearchAsync(string? search, string? cursor, int take,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyDictionary<Guid, string>> ResolveAsync(IReadOnlyCollection<Guid> policyVersionIds,
+        CancellationToken cancellationToken);
+}
+
 /// <summary>
 /// A customer contract that grants warranty terms for an item (policy stack level 3). <see cref="Priority"/> is the
 /// administrator's tie-break when several contracts match; the later start wins a tie on priority.

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
@@ -32,8 +33,9 @@ public sealed class KnowledgeCurrentnessDatabaseTests(KnowledgeHostFixture fixtu
         var draft = await EntryAsync(people, "policy draft", false,
             new(WrittenAgainstKind.PolicyVersion, v1.PolicyVersionId.ToString("D"), "Storage NBD v1"));
         var otherPeople = await fixture.NewTenantAsync("curpoth");
+        var otherV1 = await PublishedPolicyAsync(otherPeople.Tenant, "STORAGE-NBD", new DateOnly(2026, 1, 1));
         var other = await EntryAsync(otherPeople, "policy other", true,
-            new(WrittenAgainstKind.PolicyVersion, v1.PolicyVersionId.ToString("D"), "Storage NBD v1"));
+            new(WrittenAgainstKind.PolicyVersion, otherV1.PolicyVersionId.ToString("D"), "Storage NBD v1"));
         using (var scope = fixture.ScopeFor(people.Tenant))
             await scope.ServiceProvider.GetRequiredService<QuestionNotificationService>()
                 .UpdatePreferenceAsync(people.Staff, QuestionNotificationMode.Immediately, default);
@@ -158,6 +160,24 @@ public sealed class KnowledgeCurrentnessDatabaseTests(KnowledgeHostFixture fixtu
             Assert.NotNull(view);
             Assert.Equal("Updated reviewed answer.", view.Answer);
             Assert.False(view.NeedsReview);
+        }
+
+        // Values saved before the picker catalogue existed remain editable, but are visibly unresolved.
+        using (var scope = fixture.ScopeFor(people.Tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<KnowledgeDbContext>();
+            var entry = await db.Entries.SingleAsync(x => x.EntryId == published.EntryId);
+            var legacy = JsonSerializer.Serialize(new[]
+                { new WrittenAgainstInput(WrittenAgainstKind.Screen, "legacy.claim.screen", "Old claim screen") });
+            entry.WrittenAgainstJson = legacy;
+            (await db.EntryVersions.SingleAsync(x => x.EntryId == entry.EntryId
+                && x.Version == entry.CurrentVersion)).WrittenAgainstJson = legacy;
+            await db.SaveChangesAsync();
+            var view = await scope.ServiceProvider.GetRequiredService<KnowledgeEntryQueries>().EntryAsync(
+                published.EntryId, new RecordReferenceViewer(people.Other, [YojanaRole.Technician]), default);
+            var unresolved = Assert.Single(view!.WrittenAgainst);
+            Assert.False(unresolved.Resolved);
+            Assert.Equal("Old claim screen", unresolved.Label);
         }
 
         using var portal = await fixture.ClientAsync(people.Tenant, people.Other, portal: true);

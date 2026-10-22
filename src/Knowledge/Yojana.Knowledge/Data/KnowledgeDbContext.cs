@@ -25,6 +25,11 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
     public DbSet<KnowledgeEntryWrittenAgainst> EntryWrittenAgainst => Set<KnowledgeEntryWrittenAgainst>();
     public DbSet<KnowledgeEntryReviewReason> EntryReviewReasons => Set<KnowledgeEntryReviewReason>();
     public DbSet<KnowledgeScreenChange> ScreenChanges => Set<KnowledgeScreenChange>();
+    public DbSet<TrainingPath> TrainingPaths => Set<TrainingPath>();
+    public DbSet<TrainingPathVersion> TrainingPathVersions => Set<TrainingPathVersion>();
+    public DbSet<TrainingPathEntry> TrainingPathEntries => Set<TrainingPathEntry>();
+    public DbSet<TrainingProgress> TrainingProgress => Set<TrainingProgress>();
+    public DbSet<TrainingWelcomeDismissal> TrainingWelcomeDismissals => Set<TrainingWelcomeDismissal>();
     public DbSet<QuestionNotificationPreference> NotificationPreferences => Set<QuestionNotificationPreference>();
     public DbSet<QuestionNotification> Notifications => Set<QuestionNotification>();
     public DbSet<QuestionDigest> Digests => Set<QuestionDigest>();
@@ -205,6 +210,58 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
             b.Property(x => x.ScreenLabel).HasMaxLength(500);
             b.Property(x => x.Reason).HasMaxLength(500);
             b.HasIndex(x => new { x.TenantId, x.ScreenReference, x.ChangedAt, x.ChangeId });
+        });
+        modelBuilder.Entity<TrainingPath>(b =>
+        {
+            b.ToTable("training_path", table => table.HasCheckConstraint("ck_training_path_version",
+                "current_version >= 1"));
+            b.HasKey(x => new { x.TenantId, x.PathId });
+            b.Property(x => x.Role).HasMaxLength(80);
+            b.Property(x => x.Introduction).HasMaxLength(2000);
+            b.HasIndex(x => new { x.TenantId, x.Role }).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.LastChangedAt, x.PathId });
+        });
+        modelBuilder.Entity<TrainingPathVersion>(b =>
+        {
+            b.ToTable("training_path_version", table => table.HasCheckConstraint(
+                "ck_training_path_version_number", "version >= 1"));
+            b.HasKey(x => new { x.TenantId, x.PathId, x.Version });
+            b.Property(x => x.Role).HasMaxLength(80);
+            b.Property(x => x.Introduction).HasMaxLength(2000);
+            b.HasIndex(x => new { x.TenantId, x.PathId, x.ChangedAt });
+            b.HasOne<TrainingPath>().WithMany().HasForeignKey(x => new { x.TenantId, x.PathId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<TrainingPathEntry>(b =>
+        {
+            b.ToTable("training_path_entry", table => table.HasCheckConstraint(
+                "ck_training_path_entry_position", "position >= 1"));
+            b.HasKey(x => new { x.TenantId, x.PathId, x.Version, x.Position });
+            b.HasIndex(x => new { x.TenantId, x.PathId, x.Version, x.EntryId }).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.EntryId, x.PathId, x.Version });
+            b.HasOne<TrainingPathVersion>().WithMany().HasForeignKey(x => new { x.TenantId, x.PathId, x.Version })
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<KnowledgeEntry>().WithMany().HasForeignKey(x => new { x.TenantId, x.EntryId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<TrainingProgress>(b =>
+        {
+            b.ToTable("training_progress", table => table.HasCheckConstraint(
+                "ck_training_progress_entry_version", "read_entry_version >= 1"));
+            b.HasKey(x => new { x.TenantId, x.PathId, x.EntryId, x.UserId });
+            b.HasIndex(x => new { x.TenantId, x.UserId, x.ReadAt, x.PathId, x.EntryId });
+            b.HasOne<TrainingPath>().WithMany().HasForeignKey(x => new { x.TenantId, x.PathId })
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<KnowledgeEntry>().WithMany().HasForeignKey(x => new { x.TenantId, x.EntryId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<TrainingWelcomeDismissal>(b =>
+        {
+            b.ToTable("training_welcome_dismissal");
+            b.HasKey(x => new { x.TenantId, x.PathId, x.UserId });
+            b.HasIndex(x => new { x.TenantId, x.UserId, x.DismissedAt, x.PathId });
+            b.HasOne<TrainingPath>().WithMany().HasForeignKey(x => new { x.TenantId, x.PathId })
+                .OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<QuestionNotificationPreference>(b =>
         {

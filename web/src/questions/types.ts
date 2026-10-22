@@ -23,7 +23,7 @@ export type EntryStatus = "draft" | "in_review" | "published" | "retired";
 export type EntryTagKind = "role" | "task" | "item_family" | "claim_cause";
 export interface EntryTag { kind: EntryTagKind; value: string; label: string }
 export interface EntryTagInput { kind: EntryTagKind; value: string }
-export interface WrittenAgainst { kind: "policy_version" | "screen"; reference: string; label: string }
+export interface WrittenAgainst { kind: "policy_version" | "screen"; reference: string; label: string; resolved?: boolean }
 export interface EntryRecordLink { recordKind: string; recordId: string; recordName: string; source: boolean }
 export interface EntryRound { round: number; version: number; submittedByName: string; submittedAt: string; decision: "approve" | "send_back" | null; reviewerName: string | null; reviewedAt: string | null; note: string | null }
 export interface EntryVersion { version: number; savedByName: string; savedAt: string }
@@ -47,3 +47,15 @@ export interface EntryTagChoices { roles: EntryTag[]; tasks: EntryTag[]; itemFam
 export interface EntryDraftRequest { title: string; problem: string; answer: string; steps: string; tags: EntryTagInput[]; recordLinks: Array<{ recordKind: string; recordId: string }>; writtenAgainst: WrittenAgainst[] }
 export interface KnowledgeScreenReference { reference: string; label: string; publishedEntries: number; lastChangedAt: string | null; lastChangedByName: string | null }
 export interface KnowledgeScreenReferencePage { items: KnowledgeScreenReference[]; nextCursor: string | null }
+export interface ReferenceChoice { reference: string; label: string }
+export interface ReferenceChoicePage { items: ReferenceChoice[]; nextCursor: string | null }
+export interface PolicyVersionChoice { policyVersionId: string; label: string }
+export interface PolicyVersionChoicePage { items: PolicyVersionChoice[]; nextCursor: string | null }
+
+export interface TrainingPathSummary { pathId: string; role: string; roleLabel: string; introduction: string; version: number; entries: number; readEntries: number; finished: boolean; newMember: boolean; canMaintain: boolean }
+export interface TrainingPathList { items: TrainingPathSummary[]; canMaintain: boolean }
+export interface TrainingPathEntry { position: number; entryId: string; title: string; taskLabel: string | null; publishedVersion: number; read: boolean; readAt: string | null; needsReview: boolean; warning: string | null }
+export interface TrainingPath { pathId: string; role: string; roleLabel: string; introduction: string; version: number; entries: TrainingPathEntry[]; readEntries: number; finished: boolean; newMember: boolean; welcomeDismissed: boolean; canMaintain: boolean; canViewTeam: boolean }
+export interface TrainingWelcome { pathId: string; role: string; roleLabel: string; introduction: string; entries: number; readEntries: number }
+export interface TrainingTeamMember { name: string; joinedAt: string; newMember: boolean; readEntries: number; totalEntries: number; lastReadAt: string | null; finished: boolean }
+export interface TrainingTeam { role: string; roleLabel: string; people: TrainingTeamMember[]; nextCursor: string | null; questionsAskedInFirstThirtyDays: number }

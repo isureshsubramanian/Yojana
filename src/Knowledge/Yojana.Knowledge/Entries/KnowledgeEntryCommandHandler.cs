@@ -48,8 +48,9 @@ public static class KnowledgeEntryCommandHandler
     }
 
     public static async Task<EntryChangeResult> Handle(EditDraft command, KnowledgeDbContext db,
-        RecordReferenceLookup records, EntryTagLabelResolver tagLabels, ITenantContext tenant, IClock clock,
-        IMessageBus bus, CancellationToken cancellationToken)
+        RecordReferenceLookup records, EntryTagLabelResolver tagLabels, WrittenAgainstResolver writtenAgainstResolver,
+        ITenantContext tenant, IClock clock, IMessageBus bus,
+        CancellationToken cancellationToken)
     {
         var entry = await FindAsync(db, tenant, command.EntryId, cancellationToken);
         if (entry.AuthorId != command.Actor.UserId)
@@ -59,6 +60,8 @@ public static class KnowledgeEntryCommandHandler
             throw Rule("entry_not_draft", "Only a draft or a published entry needing review can be edited.");
         ValidateDraft(command.Draft);
         var tags = await tagLabels.ResolveAsync(command.Draft.Tags, cancellationToken);
+        var writtenAgainst = await writtenAgainstResolver.ResolveAsync(command.Draft.WrittenAgainst,
+            WrittenAgainst(entry.WrittenAgainstJson), cancellationToken);
         var links = await LinksAsync(entry, command.Draft.RecordLinks, db, records, tenant,
             command.Actor, cancellationToken);
         var now = clock.UtcNow;
@@ -66,7 +69,7 @@ public static class KnowledgeEntryCommandHandler
         entry.Problem = command.Draft.Problem.Trim();
         entry.Answer = command.Draft.Answer.Trim();
         entry.Steps = command.Draft.Steps.Trim();
-        entry.WrittenAgainstJson = JsonSerializer.Serialize(command.Draft.WrittenAgainst);
+        entry.WrittenAgainstJson = JsonSerializer.Serialize(writtenAgainst);
         entry.CurrentVersion++;
         if (revisingPublishedEntry) entry.Status = KnowledgeEntryStatus.Draft;
         entry.LastSavedBy = command.Actor.UserId;

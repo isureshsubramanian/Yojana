@@ -160,6 +160,7 @@ public static class PlatformSetup
         // any module handler that later takes IUserDirectory.
         builder.Services.AddScoped<UserDirectory>(sp => new UserDirectory(sp.GetRequiredService<PlatformDbContext>(), sp.GetRequiredService<ITenantContext>()));
         builder.Services.AddScoped<IUserDirectory>(sp => sp.GetRequiredService<UserDirectory>());
+        builder.Services.AddScoped<ITenantTrainingDirectory>(sp => sp.GetRequiredService<UserDirectory>());
         builder.Services.AddScoped<ITenantStaffDirectory>(sp => sp.GetRequiredService<UserDirectory>());
         // Shell contributions: modules add their own IOverviewContributor and IConnectionHealthSource registrations.
         builder.Services.AddScoped<IOverviewContributor, PlatformOverviewContributor>();

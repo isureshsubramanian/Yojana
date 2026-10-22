@@ -26,7 +26,8 @@ public static class KnowledgeCurrentnessHandler
     }
 
     public static async Task<ScreenChangeResult> Handle(MarkKnowledgeScreenChanged command, KnowledgeDbContext db,
-        ITenantContext tenant, IClock clock, IMessageBus bus, CancellationToken cancellationToken)
+        ScreenReferenceCatalogue catalogue, ITenantContext tenant, IClock clock, IMessageBus bus,
+        CancellationToken cancellationToken)
     {
         if (!command.Actor.Roles.Contains(YojanaRole.TenantAdministrator, StringComparer.Ordinal))
             throw Rule("screen_change_admin_required", "A tenant administrator must record a screen change.");
@@ -34,10 +35,8 @@ public static class KnowledgeCurrentnessHandler
             "screen_reference_too_long", "Screen reference");
         var reason = Required(command.Reason, 500, "screen_change_reason_required",
             "screen_change_reason_too_long", "Change reason");
-        var label = await db.EntryWrittenAgainst.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
-                && x.Kind == WrittenAgainstKind.Screen && x.Reference == reference)
-            .OrderByDescending(x => x.Version).Select(x => x.Label).FirstOrDefaultAsync(cancellationToken)
-            ?? throw Rule("screen_reference_not_found", "No knowledge entry references this screen.");
+        var label = catalogue.Resolve(reference)?.Label
+            ?? throw Rule("screen_reference_not_found", "The screen reference is not in the product catalogue.");
         var now = clock.UtcNow;
         var changeId = TimeOrderedId.New(now);
         db.ScreenChanges.Add(new KnowledgeScreenChange

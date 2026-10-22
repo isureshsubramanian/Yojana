@@ -6,6 +6,7 @@ import { Icon } from "../shell/Icons";
 import { KpiStrip, ScanInput, Shortcut, openSearch } from "../components";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { Rail } from "../shell/Drawer";
+import { TrainingWelcomeCard } from "../questions/TrainingWelcomeCard";
 
 export function loader({ request }: { request: Request }) {
   return api<Overview>("/api/shell/overview", { signal: request.signal });
@@ -35,6 +36,7 @@ export function Component() {
           }
         />
         <div className="stack">
+          <TrainingWelcomeCard />
           <KpiStrip kpis={overview.kpis} />
           {overview.panels.length > 0 && (
             <div className={overview.panels.length > 1 ? "cols-3-2" : "stack"}>

@@ -6,9 +6,11 @@ using Wolverine;
 using Yojana.Knowledge.Contracts;
 using Yojana.Knowledge.Entries;
 using Yojana.Knowledge.Questions;
+using Yojana.Knowledge.Training;
 using Yojana.Platform.Contracts.Records;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Knowledge;
 
@@ -23,6 +25,7 @@ public sealed record EditEntryRequest(string Title, string Problem, string Answe
 public sealed record EntryDecisionRequest(string? Note);
 public sealed record RetireEntryRequest(string Note);
 public sealed record MarkKnowledgeScreenChangedRequest(string ScreenReference, string Reason);
+public sealed record SaveTrainingPathRequest(string Introduction, IReadOnlyList<Guid> EntryIds, int ExpectedVersion);
 
 public static class KnowledgeEndpoints
 {
@@ -133,6 +136,39 @@ public static class KnowledgeEndpoints
             IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntryChangeResult>(bus, tenant,
                 new ConfirmKnowledgeEntryStillCorrect(entryId, Actor(user)), ct));
 
+        var references = app.MapGroup("/api/knowledge/references")
+            .RequireAuthorization(YojanaPolicy.StaffMember);
+        references.MapGet("/policy-versions", async (string? search, string? cursor, int? take,
+            IPolicyVersionPickerPort policies, CancellationToken ct) => await Read(async () => Results.Ok(
+                await policies.SearchAsync(search, cursor, take ?? 25, ct))));
+        references.MapGet("/screens", (string? search, string? cursor, int? take,
+            ScreenReferenceCatalogue catalogue) => Read(() => Task.FromResult<IResult>(Results.Ok(
+                catalogue.Search(search, cursor, take ?? 25)))));
+
+        var training = app.MapGroup("/api/knowledge/training-paths")
+            .RequireAuthorization(YojanaPolicy.StaffMember);
+        training.MapGet("/", async (ClaimsPrincipal user, TrainingPathQueries queries, CancellationToken ct) =>
+            await Read(async () => Results.Ok(await queries.ListAsync(Viewer(user), ct))));
+        training.MapGet("/welcome", async (ClaimsPrincipal user, TrainingPathQueries queries,
+            CancellationToken ct) => await Read(async () => await queries.WelcomeAsync(Viewer(user), ct) is { } card
+                ? Results.Ok(card) : Results.NoContent()));
+        training.MapPost("/welcome/{pathId:guid}/dismiss", (Guid pathId, ClaimsPrincipal user, IMessageBus bus,
+            ITenantContext tenant, CancellationToken ct) => Invoke<TrainingPathChangeResult>(bus, tenant,
+                new DismissTrainingWelcome(pathId, Actor(user)), ct));
+        training.MapGet("/{role}", async (string role, ClaimsPrincipal user, TrainingPathQueries queries,
+            CancellationToken ct) => await Read(async () => await queries.DetailAsync(role, Viewer(user), ct)
+                is { } path ? Results.Ok(path) : Results.NotFound()));
+        training.MapPut("/{role}", (string role, SaveTrainingPathRequest request, ClaimsPrincipal user,
+            IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<TrainingPathChangeResult>(
+                bus, tenant, new SaveTrainingPath(role, request.Introduction, request.EntryIds,
+                    request.ExpectedVersion, Actor(user)), ct));
+        training.MapPost("/{role}/entries/{entryId:guid}/read", (string role, Guid entryId,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<TrainingReadResult>(bus, tenant, new MarkTrainingEntryRead(role, entryId, Actor(user)), ct));
+        training.MapGet("/{role}/team", async (string role, string? cursor, int? take, ClaimsPrincipal user,
+            TrainingPathQueries queries, CancellationToken ct) => await Read(async () => Results.Ok(
+                await queries.TeamAsync(role, cursor, take ?? 25, Viewer(user), ct))));
+
         var screens = app.MapGroup("/api/knowledge/screens")
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         screens.MapGet("/", async (string? cursor, int? take, KnowledgeScreenQueries queries,
@@ -177,11 +213,16 @@ public static class KnowledgeEndpoints
                 "reopen_question_forbidden" or "question_edit_author_only" or "reply_edit_author_only" or
                 "entry_edit_author_only" or "entry_submit_author_only" or "entry_self_review_forbidden" or
                 "entry_review_role_required" or "entry_link_not_visible" or "screen_change_admin_required"
+                or "training_path_reviewer_role_required" or "training_path_role_required"
+                or "training_team_view_forbidden"
                 => StatusCodes.Status403Forbidden,
             "record_not_found" or "question_not_found" or "reply_not_found" or "entry_not_found" or
                 "entry_link_not_found" or "screen_reference_not_found" => StatusCodes.Status404NotFound,
+            "training_path_not_found" or "training_path_entry_not_found" or "training_member_not_found"
+                => StatusCodes.Status404NotFound,
             "question_not_open" or "question_already_open" or "entry_already_exists" or "entry_not_draft" or
                 "entry_not_in_review" or "entry_not_published" or "entry_not_needing_review"
+                or "training_path_version_conflict"
                 => StatusCodes.Status409Conflict,
             _ => StatusCodes.Status422UnprocessableEntity,
         };

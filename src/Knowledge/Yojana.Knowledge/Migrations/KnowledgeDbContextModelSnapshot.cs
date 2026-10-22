@@ -921,6 +921,216 @@ namespace Yojana.Knowledge.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.TrainingPath", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PathId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("path_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("created_by");
+
+                    b.Property<int>("CurrentVersion")
+                        .HasColumnType("int")
+                        .HasColumnName("current_version");
+
+                    b.Property<string>("Introduction")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("introduction");
+
+                    b.Property<DateTime>("LastChangedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_changed_at");
+
+                    b.Property<Guid>("LastChangedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("last_changed_by");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("role");
+
+                    b.HasKey("TenantId", "PathId")
+                        .HasName("pk_training_path");
+
+                    b.HasIndex("TenantId", "Role")
+                        .IsUnique()
+                        .HasDatabaseName("ux_training_path_tenant_id_role");
+
+                    b.HasIndex("TenantId", "LastChangedAt", "PathId")
+                        .HasDatabaseName("ix_training_path_tenant_id_last_changed_at_path_id");
+
+                    b.ToTable("training_path", "knowledge", t =>
+                        {
+                            t.HasCheckConstraint("ck_training_path_version", "current_version >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.TrainingPathEntry", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PathId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("path_id");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int")
+                        .HasColumnName("version");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("int")
+                        .HasColumnName("position");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entry_id");
+
+                    b.HasKey("TenantId", "PathId", "Version", "Position")
+                        .HasName("pk_training_path_entry");
+
+                    b.HasIndex("TenantId", "EntryId", "PathId", "Version")
+                        .HasDatabaseName("ix_training_path_entry_tenant_id_entry_id_path_id_version");
+
+                    b.HasIndex("TenantId", "PathId", "Version", "EntryId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_training_path_entry_tenant_id_path_id_version_entry_id");
+
+                    b.ToTable("training_path_entry", "knowledge", t =>
+                        {
+                            t.HasCheckConstraint("ck_training_path_entry_position", "position >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.TrainingPathVersion", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PathId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("path_id");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int")
+                        .HasColumnName("version");
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("changed_at");
+
+                    b.Property<Guid>("ChangedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("changed_by");
+
+                    b.Property<string>("Introduction")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("introduction");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("role");
+
+                    b.HasKey("TenantId", "PathId", "Version")
+                        .HasName("pk_training_path_version");
+
+                    b.HasIndex("TenantId", "PathId", "ChangedAt")
+                        .HasDatabaseName("ix_training_path_version_tenant_id_path_id_changed_at");
+
+                    b.ToTable("training_path_version", "knowledge", t =>
+                        {
+                            t.HasCheckConstraint("ck_training_path_version_number", "version >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.TrainingProgress", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PathId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("path_id");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entry_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTime>("ReadAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("read_at");
+
+                    b.Property<int>("ReadEntryVersion")
+                        .HasColumnType("int")
+                        .HasColumnName("read_entry_version");
+
+                    b.HasKey("TenantId", "PathId", "EntryId", "UserId")
+                        .HasName("pk_training_progress");
+
+                    b.HasIndex("TenantId", "EntryId")
+                        .HasDatabaseName("ix_training_progress_tenant_id_entry_id");
+
+                    b.HasIndex("TenantId", "UserId", "ReadAt", "PathId", "EntryId")
+                        .HasDatabaseName("ix_training_progress_tenant_id_user_id_read_at_path_id_entry_id");
+
+                    b.ToTable("training_progress", "knowledge", t =>
+                        {
+                            t.HasCheckConstraint("ck_training_progress_entry_version", "read_entry_version >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.TrainingWelcomeDismissal", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("PathId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("path_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTime>("DismissedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("dismissed_at");
+
+                    b.HasKey("TenantId", "PathId", "UserId")
+                        .HasName("pk_training_welcome_dismissal");
+
+                    b.HasIndex("TenantId", "UserId", "DismissedAt", "PathId")
+                        .HasDatabaseName("ix_training_welcome_dismissal_tenant_id_user_id_dismissed_at_path_id");
+
+                    b.ToTable("training_welcome_dismissal", "knowledge");
+                });
+
             modelBuilder.Entity("Yojana.Knowledge.Data.Entities.KnowledgeEntry", b =>
                 {
                     b.HasOne("Yojana.Knowledge.Data.Entities.Question", null)
@@ -1034,6 +1244,60 @@ namespace Yojana.Knowledge.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_question_reply_revision_tenant_id_question_id");
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.TrainingPathEntry", b =>
+                {
+                    b.HasOne("Yojana.Knowledge.Data.Entities.KnowledgeEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EntryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_training_path_entry_tenant_id_entry_id");
+
+                    b.HasOne("Yojana.Knowledge.Data.Entities.TrainingPathVersion", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PathId", "Version")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_training_path_entry_tenant_id_path_id_version");
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.TrainingPathVersion", b =>
+                {
+                    b.HasOne("Yojana.Knowledge.Data.Entities.TrainingPath", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PathId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_training_path_version_tenant_id_path_id");
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.TrainingProgress", b =>
+                {
+                    b.HasOne("Yojana.Knowledge.Data.Entities.KnowledgeEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EntryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_training_progress_tenant_id_entry_id");
+
+                    b.HasOne("Yojana.Knowledge.Data.Entities.TrainingPath", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PathId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_training_progress_tenant_id_path_id");
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.TrainingWelcomeDismissal", b =>
+                {
+                    b.HasOne("Yojana.Knowledge.Data.Entities.TrainingPath", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PathId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_training_welcome_dismissal_tenant_id_path_id");
                 });
 #pragma warning restore 612, 618
         }

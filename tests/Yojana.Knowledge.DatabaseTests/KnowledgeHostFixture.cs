@@ -134,7 +134,8 @@ public sealed class KnowledgeHostFixture : IAsyncLifetime
         {
             Id = id, Email = $"{id:N}@example.invalid", DisplayName = name,
             CreatedAt = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc),
-            Memberships = { new UserTenantMembership { UserId = id, TenantId = tenant, Roles = roles } },
+            Memberships = { new UserTenantMembership { UserId = id, TenantId = tenant, Roles = roles,
+                CreatedAt = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc) } },
         });
     }
 

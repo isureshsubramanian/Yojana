@@ -115,3 +115,54 @@ public sealed class KnowledgeScreenChange : ITenantScoped
     public Guid ChangedBy { get; set; }
     public DateTime ChangedAt { get; set; }
 }
+
+public sealed class TrainingPath : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid PathId { get; set; }
+    public required string Role { get; set; }
+    public required string Introduction { get; set; }
+    public int CurrentVersion { get; set; }
+    public Guid CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public Guid LastChangedBy { get; set; }
+    public DateTime LastChangedAt { get; set; }
+}
+
+public sealed class TrainingPathVersion : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid PathId { get; set; }
+    public int Version { get; set; }
+    public required string Role { get; set; }
+    public required string Introduction { get; set; }
+    public Guid ChangedBy { get; set; }
+    public DateTime ChangedAt { get; set; }
+}
+
+public sealed class TrainingPathEntry : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid PathId { get; set; }
+    public int Version { get; set; }
+    public int Position { get; set; }
+    public Guid EntryId { get; set; }
+}
+
+public sealed class TrainingProgress : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid PathId { get; set; }
+    public Guid EntryId { get; set; }
+    public Guid UserId { get; set; }
+    public int ReadEntryVersion { get; set; }
+    public DateTime ReadAt { get; set; }
+}
+
+public sealed class TrainingWelcomeDismissal : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid PathId { get; set; }
+    public Guid UserId { get; set; }
+    public DateTime DismissedAt { get; set; }
+}
