@@ -33,9 +33,13 @@
 .migration-refusals-card .table { min-width: 900px; }
 /* A table cell treats height as a minimum, so long reasons wrap and short rows keep the house row height. */
 .migration-refusals-card .table td { height: 44px; padding-block: 10px; white-space: normal; overflow-wrap: anywhere; line-height: 1.45; }
-.migration-reason-list { list-style: none; margin: 0; padding: 4px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
-.migration-reason { display: flex; width: 100%; gap: 16px; justify-content: space-between; align-items: baseline; padding: 10px 20px; border: 0; background: none; color: var(--text-1); font: inherit; text-align: left; cursor: pointer; }
+.migration-reason-list { list-style: none; margin: 0; padding: 6px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); column-gap: 8px; }
+.migration-reason { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: baseline; width: 100%; padding: 9px 20px; border: 0; background: none; color: var(--text-1); font: inherit; text-align: left; cursor: pointer; }
+.migration-reason .lbl { overflow-wrap: anywhere; }
+.migration-reason .bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.migration-reason .bar i { display: block; height: 100%; background: var(--accent); }
 .migration-reason:hover { background: var(--surface-2); }
+.migration-reason:hover .bar { background: var(--surface-1); }
 .migration-reason[aria-pressed="true"] { background: var(--surface-2); font-weight: 600; }
 .migration-reason .num { font-variant-numeric: tabular-nums; color: var(--text-2); }
 .migration-table-card .table, .migration-profile-card .table { min-width: 900px; }
