@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text;
 using Wolverine;
+using Yojana.Integration.Coexistence;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.LegacyMigration.Apply;
@@ -233,6 +234,16 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
         Assert.Equal(0, await serialisation.Units.CountAsync(row => loaded.Contains(row.UnitId)));
         Assert.Equal(ApplyRunStatus.RolledBack, (await apply.GetAsync(ids.BatchId, default))!.Status);
 
+        // The go-live record reads the rehearsed rollback with its duration (P9-T11).
+        var connectionId = await db.MigrationBatches.Where(row => row.BatchId == ids.BatchId)
+            .Select(row => row.ConnectionId).SingleAsync();
+        var goLive = await scope.ServiceProvider.GetRequiredService<IMigrationGoLiveFacts>().ReadAsync(connectionId, default);
+        var rehearsed = Assert.IsType<TimedLoadFact>(goLive.RollbackRehearsal);
+        Assert.Equal("R1", rehearsed.Label);
+        Assert.True(rehearsed.Duration >= TimeSpan.Zero);
+        Assert.Null(goLive.CutoverLoad);
+        Assert.Null(goLive.FinalSignoff);
+
         // After a rollback the next rehearsal loads the same plan afresh.
         Assert.Equal(1, (await scope.ServiceProvider.GetRequiredService<LinkOverrideService>()
             .DeleteAllAsync(new(true), default)).Removed);
@@ -318,6 +329,12 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
         await db.SaveChangesAsync();
         Assert.True((await scope.ServiceProvider.GetRequiredService<ValidationService>()
             .GetAsync(ids.BatchId, default))!.HasFinalSignoff);
+        var connectionId = await db.MigrationBatches.Where(row => row.BatchId == ids.BatchId)
+            .Select(row => row.ConnectionId).SingleAsync();
+        var signed = (await scope.ServiceProvider.GetRequiredService<IMigrationGoLiveFacts>()
+            .ReadAsync(connectionId, default)).FinalSignoff;
+        Assert.NotNull(signed);
+        Assert.Equal(fixture.Clock.UtcNow, signed.SignedAt);
         var queued = await apply.EnqueueAsync(ids.BatchId, new(false), "user:admin", default);
         Assert.False(queued.Rehearsal);
         Assert.Equal(ApplyRunStatus.Queued, queued.Status);

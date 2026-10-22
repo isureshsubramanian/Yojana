@@ -45,6 +45,8 @@ public sealed class MigrationApplyRun : ITenantScoped
     public int? CoverGaps { get; set; }
     public string? RolledBackBy { get; set; }
     public DateTime? RolledBackAt { get; set; }
+    // When the undo began, so the go-live record can show how long a rehearsed rollback took (P9-T11).
+    public DateTime? RollbackStartedAt { get; set; }
     /// <summary><see cref="ApplyRunKind.Initial"/> writes a plan into an empty module; a delta (P9-T10b) carries what changed since <see cref="BaseLoadId"/>.</summary>
     public string Kind { get; set; } = ApplyRunKind.Initial;
     public Guid? BaseLoadId { get; set; }

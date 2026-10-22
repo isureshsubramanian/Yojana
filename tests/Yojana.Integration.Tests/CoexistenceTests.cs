@@ -20,11 +20,16 @@ public sealed class CoexistenceTests
         builder.Services.AddScoped<CoexistenceConflicts>();
         builder.Services.AddScoped<SyncControl>();
         builder.Services.AddScoped<ParallelRun>();
+        builder.Services.AddScoped<ParallelRunDashboardService>();
         var app = builder.Build();
         app.MapCoexistenceEndpoints();
-        var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
+        var all = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
-        Assert.Equal(13, endpoints.Count);
+        Assert.Equal(21, all.Count);
+        // The three P9-T11 reads sit on the wider ParallelRunRead policy (IntegrationEndpointTests checks them).
+        var endpoints = all.Where(endpoint => !endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>()
+            .Any(policy => policy.Policy == YojanaPolicy.ParallelRunRead)).ToList();
+        Assert.Equal(18, endpoints.Count);
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             policy => policy.Policy == YojanaPolicy.IntegrationOperations));
         var administrator = endpoints.Where(endpoint => endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>()
@@ -34,7 +39,11 @@ public sealed class CoexistenceTests
             .OrderBy(x => x).ToList();
         Assert.Equal([
             "/api/integration/connections/{connectionId:guid}/coexistence PUT",
+            "/api/integration/connections/{connectionId:guid}/go-live/record POST",
             "/api/integration/connections/{connectionId:guid}/parallel-run POST",
+            "/api/integration/connections/{connectionId:guid}/parallel-run/handover/{kind}/confirm POST",
+            "/api/integration/connections/{connectionId:guid}/parallel-run/handover/{kind}/plan PUT",
+            "/api/integration/connections/{connectionId:guid}/parallel-run/month-end-close PUT",
             "/api/integration/connections/{connectionId:guid}/warranty-contracts PUT",
         ], administrator);
         // Stopping must stay available to the integration operator: rollback cannot wait for an administrator.
@@ -42,7 +51,8 @@ public sealed class CoexistenceTests
             .Metadata.GetOrderedMetadata<IAuthorizeData>(), policy => policy.Policy == YojanaPolicy.TenantAdministrator);
         foreach (var type in new[] { typeof(StopSync), typeof(ResumeSync), typeof(ResolveCoexistenceConflict),
                      typeof(UpdateCoexistenceSettings), typeof(UpdateWarrantyContractMaintenance),
-                     typeof(StartParallelRun), typeof(ConfirmParallelRunItem) })
+                     typeof(StartParallelRun), typeof(ConfirmParallelRunItem), typeof(SetMonthEndClose),
+                     typeof(PlanHandover), typeof(ConfirmHandover), typeof(ConfirmGoLiveItem) })
             Assert.DoesNotContain(type.GetProperties(), property => property.Name.Contains("Actor", StringComparison.OrdinalIgnoreCase)
                 || property.Name.EndsWith("By", StringComparison.Ordinal));
     }

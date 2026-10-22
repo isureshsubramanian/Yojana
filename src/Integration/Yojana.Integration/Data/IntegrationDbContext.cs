@@ -50,6 +50,8 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<CoexistenceScanState> CoexistenceScanStates => Set<CoexistenceScanState>();
     public DbSet<ParallelRunPlan> ParallelRunPlans => Set<ParallelRunPlan>();
     public DbSet<ParallelRunConfirmation> ParallelRunConfirmations => Set<ParallelRunConfirmation>();
+    public DbSet<ParallelRunHandover> ParallelRunHandovers => Set<ParallelRunHandover>();
+    public DbSet<GoLiveRecord> GoLiveRecords => Set<GoLiveRecord>();
     public DbSet<ConnectionNotificationSource> ConnectionNotificationSources => Set<ConnectionNotificationSource>();
     public DbSet<ConnectionPollWatermark> ConnectionPollWatermarks => Set<ConnectionPollWatermark>();
     public DbSet<ConnectionNotificationReceipt> ConnectionNotificationReceipts => Set<ConnectionNotificationReceipt>();
@@ -398,6 +400,21 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.Evidence).HasMaxLength(500);
             b.Property(x => x.ConfirmedBy).HasMaxLength(320);
         });
+        modelBuilder.Entity<ParallelRunHandover>(b =>
+        {
+            b.ToTable("parallel_run_handover");
+            b.HasKey(x => new { x.TenantId, x.ConnectionId, x.Kind });
+            b.Property(x => x.Kind).HasMaxLength(40);
+            b.Property(x => x.Evidence).HasMaxLength(500);
+            b.Property(x => x.ConfirmedBy).HasMaxLength(320);
+        });
+        modelBuilder.Entity<GoLiveRecord>(b =>
+        {
+            b.ToTable("go_live_record");
+            b.HasKey(x => new { x.TenantId, x.RecordId });
+            b.Property(x => x.IssuedBy).HasMaxLength(320);
+            b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.IssuedAt });
+        });
         modelBuilder.Entity<ConnectionThrottleProfileEntity>(b =>
         {
             b.ToTable("connection_throttle_profile", table =>
@@ -510,6 +527,8 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.Status).HasMaxLength(24);
             b.Property(x => x.Failure).HasMaxLength(4000);
             b.Property(x => x.RequestedBy).HasMaxLength(320);
+            b.Property(x => x.ExplainedBy).HasMaxLength(320);
+            b.Property(x => x.ExplanationNote).HasMaxLength(500);
             b.HasIndex(x => new { x.TenantId, x.StartedAt, x.ReconciliationRunId });
             b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.StartedAt, x.ReconciliationRunId });
         });

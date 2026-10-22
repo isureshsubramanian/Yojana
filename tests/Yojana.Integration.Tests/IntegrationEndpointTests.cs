@@ -1,3 +1,4 @@
+using Yojana.Integration.Coexistence;
 using Yojana.Integration.Connections;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
@@ -41,7 +42,7 @@ public sealed class IntegrationEndpointTests
             .SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()
             .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api/integration/",
                 StringComparison.Ordinal) == true).ToList();
-        Assert.Equal(32, endpoints.Count);
+        Assert.Equal(33, endpoints.Count);
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             metadata => metadata.Policy == YojanaPolicy.IntegrationOperations));
         var fieldMapWrite = endpoints.Single(endpoint => endpoint.RoutePattern.RawText ==
@@ -63,6 +64,42 @@ public sealed class IntegrationEndpointTests
             "/api/integration/connections/{connectionId:guid}/onboarding-checklist/{itemCode}/confirm");
         Assert.Contains(confirm.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             metadata => metadata.Policy == YojanaPolicy.TenantAdministrator);
+    }
+
+    [Fact]
+    public void Parallel_run_reads_admit_migration_leads_and_writes_keep_the_narrower_policies()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddAuthorization();
+        builder.Services.AddScoped<CoexistenceSettings>();
+        builder.Services.AddScoped<CoexistenceDriftService>();
+        builder.Services.AddScoped<CoexistenceConflicts>();
+        builder.Services.AddScoped<SyncControl>();
+        builder.Services.AddScoped<ParallelRun>();
+        builder.Services.AddScoped<ParallelRunDashboardService>();
+        builder.Services.AddScoped<WarrantyContractMaintenanceSettings>();
+        var app = builder.Build();
+        app.MapCoexistenceEndpoints();
+        var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>().ToList();
+        IReadOnlyList<string?> Policies(string route, string method) => endpoints.Single(endpoint =>
+                endpoint.RoutePattern.RawText == route
+                && endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Contains(method))
+            .Metadata.GetOrderedMetadata<IAuthorizeData>().Select(x => x.Policy).ToList();
+
+        foreach (var read in new[] { "/api/integration/connections/{connectionId:guid}/parallel-run/dashboard",
+                     "/api/integration/go-live/records/{recordId:guid}", "/api/integration/go-live/records/{recordId:guid}/csv" })
+            Assert.Equal([YojanaPolicy.ParallelRunRead], Policies(read, "GET"));
+        foreach (var (route, method) in new[]
+                 {
+                     ("/api/integration/connections/{connectionId:guid}/parallel-run/month-end-close", "PUT"),
+                     ("/api/integration/connections/{connectionId:guid}/parallel-run/handover/{kind}/plan", "PUT"),
+                     ("/api/integration/connections/{connectionId:guid}/parallel-run/handover/{kind}/confirm", "POST"),
+                     ("/api/integration/connections/{connectionId:guid}/go-live/record", "POST"),
+                 })
+            Assert.Equal([YojanaPolicy.IntegrationOperations, YojanaPolicy.TenantAdministrator], Policies(route, method));
+        Assert.Equal([YojanaPolicy.IntegrationOperations],
+            Policies("/api/integration/connections/{connectionId:guid}/go-live/{itemCode}/confirm", "POST"));
     }
 
     [Fact]

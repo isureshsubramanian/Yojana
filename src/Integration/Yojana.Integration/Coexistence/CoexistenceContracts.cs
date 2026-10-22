@@ -134,7 +134,9 @@ public sealed record CoexistenceConflictView(
     string? DecidedBy,
     DateTime? DecidedAt,
     Guid? ManualTaskId,
-    DateTime? ClosedAt);
+    DateTime? ClosedAt,
+    string DeciderRoleLabel = "Service desk",
+    string? ModuleValueLabel = null);
 
 public sealed record CoexistenceConflictPage(IReadOnlyList<CoexistenceConflictView> Items, string? NextCursor);
 

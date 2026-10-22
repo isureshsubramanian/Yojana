@@ -115,13 +115,13 @@ test("settings has a complete read-only mode and edit capability for both approv
   assert.match(common, /\/integration\/migration\/settings", "Settings"/);
 });
 
-test("validation is enabled while the later migration tab remains disabled", () => {
-  assert.match(common, /Arrives with P9-T11/);
-  assert.doesNotMatch(common, /Arrives with P9-T08/);
-  assert.match(common, /aria-disabled="true"/);
+test("validation and parallel run are enabled in the approved tab order", () => {
   assert.match(common, /\/integration\/migration\/review", "Review queue"/);
   assert.match(common, /\/integration\/migration\/templates", "Contract templates"/);
   assert.match(common, /\/integration\/migration\/validation", "Validation and sign-off"/);
+  assert.match(common, /\/integration\/migration\/parallel-run", "Parallel run"/);
+  assert.ok(common.indexOf('"Validation and sign-off"') < common.indexOf('"Parallel run"'));
+  assert.ok(common.indexOf('"Parallel run"') < common.indexOf('"Settings"'));
   assert.match(common, /validationAttentionCount/);
   assert.match(common, /templateSummary/); assert.match(common, /needsPerson\.templates/);
   assert.doesNotMatch(common, /Review queue", "Arrives/);

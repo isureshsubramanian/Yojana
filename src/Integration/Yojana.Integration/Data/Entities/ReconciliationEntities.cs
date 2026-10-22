@@ -18,6 +18,10 @@ public sealed class ReconciliationRun : ITenantScoped
     public string? Failure { get; set; }
     // The signed-in user who asked for an on-demand run; null for scheduled runs and runs recorded before P8.
     public string? RequestedBy { get; set; }
+    // A person's explanation of a mismatch (P9-T11): the run stays a mismatch but counts as explained.
+    public DateTime? ExplainedAt { get; set; }
+    public string? ExplainedBy { get; set; }
+    public string? ExplanationNote { get; set; }
 }
 
 public sealed class ReconciliationEntityDayResult : ITenantScoped

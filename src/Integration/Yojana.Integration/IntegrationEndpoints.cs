@@ -136,6 +136,9 @@ public static class IntegrationEndpoints
         integration.MapGet("/reconciliation/runs/{runId:guid}", async (Guid runId,
             ReconciliationService service, CancellationToken ct) =>
             await service.DetailAsync(runId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
+        integration.MapPost("/reconciliation/runs/{runId:guid}/explain", (Guid runId, ExplainReconciliationRun request,
+            ClaimsPrincipal user, ReconciliationService service, CancellationToken ct) =>
+            Invoke(() => service.ExplainAsync(runId, request.Note, Actor(user), ct)));
         integration.MapPost("/reconciliation/location-checks", (RunLocationReconciliationRequest request,
             ClaimsPrincipal user, ReconciliationService service, CancellationToken ct) => Invoke(async () =>
         {
