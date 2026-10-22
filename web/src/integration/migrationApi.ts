@@ -6,7 +6,7 @@ import type {
   MigrationReviewDetail, MigrationReviewKind, MigrationReviewPage, MigrationReviewStatus, MigrationSource,
   MigrationSourcePage, MigrationSourceTestResult, PolicyCatalogue, StartMigrationBatchResponse,
   TemplateKeywordRule, TemplateKeywordRules, TemplateMappingDetail, TemplateMappingState,
-  TemplateMappingSummaryView, TemplatePatternPage, MigrationValidation, SignoffRecord,
+  TemplateMappingSummaryView, TemplatePatternPage, MigrationValidation, SignoffRecord, TouchedMigrationLoadUnitPage,
   StartMigrationApplyResponse, StartValidationResponse, ValidationCheck, ValidationCheckDetail, ValidationDifferencePage,
   ValidationSample, ValidationSampleOutcome, ValidationSamplePage, ValidationSettings, ValidationSignatureRole,
 } from "./migrationTypes";
@@ -39,7 +39,12 @@ export const migrationApi = {
     api<MigrationPlanGapPage>(`${root}/batches/${batchId}/map/gaps${query({ kind, cursor, take: 25 })}`, { signal }),
   apply: (batchId: string, rehearsal: boolean) => api<StartMigrationApplyResponse>(`${root}/batches/${batchId}/apply`, { method: "POST", body: { rehearsal } }),
   load: (batchId: string, signal?: AbortSignal) => api<MigrationApply>(`${root}/batches/${batchId}/apply`, { signal }),
-  loadRefusals: (loadId: string, cursor?: string, signal?: AbortSignal) => api<MigrationApplyRefusalPage>(`${root}/loads/${loadId}/refusals${query({ cursor, take: 50 })}`, { signal }),
+  loadRefusals: (loadId: string, filters: { reason?: string | undefined; itemCode?: string | undefined; serial?: string | undefined; cursor?: string | undefined } = {}, signal?: AbortSignal) =>
+    api<MigrationApplyRefusalPage>(`${root}/loads/${loadId}/refusals${query({ ...filters, take: 50 })}`, { signal }),
+  loadRefusalsExportUrl: (loadId: string, filters: { reason?: string; itemCode?: string; serial?: string }) =>
+    `${root}/loads/${loadId}/refusals/export.csv${query(filters)}`,
+  touchedLoadUnits: (loadId: string, cursor?: string, signal?: AbortSignal) =>
+    api<TouchedMigrationLoadUnitPage>(`${root}/loads/${loadId}/rollback/touched-units${query({ cursor, take: 50 })}`, { signal }),
   rollbackLoad: (loadId: string) => api<RollBackMigrationLoadResponse>(`${root}/loads/${loadId}/rollback`, { method: "POST" }),
   review: (filters: { batchId: string; kind?: MigrationReviewKind | ""; family?: string; status?: MigrationReviewStatus | ""; find?: string; cursor?: string | undefined; take?: number }, signal?: AbortSignal) =>
     api<MigrationReviewPage>(`${root}/review${query({ ...filters, take: filters.take ?? 25 })}`, { signal }),

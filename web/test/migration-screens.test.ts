@@ -18,6 +18,7 @@ const profilingScreen = readFileSync(new URL("../src/integration/MigrationProfil
 const reviewScreen = readFileSync(new URL("../src/integration/MigrationReview.tsx", import.meta.url), "utf8");
 const templateScreen = readFileSync(new URL("../src/integration/MigrationTemplates.tsx", import.meta.url), "utf8");
 const validationScreen = readFileSync(new URL("../src/integration/MigrationValidation.tsx", import.meta.url), "utf8");
+const refusalsScreen = readFileSync(new URL("../src/integration/MigrationRefusals.tsx", import.meta.url), "utf8");
 const common = readFileSync(new URL("../src/integration/MigrationCommon.tsx", import.meta.url), "utf8");
 const api = readFileSync(new URL("../src/integration/migrationApi.ts", import.meta.url), "utf8");
 const routes = readFileSync(new URL("../src/routes.tsx", import.meta.url), "utf8");
@@ -49,6 +50,7 @@ test("migration routes and the Integration-area link admit administrators and Mi
   assert.match(routes, /integration\/migration\/review.*MigrationReview/);
   assert.match(routes, /integration\/migration\/templates.*MigrationTemplates/);
   assert.match(routes, /integration\/migration\/validation.*MigrationValidation/);
+  assert.match(routes, /integration\/migration\/loads\/:loadId\/refusals.*MigrationRefusals/);
   assert.match(integrationTabs, /\["\/integration\/migration", "Migration"\]/);
   assert.match(integrationTabs, /mayReadMigration\(roles\)/);
   assert.match(common, /Tenant administrator or Migration lead access is required/);
@@ -72,7 +74,7 @@ test("validation is enabled while the later migration tab remains disabled", () 
 });
 
 test("migration API adapter covers the merged endpoints and sends no browser actor", () => {
-  for (const fragment of ["/sources", "/licence", "/test", "/batches", "/profile", "/samples", "/profiling/outcomes", "/canonicalisation", "/canonicalise", "/reconstruction", "/map", "/apply", "/loads/", "/refusals", "/rollback", "/review", "/review/export.csv", "/canonicalisation/families/catalogue", "/validate", "/validation/checks", "/differences", "/explain", "/sign", "/sample", "/trace", "/signoff-record", "/validation/settings"]) assert.match(api, new RegExp(fragment.replace("/", "\\/")));
+  for (const fragment of ["/sources", "/licence", "/test", "/batches", "/profile", "/samples", "/profiling/outcomes", "/canonicalisation", "/canonicalise", "/reconstruction", "/map", "/apply", "/loads/", "/refusals", "/refusals/export.csv", "/rollback", "/rollback/touched-units", "/review", "/review/export.csv", "/canonicalisation/families/catalogue", "/validate", "/validation/checks", "/differences", "/explain", "/sign", "/sample", "/trace", "/signoff-record", "/validation/settings"]) assert.match(api, new RegExp(fragment.replace("/", "\\/")));
   assert.match(api, /method: "POST", body: \{ sourceId \}/);
   assert.match(api, /method: "PUT", body: \{ classes, expectedVersion \}/);
   assert.doesNotMatch(api, /actor|requestedBy|confirmedBy/i);
@@ -82,7 +84,7 @@ const validationRun: MigrationValidation = {
   runId: "run-internal", batchId: "batch-internal", mapRunId: "map-internal", targetKind: "module",
   rehearsal: false, rehearsalNumber: null, status: "completed", startedAt: "2026-09-01T08:00:00Z", finishedAt: "2026-09-01T08:01:00Z",
   loadDate: "2026-09-01T07:55:00Z", signoffRecordId: null, signoffRehearsal: null,
-  signoffCreatedAt: null, signoffCreatedByName: null, failureCode: null, failureDetail: null,
+  signoffCreatedAt: null, signoffCreatedByName: null, hasFinalSignoff: false, failureCode: null, failureDetail: null,
   checksTotal: 3, passed: 1, explained: 0, failed: 2, hardFailed: 1, signedChecks: 1,
   units: 409_118, events: 3_611_402, eventsShortPercent: 0.04, sampleTraced: 199, sampleTotal: 200,
   hardFailSummary: "One hard fail.", checks: [
@@ -290,7 +292,7 @@ test("phase cards format every state as a readable badge", () => {
 
 const loadFixture: MigrationApply = {
   loadId: "load-internal", batchId: "batch-internal", mapRunId: "map-internal", rehearsal: true, status: "completed",
-  requestedBy: "actor-internal", requestedAt: "2026-09-01T08:00:00Z", startedAt: "2026-09-01T08:00:01Z", finishedAt: "2026-09-01T08:02:00Z", failure: null,
+  requestedByName: "R. Okafor", requestedAt: "2026-09-01T08:00:00Z", startedAt: "2026-09-01T08:00:01Z", finishedAt: "2026-09-01T08:02:00Z", failure: null,
   unitsInPlan: 593, applied: 580, alreadyApplied: 0, refused: 13, eventsWritten: 2267, entitlementsWritten: 341,
   replacementLinksWritten: 5, certificatesRecorded: 580, rolledBackBy: null, rolledBackAt: null, gapReportRunId: "gap-internal", coverGaps: 17,
   gapsByKind: [{ kind: "card_cover_policy_not_set", label: "Equipment-card cover policy not set", count: 9 }],
@@ -309,27 +311,35 @@ test("final load gives a distinct disabled reason for each incomplete gate", () 
   const ready = { ...validationRun, rehearsal: false, status: "completed", hardFailed: 0, signedChecks: validationRun.checksTotal };
   assert.equal(finalLoadDisabledReason(null), "Run final validation first");
   assert.equal(finalLoadDisabledReason({ ...ready, rehearsal: true }), "The latest validation run is a rehearsal; run final validation");
-  assert.equal(finalLoadDisabledReason({ ...ready, signedChecks: 1 }), "2 checks are not signed");
-  assert.equal(finalLoadDisabledReason({ ...ready, hardFailed: 1 }), "1 hard fail");
-  assert.equal(finalLoadDisabledReason(ready), null);
-  assert.match(consoleScreen, /disabled=\{busy \|\| !batchId \|\| !!loadOpenReason \|\| !!finalReason\}/);
+  assert.equal(finalLoadDisabledReason(ready), "Create the final sign-off record for this load plan");
+  assert.equal(finalLoadDisabledReason({ ...ready, hasFinalSignoff: true }), null);
+  assert.match(consoleScreen, /finalDisabledReason/);
+  assert.match(consoleScreen, /className=\{`btn sm\$\{reason \? "" : enabledClass\}`\}/);
+  assert.match(consoleScreen, /migration-disabled-reason/);
   assert.match(consoleScreen, /<ErrorNote error=\{error\}/);
 });
 
 test("rehearsal rollback uses an inline confirmation and keeps touched loads in place", () => {
   for (const text of ["Roll back this rehearsal?", "Every unit, fact, cover row, link and certificate this load wrote will be removed", "Keep the load", "The rehearsal load stays in place"]) assert.ok(consoleScreen.includes(text), text);
   assert.doesNotMatch(consoleScreen, /window\.confirm|confirm\(/);
-  assert.match(consoleScreen, /result\.touchedUnitIds\.length/);
-  assert.doesNotMatch(consoleScreen, /result\.touchedUnitIds\.map|\{result\.touchedUnitIds\}/);
+  assert.match(consoleScreen, /result\.touchedUnitCount/);
+  assert.match(consoleScreen, /result\.touchedUnits/);
+  assert.match(consoleScreen, /migrationApi\.touchedLoadUnits/);
+  assert.match(consoleScreen, /Touched serial/);
   for (const outcome of ["rolled_back", "refused_touched", "nothing_to_remove"]) assert.doesNotMatch(rollbackOutcomeLabel(outcome), /_/);
 });
 
-test("load actions are administrator-only while refusals stay readable to Migration leads", () => {
-  assert.match(consoleScreen, /\{admin && <div className="migration-load-actions"/);
-  assert.match(consoleScreen, /load && load\.refused > 0.*openRefusals/s);
-  assert.match(consoleScreen, /keyset order/);
-  assert.match(consoleScreen, /<DataGrid columns=\{columns\}.*nextCursor/s);
-  assert.doesNotMatch(consoleScreen, />\{row\.(?:refusalId|planUnitId)\}</);
+test("load actions are full width and administrator-only while refusals use their own scalable view", () => {
+  assert.match(consoleScreen, /<LoadActions .*admin=\{admin\}/);
+  assert.match(consoleScreen, /if \(!admin\) return/);
+  assert.match(consoleScreen, /migration-load-action-row/);
+  assert.match(consoleScreen, /integration\/migration\/loads\/\$\{load\.loadId\}\/refusals/);
+  for (const text of ["Total refused", "Reason", "Item code", "Serial contains", "Why it was refused", "Export filtered CSV", "keyset paged", "reasons shown in full"]) assert.ok(refusalsScreen.includes(text), text);
+  assert.match(refusalsScreen, /<KpiStrip/); assert.match(refusalsScreen, /<DataGrid/);
+  assert.match(refusalsScreen, /migrationApi\.loadRefusals\(loadId, \{ \.\.\.active, cursor \}\)/);
+  assert.match(refusalsScreen, /result\?\.total/); assert.match(refusalsScreen, /totalIsExact: true/);
+  assert.match(refusalsScreen, /loadRefusalsExportUrl/);
+  assert.doesNotMatch(refusalsScreen, />\{row\.(?:refusalId|planUnitId)\}</);
 });
 
 test("every emitted load refusal and map gap has readable formatting", () => {

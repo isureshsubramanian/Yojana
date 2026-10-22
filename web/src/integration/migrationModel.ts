@@ -272,11 +272,7 @@ export function finalLoadDisabledReason(run: MigrationValidation | null | undefi
   if (!run) return "Run final validation first";
   if (run.rehearsal) return "The latest validation run is a rehearsal; run final validation";
   if (run.status !== "completed") return run.status === "failed" ? "Final validation failed" : "Final validation has not completed";
-  const reasons: string[] = [];
-  if (run.hardFailed) reasons.push(`${run.hardFailed.toLocaleString()} hard fail${run.hardFailed === 1 ? "" : "s"}`);
-  const unsigned = Math.max(0, run.checksTotal - run.signedChecks);
-  if (unsigned) reasons.push(`${unsigned.toLocaleString()} check${unsigned === 1 ? " is" : "s are"} not signed`);
-  return reasons.length ? reasons.join(" and ") : null;
+  return run.hasFinalSignoff ? null : "Create the final sign-off record for this load plan";
 }
 export function phaseStatusLabel(value: string | null | undefined): string {
   if (!value || value === "not_run") return "Not run";

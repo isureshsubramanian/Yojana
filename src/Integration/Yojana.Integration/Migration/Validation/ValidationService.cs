@@ -827,6 +827,11 @@ public sealed class ValidationService(
                 x.RunId == run.RunId).OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.RecordId)
             .Select(x => new { x.RecordId, x.Rehearsal, x.CreatedAt, x.CreatedBy })
             .FirstOrDefaultAsync(cancellationToken);
+        var hasFinalSignoff = await db.MigrationSignoffRecords.AsNoTracking().AnyAsync(record =>
+            record.TenantId == tenant.TenantId && !record.Rehearsal &&
+            db.MigrationValidationRuns.AsNoTracking().Any(validation => validation.TenantId == record.TenantId &&
+                validation.RunId == record.RunId && validation.MapRunId == run.MapRunId && !validation.Rehearsal),
+            cancellationToken);
         var gapRows = await db.MigrationPlanGaps.AsNoTracking().Where(x => x.TenantId == tenant.TenantId &&
                 x.MapRunId == run.MapRunId).GroupBy(x => x.Kind)
             .Select(group => new { Kind = group.Key, Count = group.LongCount() }).OrderBy(x => x.Kind)
@@ -835,7 +840,8 @@ public sealed class ValidationService(
         var signoffNames = await ResolveNamesAsync(signoff is null ? [] : [signoff.CreatedBy], cancellationToken);
         return new(run.RunId, run.BatchId, run.MapRunId, run.TargetKind, run.Rehearsal, rehearsalNumber,
             run.Status, run.StartedAt, run.FinishedAt, loadDate, signoff?.RecordId, signoff?.Rehearsal,
-            signoff?.CreatedAt, signoff is null ? null : Name(signoffNames, signoff.CreatedBy), run.FailureCode,
+            signoff?.CreatedAt, signoff is null ? null : Name(signoffNames, signoff.CreatedBy), hasFinalSignoff,
+            run.FailureCode,
             run.FailureDetail, checks.Count, checks.Count(x => x.Result == ValidationResult.Pass),
             checks.Count(x => x.Result == ValidationResult.Explained),
             checks.Count(x => x.Result is ValidationResult.Fail or ValidationResult.HardFail), hard.Count,

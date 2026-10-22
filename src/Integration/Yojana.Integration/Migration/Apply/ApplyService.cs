@@ -1,5 +1,6 @@
 using System.Data;
 using System.Globalization;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Wolverine;
 using Yojana.Integration.Data;
@@ -10,6 +11,7 @@ using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Validation;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.LegacyMigration.Apply;
@@ -17,17 +19,22 @@ namespace Yojana.Integration.LegacyMigration.Apply;
 public sealed record StartApplyRequest(bool Rehearsal);
 public sealed record StartApplyResponse(Guid LoadId, Guid BatchId, Guid MapRunId, bool Rehearsal, string Status);
 public sealed record MigrationApplyView(Guid LoadId, Guid BatchId, Guid MapRunId, bool Rehearsal, string Status,
-    string RequestedBy, DateTime RequestedAt, DateTime? StartedAt, DateTime? FinishedAt, string? Failure,
+    string RequestedByName, DateTime RequestedAt, DateTime? StartedAt, DateTime? FinishedAt, string? Failure,
     long UnitsInPlan, long Applied, long AlreadyApplied, long Refused, long EventsWritten,
     long EntitlementsWritten, long ReplacementLinksWritten, long CertificatesRecorded,
     string? RolledBackBy, DateTime? RolledBackAt, Guid? GapReportRunId = null, int? CoverGaps = null,
     long ReplacementLinksUsingOverride = 0, IReadOnlyList<MigrationGapCount>? GapsByKind = null);
 public sealed record MigrationApplyRefusalView(Guid RefusalId, Guid PlanUnitId, string ItemCode, string? Serial,
     IReadOnlyList<string> Reasons);
-public sealed record MigrationApplyRefusalPage(IReadOnlyList<MigrationApplyRefusalView> Items, string? NextCursor);
+public sealed record MigrationApplyRefusalCount(string Reason, string Label, long Count);
+public sealed record MigrationApplyRefusalPage(IReadOnlyList<MigrationApplyRefusalView> Items, string? NextCursor,
+    long Total, long LoadTotal, IReadOnlyList<MigrationApplyRefusalCount> CountsByReason);
+public sealed record TouchedMigrationLoadUnitView(string Serial);
+public sealed record TouchedMigrationLoadUnitPage(IReadOnlyList<TouchedMigrationLoadUnitView> Items, string? NextCursor,
+    int Total);
 public sealed record RollBackLoadResponse(Guid LoadId, string Outcome, int UnitsRemoved, int EventsRemoved,
-    IReadOnlyList<Guid> TouchedUnitIds, int EntitlementsRemoved = 0, int ReplacementLinksRemoved = 0,
-    int CertificatesRemoved = 0);
+    int TouchedUnitCount, IReadOnlyList<TouchedMigrationLoadUnitView> TouchedUnits, string? TouchedNextCursor,
+    int EntitlementsRemoved = 0, int ReplacementLinksRemoved = 0, int CertificatesRemoved = 0);
 
 public sealed class ApplyRuleException(string rule, string message) : InvalidOperationException(message)
 {
@@ -43,7 +50,7 @@ public sealed class ApplyRuleException(string rule, string message) : InvalidOpe
 /// </summary>
 public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant, IClock clock, IMessageBus bus,
     GatewayReferenceStore references, IMigrationSignoffStatus signoff, MappingSettings mappingSettings,
-    ReplacementLinkValueValidator linkValidator)
+    ReplacementLinkValueValidator linkValidator, IUserDirectory people)
 {
     public const int ChunkSize = 500;
 
@@ -126,27 +133,56 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
         return run is null ? null : await ViewAsync(run, cancellationToken);
     }
 
-    public async Task<MigrationApplyRefusalPage> RefusalsAsync(Guid loadId, string? cursor, int take,
-        CancellationToken cancellationToken)
+    public async Task<MigrationApplyRefusalPage> RefusalsAsync(Guid loadId, string? reason, string? itemCode,
+        string? serial, string? cursor, int take, CancellationToken cancellationToken)
     {
         take = Math.Clamp(take, 1, 200);
         Guid? after = Guid.TryParse(cursor, out var parsed) ? parsed : null;
-        var rows = await (from refusal in db.Set<MigrationApplyRefusal>().AsNoTracking()
-                          join unit in db.MigrationPlanUnits.AsNoTracking()
-                              on new { refusal.TenantId, refusal.PlanUnitId } equals new { unit.TenantId, unit.PlanUnitId }
-                          where refusal.TenantId == tenant.TenantId && refusal.RunId == loadId &&
-                                (after == null || refusal.RefusalId.CompareTo(after.Value) > 0)
-                          orderby refusal.RefusalId
-                          select new
-                          {
-                              refusal.RefusalId, refusal.PlanUnitId, unit.ItemCode, refusal.Reasons,
-                              Serial = db.MigrationPlanIdentifiers.Where(id => id.TenantId == unit.TenantId &&
-                                      id.PlanUnitId == unit.PlanUnitId && id.IdentifierType == IdentifierType.InternalSerial)
-                                  .Select(id => id.RawValue).FirstOrDefault(),
-                          }).Take(take + 1).ToListAsync(cancellationToken);
+        var filtered = RefusalQuery(loadId, reason, itemCode, serial);
+        var total = await filtered.LongCountAsync(cancellationToken);
+        var loadReasons = await db.Set<MigrationApplyRefusal>().AsNoTracking().Where(row =>
+                row.TenantId == tenant.TenantId && row.RunId == loadId)
+            .Select(row => row.Reasons).ToListAsync(cancellationToken);
+        var counts = loadReasons.SelectMany(ApplyRefusalReason.Split).GroupBy(value => value, StringComparer.Ordinal)
+            .OrderByDescending(group => group.LongCount()).ThenBy(group => ApplyRefusalReason.Label(group.Key),
+                StringComparer.Ordinal)
+            .Select(group => new MigrationApplyRefusalCount(group.Key, ApplyRefusalReason.Label(group.Key),
+                group.LongCount())).ToList();
+        var loadTotal = (long)loadReasons.Count;
+        var rows = await filtered.Where(row => after == null || row.RefusalId.CompareTo(after.Value) > 0)
+            .OrderBy(row => row.RefusalId).Take(take + 1).ToListAsync(cancellationToken);
         var items = rows.Take(take).Select(row => new MigrationApplyRefusalView(row.RefusalId, row.PlanUnitId,
-            row.ItemCode, row.Serial, row.Reasons.Split(' ', StringSplitOptions.RemoveEmptyEntries))).ToList();
-        return new(items, rows.Count > take ? items[^1].RefusalId.ToString("D") : null);
+            row.ItemCode, row.Serial, ApplyRefusalReason.Split(row.Reasons))).ToList();
+        return new(items, rows.Count > take ? items[^1].RefusalId.ToString("D") : null, total, loadTotal, counts);
+    }
+
+    public Task<MigrationApplyRefusalPage> RefusalsAsync(Guid loadId, string? cursor, int take,
+        CancellationToken cancellationToken) =>
+        RefusalsAsync(loadId, null, null, null, cursor, take, cancellationToken);
+
+    public async Task<byte[]> ExportRefusalsAsync(Guid loadId, string? reason, string? itemCode, string? serial,
+        CancellationToken cancellationToken)
+    {
+        var csv = new StringBuilder("Item code,Serial,Why it was refused\r\n");
+        await foreach (var row in RefusalQuery(loadId, reason, itemCode, serial)
+            .OrderBy(item => item.RefusalId).AsAsyncEnumerable().WithCancellation(cancellationToken))
+        {
+            csv.AppendJoin(',', Csv(row.ItemCode), Csv(row.Serial),
+                Csv(string.Join("; ", ApplyRefusalReason.Split(row.Reasons).Select(ApplyRefusalReason.Label))))
+                .Append("\r\n");
+        }
+        return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
+    }
+
+    public async Task<TouchedMigrationLoadUnitPage> TouchedUnitsAsync(Guid loadId, string? cursor, int take,
+        CancellationToken cancellationToken)
+    {
+        var after = Guid.TryParse(cursor, out var parsed) ? parsed : (Guid?)null;
+        var page = await bus.InvokeAsync<TouchedMigrationLoadUnitsPage>(
+            new TouchedMigrationLoadUnitsQuery(loadId, after, Math.Clamp(take, 1, 200)), Options(),
+            cancellationToken);
+        return new(page.Items.Select(row => new TouchedMigrationLoadUnitView(row.Serial)).ToList(),
+            page.NextAfterUnitId?.ToString("D"), page.Total);
     }
 
     public async Task<RollBackLoadResponse> RollBackAsync(Guid loadId, string actor, CancellationToken cancellationToken)
@@ -169,8 +205,13 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
             run.RolledBackAt = clock.UtcNow;
             await db.SaveChangesAsync(cancellationToken);
         }
-        return new(loadId, result.Outcome, result.UnitsRemoved, result.EventsRemoved, result.TouchedUnitIds,
-            result.EntitlementsRemoved, result.ReplacementLinksRemoved, result.CertificatesRemoved);
+        var touched = result.Outcome == RollBackMigrationLoadResult.RefusedTouched
+            ? await TouchedUnitsAsync(loadId, null, 50, cancellationToken)
+            : new TouchedMigrationLoadUnitPage([], null, 0);
+        return new(loadId, result.Outcome, result.UnitsRemoved, result.EventsRemoved,
+            result.TouchedUnitCount > 0 ? result.TouchedUnitCount : touched.Total, touched.Items,
+            touched.NextCursor, result.EntitlementsRemoved, result.ReplacementLinksRemoved,
+            result.CertificatesRemoved);
     }
 
     private async Task ApplyAsync(Guid runId, CancellationToken cancellationToken)
@@ -423,6 +464,36 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
 
     private DeliveryOptions Options() => new() { TenantId = tenant.TenantId.ToString() };
 
+    private IQueryable<MigrationApplyRefusalRow> RefusalQuery(Guid loadId, string? reason, string? itemCode,
+        string? serial)
+    {
+        reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        itemCode = string.IsNullOrWhiteSpace(itemCode) ? null : itemCode.Trim();
+        serial = string.IsNullOrWhiteSpace(serial) ? null : serial.Trim();
+        var query = from refusal in db.Set<MigrationApplyRefusal>().AsNoTracking()
+                    join unit in db.MigrationPlanUnits.AsNoTracking()
+                        on new { refusal.TenantId, refusal.PlanUnitId } equals new { unit.TenantId, unit.PlanUnitId }
+                    where refusal.TenantId == tenant.TenantId && refusal.RunId == loadId
+                    select new MigrationApplyRefusalRow
+                    {
+                        RefusalId = refusal.RefusalId,
+                        PlanUnitId = refusal.PlanUnitId,
+                        ItemCode = unit.ItemCode,
+                        Reasons = refusal.Reasons,
+                        Serial = db.MigrationPlanIdentifiers.Where(id => id.TenantId == unit.TenantId &&
+                                id.PlanUnitId == unit.PlanUnitId && id.IdentifierType == IdentifierType.InternalSerial)
+                            .OrderBy(id => id.PlanIdentifierId).Select(id => id.RawValue).FirstOrDefault(),
+                    };
+        if (reason is not null)
+        {
+            var delimited = " " + reason + " ";
+            query = query.Where(row => (" " + row.Reasons + " ").Contains(delimited));
+        }
+        if (itemCode is not null) query = query.Where(row => row.ItemCode == itemCode);
+        if (serial is not null) query = query.Where(row => row.Serial != null && row.Serial.Contains(serial));
+        return query;
+    }
+
     private async Task<MigrationApplyView> ViewAsync(MigrationApplyRun run, CancellationToken cancellationToken)
     {
         var cursor = run.CursorPlanUnitId;
@@ -438,10 +509,89 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
         var gaps = rows.GroupBy(row => row.Kind).OrderBy(group => group.Key)
             .Select(group => new MigrationGapCount(group.Key, PlanGapKind.Label(group.Key), group.LongCount()))
             .ToList();
-        return new(run.RunId, run.BatchId, run.MapRunId, run.Rehearsal, run.Status, run.RequestedBy,
+        var names = await people.DisplayNamesAsync([run.RequestedBy], cancellationToken);
+        return new(run.RunId, run.BatchId, run.MapRunId, run.Rehearsal, run.Status,
+            names.GetValueOrDefault(run.RequestedBy) ?? "Unknown user",
             run.RequestedAt, run.StartedAt, run.FinishedAt, run.FailureCode, run.UnitsInPlan, run.Applied,
             run.AlreadyApplied, run.Refused, run.EventsWritten, run.EntitlementsWritten,
             run.ReplacementLinksWritten, run.CertificatesRecorded, run.RolledBackBy, run.RolledBackAt,
             run.GapReportRunId, run.CoverGaps, run.ReplacementLinksUsingOverride, gaps);
+    }
+
+    private static string Csv(object? value)
+    {
+        var text = value switch
+        {
+            null => "",
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+            _ => value.ToString() ?? "",
+        };
+        if (value is string && text.Length != 0 && text[0] is '=' or '+' or '-' or '@') text = "'" + text;
+        return '"' + text.Replace("\"", "\"\"") + '"';
+    }
+}
+
+internal sealed class MigrationApplyRefusalRow
+{
+    public Guid RefusalId { get; init; }
+    public Guid PlanUnitId { get; init; }
+    public required string ItemCode { get; init; }
+    public string? Serial { get; init; }
+    public required string Reasons { get; init; }
+}
+
+internal static class ApplyRefusalReason
+{
+    private static readonly IReadOnlyDictionary<string, string> Labels = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["item_not_synced"] = "Item has not synced",
+        ["item_unknown"] = "Item is not known",
+        ["item_not_serial_tracked"] = "Item is not serial tracked",
+        ["already_open_on_another_unit"] = "Identifier is already open on another unit",
+        ["duplicate_in_batch"] = "Identifier is duplicated in this load",
+        ["replacement_unit_not_loaded"] = "Replacement unit was not loaded",
+        ["entitlement_policy_unknown"] = "Cover policy is not known",
+        ["entitlement_policy_not_published"] = "Cover policy is not published",
+        ["entitlement_policy_version_differs"] = "Cover policy version differs",
+        ["entitlement_policy_family_differs"] = "Cover policy belongs to another family",
+        ["entitlement_direction_unknown"] = "Cover direction is not known",
+        ["entitlement_start_required"] = "Cover start date is required",
+        ["entitlement_dates_invalid"] = "Cover dates are not valid",
+        ["entitlement_termination_before_start"] = "Cover ends before it starts",
+        ["entitlement_evidence_required"] = "Cover evidence is required",
+        ["entitlement_selected_evidence_required"] = "Selected cover evidence is required",
+        ["entitlement_selected_evidence_differs"] = "Selected cover evidence differs",
+        ["family_occupied"] = "Coverage family already has cover",
+        ["migration_certificate_version_not_one"] = "Migrated certificate must be version one",
+        ["migration_certificate_provenance_invalid"] = "Certificate provenance is not valid",
+        ["migration_certificate_unknowns_required"] = "Certificate unknowns are required",
+        ["migration_certificate_evidence_required"] = "Certificate evidence is required",
+        ["migration_certificate_required"] = "Migrated certificate is required",
+        ["replacement_link_invalid"] = "Replacement link is not valid",
+        ["replacement_policy_must_be_unknown"] = "Replacement policy must be unknown",
+        ["identifier_required"] = "An identifier is required",
+        ["history_depth_unknown"] = "History depth is not known",
+        ["condition_grade_unknown"] = "Condition grade is not known",
+        ["ownership_party_is_us"] = "The tenant cannot be recorded as the customer",
+        ["identifier_type_repeated"] = "Identifier type is repeated",
+        ["empty"] = "Identifier is empty",
+        ["asterisk_not_encodable_in_code39"] = "Asterisk cannot be encoded in Code 39",
+    };
+
+    public static string[] Split(string reasons) => reasons.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+    public static string Label(string value)
+    {
+        var separator = value.IndexOf(':', StringComparison.Ordinal);
+        if (separator < 0) return Labels.GetValueOrDefault(value) ?? Humanise(value);
+        var scope = value[..separator];
+        var reason = value[(separator + 1)..];
+        return $"{Humanise(scope)}: {Labels.GetValueOrDefault(reason) ?? Humanise(reason)}";
+    }
+
+    private static string Humanise(string value)
+    {
+        var text = value.Replace('_', ' ').Replace('-', ' ').Replace('*', ' ').Trim();
+        return text.Length == 0 ? "Unspecified" : char.ToUpperInvariant(text[0]) + text[1..];
     }
 }

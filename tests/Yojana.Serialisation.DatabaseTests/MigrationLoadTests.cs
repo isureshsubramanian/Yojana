@@ -174,7 +174,13 @@ public sealed class MigrationLoadTests(SerialisationHostFixture fixture)
         var refused = await InvokeAsync<RollBackMigrationLoadResult>(tenant, new RollBackMigrationLoad(reload, "user:admin"));
         Assert.Equal(RollBackMigrationLoadResult.RefusedTouched, refused.Outcome);
         Assert.Equal([touchedUnit], refused.TouchedUnitIds);
+        Assert.Equal(1, refused.TouchedUnitCount);
         Assert.Equal(0, refused.UnitsRemoved);
+        var touched = await InvokeAsync<TouchedMigrationLoadUnitsPage>(tenant,
+            new TouchedMigrationLoadUnitsQuery(reload, null, 1));
+        Assert.Equal(1, touched.Total);
+        Assert.Equal(prefix + "-021", Assert.Single(touched.Items).Serial);
+        Assert.Null(touched.NextAfterUnitId);
 
         var nothing = await InvokeAsync<RollBackMigrationLoadResult>(tenant, new RollBackMigrationLoad(Guid.NewGuid(), "user:admin"));
         Assert.Equal(RollBackMigrationLoadResult.NothingToRemove, nothing.Outcome);
@@ -419,6 +425,19 @@ public sealed class MigrationLoadTests(SerialisationHostFixture fixture)
             new RollBackMigrationLoad(load, "user:admin"));
         Assert.Equal(RollBackMigrationLoadResult.RefusedTouched, rollback.Outcome);
         Assert.Equal(new[] { unitA, unitB }.Order().ToList(), rollback.TouchedUnitIds.Order().ToList());
+        Assert.Equal(2, rollback.TouchedUnitCount);
+        var first = await InvokeAsync<TouchedMigrationLoadUnitsPage>(tenant,
+            new TouchedMigrationLoadUnitsQuery(load, null, 1));
+        Assert.Single(first.Items);
+        Assert.Equal(2, first.Total);
+        Assert.NotNull(first.NextAfterUnitId);
+        var second = await InvokeAsync<TouchedMigrationLoadUnitsPage>(tenant,
+            new TouchedMigrationLoadUnitsQuery(load, first.NextAfterUnitId, 1));
+        Assert.Single(second.Items);
+        Assert.Equal(2, second.Total);
+        Assert.Null(second.NextAfterUnitId);
+        Assert.Equal(new[] { prefix + "-120", prefix + "-121" },
+            first.Items.Concat(second.Items).Select(row => row.Serial).Order().ToArray());
     }
 
     [DatabaseFact]

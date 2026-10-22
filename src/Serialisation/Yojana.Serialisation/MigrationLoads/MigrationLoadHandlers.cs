@@ -607,19 +607,16 @@ public static class RollBackMigrationLoadHandler
         }
 
         // A unit is touched when the ledger holds more facts for it than the load wrote (live or archived partitions).
-        var touched = await rows
-            .Select(r => new
-            {
-                r.UnitId,
-                r.EventCount,
-                Live = db.Events.Count(e => e.TenantId == tenantId && e.UnitId == r.UnitId),
-                Archived = db.ArchivedEvents.Count(e => e.TenantId == tenantId && e.UnitId == r.UnitId),
-            })
-            .Where(x => x.Live + x.Archived > x.EventCount)
-            .OrderBy(x => x.UnitId).Select(x => x.UnitId).Take(TouchedListLimit).ToListAsync(cancellationToken);
-        if (touched.Count > 0)
+        // MigrationLoadTouchQuery owns this invariant for both rollback and the paged serial read; splitting the
+        // predicate would let the page disagree with the command and could hide a unit that blocks rollback.
+        var touchedQuery = MigrationLoadTouchQuery.Build(db, tenantId, command.LoadId);
+        var touchedCount = await touchedQuery.CountAsync(cancellationToken);
+        if (touchedCount > 0)
         {
-            return new RollBackMigrationLoadResult(command.LoadId, RollBackMigrationLoadResult.RefusedTouched, 0, 0, touched);
+            var touched = await touchedQuery.OrderBy(x => x.UnitId).Select(x => x.UnitId)
+                .Take(TouchedListLimit).ToListAsync(cancellationToken);
+            return new RollBackMigrationLoadResult(command.LoadId, RollBackMigrationLoadResult.RefusedTouched,
+                0, 0, touched, TouchedUnitCount: touchedCount);
         }
 
         await using var transaction = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
@@ -701,6 +698,53 @@ public static class RollBackMigrationLoadHandler
         if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         return new RollBackMigrationLoadResult(command.LoadId, RollBackMigrationLoadResult.RolledBack,
             unitsRemoved, eventsRemoved, [], entitlementsRemoved, replacementLinksRemoved, certificatesRemoved);
+    }
+}
+
+internal sealed class MigrationLoadTouchRow
+{
+    public Guid UnitId { get; init; }
+    public required string Serial { get; init; }
+}
+
+internal static class MigrationLoadTouchQuery
+{
+    public static IQueryable<MigrationLoadTouchRow> Build(SerialisationDbContext db, TenantId tenantId, Guid loadId) =>
+        db.MigrationLoadUnits.AsNoTracking().Where(row => row.TenantId == tenantId && row.LoadId == loadId)
+            .Select(row => new
+            {
+                row.UnitId,
+                row.EventCount,
+                Live = db.Events.Count(item => item.TenantId == tenantId && item.UnitId == row.UnitId),
+                Archived = db.ArchivedEvents.Count(item => item.TenantId == tenantId && item.UnitId == row.UnitId),
+            })
+            .Where(row => row.Live + row.Archived > row.EventCount)
+            .Select(row => new MigrationLoadTouchRow
+            {
+                UnitId = row.UnitId,
+                Serial = db.Identifiers.Where(identifier => identifier.TenantId == tenantId &&
+                        identifier.UnitId == row.UnitId && identifier.ValidTo == null)
+                    .OrderBy(identifier => identifier.Type == IdentifierType.InternalSerial ? 0 : 1)
+                    .ThenBy(identifier => identifier.RecordedTime).Select(identifier => identifier.RawValue)
+                    .FirstOrDefault() ?? "Serial not recorded",
+            });
+}
+
+/// <summary><see cref="TouchedMigrationLoadUnitsQuery"/>: the exact rollback blockers with readable serials.</summary>
+public static class TouchedMigrationLoadUnitsQueryHandler
+{
+    public static async Task<TouchedMigrationLoadUnitsPage> Handle(TouchedMigrationLoadUnitsQuery query,
+        SerialisationDbContext db, ITenantContext tenant, CancellationToken cancellationToken)
+    {
+        var take = Math.Clamp(query.Take, 1, 200);
+        // This must use MigrationLoadTouchQuery, as rollback does, or the UI could omit a unit that still blocks it.
+        var source = MigrationLoadTouchQuery.Build(db, tenant.TenantId, query.LoadId);
+        var total = await source.CountAsync(cancellationToken);
+        var rows = await source.Where(row => query.AfterUnitId == null ||
+                row.UnitId.CompareTo(query.AfterUnitId.Value) > 0)
+            .OrderBy(row => row.UnitId).Take(take + 1).ToListAsync(cancellationToken);
+        var items = rows.Take(take).Select(row => new TouchedMigrationLoadUnitRow(row.UnitId, row.Serial)).ToList();
+        return new(items, total, rows.Count > take ? items[^1].UnitId : null);
     }
 }
 
