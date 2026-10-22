@@ -6,10 +6,6 @@ import { mayReadMigration, validationAttentionCount } from "./migrationModel";
 import { migrationApi } from "./migrationApi";
 import "./migration.css";
 
-const futureTabs = [
-  ["Parallel run", "Arrives with P9-T11"],
-] as const;
-
 export function MigrationAccess({ children }: { children: ReactNode }) {
   const roles = useSession().roles;
   return mayReadMigration(roles) ? children
@@ -41,9 +37,8 @@ export function MigrationTabs({ flaggedClasses, waitingReviews, validationAttent
     return () => controller.abort();
   }, []);
   const attention = validationAttention ?? latestValidationAttention;
-  const tabs = [["/integration/migration", "Console"], ["/integration/migration/profiling", "Profiling"], ["/integration/migration/review", "Review queue"], ["/integration/migration/templates", "Contract templates"], ["/integration/migration/validation", "Validation and sign-off"], ["/integration/migration/settings", "Settings"]] as const;
+  const tabs = [["/integration/migration", "Console"], ["/integration/migration/profiling", "Profiling"], ["/integration/migration/review", "Review queue"], ["/integration/migration/templates", "Contract templates"], ["/integration/migration/validation", "Validation and sign-off"], ["/integration/migration/parallel-run", "Parallel run"], ["/integration/migration/settings", "Settings"]] as const;
   return <nav className="tabs migration-tabs" aria-label="Migration">
     {tabs.map(([to, label]) => <Link key={to} to={to} aria-current={pathname === to ? "page" : undefined}>{label}{label === "Profiling" && flaggedClasses !== undefined && <span className="n">{flaggedClasses.toLocaleString()}</span>}{label === "Review queue" && waitingReviews !== undefined && <span className={`n${waitingReviews > 0 ? " warn" : ""}`}>{waitingReviews.toLocaleString()}</span>}{label === "Contract templates" && templateNeedsPerson !== undefined && <span className={`n${templateNeedsPerson > 0 ? " warn" : ""}`}>{templateNeedsPerson.toLocaleString()}</span>}{label === "Validation and sign-off" && attention !== undefined && <span className={`n${attention > 0 ? " warn" : ""}`}>{attention.toLocaleString()}</span>}</Link>)}
-    {futureTabs.map(([label, title]) => <span className="migration-tab-disabled" aria-disabled="true" title={title} key={label}>{label}</span>)}
   </nav>;
 }

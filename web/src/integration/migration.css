@@ -161,7 +161,46 @@
 .migration-overrides-table .card-header .checkrow { padding: 0; border: 0; }
 .migration-settings-layout .grid-viewport .table { min-width: 620px; }
 .migration-settings-layout .grid-viewport .select { min-width: 135px; }
+.migration-parallel-picker { align-items: end; }
+.migration-parallel-kpis { display: grid; gap: 8px; }
+.migration-reconciliation-link { justify-self: end; }
+.migration-parallel-columns { display: grid; grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr); gap: var(--gap); align-items: start; }
+.migration-parallel-columns > * { min-width: 0; }
+.migration-handover-card .card-header .right { display: flex; align-items: center; gap: 10px; }
+.migration-handover-chain, .migration-go-live-checks { margin: 0; padding: 0; list-style: none; }
+.migration-handover-chain > li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 11px 0; border-bottom: 1px solid var(--rule); }
+.migration-handover-chain > li:last-child, .migration-go-live-checks > li:last-child { border-bottom: 0; }
+.migration-chain-number { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2); color: var(--text-2); font-size: 11px; font-weight: 700; }
+.migration-handover-chain > li[aria-current="step"] .migration-chain-number { background: var(--accent); color: var(--accent-contrast); }
+.migration-handover-chain p { margin: 3px 0 0; color: var(--text-3); font-size: 12px; line-height: 1.45; }
+.migration-step-facts { display: grid; gap: 3px; margin: 6px 0 0; padding-left: 18px; color: var(--text-2); font-size: 12px; line-height: 1.4; }
+.migration-step-actions, .migration-issue-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: start; margin-top: 9px; }
+.migration-parallel-refusals { flex: 1 1 100%; margin: 7px 0 0; padding: 8px 10px 8px 28px; border-radius: var(--radius-s); background: var(--warning-soft); color: var(--text-1); font-size: 12px; line-height: 1.45; }
+.migration-confirmed-by { overflow-wrap: anywhere; }
+.migration-go-live-checks > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 9px 0; border-bottom: 1px solid var(--rule); }
+.migration-go-live-checks .sub { display: block; margin-top: 2px; white-space: normal; line-height: 1.4; }
+.migration-go-live-state { display: grid; justify-items: end; gap: 6px; }
+.migration-issued { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.migration-conflicts-card .table { min-width: 940px; }
+.migration-conflicts-card .table td { white-space: normal; line-height: 1.35; }
+.migration-parallel-start-form { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(220px, .6fr) auto; gap: 14px; align-items: end; }
+.migration-parallel-start-form fieldset, .migration-decision-options { display: flex; gap: 8px; margin: 0; padding: 0; border: 0; }
+.migration-parallel-start-form legend, .migration-decision-options legend { width: 100%; margin-bottom: 5px; color: var(--text-2); font-size: 12px; }
+.migration-parallel-start-form label:not(.field), .migration-decision-options label { display: flex; gap: 7px; align-items: center; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-s); cursor: pointer; }
+.migration-parallel-start-form label.on, .migration-decision-options label.on { border-color: var(--accent); background: var(--accent-soft); }
+.migration-decision-options { display: grid; }
+.migration-conflict-pair { display: grid; gap: 8px; }
+.migration-conflict-pair > div { display: grid; gap: 3px; padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius-s); }
+.migration-conflict-pair .k { color: var(--text-3); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+.migration-reconciliation-runs { display: grid; }
+.migration-reconciliation-runs article { padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.migration-reconciliation-runs article:last-child { border-bottom: 0; }
+.migration-reconciliation-head { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
+.migration-reconciliation-head .sub, .migration-reconciliation-runs article > p .sub { display: block; margin-top: 3px; }
+.migration-reconciliation-runs article > p { margin: 8px 0; font-size: 13px; line-height: 1.45; }
+.migration-reconciliation-runs form { display: grid; gap: 8px; margin-top: 8px; }
+.migration-reconciliation-runs textarea { min-height: 76px; resize: vertical; }
 @media (max-width: 1300px) { .migration-phases { grid-template-columns: repeat(3, minmax(0, 1fr)); } .migration-phase:nth-child(3n + 1) { border-left: 0; } .migration-phase:nth-child(n + 4) { border-top: 1px solid var(--border); } }
-@media (max-width: 1000px) { .migration-settings-layout { grid-template-columns: 1fr; } .migration-overrides-table { grid-column: 1; } }
+@media (max-width: 1000px) { .migration-settings-layout, .migration-parallel-columns { grid-template-columns: 1fr; } .migration-overrides-table { grid-column: 1; } }
 @media (max-width: 900px) { .migration-load-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } .migration-delta-kv { grid-template-columns: 120px minmax(0, 1fr); } }
-@media (max-width: 720px) { .migration-phases, .migration-load-actions { grid-template-columns: 1fr; } .migration-phase + .migration-phase { border-left: 0; border-top: 1px solid var(--border); } .migration-licence, .migration-hand-over, .migration-outcome-row, .migration-canonical-state .card-body, .migration-template-header .right { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; } .migration-family-filter { flex-basis: 100%; } .migration-keyword-rule, .migration-trails { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .migration-phases, .migration-load-actions, .migration-parallel-start-form { grid-template-columns: 1fr; } .migration-phase + .migration-phase { border-left: 0; border-top: 1px solid var(--border); } .migration-licence, .migration-hand-over, .migration-outcome-row, .migration-canonical-state .card-body, .migration-template-header .right, .migration-handover-card .card-header .right, .migration-issued { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; } .migration-family-filter { flex-basis: 100%; } .migration-keyword-rule, .migration-trails { grid-template-columns: 1fr; } .migration-handover-chain > li { grid-template-columns: 24px minmax(0, 1fr); } .migration-handover-chain > li > .badge { grid-column: 2; justify-self: start; } }
