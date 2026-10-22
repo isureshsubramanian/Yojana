@@ -244,3 +244,122 @@ export interface PolicyCataloguePolicy {
 export interface PolicyCatalogue { families: PolicyCatalogueFamily[]; policies: PolicyCataloguePolicy[] }
 export interface TemplateKeywordRule { keyword: string; familyCode: string }
 export interface TemplateKeywordRules { rules: TemplateKeywordRule[]; version: string }
+
+export type ValidationResult = "pass" | "explained" | "fail" | "hard_fail" | "report";
+export type ValidationSignatureRole = "preparer" | "reviewer";
+export type ValidationSampleOutcome = "traced" | "mismatch";
+
+export interface ValidationSignature {
+  role: ValidationSignatureRole;
+  actorName: string;
+  signedAt: string;
+  superseded: boolean;
+  supersededAt: string | null;
+}
+
+export interface ValidationCheck {
+  checkId: string;
+  code: string;
+  label: string;
+  limitKind: string;
+  sourceTotal: number | null;
+  targetTotal: number | null;
+  difference: number | null;
+  result: ValidationResult;
+  explanation: string | null;
+  explainedByName: string | null;
+  explainedAt: string | null;
+  howCounted: string;
+  ranAt: string;
+  durationMilliseconds: number;
+  signatures: ValidationSignature[];
+}
+
+export interface MigrationValidation {
+  runId: string;
+  batchId: string;
+  mapRunId: string;
+  targetKind: string;
+  rehearsal: boolean;
+  status: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  checksTotal: number;
+  passed: number;
+  explained: number;
+  failed: number;
+  hardFailed: number;
+  signedChecks: number;
+  units: number;
+  events: number;
+  eventsShortPercent: number | null;
+  sampleTraced: number;
+  sampleTotal: number;
+  hardFailSummary: string | null;
+  checks: ValidationCheck[];
+}
+
+export interface ValidationCheckPart { code: string; label: string; value: number }
+export interface ValidationCheckDetail {
+  check: ValidationCheck;
+  parts: ValidationCheckPart[];
+  signatureHistory: ValidationSignature[];
+}
+
+export interface ValidationDifference {
+  differenceId: string;
+  kind: string;
+  itemCode: string | null;
+  warehouse: string | null;
+  serial: string | null;
+  sourceValue: number;
+  targetValue: number;
+  difference: number;
+  detail: string | null;
+}
+export interface ValidationDifferencePage { items: ValidationDifference[]; nextCursor: string | null }
+
+export interface ValidationSample {
+  sampleId: string;
+  serial: string;
+  itemCode: string;
+  itemFamily: string;
+  ageBand: string;
+  sourceTrailJson: string;
+  targetTrailJson: string;
+  outcome: ValidationSampleOutcome | null;
+  note: string | null;
+  tracedByName: string | null;
+  tracedAt: string | null;
+}
+export interface ValidationSamplePage { items: ValidationSample[]; nextCursor: string | null }
+
+export interface ValidationSettings {
+  historicalTolerancePercent: number;
+  sampleSize: number;
+  ageBandYears: number[];
+  version: string;
+}
+
+export interface StartValidationResponse { runId: string; batchId: string; status: string; targetKind: string }
+export interface SignoffLine {
+  position: number;
+  reportName: string;
+  sourceTotal: number | null;
+  targetTotal: number | null;
+  difference: number | null;
+  explanation: string | null;
+  result: ValidationResult;
+  preparerName: string;
+  preparedAt: string;
+  reviewerName: string;
+  reviewedAt: string;
+}
+export interface SignoffRecord {
+  recordId: string;
+  runId: string;
+  rehearsal: boolean;
+  createdAt: string;
+  createdByName: string;
+  lines: SignoffLine[];
+}
