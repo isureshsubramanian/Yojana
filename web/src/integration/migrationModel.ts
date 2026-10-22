@@ -2,7 +2,8 @@ import type { Tone } from "../components/types";
 import type {
   MigrationBatch, MigrationBatchTable, MigrationOutcome, MigrationProfile, MigrationProfileSample,
   MigrationReviewDecision, MigrationReviewDetail, MigrationReviewKind, MigrationReviewStatus,
-  TemplateBlockResolution, TemplateMappingState, TemplateSourceTerms,
+  MigrationValidation, TemplateBlockResolution, TemplateMappingState, TemplateSourceTerms,
+  ValidationResult, ValidationSignatureRole,
 } from "./migrationTypes";
 
 export const OUTCOMES: readonly MigrationOutcome[] = ["stop_load", "needs_person", "fixed_by_rule", "loaded_with_note"];
@@ -56,6 +57,8 @@ export const REVIEW_KINDS: readonly MigrationReviewKind[] = ["same_serial_one_it
 export const REVIEW_STATUSES: readonly MigrationReviewStatus[] = ["waiting", "decided", "carried_over"];
 export function mayReadMigration(roles: readonly string[]): boolean { return roles.some(role => role === "tenant_administrator" || role === "migration_lead"); }
 export function mayAdministerMigration(roles: readonly string[]): boolean { return roles.includes("tenant_administrator"); }
+export function mayPrepareValidation(roles: readonly string[]): boolean { return mayReadMigration(roles); }
+export function mayReviewValidation(roles: readonly string[]): boolean { return mayAdministerMigration(roles); }
 
 export const TEMPLATE_STATES: readonly TemplateMappingState[] = ["waiting", "needs_person", "approved", "waiting_for_policy_publication"];
 const templateStateLabels: Record<TemplateMappingState, string> = {
@@ -117,6 +120,58 @@ const refusalRuleLabels: Record<string, string> = {
   template_keyword_rules_empty: "At least one keyword rule is required",
   template_keyword_rule_too_long: "Keyword rule is too long",
   template_keyword_duplicate: "Each keyword can appear only once",
+  migration_validation_already_running: "Validation is already running",
+  migration_validation_failed: "Validation failed",
+  migration_validation_map_missing: "Mapping has not run",
+  migration_validation_map_failed: "The latest mapping failed",
+  migration_validation_map_superseded: "A newer mapping must finish",
+  migration_validation_map_not_completed: "The latest mapping has not completed",
+  migration_validation_check_not_found: "Validation check not found",
+  migration_validation_hard_fail_not_explainable: "A hard fail cannot be explained",
+  migration_validation_check_not_failed: "Only a failed check can be explained",
+  migration_validation_explanation_required: "Explanation required",
+  migration_validation_signature_role_invalid: "Signature role is not valid",
+  migration_validation_preparer_role_required: "Migration lead or tenant administrator access is required",
+  migration_validation_reviewer_role_required: "Tenant administrator access is required",
+  migration_validation_hard_fail_not_signable: "A hard fail cannot be signed",
+  migration_validation_role_already_signed: "This signature step is already complete",
+  migration_validation_distinct_signers_required: "The preparer and reviewer must be different people",
+  migration_validation_sample_outcome_invalid: "Sample outcome is not valid",
+  migration_validation_sample_not_found: "Sample not found",
+  migration_validation_cursor_invalid: "Validation page is no longer available",
+  migration_validation_run_not_found: "Validation run not found",
+  migration_validation_not_completed: "Validation has not completed",
+  migration_validation_tolerance_invalid: "History tolerance is not valid",
+  migration_validation_sample_size_invalid: "Sample size is not valid",
+  migration_validation_age_bands_invalid: "Age bands are not valid",
+  migration_signoff_already_exists: "A sign-off record already exists",
+  migration_signoff_hard_fail: "A hard fail blocks final sign-off",
+  migration_signoff_unsigned_checks: "Every check needs both signatures",
+  migration_signoff_not_found: "Sign-off record not found",
+};
+
+const validationCheckLabels: Record<string, string> = {
+  unit_master: "Unit master count",
+  active_cover: "Active cover at cutover",
+  open_service_calls: "Open service calls",
+  stock_by_item_warehouse: "In stock per item and warehouse",
+  serial_in_multiple_warehouses: "Serial in two warehouses",
+  negative_quantity: "Negative quantity",
+  historical_events: "Historical events",
+  status_histogram: "Status histogram",
+  event_per_unit: "At least one event per unit",
+  one_current_row: "Exactly one current row per unit",
+  signed_quantity: "Signed quantity per serial",
+  stratified_sample: "Stratified sample",
+  cover_gap_report: "Units sold with no base cover",
+  attachments_by_hash: "Attachments by content hash",
+};
+const validationResultLabels: Record<ValidationResult, string> = {
+  pass: "Pass", explained: "Explained", fail: "Fail", hard_fail: "Hard fail", report: "Report",
+};
+const validationRoleLabels: Record<ValidationSignatureRole, string> = { preparer: "Prepared", reviewer: "Reviewed" };
+const validationDifferenceLabels: Record<string, string> = {
+  item_warehouse: "Item and warehouse", status_bucket: "Status bucket", serial_quantity: "Serial quantity",
 };
 
 export function outcomeLabel(value: MigrationOutcome): string { return outcomeLabels[value]; }
@@ -135,6 +190,48 @@ export function reviewDecisionLabel(value: MigrationReviewDecision): string { re
 export function matchRuleLabel(value: string | null | undefined): string { return value ? matchRuleLabels[value] ?? readable(value) : "—"; }
 export function canonicalisationStatusLabel(value: string): string { return canonicalisationStatusLabels[value] ?? readable(value); }
 export function refusalRuleLabel(value: string | null | undefined): string { return value ? refusalRuleLabels[value] ?? readable(value) : "Request refused"; }
+export function validationCheckLabel(code: string, supplied?: string): string { return validationCheckLabels[code] ?? (supplied?.trim() || readable(code)); }
+export function validationResultLabel(value: ValidationResult): string { return validationResultLabels[value]; }
+export function validationResultTone(value: ValidationResult): Tone { return value === "pass" ? "ok" : value === "explained" ? "warn" : value === "fail" || value === "hard_fail" ? "bad" : "info"; }
+export function validationLimitLabel(value: string): string {
+  if (value === "zero") return "Zero";
+  if (value === "none") return "None";
+  if (value === "all") return "All";
+  const percent = /^<\s*([\d.]+)%$/.exec(value);
+  return percent ? `Less than ${percent[1]}%` : readable(value);
+}
+export function validationRoleLabel(value: ValidationSignatureRole): string { return validationRoleLabels[value]; }
+export function validationDifferenceLabel(value: string): string { return validationDifferenceLabels[value] ?? readable(value); }
+export function validationAttentionCount(run: MigrationValidation | null | undefined): number {
+  return run?.checks.filter(check => check.signatures.length < 2 || check.result === "fail" || check.result === "hard_fail").length ?? 0;
+}
+export function signoffDisabledReason(run: MigrationValidation | null | undefined): string | null {
+  if (!run) return "Run validation checks first";
+  if (run.status !== "completed") return "Validation checks have not completed";
+  if (run.rehearsal) return null;
+  const reasons: string[] = [];
+  if (run.hardFailed) reasons.push(`${run.hardFailed.toLocaleString()} hard fail${run.hardFailed === 1 ? "" : "s"}`);
+  const unsigned = Math.max(0, run.checksTotal - run.signedChecks);
+  if (unsigned) reasons.push(`${unsigned.toLocaleString()} check${unsigned === 1 ? " is" : "s are"} not signed`);
+  return reasons.length ? reasons.join(" and ") : null;
+}
+export function compactNumber(value: number): string {
+  return new Intl.NumberFormat(undefined, { notation: Math.abs(value) >= 1_000_000 ? "compact" : "standard", maximumFractionDigits: 2 }).format(value);
+}
+export function percentage(value: number | null): string { return value === null ? "—" : `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`; }
+export function validationTrail(json: string): Record<string, unknown>[] {
+  try { const parsed: unknown = JSON.parse(json); return Array.isArray(parsed) ? parsed.filter(value => value !== null && typeof value === "object") as Record<string, unknown>[] : []; }
+  catch { return []; }
+}
+export function validationTrailLine(event: Record<string, unknown>): string {
+  const value = (camel: string, pascal: string) => event[camel] ?? event[pascal];
+  const movement = value("movementKind", "MovementKind");
+  const date = value("effectiveDate", "EffectiveDate");
+  const document = value("documentNumber", "DocumentNumber");
+  const quantity = value("quantity", "Quantity");
+  const warehouse = value("warehouseCode", "WarehouseCode") ?? value("warehouse", "Warehouse");
+  return [date && String(date).slice(0, 10), movement && readable(String(movement)), document != null && `document ${String(document)}`, quantity != null && `quantity ${Number(quantity).toLocaleString()}`, warehouse && `warehouse ${String(warehouse)}`].filter(Boolean).join(" · ") || "Event details unavailable";
+}
 export function statusTone(value: string): Tone { return /^(succeeded|completed)$/.test(value) ? "ok" : /^(failed|refused|blocked)$/.test(value) ? "bad" : /^(queued|running)$/.test(value) ? "info" : "neutral"; }
 export function templateStateLabel(value: TemplateMappingState): string { return templateStateLabels[value]; }
 export function templateStateTone(value: TemplateMappingState): Tone { return value === "approved" ? "ok" : value === "needs_person" ? "warn" : "info"; }

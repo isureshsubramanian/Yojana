@@ -71,5 +71,36 @@
 .migration-template-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .migration-keyword-rule { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: end; padding: 10px 0; border-bottom: 1px solid var(--rule); }
 .migration-keyword-rule .input, .migration-keyword-rule .select { width: 100%; }
+.migration-validation-card .table { min-width: 1180px; }
+.migration-validation-card .table td { white-space: normal; line-height: 1.35; }
+.migration-hard-fail { border-color: var(--danger); }
+.migration-diff-ok { color: var(--success); }
+.migration-diff-bad { color: var(--danger); font-weight: 650; }
+.migration-how-counted { margin: 10px 0 0; line-height: 1.45; }
+.migration-check-parts { display: grid; gap: 6px; margin-top: 12px; }
+.migration-check-parts > span { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+.migration-check-parts .k { color: var(--text-3); }
+.migration-check-parts .v { font-variant-numeric: tabular-nums; }
+.migration-signatures { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.migration-signatures li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 9px 0; border-bottom: 1px solid var(--rule); }
+.migration-signature-step { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2); color: var(--text-2); font-size: 11px; font-weight: 700; }
+.migration-signature-history { margin-top: 12px; }
+.migration-signature-history h4 { margin: 0 0 6px; font-size: 12px; color: var(--text-3); text-transform: uppercase; }
+.migration-signature-history p { margin: 5px 0; font-size: 12px; }
+.migration-validation-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.migration-differences { display: grid; gap: 10px; }
+.migration-differences article { padding-bottom: 10px; border-bottom: 1px solid var(--rule); }
+.migration-differences article > .sub { display: block; margin: 2px 0 8px; }
+.migration-drawer-pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 12px; color: var(--text-2); font-size: 12px; }
+.migration-sample-card { padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.migration-sample-head { display: flex; gap: 10px; align-items: start; justify-content: space-between; }
+.migration-sample-head .sub { display: block; margin-top: 2px; }
+.migration-trails { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+.migration-trails > div { min-width: 0; padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius-s); }
+.migration-trails h4 { margin: 0 0 6px; font-size: 12px; color: var(--text-3); text-transform: uppercase; }
+.migration-trails ol { display: grid; gap: 5px; margin: 0; padding-left: 20px; font-size: 12px; line-height: 1.4; }
+.migration-sample-card .textarea { width: 100%; resize: vertical; }
+.migration-settings-form { display: grid; gap: 12px; }
+.migration-settings-form .input { width: 100%; }
 @media (max-width: 1100px) { .migration-phases { grid-template-columns: repeat(3, minmax(0, 1fr)); } .migration-phase:nth-child(4) { border-left: 0; border-top: 1px solid var(--border); } .migration-phase:nth-child(5), .migration-phase:nth-child(6) { border-top: 1px solid var(--border); } }
-@media (max-width: 720px) { .migration-phases { grid-template-columns: 1fr; } .migration-phase + .migration-phase { border-left: 0; border-top: 1px solid var(--border); } .migration-licence, .migration-outcome-row, .migration-canonical-state .card-body, .migration-template-header .right { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; } .migration-family-filter { flex-basis: 100%; } .migration-keyword-rule { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .migration-phases { grid-template-columns: 1fr; } .migration-phase + .migration-phase { border-left: 0; border-top: 1px solid var(--border); } .migration-licence, .migration-outcome-row, .migration-canonical-state .card-body, .migration-template-header .right { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; } .migration-family-filter { flex-basis: 100%; } .migration-keyword-rule, .migration-trails { grid-template-columns: 1fr; } }
