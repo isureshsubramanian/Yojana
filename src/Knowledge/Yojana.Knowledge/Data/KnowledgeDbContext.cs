@@ -17,6 +17,9 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
     public DbSet<QuestionReply> Replies => Set<QuestionReply>();
     public DbSet<QuestionReplyRevision> Revisions => Set<QuestionReplyRevision>();
     public DbSet<QuestionParticipant> Participants => Set<QuestionParticipant>();
+    public DbSet<QuestionNotificationPreference> NotificationPreferences => Set<QuestionNotificationPreference>();
+    public DbSet<QuestionNotification> Notifications => Set<QuestionNotification>();
+    public DbSet<QuestionDigest> Digests => Set<QuestionDigest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -42,6 +45,7 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
             b.HasIndex(x => new { x.TenantId, x.AskedBy, x.Status, x.AskedAt, x.QuestionId });
             b.HasIndex(x => new { x.TenantId, x.DirectedToUser, x.Status, x.AskedAt, x.QuestionId });
             b.HasIndex(x => new { x.TenantId, x.DirectedToRole, x.Status, x.AskedAt, x.QuestionId });
+            b.HasIndex(x => new { x.TenantId, x.Status, x.UpdatedAt, x.QuestionId });
         });
         modelBuilder.Entity<QuestionReply>(b =>
         {
@@ -67,6 +71,31 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
             b.HasKey(x => new { x.TenantId, x.QuestionId, x.UserId });
             b.HasIndex(x => new { x.TenantId, x.UserId, x.LastReadAt, x.QuestionId });
             b.HasOne<Question>().WithMany().HasForeignKey(x => new { x.TenantId, x.QuestionId }).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<QuestionNotificationPreference>(b =>
+        {
+            b.ToTable("question_notification_preference", table => table.HasCheckConstraint(
+                "ck_question_notification_preference_mode", "mode IN ('immediately','daily_digest','off')"));
+            b.HasKey(x => new { x.TenantId, x.UserId });
+            b.Property(x => x.Mode).HasMaxLength(24);
+            b.HasIndex(x => new { x.TenantId, x.Mode, x.UserId });
+        });
+        modelBuilder.Entity<QuestionNotification>(b =>
+        {
+            b.ToTable("question_notification", table => table.HasCheckConstraint(
+                "ck_question_notification_delivery_mode", "delivery_mode IN ('immediately','daily_digest')"));
+            b.HasKey(x => new { x.TenantId, x.NotificationId });
+            b.Property(x => x.EventKind).HasMaxLength(24);
+            b.Property(x => x.DeliveryMode).HasMaxLength(24);
+            b.HasIndex(x => new { x.TenantId, x.RecipientUserId, x.EventKind, x.EventId }).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.DeliveryMode, x.DigestDate, x.RecipientUserId, x.OccurredAt });
+            b.HasOne<Question>().WithMany().HasForeignKey(x => new { x.TenantId, x.QuestionId }).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<QuestionDigest>(b =>
+        {
+            b.ToTable("question_digest");
+            b.HasKey(x => new { x.TenantId, x.UserId, x.DigestDate });
+            b.HasIndex(x => new { x.TenantId, x.DigestDate, x.UserId });
         });
         base.OnModelCreating(modelBuilder);
     }

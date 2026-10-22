@@ -89,6 +89,19 @@ public sealed class UserDirectory(PlatformDbContext db, ITenantContext tenant) :
             .Select(group => new TenantRoleChoice(group.Key, RoleLabel(group.Key), group.Count())).ToList();
     }
 
+    public async Task<IReadOnlyList<TenantStaffNotificationRecipient>> NotificationRecipientsAsync(Guid? userId,
+        string? role, CancellationToken cancellationToken)
+    {
+        if ((userId is null) == (role is null))
+            throw new ArgumentException("Resolve either one person or one role.");
+        var query = db.Memberships.AsNoTracking().Where(m => m.TenantId == tenant.TenantId
+            && m.DeactivatedAt == null && m.CustomerPartyRef == null && m.User!.IsActive && m.Roles.Count > 0);
+        query = userId is { } id ? query.Where(m => m.UserId == id) : query.Where(m => m.Roles.Contains(role!));
+        return await query.OrderBy(m => m.User!.DisplayName).ThenBy(m => m.UserId)
+            .Select(m => new TenantStaffNotificationRecipient(m.UserId, m.User!.DisplayName, m.User.Email, m.Roles))
+            .ToListAsync(cancellationToken);
+    }
+
     private static string EncodeStaffCursor(string name, Guid id) => Convert.ToBase64String(
         Encoding.UTF8.GetBytes($"{name}\n{id:D}"));
 

@@ -6,6 +6,9 @@ import { installShortcuts } from "./shortcuts";
 import { SearchPalette } from "../components/search/SearchPalette";
 import { Drawer } from "./Drawer";
 import { useDrawer } from "./drawerStore";
+import { questionNotificationSource } from "../questions/notificationSource";
+
+const notificationSources = [questionNotificationSource];
 
 /** The signed-in frame (house layout E): top bar, icon navigation, full-width content and the drawer the pages feed. */
 export function Frame() {
@@ -18,7 +21,7 @@ export function Frame() {
       {navigation.state !== "idle" && <div className="loading-bar" role="progressbar" aria-label="Loading" />}
       <a className="skip" href="#main">Skip to content</a>
       <div className={`frame${drawer.open ? " drawer-open" : ""}`} id="frame">
-        <TopBar />
+        <TopBar notificationSources={notificationSources} />
         <SideNav />
         <Outlet />
         <Drawer />
