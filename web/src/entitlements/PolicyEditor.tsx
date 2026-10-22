@@ -10,6 +10,8 @@ import { fmtDate, humanise, shortId } from "../units/format";
 import { entitlementApi } from "./api";
 import { commaList, issueTone, nullableNumber } from "./format";
 import type { AmendmentApprovalPolicy, CoverageFamily, PolicyDetail, PolicySummary, PolicyVersion, RefurbishedGoodsPolicy, ReplacementPolicy, TenantCurrency, WarrantyReferencePolicy } from "./types";
+import { QuestionsPanel } from "../questions/QuestionsPanel";
+import { RecordQuestionsTabs } from "../questions/RecordQuestionsTabs";
 
 const draftSnapshot = (detail: PolicyDetail): string => JSON.stringify({
   name: detail.name, appliesToContractsFrom: detail.appliesToContractsFrom, terms: detail.terms,
@@ -18,6 +20,7 @@ const draftSnapshot = (detail: PolicyDetail): string => JSON.stringify({
 export function Component() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedVersion = searchParams.get("version");
+  const questionsTab = searchParams.get("tab") === "questions";
   // Only whether the drawer is open: subscribing to the whole drawer state re-renders this page on every context
   // registration its Rail makes, which loops (React error 185).
   const drawerOpen = useDrawerOpen();
@@ -101,6 +104,9 @@ export function Component() {
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Entitlements", to: "/entitlements/gaps" }, { label: "Warranty policies" }]} />
       <div className="page-header"><div><div className="eyebrow">Warranty policy · versions by contract date · {families.find((f) => f.familyCode === detail?.coverageFamily)?.name ?? "…"}</div><h1>{detail?.name ?? (loading ? "Loading policy…" : "Warranty policies")}</h1><p className="sub">Published versions are immutable · draft changes are validated before publication · {detail ? `${selectedSummary?.liveEntitlements ?? 0} live entitlements remain on their recorded version` : "select a policy"}</p><PresenceChips users={presence} /></div><div className="actions"><button type="button" className="btn" disabled={!selectedSummary || !!selectedSummary.draftVersion || busy} onClick={newVersion}>New version</button><button type="button" className="btn" disabled={!detail || busy} onClick={validate}>Validate</button><button type="button" className="btn" disabled={!editable || !policyDirty || busy} onClick={save}>Save draft</button><button type="button" className="btn primary" disabled={!editable || errors > 0 || busy || drawerOpen} aria-busy={busy} onClick={publish}>Publish version {detail?.version}<Shortcut keys="mod+enter" /></button></div></div>
+      {detail && <RecordQuestionsTabs recordKind="warranty_policy" recordId={detail.policyVersionId} />}
+      {detail && questionsTab && <QuestionsPanel recordKind="warranty_policy" recordId={detail.policyVersionId} />}
+      <div hidden={questionsTab}>
       <PresenceAdvisory users={presence} editing={policyDirty} documentLabel="policy draft" />
       <ErrorNote error={error} onReload={detail ? () => { setError(null); void entitlementApi.policyDetail(detail.policyVersionId).then((row) => { setDetail(row); setSavedDraft(draftSnapshot(row)); }).catch(setError); } : undefined} />{message && <div className="note ok" role="status" style={{ marginBottom: "var(--gap)" }}>{message}</div>}
       {detail && <div style={{ marginBottom: "var(--gap)" }}><PolicyItemsEditor key={detail.policyVersionId} versionId={detail.policyVersionId} items={detail.terms.items ?? []} editable={editable} dirty={policyDirty} onChange={(update) => { const id = detail.policyVersionId; setDetail((current) => current?.policyVersionId === id ? { ...current, terms: { ...current.terms, items: update(current.terms.items ?? []) } } : current); }} /></div>}
@@ -145,6 +151,7 @@ export function Component() {
           </tr> : <tr key={`${row.itemId}:${row.grade}:${row.channel}:${row.region}:${index}`}><td className="primary">{row.itemId ? shortId(row.itemId) : "Any item"}<span className="sub">{humanise(row.grade)}</span></td><td>{humanise(row.channel)}<span className="sub">{row.region}</span></td><td className="num">{row.durationMonths} m</td><td className="num">{row.statutoryFloorMonths ? `${row.statutoryFloorMonths} m` : "—"}</td><td>{humanise(row.statementKind)}</td></tr>)}{detail.terms.refurbished.length === 0 && <tr><td colSpan={5} className="muted" style={{ textAlign: "center", height: 72 }}>No refurbished rows on this version.</td></tr>}</tbody></table></section>
           {editable && <div className="actions"><button type="button" className="btn primary" disabled={busy} aria-busy={busy} onClick={save}>Save draft</button></div>}
         </div> : <section className="card"><div className="empty"><h2>No policy version selected</h2><p className="hint">Choose a policy and version to inspect its terms.</p></div></section>}
+      </div>
       </div>
     </main>
     <Rail label="Policy reference"><Section title="Selected version"><Kv rows={[["Policy", detail?.policyCode ?? "—"], ["Version", detail ? `v${detail.version}` : "—"], ["Status", humanise(detail?.status)], ["Rule version", detail?.ruleVersion ?? "—"], ["Tenant currency", currency?.currency ?? "not configured"], ["Live entitlements", selectedSummary?.liveEntitlements.toLocaleString() ?? "—"]]} /></Section><Section title="Tenant rules"><Kv rows={[["Approval reasons", approval?.reasons.length.toLocaleString() ?? "—"], ["Reduction role", humanise(approval?.reductionRole)], ["Second-hand floors", refurbished?.floors.length.toLocaleString() ?? "—"], ["Service-contract jurisdictions", serviceRules?.jurisdictions.length.toLocaleString() ?? "—"]]} /></Section><Section title="Versioning"><p className="muted">A published version stays immutable. Existing entitlements retain it; publication changes resolution only for contracts on or after the new effective date.</p></Section></Rail>

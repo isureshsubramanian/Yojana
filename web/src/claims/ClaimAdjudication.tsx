@@ -12,6 +12,8 @@ import { openDrawer } from "../shell/drawerStore";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDate, fmtDateTime } from "../units/format";
+import { QuestionsPanel } from "../questions/QuestionsPanel";
+import { RecordQuestionsTabs, useQuestionsTab } from "../questions/RecordQuestionsTabs";
 import { claimsApi } from "./api";
 import { ClaimRiskHoldNotice } from "./ClaimRiskUi";
 import { campaignCoverNote, checkLabel, checkValue, claimTone, denialReasonLabel, humanise, money, stackOutcome } from "./format";
@@ -35,6 +37,7 @@ export function Component() {
   const [denialReason, setDenialReason] = useState("");
   const [heldRules, setHeldRules] = useState<string[]>([]);
   const presence = useDocumentPresence("claim", claimId, dialog !== null);
+  const questionsTab = useQuestionsTab();
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true); setError(null);
@@ -97,6 +100,9 @@ export function Component() {
         {["approved", "partially_approved", "denied"].includes(detail.status) && <button type="button" className="btn primary" disabled={busy} onClick={() => void change("settle")}>Settle claim</button>}
         {detail.status === "settled" && <button type="button" className="btn primary" disabled={busy} onClick={() => void change("close")}>Close claim</button>}
       </div></div>
+      <RecordQuestionsTabs recordKind="claim" recordId={claimId} />
+      {questionsTab && <QuestionsPanel recordKind="claim" recordId={claimId} />}
+      <div hidden={questionsTab}>
       <PresenceAdvisory users={presence} editing={dialog !== null} documentLabel="claim" />
       <ErrorNote error={error} onReload={() => { setDialog(null); setNote(""); void load(); }} />
       {heldRules.length > 0 && <ClaimRiskHoldNotice claimId={claimId} rules={heldRules} />}
@@ -125,6 +131,7 @@ export function Component() {
           <section className="card" aria-labelledby="claim-evidence"><div className="card-header"><h2 id="claim-evidence">Evidence</h2><span className="meta">{detail.evidence.length} items</span></div><div className="card-body">{detail.evidence.length ? detail.evidence.map((item) => <div className="job" key={item.evidenceId}><div><div className="t">{item.reference}</div><div className="s">{humanise(item.kind)}{item.description ? ` · ${item.description}` : ""} · {fmtDateTime(item.recordedAt)} by {person(item.actorRef)}</div></div>{item.kind === "evidence_requested" ? <StatusBadge tone="warn">Requested</StatusBadge> : <StatusBadge tone="ok">Recorded</StatusBadge>}</div>) : <p className="muted">No evidence is recorded.</p>}</div></section>
           {detail.recoveries?.length ? <section className="card" aria-labelledby="claim-recovery"><div className="card-header"><h2 id="claim-recovery">Recovery claims</h2></div><div className="card-body">{detail.recoveries.map((row) => <div className="job" key={row.recoveryClaimId}><div><div className="t"><Link to={`/claims/recovery?claim=${encodeURIComponent(row.recoveryNumber)}`}>{row.recoveryNumber}</Link></div><div className="s">{names.party(row.vendorPartyRef)}</div></div><StatusBadge tone={claimTone(row.status)}>{humanise(row.status)}</StatusBadge></div>)}</div></section> : null}
         </div>
+      </div>
       </div>
     </main>
     <Rail label="Claim"><Section title="Claim"><Kv rows={[["Number", detail.claimNumber], ["Status", humanise(detail.status)], ["Submitted", fmtDateTime(detail.submittedAt)], ["Adjudicated", fmtDateTime(detail.adjudicatedAt)], ["Reviewer", person(detail.adjudicatedBy)], ["Reviewer role", humanise(detail.reviewerRole)]]} /></Section></Rail>

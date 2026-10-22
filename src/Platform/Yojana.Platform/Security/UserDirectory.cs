@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
+using System.Text;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Data.Platform;
@@ -53,4 +55,58 @@ public sealed class UserDirectory(PlatformDbContext db, ITenantContext tenant) :
     public Task<bool> ActiveStaffRoleExistsAsync(string role, CancellationToken cancellationToken) =>
         db.Memberships.AsNoTracking().AnyAsync(m => m.TenantId == tenant.TenantId && m.DeactivatedAt == null
             && m.CustomerPartyRef == null && m.User!.IsActive && m.Roles.Contains(role), cancellationToken);
+
+    public async Task<TenantStaffChoicePage> ActiveStaffAsync(string? search, string? cursor, int take,
+        CancellationToken cancellationToken)
+    {
+        if (take is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(take));
+        var after = DecodeStaffCursor(cursor);
+        var query = db.Memberships.AsNoTracking().Where(m => m.TenantId == tenant.TenantId && m.DeactivatedAt == null
+            && m.CustomerPartyRef == null && m.User!.IsActive && m.Roles.Count > 0);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(m => m.User!.DisplayName.Contains(term));
+        }
+        if (after is not null)
+            query = query.Where(m => m.User!.DisplayName.CompareTo(after.Value.Name) > 0 ||
+                (m.User.DisplayName == after.Value.Name && m.UserId.CompareTo(after.Value.Id) > 0));
+        var rows = await query.OrderBy(m => m.User!.DisplayName).ThenBy(m => m.UserId).Take(take + 1)
+            .Select(m => new { m.UserId, m.User!.DisplayName, m.Roles }).ToListAsync(cancellationToken);
+        var page = rows.Take(take).Select(row => new TenantStaffChoice(row.UserId, row.DisplayName,
+            row.Roles.Order(StringComparer.Ordinal).ToList())).ToList();
+        return new TenantStaffChoicePage(page, rows.Count > take && page.Count > 0
+            ? EncodeStaffCursor(page[^1].Name, page[^1].UserId) : null);
+    }
+
+    public async Task<IReadOnlyList<TenantRoleChoice>> ActiveRolesAsync(CancellationToken cancellationToken)
+    {
+        var roleLists = await db.Memberships.AsNoTracking().Where(m => m.TenantId == tenant.TenantId
+                && m.DeactivatedAt == null && m.CustomerPartyRef == null && m.User!.IsActive && m.Roles.Count > 0)
+            .Select(m => m.Roles).ToListAsync(cancellationToken);
+        return roleLists.SelectMany(roles => roles).Where(YojanaRole.IsKnown)
+            .GroupBy(role => role, StringComparer.Ordinal).OrderBy(group => group.Key, StringComparer.Ordinal)
+            .Select(group => new TenantRoleChoice(group.Key, RoleLabel(group.Key), group.Count())).ToList();
+    }
+
+    private static string EncodeStaffCursor(string name, Guid id) => Convert.ToBase64String(
+        Encoding.UTF8.GetBytes($"{name}\n{id:D}"));
+
+    private static (string Name, Guid Id)? DecodeStaffCursor(string? cursor)
+    {
+        if (string.IsNullOrWhiteSpace(cursor)) return null;
+        try
+        {
+            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(cursor)).Split('\n');
+            if (parts.Length != 2) throw new FormatException();
+            return (parts[0], Guid.Parse(parts[1]));
+        }
+        catch (Exception exception) when (exception is FormatException or ArgumentException)
+        {
+            throw new ArgumentException("The staff cursor is invalid.", nameof(cursor));
+        }
+    }
+
+    private static string RoleLabel(string role) => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(
+        role.Replace('_', ' '));
 }
