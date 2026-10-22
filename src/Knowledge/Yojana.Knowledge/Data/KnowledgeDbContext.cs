@@ -34,6 +34,10 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
     public DbSet<QuestionNotificationPreference> NotificationPreferences => Set<QuestionNotificationPreference>();
     public DbSet<QuestionNotification> Notifications => Set<QuestionNotification>();
     public DbSet<QuestionDigest> Digests => Set<QuestionDigest>();
+    public DbSet<QuestionAttachment> Attachments => Set<QuestionAttachment>();
+    public DbSet<QuestionPurgeRun> PurgeRuns => Set<QuestionPurgeRun>();
+    public DbSet<QuestionPersonalDataRedaction> PersonalDataRedactions => Set<QuestionPersonalDataRedaction>();
+    public DbSet<QuestionFilePurgePending> PendingFilePurges => Set<QuestionFilePurgePending>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -316,6 +320,45 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
             b.ToTable("question_digest");
             b.HasKey(x => new { x.TenantId, x.UserId, x.DigestDate });
             b.HasIndex(x => new { x.TenantId, x.DigestDate, x.UserId });
+        });
+        modelBuilder.Entity<QuestionAttachment>(b =>
+        {
+            b.ToTable("question_attachment", table => table.HasCheckConstraint("ck_question_attachment_target",
+                "(question_body = 1 AND reply_id IS NULL) OR (question_body = 0 AND reply_id IS NOT NULL)"));
+            b.HasKey(x => new { x.TenantId, x.FileId });
+            b.Property(x => x.FileName).HasMaxLength(260);
+            b.Property(x => x.ContentType).HasMaxLength(100).IsUnicode(false);
+            b.Property(x => x.Sha256).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.HasIndex(x => new { x.TenantId, x.QuestionId, x.ReplyId, x.UploadedAt, x.FileId });
+            b.HasOne<Question>().WithMany().HasForeignKey(x => new { x.TenantId, x.QuestionId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<QuestionPurgeRun>(b =>
+        {
+            b.ToTable("question_purge_run", table =>
+            {
+                table.HasCheckConstraint("ck_question_purge_run_trigger", "triggered_by_kind IN ('system','user')");
+                table.HasCheckConstraint("ck_question_purge_run_years", "retention_years BETWEEN 1 AND 100");
+            });
+            b.HasKey(x => new { x.TenantId, x.RunId });
+            b.Property(x => x.TriggeredByKind).HasMaxLength(16).IsUnicode(false);
+            b.Property(x => x.TriggeredByLabel).HasMaxLength(100);
+            b.HasIndex(x => new { x.TenantId, x.CompletedAt, x.RunId });
+        });
+        modelBuilder.Entity<QuestionPersonalDataRedaction>(b =>
+        {
+            b.ToTable("question_personal_data_redaction");
+            b.HasKey(x => new { x.TenantId, x.RedactionId });
+            b.Property(x => x.ScopeJson).HasMaxLength(8000);
+            b.Property(x => x.Reason).HasMaxLength(1000);
+            b.HasIndex(x => new { x.TenantId, x.PersonId, x.PerformedAt, x.RedactionId });
+        });
+        modelBuilder.Entity<QuestionFilePurgePending>(b =>
+        {
+            b.ToTable("question_file_purge_pending");
+            b.HasKey(x => new { x.TenantId, x.FileId });
+            b.Property(x => x.Reason).HasMaxLength(32).IsUnicode(false);
+            b.HasIndex(x => new { x.TenantId, x.QueuedAt, x.FileId });
         });
         base.OnModelCreating(modelBuilder);
     }

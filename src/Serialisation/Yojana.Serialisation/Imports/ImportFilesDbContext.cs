@@ -19,7 +19,11 @@ public sealed class StoredImportFileRow : ITenantScoped
     public DateTime? ArchivedAt { get; set; }
 }
 
-/// <summary>Import bytes only; this context always uses the dedicated import-files connection string.</summary>
+/// <summary>
+/// Import bytes only; this context always uses the dedicated import-files connection string. The deployment may put
+/// Platform's shared-file schema in the same physical files database, but the schemas, migrations and opaque references
+/// are independent. Combining either context or reference format would couple import retention to question attachments.
+/// </summary>
 public sealed class ImportFilesDbContext(DbContextOptions<ImportFilesDbContext> options, ITenantContext tenant)
     : YojanaDbContext(options, tenant)
 {

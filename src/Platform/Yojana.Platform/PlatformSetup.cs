@@ -16,6 +16,7 @@ using Wolverine.EntityFrameworkCore;
 using Wolverine.ErrorHandling;
 using Wolverine.SqlServer;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Platform.Contracts.Files;
 using Yojana.Platform.Contracts.Shell;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
@@ -32,6 +33,7 @@ using Yojana.Platform.Security;
 using Yojana.Platform.Shell;
 using Yojana.Platform.Tenancy;
 using Yojana.Platform.Time;
+using Yojana.Platform.Files;
 
 namespace Yojana.Platform;
 
@@ -125,6 +127,21 @@ public static class PlatformSetup
             options.WolverineSchema);
         ModuleContexts.Insert(0, typeof(PlatformDbContext));
         HandlerAssemblies.Add(typeof(PlatformSetup).Assembly);
+
+        var fileOptions = builder.Configuration.GetSection(TenantFileStoreOptions.SectionName)
+            .Get<TenantFileStoreOptions>() ?? new TenantFileStoreOptions();
+        fileOptions.DatabaseConnectionString = string.IsNullOrWhiteSpace(fileOptions.DatabaseConnectionString)
+            ? DedicatedFilesConnection(options.ConnectionString)
+            : PlatformOptions.Resolve(fileOptions.DatabaseConnectionString, Environment.GetEnvironmentVariable,
+                options.MaxPoolSize);
+        builder.Services.AddSingleton(fileOptions);
+        builder.Services.AddDbContext<TenantFilesDbContext>(db => db.UseSqlServer(fileOptions.DatabaseConnectionString,
+            sql => SqlServerConventions(sql, TenantFilesDbContext.SchemaName)));
+        ModuleContexts.Add(typeof(TenantFilesDbContext));
+        builder.Services.AddScoped<TenantFileSettings>();
+        builder.Services.AddScoped<TenantFileStore>();
+        builder.Services.AddScoped<ITenantFileStore>(sp => sp.GetRequiredService<TenantFileStore>());
+        builder.Services.AddScoped<ITenantFileLifecycle>(sp => sp.GetRequiredService<TenantFileStore>());
 
         builder.Services.AddScoped<SignInService>();
         builder.Services.AddScoped<SignInThrottleService>();
@@ -350,6 +367,13 @@ public static class PlatformSetup
     private static void SqlServerConventions(Microsoft.EntityFrameworkCore.Infrastructure.SqlServerDbContextOptionsBuilder sql, string schema) => sql
         .MigrationsHistoryTable("__migrations", schema)
         .UseParameterizedCollectionMode(ParameterTranslationMode.Parameter);
+
+    private static string DedicatedFilesConnection(string operationalConnection)
+    {
+        var connection = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(operationalConnection);
+        connection.InitialCatalog += "_files";
+        return connection.ConnectionString;
+    }
 
     /// <summary>Includes a module assembly in Wolverine handler discovery. Call before AddYojanaPlatform.</summary>
     public static void IncludeHandlers(Assembly assembly) => HandlerAssemblies.Add(assembly);

@@ -5,8 +5,10 @@ using Xunit;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Data.Platform;
+using Yojana.Platform.Data;
 using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Tenancy;
+using Yojana.Platform.Files;
 
 namespace Yojana.Platform.DatabaseTests;
 
@@ -48,6 +50,26 @@ public sealed class TenancyTests(PlatformHostFixture fixture)
         Assert.Equal(expected.OrderBy(x => x), covered.OrderBy(x => x));
         var blocks = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id WHERE s.name = 'tenant_policy_platform' AND p.predicate_type_desc = 'BLOCK'").SingleAsync();
         Assert.Equal(expected.Count * 2, blocks);
+    }
+
+    [DatabaseFact]
+    public async Task Shared_file_database_has_a_tenant_first_key_and_row_level_security()
+    {
+        using var scope = ScopeFor(null);
+        var db = scope.ServiceProvider.GetRequiredService<TenantFilesDbContext>();
+        Assert.Empty(db.ValidateTenantKeyConventions());
+        var covered = await db.Database.SqlQueryRaw<string>("""
+            SELECT OBJECT_NAME(p.target_object_id) AS [Value]
+            FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
+            WHERE s.name = 'tenant_policy_platform_files' AND p.predicate_type_desc = 'FILTER'
+            """).ToListAsync();
+        Assert.Equal(["stored_file"], covered);
+        var blocks = await db.Database.SqlQueryRaw<int>("""
+            SELECT COUNT(*) AS [Value]
+            FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
+            WHERE s.name = 'tenant_policy_platform_files' AND p.predicate_type_desc = 'BLOCK'
+            """).SingleAsync();
+        Assert.Equal(2, blocks);
     }
 
     [DatabaseFact]

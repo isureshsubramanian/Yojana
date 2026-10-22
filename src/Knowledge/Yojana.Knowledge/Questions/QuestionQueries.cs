@@ -11,8 +11,12 @@ using Yojana.Platform.Contracts.Time;
 
 namespace Yojana.Knowledge.Questions;
 
+public sealed record QuestionAttachmentView(Guid FileId, string FileName, string ContentType, long ContentLength,
+    Guid UploadedBy, string UploadedByName, DateTime UploadedAt);
+
 public sealed record QuestionReplyView(Guid ReplyId, string Body, Guid AuthorId, string AuthorName,
-    DateTime At, DateTime? EditedAt, int RevisionCount, bool CanEdit);
+    DateTime At, DateTime? EditedAt, int RevisionCount, bool CanEdit,
+    IReadOnlyList<QuestionAttachmentView> Attachments);
 
 public sealed record QuestionAllowedActions(bool CanEditQuestion, bool CanReply, bool CanAcceptAnswer,
     bool CanCloseWithoutAnswer, bool CanReopen, bool CanTurnIntoEntry = false, Guid? EntryId = null);
@@ -22,7 +26,7 @@ public sealed record QuestionThreadView(Guid QuestionId, string RecordKind, Guid
     string? DirectedToRole, string? DirectedToRoleLabel, Guid AskedBy, string AskedByName, DateTime AskedAt,
     Guid? AcceptedReplyId, string? ClosedReason, Guid? ClosedBy, string? ClosedByName, DateTime? ClosedAt,
     int ReopenedCount, int QuestionRevisionCount, QuestionAllowedActions AllowedActions,
-    IReadOnlyList<QuestionReplyView> Replies);
+    IReadOnlyList<QuestionAttachmentView> Attachments, IReadOnlyList<QuestionReplyView> Replies);
 
 public sealed record QuestionListItem(Guid QuestionId, string Title, string Status, Guid AskedBy,
     string AskedByName, DateTime AskedAt, Guid? DirectedToUser, string? DirectedToUserName,
@@ -72,12 +76,19 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
                 && x.QuestionId == questionId).OrderBy(x => x.At).ThenBy(x => x.ReplyId).ToListAsync(cancellationToken);
         var revisionRows = await db.Revisions.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
             && x.QuestionId == questionId).Select(x => new { x.ReplyId, x.RevisedBy }).ToListAsync(cancellationToken);
+        var attachments = await db.Attachments.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && x.QuestionId == questionId).OrderBy(x => x.UploadedAt).ThenBy(x => x.FileId)
+            .ToListAsync(cancellationToken);
         var refs = replies.Select(x => x.Author).Append(question.AskedBy)
             .Concat(question.DirectedToUser is { } directed ? [directed] : [])
             .Concat(question.ClosedBy is { } closed ? [closed] : [])
-            .Concat(revisionRows.Select(x => x.RevisedBy)).Distinct().Select(x => x.ToString("D")).ToList();
+            .Concat(revisionRows.Select(x => x.RevisedBy)).Concat(attachments.Select(x => x.UploadedBy))
+            .Where(x => x != Guid.Empty).Distinct().Select(x => x.ToString("D")).ToList();
         var names = await users.DisplayNamesAsync(refs, cancellationToken);
-        string Name(Guid id) => names.GetValueOrDefault(id.ToString("D"), "Former staff member");
+        string Name(Guid id) => id == Guid.Empty ? QuestionPrivacyService.NeutralAuthor
+            : names.GetValueOrDefault(id.ToString("D"), "Former staff member");
+        QuestionAttachmentView Attachment(QuestionAttachment item) => new(item.FileId, item.FileName,
+            item.ContentType, item.ContentLength, item.UploadedBy, Name(item.UploadedBy), item.UploadedAt);
         var askerActive = await staff.ActiveStaffMemberExistsAsync(question.AskedBy, cancellationToken);
         var isAsker = viewer.UserId == question.AskedBy;
         var administrator = viewer.Roles.Contains(YojanaRole.TenantAdministrator, StringComparer.Ordinal);
@@ -96,9 +107,12 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
             question.DirectedToRole is { } directedRole ? RoleLabel(directedRole) : null, question.AskedBy, Name(question.AskedBy),
             question.AskedAt, question.AcceptedReplyId, question.ClosedReason, question.ClosedBy,
             question.ClosedBy is { } closedBy ? Name(closedBy) : null, question.ClosedAt, question.ReopenedCount,
-            revisionRows.Count(x => x.ReplyId == null), allowed, replies.Select(reply => new QuestionReplyView(reply.ReplyId,
+            revisionRows.Count(x => x.ReplyId == null), allowed,
+            attachments.Where(x => x.QuestionBody).Select(Attachment).ToList(),
+            replies.Select(reply => new QuestionReplyView(reply.ReplyId,
                 reply.Body, reply.Author, Name(reply.Author), reply.At, reply.EditedAt,
-                revisionRows.Count(x => x.ReplyId == reply.ReplyId), reply.Author == viewer.UserId)).ToList());
+                revisionRows.Count(x => x.ReplyId == reply.ReplyId), reply.Author == viewer.UserId,
+                attachments.Where(x => x.ReplyId == reply.ReplyId).Select(Attachment).ToList())).ToList());
         await notifications.MarkReadAsync(questionId, viewer.UserId, cancellationToken);
         return view;
     }
@@ -124,7 +138,8 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
         var page = rows.Take(take).ToList();
         var replyCounts = await ReplyCountsAsync(page.Select(x => x.QuestionId).ToList(), cancellationToken);
         var names = await NamesAsync(page, cancellationToken);
-        string Name(Guid id) => names.GetValueOrDefault(id.ToString("D"), "Former staff member");
+        string Name(Guid id) => id == Guid.Empty ? QuestionPrivacyService.NeutralAuthor
+            : names.GetValueOrDefault(id.ToString("D"), "Former staff member");
         var next = rows.Count > take && page.Count > 0 ? Encode(page[^1].AskedAt, page[^1].QuestionId) : null;
         int Count(string value) => grouped.FirstOrDefault(x => x.Status == value)?.Count ?? 0;
         var counts = new QuestionStatusCounts(Count(Knowledge.Contracts.QuestionStatus.Open),
@@ -206,7 +221,8 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
             .GroupBy(x => x.QuestionId).Select(group => new { QuestionId = group.Key, Count = group.Count(), Last = group.Max(x => x.At) })
             .ToDictionaryAsync(x => x.QuestionId, cancellationToken);
         var names = await NamesAsync(page.Select(x => x.Question).ToList(), cancellationToken);
-        string Name(Guid id) => names.GetValueOrDefault(id.ToString("D"), "Former staff member");
+        string Name(Guid id) => id == Guid.Empty ? QuestionPrivacyService.NeutralAuthor
+            : names.GetValueOrDefault(id.ToString("D"), "Former staff member");
         var items = page.Select(pair =>
         {
             var question = pair.Question; var activity = replies.GetValueOrDefault(question.QuestionId);
@@ -276,7 +292,8 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
             .OrderByDescending(x => x.RevisedAt).ThenByDescending(x => x.RevisionId).ToListAsync(cancellationToken);
         var names = await users.DisplayNamesAsync(rows.Select(x => x.RevisedBy.ToString("D")).Distinct().ToList(), cancellationToken);
         return rows.Select(x => new QuestionRevisionView(x.RevisionId, x.Body, x.RevisedBy,
-            names.GetValueOrDefault(x.RevisedBy.ToString("D"), "Former staff member"), x.RevisedAt)).ToList();
+            x.RevisedBy == Guid.Empty ? QuestionPrivacyService.NeutralAuthor
+                : names.GetValueOrDefault(x.RevisedBy.ToString("D"), "Former staff member"), x.RevisedAt)).ToList();
     }
 
     private IQueryable<Question> RelevantQuestions(RecordReferenceViewer viewer) => db.Questions.AsNoTracking()
@@ -320,6 +337,7 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
     private async Task<IReadOnlyDictionary<string, string>> NamesAsync(IReadOnlyCollection<Question> questions,
         CancellationToken cancellationToken) => await users.DisplayNamesAsync(questions.Select(x => x.AskedBy)
         .Concat(questions.Where(x => x.DirectedToUser != null).Select(x => x.DirectedToUser!.Value)).Distinct()
+        .Where(x => x != Guid.Empty)
         .Select(x => x.ToString("D")).ToList(), cancellationToken);
 
     private static void ValidateStatusAndTake(string? status, int take)
