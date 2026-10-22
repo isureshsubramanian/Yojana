@@ -127,6 +127,14 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
         Assert.True(expectedOwners > 0);
         Assert.Equal(expectedOwners, owned.Count);
         Assert.All(owned, row => Assert.Equal(EpisodeSource.Migration, row.Source));
+        // Last step of the load (P9-T09): the gap report over migrated owners, recorded on the apply run.
+        var ownedUnits = owned.Select(row => row.UnitId).ToList();
+        var coveredOwners = await serialisation.Entitlements.Where(row => ownedUnits.Contains(row.UnitId) &&
+            row.CoverageFamily == CoverageFamilyCode.Base).Select(row => row.UnitId).Distinct().CountAsync();
+        Assert.NotNull(view.GapReportRunId);
+        Assert.Equal(owned.Count - coveredOwners, view.CoverGaps);
+        var gapRun = await serialisation.EntitlementGapRuns.SingleAsync(row => row.RunId == view.GapReportRunId);
+        Assert.Equal(EntitlementGapTrigger.MigrationLoad, gapRun.RunTrigger);
 
         var again = await Assert.ThrowsAsync<ApplyRuleException>(() => apply.EnqueueAsync(ids.BatchId, new(true), "user:admin", default));
         Assert.Equal("migration_apply_load_open", again.Rule);

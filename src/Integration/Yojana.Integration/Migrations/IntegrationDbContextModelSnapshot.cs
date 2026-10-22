@@ -2599,6 +2599,10 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("certificates_recorded");
 
+                    b.Property<int?>("CoverGaps")
+                        .HasColumnType("int")
+                        .HasColumnName("cover_gaps");
+
                     b.Property<Guid?>("CursorPlanUnitId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("cursor_plan_unit_id");
@@ -2619,6 +2623,10 @@ namespace Yojana.Integration.Migrations
                     b.Property<DateTime?>("FinishedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("finished_at");
+
+                    b.Property<Guid?>("GapReportRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("gap_report_run_id");
 
                     b.Property<Guid>("MapRunId")
                         .HasColumnType("uniqueidentifier")

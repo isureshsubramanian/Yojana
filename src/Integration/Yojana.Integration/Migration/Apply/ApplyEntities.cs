@@ -39,6 +39,9 @@ public sealed class MigrationApplyRun : ITenantScoped
     public long EntitlementsWritten { get; set; }
     public long ReplacementLinksWritten { get; set; }
     public long CertificatesRecorded { get; set; }
+    /// <summary>The entitlement gap report run as the load's last step (P9-T09), and the migrated units it found without base cover.</summary>
+    public Guid? GapReportRunId { get; set; }
+    public int? CoverGaps { get; set; }
     public string? RolledBackBy { get; set; }
     public DateTime? RolledBackAt { get; set; }
 }

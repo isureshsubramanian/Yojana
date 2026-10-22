@@ -1,4 +1,5 @@
 using System.Data;
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Wolverine;
 using Yojana.Integration.Data;
@@ -18,7 +19,7 @@ public sealed record MigrationApplyView(Guid LoadId, Guid BatchId, Guid MapRunId
     string RequestedBy, DateTime RequestedAt, DateTime? StartedAt, DateTime? FinishedAt, string? Failure,
     long UnitsInPlan, long Applied, long AlreadyApplied, long Refused, long EventsWritten,
     long EntitlementsWritten, long ReplacementLinksWritten, long CertificatesRecorded,
-    string? RolledBackBy, DateTime? RolledBackAt);
+    string? RolledBackBy, DateTime? RolledBackAt, Guid? GapReportRunId = null, int? CoverGaps = null);
 public sealed record MigrationApplyRefusalView(Guid RefusalId, Guid PlanUnitId, string ItemCode, string? Serial,
     IReadOnlyList<string> Reasons);
 public sealed record MigrationApplyRefusalPage(IReadOnlyList<MigrationApplyRefusalView> Items, string? NextCursor);
@@ -227,8 +228,16 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
             run = await Run(runId, cancellationToken);
         }
 
+        // Last step of every load (P9-T09, ADR "Entitlement gap report and backfill"): the standing gap report over
+        // migrated owners, run once per load (its id derives from the load). Backfill itself stays a service-manager
+        // approved selection set on the gap report screen; it is never committed here on nobody's authority.
+        var gaps = await bus.InvokeAsync<EntitlementGapRunResult>(new RunEntitlementGapReport(
+            DeterministicId.Create(runId, "entitlement-gap-report"), EntitlementGapTrigger.MigrationLoad,
+            new EntitlementGapFilters(Channels: [EpisodeSource.Migration])), Options(), cancellationToken);
         run = await db.Set<MigrationApplyRun>().SingleAsync(row => row.TenantId == tenant.TenantId &&
             row.RunId == runId, cancellationToken);
+        run.GapReportRunId = gaps.RunId;
+        run.CoverGaps = gaps.Total;
         run.Status = ApplyRunStatus.Completed;
         run.FinishedAt = clock.UtcNow;
         await bus.PublishAsync(new MigrationLoadApplied(run.RunId, run.BatchId, run.Rehearsal,
@@ -307,9 +316,12 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
                 var from = current.EvidenceDate is { } ownershipEvidence ? Utc(ownershipEvidence)
                     : lastShipment is null ? created : Utc(lastShipment.EffectiveDate);
                 var direct = unitOwners.FirstOrDefault(row => row.Tier == PlanOwnershipTier.DirectCustomer);
+                // The last delivery is the start evidence a later backfill uses for cover the plan could not name.
+                var delivery = lastShipment is null ? null : new MigratedDelivery(Utc(lastShipment.EffectiveDate),
+                    lastShipment.DocumentTypeLabel, lastShipment.DocumentNumber?.ToString(CultureInfo.InvariantCulture));
                 ownership = new MigratedOwnership(await PartyAsync(connectionId, current, cancellationToken),
                     PartyType.Customer, from, current.Pseudonymised,
-                    direct is null ? null : await PartyAsync(connectionId, direct, cancellationToken));
+                    direct is null ? null : await PartyAsync(connectionId, direct, cancellationToken), delivery);
             }
             var evidence = warrantyEvidence[plan.PlanUnitId].Select(row => new MigratedWarrantyEvidence(
                 row.SourceKind, row.SourceKey, row.StartDate, row.EndDate, row.TerminationDate,
@@ -394,5 +406,5 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
         run.Rehearsal, run.Status, run.RequestedBy, run.RequestedAt, run.StartedAt, run.FinishedAt, run.FailureCode,
         run.UnitsInPlan, run.Applied, run.AlreadyApplied, run.Refused, run.EventsWritten,
         run.EntitlementsWritten, run.ReplacementLinksWritten, run.CertificatesRecorded, run.RolledBackBy,
-        run.RolledBackAt);
+        run.RolledBackAt, run.GapReportRunId, run.CoverGaps);
 }

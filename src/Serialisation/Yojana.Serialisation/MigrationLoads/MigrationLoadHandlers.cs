@@ -205,8 +205,10 @@ public static class ApplyMigratedUnitsHandler
 
             // HIDDEN COUPLING with EpisodeService.PrepareOwnershipOpenAsync: live ownership openings raise an entitlement
             // requirement exception per unit (EntitlementRequirementWriter). Migrated owners do not: the entitlement gap
-            // report and BackfillEntitlements run as the last step of every load (P9-T09) and are the single place
-            // migrated units without cover are found. If a load ever skips that step, units sold without cover go unseen.
+            // report that Integration's ApplyService runs as the last step of every load (P9-T09) is the single place
+            // migrated units without cover are found, and an approved BackfillEntitlements closes them, starting from the
+            // delivery recorded on the ownership fact (MigratedDeliveryEvidence). If a load ever skips that report, units
+            // sold without cover go unseen until the daily no-entitlement job.
             if (unit.Custody is { } custody)
             {
                 var at = custody.From < unit.CreatedAt ? unit.CreatedAt : custody.From;
@@ -248,11 +250,15 @@ public static class ApplyMigratedUnitsHandler
                 {
                     UnitId = unitId, EventTime = at, EventType = UnitEventType.OwnershipOpened, PresetEventId = eventId,
                     LegalEntityId = command.LegalEntityId, ActorRef = command.ActorRef, IdempotencyKey = Key(UnitEventType.OwnershipOpened, at),
-                    Attributes = JsonObjectText.Of(new
+                    Attributes = JsonObjectText.Of(new Dictionary<string, object?>
                     {
-                        load_id = command.LoadId, episode_id = episodeId, party_ref = owner.PartyRef, party_type = owner.PartyType,
-                        reason = EpisodeReason.MigrationOpening, source = EpisodeSource.Migration, pseudonymised = owner.Pseudonymised,
-                        direct_customer_party_ref = owner.DirectCustomerPartyRef,
+                        ["load_id"] = command.LoadId, ["episode_id"] = episodeId, ["party_ref"] = owner.PartyRef,
+                        ["party_type"] = owner.PartyType, ["reason"] = EpisodeReason.MigrationOpening,
+                        ["source"] = EpisodeSource.Migration, ["pseudonymised"] = owner.Pseudonymised,
+                        ["direct_customer_party_ref"] = owner.DirectCustomerPartyRef,
+                        [MigratedDeliveryEvidence.AtKey] = owner.Delivery?.At,
+                        [MigratedDeliveryEvidence.LabelKey] = owner.Delivery?.DocumentLabel,
+                        [MigratedDeliveryEvidence.NumberKey] = owner.Delivery?.DocumentNumber,
                     }),
                     Delta = new CurrentStateDelta { OwnerPartyRef = (Guid?)owner.PartyRef, OpenOwnershipEpisodeId = (Guid?)episodeId },
                 });
