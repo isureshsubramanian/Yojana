@@ -15,6 +15,7 @@ public sealed class Question : ITenantScoped
     public string? DirectedToRole { get; set; }
     public Guid AskedBy { get; set; }
     public DateTime AskedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
     public Guid? AcceptedReplyId { get; set; }
     public string? ClosedReason { get; set; }
     public Guid? ClosedBy { get; set; }
@@ -57,4 +58,44 @@ public sealed class QuestionParticipant : ITenantScoped
     public bool Directed { get; set; }
     public bool Replied { get; set; }
     public DateTime? LastReadAt { get; set; }
+}
+
+public static class QuestionNotificationMode
+{
+    public const string Immediately = "immediately";
+    public const string DailyDigest = "daily_digest";
+    public const string Off = "off";
+    public static readonly IReadOnlyList<string> All = [Immediately, DailyDigest, Off];
+}
+
+public sealed class QuestionNotificationPreference : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid UserId { get; set; }
+    public required string Mode { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>One durable delivery decision per question event and recipient.</summary>
+public sealed class QuestionNotification : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid NotificationId { get; set; }
+    public Guid QuestionId { get; set; }
+    public Guid RecipientUserId { get; set; }
+    public required string EventKind { get; set; }
+    public Guid EventId { get; set; }
+    public required string DeliveryMode { get; set; }
+    public DateTime OccurredAt { get; set; }
+    public Guid? MailId { get; set; }
+    public DateOnly? DigestDate { get; set; }
+}
+
+public sealed class QuestionDigest : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid UserId { get; set; }
+    public DateOnly DigestDate { get; set; }
+    public Guid MailId { get; set; }
+    public DateTime QueuedAt { get; set; }
 }

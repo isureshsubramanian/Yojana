@@ -346,6 +346,139 @@ public sealed class QuestionDatabaseTests(KnowledgeHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Bell_counts_person_role_and_unread_reply_but_excludes_hidden_other_tenant_and_read_threads()
+    {
+        fixture.Clock.UtcNow = new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+        var setup = await SetupAsync("bell");
+        var person = await AskAsync(setup.Tenant, setup.RecordId, setup.Administrator,
+            [YojanaRole.TenantAdministrator], setup.Staff, null);
+        fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddMinutes(1);
+        _ = await AskAsync(setup.Tenant, setup.RecordId, setup.Administrator,
+            [YojanaRole.TenantAdministrator], null, YojanaRole.ServiceSupervisor);
+        fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddMinutes(1);
+        var mine = await AskAsync(setup.Tenant, setup.RecordId, setup.Staff,
+            [YojanaRole.ServiceSupervisor], setup.Other, null);
+        fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddMinutes(1);
+        await InvokeAsync<ReplyToQuestionResult>(setup.Tenant,
+            new ReplyToQuestion(mine.QuestionId, "Retain the failed media before replacement.",
+                Actor(setup.Other, YojanaRole.Technician)));
+
+        var hiddenId = Guid.CreateVersion7();
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var integration = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+            integration.InboundMessages.Add(Inbound(setup.Tenant, hiddenId));
+            await integration.SaveChangesAsync();
+        }
+        _ = await InvokeAsync<AskQuestionResult>(setup.Tenant, new AskQuestion(hiddenId,
+            RecordKind.IntegrationMessage, "Hidden inbound message", "Which queue owns it?", setup.Staff, null,
+            Actor(setup.Administrator, YojanaRole.TenantAdministrator)));
+        var otherTenant = await SetupAsync("bellother");
+        _ = await AskAsync(otherTenant.Tenant, otherTenant.RecordId, otherTenant.Administrator,
+            [YojanaRole.TenantAdministrator], otherTenant.Staff, null);
+
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var service = scope.ServiceProvider.GetRequiredService<QuestionNotificationService>();
+            var viewer = new RecordReferenceViewer(setup.Staff, [YojanaRole.ServiceSupervisor]);
+            var bell = await service.BellAsync(viewer, 10, default);
+            Assert.Equal(3, bell.Count);
+            Assert.Contains(bell.Items, x => x.QuestionId == person.QuestionId && x.Reason == "Waiting for your reply");
+            Assert.Contains(bell.Items, x => x.QuestionId == mine.QuestionId && x.Reason == "New reply");
+            Assert.DoesNotContain(bell.Items, x => x.RecordKind == RecordKind.IntegrationMessage);
+            await scope.ServiceProvider.GetRequiredService<QuestionQueries>().ThreadAsync(mine.QuestionId, viewer, default);
+            Assert.Equal(2, (await service.BellAsync(viewer, 10, default)).Count);
+        }
+
+        await InvokeAsync<ReplyToQuestionResult>(setup.Tenant, new ReplyToQuestion(person.QuestionId,
+            "Use the next-business-day service queue.", Actor(setup.Staff, YojanaRole.ServiceSupervisor)));
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var bell = await scope.ServiceProvider.GetRequiredService<QuestionNotificationService>().BellAsync(
+                new RecordReferenceViewer(setup.Staff, [YojanaRole.ServiceSupervisor]), 10, default);
+            Assert.DoesNotContain(bell.Items, x => x.QuestionId == person.QuestionId);
+        }
+
+        using var portal = await fixture.ClientAsync(setup.Tenant, setup.Staff, portal: true);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await portal.GetAsync("/api/questions/notifications/bell")).StatusCode);
+    }
+
+    [DatabaseFact]
+    public async Task Notification_preferences_use_split_tenant_defaults_and_a_person_override()
+    {
+        var setup = await SetupAsync("preference");
+        using var scope = fixture.ScopeFor(setup.Tenant);
+        var service = scope.ServiceProvider.GetRequiredService<QuestionNotificationService>();
+        var initial = await service.PreferenceAsync(setup.Staff, default);
+        Assert.Equal(QuestionNotificationMode.Immediately, initial.PersonalDefault);
+        Assert.Equal(QuestionNotificationMode.DailyDigest, initial.RoleDefault);
+        Assert.Null(initial.Choice);
+        var settings = scope.ServiceProvider.GetRequiredService<ITenantSettings>();
+        await settings.SetAsync(QuestionNotificationSettings.PersonalDefaultKey,
+            QuestionNotificationMode.DailyDigest, default);
+        await settings.SetAsync(QuestionNotificationSettings.RoleDefaultKey, QuestionNotificationMode.Off, default);
+        var tenantDefaults = await service.PreferenceAsync(setup.Staff, default);
+        Assert.Equal(QuestionNotificationMode.DailyDigest, tenantDefaults.PersonalDefault);
+        Assert.Equal(QuestionNotificationMode.Off, tenantDefaults.RoleDefault);
+        Assert.Equal(QuestionNotificationMode.Immediately,
+            (await service.UpdatePreferenceAsync(setup.Staff, QuestionNotificationMode.Immediately, default)).Choice);
+        Assert.Null((await service.UpdatePreferenceAsync(setup.Staff, null, default)).Choice);
+    }
+
+    [DatabaseFact]
+    public async Task Immediate_mail_is_enqueued_once_and_off_enqueues_nothing()
+    {
+        var setup = await SetupAsync("immediate");
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+            await scope.ServiceProvider.GetRequiredService<QuestionNotificationService>().UpdatePreferenceAsync(
+                setup.Staff, QuestionNotificationMode.Immediately, default);
+        var asked = await AskAsync(setup.Tenant, setup.RecordId, setup.Administrator,
+            [YojanaRole.TenantAdministrator], setup.Staff, null);
+        await WaitForNotificationsAsync(setup.Tenant, setup.Staff, 1);
+        var duplicate = new QuestionAsked(asked.QuestionId, RecordKind.ImportJob, setup.RecordId,
+            setup.Administrator, setup.Staff, null, fixture.Clock.UtcNow);
+        await InvokeAsync(setup.Tenant, duplicate);
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var rows = await scope.ServiceProvider.GetRequiredService<KnowledgeDbContext>().Notifications.AsNoTracking()
+                .Where(x => x.RecipientUserId == setup.Staff && x.QuestionId == asked.QuestionId).ToListAsync();
+            Assert.Single(rows);
+            Assert.NotNull(rows[0].MailId);
+        }
+
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+            await scope.ServiceProvider.GetRequiredService<QuestionNotificationService>().UpdatePreferenceAsync(
+                setup.Other, QuestionNotificationMode.Off, default);
+        var off = await AskAsync(setup.Tenant, setup.RecordId, setup.Administrator,
+            [YojanaRole.TenantAdministrator], setup.Other, null);
+        await Task.Delay(250);
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+            Assert.False(await scope.ServiceProvider.GetRequiredService<KnowledgeDbContext>().Notifications.AsNoTracking()
+                .AnyAsync(x => x.RecipientUserId == setup.Other && x.QuestionId == off.QuestionId));
+    }
+
+    [DatabaseFact]
+    public async Task Daily_digest_is_idempotent_per_person_and_day()
+    {
+        fixture.Clock.UtcNow = new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+        var setup = await SetupAsync("digest");
+        _ = await AskAsync(setup.Tenant, setup.RecordId, setup.Administrator,
+            [YojanaRole.TenantAdministrator], null, YojanaRole.ServiceSupervisor);
+        await WaitForNotificationsAsync(setup.Tenant, setup.Staff, 1);
+        fixture.Clock.UtcNow = new DateTime(2026, 9, 2, 7, 0, 0, DateTimeKind.Utc);
+        var run = new RunQuestionDailyDigest(new DateOnly(2026, 9, 2));
+        await InvokeAsync(setup.Tenant, run);
+        await InvokeAsync(setup.Tenant, run);
+        using var scope = fixture.ScopeFor(setup.Tenant);
+        var db = scope.ServiceProvider.GetRequiredService<KnowledgeDbContext>();
+        Assert.Single(await db.Digests.AsNoTracking().Where(x => x.UserId == setup.Staff
+            && x.DigestDate == run.Date).ToListAsync());
+        Assert.All(await db.Notifications.AsNoTracking().Where(x => x.RecipientUserId == setup.Staff).ToListAsync(),
+            row => Assert.Equal(run.Date, row.DigestDate));
+    }
+
+    [DatabaseFact]
     public async Task Schema_contains_all_tables_with_tenant_first_keys_and_rls()
     {
         var setup = await fixture.NewTenantAsync("schema");
@@ -353,9 +486,10 @@ public sealed class QuestionDatabaseTests(KnowledgeHostFixture fixture)
         var db = scope.ServiceProvider.GetRequiredService<KnowledgeDbContext>();
         Assert.Empty(db.ValidateTenantKeyConventions());
         var tables = await db.Database.SqlQueryRaw<string>("SELECT name AS [Value] FROM sys.tables WHERE schema_id = SCHEMA_ID('knowledge') AND name <> '__migrations'").ToListAsync();
-        Assert.Equal(new[] { "question", "question_participant", "question_reply", "question_reply_revision" }, tables.Order());
+        Assert.Equal(new[] { "question", "question_digest", "question_notification", "question_notification_preference",
+            "question_participant", "question_reply", "question_reply_revision" }, tables.Order());
         var predicates = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM sys.security_predicates p JOIN sys.tables t ON t.object_id=p.target_object_id WHERE t.schema_id=SCHEMA_ID('knowledge')").SingleAsync();
-        Assert.Equal(12, predicates);
+        Assert.Equal(21, predicates);
         var searchKeys = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM sys.indexes WHERE name IN ('ux_question_question_id', 'ux_question_reply_reply_id')").SingleAsync();
         Assert.Equal(2, searchKeys);
         var fullTextInstalled = await db.Database.SqlQueryRaw<int>("SELECT CONVERT(int, FULLTEXTSERVICEPROPERTY('IsFullTextInstalled')) AS [Value]").SingleAsync();
@@ -384,6 +518,25 @@ public sealed class QuestionDatabaseTests(KnowledgeHostFixture fixture)
         using var scope = fixture.ScopeFor(tenant);
         return await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<T>(command,
             new DeliveryOptions { TenantId = tenant.ToString() });
+    }
+
+    private async Task InvokeAsync(TenantId tenant, object command)
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync(command,
+            new DeliveryOptions { TenantId = tenant.ToString() });
+    }
+
+    private async Task WaitForNotificationsAsync(TenantId tenant, Guid recipient, int count)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            using var scope = fixture.ScopeFor(tenant);
+            if (await scope.ServiceProvider.GetRequiredService<KnowledgeDbContext>().Notifications.AsNoTracking()
+                .CountAsync(x => x.RecipientUserId == recipient) >= count) return;
+            await Task.Delay(50);
+        }
+        throw new TimeoutException("Question notifications were not handled within five seconds.");
     }
 
     private static async Task AssertRuleAsync(string rule, Func<Task> action)

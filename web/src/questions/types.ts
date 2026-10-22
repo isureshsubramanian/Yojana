@@ -14,3 +14,7 @@ export interface SearchPage { reviewedEntries: unknown[]; questions: SearchQuest
 export interface RankedCount { key: string; label: string; count: number }
 export interface MyQuestion { questionId: string; title: string; status: QuestionStatus; recordKind: string; recordId: string; recordName: string; askedByName: string; directedTo: string; askedAt: string; lastActivityAt: string; replyCount: number; waitingDays: number }
 export interface MyQuestionPage { items: MyQuestion[]; nextCursor: string | null; summary: { waitingByAge: RankedCount[]; waitingByRecordKind: RankedCount[] } }
+export type QuestionNotificationMode = "immediately" | "daily_digest" | "off";
+export interface QuestionNotificationPreference { personalDefault: QuestionNotificationMode; roleDefault: QuestionNotificationMode; choice: QuestionNotificationMode | null }
+export interface QuestionBellItem { questionId: string; title: string; recordKind: string; recordId: string; recordName: string; reason: string; activityAt: string; link: string }
+export interface QuestionBellSummary { count: number; items: QuestionBellItem[] }

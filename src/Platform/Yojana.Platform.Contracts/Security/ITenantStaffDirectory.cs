@@ -6,6 +6,9 @@ public sealed record TenantStaffChoicePage(IReadOnlyList<TenantStaffChoice> Item
 
 public sealed record TenantRoleChoice(string Role, string Label, int People);
 
+public sealed record TenantStaffNotificationRecipient(Guid UserId, string Name, string Email,
+    IReadOnlyList<string> Roles);
+
 /// <summary>Checks question addressees without exposing platform membership tables to another module.</summary>
 public interface ITenantStaffDirectory
 {
@@ -19,4 +22,11 @@ public interface ITenantStaffDirectory
 
     /// <summary>Only roles held by active staff are offered as question addressees.</summary>
     Task<IReadOnlyList<TenantRoleChoice>> ActiveRolesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Resolves active staff recipients for an internal notification. Exactly one target is supplied; callers still
+    /// decide what the recipient may see through the owning module's read port.
+    /// </summary>
+    Task<IReadOnlyList<TenantStaffNotificationRecipient>> NotificationRecipientsAsync(Guid? userId, string? role,
+        CancellationToken cancellationToken);
 }

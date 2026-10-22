@@ -3,6 +3,8 @@ using Microsoft.Extensions.Hosting;
 using Yojana.Knowledge.Data;
 using Yojana.Knowledge.Questions;
 using Yojana.Platform;
+using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Scheduling;
 
 namespace Yojana.Knowledge;
 
@@ -17,6 +19,11 @@ public static class KnowledgeModule
         builder.Services.AddScoped<RecordReferenceLookup>();
         builder.Services.AddScoped<IQuestionTextSearch, SqlServerFullTextQuestionSearch>();
         builder.Services.AddScoped<QuestionQueries>();
+        builder.Services.AddScoped(sp => new QuestionNotificationDefaults(
+            sp.GetRequiredService<ITenantSettings>()));
+        builder.Services.AddScoped<QuestionNotificationService>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<QuestionDailyDigestJob>(
+            QuestionDailyDigestJob.JobName, QuestionDailyDigestJob.Cron));
         return builder;
     }
 }

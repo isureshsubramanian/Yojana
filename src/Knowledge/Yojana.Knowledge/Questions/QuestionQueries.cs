@@ -57,7 +57,7 @@ public sealed record QuestionSearchPage(IReadOnlyList<object> ReviewedEntries,
 
 public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup records,
     IUserDirectory users, ITenantStaffDirectory staff, IQuestionTextSearch textSearch,
-    ITenantContext tenant, IClock clock)
+    QuestionNotificationService notifications, ITenantContext tenant, IClock clock)
 {
     public async Task<QuestionThreadView?> ThreadAsync(Guid questionId, RecordReferenceViewer viewer,
         CancellationToken cancellationToken)
@@ -86,7 +86,7 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
             (!askerActive && viewer.Roles.Contains(YojanaRole.ServiceSupervisor, StringComparer.Ordinal)));
         var allowed = new QuestionAllowedActions(isAsker, open, canAccept, open && (isAsker || administrator),
             !open && (isAsker || administrator));
-        return new QuestionThreadView(question.QuestionId, question.RecordKind, question.RecordId,
+        var view = new QuestionThreadView(question.QuestionId, question.RecordKind, question.RecordId,
             record.DisplayName!, question.Title, question.Body, question.Status, question.DirectedToUser,
             question.DirectedToUser is { } directedUser ? Name(directedUser) : null, question.DirectedToRole,
             question.DirectedToRole is { } directedRole ? RoleLabel(directedRole) : null, question.AskedBy, Name(question.AskedBy),
@@ -95,6 +95,8 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
             revisionRows.Count(x => x.ReplyId == null), allowed, replies.Select(reply => new QuestionReplyView(reply.ReplyId,
                 reply.Body, reply.Author, Name(reply.Author), reply.At, reply.EditedAt,
                 revisionRows.Count(x => x.ReplyId == reply.ReplyId), reply.Author == viewer.UserId)).ToList());
+        await notifications.MarkReadAsync(questionId, viewer.UserId, cancellationToken);
+        return view;
     }
 
     public async Task<QuestionPage> OnRecordAsync(string recordKind, Guid recordId, string? status,

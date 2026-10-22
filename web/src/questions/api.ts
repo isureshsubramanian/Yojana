@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import type { AddresseePage, MyQuestionPage, QuestionPage, QuestionThread, Revision, SearchPage } from "./types";
+import type { AddresseePage, MyQuestionPage, QuestionBellSummary, QuestionNotificationMode, QuestionNotificationPreference, QuestionPage, QuestionThread, Revision, SearchPage } from "./types";
 
 const root = "/api/questions";
 const qs = (values: Record<string, string | number | boolean | null | undefined>) => {
@@ -22,4 +22,7 @@ export const questionsApi = {
   addressees: (search?: string, cursor?: string, signal?: AbortSignal) => api<AddresseePage>(`${root}/addressees${qs({ search, cursor, take: 50 })}`, { signal }),
   search: (query: string, answeredOnly = false, cursor?: string, signal?: AbortSignal) => api<SearchPage>(`${root}/search${qs({ query, answeredOnly, cursor, take: 6 })}`, { signal }),
   mine: (filters: { scope: string; status: string; recordKind: string; age: string; search: string }, cursor?: string, signal?: AbortSignal) => api<MyQuestionPage>(`${root}/mine${qs({ ...filters, cursor, take: 12 })}`, { signal }),
+  bell: (signal?: AbortSignal) => api<QuestionBellSummary>(`${root}/notifications/bell?take=5`, { signal }),
+  notificationPreference: (signal?: AbortSignal) => api<QuestionNotificationPreference>(`${root}/notifications/preference`, { signal }),
+  updateNotificationPreference: (mode: QuestionNotificationMode | null) => api<QuestionNotificationPreference>(`${root}/notifications/preference`, { method: "PUT", body: { mode } }),
 };
