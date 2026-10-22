@@ -10,6 +10,7 @@ namespace Yojana.Serialisation.Portal;
 /// <summary>Tenant disclosure configuration. Missing data means the ADR defaults, including public lookup enabled.</summary>
 public sealed class DisclosurePolicyService(SerialisationDbContext db, ITenantContext tenant,
     ITenantSettings settings, IClock clock)
+    : IDisclosurePolicyReadPort
 {
     public const string PublicEnabledSetting = "portal.public.enabled";
 
@@ -27,6 +28,8 @@ public sealed class DisclosurePolicyService(SerialisationDbContext db, ITenantCo
         return new(storedSwitch is null || bool.Parse(storedSwitch.Value), complete,
             storedSwitch?.Version ?? ITenantSettings.MissingVersion);
     }
+
+    public Task<DisclosurePolicyView> ReadAsync(CancellationToken cancellationToken) => GetAsync(cancellationToken);
 
     public async Task<DisclosurePolicyView> SetFieldsAsync(UpdateDisclosureFields update, string actorRef,
         CancellationToken cancellationToken)

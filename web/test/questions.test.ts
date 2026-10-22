@@ -46,11 +46,19 @@ test("the ask box uses active person-or-role choices, the approved layout, and l
   assert.match(panel, /<optgroup label="Roles">/);
   assert.match(panel, /<optgroup label="People">/);
   assert.match(panel, /questionsApi\.search\(title\.trim\(\), true/);
-  assert.match(panel, /reviewedEntries\.length > 0/);
+  assert.match(panel, /reviewedEntries\.map/);
   assert.match(panel, /Already answered: read these before you ask/);
   assert.match(styles, /grid-template-columns: minmax\(0, 1fr\) 320px/);
   assert.match(styles, /\.card \.question-askbox \.row \.field \+ \.field \{ margin-top: 0; \}/);
   assert.doesNotMatch(api, /actor|askedBy|requestedBy/i);
+});
+
+test("an answered thread offers the server-authorised turn-into-entry action", () => {
+  assert.match(panel, /allowedActions\.canTurnIntoEntry/);
+  assert.match(panel, /questionsApi\.createEntry\(thread\.questionId\)/);
+  assert.match(panel, /Turn into entry/);
+  assert.match(panel, /allowedActions\.entryId/);
+  assert.match(api, /createEntry:.*method: "POST"/);
 });
 
 test("My questions keeps search and chips on its server-paged table and summaries as ranked lists", () => {

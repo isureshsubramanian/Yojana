@@ -17,6 +17,11 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
     public DbSet<QuestionReply> Replies => Set<QuestionReply>();
     public DbSet<QuestionReplyRevision> Revisions => Set<QuestionReplyRevision>();
     public DbSet<QuestionParticipant> Participants => Set<QuestionParticipant>();
+    public DbSet<KnowledgeEntry> Entries => Set<KnowledgeEntry>();
+    public DbSet<KnowledgeEntryVersion> EntryVersions => Set<KnowledgeEntryVersion>();
+    public DbSet<KnowledgeEntryTag> EntryTags => Set<KnowledgeEntryTag>();
+    public DbSet<KnowledgeEntryRecordLink> EntryRecordLinks => Set<KnowledgeEntryRecordLink>();
+    public DbSet<KnowledgeEntryReviewRound> EntryReviewRounds => Set<KnowledgeEntryReviewRound>();
     public DbSet<QuestionNotificationPreference> NotificationPreferences => Set<QuestionNotificationPreference>();
     public DbSet<QuestionNotification> Notifications => Set<QuestionNotification>();
     public DbSet<QuestionDigest> Digests => Set<QuestionDigest>();
@@ -71,6 +76,86 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
             b.HasKey(x => new { x.TenantId, x.QuestionId, x.UserId });
             b.HasIndex(x => new { x.TenantId, x.UserId, x.LastReadAt, x.QuestionId });
             b.HasOne<Question>().WithMany().HasForeignKey(x => new { x.TenantId, x.QuestionId }).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<KnowledgeEntry>(b =>
+        {
+            b.ToTable("knowledge_entry", table =>
+            {
+                table.HasCheckConstraint("ck_knowledge_entry_status",
+                    "status IN ('draft','in_review','published','retired')");
+                table.HasCheckConstraint("ck_knowledge_entry_version", "current_version >= 1");
+                table.HasCheckConstraint("ck_knowledge_entry_published_state",
+                    "(status IN ('published','retired') AND published_by IS NOT NULL AND published_at IS NOT NULL) OR status NOT IN ('published','retired')");
+                table.HasCheckConstraint("ck_knowledge_entry_retired_state",
+                    "(status = 'retired' AND retired_by IS NOT NULL AND retired_at IS NOT NULL AND retirement_note IS NOT NULL) OR status <> 'retired'");
+            });
+            b.HasKey(x => new { x.TenantId, x.EntryId });
+            b.Property(x => x.Title).HasMaxLength(240);
+            b.Property(x => x.Problem).HasMaxLength(8000);
+            b.Property(x => x.Answer).HasMaxLength(8000);
+            b.Property(x => x.Steps).HasMaxLength(8000);
+            b.Property(x => x.WrittenAgainstJson).HasMaxLength(8000);
+            b.Property(x => x.Status).HasMaxLength(32);
+            b.Property(x => x.RetirementNote).HasMaxLength(1000);
+            b.Property(x => x.RowVersion).IsRowVersion();
+            b.HasIndex(x => new { x.TenantId, x.SourceQuestionId }).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.Status, x.LastSavedAt, x.EntryId });
+            b.HasOne<Question>().WithMany().HasForeignKey(x => new { x.TenantId, x.SourceQuestionId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<KnowledgeEntryVersion>(b =>
+        {
+            b.ToTable("knowledge_entry_version", table =>
+                table.HasCheckConstraint("ck_knowledge_entry_version_number", "version >= 1"));
+            b.HasKey(x => new { x.TenantId, x.EntryId, x.Version });
+            b.Property(x => x.Title).HasMaxLength(240);
+            b.Property(x => x.Problem).HasMaxLength(8000);
+            b.Property(x => x.Answer).HasMaxLength(8000);
+            b.Property(x => x.Steps).HasMaxLength(8000);
+            b.Property(x => x.WrittenAgainstJson).HasMaxLength(8000);
+            b.HasIndex(x => new { x.TenantId, x.EntryId, x.SavedAt });
+            b.HasOne<KnowledgeEntry>().WithMany().HasForeignKey(x => new { x.TenantId, x.EntryId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<KnowledgeEntryTag>(b =>
+        {
+            b.ToTable("knowledge_entry_tag", table => table.HasCheckConstraint("ck_knowledge_entry_tag_kind",
+                "kind IN ('role','task','item_family','claim_cause')"));
+            b.HasKey(x => new { x.TenantId, x.EntryId, x.Version, x.Kind, x.Value });
+            b.Property(x => x.Kind).HasMaxLength(32);
+            b.Property(x => x.Value).HasMaxLength(200);
+            b.Property(x => x.Label).HasMaxLength(240);
+            b.HasIndex(x => new { x.TenantId, x.Kind, x.Value, x.EntryId, x.Version });
+            b.HasOne<KnowledgeEntryVersion>().WithMany().HasForeignKey(x => new { x.TenantId, x.EntryId, x.Version })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<KnowledgeEntryRecordLink>(b =>
+        {
+            b.ToTable("knowledge_entry_record_link");
+            b.HasKey(x => new { x.TenantId, x.EntryId, x.Version, x.RecordKind, x.RecordId });
+            b.Property(x => x.RecordKind).HasMaxLength(64);
+            b.HasIndex(x => new { x.TenantId, x.RecordKind, x.RecordId, x.EntryId, x.Version });
+            b.HasOne<KnowledgeEntryVersion>().WithMany().HasForeignKey(x => new { x.TenantId, x.EntryId, x.Version })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<KnowledgeEntryReviewRound>(b =>
+        {
+            b.ToTable("knowledge_entry_review_round", table =>
+            {
+                table.HasCheckConstraint("ck_knowledge_entry_review_round_number", "round >= 1");
+                table.HasCheckConstraint("ck_knowledge_entry_review_decision",
+                    "decision IS NULL OR decision IN ('approve','send_back')");
+                table.HasCheckConstraint("ck_knowledge_entry_review_state",
+                    "(decision IS NULL AND reviewer IS NULL AND reviewed_at IS NULL) OR (decision IS NOT NULL AND reviewer IS NOT NULL AND reviewed_at IS NOT NULL)");
+                table.HasCheckConstraint("ck_knowledge_entry_send_back_note",
+                    "decision <> 'send_back' OR note IS NOT NULL");
+            });
+            b.HasKey(x => new { x.TenantId, x.EntryId, x.Round });
+            b.Property(x => x.Decision).HasMaxLength(32);
+            b.Property(x => x.Note).HasMaxLength(1000);
+            b.HasIndex(x => new { x.TenantId, x.Decision, x.SubmittedAt, x.EntryId, x.Round });
+            b.HasOne<KnowledgeEntryVersion>().WithMany().HasForeignKey(x => new { x.TenantId, x.EntryId, x.Version })
+                .OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<QuestionNotificationPreference>(b =>
         {

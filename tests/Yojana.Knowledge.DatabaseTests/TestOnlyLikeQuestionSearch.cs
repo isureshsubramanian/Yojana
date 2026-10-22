@@ -46,4 +46,22 @@ public sealed class TestOnlyLikeQuestionSearch(KnowledgeDbContext db, ITenantCon
             .Select(x => x.QuestionId).ToListAsync(cancellationToken);
         return ids.ToHashSet();
     }
+
+    public async Task<IReadOnlyList<EntryTextMatch>> SearchEntriesAsync(string query, int take,
+        EntryTextCursor? before, CancellationToken cancellationToken)
+    {
+        var term = query.Trim();
+        var rows = await db.Entries.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && x.Status == Knowledge.Contracts.KnowledgeEntryStatus.Published
+                && (x.Title.Contains(term) || x.Problem.Contains(term) || x.Answer.Contains(term)
+                    || x.Steps.Contains(term)))
+            .Select(x => new { x.EntryId, Title = x.Title.Contains(term) }).ToListAsync(cancellationToken);
+        var ordered = rows.Select(x => new EntryTextMatch(x.EntryId, x.Title ? 2000 : 1000))
+            .OrderByDescending(x => x.Rank).ThenByDescending(x => x.EntryId);
+        if (before is not null)
+            ordered = ordered.Where(x => x.Rank < before.Rank
+                    || (x.Rank == before.Rank && x.EntryId.CompareTo(before.EntryId) < 0))
+                .OrderByDescending(x => x.Rank).ThenByDescending(x => x.EntryId);
+        return ordered.Take(take).ToList();
+    }
 }

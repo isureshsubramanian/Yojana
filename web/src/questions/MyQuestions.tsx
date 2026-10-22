@@ -8,6 +8,7 @@ import { questionsApi } from "./api";
 import { humanise, recordKinds, recordPath, statusLabel, statusTone } from "./model";
 import type { MyQuestion, MyQuestionPage, RankedCount } from "./types";
 import "./questions.css";
+import { KnowledgeSubnav } from "./KnowledgeSubnav";
 
 const dateTime = (value: string) => new Date(value).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
@@ -35,7 +36,7 @@ export function Component() {
   ];
   const grid: PageResult<MyQuestion> = { rows: result?.items ?? [], total: (page - 1) * 12 + (result?.items.length ?? 0), page, pageSize: 12, continuation: result?.nextCursor ?? null, totalIsExact: false, hasMore: !!result?.nextCursor };
   return <main className="content" id="main" tabIndex={-1}><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Questions" }]} /><PageHeader eyebrow="Questions and knowledge" title="My questions" sub="Questions you asked, questions put to you, and questions put to a role you hold. Waiting longest comes first." />
-    <nav className="tabs questions-subnav" aria-label="Questions and knowledge"><Link to="/questions" aria-current="page">My questions</Link></nav>
+    <KnowledgeSubnav current="mine" />
     <ErrorNote error={error} />
     <section className="card" aria-labelledby="my-questions-table"><div className="card-header"><h2 id="my-questions-table">Waiting <span className="meta">server-paged</span></h2><div className="segmented" role="group" aria-label="Whose questions">{([['asked', 'Asked by me'], ['directed_to_me', 'Directed at me'], ['directed_to_roles', 'At my roles'], ['all', 'All']] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={scope === value} onClick={() => setScope(value)}>{label}</button>)}</div></div>
       <div className="questions-findbar"><label className="field questions-search"><span className="lbl">Search this table as you type</span><input className="input" type="search" value={input} onChange={event => setInput(event.target.value)} placeholder="Title, details or replies" /></label><select className={`chip-select${status ? " on" : ""}`} aria-label="Status" value={status} onChange={event => setStatus(event.target.value)}><option value="">Status · All</option><option value="open">Status · Open</option><option value="answered">Status · Answered</option><option value="closed_without_answer">Status · Closed without answer</option></select><select className={`chip-select${recordKind ? " on" : ""}`} aria-label="Record kind" value={recordKind} onChange={event => setRecordKind(event.target.value)}><option value="">Record kind · All</option>{recordKinds.map(kind => <option key={kind} value={kind}>Record kind · {humanise(kind)}</option>)}</select><select className={`chip-select${age ? " on" : ""}`} aria-label="Age" value={age} onChange={event => setAge(event.target.value)}><option value="">Age · All</option><option value="under_1_day">Age · Under 1 day</option><option value="one_to_three_days">Age · 1–3 days</option><option value="four_to_seven_days">Age · 4–7 days</option><option value="over_seven_days">Age · Over 7 days</option></select></div>

@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Knowledge.Data;
 using Yojana.Knowledge.Data.Entities;
+using Yojana.Knowledge.Entries;
 using Yojana.Platform.Contracts.Records;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
@@ -14,7 +15,7 @@ public sealed record QuestionReplyView(Guid ReplyId, string Body, Guid AuthorId,
     DateTime At, DateTime? EditedAt, int RevisionCount, bool CanEdit);
 
 public sealed record QuestionAllowedActions(bool CanEditQuestion, bool CanReply, bool CanAcceptAnswer,
-    bool CanCloseWithoutAnswer, bool CanReopen);
+    bool CanCloseWithoutAnswer, bool CanReopen, bool CanTurnIntoEntry = false, Guid? EntryId = null);
 
 public sealed record QuestionThreadView(Guid QuestionId, string RecordKind, Guid RecordId, string RecordName,
     string Title, string Body, string Status, Guid? DirectedToUser, string? DirectedToUserName,
@@ -52,12 +53,12 @@ public sealed record MyQuestionPage(IReadOnlyList<MyQuestionItem> Items, string?
 public sealed record QuestionSearchItem(Guid QuestionId, string Title, string Status, string RecordKind,
     Guid RecordId, string RecordName, string Answer, int Rank, DateTime AskedAt);
 
-public sealed record QuestionSearchPage(IReadOnlyList<object> ReviewedEntries,
+public sealed record QuestionSearchPage(IReadOnlyList<KnowledgeEntryListItem> ReviewedEntries,
     IReadOnlyList<QuestionSearchItem> Questions, string? NextCursor);
 
 public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup records,
     IUserDirectory users, ITenantStaffDirectory staff, IQuestionTextSearch textSearch,
-    QuestionNotificationService notifications, ITenantContext tenant, IClock clock)
+    KnowledgeEntryQueries entries, QuestionNotificationService notifications, ITenantContext tenant, IClock clock)
 {
     public async Task<QuestionThreadView?> ThreadAsync(Guid questionId, RecordReferenceViewer viewer,
         CancellationToken cancellationToken)
@@ -84,8 +85,11 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
         var canAccept = open && (isAsker || administrator ||
             (question.DirectedToRole is { } role && viewer.Roles.Contains(role, StringComparer.Ordinal)) ||
             (!askerActive && viewer.Roles.Contains(YojanaRole.ServiceSupervisor, StringComparer.Ordinal)));
+        var entryId = await db.Entries.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+            && x.SourceQuestionId == question.QuestionId).Select(x => (Guid?)x.EntryId).SingleOrDefaultAsync(cancellationToken);
         var allowed = new QuestionAllowedActions(isAsker, open, canAccept, open && (isAsker || administrator),
-            !open && (isAsker || administrator));
+            !open && (isAsker || administrator), question.Status == Knowledge.Contracts.QuestionStatus.Answered
+                && question.AcceptedReplyId is not null && entryId is null, entryId);
         var view = new QuestionThreadView(question.QuestionId, question.RecordKind, question.RecordId,
             record.DisplayName!, question.Title, question.Body, question.Status, question.DirectedToUser,
             question.DirectedToUser is { } directedUser ? Name(directedUser) : null, question.DirectedToRole,
@@ -253,7 +257,8 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
             x.Question.RecordKind, x.Question.RecordId, x.Record.DisplayName!,
             x.Question.AcceptedReplyId is { } replyId ? answers.GetValueOrDefault(replyId, x.Question.Body) : x.Question.Body,
             x.Match.Rank, x.Question.AskedAt)).ToList();
-        return new QuestionSearchPage([], items, ordered.Count > take && page.Count > 0
+        var reviewedEntries = await entries.SearchPublishedAsync(query, Math.Min(take, 10), cancellationToken);
+        return new QuestionSearchPage(reviewedEntries, items, ordered.Count > take && page.Count > 0
             ? EncodeSearch(page[^1].Match.Rank, page[^1].Question.QuestionId) : null);
     }
 

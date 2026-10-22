@@ -202,6 +202,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<Entitlements.PolicyStore>();
         builder.Services.AddScoped<Entitlements.PolicyCoverItems>();
         builder.Services.AddScoped<Entitlements.ClaimCauseCatalogue>();
+        builder.Services.AddScoped<IClaimCauseNamePort>(sp => sp.GetRequiredService<Entitlements.ClaimCauseCatalogue>());
         builder.Services.AddScoped<Entitlements.WhatsCoveredQuery>();
         builder.Services.AddScoped<IUnitCustomerDocument, Entitlements.UnitCustomerDocument>();
         // Customer e-mail (P9-T20). Factories, coupled to SendCoverageMailHandler: these services reach PlatformDbContext
@@ -503,6 +504,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<Portal.PortalOwnershipScope>();
         builder.Services.AddScoped<Portal.PortalQueries>();
         builder.Services.AddScoped<Portal.DisclosurePolicyService>();
+        builder.Services.AddScoped<IDisclosurePolicyReadPort>(sp => sp.GetRequiredService<Portal.DisclosurePolicyService>());
         builder.Services.AddScoped<Portal.PublicPortalResolver>();
         builder.Services.AddScoped(sp => new Portal.PortalRegistrationSettings(
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
