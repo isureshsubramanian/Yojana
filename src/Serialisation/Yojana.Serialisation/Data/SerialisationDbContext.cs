@@ -138,6 +138,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<ClaimEvidence> ClaimEvidence => Set<ClaimEvidence>();
 
     public DbSet<ClaimRiskFlag> ClaimRiskFlags => Set<ClaimRiskFlag>();
+    public DbSet<MigrationLoadUnit> MigrationLoadUnits => Set<MigrationLoadUnit>();
 
     public DbSet<CoverageDecision> CoverageDecisions => Set<CoverageDecision>();
 
@@ -1040,6 +1041,15 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(e => e.ActorRef).HasMaxLength(200);
             b.HasIndex(e => new { e.TenantId, e.ClaimId, e.RecordedAt });
             b.HasOne<Claim>().WithMany().HasForeignKey(e => new { e.TenantId, e.ClaimId }).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // P9-T10: register of units written by a migration load (idempotent chunks, rollback scope).
+        modelBuilder.Entity<MigrationLoadUnit>(b =>
+        {
+            b.ToTable("migration_load_unit");
+            b.HasKey(u => new { u.TenantId, u.LoadId, u.PlanUnitId });
+            b.Property(u => u.ActorRef).HasMaxLength(200);
+            b.HasIndex(u => new { u.TenantId, u.UnitId }).IsUnique();
         });
 
         modelBuilder.Entity<ClaimRiskFlag>(b =>

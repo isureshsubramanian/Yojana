@@ -226,6 +226,7 @@ public static class IntegrationModule
         builder.Services.AddScoped<ReconstructionService>();
         builder.Services.AddScoped<MappingSettings>();
         builder.Services.AddScoped<MappingService>();
+        builder.Services.AddScoped<Yojana.Integration.LegacyMigration.Apply.ApplyService>();
         builder.Services.AddSingleton(RecurringTenantJob.For<MigrationExtractionJob>(
             MigrationExtractionJob.JobName, MigrationExtractionJob.Cron));
 

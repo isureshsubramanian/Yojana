@@ -151,11 +151,12 @@ public sealed class IntegrationEndpointTests
         builder.Services.AddScoped<ReconstructionService>();
         builder.Services.AddScoped<MappingService>();
         builder.Services.AddScoped<MappingSettings>();
+        builder.Services.AddScoped<Yojana.Integration.LegacyMigration.Apply.ApplyService>();
         var app = builder.Build();
         app.MapMigrationEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
-        Assert.Equal(39, endpoints.Count);
+        Assert.Equal(43, endpoints.Count);
         var readPaths = new HashSet<string>(StringComparer.Ordinal)
         {
             "/api/migration/batches", "/api/migration/batches/{batchId:guid}",
@@ -171,6 +172,7 @@ public sealed class IntegrationEndpointTests
             "/api/migration/batches/{batchId:guid}/map/gaps",
             "/api/migration/plan/units/{planUnitId:guid}",
             "/api/migration/mapping/settings",
+            "/api/migration/batches/{batchId:guid}/apply", "/api/migration/loads/{loadId:guid}/refusals",
         };
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             policy => policy.Policy == (IsReviewEndpoint(endpoint)
