@@ -162,7 +162,7 @@ public sealed class MigrationMappingLiveTests(IntegrationHostFixture fixture)
             rollback.ReplacementLinksRemoved, rollback.CertificatesRemoved);
         Assert.Equal(Yojana.Serialisation.Contracts.RollBackMigrationLoadResult.RolledBack, rollback.Outcome);
         await WriteEvidenceAsync(profileCounts, reviewCounts,
-            view.GapsByKind.ToDictionary(row => row.Key, row => row.Count, StringComparer.Ordinal),
+            view.GapsByKind.ToDictionary(row => row.Kind, row => row.Count, StringComparer.Ordinal),
             view.ReplacementLinks, load.Applied);
     }
 
