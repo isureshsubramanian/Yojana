@@ -156,10 +156,12 @@ public sealed partial class Cx01DocumentDatabaseTests
             var serialDb = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
             await scope.ServiceProvider.GetRequiredService<CertificateTemplateService>().EnsureStartersAsync(default);
             var templateVersion = await serialDb.CertificateTemplateVersions.Select(x => x.TemplateVersionId).FirstAsync();
+            // OpenOwnership above queues the real v1 release record on a durable local queue; it may land before or
+            // after this fixture row, so the fixture takes a version the background issuer never allocates first.
             serialDb.CertificateInstances.Add(new CertificateInstance
             {
                 TenantId = tenant, CertificateId = certificate, UnitId = unit, DocumentKind = "release_record", FormType = CertificateFormType.GenericRelease,
-                Version = 1, TrackingNumber = "CERT-1", TemplateVersionId = templateVersion, Payload = "{}", PayloadHash = new string('a', 64),
+                Version = 99, TrackingNumber = "CERT-1", TemplateVersionId = templateVersion, Payload = "{}", PayloadHash = new string('a', 64),
                 FactsHash = new string('a', 64), TriggeringEventId = header.EventId, IssuerEntityId = entity, IssuerSnapshot = "{}",
                 BrandingSnapshot = "{}", Language = "en", Provenance = "system_generated", IssuedAt = at, Status = CertificateStatus.Issued,
             });

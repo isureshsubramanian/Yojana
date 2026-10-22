@@ -5,6 +5,7 @@ using Yojana.Integration.Data;
 using Yojana.Integration.Gateway;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Integration.LegacyMigration.Reconstruction;
+using Yojana.Integration.LegacyMigration.Validation;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
@@ -38,24 +39,23 @@ public sealed class ApplyRuleException(string rule, string message) : InvalidOpe
 /// completes; nothing is published per unit. A rehearsal load can be rolled back while no unit in it was touched.
 /// </summary>
 public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant, IClock clock, IMessageBus bus,
-    GatewayReferenceStore references)
+    GatewayReferenceStore references, IMigrationSignoffStatus signoff)
 {
     public const int ChunkSize = 500;
 
     public async Task<StartApplyResponse> EnqueueAsync(Guid batchId, StartApplyRequest request, string actor,
         CancellationToken cancellationToken)
     {
-        // The final (non-rehearsal) load needs a signed validation record (P9-T08); until that gate is wired here,
-        // only rehearsals load, so nothing reaches the module for real without sign-off.
-        if (!request.Rehearsal)
-            throw new ApplyRuleException("migration_apply_signoff_required",
-                "A final load needs the validation sign-off record. Run a rehearsal load, or sign off validation first.");
         var map = await db.MigrationMapRuns.AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
                 row.BatchId == batchId && row.Status == MappingRunStatus.Completed)
             .OrderByDescending(row => row.FinishedAt).ThenByDescending(row => row.RunId)
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new ApplyRuleException("migration_apply_map_not_found",
                 "No completed load plan exists for this batch. Run mapping first.");
+        // A final load needs the non-rehearsal sign-off record (P9-T08, OD-54) of exactly this load plan.
+        if (!request.Rehearsal && !await signoff.HasFinalSignoffAsync(map.RunId, cancellationToken))
+            throw new ApplyRuleException("migration_apply_signoff_required",
+                "A final load needs the validation sign-off record of this load plan. Run a rehearsal load, or sign off validation first.");
         var open = await db.Set<MigrationApplyRun>().AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
                 (row.Status == ApplyRunStatus.Queued || row.Status == ApplyRunStatus.Running ||
                  row.Status == ApplyRunStatus.Completed || row.Status == ApplyRunStatus.Failed))

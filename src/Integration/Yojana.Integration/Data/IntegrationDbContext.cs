@@ -9,6 +9,7 @@ using Yojana.Integration.LegacyMigration.Templates;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Mapping;
+using Yojana.Integration.LegacyMigration.Validation;
 
 namespace Yojana.Integration.Data;
 
@@ -91,6 +92,14 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<MigrationPlanCertificate> MigrationPlanCertificates => Set<MigrationPlanCertificate>();
     public DbSet<MigrationPlanGap> MigrationPlanGaps => Set<MigrationPlanGap>();
     public DbSet<MigrationPlanLog> MigrationPlanLogs => Set<MigrationPlanLog>();
+    public DbSet<MigrationValidationRun> MigrationValidationRuns => Set<MigrationValidationRun>();
+    public DbSet<MigrationValidationCheck> MigrationValidationChecks => Set<MigrationValidationCheck>();
+    public DbSet<MigrationValidationCheckPart> MigrationValidationCheckParts => Set<MigrationValidationCheckPart>();
+    public DbSet<MigrationValidationDifference> MigrationValidationDifferences => Set<MigrationValidationDifference>();
+    public DbSet<MigrationValidationSample> MigrationValidationSamples => Set<MigrationValidationSample>();
+    public DbSet<MigrationValidationSignature> MigrationValidationSignatures => Set<MigrationValidationSignature>();
+    public DbSet<MigrationSignoffRecord> MigrationSignoffRecords => Set<MigrationSignoffRecord>();
+    public DbSet<MigrationSignoffLine> MigrationSignoffLines => Set<MigrationSignoffLine>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
