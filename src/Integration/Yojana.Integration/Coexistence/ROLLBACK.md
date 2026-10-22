@@ -70,3 +70,19 @@ The parallel-run checklist (30, 60 or 90 days) lists the measured items (daily c
 than seven days, conflict queue empty, recent drift scan) and the confirmed items (active phase, ERP read-only for the
 owned objects, one month-end close, rollback rehearsed, users moved). Rehearse this runbook once during the parallel
 run and confirm the "Rollback rehearsed" item with the date and who did it.
+
+## Final load and the delta load at cutover
+
+From the final migration load on, movements (deliveries, receipts, returns, transfers, adjustments) reach the module
+only through the connector:
+
+1. **Stop the sync** of the source connection before the final load; the product refuses a final load while it runs.
+2. The final load records the source server's clock when its extraction began and, when it completes, sets every
+   polling watermark of the connection to that time. The connection stays stopped.
+3. **Resume the sync.** The first poll reads the documents posted since the extraction. Keep postings frozen while the
+   extraction runs: a document posted during the extraction can appear both in the migrated history and in that poll.
+4. At cutover, extract the source again and map it, then a tenant administrator starts the **delta load** by hand. It
+   adds serials that are new in the source, replaces the migrated cover the source changed (refused, and listed, for a
+   unit the module has already worked on), lists owner changes that have no delivery behind them as conflicts
+   (accept or dismiss; nothing is written), and lists serials gone from the source (nothing is removed).
+5. A delta load can be undone on its own, latest first; it is refused while any unit it changed has later facts.
