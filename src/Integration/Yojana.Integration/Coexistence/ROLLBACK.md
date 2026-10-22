@@ -86,3 +86,6 @@ only through the connector:
    unit the module has already worked on), lists owner changes that have no delivery behind them as conflicts
    (accept or dismiss; nothing is written), and lists serials gone from the source (nothing is removed).
 5. A delta load can be undone on its own, latest first; it is refused while any unit it changed has later facts.
+6. The final load itself can be undone (OD-63) once every delta load built on it is undone, with the sync stopped
+   again; it is refused while any unit it wrote has later facts. Undoing it removes what it wrote and puts the
+   connection's polling watermarks back where they were before the final load.

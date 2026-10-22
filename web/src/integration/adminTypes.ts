@@ -6,7 +6,7 @@ export interface ConnectionPage extends CursorPage<Connection> { kpis: Connectio
 export interface TenantStatus { connectionId: string; connectionName: string; status: string; isLive: boolean; checkedUpTo: string | null; waitingToSend: number; messagesNeedingAttention: number; openManualTasks: number; updatedAt: string }
 export interface TenantStatusPage extends CursorPage<TenantStatus> { kpis: ConnectionKpis }
 export interface RecordHealth { sourceEntity: string | null; recordType: string; notificationState: string; watermark: string | null; checkedUpTo: string | null; behindSeconds: number | null; intervalSeconds: number; overlapSeconds: number; receivedToday: number; needAttention: number }
-export interface HealthDetail { connectionName: string; health: Health; recordTypes: RecordHealth[] }
+export interface HealthDetail { connectionName: string; health: Health; recordTypes: RecordHealth[]; handOver?: { from: string; text: string } | null }
 export interface ConnectionEvent { sequence: number; kind: string; occurredAt: string; actorName: string; summary: string }
 export interface ChecklistItem { code: string; label: string; detail: string; required: boolean; evidencePrompt: string | null; status: string; evidence: string | null; confirmedAt: string | null; manualConfirmation: boolean }
 export interface Checklist { displayName: string; customerCostDisclosure: string; items: ChecklistItem[]; requiredItemsConfirmed: boolean }

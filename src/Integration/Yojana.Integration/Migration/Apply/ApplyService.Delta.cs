@@ -11,9 +11,9 @@ namespace Yojana.Integration.LegacyMigration.Apply;
 
 public sealed record MigrationDeltaKindCount(string Kind, string Label, long Count);
 public sealed record MigrationDeltaItemView(Guid ItemId, string Kind, string KindLabel, string? ItemCode, string? Serial,
-    string? Detail, Guid? UnitId);
+    string? Detail, Guid? UnitId, Guid? ConflictId = null);
 public sealed record MigrationDeltaItemPage(IReadOnlyList<MigrationDeltaKindCount> Counts, long Total,
-    IReadOnlyList<MigrationDeltaItemView> Items, string? NextCursor);
+    IReadOnlyList<MigrationDeltaItemView> Items, string? NextCursor, long LoadTotal = 0);
 
 /// <summary>
 /// The delta load at cutover (P9-T10b, OD-59 to OD-62). After the final load, movements reach the module only through
@@ -32,6 +32,9 @@ public sealed partial class ApplyService
     public async Task<StartApplyResponse> EnqueueDeltaAsync(Guid batchId, string actor,
         CancellationToken cancellationToken)
     {
+        var readiness = await ReadinessAsync(batchId, cancellationToken);
+        if (!readiness.Delta.Allowed)
+            throw new ApplyRuleException(readiness.Delta.Reasons[0].Code, readiness.Delta.Reasons[0].Message);
         var batch = await db.MigrationBatches.AsNoTracking().SingleOrDefaultAsync(row =>
                 row.TenantId == tenant.TenantId && row.BatchId == batchId, cancellationToken)
             ?? throw new ApplyRuleException("migration_batch_not_found", "The batch does not exist.");
@@ -89,27 +92,65 @@ public sealed partial class ApplyService
         return new(delta.RunId, batchId, map.RunId, false, delta.Status);
     }
 
-    public async Task<MigrationDeltaItemPage> DeltaItemsAsync(Guid loadId, string? kind, string? cursor, int take,
-        CancellationToken cancellationToken)
+    public async Task<MigrationDeltaItemPage> DeltaItemsAsync(Guid loadId, string? kind, string? itemCode,
+        string? serial, string? cursor, int take, CancellationToken cancellationToken)
     {
         take = Math.Clamp(take, 1, 200);
-        if (kind is not null && !DeltaItemKind.All.Contains(kind))
-            throw new ApplyRuleException("migration_delta_kind_unknown", "Unknown delta finding kind.");
-        var all = db.Set<MigrationDeltaItem>().AsNoTracking()
-            .Where(row => row.TenantId == tenant.TenantId && row.RunId == loadId);
+        var all = DeltaFindings(loadId);
         var counts = (await all.GroupBy(row => row.Kind).Select(group => new { group.Key, Count = group.LongCount() })
                 .ToListAsync(cancellationToken))
             .OrderBy(row => Array.IndexOf(DeltaItemKind.All.ToArray(), row.Key))
             .Select(row => new MigrationDeltaKindCount(row.Key, DeltaItemKind.Label(row.Key), row.Count)).ToList();
-        var filtered = kind is null ? all : all.Where(row => row.Kind == kind);
+        var filtered = FilterDeltaFindings(all, kind, itemCode, serial);
         var total = await filtered.LongCountAsync(cancellationToken);
         Guid? after = Guid.TryParse(cursor, out var parsed) ? parsed : null;
         var rows = await filtered.Where(row => after == null || row.ItemId.CompareTo(after.Value) > 0)
             .OrderBy(row => row.ItemId).Take(take + 1).ToListAsync(cancellationToken);
-        var items = rows.Take(take).Select(row => new MigrationDeltaItemView(row.ItemId, row.Kind,
-            DeltaItemKind.Label(row.Kind), row.ItemCode, row.Serial, row.Detail, row.UnitId)).ToList();
-        return new(counts, total, items, rows.Count > take ? items[^1].ItemId.ToString("D") : null);
+        var items = rows.Take(take).Select(DeltaView).ToList();
+        return new(counts, total, items, rows.Count > take ? items[^1].ItemId.ToString("D") : null,
+            counts.Sum(row => row.Count));
     }
+
+    /// <summary>The filtered findings as a table for the CSV and Excel exports (OD-63), in the order the page shows.</summary>
+    public TabularExport ExportDeltaItems(Guid loadId, string? kind, string? itemCode, string? serial)
+    {
+        var filtered = FilterDeltaFindings(DeltaFindings(loadId), kind, itemCode, serial);
+        return new(["Serial", "Item", "Kind", "What happened"], Rows());
+
+        async IAsyncEnumerable<IReadOnlyList<string?>> Rows()
+        {
+            Guid? after = null;
+            while (true)
+            {
+                var page = await filtered.Where(row => after == null || row.ItemId.CompareTo(after.Value) > 0)
+                    .OrderBy(row => row.ItemId).Take(1000).ToListAsync();
+                foreach (var row in page) yield return [row.Serial, row.ItemCode, DeltaItemKind.Label(row.Kind), row.Detail];
+                if (page.Count < 1000) yield break;
+                after = page[^1].ItemId;
+            }
+        }
+    }
+
+    private IQueryable<MigrationDeltaItem> DeltaFindings(Guid loadId) => db.Set<MigrationDeltaItem>().AsNoTracking()
+        .Where(row => row.TenantId == tenant.TenantId && row.RunId == loadId);
+
+    private static IQueryable<MigrationDeltaItem> FilterDeltaFindings(IQueryable<MigrationDeltaItem> rows, string? kind,
+        string? itemCode, string? serial)
+    {
+        if (!string.IsNullOrWhiteSpace(kind))
+        {
+            if (!DeltaItemKind.All.Contains(kind))
+                throw new ApplyRuleException("migration_delta_kind_unknown", "Unknown delta finding kind.");
+            rows = rows.Where(row => row.Kind == kind);
+        }
+        // Item code is an exact match, as on the refused-units view; the serial is a contains search.
+        if (!string.IsNullOrWhiteSpace(itemCode)) rows = rows.Where(row => row.ItemCode == itemCode.Trim());
+        if (!string.IsNullOrWhiteSpace(serial)) rows = rows.Where(row => row.Serial != null && row.Serial.Contains(serial.Trim()));
+        return rows;
+    }
+
+    private static MigrationDeltaItemView DeltaView(MigrationDeltaItem row) => new(row.ItemId, row.Kind,
+        DeltaItemKind.Label(row.Kind), row.ItemCode, row.Serial, row.Detail, row.UnitId, row.ConflictId);
 
     private async Task ApplyDeltaAsync(Guid runId, CancellationToken cancellationToken)
     {
@@ -239,10 +280,11 @@ public sealed partial class ApplyService
                     var owner = owners.GetValueOrDefault(planUnitId);
                     if (string.Equals(owner, row.OwnerPartyCode, StringComparison.Ordinal) || shippedSince.Contains(planUnitId))
                         continue;
-                    items.Add(Item(DeltaItemKind.OwnerDiffers, plan, row.UnitId,
-                        $"Loaded owner {row.OwnerPartyCode ?? "(none)"}; the source now names {owner ?? "(none)"}."));
-                    await RaiseOwnerConflictAsync(batch.ConnectionId, plan, serials.GetValueOrDefault(planUnitId),
-                        row.OwnerPartyCode, owner, cancellationToken);
+                    var finding = Item(DeltaItemKind.OwnerDiffers, plan, row.UnitId,
+                        $"Loaded owner {row.OwnerPartyCode ?? "(none)"}; the source now names {owner ?? "(none)"}.");
+                    finding.ConflictId = await RaiseOwnerConflictAsync(batch.ConnectionId, plan,
+                        serials.GetValueOrDefault(planUnitId), row.OwnerPartyCode, owner, cancellationToken);
+                    items.Add(finding);
                     run.OwnerDiffers++;
                 }
             }
@@ -390,7 +432,7 @@ public sealed partial class ApplyService
     /// An owner change the delta cannot explain goes to the coexistence conflict queue (OD-61 c). The record key is the
     /// source-key hash, so a later delta that sees the same difference refreshes the open conflict instead of adding one.
     /// </summary>
-    private async Task RaiseOwnerConflictAsync(Guid connectionId, MigrationPlanUnit plan, string? serial,
+    private async Task<Guid> RaiseOwnerConflictAsync(Guid connectionId, MigrationPlanUnit plan, string? serial,
         string? loadedOwner, string? sourceOwner, CancellationToken cancellationToken)
     {
         var now = clock.UtcNow;
@@ -402,18 +444,20 @@ public sealed partial class ApplyService
         {
             open.RemoteValue = sourceOwner;
             open.LastSeenAt = now;
-            return;
+            return open.ConflictId;
         }
         var label = serial is null ? plan.ItemCode : $"{plan.ItemCode} {serial}";
+        var conflictId = Guid.CreateVersion7(now);
         db.CoexistenceConflicts.Add(new CoexistenceConflict
         {
-            TenantId = tenant.TenantId, ConflictId = Guid.CreateVersion7(now), ConnectionId = connectionId,
+            TenantId = tenant.TenantId, ConflictId = conflictId, ConnectionId = connectionId,
             RecordType = MigratedUnitRecordType, RecordKey = plan.SourceKeyHash!,
             RecordLabel = label.Length <= 300 ? label : label[..300],
             Kind = CoexistenceConflictKind.MigrationOwnerDiffers, FieldName = OwnerFieldName,
             BaselineValue = loadedOwner, RemoteValue = sourceOwner, Status = CoexistenceConflictStatus.Open,
             DetectedAt = now, LastSeenAt = now,
         });
+        return conflictId;
     }
 
     private async Task<bool> SourceConnectionRunningAsync(Guid batchId, CancellationToken cancellationToken) =>
@@ -453,6 +497,7 @@ public sealed partial class ApplyService
         var now = clock.UtcNow;
         var states = await db.ConnectionPollWatermarks.Where(row => row.TenantId == tenant.TenantId &&
             row.ConnectionId == batch.ConnectionId).ToListAsync(cancellationToken);
+        run.WatermarksBefore = SaveWatermarks(states);
         foreach (var state in states)
         {
             state.Watermark = watermark;

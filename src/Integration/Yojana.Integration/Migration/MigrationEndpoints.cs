@@ -203,12 +203,31 @@ public static class MigrationEndpoints
             }
             catch (ApplyRuleException ex) { return Problem(ex); }
         });
-        review.MapGet("/loads/{loadId:guid}/delta", async (Guid loadId, string? kind, string? cursor, int? take,
-            ApplyService service, CancellationToken ct) =>
+        review.MapGet("/loads/{loadId:guid}/delta", async (Guid loadId, string? kind, string? itemCode,
+            string? serial, string? cursor, int? take, ApplyService service, CancellationToken ct) =>
         {
-            try { return Results.Ok(await service.DeltaItemsAsync(loadId, kind, cursor, take ?? 50, ct)); }
+            try { return Results.Ok(await service.DeltaItemsAsync(loadId, kind, itemCode, serial, cursor, take ?? 50, ct)); }
             catch (ApplyRuleException ex) { return Problem(ex); }
         });
+        review.MapGet("/loads/{loadId:guid}/delta/export.csv", (Guid loadId, string? kind, string? itemCode,
+            string? serial, HttpContext http, ApplyService service,
+            [Microsoft.AspNetCore.Mvc.FromServices] ITabularExporter exporter) =>
+                DeltaExport(loadId, kind, itemCode, serial, "csv", http, service, exporter));
+        review.MapGet("/loads/{loadId:guid}/delta/export.xlsx", (Guid loadId, string? kind, string? itemCode,
+            string? serial, HttpContext http, ApplyService service,
+            [Microsoft.AspNetCore.Mvc.FromServices] ITabularExporter exporter) =>
+                DeltaExport(loadId, kind, itemCode, serial, "xlsx", http, service, exporter));
+        // P9-T34: what each load action allows and why not, and every load of a source with its undo state.
+        review.MapGet("/batches/{batchId:guid}/load-readiness", async (Guid batchId, ApplyService service,
+            CancellationToken ct) =>
+        {
+            try { return Results.Ok(await service.ReadinessAsync(batchId, ct)); }
+            catch (ApplyRuleException ex) { return Problem(ex); }
+        });
+        review.MapGet("/loads", async (Guid sourceId, string? cursor, int? take, ApplyService service,
+            CancellationToken ct) => Results.Ok(await service.LoadsAsync(sourceId, cursor, take ?? 50, ct)));
+        review.MapGet("/loads/{loadId:guid}", async (Guid loadId, ApplyService service, CancellationToken ct) =>
+            await service.LoadAsync(loadId, ct) is { } result ? Results.Ok(result) : Results.NotFound());
         review.MapGet("/loads/{loadId:guid}/refusals", async (Guid loadId, string? reason, string? itemCode,
             string? serial, string? cursor, int? take, ApplyService service, CancellationToken ct) =>
             Results.Ok(await service.RefusalsAsync(loadId, reason, itemCode, serial, cursor, take ?? 50, ct)));
@@ -415,6 +434,18 @@ public static class MigrationEndpoints
     {
         try { return Results.Ok(await action()); }
         catch (LinkOverrideRuleException ex) { return Problem(ex); }
+    }
+
+    private static IResult DeltaExport(Guid loadId, string? kind, string? itemCode, string? serial, string format,
+        HttpContext http, ApplyService service, ITabularExporter exporter)
+    {
+        try
+        {
+            var table = service.ExportDeltaItems(loadId, kind, itemCode, serial);
+            return Results.Stream(stream => exporter.WriteAsync(format, table, stream, http.RequestAborted),
+                exporter.ContentType(format), $"migration-delta-findings{exporter.Extension(format)}");
+        }
+        catch (ApplyRuleException ex) { return Problem(ex); }
     }
 
     private static async Task<IResult> ValidationExport(Guid batchId, string format, HttpContext http,

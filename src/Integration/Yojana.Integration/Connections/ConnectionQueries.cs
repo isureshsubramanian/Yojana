@@ -115,8 +115,13 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
         var connection = await ConnectionAsync(id, ct);
         var row = await db.ConnectionHealth.AsNoTracking().SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == id, ct) ?? Missing(connection);
+        // A stopped connection may be waiting on the final migration load's hand-over (OD-60); a running one is not.
+        var notes = services.GetService(typeof(IConnectionHandOverNotes)) as IConnectionHandOverNotes;
+        var handOver = connection.Status == ConnectionStatus.Active || notes is null ? null
+            : await notes.ForAsync(id, ct);
         return new(id, connection.DisplayLabel, View(row),
-            JsonSerializer.Deserialize<List<RecordTypeHealth>>(row.RecordTypesJson, IntegrationContracts.Json) ?? []);
+            JsonSerializer.Deserialize<List<RecordTypeHealth>>(row.RecordTypesJson, IntegrationContracts.Json) ?? [],
+            handOver);
     }
 
     public async Task<ConnectionEventPage> EventsAsync(Guid id, string? cursor, int take, CancellationToken ct)

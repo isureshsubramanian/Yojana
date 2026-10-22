@@ -108,13 +108,13 @@ public sealed class MigrationDeltaLoadTests(IntegrationHostFixture fixture)
         Assert.Equal(0, view.CoverReplaced);
         Assert.Null(view.WatermarkHandedOverFrom);
 
-        var findings = await apply.DeltaItemsAsync(view.LoadId, null, null, 50, default);
+        var findings = await apply.DeltaItemsAsync(view.LoadId, null, null, null, null, 50, default);
         Assert.Equal(4, findings.Total);
         Assert.Equal([DeltaItemKind.NewUnit, DeltaItemKind.AlreadyInModule, DeltaItemKind.OwnerDiffers,
             DeltaItemKind.GoneFromSource], findings.Counts.Select(row => row.Kind));
-        var newUnit = (await apply.DeltaItemsAsync(view.LoadId, DeltaItemKind.NewUnit, null, 50, default)).Items.Single();
+        var newUnit = (await apply.DeltaItemsAsync(view.LoadId, DeltaItemKind.NewUnit, null, null, null, 50, default)).Items.Single();
         Assert.Equal(("SERVER-CONTRACT", "SER-NEW-1"), (newUnit.ItemCode, newUnit.Serial));
-        var ownerItem = (await apply.DeltaItemsAsync(view.LoadId, DeltaItemKind.OwnerDiffers, null, 50, default)).Items.Single();
+        var ownerItem = (await apply.DeltaItemsAsync(view.LoadId, DeltaItemKind.OwnerDiffers, null, null, null, 50, default)).Items.Single();
         Assert.Contains("NEW-OWNER", ownerItem.Detail);
         var conflict = await db.CoexistenceConflicts.AsNoTracking().SingleAsync(row =>
             row.ConnectionId == setup.ConnectionId && row.Kind == CoexistenceConflictKind.MigrationOwnerDiffers);
@@ -123,7 +123,7 @@ public sealed class MigrationDeltaLoadTests(IntegrationHostFixture fixture)
         Assert.NotEqual("NEW-OWNER", (await db.Set<MigrationLoadedUnit>().AsNoTracking().SingleAsync(row =>
             row.UnitId == ownerItem.UnitId)).OwnerPartyCode);
         var serialisation = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
-        var goneItem = (await apply.DeltaItemsAsync(view.LoadId, DeltaItemKind.GoneFromSource, null, 50, default)).Items.Single();
+        var goneItem = (await apply.DeltaItemsAsync(view.LoadId, DeltaItemKind.GoneFromSource, null, null, null, 50, default)).Items.Single();
         Assert.True(await serialisation.Units.AnyAsync(row => row.UnitId == goneItem.UnitId));
 
         // Undone on its own (OD-62): its new unit leaves the module and the register; the final load stays.
@@ -155,7 +155,7 @@ public sealed class MigrationDeltaLoadTests(IntegrationHostFixture fixture)
         var queued = await apply.EnqueueDeltaAsync(delta.BatchId, Admin, default);
         Assert.Equal(1, await apply.RunPendingAsync(default));
         var view = (await apply.GetAsync(delta.BatchId, default))!;
-        var coverFindings = await apply.DeltaItemsAsync(view.LoadId, null, null, 50, default);
+        var coverFindings = await apply.DeltaItemsAsync(view.LoadId, null, null, null, null, 50, default);
         Assert.True(view.CoverReplaced == 1, string.Join("; ", coverFindings.Items.Select(row =>
             $"{row.Kind}:{row.ItemCode}:{row.Detail}")) + $" refused={view.Refused}");
         Assert.Equal(0, view.Applied);
@@ -174,6 +174,123 @@ public sealed class MigrationDeltaLoadTests(IntegrationHostFixture fixture)
             row.SourceKeyHash == covered.SourceKeyHash);
         Assert.Equal((before.CoverHash, final.RunId), (restored.CoverHash, restored.CoverLoadId));
         Assert.False(await serialisation.Entitlements.AnyAsync(row => row.MigrationLoadId == queued.LoadId));
+    }
+
+    [DatabaseFact]
+    public async Task The_console_reads_load_actions_labels_and_undo_order_and_the_final_load_is_undone_after_its_deltas()
+    {
+        var tenant = await fixture.NewTenantAsync("dcons");
+        var setup = await SetUpAsync(tenant, new DateTime(2026, 12, 31, 9, 0, 0));
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var apply = scope.ServiceProvider.GetRequiredService<ApplyService>();
+        var watermarkBefore = await db.ConnectionPollWatermarks.AsNoTracking().SingleAsync(row =>
+            row.ConnectionId == setup.ConnectionId);
+
+        // Before any load: rehearsal and final may start; a delta has nothing to build on.
+        var ready = await apply.ReadinessAsync(setup.BatchId, default);
+        Assert.True(ready.Rehearsal.Allowed);
+        Assert.True(ready.Final.Allowed);
+        Assert.Equal(["migration_delta_base_missing"], ready.Delta.Reasons.Select(row => row.Code));
+        var connection = await db.Connections.SingleAsync(row => row.ConnectionId == setup.ConnectionId);
+        connection.Status = ConnectionStatus.Active;
+        await db.SaveChangesAsync();
+        var running = await apply.ReadinessAsync(setup.BatchId, default);
+        Assert.True(running.Rehearsal.Allowed);
+        Assert.Contains("Stop the sync on Fictional ERP first", running.Final.Reasons.Single().Message);
+        connection.Status = ConnectionStatus.Paused;
+        await db.SaveChangesAsync();
+
+        var final = await FinalLoadAsync(apply, setup.BatchId);
+        var afterFinal = await apply.ReadinessAsync(setup.BatchId, default);
+        Assert.Equal("migration_apply_rehearsal_closed", afterFinal.Rehearsal.Reasons.Single().Code);
+        Assert.Equal("migration_apply_final_done", afterFinal.Final.Reasons.Single().Code);
+        Assert.StartsWith("F1 is in the module", afterFinal.Final.Reasons.Single().Message);
+        Assert.Equal("migration_delta_same_batch", afterFinal.Delta.Reasons.Single().Code);
+        // Connection health carries the hand-over while the connection is stopped (OD-60).
+        var health = scope.ServiceProvider.GetRequiredService<Yojana.Integration.Connections.ConnectionQueries>();
+        Assert.Equal(new DateTime(2026, 12, 31, 9, 0, 0), (await health.HealthAsync(setup.ConnectionId, default)).HandOver!.From);
+        // Enqueue refuses with exactly the reason the console shows.
+        var refused = await Assert.ThrowsAsync<ApplyRuleException>(() =>
+            apply.EnqueueAsync(setup.BatchId, new(true), Admin, default));
+        Assert.Equal(afterFinal.Rehearsal.Reasons.Single().Code, refused.Rule);
+
+        var plan = await db.MigrationPlanUnits.AsNoTracking().Where(row => row.MapRunId == setup.MapRunId).ToListAsync();
+        var owned = await db.MigrationPlanOwnership.AsNoTracking().Where(row => row.MapRunId == setup.MapRunId &&
+                row.IsCurrent && row.PartyCode != null &&
+                db.MigrationPlanUnits.Any(unit => unit.PlanUnitId == row.PlanUnitId && unit.ItemCode != Unsynced))
+            .Select(row => row.PlanUnitId).FirstAsync();
+        var template = plan.Single(row => row.ItemCode == "SERVER-CONTRACT");
+        var delta = await CloneAsync(db, tenant, setup, plan, ownerChange: (owned, "NEW-OWNER"),
+            extra: [(template, "delta|new-a", "SER-NEW-A", "MFG-NEW-A"), (template, "delta|new-b", "SER-NEW-B", "MFG-NEW-B")]);
+        var deltaReady = await apply.ReadinessAsync(delta.BatchId, default);
+        Assert.True(deltaReady.Delta.Allowed);
+        Assert.Equal((final.RunId, "F1"), (deltaReady.Delta.BaseLoadId!.Value, deltaReady.Delta.BaseLabel));
+        // Loads are ordered and labelled by request time; the shared test clock stands still, so it moves on here.
+        var originalNow = fixture.Clock.UtcNow;
+        Guid deltaId;
+        try
+        {
+            fixture.Clock.UtcNow = originalNow.AddMinutes(5);
+            deltaId = (await apply.EnqueueDeltaAsync(delta.BatchId, Admin, default)).LoadId;
+            Assert.Equal(1, await apply.RunPendingAsync(default));
+        }
+        finally { fixture.Clock.UtcNow = originalNow; }
+        var queued = new { LoadId = deltaId };
+
+        // Loads newest first, labelled by kind; the final load waits for its delta, the delta can be undone.
+        var loads = await apply.LoadsAsync(setup.SourceId, null, 50, default);
+        Assert.Equal([("D1", "delta", "F1"), ("F1", "final", (string?)null)],
+            loads.Items.Select(row => (row.Label, row.Kind, row.BaseLabel)));
+        Assert.True(loads.Items[0].Undo.Allowed);
+        Assert.Equal("A later delta load (D1) stands. Undo it first.", loads.Items[1].Undo.Reason);
+        Assert.Equal(("Fictional ERP", "stopped", (DateTime?)new DateTime(2026, 12, 31, 9, 0, 0)),
+            (loads.Items[1].HandOver!.ConnectionName, loads.Items[1].HandOver!.SyncState, loads.Items[1].HandOver!.From));
+        Assert.Null(loads.Items[0].HandOver);
+        var page = await apply.LoadsAsync(setup.SourceId, null, 1, default);
+        Assert.Equal("F1", (await apply.LoadsAsync(setup.SourceId, page.NextCursor, 1, default)).Items.Single().Label);
+        Assert.Equal("D1", (await apply.LoadAsync(queued.LoadId, default))!.Label);
+        var blocked = await Assert.ThrowsAsync<ApplyRuleException>(() => apply.RollBackAsync(final.RunId, Admin, default));
+        Assert.Equal("migration_final_later_delta", blocked.Rule);
+
+        // Findings: exact item code, serial contains, the whole-load total, and the owner difference's conflict.
+        var all = await apply.DeltaItemsAsync(queued.LoadId, null, null, null, null, 50, default);
+        var serialMatch = await apply.DeltaItemsAsync(queued.LoadId, null, null, "NEW-A", null, 50, default);
+        Assert.Equal(("SER-NEW-A", 1L, all.Total), (serialMatch.Items.Single().Serial, serialMatch.Total, serialMatch.LoadTotal));
+        Assert.Equal(0, (await apply.DeltaItemsAsync(queued.LoadId, null, "SERVER", null, null, 50, default)).Total);
+        var ownerItem = (await apply.DeltaItemsAsync(queued.LoadId, DeltaItemKind.OwnerDiffers, null, null, null, 50,
+            default)).Items.Single();
+        Assert.Equal(ownerItem.ConflictId, await db.CoexistenceConflicts.AsNoTracking().Where(row =>
+            row.Kind == CoexistenceConflictKind.MigrationOwnerDiffers).Select(row => (Guid?)row.ConflictId).SingleAsync());
+        var export = apply.ExportDeltaItems(queued.LoadId, DeltaItemKind.NewUnit, null, null);
+        var rows = new List<IReadOnlyList<string?>>();
+        await foreach (var row in export.Rows) rows.Add(row);
+        Assert.Equal(["SER-NEW-A", "SER-NEW-B"], rows.Select(row => row[0]).Order());
+        Assert.All(rows, row => Assert.Equal("New in the source", row[2]));
+
+        // Latest first: the delta, then the final load, which puts the connector's watermark back (OD-63).
+        Assert.Equal(RollBackMigrationLoadResult.RolledBack, (await apply.RollBackAsync(queued.LoadId, Admin, default)).Outcome);
+        // Loads clear the shared change tracker, so the connection is read again before it is changed.
+        connection = await db.Connections.SingleAsync(row => row.ConnectionId == setup.ConnectionId);
+        connection.Status = ConnectionStatus.Active;
+        await db.SaveChangesAsync();
+        Assert.Equal("migration_apply_connection_running",
+            (await Assert.ThrowsAsync<ApplyRuleException>(() => apply.RollBackAsync(final.RunId, Admin, default))).Rule);
+        connection = await db.Connections.SingleAsync(row => row.ConnectionId == setup.ConnectionId);
+        connection.Status = ConnectionStatus.Paused;
+        await db.SaveChangesAsync();
+        var undone = await apply.RollBackAsync(final.RunId, Admin, default);
+        Assert.Equal(RollBackMigrationLoadResult.RolledBack, undone.Outcome);
+        var watermark = await db.ConnectionPollWatermarks.AsNoTracking().SingleAsync(row =>
+            row.ConnectionId == setup.ConnectionId);
+        Assert.Equal((watermarkBefore.Watermark, watermarkBefore.NextPollAt), (watermark.Watermark, watermark.NextPollAt));
+        Assert.False(await db.Set<MigrationLoadedUnit>().AnyAsync(row => row.ConnectionId == setup.ConnectionId));
+        Assert.Null((await health.HealthAsync(setup.ConnectionId, default)).HandOver);
+        var again = await apply.ReadinessAsync(setup.BatchId, default);
+        Assert.True(again.Rehearsal.Allowed);
+        Assert.True(again.Final.Allowed);
+        Assert.Equal(["Already undone.", "Already undone."],
+            (await apply.LoadsAsync(setup.SourceId, null, 50, default)).Items.Select(row => row.Undo.Reason));
     }
 
     private sealed record Setup(Guid BatchId, Guid MapRunId, Guid ConnectionId, Guid SourceId);

@@ -2722,6 +2722,10 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("watermark_note");
 
+                    b.Property<string>("WatermarksBefore")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("watermarks_before");
+
                     b.HasKey("TenantId", "RunId")
                         .HasName("pk_migration_apply_run");
 
@@ -2751,6 +2755,10 @@ namespace Yojana.Integration.Migrations
                     b.Property<Guid>("ItemId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("item_id");
+
+                    b.Property<Guid?>("ConflictId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("conflict_id");
 
                     b.Property<string>("Detail")
                         .HasMaxLength(2000)
