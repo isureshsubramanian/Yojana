@@ -8,6 +8,9 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Platform/Yojana.Platform/Yojana.Platform.csproj" />
     <ProjectReference Include="../../src/Serialisation/Yojana.Serialisation/Yojana.Serialisation.csproj" />
+    <!-- The migration rehearsal intentionally uses Integration internals: a duplicate public benchmark protocol would
+         drift from extraction. Removing this reference requires a public rehearsal port supplied by Integration. -->
+    <ProjectReference Include="../../src/Integration/Yojana.Integration/Yojana.Integration.csproj" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>

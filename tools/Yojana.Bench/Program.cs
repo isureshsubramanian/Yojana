@@ -22,6 +22,31 @@ using Yojana.Platform.Time;
 using Yojana.Serialisation;
 
 var options = BenchOptions.Parse(args);
+if (options.Command == "migration-source")
+{
+    var generated = await new MigrationSourceGenerator(options.SourceConnectionString!, options.Serials, options.Seed)
+        .GenerateAsync(CancellationToken.None);
+    Console.WriteLine($"migration source · serials {generated.RequestedSerials:N0} · rows {generated.RowsWritten:N0} · hash {generated.ContentHash}");
+    foreach (var row in generated.RowsByRole.OrderBy(row => row.Key, StringComparer.Ordinal))
+        Console.WriteLine($"  {row.Key}: {row.Value:N0}");
+    return;
+}
+if (options.Command == "migration-rehearsal")
+{
+    try
+    {
+        var result = await new MigrationRehearsalRunner(options).RunAsync(CancellationToken.None);
+        Console.WriteLine($"migration rehearsal complete · tenant {result.TenantId:D} · source {result.SourceSerials:N0} = loaded {result.Loaded:N0} + refused {result.Refused:N0} + excluded {result.Excluded:N0}");
+        Console.WriteLine($"reports: {result.MarkdownReport} · {result.JsonReport}");
+    }
+    catch (MigrationRehearsalException exception)
+    {
+        Console.Error.WriteLine($"migration rehearsal failed: {exception.Message}");
+        Console.Error.WriteLine($"failure reports: {exception.MarkdownReport} · {exception.JsonReport}");
+        Environment.ExitCode = 1;
+    }
+    return;
+}
 if (options.Command == "concurrency")
 {
     await new ConcurrencyRunner(options).RunAsync(CancellationToken.None);

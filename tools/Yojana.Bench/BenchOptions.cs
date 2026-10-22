@@ -28,6 +28,12 @@ public sealed class BenchOptions
     public string Email { get; private set; } = "admin@dev.yojana.local";
     public string Password { get; private set; } = "";
     public string? Weights { get; private set; }
+    public int Serials { get; private set; } = 20_000;
+    public int Seed { get; private set; } = 36;
+    public string? SourceConnectionString { get; private set; }
+    public string? TargetConnectionString { get; private set; }
+    public string? TenantSelection { get; private set; }
+    public bool CapturePlans { get; private set; }
 
     public Guid ConcurrencyTenantId => TenantIndex is { } index ? TenantId(index) : DevelopmentSeeder.DevTenantId.Value;
     public string ConcurrencyTenantLabel => TenantIndex is { } index ? $"BENCH{index}" : DevelopmentSeeder.DevTenantCode;
@@ -44,6 +50,7 @@ public sealed class BenchOptions
         var environmentPassword = environment("YOJANA_BENCH_PASSWORD") ?? "";
         var o = new BenchOptions { Password = environmentPassword };
         var emailSpecified = false;
+        var outputSpecified = false;
         if (args.Length > 0 && !args[0].StartsWith("--", StringComparison.Ordinal)) o.Command = args[0];
         for (var i = 0; i < args.Length; i++)
         {
@@ -58,24 +65,65 @@ public sealed class BenchOptions
                 case "--samples": o.Samples = int.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--partitions": o.Partitions = int.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--database": o.Database = Next(); break;
-                case "--out": o.OutDirectory = Next(); break;
+                case "--out": o.OutDirectory = Next(); outputSpecified = true; break;
                 case "--skip-lifecycle": o.SkipLifecycle = true; break;
                 case "--url": o.Url = new Uri(Next(), UriKind.Absolute); break;
                 case "--engineers": o.Engineers = int.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--duration": o.Duration = ParseDuration(Next()); break;
                 case "--contention": o.ContentionPercent = int.Parse(Next(), CultureInfo.InvariantCulture); break;
-                case "--tenant": o.TenantIndex = int.Parse(Next(), CultureInfo.InvariantCulture); break;
+                case "--tenant":
+                {
+                    var tenant = Next();
+                    if (o.Command == "migration-rehearsal") o.TenantSelection = tenant;
+                    else o.TenantIndex = int.Parse(tenant, CultureInfo.InvariantCulture);
+                    break;
+                }
                 case "--documents": o.Documents = int.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--numbering": o.NumberingMode = Next(); break;
                 case "--email": o.Email = Next(); emailSpecified = true; break;
                 case "--password": o.Password = Next(); break;
                 case "--weights": o.Weights = Next(); break;
+                case "--serials": o.Serials = int.Parse(Next(), CultureInfo.InvariantCulture); break;
+                case "--seed": o.Seed = int.Parse(Next(), CultureInfo.InvariantCulture); break;
+                case "--connection": o.SourceConnectionString = ConnectionFor(Next(), environment); break;
+                case "--capture-plans": o.CapturePlans = true; break;
+                case "--target": o.TargetConnectionString = ConnectionFor(Next(), environment); break;
+                case "--source": o.SourceConnectionString = ConnectionFor(Next(), environment); break;
             }
         }
 
         if (o.TenantIndex is <= 0) throw new ArgumentOutOfRangeException("--tenant", "Tenant index must be positive.");
         if (o.Documents is < 1 or > 500) throw new ArgumentOutOfRangeException("--documents", "Documents must be from 1 to 500.");
         if (o.TenantIndex is { } tenantIndex && !emailSpecified) o.Email = DevelopmentSeeder.AdministratorEmail($"bench{tenantIndex}.yojana.local");
+
+        if (o.Command == "migration-source")
+        {
+            if (o.Serials is < 1 or > 5_000_000)
+                throw new ArgumentOutOfRangeException("--serials", "Serial count must be from 1 to 5,000,000.");
+            if (string.IsNullOrWhiteSpace(o.SourceConnectionString))
+                throw new ArgumentException("migration-source needs --connection <source connection string>.");
+            o.ConnectionString = o.SourceConnectionString;
+            if (!outputSpecified) o.OutDirectory = "artifacts/migration-rehearsal";
+            var source = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(o.SourceConnectionString);
+            o.Server = source.DataSource;
+            o.Database = source.InitialCatalog;
+            return o;
+        }
+        if (o.Command == "migration-rehearsal")
+        {
+            if (string.IsNullOrWhiteSpace(o.TargetConnectionString) || string.IsNullOrWhiteSpace(o.SourceConnectionString))
+                throw new ArgumentException("migration-rehearsal needs --target <db> and --source <db>.");
+            if (string.IsNullOrWhiteSpace(o.TenantSelection))
+                throw new ArgumentException("migration-rehearsal needs --tenant <new|id>.");
+            if (o.TenantSelection != "new" && !Guid.TryParse(o.TenantSelection, out _))
+                throw new ArgumentException("--tenant must be 'new' or a tenant GUID.");
+            o.ConnectionString = o.TargetConnectionString;
+            if (!outputSpecified) o.OutDirectory = "artifacts/migration-rehearsal";
+            var target = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(o.TargetConnectionString);
+            o.Server = target.DataSource;
+            o.Database = target.InitialCatalog;
+            return o;
+        }
 
         var full = environment("YOJANA_BENCH_SQL");
         if (!string.IsNullOrEmpty(full))
@@ -115,6 +163,15 @@ public sealed class BenchOptions
         if (o.Command == "concurrency" && o.Url is null)
             throw new ArgumentException("concurrency needs --url for the running Yojana web host");
         return o;
+    }
+
+    private static string ConnectionFor(string value, Func<string, string?> environment)
+    {
+        if (value.Contains('=', StringComparison.Ordinal)) return value;
+        var basis = environment("YOJANA_TEST_SQL") ?? environment("YOJANA_BENCH_SQL")
+            ?? throw new InvalidOperationException(
+                "A database name needs YOJANA_TEST_SQL or YOJANA_BENCH_SQL as its server and credential template.");
+        return new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(basis) { InitialCatalog = value }.ConnectionString;
     }
 
     private static TimeSpan ParseDuration(string value)
