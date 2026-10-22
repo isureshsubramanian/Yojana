@@ -203,9 +203,15 @@ public static class MigrationEndpoints
         });
         review.MapGet("/mapping/settings", (MappingSettings mappingSettings, CancellationToken ct) =>
             InvokeMapping(() => mappingSettings.GetAsync(ct)));
-        admin.MapPut("/mapping/settings", (UpdateMappingSettingsRequest request,
+        review.MapPut("/mapping/settings", async (UpdateMappingSettingsRequest request,
             MappingSettings mappingSettings, CancellationToken ct) =>
-            InvokeMapping(() => mappingSettings.SetAsync(request, ct)));
+        {
+            if (string.IsNullOrWhiteSpace(request.ExpectedVersion))
+                return Results.Problem(title: "document_version_required",
+                    detail: "ExpectedVersion is required for a mapping-settings edit.", statusCode: 400,
+                    extensions: new Dictionary<string, object?> { ["rule"] = "document_version_required" });
+            return await InvokeMapping(() => mappingSettings.SetAsync(request, ct));
+        });
         review.MapGet("/batches/{batchId:guid}/links/export.csv", async (Guid batchId,
             LinkOverrideService service, CancellationToken ct) =>
         {
@@ -235,8 +241,9 @@ public static class MigrationEndpoints
         {
             MultipartBodyLengthLimit = LinkOverrideService.MaxFileBytes + 65_536,
         });
-        review.MapGet("/link-overrides", (string? cursor, int? take, LinkOverrideService service,
-            CancellationToken ct) => InvokeLinkOverrides(() => service.ListAsync(cursor, take ?? 50, ct)));
+        review.MapGet("/link-overrides", (Guid? batchId, bool? unused, string? cursor, int? take,
+            LinkOverrideService service, CancellationToken ct) => InvokeLinkOverrides(() =>
+                service.ListAsync(batchId, unused, cursor, take ?? 50, ct)));
         review.MapDelete("/link-overrides", ([Microsoft.AspNetCore.Mvc.FromBody] DeleteLinkOverridesRequest request,
             LinkOverrideService service, CancellationToken ct) =>
             InvokeLinkOverrides(() => service.DeleteAllAsync(request, ct)));
@@ -360,6 +367,12 @@ public static class MigrationEndpoints
     {
         try { return Results.Ok(await action()); }
         catch (MappingRuleException ex) { return Problem(ex); }
+        catch (TenantSettingVersionConflictException ex)
+        {
+            return Results.Problem(title: "tenant_setting_changed", detail: ex.Message,
+                statusCode: StatusCodes.Status409Conflict,
+                extensions: new Dictionary<string, object?> { ["rule"] = "tenant_setting_changed" });
+        }
     }
 
     private static async Task<IResult> InvokeValidation<T>(Func<Task<T>> action)

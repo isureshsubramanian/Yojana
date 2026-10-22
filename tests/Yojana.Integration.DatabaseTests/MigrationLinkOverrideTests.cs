@@ -1,10 +1,13 @@
 using System.Text;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Yojana.Integration.Data;
 using Yojana.Integration.LegacyMigration.LinkOverrides;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.DatabaseTests;
@@ -12,6 +15,26 @@ namespace Yojana.Integration.DatabaseTests;
 [Collection("integration host")]
 public sealed class MigrationLinkOverrideTests(IntegrationHostFixture fixture)
 {
+    [DatabaseFact]
+    public async Task Settings_and_override_edits_admit_both_editing_roles_and_refuse_other_roles()
+    {
+        var tenant = await fixture.NewTenantAsync("lnkauth");
+        using var scope = fixture.ScopeFor(tenant);
+        var authorisation = scope.ServiceProvider.GetRequiredService<IAuthorizationService>();
+        foreach (var role in new[] { YojanaRole.TenantAdministrator, YojanaRole.MigrationLead })
+            Assert.True((await authorisation.AuthorizeAsync(Principal(role), null,
+                YojanaPolicy.MigrationReview)).Succeeded);
+        foreach (var role in new[] { YojanaRole.IntegrationOperator, YojanaRole.ServiceManager })
+            Assert.False((await authorisation.AuthorizeAsync(Principal(role), null,
+                YojanaPolicy.MigrationReview)).Succeeded);
+
+        ClaimsPrincipal Principal(string role) => new(new ClaimsIdentity(
+        [
+            new Claim(YojanaClaim.TenantId, tenant.Value.ToString("D")),
+            new Claim(YojanaClaim.Role, role),
+        ], "test"));
+    }
+
     [DatabaseFact]
     public async Task Defaults_validate_and_csv_overrides_round_trip_atomically_and_survive_a_new_map_run()
     {
@@ -63,6 +86,9 @@ public sealed class MigrationLinkOverrideTests(IntegrationHostFixture fixture)
         Assert.Equal(ReplacementDirection.VendorFacing,
             afterUpload[1][header.IndexOf("direction")]);
         Assert.Equal("True", afterUpload[1][header.IndexOf("direction_overridden")]);
+        var usedPage = await service.ListAsync(ids.BatchId, null, null, 50, default);
+        Assert.Equal((1, 0), (usedPage.TotalCount, usedPage.UnusedCount));
+        Assert.False(Assert.Single(usedPage.Items).Unused);
 
         var badValues = values.Take(12).ToList();
         badValues[header.IndexOf("currency")] = "XXX";
@@ -92,6 +118,14 @@ public sealed class MigrationLinkOverrideTests(IntegrationHostFixture fixture)
         var afterRemap = MigrationCsvReader.Read(Encoding.UTF8.GetString(
             await service.ExportAsync(ids.BatchId, default)));
         Assert.Equal(ReplacementDirection.VendorFacing, afterRemap[1][header.IndexOf("direction")]);
+        await db.MigrationPlanReplacementLinks.Where(row => row.MapRunId == secondMap.RunId)
+            .ExecuteDeleteAsync();
+        var allAfterLinkDisappeared = await service.ListAsync(ids.BatchId, null, null, 50, default);
+        Assert.Equal((1, 1), (allAfterLinkDisappeared.TotalCount, allAfterLinkDisappeared.UnusedCount));
+        Assert.True(Assert.Single(allAfterLinkDisappeared.Items).Unused);
+        var unusedOnly = await service.ListAsync(ids.BatchId, true, null, 50, default);
+        Assert.Single(unusedOnly.Items);
+        Assert.Single(await db.MigrationLinkOverrides.AsNoTracking().ToListAsync());
 
         var refusedDelete = await Assert.ThrowsAsync<LinkOverrideRuleException>(() =>
             service.DeleteAllAsync(new(false), default));

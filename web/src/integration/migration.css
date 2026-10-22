@@ -110,5 +110,21 @@
 .migration-sample-card .textarea { width: 100%; resize: vertical; }
 .migration-settings-form { display: grid; gap: 12px; }
 .migration-settings-form .input { width: 100%; }
+.migration-settings-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr); gap: var(--gap); align-items: start; }
+.migration-settings-layout > .stack { align-content: start; }
+.migration-settings-layout .form-grid { align-items: start; }
+.migration-settings-layout .select { width: 100%; }
+.migration-settings-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.migration-settings-confirm { display: grid; gap: 10px; }
+.migration-settings-confirm > span:last-child { display: flex; gap: 8px; flex-wrap: wrap; }
+.migration-override-summary { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 7px 12px; font-size: 13px; }
+.migration-override-summary .k { color: var(--text-3); }
+.migration-overrides-table { grid-column: 1 / -1; min-width: 0; }
+.migration-overrides-table .table { min-width: 900px; }
+.migration-overrides-table .table td { white-space: normal; line-height: 1.35; }
+.migration-overrides-table .card-header .checkrow { padding: 0; border: 0; }
+.migration-settings-layout .grid-viewport .table { min-width: 620px; }
+.migration-settings-layout .grid-viewport .select { min-width: 135px; }
 @media (max-width: 1300px) { .migration-phases { grid-template-columns: repeat(3, minmax(0, 1fr)); } .migration-phase:nth-child(3n + 1) { border-left: 0; } .migration-phase:nth-child(n + 4) { border-top: 1px solid var(--border); } }
+@media (max-width: 1000px) { .migration-settings-layout { grid-template-columns: 1fr; } .migration-overrides-table { grid-column: 1; } }
 @media (max-width: 720px) { .migration-phases { grid-template-columns: 1fr; } .migration-phase + .migration-phase { border-left: 0; border-top: 1px solid var(--border); } .migration-licence, .migration-outcome-row, .migration-canonical-state .card-body, .migration-template-header .right { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; } .migration-family-filter { flex-basis: 100%; } .migration-keyword-rule, .migration-trails { grid-template-columns: 1fr; } }

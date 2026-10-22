@@ -18,6 +18,7 @@ const profilingScreen = readFileSync(new URL("../src/integration/MigrationProfil
 const reviewScreen = readFileSync(new URL("../src/integration/MigrationReview.tsx", import.meta.url), "utf8");
 const templateScreen = readFileSync(new URL("../src/integration/MigrationTemplates.tsx", import.meta.url), "utf8");
 const validationScreen = readFileSync(new URL("../src/integration/MigrationValidation.tsx", import.meta.url), "utf8");
+const settingsScreen = readFileSync(new URL("../src/integration/MigrationSettings.tsx", import.meta.url), "utf8");
 const common = readFileSync(new URL("../src/integration/MigrationCommon.tsx", import.meta.url), "utf8");
 const api = readFileSync(new URL("../src/integration/migrationApi.ts", import.meta.url), "utf8");
 const routes = readFileSync(new URL("../src/routes.tsx", import.meta.url), "utf8");
@@ -49,6 +50,7 @@ test("migration routes and the Integration-area link admit administrators and Mi
   assert.match(routes, /integration\/migration\/review.*MigrationReview/);
   assert.match(routes, /integration\/migration\/templates.*MigrationTemplates/);
   assert.match(routes, /integration\/migration\/validation.*MigrationValidation/);
+  assert.match(routes, /integration\/migration\/settings.*MigrationSettings/);
   assert.match(integrationTabs, /\["\/integration\/migration", "Migration"\]/);
   assert.match(integrationTabs, /mayReadMigration\(roles\)/);
   assert.match(common, /Tenant administrator or Migration lead access is required/);
@@ -57,6 +59,54 @@ test("migration routes and the Integration-area link admit administrators and Mi
   assert.equal(mayReadMigration(["integration_operator"]), false);
   assert.equal(mayAdministerMigration(["migration_lead"]), false);
   assert.equal(mayAdministerMigration(["tenant_administrator"]), true);
+});
+
+test("migration settings follows the approved three-card order and uses readable policy choices", () => {
+  const cover = settingsScreen.indexOf("Cover with no contract");
+  const links = settingsScreen.indexOf("Replacement links: values the source application does not hold");
+  const mapping = settingsScreen.indexOf(">Mapping<");
+  assert.ok(cover >= 0 && links > cover && mapping > links);
+  for (const text of ["Only approved and published policies are offered", "Equipment-card cover policy not set", "Serial-master cover policy not set", "policy.policyName", "policy.version", "Condition of loaded serials", "The last rule always matches"]) assert.ok(settingsScreen.includes(text), text);
+  assert.doesNotMatch(settingsScreen, />\{policy\.policyId\}</);
+});
+
+test("link defaults implement the seven server rules with inline validation", () => {
+  for (const text of ["Direction", "Reason", "State", "Replacement condition allowed", "Price", "Amount", "Currency", "closed–returned and closed–billed links only"]) assert.ok(settingsScreen.includes(text), text);
+  assert.match(settingsScreen, /const charged = value\.pricePolicy !== "zero"/);
+  assert.match(settingsScreen, /disabled=\{readOnly \|\| !charged\}/g);
+  assert.match(settingsScreen, /validateLinks\(draft\.linkDefaults\)/);
+  assert.match(settingsScreen, /linkRuleField\(serverRule\)/);
+  assert.match(settingsScreen, /className="form-error" role="alert"/);
+  assert.match(api, /expectedVersion: settings\.version/);
+});
+
+test("override upload is atomic, reports readable errors and refreshes result counts", () => {
+  for (const text of ["Upload refused", "nothing was stored", "Document number", "Problem", "added", "changed", "removed", "unchanged", "fix the file and upload again"]) assert.ok(settingsScreen.includes(text), text);
+  assert.match(settingsScreen, /result\.errors\.map/);
+  assert.match(settingsScreen, /result\.errorTotal/);
+  assert.match(settingsScreen, /overrideColumnLabel\(error\.column\)/);
+  assert.match(settingsScreen, /overrideProblemLabel\(error\.reason\)/);
+  assert.doesNotMatch(settingsScreen, />\{error\.(?:column|reason)\}</);
+  assert.match(api, /FormData/);
+  assert.doesNotMatch(api, /actor|requestedBy|confirmedBy/i);
+});
+
+test("override list is batch-scoped, server-paged and keeps unused overrides visible", () => {
+  for (const text of ["Download links (CSV)", "Upload overrides", "Remove all overrides", "Unused only", "Unused", "selected mapping run", "Confirm removal", "Keep overrides"]) assert.ok(settingsScreen.includes(text), text);
+  assert.match(settingsScreen, /migrationApi\.linkOverrides\(batchId \|\| undefined, unusedOnly \|\| undefined, cursor/);
+  assert.match(settingsScreen, /<DataGrid/);
+  assert.match(settingsScreen, /row\.unused \? <StatusBadge tone="warn">Unused/);
+  assert.match(settingsScreen, /setConfirmClear\(true\)/);
+  assert.doesNotMatch(settingsScreen, /window\.confirm|confirm\(/);
+  assert.match(api, /batchId, unused: unused \|\| undefined, cursor, take: 12/);
+});
+
+test("settings has a complete read-only mode and edit capability for both approved roles", () => {
+  assert.match(settingsScreen, /role === "tenant_administrator" \|\| role === "migration_lead"/);
+  assert.match(settingsScreen, /!canEdit && <div className="note">You have read-only access/);
+  assert.match(settingsScreen, /readOnly=\{!canEdit \|\| busy\}/g);
+  assert.match(settingsScreen, /\{canEdit && <>/);
+  assert.match(common, /\/integration\/migration\/settings", "Settings"/);
 });
 
 test("validation is enabled while the later migration tab remains disabled", () => {

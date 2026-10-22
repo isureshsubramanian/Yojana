@@ -8,6 +8,7 @@ namespace Yojana.Integration.LegacyMigration.Mapping;
 public sealed class MappingSettings(ITenantSettings settings, IPolicyCatalogueQuery policies,
     ReplacementLinkValueValidator linkValidator)
 {
+    public const string SettingsDocumentKey = "migration.mapping.settings";
     public const string AllowWaitingReviewsKey = "migration.mapping.allow_waiting_reviews";
     public const string CutoverDateKey = "migration.mapping.cutover_date";
     public const string ConditionMapKey = "migration.mapping.condition_map";
@@ -27,6 +28,20 @@ public sealed class MappingSettings(ITenantSettings settings, IPolicyCatalogueQu
 
     public async Task<MappingSettingsView> GetAsync(CancellationToken cancellationToken)
     {
+        var catalogue = await policies.ReadAsync(cancellationToken);
+        var document = await settings.GetVersionedAsync(SettingsDocumentKey, cancellationToken);
+        if (document is not null)
+        {
+            var stored = JsonSerializer.Deserialize<Stored>(document.Value)
+                ?? throw new InvalidOperationException($"Tenant setting '{SettingsDocumentKey}' is invalid.");
+            var documentMap = Validate(stored.ConditionMap);
+            var documentLinkDefaults = linkValidator.Validate(stored.LinkDefaults);
+            return View(stored.AllowWaitingReviews, stored.CutoverDate, documentMap, documentLinkDefaults,
+                stored.CardCoverPolicyId, stored.SerialMasterCoverPolicyId, catalogue, document.Version);
+        }
+
+        // The individual keys were shipped before this screen. They remain a read-only upgrade seam; the first edit
+        // writes the complete settings aggregate under SettingsDocumentKey with one optimistic version token.
         var allow = bool.TryParse(await settings.GetAsync(AllowWaitingReviewsKey, cancellationToken), out var value)
             && value;
         var dateText = await settings.GetAsync(CutoverDateKey, cancellationToken);
@@ -44,7 +59,8 @@ public sealed class MappingSettings(ITenantSettings settings, IPolicyCatalogueQu
         var linkDefaults = linkText is null ? ReplacementLinkValueValidator.AcceptedDefaults
             : linkValidator.Validate(JsonSerializer.Deserialize<ReplacementLinkValues>(linkText)
                 ?? throw new InvalidOperationException($"Tenant setting '{LinkDefaultsKey}' is invalid."));
-        return new(allow, cutover, map, linkDefaults, cardPolicy, serialMasterPolicy);
+        return View(allow, cutover, map, linkDefaults, cardPolicy, serialMasterPolicy, catalogue,
+            ITenantSettings.MissingVersion);
     }
 
     public async Task<MappingSettingsView> SetAsync(UpdateMappingSettingsRequest request,
@@ -59,17 +75,14 @@ public sealed class MappingSettings(ITenantSettings settings, IPolicyCatalogueQu
         var linkDefaults = request.LinkDefaults is null
             ? (await GetAsync(cancellationToken)).LinkDefaults
             : linkValidator.Validate(request.LinkDefaults);
-        await settings.SetAsync(AllowWaitingReviewsKey, request.AllowWaitingReviews.ToString(), cancellationToken);
-        await settings.SetAsync(CutoverDateKey,
-            request.CutoverDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "", cancellationToken);
-        await settings.SetAsync(ConditionMapKey, JsonSerializer.Serialize(map), cancellationToken);
-        await settings.SetAsync(CardCoverPolicyKey, request.CardCoverPolicyId?.ToString("D") ?? "",
+        var current = await settings.GetVersionedAsync(SettingsDocumentKey, cancellationToken);
+        var expectedVersion = request.ExpectedVersion ?? current?.Version ?? ITenantSettings.MissingVersion;
+        var value = new Stored(request.AllowWaitingReviews, request.CutoverDate, map, linkDefaults,
+            request.CardCoverPolicyId, request.SerialMasterCoverPolicyId);
+        var saved = await settings.SetAsync(SettingsDocumentKey, JsonSerializer.Serialize(value), expectedVersion,
             cancellationToken);
-        await settings.SetAsync(SerialMasterCoverPolicyKey,
-            request.SerialMasterCoverPolicyId?.ToString("D") ?? "", cancellationToken);
-        await settings.SetAsync(LinkDefaultsKey, JsonSerializer.Serialize(linkDefaults), cancellationToken);
-        return new(request.AllowWaitingReviews, request.CutoverDate, map, linkDefaults, request.CardCoverPolicyId,
-            request.SerialMasterCoverPolicyId);
+        return View(request.AllowWaitingReviews, request.CutoverDate, map, linkDefaults,
+            request.CardCoverPolicyId, request.SerialMasterCoverPolicyId, catalogue, saved.Version);
     }
 
     public static string InferCondition(string? cardStatus, string? lastMovement,
@@ -117,4 +130,21 @@ public sealed class MappingSettings(ITenantSettings settings, IPolicyCatalogueQu
             throw new MappingRuleException("migration_mapping_cover_policy_family_mismatch",
                 $"The {settingName} policy must belong to the {family} family.");
     }
+
+    private static MappingSettingsView View(bool allowWaitingReviews, DateOnly? cutoverDate,
+        IReadOnlyList<ConditionMappingRule> conditionMap, ReplacementLinkValues linkDefaults,
+        Guid? cardCoverPolicyId, Guid? serialMasterCoverPolicyId, PolicyCatalogue catalogue, string version)
+    {
+        var choices = catalogue.Policies.Select(Choice).ToList();
+        return new(allowWaitingReviews, cutoverDate, conditionMap, linkDefaults, cardCoverPolicyId,
+            serialMasterCoverPolicyId, choices.SingleOrDefault(row => row.PolicyId == cardCoverPolicyId),
+            choices.SingleOrDefault(row => row.PolicyId == serialMasterCoverPolicyId), choices, version);
+    }
+
+    private static MappingPolicyChoice Choice(PolicyCataloguePolicy policy) => new(policy.PolicyId,
+        policy.PolicyCode, policy.Version, policy.PolicyName, policy.FamilyCode);
+
+    private sealed record Stored(bool AllowWaitingReviews, DateOnly? CutoverDate,
+        IReadOnlyList<ConditionMappingRule> ConditionMap, ReplacementLinkValues LinkDefaults,
+        Guid? CardCoverPolicyId, Guid? SerialMasterCoverPolicyId);
 }

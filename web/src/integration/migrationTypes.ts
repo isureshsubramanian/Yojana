@@ -171,6 +171,66 @@ export interface MigrationMap {
   waitingCandidatesLeftOut: number;
 }
 
+export interface ConditionMappingRule { cardStatus: string | null; lastMovementKind: string | null; grade: string }
+export interface ReplacementLinkValues {
+  direction: string;
+  replacementReason: string;
+  state: string;
+  replacementConditionAllowed: string;
+  pricePolicy: string;
+  differenceAmount: number;
+  currency: string;
+}
+export interface MappingPolicyChoice {
+  policyId: string;
+  policyCode: string;
+  version: number;
+  policyName: string;
+  familyCode: string;
+}
+export interface MappingSettings {
+  allowWaitingReviews: boolean;
+  cutoverDate: string | null;
+  conditionMap: ConditionMappingRule[];
+  linkDefaults: ReplacementLinkValues;
+  cardCoverPolicyId: string | null;
+  serialMasterCoverPolicyId: string | null;
+  cardCoverPolicy: MappingPolicyChoice | null;
+  serialMasterCoverPolicy: MappingPolicyChoice | null;
+  approvedPublishedPolicies: MappingPolicyChoice[];
+  version: string;
+}
+export interface LinkOverride {
+  sourceKey: string;
+  direction: string | null;
+  replacementReason: string | null;
+  state: string | null;
+  replacementConditionAllowed: string | null;
+  pricePolicy: string | null;
+  differenceAmount: number | null;
+  currency: string | null;
+  uploadedAt: string;
+  uploadedByName: string;
+  uploadFileName: string;
+  unused: boolean;
+}
+export interface LinkOverridePage {
+  items: LinkOverride[];
+  nextCursor: string | null;
+  totalCount: number;
+  unusedCount: number;
+}
+export interface LinkOverrideUploadError { row: number; column: string; reason: string }
+export interface LinkOverrideUploadResponse {
+  added: number;
+  changed: number;
+  removed: number;
+  unchanged: number;
+  errorTotal: number;
+  errors: LinkOverrideUploadError[];
+}
+export interface CurrencyInfo { code: string; name: string; symbol: string; minorDigits: number }
+
 export interface StartMigrationApplyResponse {
   loadId: string;
   batchId: string;
