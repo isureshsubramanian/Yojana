@@ -52,6 +52,11 @@ public sealed class MigrationApplyRun : ITenantScoped
     public DateTime? WatermarkHandedOverFrom { get; set; }
     /// <summary>Why the hand-over left the watermarks as they were, when it did.</summary>
     public string? WatermarkNote { get; set; }
+    /// <summary>
+    /// The connection's poll watermarks before this final load handed over (JSON of entity type, watermark, next poll),
+    /// so undoing the final load can put them back (OD-63). Null for other loads and loads before P9-T34.
+    /// </summary>
+    public string? WatermarksBefore { get; set; }
     public long CoverReplaced { get; set; }
     public long CoverRefused { get; set; }
     public long AlreadyInModule { get; set; }
@@ -124,6 +129,8 @@ public sealed class MigrationDeltaItem : ITenantScoped
     public string? ItemCode { get; set; }
     public string? Serial { get; set; }
     public string? Detail { get; set; }
+    /// <summary>The coexistence conflict an owner difference was raised as (OD-61 c); null for other kinds.</summary>
+    public Guid? ConflictId { get; set; }
     /// <summary>For a replaced cover: what the register held before, so undoing the delta restores it.</summary>
     public string? PreviousCoverHash { get; set; }
     public Guid? PreviousCoverLoadId { get; set; }

@@ -38,7 +38,19 @@ public sealed record RecordTypeHealth(string RecordType, string NotificationStat
     DateTime? CheckedUpTo, double? BehindSeconds, int IntervalSeconds, int OverlapSeconds,
     long ReceivedToday, int NeedAttention, string? SourceEntity = null);
 public sealed record ConnectionHealthDetail(Guid ConnectionId, string ConnectionName, ConnectionHealthView Health,
-    IReadOnlyList<RecordTypeHealth> RecordTypes);
+    IReadOnlyList<RecordTypeHealth> RecordTypes, ConnectionHandOverNote? HandOver = null);
+
+/// <summary>
+/// A stopped connection waiting for a person to resume it after the final migration load handed it a starting point
+/// (OD-60, P9-T34): shown on Connection health until the sync runs again.
+/// </summary>
+public sealed record ConnectionHandOverNote(DateTime From, string Text);
+
+/// <summary>Port the migration apply step answers; connections never read migration tables themselves.</summary>
+public interface IConnectionHandOverNotes
+{
+    Task<ConnectionHandOverNote?> ForAsync(Guid connectionId, CancellationToken cancellationToken);
+}
 public sealed record CredentialState(string Purpose, bool IsSet, DateTime? CreatedAt, DateTime? ExpiresAt,
     DateTime? ReplaceBy, DateTime? RetiredAt);
 public sealed record CapabilityView(string CanonicalMessage, string SupportLevel);
