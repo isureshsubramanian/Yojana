@@ -23,6 +23,7 @@
     <Project Path="src/Workers/Yojana.RenderWorker/Yojana.RenderWorker.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Yojana.DemoIncumbent.Tests/Yojana.DemoIncumbent.Tests.csproj" />
     <Project Path="tests/Yojana.Demo.Tests/Yojana.Demo.Tests.csproj" />
     <Project Path="tests/Yojana.Integration.Tests/Yojana.Integration.Tests.csproj" />
     <Project Path="tests/Yojana.Architecture.Tests/Yojana.Architecture.Tests.csproj" />
@@ -35,6 +36,7 @@
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Yojana.Bench/Yojana.Bench.csproj" />
+    <Project Path="tools/Yojana.DemoIncumbent/Yojana.DemoIncumbent.csproj" />
     <Project Path="tools/Yojana.Demo/Yojana.Demo.csproj" />
     <Project Path="tools/Yojana.Gates/Yojana.Gates.csproj" />
   </Folder>

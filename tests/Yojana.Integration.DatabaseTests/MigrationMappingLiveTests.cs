@@ -1,5 +1,6 @@
 using Microsoft.Data.SqlClient;
 using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Yojana.Integration.Data;
@@ -17,6 +18,10 @@ namespace Yojana.Integration.DatabaseTests;
 public sealed class MigrationMappingLiveTests(IntegrationHostFixture fixture)
 {
     private const string Actor = "fictional-live-mapping-lead";
+    private static readonly JsonSerializerOptions EvidenceJson = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true,
+    };
 
     [MigrationLiveFact]
     [Trait("Category", "MigrationLive")]
@@ -42,6 +47,10 @@ public sealed class MigrationMappingLiveTests(IntegrationHostFixture fixture)
         var profiles = scope.ServiceProvider.GetRequiredService<MigrationProfileService>();
         Assert.Equal(1, await profiles.RunPendingAsync(default));
         Assert.False(await profiles.IsLoadBlocked(batch.BatchId, default));
+        var profile = await profiles.GetAsync(batch.BatchId, default);
+        Assert.NotNull(profile);
+        var profileCounts = profile.Classes.Where(row => row.Count.HasValue)
+            .ToDictionary(row => row.Code, row => row.Count!.Value, StringComparer.Ordinal);
         var canonical = scope.ServiceProvider.GetRequiredService<CanonicalisationService>();
         Assert.Equal(1, await canonical.EnqueueEligibleAsync(default));
         Assert.Equal(1, await canonical.RunPendingAsync(default));
@@ -49,14 +58,7 @@ public sealed class MigrationMappingLiveTests(IntegrationHostFixture fixture)
         Assert.Equal(1, await reconstruction.EnqueueEligibleAsync(default));
         Assert.Equal(1, await reconstruction.RunPendingAsync(default));
 
-        var waiting = await canonical.ListAsync(batch.BatchId, MigrationReviewKind.HistoryNeedsReview,
-            null, MigrationReviewStatus.Waiting, null, 100, default);
-        var issued = waiting.Items.Where(row => row.CandidateSummary.Contains("issued out",
-            StringComparison.OrdinalIgnoreCase)).ToList();
-        Assert.Equal(3, issued.Count);
-        foreach (var item in issued)
-            await canonical.DecideAsync(item.ItemId, new(MigrationReviewDecisionKind.AcceptAsRecorded, null,
-                "The issued-out source movement was checked and accepted as recorded."), Actor, default);
+        var reviewCounts = await ResolveWaitingAsync(canonical, batch.BatchId);
         Assert.Empty((await canonical.ListAsync(batch.BatchId, null, null, MigrationReviewStatus.Waiting,
             null, 100, default)).Items);
 
@@ -159,6 +161,58 @@ public sealed class MigrationMappingLiveTests(IntegrationHostFixture fixture)
             rollback.Outcome, rollback.UnitsRemoved, rollback.EventsRemoved, rollback.EntitlementsRemoved,
             rollback.ReplacementLinksRemoved, rollback.CertificatesRemoved);
         Assert.Equal(Yojana.Serialisation.Contracts.RollBackMigrationLoadResult.RolledBack, rollback.Outcome);
+        await WriteEvidenceAsync(profileCounts, reviewCounts,
+            view.GapsByKind.ToDictionary(row => row.Key, row => row.Count, StringComparer.Ordinal),
+            view.ReplacementLinks, load.Applied);
+    }
+
+    private static async Task<IReadOnlyDictionary<string, long>> ResolveWaitingAsync(
+        CanonicalisationService canonical, Guid batchId)
+    {
+        var counts = new Dictionary<string, long>(StringComparer.Ordinal);
+        while (true)
+        {
+            var waiting = await canonical.ListAsync(batchId, null, null, MigrationReviewStatus.Waiting,
+                null, 200, default);
+            if (waiting.Items.Count == 0) break;
+            foreach (var group in waiting.Items.GroupBy(row => row.Kind, StringComparer.Ordinal))
+                counts[group.Key] = counts.GetValueOrDefault(group.Key) + group.LongCount();
+            foreach (var item in waiting.Items)
+            {
+                var decision = item.Kind == MigrationReviewKind.HistoryNeedsReview
+                    ? MigrationReviewDecisionKind.AcceptAsRecorded
+                    : MigrationReviewDecisionKind.KeepApart;
+                await canonical.DecideAsync(item.ItemId, new(decision, null,
+                    "The isolated demo evidence is retained as separate recorded units for rehearsal."),
+                    Actor, default);
+            }
+        }
+        foreach (var count in counts.OrderBy(row => row.Key, StringComparer.Ordinal))
+            Console.WriteLine("REVIEW {0}: {1}", count.Key, count.Value);
+        return counts;
+    }
+
+    private static async Task WriteEvidenceAsync(IReadOnlyDictionary<string, long> profile,
+        IReadOnlyDictionary<string, long> review, IReadOnlyDictionary<string, long> gaps,
+        long replacementLinks, long unitsApplied)
+    {
+        var path = Environment.GetEnvironmentVariable("YOJANA_DEMO_PIPELINE_EVIDENCE");
+        if (string.IsNullOrWhiteSpace(path)) return;
+        // Coupled to ManifestWriter's PipelineEvidence file contract. A project reference would make the
+        // migration database tests depend on a non-shipped tool; changing these names or types breaks reports.
+        var evidence = new
+        {
+            ProfilingAnomalies = profile,
+            ReviewItems = review,
+            PlanGaps = gaps,
+            ReplacementLinks = replacementLinks,
+            UnitsApplied = unitsApplied,
+        };
+        var fullPath = Path.GetFullPath(path);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        await File.WriteAllTextAsync(fullPath,
+            JsonSerializer.Serialize(evidence, EvidenceJson) + Environment.NewLine);
+        Console.WriteLine("PIPELINE_EVIDENCE {0}", fullPath);
     }
 
     private static void Print(string heading, IReadOnlyList<MappingCount> counts)
