@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { DataGrid, KpiStrip, StatusBadge, type GridColumn } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
@@ -14,10 +14,11 @@ import type { GapPage, GapRow, GapRun } from "./types";
 const PAGE = 50;
 
 export function Component() {
+  const [searchParams] = useSearchParams();
   const [itemIds, setItemIds] = useState("");
   const [saleFrom, setSaleFrom] = useState("");
   const [saleTo, setSaleTo] = useState("");
-  const [channels, setChannels] = useState("");
+  const [channels, setChannels] = useState(() => searchParams.get("channels") ?? "");
   const [dropShip, setDropShip] = useState("include");
   const [requirementStatus, setRequirementStatus] = useState("");
   const [sort, setSort] = useState("sale_date_desc");

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { DataGrid, KpiStrip, StatusBadge, type GridColumn } from "../components";
 import { ApiError } from "../api/client";
 import { useSession } from "../session/session";
@@ -9,10 +10,16 @@ import { date, useCursorPage } from "./AdminCommon";
 import { MigrationAccess, MigrationPage } from "./MigrationCommon";
 import { migrationApi } from "./migrationApi";
 import {
-  batchLabel, batchResult, batchStatusLabel, batchTotals, duration, elapsed, failureLabel, profileStatusLabel,
-  mayAdministerMigration, profileTotals, routeLabel, runtimeLabel, statusTone,
+  batchLabel, batchResult, batchStatusLabel, batchTotals, countTotal, duration, elapsed, failureLabel,
+  finalLoadDisabledReason, loadStatusLabel, loadStatusTone, mappingGapLabel, mayAdministerMigration,
+  phaseStatusLabel, phaseStatusTone, profileTotals, refusalReasonLabel,
+  rollbackOutcomeLabel, routeLabel, runtimeLabel, statusTone,
 } from "./migrationModel";
-import type { CanonicalisationRun, MigrationBatch, MigrationBatchPage, MigrationBatchTable, MigrationProfile, MigrationSource, MigrationSourceTestResult } from "./migrationTypes";
+import type {
+  CanonicalisationRun, MigrationApply, MigrationApplyRefusal, MigrationApplyRefusalPage, MigrationBatch,
+  MigrationBatchPage, MigrationBatchTable, MigrationMap, MigrationProfile, MigrationReconstruction,
+  MigrationSource, MigrationSourceTestResult, MigrationValidation, RollBackMigrationLoadResponse,
+} from "./migrationTypes";
 
 export function Component() { return <MigrationAccess><MigrationConsole /></MigrationAccess>; }
 
@@ -24,6 +31,11 @@ function MigrationConsole() {
   const [details, setDetails] = useState<Record<string, MigrationBatch>>({});
   const [selected, setSelected] = useState<string | null>(null); const [profile, setProfile] = useState<MigrationProfile | null>(null);
   const [canonicalisation, setCanonicalisation] = useState<CanonicalisationRun | null>(null);
+  const [reconstruction, setReconstruction] = useState<MigrationReconstruction | null>(null);
+  const [map, setMap] = useState<MigrationMap | null>(null);
+  const [validation, setValidation] = useState<MigrationValidation | null>(null);
+  const [load, setLoad] = useState<MigrationApply | null>(null);
+  const [phaseError, setPhaseError] = useState<unknown>(null);
   const [startBusy, setStartBusy] = useState(false); const [startError, setStartError] = useState<unknown>(null); const [startNotice, setStartNotice] = useState("");
   const fetchBatches = useCallback((cursor?: string, signal?: AbortSignal) => migrationApi.batches(cursor, signal), []);
   const batches = useCursorPage<MigrationBatch, MigrationBatchPage>(fetchBatches);
@@ -46,22 +58,47 @@ function MigrationConsole() {
   const latest = (admin ? batches.result?.items.find(item => item.sourceId === sourceId) : batches.result?.items[0]) ?? null;
   const latestDetail = latest ? details[latest.batchId] ?? null : null;
   const selectedBatch = selected ? details[selected] ?? batches.result?.items.find(item => item.batchId === selected) ?? null : latestDetail;
+  const phaseBatch = selectedBatch ?? latest;
+  const phaseBatchId = phaseBatch?.batchId ?? "";
+  const loadPhases = useCallback(async (signal?: AbortSignal) => {
+    if (!phaseBatchId) return;
+    try {
+      const [nextBatch, nextProfile, nextCanonicalisation, nextReconstruction, nextMap, nextValidation, nextLoad] = await Promise.all([
+        migrationApi.batch(phaseBatchId, signal),
+        optional(() => migrationApi.profile(phaseBatchId, signal)),
+        optional(() => migrationApi.canonicalisation(phaseBatchId, signal)),
+        optional(() => migrationApi.reconstruction(phaseBatchId, signal)),
+        optional(() => migrationApi.map(phaseBatchId, signal)),
+        optional(() => migrationApi.validation(phaseBatchId, signal)),
+        optional(() => migrationApi.load(phaseBatchId, signal)),
+      ]);
+      if (signal?.aborted) return;
+      setDetails(current => ({ ...current, [nextBatch.batchId]: nextBatch }));
+      setProfile(nextProfile); setCanonicalisation(nextCanonicalisation); setReconstruction(nextReconstruction);
+      setMap(nextMap); setValidation(nextValidation); setLoad(nextLoad); setPhaseError(null);
+    } catch (reason) {
+      if (!(reason instanceof DOMException && reason.name === "AbortError")) setPhaseError(reason);
+    }
+  }, [phaseBatchId]);
   useEffect(() => {
-    if (!latest) { setProfile(null); setCanonicalisation(null); return; }
+    setProfile(null); setCanonicalisation(null); setReconstruction(null); setMap(null); setValidation(null); setLoad(null); setPhaseError(null);
+    if (!phaseBatchId) return;
     const controller = new AbortController();
-    setCanonicalisation(null);
-    migrationApi.profile(latest.batchId, controller.signal).then(setProfile).catch(reason => {
-      if (!controller.signal.aborted && reason instanceof ApiError && reason.status === 404) setProfile(null);
-    });
-    migrationApi.canonicalisation(latest.batchId, controller.signal).then(setCanonicalisation).catch(reason => {
-      if (!controller.signal.aborted && reason instanceof ApiError && reason.status === 404) setCanonicalisation(null);
-    });
+    void loadPhases(controller.signal);
     return () => controller.abort();
-  }, [latest?.batchId]);
+  }, [loadPhases, phaseBatchId]);
+
+  const watching = [phaseBatch?.status, profile?.status, canonicalisation?.status, reconstruction?.status, map?.status, validation?.status, load?.status]
+    .some(status => status === "queued" || status === "running");
+  useEffect(() => {
+    if (!watching) return;
+    const timer = window.setInterval(() => void loadPhases(), 3000);
+    return () => window.clearInterval(timer);
+  }, [loadPhases, watching]);
 
   const flaggedClasses = profile?.classes.filter(row => (row.count ?? 0) > 0).length;
-  const totals = latestDetail?.tables ? batchTotals(latestDetail.tables) : null;
-  const serials = latestDetail?.tables?.find(row => row.role === "serial_master")?.rowsRead;
+  const totals = phaseBatch?.tables ? batchTotals(phaseBatch.tables) : null;
+  const serials = phaseBatch?.tables?.find(row => row.role === "serial_master")?.rowsRead;
   const columns = useMemo<GridColumn<MigrationBatch>[]>(() => [
     ...(!admin || sources.length > 1 ? [{ key: "source", label: "Source", width: 17, render: (row: MigrationBatch) => sources.find(item => item.sourceId === row.sourceId)?.displayLabel ?? row.sourceSystem }] : []),
     { key: "started", label: "Started", width: 16, render: row => date(row.startedAt ?? row.requestedAt) },
@@ -94,11 +131,11 @@ function MigrationConsole() {
   </> : undefined;
 
   return <><MigrationPage title="Migration" eyebrow={eyebrow} sub="Copy the installed base, cover and history out of the source application, check it, and sign it off. The source is only ever read." actions={actions} flaggedClasses={flaggedClasses} waitingReviews={canonicalisation?.waitingReviewItems}>
-    <ErrorNote error={sourceError ?? batches.error ?? startError} />
+    <ErrorNote error={sourceError ?? batches.error ?? startError ?? phaseError} />
     {startNotice && <div className={`note${startNotice.startsWith("Extraction refused") ? " bad" : ""}`} role="status">{startNotice}</div>}
     {admin && source && <LicenceBanner source={source} onSaved={updated => setSources(current => current.map(item => item.sourceId === updated.sourceId ? updated : item))} />}
-    <PhaseStrip batch={latestDetail ?? latest} profile={profile} />
-    {totals && <KpiStrip label="Latest extraction figures" kpis={[
+    <PhaseStrip key={phaseBatchId || "none"} batch={phaseBatch} profile={profile} canonicalisation={canonicalisation} reconstruction={reconstruction} map={map} validation={validation} load={load} admin={admin} onChanged={loadPhases} />
+    {totals && <KpiStrip label="Extraction figures" kpis={[
       ...(serials === undefined ? [] : [{ label: "Serials in the source", value: serials.toLocaleString(), detail: "serial-master rows read" }]),
       { label: "Rows gone from the source", value: totals.absent.toLocaleString(), detail: "kept and marked absent" },
     ]} />}
@@ -135,13 +172,89 @@ function SourceTest({ result }: { result: MigrationSourceTestResult }) {
   return <div className="grid-viewport"><table className="table"><thead><tr><th>Source table</th><th className="num">Rows</th><th>Status</th></tr></thead><tbody>{result.tables.map(row => <tr key={row.table}><td><span className="primary">{row.label ?? row.table}</span><span className="sub mono">{row.table}</span></td><td className="num">{row.rowCount?.toLocaleString() ?? "—"}</td><td><StatusBadge tone={row.error ? "bad" : "ok"}>{row.error ? failureLabel(row.error) : "Readable"}</StatusBadge></td></tr>)}</tbody></table></div>;
 }
 
-function PhaseStrip({ batch, profile }: { batch: MigrationBatch | null; profile: MigrationProfile | null }) {
+function PhaseStrip({ batch, profile, canonicalisation, reconstruction, map, validation, load, admin, onChanged }: {
+  batch: MigrationBatch | null; profile: MigrationProfile | null; canonicalisation: CanonicalisationRun | null;
+  reconstruction: MigrationReconstruction | null; map: MigrationMap | null; validation: MigrationValidation | null;
+  load: MigrationApply | null; admin: boolean; onChanged: () => void | Promise<void>;
+}) {
   const tables = batch?.tables ?? []; const totals = batchTotals(tables); const profileCount = profileTotals(profile).flagged;
-  return <section className="card" aria-labelledby="migration-phases"><div className="card-header"><h2 id="migration-phases">Latest extraction <span className="meta">{batch ? date(batch.requestedAt) : "not run"}</span></h2><span className="muted">Extract and Profile run on every full extraction</span></div><div className="card-body"><div className="migration-phases">
-    <div className="migration-phase"><div className="l">0 · Extract</div><div className="n">{tables.length ? `${tables.length} tables` : "—"}</div><div className="s">{tables.length ? `${totals.rowsRead.toLocaleString()} rows read · ${elapsed(batch?.startedAt ?? null, batch?.finishedAt ?? null)}` : "No table results yet"}</div><StatusBadge tone={statusTone(batch?.status ?? "waiting")}>{batch ? batchStatusLabel(batch.status) : "Not run"}</StatusBadge></div>
-    <div className="migration-phase"><div className="l">1 · Profile</div><div className="n">{profile ? `${profile.classes.length} classes` : "—"}</div><div className="s">{profile ? `${profileCount.toLocaleString()} rows flagged` : "No profiling run yet"}</div><StatusBadge tone={statusTone(profile?.status ?? "waiting")}>{profile ? profileStatusLabel(profile.status) : "Not run"}</StatusBadge></div>
-    {(["Canonicalise", "Reconstruct", "Map", "Validate"] as const).map((label, index) => <div className="migration-phase not-built" key={label}><div className="l">{index + 2} · {label}</div><div className="n">—</div><div className="s">Not built yet</div><StatusBadge tone="neutral">Not built yet</StatusBadge></div>)}
+  const reconstructEvents = countTotal(reconstruction?.eventsByMovementKind ?? []);
+  const reconstructReviews = countTotal(reconstruction?.queuedForReviewByReason ?? []);
+  const mappedUnits = countTotal(map?.unitsByOrigin ?? []);
+  const mapGaps = map?.gapsByKind.map(row => `${mappingGapLabel(row.key)} ${row.count.toLocaleString()}`).join(" · ");
+  return <section className="card" aria-labelledby="migration-phases"><div className="card-header"><h2 id="migration-phases">Migration phases <span className="meta">{batch ? date(batch.requestedAt) : "not run"}</span></h2><span className="muted">The selected extraction and its latest run in each phase</span></div><div className="card-body"><div className="migration-phases">
+    <PhaseCard label="0 · Extract" headline={tables.length ? `${tables.length} tables` : "—"} detail={tables.length ? `${totals.rowsRead.toLocaleString()} rows read · ${elapsed(batch?.startedAt ?? null, batch?.finishedAt ?? null)}` : "No table results yet"} status={batch?.status} href="#migration-tables" />
+    <PhaseCard label="1 · Profile" headline={profile ? `${profile.classes.length} classes` : "—"} detail={profile ? `${profileCount.toLocaleString()} rows flagged` : "No profiling run yet"} status={profile?.status} href="/integration/migration/profiling" />
+    <PhaseCard label="2 · Canonicalise" headline={canonicalisation ? `${canonicalisation.candidateRowsTotal.toLocaleString()} candidates` : "—"} detail={canonicalisation ? canonicalisation.failure ? failureLabel(canonicalisation.failure)! : `${canonicalisation.waitingReviewItems.toLocaleString()} waiting for review` : "No canonicalisation run yet"} status={canonicalisation?.status} href="/integration/migration/review" />
+    <PhaseCard label="3 · Reconstruct" headline={reconstruction ? `${reconstruction.candidatesReconstructed.toLocaleString()} units` : "—"} detail={reconstruction ? reconstruction.failure ? failureLabel(reconstruction.failure)! : `${reconstructEvents.toLocaleString()} events · ${reconstructReviews.toLocaleString()} to review` : "No reconstruction run yet"} status={reconstruction?.status} />
+    <PhaseCard label="4 · Map" headline={map ? `${mappedUnits.toLocaleString()} units` : "—"} detail={map ? map.failure ? failureLabel(map.failure)! : mapGaps || "No mapping gaps" : "No map run yet"} status={map?.status} />
+    <PhaseCard label="5 · Validate" headline={validation ? `${validation.hardFailed.toLocaleString()} hard fails open` : "—"} detail={validation ? `${validation.signedChecks.toLocaleString()} of ${validation.checksTotal.toLocaleString()} checks signed` : "No validation run yet"} status={validation?.status} href="/integration/migration/validation" />
+    <LoadPhaseCard batchId={batch?.batchId ?? ""} load={load} validation={validation} admin={admin} onChanged={onChanged} />
   </div></div></section>;
+}
+
+function PhaseCard({ label, headline, detail, status, href }: { label: string; headline: string; detail: string; status: string | null | undefined; href?: string }) {
+  const body = <><div className="l">{label}</div><div className="n">{headline}</div><div className="s">{detail}</div><StatusBadge tone={phaseStatusTone(status)}>{phaseStatusLabel(status)}</StatusBadge></>;
+  if (href?.startsWith("/")) return <Link className="migration-phase" to={href}>{body}</Link>;
+  if (href) return <a className="migration-phase" href={href}>{body}</a>;
+  return <div className="migration-phase">{body}</div>;
+}
+
+function LoadPhaseCard({ batchId, load, validation, admin, onChanged }: { batchId: string; load: MigrationApply | null; validation: MigrationValidation | null; admin: boolean; onChanged: () => void | Promise<void> }) {
+  const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState("");
+  const [confirmRollback, setConfirmRollback] = useState(false); const [confirmFinal, setConfirmFinal] = useState(false); const [rollback, setRollback] = useState<RollBackMigrationLoadResponse | null>(null);
+  const finalReason = finalLoadDisabledReason(validation);
+  const loadOpen = !!load && load.status !== "rolled_back";
+  const loadOpenReason = loadOpen ? load?.status === "queued" || load?.status === "running" ? "A load is already in progress" : "Resolve the existing load before loading again" : null;
+  const canRollback = !!load?.rehearsal && (load.status === "completed" || load.status === "failed");
+  const start = async (rehearsal: boolean) => {
+    if (!batchId) return; setBusy(true); setError(null); setNotice(""); setRollback(null);
+    try { await migrationApi.apply(batchId, rehearsal); setConfirmFinal(false); setNotice(rehearsal ? "Rehearsal load queued." : "Final load queued."); await onChanged(); }
+    catch (reason) { setError(reason); }
+    finally { setBusy(false); }
+  };
+  const rollBack = async () => {
+    if (!load) return; setBusy(true); setError(null); setNotice(""); setRollback(null);
+    try { const result = await migrationApi.rollbackLoad(load.loadId); setRollback(result); setConfirmRollback(false); await onChanged(); }
+    catch (reason) { setError(reason); }
+    finally { setBusy(false); }
+  };
+  const failure = failureLabel(load?.failure ?? null);
+  return <div className="migration-phase migration-load-phase"><div className="l">6 · Load{load ? ` · ${load.rehearsal ? "rehearsal" : "final"}` : ""}</div><div className="n">{load ? `${load.applied.toLocaleString()} applied` : "—"}</div><div className="s">{load ? <>{load.refused.toLocaleString()} refused · {load.eventsWritten.toLocaleString()} facts written<br />{load.entitlementsWritten.toLocaleString()} cover rows written · {load.replacementLinksWritten.toLocaleString()} links · {load.certificatesRecorded.toLocaleString()} certificates</> : "No load run yet"}</div><StatusBadge tone={load ? loadStatusTone(load.status) : "neutral"}>{load ? loadStatusLabel(load.status) : "Not run"}</StatusBadge>
+    {failure && <p className="migration-phase-note">{failure}</p>}
+    {load?.coverGaps !== null && load?.coverGaps !== undefined && <Link className="migration-phase-link" to="/entitlements/gaps?channels=migration">{load.coverGaps.toLocaleString()} sold units with no base cover</Link>}
+    {load && load.refused > 0 && <button type="button" className="btn sm" onClick={() => openRefusals(load)}>View {load.refused.toLocaleString()} refusals</button>}
+    {admin && <div className="migration-load-actions"><button type="button" className="btn sm" disabled={busy || !batchId || !!loadOpenReason} title={loadOpenReason ?? "Loads the plan as a rehearsal"} onClick={() => void start(true)}>Load as rehearsal</button><button type="button" className="btn primary sm" disabled={busy || !batchId || !!loadOpenReason || !!finalReason} title={loadOpenReason ?? finalReason ?? "Loads the signed-off final plan"} onClick={() => setConfirmFinal(true)}>Final load</button>{canRollback && !confirmRollback && <button type="button" className="btn danger sm" disabled={busy} onClick={() => setConfirmRollback(true)}>Roll back rehearsal</button>}</div>}
+    {admin && finalReason && <p className="migration-phase-note">Final load unavailable: {finalReason}.</p>}
+    {confirmFinal && <div className="migration-rollback-confirm" role="group" aria-labelledby="final-confirm-title"><strong id="final-confirm-title">Start the final load?</strong><p>The signed-off plan is written into the module for real. A final load cannot be rolled back.</p><div><button type="button" className="btn sm" disabled={busy} onClick={() => setConfirmFinal(false)}>Not yet</button><button type="button" className="btn primary sm" disabled={busy} onClick={() => void start(false)}>{busy ? "Starting…" : "Start the final load"}</button></div></div>}
+    {confirmRollback && <div className="migration-rollback-confirm" role="group" aria-labelledby="rollback-confirm-title"><strong id="rollback-confirm-title">Roll back this rehearsal?</strong><p>Every unit, fact, cover row, link and certificate this load wrote will be removed.</p><div><button type="button" className="btn sm" disabled={busy} onClick={() => setConfirmRollback(false)}>Keep the load</button><button type="button" className="btn danger sm" disabled={busy} onClick={() => void rollBack()}>{busy ? "Rolling back…" : "Roll back rehearsal"}</button></div></div>}
+    <ErrorNote error={error} />{notice && <p className="migration-phase-note" role="status">{notice}</p>}{rollback && <RollbackResult result={rollback} />}
+  </div>;
+}
+
+function RollbackResult({ result }: { result: RollBackMigrationLoadResponse }) {
+  const refused = result.outcome === "refused_touched";
+  return <div className={`note${refused ? " warn" : ""}`} role="status"><strong>{rollbackOutcomeLabel(result.outcome)}.</strong>&nbsp;{refused
+    ? `${result.touchedUnitIds.length.toLocaleString()} touched unit${result.touchedUnitIds.length === 1 ? "" : "s"} stop the rollback. The rehearsal load stays in place.`
+    : `${result.unitsRemoved.toLocaleString()} units, ${result.eventsRemoved.toLocaleString()} facts, ${result.entitlementsRemoved.toLocaleString()} cover rows, ${result.replacementLinksRemoved.toLocaleString()} links and ${result.certificatesRemoved.toLocaleString()} certificates removed.`}</div>;
+}
+
+function openRefusals(load: MigrationApply) {
+  openDrawer({ eyebrow: load.rehearsal ? "Rehearsal load" : "Final load", title: "Refused units" }, <RefusalDrawer loadId={load.loadId} />);
+}
+
+function RefusalDrawer({ loadId }: { loadId: string }) {
+  const [result, setResult] = useState<MigrationApplyRefusalPage | null>(null); const [page, setPage] = useState(1);
+  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]); const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
+  const loadPage = useCallback(async (target: number, cursor?: string) => { setBusy(true); setError(null); try { setResult(await migrationApi.loadRefusals(loadId, cursor)); setPage(target); } catch (reason) { setError(reason); } finally { setBusy(false); } }, [loadId]);
+  useEffect(() => { void loadPage(1); }, [loadPage]);
+  const go = (target: number) => { const cursor = target > page ? result?.nextCursor ?? undefined : cursors[target - 1]; if (target < 1 || (target > page && !cursor)) return; setCursors(current => { const next = current.slice(); next[target - 1] = cursor; return next; }); void loadPage(target, cursor); };
+  const columns: GridColumn<MigrationApplyRefusal>[] = [
+    { key: "item", label: "Item code", width: 25, render: row => row.itemCode },
+    { key: "serial", label: "Serial", width: 30, render: row => row.serial ?? "No serial recorded" },
+    { key: "reasons", label: "Why it was refused", width: 45, render: row => row.reasons.map(refusalReasonLabel).join(" · ") },
+  ];
+  return <><p className="muted">Units are listed from the load in keyset order. Internal load and plan identifiers are not shown.</p><ErrorNote error={error} /><DataGrid columns={columns} page={{ rows: result?.items ?? [], total: (page - 1) * 50 + (result?.items.length ?? 0), page, pageSize: 50, continuation: result?.nextCursor ?? null, totalIsExact: false, hasMore: !!result?.nextCursor }} rowId={row => row.refusalId} onPage={go} loading={busy} emptyText="This load has no refused units." viewportHeight={520} /></>;
 }
 
 function BatchTables({ batch, latest }: { batch: MigrationBatch | null; latest: boolean }) {
@@ -155,10 +268,15 @@ function BatchTables({ batch, latest }: { batch: MigrationBatch | null; latest: 
     { key: "gone", label: "Gone", width: 10, numeric: true, render: row => row.absent.toLocaleString() },
     { key: "time", label: "Time", width: 20, numeric: true, render: row => duration(row.durationMilliseconds) },
   ];
-  return <section className="card migration-table-card" aria-labelledby="migration-tables"><div className="card-header"><h2 id="migration-tables">What {batch ? batchLabel(batch, latest) : "the latest extraction"} read <span className="meta">{tables.length ? `${tables.length} source tables` : "select an extraction"}</span></h2></div><DataGrid columns={columns} page={{ rows: tables, total: tables.length, page: 1, pageSize: Math.max(1, tables.length), continuation: null }} rowId={row => row.table} onPage={() => undefined} emptyText="No table results are available for this extraction." viewportHeight={520} footer={<span className="muted">Rows gone from the source are kept and marked absent; they are never deleted.</span>} /></section>;
+  return <section className="card migration-table-card" id="migration-tables" aria-labelledby="migration-tables-heading"><div className="card-header"><h2 id="migration-tables-heading">What {batch ? batchLabel(batch, latest) : "the latest extraction"} read <span className="meta">{tables.length ? `${tables.length} source tables` : "select an extraction"}</span></h2></div><DataGrid columns={columns} page={{ rows: tables, total: tables.length, page: 1, pageSize: Math.max(1, tables.length), continuation: null }} rowId={row => row.table} onPage={() => undefined} emptyText="No table results are available for this extraction." viewportHeight={520} footer={<span className="muted">Rows gone from the source are kept and marked absent; they are never deleted.</span>} /></section>;
 }
 
 function BatchDrawer({ batch, source }: { batch: MigrationBatch; source: MigrationSource | null }) {
   const totals = batch.tables ? batchTotals(batch.tables) : null;
   return <><Kv rows={[["Source", source?.displayLabel ?? batch.sourceSystem], ["Started", date(batch.startedAt ?? batch.requestedAt)], ["Finished", date(batch.finishedAt)], ["Took", elapsed(batch.startedAt, batch.finishedAt)], ["Started by", batch.requestedByName], ["Status", batchStatusLabel(batch.status)], ["Rows", totals ? `${totals.rowsRead.toLocaleString()} read · ${totals.inserted.toLocaleString()} new · ${totals.updated.toLocaleString()} changed · ${totals.absent.toLocaleString()} gone` : "—"]]} />{batch.failure && <div className="note bad">{failureLabel(batch.failure)}</div>}</>;
+}
+
+async function optional<T>(action: () => Promise<T>): Promise<T | null> {
+  try { return await action(); }
+  catch (reason) { if (reason instanceof ApiError && reason.status === 404) return null; throw reason; }
 }
