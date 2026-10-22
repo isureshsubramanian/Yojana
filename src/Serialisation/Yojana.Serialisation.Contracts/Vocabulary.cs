@@ -276,6 +276,8 @@ public static class UnitEventType
     public const string OwnershipClosed = "ownership.closed";
     public const string OwnershipTransferred = "ownership.transferred";
     public const string OwnershipSourceDocumentCorrected = "ownership.source_document_corrected";
+    /// <summary>A movement the incumbent recorded before cutover, written by a migration load (P9-T10); state-neutral.</summary>
+    public const string MigratedHistory = "unit.migrated_history";
 }
 
 /// <summary>Non-unit facts owned by Serialisation and published across the item boundary.</summary>

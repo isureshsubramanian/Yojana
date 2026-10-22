@@ -81,6 +81,49 @@ public sealed class MigrationMappingLiveTests(IntegrationHostFixture fixture)
             .GroupBy(row => row.Kind).Select(group => new { Kind = group.Key, Count = group.LongCount() })
             .OrderBy(row => row.Kind).ToListAsync();
         foreach (var gap in storedGaps) Console.WriteLine("GAP {0}: {1}", gap.Kind, gap.Count);
+
+        // P9-T10: a rehearsal load of the live plan into the module, then its rollback. The connector's item sync is
+        // simulated from the plan's item codes (serial-tracked); nothing is written to the source.
+        var connectionId = (await db.MigrationBatches.AsNoTracking().SingleAsync(row => row.BatchId == batch.BatchId)).ConnectionId;
+        if (!await db.ConnectionGatewaySettings.AnyAsync(row => row.ConnectionId == connectionId))
+        {
+            if (!await db.Connections.AnyAsync(row => row.ConnectionId == connectionId))
+                db.Connections.Add(new Data.Entities.Connection { TenantId = tenant, ConnectionId = connectionId, ConnectorCode = "CX01",
+                    DisplayLabel = "Owner demo", Status = Data.Entities.ConnectionStatus.Active, CreatedAt = fixture.Clock.UtcNow });
+            db.ConnectionGatewaySettings.Add(new Data.Entities.ConnectionGatewaySetting { TenantId = tenant, ConnectionId = connectionId,
+                LegalEntityId = Guid.NewGuid(), OutboundMode = "reference_only", NativeWarrantyObjectMode = "frozen", OrderingWaitMinutes = 15 });
+        }
+        foreach (var code in await db.MigrationPlanUnits.Where(row => row.MapRunId == view.RunId).Select(row => row.ItemCode).Distinct().ToListAsync())
+        {
+            var moduleId = Guid.CreateVersion7();
+            db.ExternalIdMaps.Add(new Data.Entities.ExternalIdMap
+            {
+                TenantId = tenant, ExternalIdMapId = Guid.CreateVersion7(), ConnectionId = connectionId, EntityType = "item",
+                ExternalId = code, ModuleId = moduleId, ValidFrom = fixture.Clock.UtcNow, NaturalKeyHash = code,
+                MappingSource = Data.Entities.ExternalIdMappingSource.Auto, MappedBy = "fixture", MappedAt = fixture.Clock.UtcNow,
+            });
+            db.ReferenceProjections.Add(new Data.Entities.ReferenceProjection
+            {
+                TenantId = tenant, EntityType = "item", ModuleId = moduleId, Code = code, DisplayName = code,
+                TrackingMode = "serial", Uom = "EA", AttributesJson = "{}", UpdatedAt = fixture.Clock.UtcNow,
+            });
+        }
+        await db.SaveChangesAsync();
+        var apply = scope.ServiceProvider.GetRequiredService<LegacyMigration.Apply.ApplyService>();
+        await apply.EnqueueAsync(batch.BatchId, new(true), Actor, default);
+        var started = DateTime.UtcNow;
+        Assert.Equal(1, await apply.RunPendingAsync(default));
+        var load = (await apply.GetAsync(batch.BatchId, default))!;
+        Console.WriteLine("APPLY status={0} plan={1} applied={2} refused={3} events={4} took={5}", load.Status,
+            load.UnitsInPlan, load.Applied, load.Refused, load.EventsWritten, DateTime.UtcNow - started);
+        foreach (var refusal in (await apply.RefusalsAsync(load.LoadId, null, 200, default)).Items
+                     .GroupBy(row => string.Join(' ', row.Reasons)))
+            Console.WriteLine("APPLY_REFUSED {0}: {1}", refusal.Key, refusal.Count());
+        Assert.Equal(LegacyMigration.Apply.ApplyRunStatus.Completed, load.Status);
+        Assert.Equal(load.UnitsInPlan, load.Applied + load.Refused);
+        var rollback = await apply.RollBackAsync(load.LoadId, Actor, default);
+        Console.WriteLine("ROLLBACK outcome={0} units={1} events={2}", rollback.Outcome, rollback.UnitsRemoved, rollback.EventsRemoved);
+        Assert.Equal(Yojana.Serialisation.Contracts.RollBackMigrationLoadResult.RolledBack, rollback.Outcome);
     }
 
     private static void Print(string heading, IReadOnlyList<MappingCount> counts)

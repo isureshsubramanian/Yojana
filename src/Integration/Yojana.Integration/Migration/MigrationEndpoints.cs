@@ -9,6 +9,7 @@ using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Mapping;
+using Yojana.Integration.LegacyMigration.Apply;
 using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.LegacyMigration;
@@ -176,6 +177,28 @@ public static class MigrationEndpoints
         review.MapGet("/plan/units/{planUnitId:guid}", async (Guid planUnitId, MappingService service,
             CancellationToken ct) => await service.UnitAsync(planUnitId, ct) is { } result
                 ? Results.Ok(result) : Results.NotFound());
+        admin.MapPost("/batches/{batchId:guid}/apply", async (Guid batchId, StartApplyRequest request,
+            ClaimsPrincipal user, ApplyService service, CancellationToken ct) =>
+        {
+            try
+            {
+                var result = await service.EnqueueAsync(batchId, request, Actor(user), ct);
+                return Results.Accepted($"/api/migration/batches/{batchId:D}/apply", result);
+            }
+            catch (ApplyRuleException ex) { return Problem(ex); }
+        });
+        review.MapGet("/batches/{batchId:guid}/apply", async (Guid batchId, ApplyService service,
+            CancellationToken ct) => await service.GetAsync(batchId, ct) is { } result
+                ? Results.Ok(result) : Results.NotFound());
+        review.MapGet("/loads/{loadId:guid}/refusals", async (Guid loadId, string? cursor, int? take,
+            ApplyService service, CancellationToken ct) =>
+            Results.Ok(await service.RefusalsAsync(loadId, cursor, take ?? 50, ct)));
+        admin.MapPost("/loads/{loadId:guid}/rollback", async (Guid loadId, ClaimsPrincipal user,
+            ApplyService service, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await service.RollBackAsync(loadId, Actor(user), ct)); }
+            catch (ApplyRuleException ex) { return Problem(ex); }
+        });
         review.MapGet("/mapping/settings", (MappingSettings mappingSettings, CancellationToken ct) =>
             InvokeMapping(() => mappingSettings.GetAsync(ct)));
         admin.MapPut("/mapping/settings", (UpdateMappingSettingsRequest request,
@@ -247,6 +270,10 @@ public static class MigrationEndpoints
         extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
 
     private static IResult Problem(TemplateMappingRuleException ex) => Results.Problem(title: ex.Rule,
+        detail: ex.Message, statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
+        extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+
+    private static IResult Problem(ApplyRuleException ex) => Results.Problem(title: ex.Rule,
         detail: ex.Message, statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
         extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
 

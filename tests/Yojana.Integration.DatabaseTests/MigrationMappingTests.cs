@@ -188,7 +188,7 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         Assert.Equal(0, await db.MigrationMapRuns.CountAsync());
     }
 
-    private static (Guid BatchId, Guid ReconstructionId) SeedPipeline(IntegrationDbContext db, TenantId tenant,
+    internal static (Guid BatchId, Guid ReconstructionId) SeedPipeline(IntegrationDbContext db, TenantId tenant,
         Guid policyId)
     {
         var sourceId = Guid.CreateVersion7();
@@ -517,7 +517,7 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         return row;
     }
 
-    private async Task<Guid> PublishedPolicyAsync(TenantId tenant)
+    internal async Task<Guid> PublishedPolicyAsync(TenantId tenant)
     {
         var id = Guid.CreateVersion7();
         using var scope = fixture.ScopeFor(tenant);

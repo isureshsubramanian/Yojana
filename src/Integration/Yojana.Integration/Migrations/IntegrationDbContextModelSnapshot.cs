@@ -2536,6 +2536,145 @@ namespace Yojana.Integration.Migrations
                     b.ToTable("tenant_data_key_rewrap_checkpoint", "integration");
                 });
 
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Apply.MigrationApplyRefusal", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RefusalId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("refusal_id");
+
+                    b.Property<Guid>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<string>("Reasons")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("reasons");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.HasKey("TenantId", "RefusalId")
+                        .HasName("pk_migration_apply_refusal");
+
+                    b.HasIndex("TenantId", "RunId", "PlanUnitId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_apply_refusal_tenant_id_run_id_plan_unit_id");
+
+                    b.HasIndex("TenantId", "RunId", "RefusalId")
+                        .HasDatabaseName("ix_migration_apply_refusal_tenant_id_run_id_refusal_id");
+
+                    b.ToTable("migration_apply_refusal", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Apply.MigrationApplyRun", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<long>("AlreadyApplied")
+                        .HasColumnType("bigint")
+                        .HasColumnName("already_applied");
+
+                    b.Property<long>("Applied")
+                        .HasColumnType("bigint")
+                        .HasColumnName("applied");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<Guid?>("CursorPlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("cursor_plan_unit_id");
+
+                    b.Property<long>("EventsWritten")
+                        .HasColumnType("bigint")
+                        .HasColumnName("events_written");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("failure_code");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("finished_at");
+
+                    b.Property<Guid>("MapRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("map_run_id");
+
+                    b.Property<long>("Refused")
+                        .HasColumnType("bigint")
+                        .HasColumnName("refused");
+
+                    b.Property<bool>("Rehearsal")
+                        .HasColumnType("bit")
+                        .HasColumnName("rehearsal");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("requested_at");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("requested_by");
+
+                    b.Property<DateTime?>("RolledBackAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("rolled_back_at");
+
+                    b.Property<string>("RolledBackBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("rolled_back_by");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<long>("UnitsInPlan")
+                        .HasColumnType("bigint")
+                        .HasColumnName("units_in_plan");
+
+                    b.HasKey("TenantId", "RunId")
+                        .HasName("pk_migration_apply_run");
+
+                    b.HasIndex("TenantId", "MapRunId")
+                        .HasDatabaseName("ix_migration_apply_run_tenant_id_map_run_id");
+
+                    b.HasIndex("TenantId", "BatchId", "RequestedAt", "RunId")
+                        .HasDatabaseName("ix_migration_apply_run_tenant_id_batch_id_requested_at_run_id");
+
+                    b.HasIndex("TenantId", "Status", "RequestedAt", "RunId")
+                        .HasDatabaseName("ix_migration_apply_run_tenant_id_status_requested_at_run_id");
+
+                    b.ToTable("migration_apply_run", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_apply_run_status", "status IN ('queued','running','completed','failed','rolled_back')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationCanonRun", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -6696,6 +6835,26 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_reconciliation_location_tenant_id_reconciliation_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Apply.MigrationApplyRefusal", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Apply.MigrationApplyRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_apply_refusal_tenant_id_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Apply.MigrationApplyRun", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationMapRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "MapRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_apply_run_tenant_id_map_run_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationCanonRun", b =>

@@ -202,6 +202,9 @@ public sealed class EpisodeService(SerialisationDbContext db, ITenantContext ten
 
         db.Episodes.Add(episode);
         Track(unitId, EpisodeKind.Ownership, episode);
+        // HIDDEN COUPLING with ApplyMigratedUnitsHandler (P9-T10): migrated ownership rows bypass this method and so
+        // raise no requirement here; the entitlement gap report run as the last step of every migration load is their
+        // replacement. A change to what this call guarantees must be mirrored in that load step.
         // HIDDEN COUPLING with EntitlementRequirementWriter: this call must remain in the ownership-opening unit of
         // work. Moving it after commit permits a required entitlement to disappear without either cover or an exception.
         await entitlementRequirements.RaiseForAsync(episode, cancellationToken);
