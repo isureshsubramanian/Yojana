@@ -5,6 +5,7 @@ import { ErrorNote } from "../units/common";
 import { MigrationAccess, MigrationPage } from "./MigrationCommon";
 import { migrationApi } from "./migrationApi";
 import { refusalReasonLabel } from "./migrationModel";
+import { MigrationRankedList } from "./MigrationRankedList";
 import type { MigrationApplyRefusal, MigrationApplyRefusalPage } from "./migrationTypes";
 
 const pageSize = 50;
@@ -59,9 +60,7 @@ function MigrationRefusals() {
 
   return <MigrationPage title="Refused units" eyebrow="Migration load · units not written" sub="Find every refused serial, see the full blocking reason, and export the filtered result." actions={<><Link className="btn" to="/integration/migration">Back to console</Link></>}>
     <KpiStrip label="Refusal counts" kpis={kpis} />
-    {!!result?.countsByReason.length && <section className="card" aria-labelledby="migration-refusal-reasons"><div className="card-header"><h2 id="migration-refusal-reasons">Refused by reason <span className="meta">whole load · largest first · share of all refused units · select a reason to filter</span></h2></div><ul className="migration-reason-list">
-      {result.countsByReason.map(row => <li key={row.reason}><button type="button" className="migration-reason" aria-pressed={filters.reason === row.reason} onClick={() => showReason(row.reason)}><span className="lbl">{row.label}</span><span className="num">{row.count.toLocaleString()}</span><span className="bar" aria-hidden="true"><i style={{ width: `${Math.max(1, Math.round(row.count * 100 / Math.max(1, result.loadTotal)))}%` }} /></span></button></li>)}
-    </ul></section>}
+    <MigrationRankedList headingId="migration-refusal-reasons" title="Refused by reason" meta="whole load · largest first · share of all refused units · select a reason to filter" rows={(result?.countsByReason ?? []).map(row => ({ key: row.reason, label: row.label, count: row.count }))} total={result?.loadTotal ?? 0} selected={filters.reason} onSelect={showReason} />
     <section className="card" aria-labelledby="migration-refusal-filters"><div className="card-header"><h2 id="migration-refusal-filters">Filters <span className="meta">server-side · exact total</span></h2></div><div className="card-body"><form className="toolbar migration-refusal-filters" role="search" aria-label="Refused unit filters" onSubmit={applyFilters}>
       <label className="field"><span className="lbl">Reason</span><select className="select" value={draft.reason} onChange={event => setDraft(current => ({ ...current, reason: event.target.value }))}><option value="">Any reason</option>{result?.countsByReason.map(row => <option key={row.reason} value={row.reason}>{row.label} · {row.count.toLocaleString()}</option>)}</select></label>
       <label className="field"><span className="lbl">Item code</span><input className="input" value={draft.itemCode} onChange={event => setDraft(current => ({ ...current, itemCode: event.target.value }))} placeholder="Exact item code" /></label>

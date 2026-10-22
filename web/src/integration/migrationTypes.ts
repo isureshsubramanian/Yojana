@@ -239,6 +239,69 @@ export interface StartMigrationApplyResponse {
   status: string;
 }
 
+export interface MigrationLoadActionReason { code: string; message: string }
+export interface MigrationLoadAction { allowed: boolean; reasons: MigrationLoadActionReason[] }
+export interface MigrationDeltaLoadAction extends MigrationLoadAction { baseLoadId: string | null; baseLabel: string | null }
+export interface MigrationLoadReadiness {
+  rehearsal: MigrationLoadAction;
+  final: MigrationLoadAction;
+  delta: MigrationDeltaLoadAction;
+}
+
+export type MigrationLoadKind = "rehearsal" | "final" | "delta";
+export interface MigrationLoadUndo { allowed: boolean; reason: string | null }
+export interface MigrationLoadHandOver {
+  connectionId: string;
+  connectionName: string;
+  from: string | null;
+  syncState: string;
+  note: string | null;
+}
+
+export interface MigrationSyncControlResult {
+  connectionId: string;
+  syncState: string;
+  notificationsHeld: boolean;
+  waitingOutbound: number;
+  warning: string | null;
+}
+
+export interface MigrationLoadSummary {
+  loadId: string;
+  label: string;
+  kind: MigrationLoadKind;
+  status: string;
+  batchId: string;
+  batchDisplayNumber: string;
+  baseLoadId: string | null;
+  baseLabel: string | null;
+  requestedByName: string;
+  requestedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  applied: number;
+  refused: number;
+  alreadyInModule: number;
+  coverReplaced: number;
+  coverRefused: number;
+  ownerDiffers: number;
+  goneFromSource: number;
+  eventsWritten: number;
+  entitlementsWritten: number;
+  replacementLinksWritten: number;
+  rolledBackAt: string | null;
+  rolledBackByName: string | null;
+  undo: MigrationLoadUndo;
+  handOver: MigrationLoadHandOver | null;
+}
+
+export interface MigrationLoadDetail extends MigrationLoadSummary {
+  batchStartedAt: string | null;
+  batchFinishedAt: string | null;
+}
+
+export interface MigrationLoadPage { items: MigrationLoadSummary[]; nextCursor: string | null }
+
 export interface MigrationApply {
   loadId: string;
   batchId: string;
@@ -263,6 +326,28 @@ export interface MigrationApply {
   gapReportRunId: string | null;
   coverGaps: number | null;
   gapsByKind: MigrationGapCount[];
+  label: string;
+  handOver: MigrationLoadHandOver | null;
+  undo: MigrationLoadUndo;
+}
+
+export interface MigrationDeltaCount { kind: string; label: string; count: number }
+export interface MigrationDeltaFinding {
+  itemId: string;
+  kind: string;
+  kindLabel: string;
+  itemCode: string | null;
+  serial: string | null;
+  detail: string | null;
+  unitId: string | null;
+  conflictId: string | null;
+}
+export interface MigrationDeltaFindingPage {
+  counts: MigrationDeltaCount[];
+  total: number;
+  loadTotal: number;
+  items: MigrationDeltaFinding[];
+  nextCursor: string | null;
 }
 
 export interface MigrationApplyRefusal {

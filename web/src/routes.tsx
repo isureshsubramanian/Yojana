@@ -71,6 +71,7 @@ export const router = createBrowserRouter([
           { path: "integration/migration/validation", lazy: () => import("./integration/MigrationValidation") },
           { path: "integration/migration/settings", lazy: () => import("./integration/MigrationSettings") },
           { path: "integration/migration/loads/:loadId/refusals", lazy: () => import("./integration/MigrationRefusals") },
+          { path: "integration/migration/loads/:loadId/delta", lazy: () => import("./integration/MigrationDelta") },
           { path: "settings/disclosure", lazy: () => import("./p7/Disclosure") },
           { path: "units", lazy: () => import("./units/UnitSearch") },
           { path: "units/receive", lazy: () => import("./units/Receive") },

@@ -3,13 +3,13 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   OUTCOMES, REVIEW_KINDS, REVIEW_STATUSES, batchLabel, batchResult, batchStatusLabel, batchTotals, candidateLetter,
-  canonicalisationStatusLabel, countTotal, duration, factLabel, factValue, finalLoadDisabledReason, loadStatusLabel,
-  loadStatusTone, matchRuleLabel, mayAdministerMigration, phaseStatusLabel, phaseStatusTone,
+  canonicalisationStatusLabel, countTotal, deltaExportUrl, deltaKindTone, duration, factLabel, factValue, finalLoadDisabledReason, handOverSentence,
+  loadActionState, loadKindLabel, loadKindTone, loadStatusLabel, loadStatusTone, matchRuleLabel, mayAdministerMigration, migrationApplyKind, migrationTimestamp, phaseStatusLabel, phaseStatusTone,
   mayPrepareValidation, mayReadMigration, mayReviewValidation, outcomeLabel, percentage, profileClass, profileStatusLabel, profileTotals, refusalRuleLabel,
   refusalReasonLabel, reviewDecisionLabel, reviewDecisionOptions, reviewKindLabel, reviewStatusLabel, rollbackOutcomeLabel, routeLabel, runtimeLabel,
   sampleExample, sampleFacts, serialAsStored, signoffDisabledReason, signedChange, templateResolutionLabel, templateStateLabel,
   templateStateTone, templateTermsLabel, validationAttentionCount, validationCheckLabel, validationDifferenceLabel,
-  validationLimitLabel, validationResultLabel, validationRoleLabel, validationTrail, validationTrailLine,
+  undoConfirmation, validationLimitLabel, validationResultLabel, validationRoleLabel, validationTrail, validationTrailLine,
 } from "../src/integration/migrationModel.ts";
 import type { MigrationApply, MigrationBatch, MigrationProfile, MigrationReviewDetail, MigrationValidation, TemplateSourceTerms } from "../src/integration/migrationTypes.ts";
 
@@ -20,6 +20,9 @@ const templateScreen = readFileSync(new URL("../src/integration/MigrationTemplat
 const validationScreen = readFileSync(new URL("../src/integration/MigrationValidation.tsx", import.meta.url), "utf8");
 const settingsScreen = readFileSync(new URL("../src/integration/MigrationSettings.tsx", import.meta.url), "utf8");
 const refusalsScreen = readFileSync(new URL("../src/integration/MigrationRefusals.tsx", import.meta.url), "utf8");
+const deltaScreen = readFileSync(new URL("../src/integration/MigrationDelta.tsx", import.meta.url), "utf8");
+const undoScreen = readFileSync(new URL("../src/integration/MigrationLoadUndo.tsx", import.meta.url), "utf8");
+const rankedList = readFileSync(new URL("../src/integration/MigrationRankedList.tsx", import.meta.url), "utf8");
 const common = readFileSync(new URL("../src/integration/MigrationCommon.tsx", import.meta.url), "utf8");
 const api = readFileSync(new URL("../src/integration/migrationApi.ts", import.meta.url), "utf8");
 const routes = readFileSync(new URL("../src/routes.tsx", import.meta.url), "utf8");
@@ -53,6 +56,7 @@ test("migration routes and the Integration-area link admit administrators and Mi
   assert.match(routes, /integration\/migration\/validation.*MigrationValidation/);
   assert.match(routes, /integration\/migration\/settings.*MigrationSettings/);
   assert.match(routes, /integration\/migration\/loads\/:loadId\/refusals.*MigrationRefusals/);
+  assert.match(routes, /integration\/migration\/loads\/:loadId\/delta.*MigrationDelta/);
   assert.match(integrationTabs, /\["\/integration\/migration", "Migration"\]/);
   assert.match(integrationTabs, /mayReadMigration\(roles\)/);
   assert.match(common, /Tenant administrator or Migration lead access is required/);
@@ -124,7 +128,8 @@ test("validation is enabled while the later migration tab remains disabled", () 
 });
 
 test("migration API adapter covers the merged endpoints and sends no browser actor", () => {
-  for (const fragment of ["/sources", "/licence", "/test", "/batches", "/profile", "/samples", "/profiling/outcomes", "/canonicalisation", "/canonicalise", "/reconstruction", "/map", "/apply", "/loads/", "/refusals", "/refusals/export.csv", "/rollback", "/rollback/touched-units", "/review", "/review/export.csv", "/canonicalisation/families/catalogue", "/validate", "/validation/checks", "/differences", "/explain", "/sign", "/sample", "/trace", "/signoff-record", "/validation/settings"]) assert.match(api, new RegExp(fragment.replace("/", "\\/")));
+  for (const fragment of ["/sources", "/licence", "/test", "/batches", "/profile", "/samples", "/profiling/outcomes", "/canonicalisation", "/canonicalise", "/reconstruction", "/map", "/apply", "/load-readiness", "/delta", "/loads", "/refusals", "/refusals/export.csv", "/rollback", "/rollback/touched-units", "/resume-sync", "/review", "/review/export.csv", "/canonicalisation/families/catalogue", "/validate", "/validation/checks", "/differences", "/explain", "/sign", "/sample", "/trace", "/signoff-record", "/validation/settings"]) assert.match(api, new RegExp(fragment.replace("/", "\\/")));
+  assert.match(api, /deltaExportUrl\(loadId, format, filters\)/);
   assert.match(api, /method: "POST", body: \{ sourceId \}/);
   assert.match(api, /method: "PUT", body: \{ classes, expectedVersion \}/);
   assert.doesNotMatch(api, /actor|requestedBy|confirmedBy/i);
@@ -341,11 +346,12 @@ test("phase cards format every state as a readable badge", () => {
 });
 
 const loadFixture: MigrationApply = {
-  loadId: "load-internal", batchId: "batch-internal", mapRunId: "map-internal", rehearsal: true, status: "completed",
+  loadId: "load-internal", label: "R3", batchId: "batch-internal", mapRunId: "map-internal", rehearsal: true, status: "completed",
   requestedByName: "R. Okafor", requestedAt: "2026-09-01T08:00:00Z", startedAt: "2026-09-01T08:00:01Z", finishedAt: "2026-09-01T08:02:00Z", failure: null,
   unitsInPlan: 593, applied: 580, alreadyApplied: 0, refused: 13, eventsWritten: 2267, entitlementsWritten: 341,
   replacementLinksWritten: 5, certificatesRecorded: 580, rolledBackBy: null, rolledBackAt: null, gapReportRunId: "gap-internal", coverGaps: 17,
   gapsByKind: [{ kind: "card_cover_policy_not_set", label: "Equipment-card cover policy not set", count: 9 }],
+  handOver: null, undo: { allowed: true, reason: null },
 };
 
 test("load card maps fixture counts, watches active loads and filters the cover-gap link", () => {
@@ -357,39 +363,100 @@ test("load card maps fixture counts, watches active loads and filters the cover-
   for (const status of ["queued", "running", "completed", "failed", "rolled_back"]) { assert.doesNotMatch(loadStatusLabel(status), /_/); assert.ok(loadStatusTone(status)); }
 });
 
-test("final load gives a distinct disabled reason for each incomplete gate", () => {
+test("the legacy final-validation helper still gives a distinct reason for every incomplete gate", () => {
   const ready = { ...validationRun, rehearsal: false, status: "completed", hardFailed: 0, signedChecks: validationRun.checksTotal };
   assert.equal(finalLoadDisabledReason(null), "Run final validation first");
   assert.equal(finalLoadDisabledReason({ ...ready, rehearsal: true }), "The latest validation run is a rehearsal; run final validation");
   assert.equal(finalLoadDisabledReason(ready), "Create the final sign-off record for this load plan");
   assert.equal(finalLoadDisabledReason({ ...ready, hasFinalSignoff: true }), null);
-  assert.match(consoleScreen, /finalDisabledReason/);
-  assert.match(consoleScreen, /className=\{`btn sm\$\{reason \? "" : enabledClass\}`\}/);
-  assert.match(consoleScreen, /migration-disabled-reason/);
+});
+
+test("server readiness controls every load button and displays every returned message", () => {
+  assert.deepEqual(loadActionState(null), { disabled: true, reasons: ["Checking load readiness"] });
+  assert.deepEqual(loadActionState({ allowed: false, reasons: [
+    { code: "migration_apply_load_open", message: "A load is already queued or running." },
+    { code: "migration_apply_connection_running", message: "Stop the sync first." },
+  ] }), { disabled: true, reasons: ["A load is already queued or running.", "Stop the sync first."] });
+  assert.deepEqual(loadActionState({ allowed: true, reasons: [] }), { disabled: false, reasons: [] });
+  assert.deepEqual(loadActionState({ allowed: true, reasons: [] }, true), { disabled: true, reasons: ["Another load action is running"] });
+  assert.match(consoleScreen, /migrationApi\.loadReadiness\(phaseBatchId/);
+  assert.match(consoleScreen, /state\.reasons\.map/);
+  assert.match(consoleScreen, /Start delta load/);
+  assert.match(consoleScreen, /migrationApi\.startDelta/);
+  assert.match(consoleScreen, /if \(!admin\) return/);
+});
+
+test("delta confirmation states each write and non-write rule and surfaces problem detail", () => {
+  for (const text of ["Start a delta load from", "write serials that are new in the source", "replace changed cover unless the unit was touched", "never write owner differences", "only list serials gone from the source", "Not yet", "Start the delta load"]) assert.ok(consoleScreen.includes(text), text);
+  assert.doesNotMatch(consoleScreen, /window\.confirm|confirm\(/);
   assert.match(consoleScreen, /<ErrorNote error=\{error\}/);
 });
 
-test("rehearsal rollback uses an inline confirmation and keeps touched loads in place", () => {
-  for (const text of ["Roll back this rehearsal?", "Every unit, fact, cover row, link and certificate this load wrote will be removed", "Keep the load", "The rehearsal load stays in place"]) assert.ok(consoleScreen.includes(text), text);
-  assert.doesNotMatch(consoleScreen, /window\.confirm|confirm\(/);
-  assert.match(consoleScreen, /result\.touchedUnitCount/);
-  assert.match(consoleScreen, /result\.touchedUnits/);
-  assert.match(consoleScreen, /migrationApi\.touchedLoadUnits/);
-  assert.match(consoleScreen, /Touched serial/);
+test("one shared undo flow handles rehearsal, final and delta touched-unit refusals", () => {
+  assert.deepEqual(undoConfirmation({ kind: "final", label: "F1" }), { title: "Undo F1?", detail: "The module goes back to before the final load and the connection's polling position is restored." });
+  assert.match(undoConfirmation({ kind: "delta", label: "D1" }).detail, /cover it replaced will be restored/);
+  assert.match(undoConfirmation({ kind: "rehearsal", label: "R3" }).detail, /certificate this rehearsal wrote/);
+  for (const text of ["Keep the load", "The load stays in place", "Touched serial"]) assert.ok(undoScreen.includes(text), text);
+  assert.match(undoScreen, /migrationApi\.touchedLoadUnits/);
+  assert.match(undoScreen, /result\.touchedUnitCount/);
+  assert.match(consoleScreen, /<MigrationUndoPanel undo=\{undo\}/);
+  assert.match(deltaScreen, /<MigrationUndoPanel undo=\{undo\}/);
   for (const outcome of ["rolled_back", "refused_touched", "nothing_to_remove"]) assert.doesNotMatch(rollbackOutcomeLabel(outcome), /_/);
 });
 
-test("load actions are full width and administrator-only while refusals use their own scalable view", () => {
+test("load history is source-scoped, keyset paged and exposes only server-approved undo", () => {
+  for (const text of ["Loads", "newest first · this source", "Load", "Kind", "Batch", "Base", "Started", "By", "Status", "Written", "Cover replaced", "Refused", "Owner differs", "Gone"]) assert.ok(consoleScreen.includes(text), text);
+  assert.match(consoleScreen, /migrationApi\.loads\(activeSourceId, cursor/);
+  assert.match(consoleScreen, /row\.kind === "delta".*\/delta/s);
+  assert.match(consoleScreen, /row\.undo\.allowed/);
+  assert.match(consoleScreen, /footerNote="Undo is available on the latest delta only; a final load only when no later delta stands"/);
+  assert.match(consoleScreen, /source\.onPage/);
+});
+
+test("load actions are administrator-only while refusals keep the shared ranked list", () => {
   assert.match(consoleScreen, /<LoadActions .*admin=\{admin\}/);
   assert.match(consoleScreen, /if \(!admin\) return/);
   assert.match(consoleScreen, /migration-load-action-row/);
-  assert.match(consoleScreen, /integration\/migration\/loads\/\$\{load\.loadId\}\/refusals/);
   for (const text of ["Total refused", "Reason", "Item code", "Serial contains", "Why it was refused", "Export filtered CSV", "keyset paged", "reasons shown in full"]) assert.ok(refusalsScreen.includes(text), text);
   assert.match(refusalsScreen, /<KpiStrip/); assert.match(refusalsScreen, /<DataGrid/);
+  assert.match(refusalsScreen, /<MigrationRankedList/); assert.match(deltaScreen, /<MigrationRankedList/);
+  for (const text of ["aria-pressed", "migration-reason", "migration-reason-list"]) assert.ok(rankedList.includes(text), text);
   assert.match(refusalsScreen, /migrationApi\.loadRefusals\(loadId, \{ \.\.\.active, cursor \}\)/);
   assert.match(refusalsScreen, /result\?\.total/); assert.match(refusalsScreen, /totalIsExact: true/);
   assert.match(refusalsScreen, /loadRefusalsExportUrl/);
   assert.doesNotMatch(refusalsScreen, />\{row\.(?:refusalId|planUnitId)\}</);
+});
+
+test("load and finding kind labels and tones cover the complete contract", () => {
+  assert.deepEqual((["rehearsal", "final", "delta"] as const).map(loadKindLabel), ["Rehearsal", "Final", "Delta"]);
+  assert.deepEqual((["rehearsal", "final", "delta"] as const).map(loadKindTone), ["neutral", "ok", "info"]);
+  assert.deepEqual(["new_unit", "already_in_module", "cover_replaced", "cover_refused", "owner_differs", "gone_from_source"].map(deltaKindTone), ["ok", "neutral", "info", "warn", "warn", "neutral"]);
+  assert.equal(migrationApplyKind(loadFixture), "rehearsal");
+  assert.equal(migrationApplyKind({ label: "F1", rehearsal: false }), "final");
+  assert.equal(migrationApplyKind({ label: "D1", rehearsal: false }), "delta");
+});
+
+test("hand-over copy uses the tenant-local second and honours running and retained-watermark states", () => {
+  const base = { batchDisplayNumber: "MB-0012", handOver: { connectionId: "connection", connectionName: "Primary source", from: "2026-09-01T01:58:12Z", syncState: "stopped", note: null } };
+  assert.equal(handOverSentence(base, value => value.replace("T", " ").replace("Z", "")), "Sync hand-over: Primary source will read source changes from 2026-09-01 01:58:12 (source clock when MB-0012 started). The connection is stopped — Resume the sync.");
+  assert.match(handOverSentence({ ...base, handOver: { ...base.handOver, syncState: "running" } }, () => "local time")!, /The connection is running\.$/);
+  assert.equal(handOverSentence({ ...base, handOver: { ...base.handOver, note: "Watermarks left as they were." } }), "Watermarks left as they were.");
+  assert.match(migrationTimestamp("2026-09-01T01:58:12Z"), /:\d{2}:12/);
+  assert.match(consoleScreen, /migrationApi\.resumeSync/);
+  assert.match(api, /Resumed after the final migration load/);
+});
+
+test("delta findings screen maps the approved filters, exact paging, links and filtered exports", () => {
+  for (const text of ["Delta load", "Base load", "Batch", "Started by", "Findings", "Undo", "Findings by kind", "Owner differences are coexistence conflicts", "Any kind", "Item code", "Serial contains", "What happened", "Conflict open", "Open unit", "CSV", "Excel"]) assert.ok(deltaScreen.includes(text), text);
+  assert.match(deltaScreen, /migrationApi\.loadSummary/);
+  assert.match(deltaScreen, /migrationApi\.deltaFindings\(loadId, \{ \.\.\.active, cursor \}\)/);
+  assert.match(deltaScreen, /pageSize = 100/);
+  assert.match(deltaScreen, /totalIsExact: true/);
+  assert.match(deltaScreen, /deltaKindTone\(row\.kind\)/);
+  assert.match(deltaScreen, /row\.unitId.*\/units\/\$\{row\.unitId\}/s);
+  assert.doesNotMatch(deltaScreen, />\{row\.(?:itemId|unitId|conflictId)\}</);
+  assert.equal(deltaExportUrl("load-internal", "csv", { kind: "owner_differs", itemCode: "RS 1", serial: "" }), "/api/migration/loads/load-internal/delta/export.csv?kind=owner_differs&itemCode=RS+1");
+  assert.equal(deltaExportUrl("load-internal", "xlsx", { kind: "", itemCode: "", serial: "" }), "/api/migration/loads/load-internal/delta/export.xlsx");
 });
 
 test("every emitted load refusal and map gap has readable formatting", () => {

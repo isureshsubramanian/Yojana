@@ -1,6 +1,7 @@
 import type { Tone } from "../components/types";
 import type {
-  MigrationBatch, MigrationBatchTable, MigrationOutcome, MigrationProfile, MigrationProfileSample,
+  MigrationApply, MigrationBatch, MigrationBatchTable, MigrationOutcome, MigrationProfile, MigrationProfileSample,
+  MigrationLoadAction, MigrationLoadKind, MigrationLoadSummary,
   MigrationReviewDecision, MigrationReviewDetail, MigrationReviewKind, MigrationReviewStatus,
   MigrationValidation, TemplateBlockResolution, TemplateMappingState, TemplateSourceTerms,
   ValidationResult, ValidationSignatureRole,
@@ -288,6 +289,46 @@ export function phaseStatusTone(value: string | null | undefined): Tone {
 }
 export function loadStatusLabel(value: string): string { return loadStatusLabels[value] ?? readable(value); }
 export function loadStatusTone(value: string): Tone { return value === "completed" ? "ok" : value === "failed" ? "bad" : /^(queued|running)$/.test(value) ? "info" : "neutral"; }
+export function loadKindLabel(value: MigrationLoadKind): string { return value === "rehearsal" ? "Rehearsal" : value === "final" ? "Final" : "Delta"; }
+export function loadKindTone(value: MigrationLoadKind): Tone { return value === "final" ? "ok" : value === "delta" ? "info" : "neutral"; }
+export function migrationApplyKind(load: Pick<MigrationApply, "label" | "rehearsal">): MigrationLoadKind { return load.label.startsWith("D") ? "delta" : load.rehearsal ? "rehearsal" : "final"; }
+export function deltaKindTone(value: string): Tone {
+  return value === "new_unit" ? "ok" : value === "cover_replaced" ? "info"
+    : value === "cover_refused" || value === "owner_differs" ? "warn" : "neutral";
+}
+export function loadActionState(action: MigrationLoadAction | null | undefined, busy = false): { disabled: boolean; reasons: string[] } {
+  if (busy) return { disabled: true, reasons: ["Another load action is running"] };
+  if (!action) return { disabled: true, reasons: ["Checking load readiness"] };
+  return { disabled: !action.allowed || action.reasons.length > 0, reasons: action.reasons.map(reason => reason.message) };
+}
+export function migrationTimestamp(value: string): string {
+  const timestamp = new Date(/(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? value : `${value}Z`);
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).format(timestamp);
+}
+export function handOverSentence(
+  load: Pick<MigrationLoadSummary, "batchDisplayNumber" | "handOver">,
+  format: (value: string) => string = migrationTimestamp,
+): string | null {
+  const handOver = load.handOver;
+  if (!handOver) return null;
+  if (handOver.note) return handOver.note;
+  const from = handOver.from ? format(handOver.from) : "the retained polling position";
+  const lead = `Sync hand-over: ${handOver.connectionName} will read source changes from ${from} (source clock when ${load.batchDisplayNumber} started).`;
+  return handOver.syncState === "running" ? `${lead} The connection is running.` : `${lead} The connection is stopped — Resume the sync.`;
+}
+export function deltaExportUrl(loadId: string, format: "csv" | "xlsx", filters: { kind?: string; itemCode?: string; serial?: string }): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) if (value) query.set(key, value);
+  const suffix = query.toString();
+  return `/api/migration/loads/${loadId}/delta/export.${format}${suffix ? `?${suffix}` : ""}`;
+}
+export function undoConfirmation(load: Pick<MigrationLoadSummary, "kind" | "label">): { title: string; detail: string } {
+  if (load.kind === "final") return { title: `Undo ${load.label}?`, detail: "The module goes back to before the final load and the connection's polling position is restored." };
+  if (load.kind === "delta") return { title: `Undo ${load.label}?`, detail: "The units and facts this delta wrote will be removed, and the migrated cover it replaced will be restored." };
+  return { title: `Undo ${load.label}?`, detail: "Every unit, fact, cover row, link and certificate this rehearsal wrote will be removed." };
+}
 export function rollbackOutcomeLabel(value: string): string { return rollbackOutcomeLabels[value] ?? readable(value); }
 export function refusalReasonLabel(value: string): string {
   const separator = value.indexOf(":");

@@ -1,4 +1,5 @@
 import { api, ApiError } from "../api/client";
+import { deltaExportUrl } from "./migrationModel";
 import type {
   CanonicalFamilyCatalogue, CanonicalisationRun, MigrationBatch, MigrationBatchPage, MigrationOutcomeChoice, MigrationOutcomeSettings,
   MigrationProfile, MigrationProfileSamples, MigrationReviewDecision, MigrationReviewDecisionResponse,
@@ -10,13 +11,15 @@ import type {
   StartMigrationApplyResponse, StartValidationResponse, ValidationCheck, ValidationCheckDetail, ValidationDifferencePage,
   ValidationSample, ValidationSampleOutcome, ValidationSamplePage, ValidationSettings, ValidationSignatureRole,
   CurrencyInfo, LinkOverridePage, LinkOverrideUploadResponse, MappingSettings,
+  MigrationDeltaFindingPage, MigrationLoadDetail, MigrationLoadPage, MigrationLoadReadiness, MigrationSyncControlResult,
 } from "./migrationTypes";
 
 const root = "/api/migration";
 function query(values: Record<string, string | number | boolean | undefined>) {
   const result = new URLSearchParams();
   for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== "") result.set(key, String(value));
-  return `?${result}`;
+  const text = result.toString();
+  return text ? `?${text}` : "";
 }
 
 async function uploadCsv(path: string, file: File): Promise<LinkOverrideUploadResponse> {
@@ -51,6 +54,15 @@ export const migrationApi = {
     api<MigrationPlanGapPage>(`${root}/batches/${batchId}/map/gaps${query({ kind, cursor, take: 25 })}`, { signal }),
   apply: (batchId: string, rehearsal: boolean) => api<StartMigrationApplyResponse>(`${root}/batches/${batchId}/apply`, { method: "POST", body: { rehearsal } }),
   load: (batchId: string, signal?: AbortSignal) => api<MigrationApply>(`${root}/batches/${batchId}/apply`, { signal }),
+  loadReadiness: (batchId: string, signal?: AbortSignal) => api<MigrationLoadReadiness>(`${root}/batches/${batchId}/load-readiness`, { signal }),
+  startDelta: (batchId: string) => api<StartMigrationApplyResponse>(`${root}/batches/${batchId}/delta`, { method: "POST" }),
+  loads: (sourceId: string, cursor?: string, signal?: AbortSignal) =>
+    api<MigrationLoadPage>(`${root}/loads${query({ sourceId, cursor, take: 12 })}`, { signal }),
+  loadSummary: (loadId: string, signal?: AbortSignal) => api<MigrationLoadDetail>(`${root}/loads/${loadId}`, { signal }),
+  deltaFindings: (loadId: string, filters: { kind?: string | undefined; itemCode?: string | undefined; serial?: string | undefined; cursor?: string | undefined } = {}, signal?: AbortSignal) =>
+    api<MigrationDeltaFindingPage>(`${root}/loads/${loadId}/delta${query({ ...filters, take: 100 })}`, { signal }),
+  deltaExportUrl: (loadId: string, format: "csv" | "xlsx", filters: { kind?: string; itemCode?: string; serial?: string }) =>
+    deltaExportUrl(loadId, format, filters),
   loadRefusals: (loadId: string, filters: { reason?: string | undefined; itemCode?: string | undefined; serial?: string | undefined; cursor?: string | undefined } = {}, signal?: AbortSignal) =>
     api<MigrationApplyRefusalPage>(`${root}/loads/${loadId}/refusals${query({ ...filters, take: 50 })}`, { signal }),
   loadRefusalsExportUrl: (loadId: string, filters: { reason?: string; itemCode?: string; serial?: string }) =>
@@ -58,6 +70,7 @@ export const migrationApi = {
   touchedLoadUnits: (loadId: string, cursor?: string, signal?: AbortSignal) =>
     api<TouchedMigrationLoadUnitPage>(`${root}/loads/${loadId}/rollback/touched-units${query({ cursor, take: 50 })}`, { signal }),
   rollbackLoad: (loadId: string) => api<RollBackMigrationLoadResponse>(`${root}/loads/${loadId}/rollback`, { method: "POST" }),
+  resumeSync: (connectionId: string) => api<MigrationSyncControlResult>(`/api/integration/connections/${connectionId}/resume-sync`, { method: "POST", body: { note: "Resumed after the final migration load" } }),
   review: (filters: { batchId: string; kind?: MigrationReviewKind | ""; family?: string; status?: MigrationReviewStatus | ""; find?: string; cursor?: string | undefined; take?: number }, signal?: AbortSignal) =>
     api<MigrationReviewPage>(`${root}/review${query({ ...filters, take: filters.take ?? 25 })}`, { signal }),
   reviewExportUrl: (filters: { batchId: string; kind?: MigrationReviewKind | ""; family?: string; status?: MigrationReviewStatus | ""; find?: string }) =>

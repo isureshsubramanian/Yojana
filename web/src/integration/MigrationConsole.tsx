@@ -11,14 +11,15 @@ import { MigrationAccess, MigrationPage } from "./MigrationCommon";
 import { migrationApi } from "./migrationApi";
 import {
   batchLabel, batchResult, batchStatusLabel, batchTotals, countTotal, duration, elapsed, failureLabel,
-  finalLoadDisabledReason, loadStatusLabel, loadStatusTone, mayAdministerMigration,
+  handOverSentence, loadActionState, loadKindLabel, loadKindTone, loadStatusLabel, loadStatusTone, mayAdministerMigration, migrationApplyKind,
   phaseStatusLabel, phaseStatusTone, profileTotals,
-  rollbackOutcomeLabel, routeLabel, runtimeLabel, statusTone,
+  routeLabel, runtimeLabel, statusTone,
 } from "./migrationModel";
+import { MigrationUndoPanel, UndoLoadButton, useMigrationLoadUndo } from "./MigrationLoadUndo";
 import type {
   CanonicalisationRun, MigrationApply, MigrationBatch,
   MigrationBatchPage, MigrationBatchTable, MigrationMap, MigrationProfile, MigrationReconstruction,
-  MigrationSource, MigrationSourceTestResult, MigrationValidation, RollBackMigrationLoadResponse, TouchedMigrationLoadUnit,
+  MigrationLoadReadiness, MigrationLoadSummary, MigrationSource, MigrationSourceTestResult, MigrationValidation,
 } from "./migrationTypes";
 
 export function Component() { return <MigrationAccess><MigrationConsole /></MigrationAccess>; }
@@ -35,6 +36,7 @@ function MigrationConsole() {
   const [map, setMap] = useState<MigrationMap | null>(null);
   const [validation, setValidation] = useState<MigrationValidation | null>(null);
   const [load, setLoad] = useState<MigrationApply | null>(null);
+  const [readiness, setReadiness] = useState<MigrationLoadReadiness | null>(null);
   const [phaseError, setPhaseError] = useState<unknown>(null);
   const [startBusy, setStartBusy] = useState(false); const [startError, setStartError] = useState<unknown>(null); const [startNotice, setStartNotice] = useState("");
   const fetchBatches = useCallback((cursor?: string, signal?: AbortSignal) => migrationApi.batches(cursor, signal), []);
@@ -56,6 +58,11 @@ function MigrationConsole() {
 
   const source = sources.find(item => item.sourceId === sourceId) ?? null;
   const latest = (admin ? batches.result?.items.find(item => item.sourceId === sourceId) : batches.result?.items[0]) ?? null;
+  const activeSourceId = sourceId || latest?.sourceId || "";
+  const fetchLoads = useCallback((cursor?: string, signal?: AbortSignal) => activeSourceId
+    ? migrationApi.loads(activeSourceId, cursor, signal)
+    : Promise.resolve({ items: [], nextCursor: null }), [activeSourceId]);
+  const loads = useCursorPage<MigrationLoadSummary>(fetchLoads);
   const latestDetail = latest ? details[latest.batchId] ?? null : null;
   const selectedBatch = selected ? details[selected] ?? batches.result?.items.find(item => item.batchId === selected) ?? null : latestDetail;
   const phaseBatch = selectedBatch ?? latest;
@@ -63,7 +70,7 @@ function MigrationConsole() {
   const loadPhases = useCallback(async (signal?: AbortSignal) => {
     if (!phaseBatchId) return;
     try {
-      const [nextBatch, nextProfile, nextCanonicalisation, nextReconstruction, nextMap, nextValidation, nextLoad] = await Promise.all([
+      const [nextBatch, nextProfile, nextCanonicalisation, nextReconstruction, nextMap, nextValidation, nextLoad, nextReadiness] = await Promise.all([
         migrationApi.batch(phaseBatchId, signal),
         optional(() => migrationApi.profile(phaseBatchId, signal)),
         optional(() => migrationApi.canonicalisation(phaseBatchId, signal)),
@@ -71,17 +78,18 @@ function MigrationConsole() {
         optional(() => migrationApi.map(phaseBatchId, signal)),
         optional(() => migrationApi.validation(phaseBatchId, signal)),
         optional(() => migrationApi.load(phaseBatchId, signal)),
+        migrationApi.loadReadiness(phaseBatchId, signal),
       ]);
       if (signal?.aborted) return;
       setDetails(current => ({ ...current, [nextBatch.batchId]: nextBatch }));
       setProfile(nextProfile); setCanonicalisation(nextCanonicalisation); setReconstruction(nextReconstruction);
-      setMap(nextMap); setValidation(nextValidation); setLoad(nextLoad); setPhaseError(null);
+      setMap(nextMap); setValidation(nextValidation); setLoad(nextLoad); setReadiness(nextReadiness); setPhaseError(null);
     } catch (reason) {
       if (!(reason instanceof DOMException && reason.name === "AbortError")) setPhaseError(reason);
     }
   }, [phaseBatchId]);
   useEffect(() => {
-    setProfile(null); setCanonicalisation(null); setReconstruction(null); setMap(null); setValidation(null); setLoad(null); setPhaseError(null);
+    setProfile(null); setCanonicalisation(null); setReconstruction(null); setMap(null); setValidation(null); setLoad(null); setReadiness(null); setPhaseError(null);
     if (!phaseBatchId) return;
     const controller = new AbortController();
     void loadPhases(controller.signal);
@@ -108,7 +116,7 @@ function MigrationConsole() {
     { key: "result", label: "Result", width: !admin || sources.length > 1 ? 23 : 40, render: row => batchResult(details[row.batchId] ?? row) },
   ], [admin, details, sources]);
 
-  const refresh = () => { batches.refresh(); setStartNotice(""); };
+  const loadChanged = async () => { await loadPhases(); loads.refresh(); };
   const start = async () => {
     if (!source) return; setStartBusy(true); setStartError(null); setStartNotice("");
     try {
@@ -134,11 +142,13 @@ function MigrationConsole() {
     <ErrorNote error={sourceError ?? batches.error ?? startError ?? phaseError} />
     {startNotice && <div className={`note${startNotice.startsWith("Extraction refused") ? " bad" : ""}`} role="status">{startNotice}</div>}
     {admin && source && <LicenceBanner source={source} onSaved={updated => setSources(current => current.map(item => item.sourceId === updated.sourceId ? updated : item))} />}
-    <PhaseStrip key={phaseBatchId || "none"} batch={phaseBatch} profile={profile} canonicalisation={canonicalisation} reconstruction={reconstruction} map={map} validation={validation} load={load} admin={admin} onChanged={loadPhases} />
+    <PhaseStrip key={phaseBatchId || "none"} batch={phaseBatch} profile={profile} canonicalisation={canonicalisation} reconstruction={reconstruction} map={map} validation={validation} load={load} readiness={readiness} latestLoadRequestedBy={loads.result?.items[0]?.requestedByName ?? null} admin={admin} onChanged={loadChanged} />
+    {load?.handOver && migrationApplyKind(load) === "final" && <FinalLoadResult load={load} batchDisplayNumber={phaseBatch?.displayNumber ?? "the loaded extraction"} onChanged={loadChanged} />}
     {totals && <KpiStrip label="Extraction figures" kpis={[
       ...(serials === undefined ? [] : [{ label: "Serials in the source", value: serials.toLocaleString(), detail: "serial-master rows read" }]),
       { label: "Rows gone from the source", value: totals.absent.toLocaleString(), detail: "kept and marked absent" },
     ]} />}
+    <LoadsTable source={loads} admin={admin} onChanged={loadChanged} />
     <BatchTables batch={selectedBatch} latest={selectedBatch?.batchId === latest?.batchId} />
     <section className="card migration-table-card" aria-labelledby="migration-batches"><div className="card-header"><h2 id="migration-batches">Extractions <span className="meta">newest first</span></h2></div>
       <DataGrid columns={columns} page={batches.grid} rowId={row => row.batchId} onPage={batches.onPage} onRowClick={showBatch} activeRowId={selected ?? latest?.batchId} loading={batches.busy} viewportHeight={430} emptyText="No extractions have been requested." />
@@ -172,10 +182,10 @@ function SourceTest({ result }: { result: MigrationSourceTestResult }) {
   return <div className="grid-viewport"><table className="table"><thead><tr><th>Source table</th><th className="num">Rows</th><th>Status</th></tr></thead><tbody>{result.tables.map(row => <tr key={row.table}><td><span className="primary">{row.label ?? row.table}</span><span className="sub mono">{row.table}</span></td><td className="num">{row.rowCount?.toLocaleString() ?? "—"}</td><td><StatusBadge tone={row.error ? "bad" : "ok"}>{row.error ? failureLabel(row.error) : "Readable"}</StatusBadge></td></tr>)}</tbody></table></div>;
 }
 
-function PhaseStrip({ batch, profile, canonicalisation, reconstruction, map, validation, load, admin, onChanged }: {
+function PhaseStrip({ batch, profile, canonicalisation, reconstruction, map, validation, load, readiness, latestLoadRequestedBy, admin, onChanged }: {
   batch: MigrationBatch | null; profile: MigrationProfile | null; canonicalisation: CanonicalisationRun | null;
   reconstruction: MigrationReconstruction | null; map: MigrationMap | null; validation: MigrationValidation | null;
-  load: MigrationApply | null; admin: boolean; onChanged: () => void | Promise<void>;
+  load: MigrationApply | null; readiness: MigrationLoadReadiness | null; latestLoadRequestedBy: string | null; admin: boolean; onChanged: () => void | Promise<void>;
 }) {
   const tables = batch?.tables ?? []; const totals = batchTotals(tables); const profileCount = profileTotals(profile).flagged;
   const reconstructEvents = countTotal(reconstruction?.eventsByMovementKind ?? []);
@@ -192,7 +202,7 @@ function PhaseStrip({ batch, profile, canonicalisation, reconstruction, map, val
     <PhaseCard label="4 · Map" headline={map ? `${mappedUnits.toLocaleString()} units` : "—"} detail={map ? map.failure ? failureLabel(map.failure)! : mapGaps?.length ? <>{mapGaps}</> : "No mapping gaps" : "No map run yet"} status={map?.status} />
     <PhaseCard label="5 · Validate" headline={validation ? `${validation.hardFailed.toLocaleString()} hard fails open` : "—"} detail={validation ? `${validation.signedChecks.toLocaleString()} of ${validation.checksTotal.toLocaleString()} checks signed` : "No validation run yet"} status={validation?.status} href="/integration/migration/validation" />
     <LoadPhaseCard batchId={batch?.batchId ?? ""} load={load} />
-  </div><LoadActions batchId={batch?.batchId ?? ""} load={load} validation={validation} admin={admin} onChanged={onChanged} /></div></section>;
+  </div><LoadActions batchId={batch?.batchId ?? ""} batchDisplayNumber={batch?.displayNumber ?? "the selected extraction"} load={load} readiness={readiness} latestLoadRequestedBy={latestLoadRequestedBy} admin={admin} onChanged={onChanged} /></div></section>;
 }
 
 function PhaseCard({ label, headline, detail, status, href }: { label: string; headline: string; detail: ReactNode; status: string | null | undefined; href?: string }) {
@@ -204,69 +214,91 @@ function PhaseCard({ label, headline, detail, status, href }: { label: string; h
 
 function LoadPhaseCard({ batchId, load }: { batchId: string; load: MigrationApply | null }) {
   const failure = failureLabel(load?.failure ?? null);
+  const kind = load ? migrationApplyKind(load) : null;
   const gapLink = load && load.refused > 0
-    ? <Link className="migration-phase-link" to={`/integration/migration/loads/${load.loadId}/refusals`}>View {load.refused.toLocaleString()} refusals</Link>
+    ? <Link className="migration-phase-link" to={`/integration/migration/loads/${load.loadId}/${kind === "delta" ? "delta" : "refusals"}`}>View {load.refused.toLocaleString()} refusals</Link>
     : load?.coverGaps !== null && load?.coverGaps !== undefined
       ? <Link className="migration-phase-link" to="/entitlements/gaps?channels=migration">{load.coverGaps.toLocaleString()} sold units with no base cover</Link>
       : load?.gapsByKind[0] ? <Link className="migration-phase-link"
         to={`/integration/migration/validation?batchId=${encodeURIComponent(batchId)}&gapKind=${encodeURIComponent(load.gapsByKind[0].kind)}#migration-plan-gaps`}>
         {load.gapsByKind[0].label} {load.gapsByKind[0].count.toLocaleString()}</Link> : null;
-  return <div className="migration-phase migration-load-phase"><div className="l">6 · Load{load ? ` · ${load.rehearsal ? "rehearsal" : "final"}` : ""}</div><div className="n">{load ? `${load.applied.toLocaleString()} applied` : "—"}</div><div className="s">{load ? <>{load.refused.toLocaleString()} refused · {load.eventsWritten.toLocaleString()} facts<br />{load.entitlementsWritten.toLocaleString()} cover · {load.replacementLinksWritten.toLocaleString()} links · {load.certificatesRecorded.toLocaleString()} certificates</> : "No load run yet"}</div><StatusBadge tone={load ? loadStatusTone(load.status) : "neutral"}>{load ? loadStatusLabel(load.status) : "Not run"}</StatusBadge>
+  return <div className="migration-phase migration-load-phase"><div className="l">6 · Load{kind ? ` · ${kind}` : ""}</div><div className="n">{load ? `${load.applied.toLocaleString()} applied` : "—"}</div><div className="s">{load ? <>{load.refused.toLocaleString()} refused · {load.eventsWritten.toLocaleString()} facts<br />{load.entitlementsWritten.toLocaleString()} cover · {load.replacementLinksWritten.toLocaleString()} links · {load.certificatesRecorded.toLocaleString()} certificates</> : "No load run yet"}</div><StatusBadge tone={load ? loadStatusTone(load.status) : "neutral"}>{load ? loadStatusLabel(load.status) : "Not run"}</StatusBadge>
     {failure && <p className="migration-phase-note">{failure}</p>}
     {gapLink}
   </div>;
 }
 
-function LoadActions({ batchId, load, validation, admin, onChanged }: { batchId: string; load: MigrationApply | null; validation: MigrationValidation | null; admin: boolean; onChanged: () => void | Promise<void> }) {
+function LoadActions({ batchId, batchDisplayNumber, load, readiness, latestLoadRequestedBy, admin, onChanged }: { batchId: string; batchDisplayNumber: string; load: MigrationApply | null; readiness: MigrationLoadReadiness | null; latestLoadRequestedBy: string | null; admin: boolean; onChanged: () => void | Promise<void> }) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState("");
-  const [confirmRollback, setConfirmRollback] = useState(false); const [confirmFinal, setConfirmFinal] = useState(false); const [rollback, setRollback] = useState<RollBackMigrationLoadResponse | null>(null);
-  const finalReason = finalLoadDisabledReason(validation);
-  const loadOpen = !!load && load.status !== "rolled_back";
-  const loadOpenReason = loadOpen ? load?.status === "queued" || load?.status === "running" ? "A load is already in progress" : "Resolve the existing load before loading again" : null;
-  const canRollback = !!load?.rehearsal && (load.status === "completed" || load.status === "failed");
-  const rehearsalReason = busy ? "Another load action is running" : !batchId ? "Choose an extraction first" : loadOpenReason;
-  const finalDisabledReason = busy ? "Another load action is running" : !batchId ? "Choose an extraction first" : loadOpenReason ?? finalReason;
-  const rollbackReason = busy ? "Another load action is running" : !load ? "Run a rehearsal load first" : !load.rehearsal ? "A final load cannot be rolled back here" : !canRollback ? `A ${loadStatusLabel(load.status).toLowerCase()} rehearsal cannot be rolled back` : null;
+  const [confirmFinal, setConfirmFinal] = useState(false); const [confirmDelta, setConfirmDelta] = useState(false);
+  const undo = useMigrationLoadUndo(onChanged);
+  const rehearsalState = loadActionState(readiness?.rehearsal, busy || undo.busy);
+  const finalState = loadActionState(readiness?.final, busy || undo.busy);
+  const deltaState = loadActionState(readiness?.delta, busy || undo.busy);
   const start = async (rehearsal: boolean) => {
-    if (!batchId) return; setBusy(true); setError(null); setNotice(""); setRollback(null);
+    if (!batchId) return; setBusy(true); setError(null); setNotice("");
     try { await migrationApi.apply(batchId, rehearsal); setConfirmFinal(false); setNotice(rehearsal ? "Rehearsal load queued." : "Final load queued."); await onChanged(); }
     catch (reason) { setError(reason); }
     finally { setBusy(false); }
   };
-  const rollBack = async () => {
-    if (!load) return; setBusy(true); setError(null); setNotice(""); setRollback(null);
-    try { const result = await migrationApi.rollbackLoad(load.loadId); setRollback(result); setConfirmRollback(false); await onChanged(); }
+  const startDelta = async () => {
+    if (!batchId) return; setBusy(true); setError(null); setNotice("");
+    try { await migrationApi.startDelta(batchId); setConfirmDelta(false); setNotice("Delta load queued."); await onChanged(); }
     catch (reason) { setError(reason); }
     finally { setBusy(false); }
   };
-  if (!admin) return load ? <div className="migration-load-action-row"><p className="muted">Load requested by {load.requestedByName}.</p></div> : null;
+  if (!admin) return latestLoadRequestedBy ? <div className="migration-load-action-row"><p className="muted">Latest load requested by {latestLoadRequestedBy}.</p></div> : null;
+  const undoLoad = load ? { loadId: load.loadId, label: load.label, kind: migrationApplyKind(load), undo: load.undo } : null;
   return <div className="migration-load-action-row" aria-label="Load actions"><div className="migration-load-actions">
-    <LoadAction label="Load as rehearsal" reason={rehearsalReason} onClick={() => void start(true)} />
-    <LoadAction label="Final load" reason={finalDisabledReason} primary onClick={() => setConfirmFinal(true)} />
-    <LoadAction label="Roll back rehearsal" reason={rollbackReason} danger onClick={() => setConfirmRollback(true)} />
+    <LoadAction label="Load as rehearsal" state={rehearsalState} onClick={() => void start(true)} />
+    <LoadAction label="Final load" state={finalState} onClick={() => setConfirmFinal(true)} />
+    <LoadAction label="Start delta load" state={deltaState} primary hint={readiness?.delta.allowed ? `Base ${readiness.delta.baseLabel ?? "final load"} · tenant administrators only` : undefined} onClick={() => setConfirmDelta(true)} />
+    {undoLoad && <UndoLoadButton load={undoLoad} busy={busy} onRequest={undo.request} />}
   </div>{load && <p className="muted migration-load-by">Latest load requested by {load.requestedByName}.</p>}
-    {confirmFinal && <div className="note warn migration-load-confirm" role="group" aria-labelledby="final-confirm-title"><strong id="final-confirm-title">Start the final load?</strong><p>The signed-off plan is written into the module for real. A final load cannot be rolled back.</p><div><button type="button" className="btn sm" disabled={busy} onClick={() => setConfirmFinal(false)}>Not yet</button><button type="button" className="btn primary sm" disabled={busy} onClick={() => void start(false)}>{busy ? "Starting…" : "Start the final load"}</button></div></div>}
-    {confirmRollback && <div className="note warn migration-load-confirm" role="group" aria-labelledby="rollback-confirm-title"><strong id="rollback-confirm-title">Roll back this rehearsal?</strong><p>Every unit, fact, cover row, link and certificate this load wrote will be removed.</p><div><button type="button" className="btn sm" disabled={busy} onClick={() => setConfirmRollback(false)}>Keep the load</button><button type="button" className="btn danger sm" disabled={busy} onClick={() => void rollBack()}>{busy ? "Rolling back…" : "Roll back rehearsal"}</button></div></div>}
-    <ErrorNote error={error} />{notice && <div className="note" role="status">{notice}</div>}{rollback && <RollbackResult result={rollback} />}
+    {confirmFinal && <div className="note warn migration-load-confirm" role="group" aria-labelledby="final-confirm-title"><strong id="final-confirm-title">Start the final load?</strong><p>The signed-off plan is written into the module for real. It can be undone only while no later delta load stands.</p><div><button type="button" className="btn sm" disabled={busy} onClick={() => setConfirmFinal(false)}>Not yet</button><button type="button" className="btn primary sm" disabled={busy} onClick={() => void start(false)}>{busy ? "Starting…" : "Start the final load"}</button></div></div>}
+    {confirmDelta && <div className="note warn migration-load-confirm" role="group" aria-labelledby="delta-confirm-title"><strong id="delta-confirm-title">Start a delta load from {batchDisplayNumber}?</strong><p>Compared with the extraction already loaded, the delta load will:</p><ul><li>write serials that are new in the source, with their history and cover;</li><li>replace changed cover unless the unit was touched in the module after the final load, when it is listed as refused;</li><li>never write owner differences: each one goes to Coexistence conflicts;</li><li>only list serials gone from the source; nothing is deleted or retired.</li></ul><p>It can be undone while it is the latest.</p><div><button type="button" className="btn sm" disabled={busy} onClick={() => setConfirmDelta(false)}>Not yet</button><button type="button" className="btn primary sm" disabled={busy} onClick={() => void startDelta()}>{busy ? "Starting…" : "Start the delta load"}</button></div></div>}
+    <ErrorNote error={error} />{notice && <div className="note" role="status">{notice}</div>}<MigrationUndoPanel undo={undo} />
   </div>;
 }
 
-function LoadAction({ label, reason, primary, danger, onClick }: { label: string; reason: string | null; primary?: boolean; danger?: boolean; onClick: () => void }) {
-  const enabledClass = primary ? " primary" : danger ? " danger" : "";
-  return <div className="migration-load-action"><button type="button" className={`btn sm${reason ? "" : enabledClass}`} disabled={!!reason} onClick={onClick}>{label}</button>{reason && <span className="migration-disabled-reason">{reason}.</span>}</div>;
+function LoadAction({ label, state, primary, hint, onClick }: { label: string; state: ReturnType<typeof loadActionState>; primary?: boolean; hint?: string | undefined; onClick: () => void }) {
+  return <div className="migration-load-action"><button type="button" className={`btn sm${state.disabled || !primary ? "" : " primary"}`} disabled={state.disabled} onClick={onClick}>{label}</button>{state.reasons.map(reason => <span className="migration-disabled-reason" key={reason}>{reason}</span>)}{!state.disabled && hint && <span className="migration-disabled-reason">{hint}</span>}</div>;
 }
 
-function RollbackResult({ result }: { result: RollBackMigrationLoadResponse }) {
-  const refused = result.outcome === "refused_touched";
-  const [items, setItems] = useState(result.touchedUnits); const [nextCursor, setNextCursor] = useState(result.touchedNextCursor);
-  const [page, setPage] = useState(1); const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]); const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
-  const go = async (target: number) => { const cursor = target > page ? nextCursor ?? undefined : cursors[target - 1]; if (target < 1 || (target > page && !cursor)) return; setBusy(true); setError(null); try { const response = await migrationApi.touchedLoadUnits(result.loadId, cursor); setItems(response.items); setNextCursor(response.nextCursor); setPage(target); setCursors(current => { const next = current.slice(); next[target - 1] = cursor; return next; }); } catch (reason) { setError(reason); } finally { setBusy(false); } };
-  const columns: GridColumn<TouchedMigrationLoadUnit>[] = [{ key: "serial", label: "Touched serial", width: 100, mono: true, render: row => row.serial }];
-  return <div className={`note${refused ? " warn" : ""}`} role="status"><strong>{rollbackOutcomeLabel(result.outcome)}.</strong>&nbsp;{refused
-    ? `${result.touchedUnitCount.toLocaleString()} touched unit${result.touchedUnitCount === 1 ? "" : "s"} stop the rollback. The rehearsal load stays in place.`
-    : `${result.unitsRemoved.toLocaleString()} units, ${result.eventsRemoved.toLocaleString()} facts, ${result.entitlementsRemoved.toLocaleString()} cover rows, ${result.replacementLinksRemoved.toLocaleString()} links and ${result.certificatesRemoved.toLocaleString()} certificates removed.`}
-    {refused && <div className="migration-touched-grid"><ErrorNote error={error} /><DataGrid columns={columns} page={{ rows: items, total: result.touchedUnitCount, page, pageSize: 50, continuation: nextCursor, totalIsExact: true, hasMore: !!nextCursor }} rowId={row => row.serial} onPage={target => void go(target)} loading={busy} emptyText="No touched serials were returned." viewportHeight={260} /></div>}
-  </div>;
+function FinalLoadResult({ load, batchDisplayNumber, onChanged }: { load: MigrationApply; batchDisplayNumber: string; onChanged: () => void | Promise<void> }) {
+  const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
+  const sentence = handOverSentence({ batchDisplayNumber, handOver: load.handOver });
+  const canResume = !!load.handOver && !load.handOver.note && load.handOver.syncState !== "running";
+  const resume = async () => {
+    if (!load.handOver) return;
+    setBusy(true); setError(null);
+    try { await migrationApi.resumeSync(load.handOver.connectionId); await onChanged(); }
+    catch (reason) { setError(reason); }
+    finally { setBusy(false); }
+  };
+  return <><div className="note ok migration-hand-over" role="status"><span><strong>Final load {load.label} completed.</strong>&nbsp;{load.applied.toLocaleString()} units, {load.eventsWritten.toLocaleString()} history facts, {load.entitlementsWritten.toLocaleString()} cover rows, {load.replacementLinksWritten.toLocaleString()} replacement links written · {load.refused.toLocaleString()} refused. {sentence}</span>{canResume && <button type="button" className="btn sm" disabled={busy} onClick={() => void resume()}>{busy ? "Resuming…" : "Resume the sync"}</button>}</div><ErrorNote error={error} /></>;
+}
+
+function LoadsTable({ source, admin, onChanged }: { source: ReturnType<typeof useCursorPage<MigrationLoadSummary>>; admin: boolean; onChanged: () => void | Promise<void> }) {
+  const undo = useMigrationLoadUndo(onChanged);
+  const columns: GridColumn<MigrationLoadSummary>[] = [
+    { key: "load", label: "Load", width: 7, mono: true, render: row => row.kind === "delta" ? <Link to={`/integration/migration/loads/${row.loadId}/delta`}>{row.label}</Link> : row.label },
+    { key: "kind", label: "Kind", width: 8, render: row => <StatusBadge tone={loadKindTone(row.kind)}>{loadKindLabel(row.kind)}</StatusBadge> },
+    { key: "batch", label: "Batch", width: 9, mono: true, render: row => row.batchDisplayNumber },
+    { key: "base", label: "Base", width: 6, mono: true, render: row => row.baseLabel ?? "—" },
+    { key: "started", label: "Started", width: 12, render: row => date(row.startedAt ?? row.requestedAt) },
+    { key: "by", label: "By", width: 11, render: row => row.requestedByName },
+    { key: "status", label: "Status", width: 9, render: row => <StatusBadge tone={loadStatusTone(row.status)}>{loadStatusLabel(row.status)}</StatusBadge> },
+    { key: "written", label: "Written", width: 7, numeric: true, render: row => row.applied.toLocaleString() },
+    { key: "cover", label: "Cover replaced", width: 8, numeric: true, render: row => row.coverReplaced.toLocaleString() },
+    { key: "refused", label: "Refused", width: 6, numeric: true, render: row => row.refused.toLocaleString() },
+    { key: "owner", label: "Owner differs", width: 7, numeric: true, render: row => row.ownerDiffers.toLocaleString() },
+    { key: "gone", label: "Gone", width: 5, numeric: true, render: row => row.goneFromSource.toLocaleString() },
+    { key: "undo", label: "", width: 10, render: row => !admin ? null : row.undo.allowed
+      ? <button type="button" className="btn danger sm" disabled={undo.busy} onClick={() => undo.request(row)}>Undo {row.label}</button>
+      : <span className="migration-disabled-reason">{row.undo.reason ?? "Not available"}</span> },
+  ];
+  return <section className="card migration-loads-card" aria-labelledby="migration-loads"><div className="card-header"><h2 id="migration-loads">Loads <span className="meta">newest first · this source</span></h2></div><ErrorNote error={source.error} /><DataGrid columns={columns} page={source.grid} rowId={row => row.loadId} onPage={source.onPage} loading={source.busy} emptyText="No loads have been requested for this source." viewportHeight={430} footerNote="Undo is available on the latest delta only; a final load only when no later delta stands" /><div className="card-body"><MigrationUndoPanel undo={undo} /></div></section>;
 }
 
 function BatchTables({ batch, latest }: { batch: MigrationBatch | null; latest: boolean }) {
