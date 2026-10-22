@@ -135,6 +135,19 @@ export interface MigrationReconstruction {
 }
 
 export interface MappingCount { key: string; count: number }
+export interface MigrationGapCount { kind: string; label: string; count: number }
+export interface MigrationPlanGap {
+  gapId: string;
+  planUnitId: string | null;
+  itemCode: string | null;
+  itemName: string | null;
+  serial: string | null;
+  kind: string;
+  label: string;
+  reason: string;
+  sourceKey: string | null;
+}
+export interface MigrationPlanGapPage { items: MigrationPlanGap[]; nextCursor: string | null }
 export interface MigrationMap {
   runId: string;
   batchId: string;
@@ -153,7 +166,7 @@ export interface MigrationMap {
   entitlementsByFamily: MappingCount[];
   entitlementsByDateSource: MappingCount[];
   expiredEntitlements: number;
-  gapsByKind: MappingCount[];
+  gapsByKind: MigrationGapCount[];
   excludedCandidates: number;
   waitingCandidatesLeftOut: number;
 }
@@ -189,6 +202,7 @@ export interface MigrationApply {
   rolledBackAt: string | null;
   gapReportRunId: string | null;
   coverGaps: number | null;
+  gapsByKind: MigrationGapCount[];
 }
 
 export interface MigrationApplyRefusal {
@@ -340,7 +354,7 @@ export interface PolicyCatalogue { families: PolicyCatalogueFamily[]; policies: 
 export interface TemplateKeywordRule { keyword: string; familyCode: string }
 export interface TemplateKeywordRules { rules: TemplateKeywordRule[]; version: string }
 
-export type ValidationResult = "pass" | "explained" | "fail" | "hard_fail" | "report";
+export type ValidationResult = "pass" | "explained" | "fail" | "hard_fail" | "report" | "warning";
 export type ValidationSignatureRole = "preparer" | "reviewer";
 export type ValidationSampleOutcome = "traced" | "mismatch";
 
@@ -399,6 +413,7 @@ export interface MigrationValidation {
   sampleTraced: number;
   sampleTotal: number;
   hardFailSummary: string | null;
+  gapsByKind: MigrationGapCount[];
   checks: ValidationCheck[];
 }
 

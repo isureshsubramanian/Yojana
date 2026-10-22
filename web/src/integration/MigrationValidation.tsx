@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import { ApiError } from "../api/client";
 import { DataGrid, KpiStrip, StatusBadge, type GridColumn } from "../components";
 import { useSession } from "../session/session";
@@ -16,7 +17,8 @@ import {
   validationResultTone, validationRoleLabel, validationTrail, validationTrailLine,
 } from "./migrationModel";
 import type {
-  MigrationBatch, MigrationBatchPage, MigrationValidation as MigrationValidationView, SignoffRecord,
+  MigrationBatch, MigrationBatchPage, MigrationPlanGap, MigrationPlanGapPage,
+  MigrationValidation as MigrationValidationView, SignoffRecord,
   ValidationCheck, ValidationCheckDetail, ValidationDifferencePage, ValidationResult, ValidationSample,
   ValidationSampleOutcome, ValidationSamplePage, ValidationSettings, ValidationSignatureRole,
 } from "./migrationTypes";
@@ -24,6 +26,7 @@ import type {
 export function Component() { return <MigrationAccess><MigrationValidation /></MigrationAccess>; }
 
 function MigrationValidation() {
+  const [searchParams] = useSearchParams();
   const session = useSession();
   const admin = mayAdministerMigration(session.roles);
   const fetchBatches = useCallback((cursor?: string, signal?: AbortSignal) => migrationApi.batches(cursor, signal), []);
@@ -39,8 +42,12 @@ function MigrationValidation() {
 
   useEffect(() => {
     const available = batches.result?.items;
-    if (available?.length) setBatchId(current => available.some(batch => batch.batchId === current) ? current : available[0]!.batchId);
-  }, [batches.result]);
+    if (available?.length) setBatchId(current => {
+      const requested = searchParams.get("batchId");
+      if (requested && available.some(batch => batch.batchId === requested)) return requested;
+      return available.some(batch => batch.batchId === current) ? current : available[0]!.batchId;
+    });
+  }, [batches.result, searchParams]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -150,10 +157,54 @@ function MigrationValidation() {
       { label: "History events", value: compactNumber(run.events), detail: `${percentage(run.eventsShortPercent)} short · limit ${settings ? percentage(settings.historicalTolerancePercent) : validationLimitLabel(history?.limitKind ?? "")}` },
       { label: "Sample traced", value: `${run.sampleTraced.toLocaleString()} of ${run.sampleTotal.toLocaleString()}`, detail: "stratified by item family and age" },
     ]} />}
+    {run && <PlanGapList batchId={batchId} gaps={run.gapsByKind}
+      initialKind={searchParams.get("gapKind") ?? undefined} />}
     <section className="card migration-validation-card" aria-labelledby="validation-checks"><div className="card-header"><h2 id="validation-checks">Checks <span className="meta">source total, {targetLabel.toLowerCase()} total, difference</span></h2><div className="right">{run && <><a className="btn sm" href={migrationApi.validationExportUrl(batchId, "csv")} download>CSV</a><a className="btn sm" href={migrationApi.validationExportUrl(batchId, "xlsx")} download>Excel</a></>}{run?.rehearsal && <StatusBadge tone="info">Rehearsal</StatusBadge>}</div></div>
       <DataGrid columns={columns} page={{ rows: run?.checks ?? [], total: run?.checks.length ?? 0, page: 1, pageSize: run?.checks.length || 1, continuation: null, totalIsExact: true, hasMore: false }} rowId={check => check.checkId} onPage={() => undefined} onRowClick={check => void openCheck(check)} loading={loading} viewportHeight={620} emptyText={batchId ? "No validation run exists for this extraction." : "Choose an extraction."} footer={<span className="muted">{run ? `${run.checks.length.toLocaleString()} checks · select a row for counts, differences and signatures` : admin ? "Run the checks to create the first validation result." : "An administrator must start validation."}</span>} />
     </section>
   </MigrationPage><Rail label="Validation settings"><ValidationSettingsPanel settings={settings} admin={admin} onSaved={setSettings} /></Rail></>;
+}
+
+function PlanGapList({ batchId, gaps, initialKind }: {
+  batchId: string;
+  gaps: MigrationValidationView["gapsByKind"];
+  initialKind?: string | undefined;
+}) {
+  const selected = gaps.some(row => row.kind === initialKind) ? initialKind! : gaps[0]?.kind ?? "";
+  const [result, setResult] = useState<MigrationPlanGapPage | null>(null);
+  const [page, setPage] = useState(1);
+  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const load = useCallback(async (target: number, cursor?: string) => {
+    if (!selected) { setResult(null); return; }
+    setBusy(true); setError(null);
+    try { setResult(await migrationApi.mapGaps(batchId, selected, cursor)); setPage(target); }
+    catch (reason) { setError(reason); }
+    finally { setBusy(false); }
+  }, [batchId, selected]);
+  useEffect(() => { setCursors([undefined]); void load(1); }, [load]);
+  const go = (target: number) => {
+    const cursor = target > page ? result?.nextCursor ?? undefined : cursors[target - 1];
+    if (target < 1 || (target > page && !cursor)) return;
+    setCursors(current => { const next = current.slice(); next[target - 1] = cursor; return next; });
+    void load(target, cursor);
+  };
+  const columns: GridColumn<MigrationPlanGap>[] = [
+    { key: "unit", label: "Unit", width: 23, render: row => <span className="primary"><span className="t">{row.serial ?? "No serial recorded"}</span><span className="sub">{[row.itemCode, row.itemName].filter(Boolean).join(" · ")}</span></span> },
+    { key: "kind", label: "Gap", width: 22, render: row => row.label },
+    { key: "evidence", label: "Evidence key", width: 20, render: row => row.sourceKey ?? "—" },
+    { key: "reason", label: "What is needed", width: 35, render: row => row.reason },
+  ];
+  return <section className="card migration-validation-card" id="migration-plan-gaps" aria-labelledby="migration-plan-gaps-heading">
+    <div className="card-header"><h2 id="migration-plan-gaps-heading">Plan gaps <span className="meta">counted by kind</span></h2></div>
+    <div className="card-body"><div className="migration-validation-actions">{gaps.map(row =>
+      <Link key={row.kind} className={`btn sm${row.kind === selected ? " primary" : ""}`}
+        to={`/integration/migration/validation?batchId=${encodeURIComponent(batchId)}&gapKind=${encodeURIComponent(row.kind)}#migration-plan-gaps`}>
+        {row.label} · {row.count.toLocaleString()}</Link>)}</div></div>
+    <ValidationError error={error} />
+    <DataGrid columns={columns} page={{ rows: result?.items ?? [], total: (page - 1) * 25 + (result?.items.length ?? 0), page, pageSize: 25, continuation: result?.nextCursor ?? null, totalIsExact: false, hasMore: !!result?.nextCursor }} rowId={row => row.gapId} onPage={go} loading={busy} viewportHeight={360} emptyText={gaps.length ? "No gaps of this kind." : "This plan has no gaps."} footer={<span className="muted">Plan gaps are keyset-paged. Policy gaps are warnings and do not block sign-off on their own.</span>} />
+  </section>;
 }
 
 function CheckDrawer({ initial, initialDifferences, runId, roles, targetLabel, onChanged }: {

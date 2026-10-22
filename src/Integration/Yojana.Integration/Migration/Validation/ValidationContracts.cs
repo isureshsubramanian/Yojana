@@ -15,6 +15,7 @@ public sealed record MigrationValidationView(Guid RunId, Guid BatchId, Guid MapR
     string? SignoffCreatedByName, string? FailureCode, string? FailureDetail, int ChecksTotal, int Passed,
     int Explained, int Failed, int HardFailed, int SignedChecks, long Units, long Events,
     decimal? EventsShortPercent, int SampleTraced, int SampleTotal, string? HardFailSummary,
+    IReadOnlyList<Mapping.MigrationGapCount> GapsByKind,
     IReadOnlyList<ValidationCheckView> Checks);
 public sealed record ValidationCheckDetail(ValidationCheckView Check,
     IReadOnlyList<ValidationCheckPartView> Parts, IReadOnlyList<ValidationSignatureView> SignatureHistory);

@@ -64,11 +64,15 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         Assert.Equal(5, status.UnitsByLocationState.Single(row => row.Key == PlanLocationState.Shipped).Count);
         Assert.Contains(status.Ownership, row => row.Key == "two_tier" && row.Count == 1);
         Assert.Contains(status.Ownership, row => row.Key == "pseudonymised" && row.Count == 1);
-        Assert.Contains(status.GapsByKind, row => row.Key == PlanGapKind.ReplacementUnitMissing);
-        Assert.Contains(status.GapsByKind, row => row.Key == PlanGapKind.PolicyNotPublished);
-        Assert.Contains(status.GapsByKind, row => row.Key == PlanGapKind.TemplateNotApproved);
-        Assert.Contains(status.GapsByKind, row => row.Key == PlanGapKind.NoTemplate);
-        Assert.Contains(status.GapsByKind, row => row.Key == PlanGapKind.AttachmentPathMissing);
+        Assert.Contains(status.GapsByKind, row => row.Kind == PlanGapKind.ReplacementUnitMissing);
+        Assert.Contains(status.GapsByKind, row => row.Kind == PlanGapKind.PolicyNotPublished);
+        Assert.Contains(status.GapsByKind, row => row.Kind == PlanGapKind.TemplateNotApproved);
+        Assert.Contains(status.GapsByKind, row => row.Kind == PlanGapKind.NoTemplate);
+        Assert.Contains(status.GapsByKind, row => row.Kind == PlanGapKind.AttachmentPathMissing);
+        Assert.Contains(status.GapsByKind, row => row.Kind == PlanGapKind.CardCoverPolicyNotSet &&
+            row.Label == "Equipment-card cover policy not set");
+        Assert.Contains(status.GapsByKind, row => row.Kind == PlanGapKind.SerialMasterCoverPolicyNotSet &&
+            row.Label == "Serial-master cover policy not set");
         Assert.Equal(1, status.ReplacementLinks);
         Assert.Equal(1, status.ExpiredEntitlements);
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(30), $"Tiny mapping took {stopwatch.Elapsed}.");
@@ -113,6 +117,8 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         Assert.Contains("placeholder", placeholder.Note!, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(PlanWarrantyEvidenceSource.EquipmentCard,
             Assert.Single(placeholder.Entitlements).DateSource);
+        Assert.Null(Assert.Single(placeholder.Entitlements).PolicyId);
+        Assert.Contains(placeholder.Gaps, row => row.Kind == PlanGapKind.CardCoverPolicyNotSet);
         Assert.Contains(placeholder.Events, row => row.Provenance == HistoryProvenance.Reconstructed);
         Assert.Single(placeholder.ReplacementLinks);
 
@@ -139,6 +145,8 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         var masterEntitlement = Assert.Single(masterOnly!.Entitlements);
         Assert.Equal(PlanWarrantyEvidenceSource.SerialMaster, masterEntitlement.DateSource);
         Assert.Equal(EntitlementDirection.Inbound, masterEntitlement.Direction);
+        Assert.Null(masterEntitlement.PolicyId);
+        Assert.Contains(masterOnly.Gaps, row => row.Kind == PlanGapKind.SerialMasterCoverPolicyNotSet);
         Assert.True(masterEntitlement.Expired);
 
         var firstPage = await mapping.GapsAsync(ids.BatchId, null, null, 1, default);
@@ -152,6 +160,93 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         Assert.Equal(0, await otherDb.MigrationPlanUnits.CountAsync());
         Assert.Equal(0, await otherDb.MigrationPlanEvents.CountAsync());
         Assert.Equal(0, await otherDb.MigrationPlanEntitlements.CountAsync());
+    }
+
+    [DatabaseFact]
+    public async Task Cover_policy_settings_validate_and_a_new_map_uses_current_published_versions()
+    {
+        var tenant = await fixture.NewTenantAsync("mapcover");
+        var templatePolicy = await PublishedPolicyAsync(tenant);
+        var baseV1 = await AddPolicyAsync(tenant, CoverageFamilyCode.Base, "BASE-CARD-12", 1,
+            PolicyVersionStatus.Published);
+        var supplierV1 = await AddPolicyAsync(tenant, CoverageFamilyCode.Supplier, "SUPPLIER-12", 1,
+            PolicyVersionStatus.Published);
+        var draftOnly = await AddPolicyAsync(tenant, CoverageFamilyCode.Base, "BASE-DRAFT", 1,
+            PolicyVersionStatus.Draft);
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var ids = SeedPipeline(db, tenant, templatePolicy);
+        await db.SaveChangesAsync();
+        var settings = scope.ServiceProvider.GetRequiredService<MappingSettings>();
+        var defaults = await settings.GetAsync(default);
+
+        var unknown = await Assert.ThrowsAsync<MappingRuleException>(() => settings.SetAsync(
+            new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap, null, Guid.CreateVersion7(), null), default));
+        Assert.Equal("migration_mapping_cover_policy_not_published", unknown.Rule);
+        var draft = await Assert.ThrowsAsync<MappingRuleException>(() => settings.SetAsync(
+            new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap, null, draftOnly, null), default));
+        Assert.Equal("migration_mapping_cover_policy_not_published", draft.Rule);
+        var wrongFamily = await Assert.ThrowsAsync<MappingRuleException>(() => settings.SetAsync(
+            new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap, null, supplierV1, null), default));
+        Assert.Equal("migration_mapping_cover_policy_family_mismatch", wrongFamily.Rule);
+
+        var accepted = await settings.SetAsync(new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap,
+            null, baseV1, supplierV1), default);
+        Assert.Equal((baseV1, supplierV1), (accepted.CardCoverPolicyId, accepted.SerialMasterCoverPolicyId));
+        var cleared = await settings.SetAsync(new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap),
+            default);
+        Assert.Null(cleared.CardCoverPolicyId);
+        Assert.Null(cleared.SerialMasterCoverPolicyId);
+
+        var mapping = scope.ServiceProvider.GetRequiredService<MappingService>();
+        await mapping.EnqueueAsync(ids.BatchId, default);
+        Assert.Equal(1, await mapping.RunPendingAsync(default));
+        var unset = (await mapping.GetAsync(ids.BatchId, default))!;
+        var cardGap = Assert.Single((await mapping.GapsAsync(ids.BatchId,
+            PlanGapKind.CardCoverPolicyNotSet, null, 50, default)).Items);
+        Assert.Equal("Equipment-card cover policy not set", cardGap.Label);
+        Assert.Equal("PC-PLACEHOLDER", cardGap.ItemCode);
+        Assert.Equal("202", cardGap.Serial);
+        var unsetCard = await PlanUnitAsync(db, mapping, unset.RunId, "PC-PLACEHOLDER");
+        var unsetCardCover = Assert.Single(unsetCard.Entitlements);
+        Assert.Null(unsetCardCover.PolicyId);
+        Assert.Equal(new DateOnly(2026, 2, 1), unsetCardCover.StartDate);
+        Assert.Equal(new DateOnly(2026, 12, 1), unsetCardCover.EndDate);
+        var unsetSupplier = await PlanUnitAsync(db, mapping, unset.RunId, "NETWORK-MASTER");
+        Assert.Null(Assert.Single(unsetSupplier.Entitlements).PolicyId);
+        Assert.Contains(unsetSupplier.Gaps, row => row.Kind == PlanGapKind.SerialMasterCoverPolicyNotSet);
+
+        await settings.SetAsync(new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap, null, baseV1,
+            supplierV1), default);
+        var baseV2 = await AddPolicyAsync(tenant, CoverageFamilyCode.Base, "BASE-CARD-12", 2,
+            PolicyVersionStatus.Published);
+        fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddSeconds(1);
+        await mapping.EnqueueAsync(ids.BatchId, default);
+        Assert.Equal(1, await mapping.RunPendingAsync(default));
+        var configured = (await mapping.GetAsync(ids.BatchId, default))!;
+        var mappedCard = Assert.Single((await PlanUnitAsync(db, mapping, configured.RunId,
+            "PC-PLACEHOLDER")).Entitlements);
+        Assert.Equal((baseV2, 2), (mappedCard.PolicyId, mappedCard.PolicyVersion));
+        var mappedSupplier = Assert.Single((await PlanUnitAsync(db, mapping, configured.RunId,
+            "NETWORK-MASTER")).Entitlements);
+        Assert.Equal((supplierV1, 1), (mappedSupplier.PolicyId, mappedSupplier.PolicyVersion));
+        Assert.DoesNotContain(configured.GapsByKind, row => row.Kind is
+            PlanGapKind.CardCoverPolicyNotSet or PlanGapKind.SerialMasterCoverPolicyNotSet);
+
+        using (var serialScope = fixture.ScopeFor(tenant))
+        {
+            var serialDb = serialScope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            (await serialDb.PolicyVersions.SingleAsync(row => row.PolicyVersionId == baseV1)).Status =
+                PolicyVersionStatus.Draft;
+            await serialDb.SaveChangesAsync();
+        }
+        fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddSeconds(1);
+        await mapping.EnqueueAsync(ids.BatchId, default);
+        Assert.Equal(1, await mapping.RunPendingAsync(default));
+        var unpublished = (await mapping.GetAsync(ids.BatchId, default))!;
+        var unpublishedCard = await PlanUnitAsync(db, mapping, unpublished.RunId, "PC-PLACEHOLDER");
+        Assert.Null(Assert.Single(unpublishedCard.Entitlements).PolicyId);
+        Assert.Contains(unpublishedCard.Gaps, row => row.Kind == PlanGapKind.CardCoverPolicyNotSet);
     }
 
     [DatabaseFact]
@@ -262,7 +357,7 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         Assert.NotNull(view);
         Assert.Equal(1, view.RehearsalNumber);
         Assert.Null(view.LoadDate);
-        Assert.Equal(14, view.ChecksTotal);
+        Assert.Equal(16, view.ChecksTotal);
         Assert.Equal(ValidationTargetKind.Plan, view.TargetKind);
         foreach (var code in new[]
                  {
@@ -275,6 +370,12 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
             x.Result == ValidationResult.HardFail);
         Assert.Contains(view.Checks, x => x.Code == "cover_gap_report" && x.Result == ValidationResult.Report);
         Assert.Contains(view.Checks, x => x.Code == "attachments_by_hash" && x.Result == ValidationResult.Report);
+        Assert.Contains(view.Checks, x => x.Code == PlanGapKind.CardCoverPolicyNotSet &&
+            x.Result == ValidationResult.Warning);
+        Assert.Contains(view.Checks, x => x.Code == PlanGapKind.SerialMasterCoverPolicyNotSet &&
+            x.Result == ValidationResult.Warning);
+        Assert.Contains(view.GapsByKind, x => x.Kind == PlanGapKind.CardCoverPolicyNotSet && x.Count == 1);
+        Assert.Contains(view.GapsByKind, x => x.Kind == PlanGapKind.SerialMasterCoverPolicyNotSet && x.Count == 1);
         Assert.Contains(view.Checks, x => x.Code == "historical_events" && x.LimitKind == "< 0.25%");
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(30), $"Tiny validation took {stopwatch.Elapsed}.");
 
@@ -368,7 +469,7 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
 
         var rehearsal = await validation.CreateSignoffAsync(second.RunId, "person-b", default);
         Assert.True(rehearsal.Rehearsal);
-        Assert.Equal(14, rehearsal.Lines.Count);
+        Assert.Equal(16, rehearsal.Lines.Count);
         Assert.Contains("REHEARSAL", System.Text.Encoding.UTF8.GetString(
             await validation.ExportCsvAsync(rehearsal.RecordId, default)));
         var reloaded = await validation.GetAsync(ids.BatchId, default);
@@ -789,6 +890,48 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         });
         await db.SaveChangesAsync();
         return id;
+    }
+
+    private async Task<Guid> AddPolicyAsync(TenantId tenant, string family, string code, int version,
+        string status)
+    {
+        var id = Guid.CreateVersion7();
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        if (!await db.CoverageFamilies.AnyAsync(row => row.FamilyCode == family))
+            db.CoverageFamilies.Add(new CoverageFamily
+            {
+                TenantId = tenant, FamilyCode = family,
+                Name = family == CoverageFamilyCode.Supplier ? "Supplier warranty" : "Base warranty",
+                Stacking = false, AccountingTag = AssuranceOrService.Assurance, CreatedAt = Extracted,
+                LastModifiedAt = Extracted, LastModifiedBy = "test",
+            });
+        db.PolicyVersions.Add(new WarrantyPolicyVersion
+        {
+            TenantId = tenant, PolicyVersionId = id, PolicyCode = code, Version = version,
+            Name = $"Fictional hardware {family} cover", CoverageFamily = family,
+            EntitlementType = EntitlementType.Manufacturer,
+            AppliesToContractsFrom = new(2026, 1, 1), Status = status, RuleVersion = $"v{version}.d1",
+            DurationValue = 12, DurationUnit = DurationRule.Months, EndOfMonthRule = DurationRule.Clamp,
+            DurationBasis = DurationBasis.Time, StartTrigger = StartTrigger.Deliver,
+            Coverage = JsonSerializer.Serialize(new CoverageTerms(100, 100, 100, "next_business_day", 24),
+                LedgerJson.Options), Transferable = Transferability.Yes, SettlementFormula = "full",
+            AssuranceOrService = AssuranceOrService.Assurance,
+            ReferenceTimeZoneRule = PolicyTerms.TimeZoneUtc, CreatedAt = Extracted, CreatedBy = "test",
+            LastModifiedAt = Extracted, LastModifiedBy = "test",
+            PublishedAt = status == PolicyVersionStatus.Published ? Extracted : null,
+            PublishedBy = status == PolicyVersionStatus.Published ? "test" : null,
+        });
+        await db.SaveChangesAsync();
+        return id;
+    }
+
+    private static async Task<MigrationPlanUnitView> PlanUnitAsync(IntegrationDbContext db,
+        MappingService mapping, Guid runId, string itemCode)
+    {
+        var id = await db.MigrationPlanUnits.Where(row => row.MapRunId == runId && row.ItemCode == itemCode)
+            .Select(row => row.PlanUnitId).SingleAsync();
+        return (await mapping.UnitAsync(id, default))!;
     }
 }
 

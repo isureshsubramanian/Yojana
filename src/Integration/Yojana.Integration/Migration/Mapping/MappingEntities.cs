@@ -46,6 +46,22 @@ public static class PlanGapKind
     public const string AttachmentPathMissing = "attachment_path_missing";
     public const string AttachmentUnitUnknown = "attachment_unit_unknown";
     public const string WaitingReview = "waiting_review";
+    public const string CardCoverPolicyNotSet = "card_cover_policy_not_set";
+    public const string SerialMasterCoverPolicyNotSet = "serial_master_cover_policy_not_set";
+
+    public static string Label(string kind) => kind switch
+    {
+        TemplateNotApproved => "Template not approved",
+        PolicyNotPublished => "Policy not published",
+        NoTemplate => "No template",
+        ReplacementUnitMissing => "Replacement unit missing",
+        AttachmentPathMissing => "Attachment path missing",
+        AttachmentUnitUnknown => "Attachment unit unknown",
+        WaitingReview => "Waiting for review",
+        CardCoverPolicyNotSet => "Equipment-card cover policy not set",
+        SerialMasterCoverPolicyNotSet => "Serial-master cover policy not set",
+        _ => kind,
+    };
 }
 
 public static class PlanLogKind

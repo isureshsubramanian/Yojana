@@ -23,6 +23,7 @@ public static class ValidationResult
     public const string Fail = "fail";
     public const string HardFail = "hard_fail";
     public const string Report = "report";
+    public const string Warning = "warning";
 }
 
 public static class ValidationSignatureRole

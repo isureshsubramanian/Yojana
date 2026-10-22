@@ -132,8 +132,10 @@ public sealed class MappingService(
         var entitlementsByDateSource = await CountsAsync(db.MigrationPlanEntitlements.Where(row =>
             row.TenantId == tenant.TenantId && row.MapRunId == run.RunId), row => row.DateSource,
             cancellationToken);
-        var gaps = await CountsAsync(db.MigrationPlanGaps.Where(row => row.TenantId == tenant.TenantId &&
+        var gapRows = await CountsAsync(db.MigrationPlanGaps.Where(row => row.TenantId == tenant.TenantId &&
             row.MapRunId == run.RunId), row => row.Kind, cancellationToken);
+        var gaps = gapRows.Select(row => new MigrationGapCount(row.Key, PlanGapKind.Label(row.Key), row.Count))
+            .ToList();
         var ownershipRows = await db.MigrationPlanOwnership.AsNoTracking().Where(row =>
                 row.TenantId == tenant.TenantId && row.MapRunId == run.RunId)
             .Select(row => new { row.PlanUnitId, row.Tier, row.Pseudonymised }).ToListAsync(cancellationToken);
@@ -166,7 +168,19 @@ public sealed class MappingService(
         if (!string.IsNullOrWhiteSpace(kind)) query = query.Where(row => row.Kind == kind);
         var rows = await query.OrderBy(row => row.PlanGapId).Take(take + 1).ToListAsync(cancellationToken);
         var page = rows.Take(take).ToList();
-        return new(page.Select(GapView).ToList(), rows.Count > take ? EncodeCursor(page[^1].PlanGapId) : null);
+        var unitIds = page.Where(row => row.PlanUnitId is not null).Select(row => row.PlanUnitId!.Value)
+            .Distinct().ToList();
+        var units = await db.MigrationPlanUnits.AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
+                unitIds.Contains(row.PlanUnitId)).ToDictionaryAsync(row => row.PlanUnitId, cancellationToken);
+        var serials = await db.MigrationPlanIdentifiers.AsNoTracking().Where(row =>
+                row.TenantId == tenant.TenantId && unitIds.Contains(row.PlanUnitId) &&
+                row.IdentifierType == IdentifierType.InternalSerial)
+            .Select(row => new { row.PlanUnitId, row.RawValue }).ToDictionaryAsync(row => row.PlanUnitId,
+                row => row.RawValue, cancellationToken);
+        return new(page.Select(row => GapView(row, row.PlanUnitId is { } unitId
+                ? units.GetValueOrDefault(unitId) : null,
+            row.PlanUnitId is { } serialUnitId ? serials.GetValueOrDefault(serialUnitId) : null)).ToList(),
+            rows.Count > take ? EncodeCursor(page[^1].PlanGapId) : null);
     }
 
     public async Task<MigrationPlanUnitView?> UnitAsync(Guid planUnitId, CancellationToken cancellationToken)
@@ -219,7 +233,9 @@ public sealed class MappingService(
                 row.ReplacedPlanUnitId, row.ReplacementPlanUnitId, row.PolicyApplied, row.SourceKey)).ToList(),
             attachments.Select(row => new MigrationPlanAttachmentView(row.PlanAttachmentId, row.Path,
                 row.FileName, row.FileSize, row.ContentHash, row.SourceKey)).ToList(),
-            new(certificate.Version, certificate.Provenance), gaps.Select(GapView).ToList(),
+            new(certificate.Version, certificate.Provenance), gaps.Select(row => GapView(row, unit,
+                identifiers.FirstOrDefault(id => id.IdentifierType == IdentifierType.InternalSerial)?.RawValue))
+                .ToList(),
             logs.Select(row => new MigrationPlanLogView(row.PlanLogId, row.Kind, row.SourceKey,
                 row.RelatedSourceKey, row.Note)).ToList());
     }
@@ -312,6 +328,7 @@ public sealed class MappingService(
         await db.SaveChangesAsync(cancellationToken);
 
         var catalogue = await policyCatalogue.ReadAsync(cancellationToken);
+        var configured = await settings.GetAsync(cancellationToken);
         var excludedEventKeys = await ExcludedEventKeysAsync(reconstruction, cancellationToken);
         Guid? after = null;
         while (true)
@@ -324,7 +341,7 @@ public sealed class MappingService(
                 .ToListAsync(cancellationToken);
             if (candidates.Count == 0) break;
             await MapCandidatesAsync(run, reconstruction, batch, candidates, excludedEventKeys, catalogue,
-                cancellationToken);
+                configured, cancellationToken);
             after = candidates[^1].CandidateId;
             await db.SaveChangesAsync(cancellationToken);
             db.ChangeTracker.Clear();
@@ -338,7 +355,8 @@ public sealed class MappingService(
 
     private async Task MapCandidatesAsync(MigrationMapRun run, MigrationReconstructionRun reconstruction,
         MigrationBatch batch, IReadOnlyList<MigrationUnitCandidate> candidates,
-        HashSet<string> excludedEventKeys, PolicyCatalogue catalogue, CancellationToken cancellationToken)
+        HashSet<string> excludedEventKeys, PolicyCatalogue catalogue, MappingSettingsView configured,
+        CancellationToken cancellationToken)
     {
         var candidateIds = candidates.Select(row => row.CandidateId).ToList();
         var primaryKeys = candidates.Select(row => row.PrimarySourceKey).ToList();
@@ -432,7 +450,7 @@ public sealed class MappingService(
                 row.SourceKind == CandidateSourceKind.EquipmentCard);
             var card = cardSource is null ? null : cards.GetValueOrDefault(cardSource.SourceKey);
             var lastMovement = retainedHistory.LastOrDefault()?.MovementKind;
-            var condition = await settings.InferConditionAsync(card?.Status, lastMovement, cancellationToken);
+            var condition = MappingSettings.InferCondition(card?.Status, lastMovement, configured.ConditionMap);
             var plan = new MigrationPlanUnit
             {
                 TenantId = tenant.TenantId,
@@ -457,7 +475,7 @@ public sealed class MappingService(
                 episodesByCandidate[candidate.CandidateId].ToList(), candidateHistory, partyNames);
             MapWarranty(run, plan, master, cardSource, card,
                 entitlementsByCandidate[candidate.CandidateId].ToList(), contractLines, contracts, mappings,
-                blocks, catalogue);
+                blocks, catalogue, configured);
             db.MigrationPlanCertificates.Add(new MigrationPlanCertificate
             {
                 TenantId = tenant.TenantId, PlanCertificateId = Guid.CreateVersion7(clock.UtcNow),
@@ -605,7 +623,7 @@ public sealed class MappingService(
         IReadOnlyList<MigrationEntitlementCandidate> candidates,
         Dictionary<string, ContractLineStagingRow> contractLines,
         IReadOnlyList<ServiceContractStagingRow> contracts, IReadOnlyList<TemplateMapping> mappings,
-        IReadOnlyList<TemplateMappingBlock> blocks, PolicyCatalogue catalogue)
+        IReadOnlyList<TemplateMappingBlock> blocks, PolicyCatalogue catalogue, MappingSettingsView configured)
     {
         var evidence = new List<MigrationPlanWarrantyEvidence>();
         foreach (var candidate in candidates.Where(row => row.SourceKind == CandidateSourceKind.ContractLine))
@@ -671,17 +689,40 @@ public sealed class MappingService(
         if (cardEvidence is not null)
         {
             cardEvidence.SelectedForEntitlement = true;
-            AddEntitlement(run, plan, CoverageFamilyCode.Base, null, null, cardEvidence,
+            var policy = CurrentConfiguredPolicy(configured.CardCoverPolicyId, CoverageFamilyCode.Base, catalogue);
+            AddEntitlement(run, plan, CoverageFamilyCode.Base, policy?.PolicyId, policy?.Version, cardEvidence,
                 EntitlementDirection.Outbound);
+            if (policy is null)
+                AddGap(run, plan.PlanUnitId, PlanGapKind.CardCoverPolicyNotSet,
+                    "Set a published base-family policy for cover whose dates come from the equipment card.",
+                    cardEvidence.SourceKey);
             return;
         }
         var masterEvidence = evidence.FirstOrDefault(row => row.SourceKind == PlanWarrantyEvidenceSource.SerialMaster);
         if (masterEvidence is not null)
         {
             masterEvidence.SelectedForEntitlement = true;
-            AddEntitlement(run, plan, CoverageFamilyCode.Supplier, null, null, masterEvidence,
+            var policy = CurrentConfiguredPolicy(configured.SerialMasterCoverPolicyId,
+                CoverageFamilyCode.Supplier, catalogue);
+            AddEntitlement(run, plan, CoverageFamilyCode.Supplier, policy?.PolicyId, policy?.Version,
+                masterEvidence,
                 EntitlementDirection.Inbound);
+            if (policy is null)
+                AddGap(run, plan.PlanUnitId, PlanGapKind.SerialMasterCoverPolicyNotSet,
+                    "Set a published supplier-family policy for cover whose dates come from the serial master.",
+                    masterEvidence.SourceKey);
         }
+    }
+
+    private static PolicyCataloguePolicy? CurrentConfiguredPolicy(Guid? configuredPolicyId, string family,
+        PolicyCatalogue catalogue)
+    {
+        if (configuredPolicyId is null) return null;
+        var selected = catalogue.Policies.SingleOrDefault(row => row.PolicyId == configuredPolicyId &&
+            row.FamilyCode == family);
+        return selected is null ? null : catalogue.Policies.Where(row => row.PolicyCode == selected.PolicyCode &&
+                row.FamilyCode == family).OrderByDescending(row => row.Version).ThenByDescending(row => row.PolicyId)
+            .First();
     }
 
     private MigrationPlanWarrantyEvidence NewEvidence(MigrationMapRun run, MigrationPlanUnit plan,
@@ -917,8 +958,9 @@ public sealed class MappingService(
         if (string.IsNullOrWhiteSpace(root)) return null;
         return string.IsNullOrWhiteSpace(source.SubPath) ? root : Path.Combine(root, source.SubPath);
     }
-    private static MigrationPlanGapView GapView(MigrationPlanGap row) => new(row.PlanGapId,
-        row.PlanUnitId, row.Kind, row.Reason, row.SourceKey);
+    private static MigrationPlanGapView GapView(MigrationPlanGap row, MigrationPlanUnit? unit, string? serial) =>
+        new(row.PlanGapId, row.PlanUnitId, unit?.ItemCode, unit?.ItemName, serial, row.Kind,
+            PlanGapKind.Label(row.Kind), row.Reason, row.SourceKey);
     private static MigrationPlanWarrantyEvidenceView EvidenceView(MigrationPlanWarrantyEvidence row) =>
         new(row.SourceKind, row.SourceKey, row.StartDate, row.EndDate, row.TerminationDate, row.Direction,
             row.SelectedForEntitlement);

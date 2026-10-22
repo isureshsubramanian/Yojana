@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   OUTCOMES, REVIEW_KINDS, REVIEW_STATUSES, batchLabel, batchResult, batchStatusLabel, batchTotals, candidateLetter,
   canonicalisationStatusLabel, countTotal, duration, factLabel, factValue, finalLoadDisabledReason, loadStatusLabel,
-  loadStatusTone, mappingGapLabel, matchRuleLabel, mayAdministerMigration, phaseStatusLabel, phaseStatusTone,
+  loadStatusTone, matchRuleLabel, mayAdministerMigration, phaseStatusLabel, phaseStatusTone,
   mayPrepareValidation, mayReadMigration, mayReviewValidation, outcomeLabel, percentage, profileClass, profileStatusLabel, profileTotals, refusalRuleLabel,
   refusalReasonLabel, reviewDecisionLabel, reviewDecisionOptions, reviewKindLabel, reviewStatusLabel, rollbackOutcomeLabel, routeLabel, runtimeLabel,
   sampleExample, sampleFacts, serialAsStored, signoffDisabledReason, signedChange, templateResolutionLabel, templateStateLabel,
@@ -89,6 +89,9 @@ const validationRun: MigrationValidation = {
     { checkId: "check-unit", code: "unit_master", label: "Unit master count", limitKind: "zero", sourceTotal: 409_118, targetTotal: 409_118, difference: 0, result: "pass", explanation: null, explainedByName: null, explainedAt: null, howCounted: "After review merges.", ranAt: "2026-09-01T08:00:00Z", durationMilliseconds: 1200, signatures: [{ role: "preparer", actorName: "Anika Iyer", signedAt: "2026-09-01T08:10:00Z", superseded: false, supersededAt: null }, { role: "reviewer", actorName: "Tomas Lindqvist", signedAt: "2026-09-01T08:20:00Z", superseded: false, supersededAt: null }] },
     { checkId: "check-hard", code: "negative_quantity", label: "Negative quantity", limitKind: "none", sourceTotal: 1, targetTotal: null, difference: null, result: "hard_fail", explanation: null, explainedByName: null, explainedAt: null, howCounted: "Source fact.", ranAt: "2026-09-01T08:00:00Z", durationMilliseconds: 10, signatures: [] },
     { checkId: "check-sample", code: "stratified_sample", label: "Stratified sample", limitKind: "all", sourceTotal: 200, targetTotal: 199, difference: -1, result: "fail", explanation: null, explainedByName: null, explainedAt: null, howCounted: "By family and age.", ranAt: "2026-09-01T08:00:00Z", durationMilliseconds: 90, signatures: [] },
+  ], gapsByKind: [
+    { kind: "card_cover_policy_not_set", label: "Equipment-card cover policy not set", count: 12 },
+    { kind: "serial_master_cover_policy_not_set", label: "Serial-master cover policy not set", count: 5 },
   ],
 };
 
@@ -102,6 +105,22 @@ test("validation screen maps fixture fields into the approved grid and KPI struc
   assert.equal(batchLabel(batch, true), "Latest extraction · MB-0007");
   for (const screen of [consoleScreen, profilingScreen, reviewScreen, templateScreen, validationScreen]) assert.match(screen, /batchLabel/);
   assert.match(validationScreen, /load date/);
+});
+
+test("map validation and load views use server-labelled links into the paged plan-gap filter", () => {
+  for (const field of ["row.kind", "row.label", "row.count"]) {
+    assert.match(consoleScreen, new RegExp(field.replace(".", "\\.")));
+    assert.match(validationScreen, new RegExp(field.replace(".", "\\.")));
+  }
+  assert.match(consoleScreen, /gapKind=.*row\.kind/);
+  assert.match(validationScreen, /migrationApi\.mapGaps\(batchId, selected, cursor\)/);
+  assert.match(validationScreen, /Plan gaps/);
+  assert.match(validationScreen, /keyset-paged/);
+  assert.match(validationScreen, /Policy gaps are warnings and do not block sign-off on their own/);
+  assert.doesNotMatch(validationScreen, />\{row\.planUnitId\}</);
+  assert.deepEqual(validationRun.gapsByKind.map(row => [row.label, row.count]), [
+    ["Equipment-card cover policy not set", 12], ["Serial-master cover policy not set", 5],
+  ]);
 });
 
 test("hard failures show the approved cutover warning and final sign-off reason", () => {
@@ -274,6 +293,7 @@ const loadFixture: MigrationApply = {
   requestedBy: "actor-internal", requestedAt: "2026-09-01T08:00:00Z", startedAt: "2026-09-01T08:00:01Z", finishedAt: "2026-09-01T08:02:00Z", failure: null,
   unitsInPlan: 593, applied: 580, alreadyApplied: 0, refused: 13, eventsWritten: 2267, entitlementsWritten: 341,
   replacementLinksWritten: 5, certificatesRecorded: 580, rolledBackBy: null, rolledBackAt: null, gapReportRunId: "gap-internal", coverGaps: 17,
+  gapsByKind: [{ kind: "card_cover_policy_not_set", label: "Equipment-card cover policy not set", count: 9 }],
 };
 
 test("load card maps fixture counts, watches active loads and filters the cover-gap link", () => {
@@ -324,7 +344,7 @@ test("every emitted load refusal and map gap has readable formatting", () => {
     "internal_serial:character_not_encodable_in_code128:*",
   ];
   for (const reason of refusals) assert.doesNotMatch(refusalReasonLabel(reason), /_/);
-  for (const kind of ["template_not_approved", "policy_not_published", "no_template", "replacement_unit_missing", "attachment_path_missing", "attachment_unit_unknown", "waiting_review"]) assert.doesNotMatch(mappingGapLabel(kind), /_/);
+  assert.match(consoleScreen, /\{row\.label\}/);
   assert.equal(refusalReasonLabel("duplicate_in_batch"), "Identifier is duplicated in this load");
 });
 

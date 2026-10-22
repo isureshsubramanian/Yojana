@@ -40,7 +40,8 @@ public sealed class ValidationService(
         "unit_master", "active_cover", "open_service_calls", "stock_by_item_warehouse",
         MigrationProfileClasses.SerialInMultipleWarehouses.Code, MigrationProfileClasses.NegativeQuantity.Code,
         "historical_events", "status_histogram", "event_per_unit", "one_current_row", "signed_quantity",
-        "stratified_sample", "cover_gap_report", "attachments_by_hash",
+        "stratified_sample", PlanGapKind.CardCoverPolicyNotSet,
+        PlanGapKind.SerialMasterCoverPolicyNotSet, "cover_gap_report", "attachments_by_hash",
     }.Select((code, index) => new { code, index }).ToDictionary(x => x.code, x => x.index,
         StringComparer.Ordinal);
 
@@ -465,6 +466,19 @@ public sealed class ValidationService(
         await AddSignedQuantityCheckAsync(run, map, cancellationToken);
         await AddSampleAsync(run, map, canon, configured, cancellationToken);
 
+        var policyGapCounts = await db.MigrationPlanGaps.AsNoTracking().Where(x =>
+                x.TenantId == tenant.TenantId && x.MapRunId == map.RunId &&
+                (x.Kind == PlanGapKind.CardCoverPolicyNotSet ||
+                 x.Kind == PlanGapKind.SerialMasterCoverPolicyNotSet))
+            .GroupBy(x => x.Kind).Select(group => new { Kind = group.Key, Count = group.LongCount() })
+            .ToDictionaryAsync(x => x.Kind, x => x.Count, cancellationToken);
+        AddCoverPolicyWarning(run, PlanGapKind.CardCoverPolicyNotSet,
+            policyGapCounts.GetValueOrDefault(PlanGapKind.CardCoverPolicyNotSet),
+            "Equipment-card cover dates retained without a configured published base-family policy.");
+        AddCoverPolicyWarning(run, PlanGapKind.SerialMasterCoverPolicyNotSet,
+            policyGapCounts.GetValueOrDefault(PlanGapKind.SerialMasterCoverPolicyNotSet),
+            "Serial-master cover dates retained without a configured published supplier-family policy.");
+
         // Sold units the load will leave without base cover: no base entitlement naming a policy in the plan, whether
         // the plan recorded a gap (no template, unapproved template, unpublished policy) or kept dates without a
         // policy (equipment card). The gap report run after the load lists the same units for backfill (P9-T09).
@@ -707,6 +721,10 @@ public sealed class ValidationService(
         return check;
     }
 
+    private void AddCoverPolicyWarning(MigrationValidationRun run, string kind, long count, string how) =>
+        AddCheck(run, kind, PlanGapKind.Label(kind), "warning", count, null,
+            count == 0 ? ValidationResult.Pass : ValidationResult.Warning, how);
+
     private void AddPart(MigrationValidationCheck check, string code, string label, decimal value) =>
         db.MigrationValidationCheckParts.Add(new MigrationValidationCheckPart
         {
@@ -809,6 +827,11 @@ public sealed class ValidationService(
                 x.RunId == run.RunId).OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.RecordId)
             .Select(x => new { x.RecordId, x.Rehearsal, x.CreatedAt, x.CreatedBy })
             .FirstOrDefaultAsync(cancellationToken);
+        var gapRows = await db.MigrationPlanGaps.AsNoTracking().Where(x => x.TenantId == tenant.TenantId &&
+                x.MapRunId == run.MapRunId).GroupBy(x => x.Kind)
+            .Select(group => new { Kind = group.Key, Count = group.LongCount() }).OrderBy(x => x.Kind)
+            .ToListAsync(cancellationToken);
+        var gaps = gapRows.Select(x => new MigrationGapCount(x.Kind, PlanGapKind.Label(x.Kind), x.Count)).ToList();
         var signoffNames = await ResolveNamesAsync(signoff is null ? [] : [signoff.CreatedBy], cancellationToken);
         return new(run.RunId, run.BatchId, run.MapRunId, run.TargetKind, run.Rehearsal, rehearsalNumber,
             run.Status, run.StartedAt, run.FinishedAt, loadDate, signoff?.RecordId, signoff?.Rehearsal,
@@ -820,7 +843,8 @@ public sealed class ValidationService(
             unit?.TargetTotal ?? 0, history?.TargetTotal ?? 0,
             history?.SourceTotal > 0 ? Math.Abs(history.Difference ?? 0) * 100m / history.SourceTotal : 0,
             samples.Count(x => x == "traced"), samples.Count,
-            hard.Count == 0 ? null : $"{hard.Count} hard fail{(hard.Count == 1 ? "" : "s")} stop the cutover. Fix in the source application; the next extraction and rehearsal check again.", views);
+            hard.Count == 0 ? null : $"{hard.Count} hard fail{(hard.Count == 1 ? "" : "s")} stop the cutover. Fix in the source application; the next extraction and rehearsal check again.",
+            gaps, views);
     }
 
     private static async IAsyncEnumerable<IReadOnlyList<string?>> ExportRows(
@@ -856,6 +880,7 @@ public sealed class ValidationService(
         ValidationResult.Fail => "Fail",
         ValidationResult.HardFail => "Hard fail",
         ValidationResult.Report => "Report",
+        ValidationResult.Warning => "Warning",
         _ => value,
     };
 

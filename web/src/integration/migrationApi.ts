@@ -2,7 +2,7 @@ import { api } from "../api/client";
 import type {
   CanonicalFamilyCatalogue, CanonicalisationRun, MigrationBatch, MigrationBatchPage, MigrationOutcomeChoice, MigrationOutcomeSettings,
   MigrationProfile, MigrationProfileSamples, MigrationReviewDecision, MigrationReviewDecisionResponse,
-  MigrationApply, MigrationApplyRefusalPage, MigrationMap, MigrationReconstruction, RollBackMigrationLoadResponse,
+  MigrationApply, MigrationApplyRefusalPage, MigrationMap, MigrationPlanGapPage, MigrationReconstruction, RollBackMigrationLoadResponse,
   MigrationReviewDetail, MigrationReviewKind, MigrationReviewPage, MigrationReviewStatus, MigrationSource,
   MigrationSourcePage, MigrationSourceTestResult, PolicyCatalogue, StartMigrationBatchResponse,
   TemplateKeywordRule, TemplateKeywordRules, TemplateMappingDetail, TemplateMappingState,
@@ -35,6 +35,8 @@ export const migrationApi = {
   runCanonicalisation: (batchId: string) => api<{ runId: string; batchId: string; status: string }>(`${root}/batches/${batchId}/canonicalise`, { method: "POST" }),
   reconstruction: (batchId: string, signal?: AbortSignal) => api<MigrationReconstruction>(`${root}/batches/${batchId}/reconstruction`, { signal }),
   map: (batchId: string, signal?: AbortSignal) => api<MigrationMap>(`${root}/batches/${batchId}/map`, { signal }),
+  mapGaps: (batchId: string, kind?: string, cursor?: string, signal?: AbortSignal) =>
+    api<MigrationPlanGapPage>(`${root}/batches/${batchId}/map/gaps${query({ kind, cursor, take: 25 })}`, { signal }),
   apply: (batchId: string, rehearsal: boolean) => api<StartMigrationApplyResponse>(`${root}/batches/${batchId}/apply`, { method: "POST", body: { rehearsal } }),
   load: (batchId: string, signal?: AbortSignal) => api<MigrationApply>(`${root}/batches/${batchId}/apply`, { signal }),
   loadRefusals: (loadId: string, cursor?: string, signal?: AbortSignal) => api<MigrationApplyRefusalPage>(`${root}/loads/${loadId}/refusals${query({ cursor, take: 50 })}`, { signal }),
