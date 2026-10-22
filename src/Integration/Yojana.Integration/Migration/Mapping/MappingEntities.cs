@@ -91,6 +91,18 @@ public sealed class MigrationMapRun : ITenantScoped
     public long WaitingCandidateCount { get; set; }
 }
 
+/// <summary>
+/// A map-run snapshot of candidates held out by reviews that were waiting when mapping started. Mapping pages join
+/// this narrow relation instead of carrying every source key as a JSON SQL parameter on every page.
+/// </summary>
+public sealed class MigrationMapWaitingCandidate : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid MapRunId { get; set; }
+    public Guid CandidateId { get; set; }
+    public required string SourceKey { get; set; }
+}
+
 public sealed class MigrationPlanUnit : ITenantScoped
 {
     public TenantId TenantId { get; set; }

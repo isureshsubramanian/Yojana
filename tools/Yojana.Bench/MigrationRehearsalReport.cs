@@ -23,10 +23,12 @@ public sealed class MigrationRehearsalReport(string outputDirectory, string targ
     private readonly DateTime startedAt = DateTime.UtcNow;
     private string status = "running";
     private string? failure;
+    private string? planFingerprint;
 
     public IReadOnlyList<MigrationPhaseMeasurement> Phases => phases;
     public void Add(MigrationPhaseMeasurement phase) => phases.Add(phase);
     public void AddPlan(string path) => plans.Add(path);
+    public void SetPlanFingerprint(string value) => planFingerprint = value;
     public void Complete() => status = "completed";
     public void Fail(Exception exception)
     {
@@ -51,6 +53,8 @@ public sealed class MigrationRehearsalReport(string outputDirectory, string targ
         foreach (var phase in phases)
             text.AppendLine($"| {Escape(phase.Phase)} | {phase.WallSeconds:0.000} | {phase.RowsIn:N0} | {phase.RowsOut:N0} | {phase.SqlRoundTrips:N0} | {phase.TargetDatabaseMb:0.0} | {phase.SourceDatabaseMb:0.0} | {Escape(phase.Notes)} |");
         text.AppendLine();
+        if (planFingerprint is not null)
+            text.AppendLine($"Mapping-plan fingerprint: `{planFingerprint}`.").AppendLine();
         text.AppendLine("SQL round trips are client-driver command completions in the measured async flow. Bulk-copy streams and transaction commits are not commands, so this is a deliberately cheap lower-bound count.");
         text.AppendLine();
         if (phases.Count != 0)
@@ -81,6 +85,7 @@ public sealed class MigrationRehearsalReport(string outputDirectory, string targ
             targetDatabase,
             sourceDatabase,
             sourceSerials,
+            planFingerprint,
             phases,
             plans = plans.Select(Path.GetFileName),
         }, new JsonSerializerOptions { WriteIndented = true }), cancellationToken);

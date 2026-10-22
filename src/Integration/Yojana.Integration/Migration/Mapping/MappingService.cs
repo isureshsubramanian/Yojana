@@ -22,9 +22,17 @@ public sealed class MappingService(
     IClock clock,
     IMigrationProfileStatus profileStatus,
     MappingSettings settings,
-    IPolicyCatalogueQuery policyCatalogue)
+    IPolicyCatalogueQuery policyCatalogue,
+    MigrationBulkWriter bulkWriter)
 {
-    private const int CandidateBatchSize = 1000;
+    private const int CandidateBatchSize = 5000;
+    private static readonly Type[] PlanTableOrder =
+    [
+        typeof(MigrationPlanUnit), typeof(MigrationPlanIdentifier), typeof(MigrationPlanEvent),
+        typeof(MigrationPlanOwnership), typeof(MigrationPlanEntitlement), typeof(MigrationPlanWarrantyEvidence),
+        typeof(MigrationPlanCertificate), typeof(MigrationPlanReplacementLink), typeof(MigrationPlanAttachment),
+        typeof(MigrationPlanGap), typeof(MigrationPlanLog),
+    ];
 
     public async Task<StartMappingResponse> EnqueueAsync(Guid batchId, CancellationToken cancellationToken)
     {
@@ -310,10 +318,9 @@ public sealed class MappingService(
             row.TenantId == tenant.TenantId && row.RunId == run.ReconstructionRunId, cancellationToken);
         var batch = await db.MigrationBatches.AsNoTracking().SingleAsync(row => row.TenantId == tenant.TenantId &&
             row.BatchId == run.BatchId, cancellationToken);
-        var waitingCandidateKeys = await WaitingCandidateKeysAsync(reconstruction, cancellationToken);
-        run.WaitingCandidateCount = await db.MigrationUnitCandidates.LongCountAsync(row =>
-            row.TenantId == tenant.TenantId && row.RunId == reconstruction.CanonicalisationRunId &&
-            waitingCandidateKeys.Contains(row.PrimarySourceKey), cancellationToken);
+        await StageWaitingCandidatesAsync(run, reconstruction, cancellationToken);
+        run.WaitingCandidateCount = await db.MigrationMapWaitingCandidates.LongCountAsync(row =>
+            row.TenantId == tenant.TenantId && row.MapRunId == run.RunId, cancellationToken);
         run.ExcludedCandidateCount = await db.MigrationUnitCandidates.LongCountAsync(row =>
             row.TenantId == tenant.TenantId && row.RunId == reconstruction.CanonicalisationRunId &&
             row.Disposition != CandidateDisposition.Active, cancellationToken);
@@ -323,8 +330,12 @@ public sealed class MappingService(
             .Select(row => new { row.PrimarySourceKey, row.Disposition }).ToListAsync(cancellationToken);
         foreach (var row in excluded) AddLog(run, null, PlanLogKind.CandidateExcluded, row.PrimarySourceKey, null,
             $"Candidate left out because its disposition is {row.Disposition}.");
+        var waitingCandidateKeys = await db.MigrationMapWaitingCandidates.AsNoTracking().Where(row =>
+                row.TenantId == tenant.TenantId && row.MapRunId == run.RunId)
+            .Select(row => row.SourceKey).ToListAsync(cancellationToken);
         foreach (var sourceKey in waitingCandidateKeys) AddGap(run, null, PlanGapKind.WaitingReview,
             "Candidate left out of this rehearsal because its review is still waiting.", sourceKey);
+        await bulkWriter.WriteTrackedAddsAsync(PlanTableOrder, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
         var catalogue = await policyCatalogue.ReadAsync(cancellationToken);
@@ -335,7 +346,8 @@ public sealed class MappingService(
         {
             var query = db.MigrationUnitCandidates.AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
                 row.RunId == reconstruction.CanonicalisationRunId && row.Disposition == CandidateDisposition.Active &&
-                !waitingCandidateKeys.Contains(row.PrimarySourceKey));
+                !db.MigrationMapWaitingCandidates.Any(waitingRow => waitingRow.TenantId == row.TenantId &&
+                    waitingRow.MapRunId == run.RunId && waitingRow.CandidateId == row.CandidateId));
             if (after is not null) query = query.Where(row => row.CandidateId.CompareTo(after.Value) > 0);
             var candidates = await query.OrderBy(row => row.CandidateId).Take(CandidateBatchSize)
                 .ToListAsync(cancellationToken);
@@ -343,14 +355,11 @@ public sealed class MappingService(
             await MapCandidatesAsync(run, reconstruction, batch, candidates, excludedEventKeys, catalogue,
                 configured, cancellationToken);
             after = candidates[^1].CandidateId;
-            await db.SaveChangesAsync(cancellationToken);
-            db.ChangeTracker.Clear();
-            run = await db.MigrationMapRuns.SingleAsync(row => row.TenantId == tenant.TenantId &&
-                row.RunId == run.RunId, cancellationToken);
+            await bulkWriter.WriteTrackedAddsAsync(PlanTableOrder, cancellationToken);
         }
         await MapReplacementLinksAsync(run, reconstruction, batch, cancellationToken);
         await MapAttachmentsAsync(run, batch, cancellationToken);
-        await db.SaveChangesAsync(cancellationToken);
+        await bulkWriter.WriteTrackedAddsAsync(PlanTableOrder, cancellationToken);
     }
 
     private async Task MapCandidatesAsync(MigrationMapRun run, MigrationReconstructionRun reconstruction,
@@ -828,7 +837,7 @@ public sealed class MappingService(
                     SourceKey = $"{replaced.SourcePk}->{replacement.SourcePk}",
                 });
             }
-            await db.SaveChangesAsync(cancellationToken);
+            await bulkWriter.WriteTrackedAddsAsync(PlanTableOrder, cancellationToken);
             after = units[^1].PlanUnitId;
         }
     }
@@ -866,24 +875,31 @@ public sealed class MappingService(
                     source.SourcePk);
             }
             after = attachments[^1].SourcePk;
-            await db.SaveChangesAsync(cancellationToken);
+            await bulkWriter.WriteTrackedAddsAsync(PlanTableOrder, cancellationToken);
         }
         if (found)
             AddLog(run, null, PlanLogKind.SourceLimitation, null, null,
                 "Attachment metadata is retained, but this source extraction does not provide a unit link. No files were copied or hashed during mapping.");
     }
 
-    private async Task<HashSet<string>> WaitingCandidateKeysAsync(MigrationReconstructionRun reconstruction,
-        CancellationToken cancellationToken)
+    private async Task StageWaitingCandidatesAsync(MigrationMapRun run,
+        MigrationReconstructionRun reconstruction, CancellationToken cancellationToken)
     {
-        if (!await db.MigrationReviewItems.AnyAsync(row => row.TenantId == tenant.TenantId &&
-                row.RunId == reconstruction.CanonicalisationRunId && row.Status == MigrationReviewStatus.Waiting,
-                cancellationToken)) return [];
-        var json = await db.MigrationReviewItems.AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
-                row.RunId == reconstruction.CanonicalisationRunId && row.Status == MigrationReviewStatus.Waiting)
-            .Select(row => row.CandidateSourceKeysJson).ToListAsync(cancellationToken);
-        return json.SelectMany(value => JsonSerializer.Deserialize<List<string>>(value) ?? [])
-            .ToHashSet(StringComparer.Ordinal);
+        await db.Database.ExecuteSqlInterpolatedAsync($$"""
+            INSERT INTO [migration].[migration_map_waiting_candidate]
+                ([tenant_id], [map_run_id], [candidate_id], [source_key])
+            SELECT {{tenant.TenantId.Value}}, {{run.RunId}}, candidate.[candidate_id], candidate.[primary_source_key]
+              FROM [migration].[migration_review_item] AS review_item
+              CROSS APPLY OPENJSON(review_item.[candidate_source_keys_json]) AS candidate_key
+              JOIN [migration].[migration_unit_candidate] AS candidate
+                ON candidate.[tenant_id] = review_item.[tenant_id]
+               AND candidate.[run_id] = review_item.[run_id]
+               AND candidate.[primary_source_key] = candidate_key.[value]
+             WHERE review_item.[tenant_id] = {{tenant.TenantId.Value}}
+               AND review_item.[run_id] = {{reconstruction.CanonicalisationRunId}}
+               AND review_item.[status] = N'waiting'
+             GROUP BY candidate.[candidate_id], candidate.[primary_source_key];
+            """, cancellationToken);
     }
 
     // OD-50: "exclude from history" drops only the events reconstruction flagged for review,

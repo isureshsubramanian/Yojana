@@ -31,6 +31,15 @@ if (options.Command == "migration-source")
         Console.WriteLine($"  {row.Key}: {row.Value:N0}");
     return;
 }
+if (options.Command == "migration-plan-fingerprint")
+{
+    var tenantId = Guid.Parse(options.TenantSelection!);
+    var mapRunId = await MigrationPlanFingerprint.FirstCompletedMapAsync(options.TargetConnectionString!, tenantId);
+    var fingerprint = await MigrationPlanFingerprint.CalculateAsync(options.TargetConnectionString!, tenantId,
+        mapRunId);
+    Console.WriteLine($"migration plan · tenant {tenantId:D} · map {mapRunId:D} · fingerprint {fingerprint}");
+    return;
+}
 if (options.Command == "migration-rehearsal")
 {
     try

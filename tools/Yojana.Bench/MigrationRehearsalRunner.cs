@@ -42,6 +42,7 @@ public sealed record MigrationRehearsalResult(
     long DeltaOwner,
     long DeltaGone,
     long RemainingMigratedUnits,
+    string PlanFingerprint,
     string MarkdownReport,
     string JsonReport);
 
@@ -58,6 +59,7 @@ public sealed class MigrationRehearsalRunner(BenchOptions options)
     private bool finalUndone;
     private bool deltaUndone;
     private ActualPlanCapture? planCapture;
+    private string planFingerprint = string.Empty;
 
     public async Task<MigrationRehearsalResult> RunAsync(CancellationToken cancellationToken)
     {
@@ -99,6 +101,9 @@ public sealed class MigrationRehearsalRunner(BenchOptions options)
 
             var first = await RunPipelineAsync(services, sourceView.SourceId, "", cancellationToken);
             var map = first.Map;
+            planFingerprint = await MigrationPlanFingerprint.CalculateAsync(options.TargetConnectionString!,
+                tenant.Value, map.RunId, cancellationToken);
+            report.SetPlanFingerprint(planFingerprint);
             excluded = Math.Max(0, sourceSerials - map.UnitsByOrigin.Sum(row => row.Count));
             await ConfigureItemReferencesAsync(db, sourceView.SourceId, map.RunId, cancellationToken);
             await RunFinalValidationAsync(services, first.BatchId, cancellationToken);
@@ -175,7 +180,7 @@ public sealed class MigrationRehearsalRunner(BenchOptions options)
             var paths = await report.WriteAsync(cancellationToken);
             return new(tenant.Value, sourceSerials, finalView.Applied, finalView.Refused, excluded,
                 deltaView!.Applied, deltaView.CoverReplaced, deltaView.OwnerDiffers, deltaView.GoneFromSource,
-                remaining, paths.Markdown, paths.Json);
+                remaining, planFingerprint, paths.Markdown, paths.Json);
         }
         catch (Exception exception)
         {

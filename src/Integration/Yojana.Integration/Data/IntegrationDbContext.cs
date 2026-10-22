@@ -83,6 +83,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<MigrationOwnershipEpisode> MigrationOwnershipEpisodes => Set<MigrationOwnershipEpisode>();
     public DbSet<MigrationReconstructionLog> MigrationReconstructionLogs => Set<MigrationReconstructionLog>();
     public DbSet<MigrationMapRun> MigrationMapRuns => Set<MigrationMapRun>();
+    public DbSet<MigrationMapWaitingCandidate> MigrationMapWaitingCandidates => Set<MigrationMapWaitingCandidate>();
     public DbSet<MigrationPlanUnit> MigrationPlanUnits => Set<MigrationPlanUnit>();
     public DbSet<MigrationPlanIdentifier> MigrationPlanIdentifiers => Set<MigrationPlanIdentifier>();
     public DbSet<MigrationPlanEvent> MigrationPlanEvents => Set<MigrationPlanEvent>();

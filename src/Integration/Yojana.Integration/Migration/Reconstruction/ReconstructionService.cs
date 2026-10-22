@@ -17,9 +17,15 @@ public sealed class ReconstructionService(
     IClock clock,
     IMigrationProfileStatus profileStatus,
     IMigrationReviewCarryOver reviewQueue,
-    SourceHistoryReader sourceHistory)
+    SourceHistoryReader sourceHistory,
+    MigrationBulkWriter bulkWriter)
 {
-    private const int CandidateBatchSize = 1000;
+    private const int CandidateBatchSize = 5000;
+    private static readonly Type[] ReconstructionTableOrder =
+    [
+        typeof(MigrationHistoryEvent), typeof(MigrationOwnershipEpisode),
+        typeof(MigrationReconstructionLog), typeof(MigrationReviewItem),
+    ];
 
     public async Task<StartReconstructionResponse> EnqueueAsync(Guid batchId,
         CancellationToken cancellationToken)
@@ -229,7 +235,7 @@ public sealed class ReconstructionService(
         Guid? lastCandidateId = null;
         while (true)
         {
-            var query = db.MigrationUnitCandidates.Where(row => row.TenantId == tenant.TenantId &&
+            var query = db.MigrationUnitCandidates.AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
                 row.RunId == run.CanonicalisationRunId && row.Disposition == CandidateDisposition.Active);
             if (lastCandidateId is not null)
                 query = query.Where(row => row.CandidateId.CompareTo(lastCandidateId.Value) > 0);
@@ -239,6 +245,7 @@ public sealed class ReconstructionService(
             var ids = candidates.Select(row => row.CandidateId).ToList();
             var sourceRows = await sourceHistory.ReadAsync(run.CanonicalisationRunId, run.BatchId,
                 batch.SourceSystem, ids, cancellationToken);
+            var sourceRowsByCandidate = sourceRows.ToLookup(row => row.CandidateId);
             var sourceMasters = await db.Set<SerialMasterStagingRow>().AsNoTracking().Where(row =>
                     row.TenantId == tenant.TenantId && row.BatchId == run.BatchId &&
                     row.SourceSystem == batch.SourceSystem && row.AbsentSinceBatchId == null &&
@@ -248,7 +255,7 @@ public sealed class ReconstructionService(
             var masters = sourceMasters.ToDictionary(row => row.SourcePk, StringComparer.Ordinal);
             foreach (var candidate in candidates)
             {
-                var rows = sourceRows.Where(row => row.CandidateId == candidate.CandidateId)
+                var rows = sourceRowsByCandidate[candidate.CandidateId]
                     .OrderBy(row => row.DocumentDate ?? DateTime.MaxValue)
                     .ThenBy(row => row.CreatedDate ?? DateTime.MaxValue).ThenBy(row => row.CreatedTime ?? int.MaxValue)
                     .ThenBy(row => row.LogEntry ?? int.MaxValue).ThenBy(row => row.TransactionSourceKey,
@@ -259,11 +266,10 @@ public sealed class ReconstructionService(
             }
             run.CandidatesReconstructed += candidates.Count;
             lastCandidateId = candidates[^1].CandidateId;
-            await db.SaveChangesAsync(cancellationToken);
-            db.ChangeTracker.Clear();
-            run = await db.MigrationReconstructionRuns.SingleAsync(row => row.TenantId == tenant.TenantId &&
-                row.RunId == run.RunId, cancellationToken);
+            await bulkWriter.WriteTrackedAddsAsync(ReconstructionTableOrder, cancellationToken);
         }
+        await UpdateHistoryDepthAsync(run, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private void ProcessCandidate(MigrationReconstructionRun run, string sourceSystem,
@@ -390,11 +396,7 @@ public sealed class ReconstructionService(
                 Quantity = 1m,
                 Provenance = HistoryProvenance.Reconstructed,
             });
-            candidate.HistoryDepth = HistoryDepth.OpeningBalanceOnly;
         }
-        else
-            candidate.HistoryDepth = history[0].MovementKind is HistoryMovementKind.Received or HistoryMovementKind.Produced
-                ? HistoryDepth.Full : HistoryDepth.Partial;
 
         for (var index = 0; index < history.Count; index++) history[index].Sequence = index + 1;
         db.MigrationHistoryEvents.AddRange(history);
@@ -509,6 +511,28 @@ public sealed class ReconstructionService(
     private static string? EventSourceKey(MigrationHistoryEvent historyEvent,
         IReadOnlyList<SourceHistoryMovementRow> rows) =>
         rows.FirstOrDefault(row => row.EventCandidateId == historyEvent.EventCandidateId)?.TransactionSourceKey;
+
+    private async Task UpdateHistoryDepthAsync(MigrationReconstructionRun run,
+        CancellationToken cancellationToken)
+    {
+        await db.Database.ExecuteSqlInterpolatedAsync($$"""
+            UPDATE candidate
+               SET [history_depth] = CASE
+                   WHEN first_event.[movement_kind] = N'opening_balance' THEN N'opening_balance_only'
+                   WHEN first_event.[movement_kind] IN (N'received', N'produced') THEN N'full'
+                   ELSE N'partial'
+               END
+              FROM [migration].[migration_unit_candidate] AS candidate
+              JOIN [migration].[migration_history_event] AS first_event
+                ON first_event.[tenant_id] = candidate.[tenant_id]
+               AND first_event.[candidate_id] = candidate.[candidate_id]
+               AND first_event.[reconstruction_run_id] = {{run.RunId}}
+               AND first_event.[sequence] = 1
+             WHERE candidate.[tenant_id] = {{tenant.TenantId.Value}}
+               AND candidate.[run_id] = {{run.CanonicalisationRunId}}
+               AND candidate.[disposition] = N'active';
+            """, cancellationToken);
+    }
 
     private async Task MarkFailedAsync(Guid runId, string code, CancellationToken cancellationToken)
     {
