@@ -54,7 +54,9 @@ public sealed class MigratedCertificateBatchTests(SerialisationHostFixture fixtu
         var replaced = Shipped(server, prefix + "-R1", ConditionGrades.Defective, true);
         var replacement = Shipped(server, prefix + "-R2", ConditionGrades.New, true) with
         {
-            ReplacementLinks = [new MigratedReplacementLink(Guid.NewGuid(), Guid.Empty, Guid.Empty, "unknown", "SWAP-1")],
+            ReplacementLinks = [new MigratedReplacementLink(Guid.NewGuid(), Guid.Empty, Guid.Empty, "unknown", "SWAP-1",
+                ReplacementDirection.CustomerFacing, ReplacementReason.WarrantyDefect, ReplacementLinkState.ClosedReturned,
+                ReplacementConditionAllowed.Any, ReplacementPricePolicy.Zero, 0m, "XXX")],
         };
         replacement = replacement with
         {
