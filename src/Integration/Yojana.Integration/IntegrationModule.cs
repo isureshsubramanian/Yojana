@@ -37,6 +37,8 @@ using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Integration.LegacyMigration.Validation;
+using Yojana.Integration.Ports;
+using Yojana.Platform.Contracts.Records;
 
 namespace Yojana.Integration;
 
@@ -48,6 +50,7 @@ public static class IntegrationModule
     public static IHostApplicationBuilder AddIntegrationModule(this IHostApplicationBuilder builder)
     {
         builder.AddModuleDbContext<IntegrationDbContext>(Schema);
+        builder.Services.AddKeyedScoped<IRecordReferenceResolver, IntegrationMessageRecordReferenceResolver>(RecordKind.IntegrationMessage);
         builder.Services.AddScoped<IConnectionBusyObserver, ConnectionBusyAuditObserver>();
         builder.Services.AddScoped<ConnectionCommands>();
         builder.Services.AddScoped<ConnectionQueries>();

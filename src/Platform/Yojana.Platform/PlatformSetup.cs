@@ -158,7 +158,9 @@ public static class PlatformSetup
         builder.Services.AddScoped<IPresenceService, PresenceService>();
         // A factory for the same reason as ITenantCurrency above: it keeps PlatformDbContext out of the generated graph of
         // any module handler that later takes IUserDirectory.
-        builder.Services.AddScoped<IUserDirectory>(sp => new UserDirectory(sp.GetRequiredService<PlatformDbContext>(), sp.GetRequiredService<ITenantContext>()));
+        builder.Services.AddScoped<UserDirectory>(sp => new UserDirectory(sp.GetRequiredService<PlatformDbContext>(), sp.GetRequiredService<ITenantContext>()));
+        builder.Services.AddScoped<IUserDirectory>(sp => sp.GetRequiredService<UserDirectory>());
+        builder.Services.AddScoped<ITenantStaffDirectory>(sp => sp.GetRequiredService<UserDirectory>());
         // Shell contributions: modules add their own IOverviewContributor and IConnectionHealthSource registrations.
         builder.Services.AddScoped<IOverviewContributor, PlatformOverviewContributor>();
         builder.Services.AddSingleton<IConnectionHealthSource, NoConnectionsHealthSource>();
@@ -178,6 +180,10 @@ public static class PlatformSetup
         builder.Services.AddAuthorization(auth =>
         {
             auth.AddPolicy(YojanaPolicy.TenantMember, p => p.RequireAuthenticatedUser().RequireClaim(YojanaClaim.TenantId));
+            auth.AddPolicy(YojanaPolicy.StaffMember, p => p.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId)
+                .RequireAssertion(context => !context.User.HasClaim(claim => claim.Type == YojanaClaim.CustomerPartyRef)
+                    && context.User.FindAll(YojanaClaim.Role).Any(claim => YojanaRole.IsKnown(claim.Value))));
             auth.AddPolicy(YojanaPolicy.CustomerPortal, p => p.RequireAuthenticatedUser()
                 .RequireClaim(YojanaClaim.TenantId).RequireClaim(YojanaClaim.CustomerPartyRef));
             foreach (var role in YojanaRole.All)

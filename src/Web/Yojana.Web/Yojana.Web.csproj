@@ -18,6 +18,7 @@
     <ProjectReference Include="../../Platform/Yojana.Platform/Yojana.Platform.csproj" />
     <ProjectReference Include="../../Serialisation/Yojana.Serialisation/Yojana.Serialisation.csproj" />
     <ProjectReference Include="../../Integration/Yojana.Integration/Yojana.Integration.csproj" />
+    <ProjectReference Include="../../Knowledge/Yojana.Knowledge/Yojana.Knowledge.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

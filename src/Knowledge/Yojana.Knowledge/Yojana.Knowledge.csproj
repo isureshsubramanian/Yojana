@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Yojana.Knowledge.Contracts/Yojana.Knowledge.Contracts.csproj" />
+    <ProjectReference Include="../../Platform/Yojana.Platform/Yojana.Platform.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

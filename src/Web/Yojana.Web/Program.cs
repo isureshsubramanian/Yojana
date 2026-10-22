@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Wolverine;
 using Wolverine.EntityFrameworkCore;
 using Yojana.Integration;
+using Yojana.Knowledge;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Security;
@@ -36,9 +37,11 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 // Handler assemblies must be known before the platform configures the bus (PlatformSetup.IncludeHandlers).
 PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);
 PlatformSetup.IncludeHandlers(typeof(IntegrationModule).Assembly);
+PlatformSetup.IncludeHandlers(typeof(KnowledgeModule).Assembly);
 builder.AddYojanaPlatform();
 builder.AddSerialisationModule();
 builder.AddIntegrationModule();
+builder.AddKnowledgeModule();
 
 var app = builder.Build();
 
@@ -115,6 +118,7 @@ app.UseSerialisationInteractiveReads();
 app.MapPresenceEndpoints();
 app.MapSerialisationEndpoints();
 app.MapIntegrationEndpoints();
+app.MapKnowledgeEndpoints();
 
 app.MapGet("/health", async (PlatformDbContext db, CancellationToken ct) =>
 {
