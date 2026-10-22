@@ -243,6 +243,8 @@ internal static class SourceProtocol
             if (table.RowType == typeof(SerialMasterStagingRow))
             {
                 builder.Property(nameof(SerialMasterStagingRow.NormalisedSerialNumber)).HasMaxLength(500);
+                builder.Property(nameof(SerialMasterStagingRow.FamilyNormalisedSerialNumber)).HasMaxLength(500)
+                    .UseCollation("Latin1_General_100_BIN2");
                 builder.Property(nameof(SerialMasterStagingRow.NormalisedManufacturerSerial)).HasMaxLength(500);
                 builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.SourceSystem),
                         nameof(SerialMasterStagingRow.ItemCode),
@@ -258,10 +260,18 @@ internal static class SourceProtocol
                         nameof(StagingRow.SourcePk), nameof(SerialMasterStagingRow.SystemNumber),
                         nameof(SerialMasterStagingRow.SerialNumber),
                         nameof(SerialMasterStagingRow.ManufacturerSerial));
+                builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
+                        nameof(StagingRow.SourceSystem), nameof(StagingRow.AbsentSinceBatchId),
+                        nameof(SerialMasterStagingRow.ItemCode),
+                        nameof(SerialMasterStagingRow.FamilyNormalisedSerialNumber))
+                    .IncludeProperties(nameof(StagingRow.SourcePk), nameof(SerialMasterStagingRow.SystemNumber),
+                        nameof(SerialMasterStagingRow.SerialNumber));
             }
             if (table.RowType == typeof(EquipmentCardStagingRow))
             {
                 builder.Property(nameof(EquipmentCardStagingRow.NormalisedInternalSerial)).HasMaxLength(500);
+                builder.Property(nameof(EquipmentCardStagingRow.FamilyNormalisedInternalSerial)).HasMaxLength(500)
+                    .UseCollation("Latin1_General_100_BIN2");
                 builder.Property(nameof(EquipmentCardStagingRow.NormalisedManufacturerSerial)).HasMaxLength(500);
                 builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.SourceSystem),
                         nameof(EquipmentCardStagingRow.ItemCode),
@@ -271,6 +281,13 @@ internal static class SourceProtocol
                         nameof(EquipmentCardStagingRow.CustomerCode),
                         nameof(EquipmentCardStagingRow.InternalSerial),
                         nameof(EquipmentCardStagingRow.ManufacturerSerial));
+                builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
+                        nameof(StagingRow.SourceSystem), nameof(StagingRow.AbsentSinceBatchId),
+                        nameof(EquipmentCardStagingRow.ItemCode),
+                        nameof(EquipmentCardStagingRow.FamilyNormalisedInternalSerial))
+                    .IncludeProperties(nameof(StagingRow.SourcePk), nameof(EquipmentCardStagingRow.CardId),
+                        nameof(EquipmentCardStagingRow.InternalSerial), nameof(EquipmentCardStagingRow.WarrantyStart),
+                        nameof(EquipmentCardStagingRow.WarrantyEnd));
                 builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.SourceSystem),
                         nameof(EquipmentCardStagingRow.ItemCode),
                         nameof(EquipmentCardStagingRow.NormalisedManufacturerSerial))
@@ -281,6 +298,26 @@ internal static class SourceProtocol
                         nameof(EquipmentCardStagingRow.ManufacturerSerial));
                 builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
                     nameof(StagingRow.SourceSystem), nameof(EquipmentCardStagingRow.CardId));
+            }
+            if (table.RowType == typeof(ContractLineStagingRow))
+            {
+                builder.Property(nameof(ContractLineStagingRow.NormalisedInternalSerial)).HasMaxLength(500);
+                builder.Property(nameof(ContractLineStagingRow.FamilyNormalisedInternalSerial)).HasMaxLength(500)
+                    .UseCollation("Latin1_General_100_BIN2");
+                builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
+                        nameof(StagingRow.SourceSystem), nameof(StagingRow.AbsentSinceBatchId),
+                        nameof(ContractLineStagingRow.ItemCode),
+                        nameof(ContractLineStagingRow.NormalisedInternalSerial))
+                    .IncludeProperties(nameof(StagingRow.SourcePk), nameof(ContractLineStagingRow.ContractId),
+                        nameof(ContractLineStagingRow.InternalSerial), nameof(ContractLineStagingRow.StartDate),
+                        nameof(ContractLineStagingRow.EndDate));
+                builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
+                        nameof(StagingRow.SourceSystem), nameof(StagingRow.AbsentSinceBatchId),
+                        nameof(ContractLineStagingRow.ItemCode),
+                        nameof(ContractLineStagingRow.FamilyNormalisedInternalSerial))
+                    .IncludeProperties(nameof(StagingRow.SourcePk), nameof(ContractLineStagingRow.ContractId),
+                        nameof(ContractLineStagingRow.InternalSerial), nameof(ContractLineStagingRow.StartDate),
+                        nameof(ContractLineStagingRow.EndDate));
             }
             if (table.RowType == typeof(SerialQuantityStagingRow))
                 builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),

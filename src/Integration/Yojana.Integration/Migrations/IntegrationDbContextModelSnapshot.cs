@@ -5453,6 +5453,12 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("extracted_at");
 
+                    b.Property<string>("FamilyNormalisedInternalSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("family_normalised_internal_serial")
+                        .UseCollation("Latin1_General_100_BIN2");
+
                     b.Property<Guid>("FirstBatchId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("first_batch_id");
@@ -5475,6 +5481,11 @@ namespace Yojana.Integration.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("manufacturer_serial");
+
+                    b.Property<string>("NormalisedInternalSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("normalised_internal_serial");
 
                     b.Property<byte[]>("RowHash")
                         .IsRequired()
@@ -5499,6 +5510,16 @@ namespace Yojana.Integration.Migrations
 
                     b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_ctr1_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "ItemCode", "FamilyNormalisedInternalSerial")
+                        .HasDatabaseName("ix_stg_src_ctr1_tenant_id_batch_id_source_system_absent_since_batch_id_item_code_family_normalised_internal_serial");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "ItemCode", "FamilyNormalisedInternalSerial"), new[] { "SourcePk", "ContractId", "InternalSerial", "StartDate", "EndDate" });
+
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "ItemCode", "NormalisedInternalSerial")
+                        .HasDatabaseName("ix_stg_src_ctr1_tenant_id_batch_id_source_system_absent_since_batch_id_item_code_normalised_internal_serial");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "ItemCode", "NormalisedInternalSerial"), new[] { "SourcePk", "ContractId", "InternalSerial", "StartDate", "EndDate" });
 
                     b.ToTable("stg_src_ctr1", "migration");
                 });
@@ -5755,6 +5776,12 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("extracted_at");
 
+                    b.Property<string>("FamilyNormalisedInternalSerial")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("family_normalised_internal_serial")
+                        .UseCollation("Latin1_General_100_BIN2");
+
                     b.Property<Guid>("FirstBatchId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("first_batch_id");
@@ -5838,6 +5865,11 @@ namespace Yojana.Integration.Migrations
 
                     b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_oins_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "ItemCode", "FamilyNormalisedInternalSerial")
+                        .HasDatabaseName("ix_stg_src_oins_tenant_id_batch_id_source_system_absent_since_batch_id_item_code_family_normalised_internal_serial");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "ItemCode", "FamilyNormalisedInternalSerial"), new[] { "SourcePk", "CardId", "InternalSerial", "WarrantyStart", "WarrantyEnd" });
 
                     b.ToTable("stg_src_oins", "migration");
                 });
@@ -6229,6 +6261,12 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("extracted_at");
 
+                    b.Property<string>("FamilyNormalisedSerialNumber")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("family_normalised_serial_number")
+                        .UseCollation("Latin1_General_100_BIN2");
+
                     b.Property<Guid>("FirstBatchId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("first_batch_id");
@@ -6322,6 +6360,11 @@ namespace Yojana.Integration.Migrations
 
                     b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_osrn_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
+
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "ItemCode", "FamilyNormalisedSerialNumber")
+                        .HasDatabaseName("ix_stg_src_osrn_tenant_id_batch_id_source_system_absent_since_batch_id_item_code_family_normalised_serial_number");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "ItemCode", "FamilyNormalisedSerialNumber"), new[] { "SourcePk", "SystemNumber", "SerialNumber" });
 
                     b.ToTable("stg_src_osrn", "migration");
                 });

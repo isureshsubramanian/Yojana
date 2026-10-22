@@ -384,7 +384,7 @@ public sealed class SourceExtractor(
         var join = "target.tenant_id = load_row.tenant_id AND target.source_system = load_row.source_system " +
                    "AND target.source_table = load_row.source_table AND target.source_pk = load_row.source_pk";
         // TIGHT COUPLING (stored serial match keys): these assignments and migration.canonical_serial's
-        // trim-and-uppercase behaviour are one storage contract. The P9T35 backfill uses the same function;
+        // trim-and-uppercase behaviour are one storage contract. The staging-key migrations use the same function;
         // changing its false/false/false behaviour without rebuilding these columns makes old and new rows differ.
         var matchKeys = MatchKeys(table.RowType);
         var rawUpdates = string.Join(",\n                   ", table.Columns.Select(column =>
@@ -452,6 +452,8 @@ public sealed class SourceExtractor(
             : rowType == typeof(EquipmentCardStagingRow)
                 ? [new("normalised_internal_serial", "internal_serial"),
                     new("normalised_manufacturer_serial", "manufacturer_serial")]
+                : rowType == typeof(ContractLineStagingRow)
+                    ? [new("normalised_internal_serial", "internal_serial")]
                 : [];
 
     private static string MatchKeySql(string value) =>

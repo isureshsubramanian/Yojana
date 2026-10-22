@@ -57,9 +57,13 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
         var batchColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'migration_batch'").ToListAsync();
         AssertSuperset(batchColumns, "tenant_id", "display_number");
         var serialMasterColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'stg_src_osrn'").ToListAsync();
-        AssertSuperset(serialMasterColumns, "normalised_serial_number", "normalised_manufacturer_serial");
+        AssertSuperset(serialMasterColumns, "normalised_serial_number", "normalised_manufacturer_serial",
+            "family_normalised_serial_number");
         var equipmentCardColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'stg_src_oins'").ToListAsync();
-        AssertSuperset(equipmentCardColumns, "normalised_internal_serial", "normalised_manufacturer_serial");
+        AssertSuperset(equipmentCardColumns, "normalised_internal_serial", "normalised_manufacturer_serial",
+            "family_normalised_internal_serial");
+        var contractLineColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'stg_src_ctr1'").ToListAsync();
+        AssertSuperset(contractLineColumns, "normalised_internal_serial", "family_normalised_internal_serial");
         var stagingWithoutActiveIndex = await db.Database.SqlQueryRaw<int>("""
             SELECT COUNT(*) AS [Value]
               FROM sys.tables AS table_row

@@ -28,9 +28,9 @@ public sealed class CanonicalisationWriter(IntegrationDbContext db, ITenantConte
              WHERE candidate.tenant_id = {{tenant.TenantId.Value}} AND candidate.run_id = {{run.RunId}};
             """, cancellationToken);
             await WriteEventsAsync(run, sourceSystem, cancellationToken);
-            await db.Database.ExecuteSqlRawAsync(CardSql(RuleValues(rules.Count)),
+            await db.Database.ExecuteSqlRawAsync(CardSql,
                 Parameters(run, sourceSystem, rules), cancellationToken);
-            await db.Database.ExecuteSqlRawAsync(ContractSql(RuleValues(rules.Count)),
+            await db.Database.ExecuteSqlRawAsync(ContractSql,
                 Parameters(run, sourceSystem, rules), cancellationToken);
         }
         finally
@@ -124,6 +124,72 @@ public sealed class CanonicalisationWriter(IntegrationDbContext db, ITenantConte
         """;
 
     private static string CandidateSql(string values) => $$"""
+        -- TIGHT COUPLING (family match keys): these three stored values are derived from the tenant family rule
+        -- selected below. They must be refreshed together before candidate creation; otherwise the later joins can
+        -- compare keys produced by different rule versions. Keeping the refresh in this batch also means the scalar
+        -- function runs once per source row rather than once per candidate comparison.
+        WITH {{FamilyCtes(values)}}, master_keys AS
+        (
+            SELECT master.source_pk,
+                   [migration].[canonical_serial](CASE WHEN NULLIF(TRIM(master.serial_number), N'') IS NULL
+                       THEN CONCAT(N'SYSTEM-', CONVERT(nvarchar(40), master.system_number))
+                       ELSE master.serial_number END, family_rule.strip_hyphens,
+                       family_rule.strip_spaces, family_rule.strip_leading_zeros) AS family_key
+              FROM [migration].[stg_src_osrn] AS master
+              OUTER APPLY
+              (
+                  SELECT TOP (1) family_rules.* FROM family_rules
+                   WHERE UPPER(master.item_code) LIKE family_rules.prefix + N'%'
+                   ORDER BY LEN(family_rules.prefix) DESC, family_rules.prefix
+              ) AS family_rule
+             WHERE master.tenant_id = @tenant AND master.batch_id = @batch
+               AND master.source_system = @source AND master.absent_since_batch_id IS NULL
+        )
+        UPDATE master SET family_normalised_serial_number = master_keys.family_key
+          FROM [migration].[stg_src_osrn] AS master
+          JOIN master_keys ON master_keys.source_pk = master.source_pk
+         WHERE master.tenant_id = @tenant AND master.source_system = @source;
+
+        WITH {{FamilyCtes(values)}}, card_keys AS
+        (
+            SELECT card.source_pk,
+                   [migration].[canonical_serial](card.internal_serial, family_rule.strip_hyphens,
+                       family_rule.strip_spaces, family_rule.strip_leading_zeros) AS family_key
+              FROM [migration].[stg_src_oins] AS card
+              OUTER APPLY
+              (
+                  SELECT TOP (1) family_rules.* FROM family_rules
+                   WHERE UPPER(card.item_code) LIKE family_rules.prefix + N'%'
+                   ORDER BY LEN(family_rules.prefix) DESC, family_rules.prefix
+              ) AS family_rule
+             WHERE card.tenant_id = @tenant AND card.batch_id = @batch
+               AND card.source_system = @source AND card.absent_since_batch_id IS NULL
+        )
+        UPDATE card SET family_normalised_internal_serial = card_keys.family_key
+          FROM [migration].[stg_src_oins] AS card
+          JOIN card_keys ON card_keys.source_pk = card.source_pk
+         WHERE card.tenant_id = @tenant AND card.source_system = @source;
+
+        WITH {{FamilyCtes(values)}}, line_keys AS
+        (
+            SELECT line.source_pk,
+                   [migration].[canonical_serial](line.internal_serial, family_rule.strip_hyphens,
+                       family_rule.strip_spaces, family_rule.strip_leading_zeros) AS family_key
+              FROM [migration].[stg_src_ctr1] AS line
+              OUTER APPLY
+              (
+                  SELECT TOP (1) family_rules.* FROM family_rules
+                   WHERE UPPER(line.item_code) LIKE family_rules.prefix + N'%'
+                   ORDER BY LEN(family_rules.prefix) DESC, family_rules.prefix
+              ) AS family_rule
+             WHERE line.tenant_id = @tenant AND line.batch_id = @batch
+               AND line.source_system = @source AND line.absent_since_batch_id IS NULL
+        )
+        UPDATE line SET family_normalised_internal_serial = line_keys.family_key
+          FROM [migration].[stg_src_ctr1] AS line
+          JOIN line_keys ON line_keys.source_pk = line.source_pk
+         WHERE line.tenant_id = @tenant AND line.source_system = @source;
+
         WITH {{FamilyCtes(values)}},
         normalised AS
         (
@@ -138,10 +204,7 @@ public sealed class CanonicalisationWriter(IntegrationDbContext db, ITenantConte
                    CASE WHEN NULLIF(master.normalised_serial_number, N'') IS NULL
                         THEN UPPER(CONCAT(N'SYSTEM-', CONVERT(nvarchar(40), master.system_number)))
                         ELSE master.normalised_serial_number END COLLATE Latin1_General_100_BIN2 AS trimmed_key,
-                   [migration].[canonical_serial](CASE WHEN NULLIF(TRIM(master.serial_number), N'') IS NULL
-                        THEN CONCAT(N'SYSTEM-', CONVERT(nvarchar(40), master.system_number))
-                        ELSE master.serial_number END, family_rule.strip_hyphens, family_rule.strip_spaces,
-                        family_rule.strip_leading_zeros) COLLATE Latin1_General_100_BIN2 AS family_key,
+                   master.family_normalised_serial_number AS family_key,
                    CASE WHEN NULLIF(TRIM(master.serial_number), N'') IS NULL THEN 1 ELSE 0 END AS placeholder
               FROM [migration].[stg_src_osrn] AS master
               OUTER APPLY
@@ -187,23 +250,14 @@ public sealed class CanonicalisationWriter(IntegrationDbContext db, ITenantConte
           FROM resolved;
         """;
 
-    private static string CardSql(string values) => $$"""
-        WITH {{FamilyCtes(values)}},
-        card_keys AS
+    private const string CardSql = """
+        WITH card_keys AS
         (
             SELECT card.source_pk AS card_source_key, card.item_code, card.internal_serial,
                    card.manufacturer_serial, card.normalised_internal_serial,
-                   [migration].[canonical_serial](card.internal_serial, family_rule.strip_hyphens,
-                       family_rule.strip_spaces, family_rule.strip_leading_zeros)
-                       COLLATE Latin1_General_100_BIN2 AS family_key,
+                   card.family_normalised_internal_serial AS family_key,
                    card.warranty_start, card.warranty_end
               FROM [migration].[stg_src_oins] AS card
-              OUTER APPLY
-              (
-                  SELECT TOP (1) family_rules.* FROM family_rules
-                   WHERE UPPER(card.item_code) LIKE family_rules.prefix + N'%'
-                   ORDER BY LEN(family_rules.prefix) DESC, family_rules.prefix
-              ) AS family_rule
              WHERE card.tenant_id = @tenant AND card.batch_id = @batch
                AND card.source_system = @source AND card.absent_since_batch_id IS NULL
         ),
@@ -292,24 +346,15 @@ public sealed class CanonicalisationWriter(IntegrationDbContext db, ITenantConte
           FROM linked WHERE warranty_start IS NOT NULL OR warranty_end IS NOT NULL;
         """;
 
-    private static string ContractSql(string values) => $$"""
-        WITH {{FamilyCtes(values)}},
-        line_keys AS
+    private const string ContractSql = """
+        WITH line_keys AS
         (
             SELECT line.source_pk AS line_source_key, line.contract_id, line.item_code,
                    line.internal_serial, line.manufacturer_serial,
-                   UPPER(TRIM(line.internal_serial)) COLLATE Latin1_General_100_BIN2 AS trimmed_key,
-                   [migration].[canonical_serial](line.internal_serial, family_rule.strip_hyphens,
-                       family_rule.strip_spaces, family_rule.strip_leading_zeros)
-                       COLLATE Latin1_General_100_BIN2 AS family_key,
+                   line.normalised_internal_serial AS trimmed_key,
+                   line.family_normalised_internal_serial AS family_key,
                    line.start_date, line.end_date
               FROM [migration].[stg_src_ctr1] AS line
-              OUTER APPLY
-              (
-                  SELECT TOP (1) family_rules.* FROM family_rules
-                   WHERE UPPER(line.item_code) LIKE family_rules.prefix + N'%'
-                   ORDER BY LEN(family_rules.prefix) DESC, family_rules.prefix
-              ) AS family_rule
              WHERE line.tenant_id = @tenant AND line.batch_id = @batch
                AND line.source_system = @source AND line.absent_since_batch_id IS NULL
         ),
