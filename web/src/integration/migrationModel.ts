@@ -52,6 +52,8 @@ const failureLabels: Record<string, string> = {
   migration_extraction_failed: "The extraction failed. Check the source connection and try again.",
   migration_extraction_cancelled: "The extraction was cancelled.",
   migration_validation_failed: "Validation failed.",
+  migration_apply_cancelled: "The load was cancelled.",
+  migration_apply_failed: "The load failed.",
 };
 
 export const REVIEW_KINDS: readonly MigrationReviewKind[] = ["same_serial_one_item", "same_serial_different_items", "orphan_equipment_card", "serial_in_user_field", "history_needs_review"];
@@ -149,6 +151,63 @@ const refusalRuleLabels: Record<string, string> = {
   migration_signoff_hard_fail: "A hard fail blocks final sign-off",
   migration_signoff_unsigned_checks: "Every check needs both signatures",
   migration_signoff_not_found: "Sign-off record not found",
+  migration_apply_map_not_found: "A completed load plan is required",
+  migration_apply_signoff_required: "A final sign-off record is required for this load plan",
+  migration_apply_load_open: "An earlier load is still open",
+  migration_apply_load_not_found: "Load not found",
+  migration_apply_final_load: "A final load cannot be rolled back here",
+  migration_apply_not_rollbackable: "This load cannot be rolled back",
+  migration_apply_connection_unconfigured: "The source connection is not configured for loading",
+};
+
+const loadStatusLabels: Record<string, string> = {
+  queued: "Queued", running: "Running", completed: "Completed", failed: "Failed", rolled_back: "Rolled back",
+};
+const rollbackOutcomeLabels: Record<string, string> = {
+  rolled_back: "Rolled back", refused_touched: "Refused because units were touched", nothing_to_remove: "Nothing to remove",
+};
+const mappingGapLabels: Record<string, string> = {
+  template_not_approved: "Template not approved",
+  policy_not_published: "Policy not published",
+  no_template: "No template",
+  replacement_unit_missing: "Replacement unit missing",
+  attachment_path_missing: "Attachment path missing",
+  attachment_unit_unknown: "Attachment unit unknown",
+  waiting_review: "Waiting for review",
+};
+const refusalReasonLabels: Record<string, string> = {
+  item_not_synced: "Item has not synced",
+  item_unknown: "Item is not known",
+  item_not_serial_tracked: "Item is not serial tracked",
+  already_open_on_another_unit: "Identifier is already open on another unit",
+  duplicate_in_batch: "Identifier is duplicated in this load",
+  replacement_unit_not_loaded: "Replacement unit was not loaded",
+  entitlement_policy_unknown: "Cover policy is not known",
+  entitlement_policy_not_published: "Cover policy is not published",
+  entitlement_policy_version_differs: "Cover policy version differs",
+  entitlement_policy_family_differs: "Cover policy belongs to another family",
+  entitlement_direction_unknown: "Cover direction is not known",
+  entitlement_start_required: "Cover start date is required",
+  entitlement_dates_invalid: "Cover dates are not valid",
+  entitlement_termination_before_start: "Cover ends before it starts",
+  entitlement_evidence_required: "Cover evidence is required",
+  entitlement_selected_evidence_required: "Selected cover evidence is required",
+  entitlement_selected_evidence_differs: "Selected cover evidence differs",
+  family_occupied: "Coverage family already has cover",
+  migration_certificate_version_not_one: "Migrated certificate must be version one",
+  migration_certificate_provenance_invalid: "Certificate provenance is not valid",
+  migration_certificate_unknowns_required: "Certificate unknowns are required",
+  migration_certificate_evidence_required: "Certificate evidence is required",
+  migration_certificate_required: "Migrated certificate is required",
+  replacement_link_invalid: "Replacement link is not valid",
+  replacement_policy_must_be_unknown: "Replacement policy must be unknown",
+  identifier_required: "An identifier is required",
+  history_depth_unknown: "History depth is not known",
+  condition_grade_unknown: "Condition grade is not known",
+  ownership_party_is_us: "The tenant cannot be recorded as the customer",
+  identifier_type_repeated: "Identifier type is repeated",
+  empty: "Identifier is empty",
+  asterisk_not_encodable_in_code39: "Asterisk cannot be encoded in Code 39",
 };
 
 const validationCheckLabels: Record<string, string> = {
@@ -217,6 +276,39 @@ export function signoffDisabledReason(run: MigrationValidation | null | undefine
   if (unsigned) reasons.push(`${unsigned.toLocaleString()} check${unsigned === 1 ? " is" : "s are"} not signed`);
   return reasons.length ? reasons.join(" and ") : null;
 }
+export function finalLoadDisabledReason(run: MigrationValidation | null | undefined): string | null {
+  if (!run) return "Run final validation first";
+  if (run.rehearsal) return "The latest validation run is a rehearsal; run final validation";
+  if (run.status !== "completed") return run.status === "failed" ? "Final validation failed" : "Final validation has not completed";
+  const reasons: string[] = [];
+  if (run.hardFailed) reasons.push(`${run.hardFailed.toLocaleString()} hard fail${run.hardFailed === 1 ? "" : "s"}`);
+  const unsigned = Math.max(0, run.checksTotal - run.signedChecks);
+  if (unsigned) reasons.push(`${unsigned.toLocaleString()} check${unsigned === 1 ? " is" : "s are"} not signed`);
+  return reasons.length ? reasons.join(" and ") : null;
+}
+export function phaseStatusLabel(value: string | null | undefined): string {
+  if (!value || value === "not_run") return "Not run";
+  if (/^(queued|waiting)$/.test(value)) return "Waiting";
+  if (value === "running") return "Running";
+  if (/^(completed|succeeded)$/.test(value)) return "Done";
+  if (/^(failed|refused|blocked)$/.test(value)) return "Failed";
+  return readable(value);
+}
+export function phaseStatusTone(value: string | null | undefined): Tone {
+  const label = phaseStatusLabel(value);
+  return label === "Done" ? "ok" : label === "Running" ? "info" : label === "Failed" ? "bad" : "neutral";
+}
+export function loadStatusLabel(value: string): string { return loadStatusLabels[value] ?? readable(value); }
+export function loadStatusTone(value: string): Tone { return value === "completed" ? "ok" : value === "failed" ? "bad" : /^(queued|running)$/.test(value) ? "info" : "neutral"; }
+export function rollbackOutcomeLabel(value: string): string { return rollbackOutcomeLabels[value] ?? readable(value); }
+export function mappingGapLabel(value: string): string { return mappingGapLabels[value] ?? readable(value); }
+export function refusalReasonLabel(value: string): string {
+  const separator = value.indexOf(":");
+  if (separator < 0) return refusalReasonLabels[value] ?? readable(value);
+  const scope = value.slice(0, separator); const reason = value.slice(separator + 1);
+  return `${readable(scope)}: ${refusalReasonLabels[reason] ?? readable(reason)}`;
+}
+export function countTotal(rows: readonly { count: number }[]): number { return rows.reduce((sum, row) => sum + row.count, 0); }
 export function compactNumber(value: number): string {
   return new Intl.NumberFormat(undefined, { notation: Math.abs(value) >= 1_000_000 ? "compact" : "standard", maximumFractionDigits: 2 }).format(value);
 }

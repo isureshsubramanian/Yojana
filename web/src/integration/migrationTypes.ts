@@ -117,6 +117,100 @@ export interface CanonicalisationRun {
   gaps: CanonicalisationGap[];
 }
 
+export interface ReconstructionCount { key: string; count: number }
+export interface MigrationReconstruction {
+  runId: string;
+  batchId: string;
+  canonicalisationRunId: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  status: string;
+  failure: string | null;
+  candidatesReconstructed: number;
+  candidatesSkippedByDisposition: number;
+  eventsByMovementKind: ReconstructionCount[];
+  historyDepth: ReconstructionCount[];
+  cancellationPairsRemoved: number;
+  queuedForReviewByReason: ReconstructionCount[];
+}
+
+export interface MappingCount { key: string; count: number }
+export interface MigrationMap {
+  runId: string;
+  batchId: string;
+  reconstructionRunId: string;
+  cutoverDate: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  status: string;
+  failure: string | null;
+  unitsByOrigin: MappingCount[];
+  unitsByLocationState: MappingCount[];
+  identifiersByIssuer: MappingCount[];
+  eventsByProvenance: MappingCount[];
+  ownership: MappingCount[];
+  replacementLinks: number;
+  entitlementsByFamily: MappingCount[];
+  entitlementsByDateSource: MappingCount[];
+  expiredEntitlements: number;
+  gapsByKind: MappingCount[];
+  excludedCandidates: number;
+  waitingCandidatesLeftOut: number;
+}
+
+export interface StartMigrationApplyResponse {
+  loadId: string;
+  batchId: string;
+  mapRunId: string;
+  rehearsal: boolean;
+  status: string;
+}
+
+export interface MigrationApply {
+  loadId: string;
+  batchId: string;
+  mapRunId: string;
+  rehearsal: boolean;
+  status: string;
+  requestedBy: string;
+  requestedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  failure: string | null;
+  unitsInPlan: number;
+  applied: number;
+  alreadyApplied: number;
+  refused: number;
+  eventsWritten: number;
+  entitlementsWritten: number;
+  replacementLinksWritten: number;
+  certificatesRecorded: number;
+  rolledBackBy: string | null;
+  rolledBackAt: string | null;
+  gapReportRunId: string | null;
+  coverGaps: number | null;
+}
+
+export interface MigrationApplyRefusal {
+  refusalId: string;
+  planUnitId: string;
+  itemCode: string;
+  serial: string | null;
+  reasons: string[];
+}
+export interface MigrationApplyRefusalPage { items: MigrationApplyRefusal[]; nextCursor: string | null }
+
+export interface RollBackMigrationLoadResponse {
+  loadId: string;
+  outcome: string;
+  unitsRemoved: number;
+  eventsRemoved: number;
+  touchedUnitIds: string[];
+  entitlementsRemoved: number;
+  replacementLinksRemoved: number;
+  certificatesRemoved: number;
+}
+
 export interface CanonicalFamilyCatalogueItem { code: string; label: string }
 export interface CanonicalFamilyCatalogue { families: CanonicalFamilyCatalogueItem[] }
 
