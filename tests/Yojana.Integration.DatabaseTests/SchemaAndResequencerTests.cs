@@ -56,6 +56,32 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
         AssertSuperset(healthColumns, "tenant_id", "inbound_count_date_utc", "completed_inbound_days_json");
         var batchColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'migration_batch'").ToListAsync();
         AssertSuperset(batchColumns, "tenant_id", "display_number");
+        var serialMasterColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'stg_src_osrn'").ToListAsync();
+        AssertSuperset(serialMasterColumns, "normalised_serial_number", "normalised_manufacturer_serial");
+        var equipmentCardColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'stg_src_oins'").ToListAsync();
+        AssertSuperset(equipmentCardColumns, "normalised_internal_serial", "normalised_manufacturer_serial");
+        var stagingWithoutActiveIndex = await db.Database.SqlQueryRaw<int>("""
+            SELECT COUNT(*) AS [Value]
+              FROM sys.tables AS table_row
+              JOIN sys.schemas AS schema_row ON schema_row.schema_id = table_row.schema_id
+             WHERE schema_row.name = N'migration' AND table_row.name LIKE N'stg[_]src[_]%'
+               AND NOT EXISTS
+               (
+                   SELECT 1 FROM sys.indexes AS index_row
+                    WHERE index_row.object_id = table_row.object_id
+                      AND N'tenant_id,batch_id,source_system,absent_since_batch_id' =
+                          STUFF((SELECT N',' + column_row.name
+                                   FROM sys.index_columns AS index_column
+                                   JOIN sys.columns AS column_row ON column_row.object_id = index_column.object_id
+                                      AND column_row.column_id = index_column.column_id
+                                  WHERE index_column.object_id = index_row.object_id
+                                    AND index_column.index_id = index_row.index_id
+                                    AND index_column.key_ordinal BETWEEN 1 AND 4
+                                  ORDER BY index_column.key_ordinal
+                                  FOR XML PATH(''), TYPE).value('.', 'nvarchar(max)'), 1, 1, N'')
+               )
+            """).SingleAsync();
+        Assert.Equal(0, stagingWithoutActiveIndex);
         var validationColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'migration_validation_run'").ToListAsync();
         var applyColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'migration_apply_run'").ToListAsync();
         Assert.Contains("replacement_links_using_override", applyColumns);

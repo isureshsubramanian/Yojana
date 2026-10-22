@@ -195,6 +195,7 @@ public static class IntegrationModule
         builder.Services.AddScoped<SourceExtractor>();
         builder.Services.AddScoped<MigrationSourceService>();
         builder.Services.AddScoped<SourceHistoryReader>();
+        builder.Services.AddScoped<StagingMismatchProfileReader>();
         builder.Services.AddScoped<MigrationBatchService>();
         builder.Services.AddScoped<TemplateKeywordRules>();
         builder.Services.AddScoped<TemplateMappingService>();

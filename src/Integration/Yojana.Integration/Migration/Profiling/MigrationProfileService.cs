@@ -182,7 +182,7 @@ public sealed class MigrationProfileService(
             var orderedQueries = queries.ToDictionary(query => query.Class.Code, StringComparer.Ordinal);
             if (orderedQueries.Count != MigrationProfileClasses.All.Count)
                 throw new InvalidOperationException("The fixed migration profiling query pack is incomplete.");
-            var context = new MigrationProfileQueryContext(db, run.BatchId, batch.SourceSystem,
+            var context = new MigrationProfileQueryContext(db, tenant.TenantId, run.BatchId, batch.SourceSystem,
                 batch.FinishedAt ?? batch.StartedAt ?? clock.UtcNow);
             var results = new List<MigrationProfileResult>(MigrationProfileClasses.All.Count);
             foreach (var item in MigrationProfileClasses.All)

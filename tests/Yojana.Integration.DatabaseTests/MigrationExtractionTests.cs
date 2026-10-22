@@ -95,6 +95,14 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
                 x.SourceSystem == "cx01" && x.ItemCode == "SERVER-RACK-01" && x.SystemNumber == 1);
             Assert.Null(restored.AbsentSinceBatchId);
             Assert.Equal("  srv-Mixed-001  ", restored.SerialNumber);
+            Assert.Equal("SRV-MIXED-001", restored.NormalisedSerialNumber);
+            Assert.Equal("MNF-1", restored.NormalisedManufacturerSerial);
+            var stagedCard = await db.Set<EquipmentCardStagingRow>().AsNoTracking()
+                .SingleAsync(row => row.SourceSystem == "cx01");
+            Assert.Equal(stagedCard.InternalSerial?.Trim().ToUpperInvariant(),
+                stagedCard.NormalisedInternalSerial);
+            Assert.Equal(stagedCard.ManufacturerSerial?.Trim().ToUpperInvariant(),
+                stagedCard.NormalisedManufacturerSerial);
             Assert.Equal("SERVER-RACK-01|1|MAIN", await db.Set<SerialQuantityStagingRow>().Where(x =>
                 x.SourceSystem == "cx01" && x.ItemCode == "SERVER-RACK-01").Select(x => x.SourcePk).SingleAsync());
 

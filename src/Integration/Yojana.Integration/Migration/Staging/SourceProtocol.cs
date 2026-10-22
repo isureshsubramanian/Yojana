@@ -236,8 +236,65 @@ internal static class SourceProtocol
             builder.Property(nameof(StagingRow.SourceTable)).HasMaxLength(100);
             builder.Property(nameof(StagingRow.SourcePk)).HasMaxLength(1000);
             builder.Property(nameof(StagingRow.RowHash)).HasMaxLength(32).IsFixedLength();
-            builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId), nameof(StagingRow.SourcePk));
+            builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
+                nameof(StagingRow.SourceSystem), nameof(StagingRow.AbsentSinceBatchId),
+                nameof(StagingRow.SourcePk));
             builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.AbsentSinceBatchId), nameof(StagingRow.SourcePk));
+            if (table.RowType == typeof(SerialMasterStagingRow))
+            {
+                builder.Property(nameof(SerialMasterStagingRow.NormalisedSerialNumber)).HasMaxLength(500);
+                builder.Property(nameof(SerialMasterStagingRow.NormalisedManufacturerSerial)).HasMaxLength(500);
+                builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.SourceSystem),
+                        nameof(SerialMasterStagingRow.ItemCode),
+                        nameof(SerialMasterStagingRow.NormalisedSerialNumber))
+                    .IncludeProperties(nameof(StagingRow.BatchId), nameof(StagingRow.AbsentSinceBatchId),
+                        nameof(StagingRow.SourcePk), nameof(SerialMasterStagingRow.SystemNumber),
+                        nameof(SerialMasterStagingRow.SerialNumber),
+                        nameof(SerialMasterStagingRow.ManufacturerSerial));
+                builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.SourceSystem),
+                        nameof(SerialMasterStagingRow.ItemCode),
+                        nameof(SerialMasterStagingRow.NormalisedManufacturerSerial))
+                    .IncludeProperties(nameof(StagingRow.BatchId), nameof(StagingRow.AbsentSinceBatchId),
+                        nameof(StagingRow.SourcePk), nameof(SerialMasterStagingRow.SystemNumber),
+                        nameof(SerialMasterStagingRow.SerialNumber),
+                        nameof(SerialMasterStagingRow.ManufacturerSerial));
+            }
+            if (table.RowType == typeof(EquipmentCardStagingRow))
+            {
+                builder.Property(nameof(EquipmentCardStagingRow.NormalisedInternalSerial)).HasMaxLength(500);
+                builder.Property(nameof(EquipmentCardStagingRow.NormalisedManufacturerSerial)).HasMaxLength(500);
+                builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.SourceSystem),
+                        nameof(EquipmentCardStagingRow.ItemCode),
+                        nameof(EquipmentCardStagingRow.NormalisedInternalSerial))
+                    .IncludeProperties(nameof(StagingRow.BatchId), nameof(StagingRow.AbsentSinceBatchId),
+                        nameof(StagingRow.SourcePk), nameof(EquipmentCardStagingRow.CardId),
+                        nameof(EquipmentCardStagingRow.CustomerCode),
+                        nameof(EquipmentCardStagingRow.InternalSerial),
+                        nameof(EquipmentCardStagingRow.ManufacturerSerial));
+                builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.SourceSystem),
+                        nameof(EquipmentCardStagingRow.ItemCode),
+                        nameof(EquipmentCardStagingRow.NormalisedManufacturerSerial))
+                    .IncludeProperties(nameof(StagingRow.BatchId), nameof(StagingRow.AbsentSinceBatchId),
+                        nameof(StagingRow.SourcePk), nameof(EquipmentCardStagingRow.CardId),
+                        nameof(EquipmentCardStagingRow.CustomerCode),
+                        nameof(EquipmentCardStagingRow.InternalSerial),
+                        nameof(EquipmentCardStagingRow.ManufacturerSerial));
+                builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
+                    nameof(StagingRow.SourceSystem), nameof(EquipmentCardStagingRow.CardId));
+            }
+            if (table.RowType == typeof(SerialQuantityStagingRow))
+                builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
+                        nameof(StagingRow.SourceSystem), nameof(StagingRow.AbsentSinceBatchId),
+                        nameof(SerialQuantityStagingRow.ItemCode),
+                        nameof(SerialQuantityStagingRow.SystemNumber))
+                    .IncludeProperties(nameof(StagingRow.SourcePk),
+                        nameof(SerialQuantityStagingRow.WarehouseCode),
+                        nameof(SerialQuantityStagingRow.Quantity));
+            if (table.RowType == typeof(ItemSerialSettingStagingRow))
+                builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
+                        nameof(StagingRow.SourceSystem), nameof(StagingRow.AbsentSinceBatchId),
+                        nameof(ItemSerialSettingStagingRow.ItemCode))
+                    .IncludeProperties(nameof(ItemSerialSettingStagingRow.ManagementMethod));
             if (table.RowType == typeof(TransactionLogHeaderStagingRow))
                 builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
                     nameof(StagingRow.SourceSystem), nameof(TransactionLogHeaderStagingRow.DocumentType),

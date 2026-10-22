@@ -364,13 +364,23 @@ public sealed class SourceExtractor(
         var target = $"[{MigrationModel.Schema}].[{table.StagingTable}]";
         var join = "target.tenant_id = load_row.tenant_id AND target.source_system = load_row.source_system " +
                    "AND target.source_table = load_row.source_table AND target.source_pk = load_row.source_pk";
+        // TIGHT COUPLING (stored serial match keys): these assignments and migration.canonical_serial's
+        // trim-and-uppercase behaviour are one storage contract. The P9T35 backfill uses the same function;
+        // changing its false/false/false behaviour without rebuilding these columns makes old and new rows differ.
+        var matchKeys = MatchKeys(table.RowType);
         var rawUpdates = string.Join(",\n                   ", table.Columns.Select(column =>
-            $"target.[{column.TargetName}] = load_row.[{column.TargetName}]"));
+                $"target.[{column.TargetName}] = load_row.[{column.TargetName}]")
+            .Concat(matchKeys.Select(key =>
+                $"target.[{key.Target}] = {MatchKeySql($"load_row.[{key.Source}]")}")));
         var allColumns = new[] { "tenant_id", "batch_id", "source_system", "source_table", "source_pk",
             "extracted_at", "row_hash", "first_batch_id", "absent_since_batch_id" }
-            .Concat(table.Columns.Select(x => x.TargetName)).ToList();
+            .Concat(table.Columns.Select(x => x.TargetName))
+            .Concat(matchKeys.Select(key => key.Target)).ToList();
         var insertColumns = string.Join(", ", allColumns.Select(x => $"[{x}]"));
-        var insertValues = string.Join(", ", allColumns.Select(x => $"load_row.[{x}]"));
+        var matchKeyTargets = matchKeys.ToDictionary(key => key.Target, StringComparer.Ordinal);
+        var insertValues = string.Join(", ", allColumns.Select(column =>
+            matchKeyTargets.TryGetValue(column, out var key)
+                ? MatchKeySql($"load_row.[{key.Source}]") : $"load_row.[{column}]"));
         return $"""
             IF EXISTS (SELECT source_pk FROM #migration_load GROUP BY source_pk HAVING COUNT_BIG(1) > 1)
                 THROW 51000, 'migration_source_duplicate_key', 1;
@@ -416,6 +426,18 @@ public sealed class SourceExtractor(
             """;
     }
 
+    private static IReadOnlyList<MatchKeyColumn> MatchKeys(Type rowType) =>
+        rowType == typeof(SerialMasterStagingRow)
+            ? [new("normalised_serial_number", "serial_number"),
+                new("normalised_manufacturer_serial", "manufacturer_serial")]
+            : rowType == typeof(EquipmentCardStagingRow)
+                ? [new("normalised_internal_serial", "internal_serial"),
+                    new("normalised_manufacturer_serial", "manufacturer_serial")]
+                : [];
+
+    private static string MatchKeySql(string value) =>
+        $"[{MigrationModel.Schema}].[canonical_serial]({value}, 0, 0, 0)";
+
     private static async Task ExecuteAsync(SqlConnection connection, SqlTransaction transaction, string sql,
         int timeout, CancellationToken cancellationToken)
     {
@@ -424,4 +446,5 @@ public sealed class SourceExtractor(
     }
 
     private sealed record ChunkCounts(long Inserted, long Updated, long Unchanged);
+    private sealed record MatchKeyColumn(string Target, string Source);
 }

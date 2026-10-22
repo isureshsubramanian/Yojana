@@ -135,9 +135,9 @@ public sealed class CanonicalisationWriter(IntegrationDbContext db, ITenantConte
                    CASE WHEN NULLIF(TRIM(master.serial_number), N'') IS NULL
                         THEN CONCAT(N'SYSTEM-', CONVERT(nvarchar(40), master.system_number))
                         ELSE master.serial_number END COLLATE Latin1_General_100_BIN2 AS exact_key,
-                   UPPER(TRIM(CASE WHEN NULLIF(TRIM(master.serial_number), N'') IS NULL
-                        THEN CONCAT(N'SYSTEM-', CONVERT(nvarchar(40), master.system_number))
-                        ELSE master.serial_number END)) COLLATE Latin1_General_100_BIN2 AS trimmed_key,
+                   CASE WHEN NULLIF(master.normalised_serial_number, N'') IS NULL
+                        THEN UPPER(CONCAT(N'SYSTEM-', CONVERT(nvarchar(40), master.system_number)))
+                        ELSE master.normalised_serial_number END COLLATE Latin1_General_100_BIN2 AS trimmed_key,
                    [migration].[canonical_serial](CASE WHEN NULLIF(TRIM(master.serial_number), N'') IS NULL
                         THEN CONCAT(N'SYSTEM-', CONVERT(nvarchar(40), master.system_number))
                         ELSE master.serial_number END, family_rule.strip_hyphens, family_rule.strip_spaces,
@@ -196,7 +196,7 @@ public sealed class CanonicalisationWriter(IntegrationDbContext db, ITenantConte
                    CASE WHEN card.internal_serial COLLATE Latin1_General_100_BIN2 = candidate.stored_serial COLLATE Latin1_General_100_BIN2
                              OR (card.manufacturer_serial IS NOT NULL AND master.manufacturer_serial IS NOT NULL
                                  AND card.manufacturer_serial COLLATE Latin1_General_100_BIN2 = master.manufacturer_serial COLLATE Latin1_General_100_BIN2) THEN 1
-                        WHEN UPPER(TRIM(card.internal_serial)) COLLATE Latin1_General_100_BIN2 = candidate.trimmed_serial COLLATE Latin1_General_100_BIN2 THEN 2
+                        WHEN card.normalised_internal_serial COLLATE Latin1_General_100_BIN2 = candidate.trimmed_serial COLLATE Latin1_General_100_BIN2 THEN 2
                         WHEN [migration].[canonical_serial](card.internal_serial, family_rule.strip_hyphens,
                              family_rule.strip_spaces, family_rule.strip_leading_zeros) COLLATE Latin1_General_100_BIN2 =
                              candidate.family_normalised_serial COLLATE Latin1_General_100_BIN2 THEN 3 END AS priority,
@@ -207,7 +207,8 @@ public sealed class CanonicalisationWriter(IntegrationDbContext db, ITenantConte
                AND candidate.item_code = card.item_code
               JOIN [migration].[stg_src_osrn] AS master
                 ON master.tenant_id = candidate.tenant_id AND master.batch_id = @batch
-               AND master.source_system = @source AND master.source_pk = candidate.primary_source_key
+               AND master.source_system = @source AND master.absent_since_batch_id IS NULL
+               AND master.source_pk = candidate.primary_source_key
               OUTER APPLY
               (
                   SELECT TOP (1) family_rules.* FROM family_rules
@@ -239,7 +240,8 @@ public sealed class CanonicalisationWriter(IntegrationDbContext db, ITenantConte
               FROM [migration].[migration_unit_candidate_source] AS source
               JOIN [migration].[stg_src_oins] AS card
                 ON card.tenant_id = source.tenant_id AND card.batch_id = @batch
-               AND card.source_system = @source AND card.source_pk = source.source_key
+               AND card.source_system = @source AND card.absent_since_batch_id IS NULL
+               AND card.source_pk = source.source_key
               JOIN [migration].[migration_unit_candidate] AS candidate
                 ON candidate.tenant_id = source.tenant_id AND candidate.candidate_id = source.candidate_id
              WHERE source.tenant_id = @tenant AND source.run_id = @run
@@ -273,7 +275,8 @@ public sealed class CanonicalisationWriter(IntegrationDbContext db, ITenantConte
                AND candidate.item_code = line.item_code
               JOIN [migration].[stg_src_osrn] AS master
                 ON master.tenant_id = candidate.tenant_id AND master.batch_id = @batch
-               AND master.source_system = @source AND master.source_pk = candidate.primary_source_key
+               AND master.source_system = @source AND master.absent_since_batch_id IS NULL
+               AND master.source_pk = candidate.primary_source_key
               OUTER APPLY
               (
                   SELECT TOP (1) family_rules.* FROM family_rules

@@ -1,9 +1,11 @@
 using Yojana.Integration.Data;
+using Yojana.Platform.Contracts.Tenancy;
 
 namespace Yojana.Integration.LegacyMigration.Profiling;
 
 public sealed record MigrationProfileQueryContext(
     IntegrationDbContext Db,
+    TenantId TenantId,
     Guid BatchId,
     string SourceSystem,
     DateTime ExtractionDate);

@@ -33,18 +33,32 @@ internal sealed record SourceHistoryMovementRow(
 public sealed class SourceHistoryReader(IntegrationDbContext db, ITenantContext tenant)
 {
     internal async Task<IReadOnlyList<SourceHistoryMovementRow>> ReadAsync(Guid canonicalisationRunId,
-        IReadOnlyList<Guid> candidateIds, CancellationToken cancellationToken)
+        Guid batchId, string sourceSystem, IReadOnlyList<Guid> candidateIds,
+        CancellationToken cancellationToken)
     {
         var rows = await (from candidateEvent in db.MigrationEventCandidates.AsNoTracking()
                           join line in db.Set<TransactionLogLineStagingRow>().AsNoTracking()
-                              on new { candidateEvent.TenantId, SourceKey = candidateEvent.TransactionSourceKey }
-                              equals new { line.TenantId, SourceKey = line.SourcePk }
+                              on new
+                              {
+                                  candidateEvent.TenantId,
+                                  BatchId = batchId,
+                                  SourceSystem = sourceSystem,
+                                  SourceKey = candidateEvent.TransactionSourceKey,
+                              }
+                              equals new
+                              {
+                                  line.TenantId,
+                                  line.BatchId,
+                                  line.SourceSystem,
+                                  SourceKey = line.SourcePk,
+                              }
                           join header in db.Set<TransactionLogHeaderStagingRow>().AsNoTracking()
                               on new { line.TenantId, line.BatchId, line.SourceSystem, line.LogEntry }
                               equals new { header.TenantId, header.BatchId, header.SourceSystem, header.LogEntry }
                           where candidateEvent.TenantId == tenant.TenantId &&
                                 candidateEvent.RunId == canonicalisationRunId &&
-                                candidateIds.Contains(candidateEvent.CandidateId)
+                                candidateIds.Contains(candidateEvent.CandidateId) &&
+                                line.AbsentSinceBatchId == null && header.AbsentSinceBatchId == null
                           select new SourceInputRow
                           {
                               CandidateId = candidateEvent.CandidateId,
