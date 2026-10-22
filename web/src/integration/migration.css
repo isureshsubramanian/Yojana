@@ -37,6 +37,9 @@
 .migration-refusal-filters { align-items: end; flex-wrap: wrap; }
 .migration-refusal-filters .field { flex: 1 1 210px; }
 .migration-refusal-filters .input, .migration-refusal-filters .select { width: 100%; }
+.migration-findings-search { padding: 12px 16px; border-bottom: 1px solid var(--rule); }
+.migration-findings-search .field:first-child { flex: 2 1 320px; }
+.migration-findings-search > .muted { flex: 1 1 100%; font-size: 12px; }
 .migration-refusals-card .table { min-width: 900px; }
 /* A table cell treats height as a minimum, so long reasons wrap and short rows keep the house row height. */
 .migration-refusals-card .table td { height: 44px; padding-block: 10px; white-space: normal; overflow-wrap: anywhere; line-height: 1.45; }

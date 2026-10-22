@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { DataGrid, KpiStrip, StatusBadge, type GridColumn } from "../components";
 import { useSession } from "../session/session";
@@ -49,11 +49,13 @@ function MigrationDelta() {
   }, [filters, loadId]);
   useEffect(() => { void loadPage(1); }, [loadPage]);
 
-  const applyFilters = (event: FormEvent) => {
-    event.preventDefault();
+  // Typing searches: the draft becomes the server filter once typing pauses, so a serial is found without an Apply press or an export.
+  useEffect(() => {
     const next = { kind: draft.kind, itemCode: draft.itemCode.trim(), serial: draft.serial.trim() };
-    setCursors([undefined]); setPage(1); setFilters(next);
-  };
+    if (next.kind === filters.kind && next.itemCode === filters.itemCode && next.serial === filters.serial) return;
+    const timer = setTimeout(() => { setCursors([undefined]); setPage(1); setFilters(next); }, 300);
+    return () => clearTimeout(timer);
+  }, [draft, filters]);
   const clearFilters = () => { setDraft(emptyFilters); setCursors([undefined]); setPage(1); setFilters(emptyFilters); };
   const showKind = (kind: string) => { const next = { ...filters, kind }; setDraft(next); setCursors([undefined]); setPage(1); setFilters(next); };
   const go = (target: number) => {
@@ -93,13 +95,13 @@ function MigrationDelta() {
     <MigrationRankedList headingId="migration-delta-kinds" title="Findings by kind" meta="whole load · largest first · share of all findings · select a kind to filter" rows={(result?.counts ?? []).map(row => ({ key: row.kind, label: row.label, count: row.count }))} total={result?.loadTotal ?? 0} selected={filters.kind} onSelect={showKind} />
     {load && <div className="note"><strong>Owner differences are coexistence conflicts.</strong>&nbsp;When the source names a different owner and no delivery, return or transfer document explains it, the load never writes the owner: the unit keeps its owner in the module and the difference goes to Coexistence conflicts for a person to decide. <strong>Undoing {load.label}</strong> removes the {load.applied.toLocaleString()} units it wrote and restores the {load.coverReplaced.toLocaleString()} cover rows it replaced; refused, owner and gone findings change nothing, so there is nothing to undo for them.</div>}
     <MigrationUndoPanel undo={undo} />
-    <section className="card" aria-labelledby="migration-delta-filters"><div className="card-header"><h2 id="migration-delta-filters">Filters <span className="meta">server-side · exact total</span></h2></div><div className="card-body"><form className="toolbar migration-refusal-filters" role="search" aria-label="Delta finding filters" onSubmit={applyFilters}>
+    <ErrorNote error={error} />
+    <section className="card migration-refusals-card migration-delta-findings" aria-labelledby="migration-delta-findings"><div className="card-header"><h2 id="migration-delta-findings">Findings <span className="meta">{(result?.total ?? 0).toLocaleString()} · search, or export what is shown</span></h2><span className="migration-export-actions" role="group" aria-label="Export filtered findings"><a className="btn sm" href={migrationApi.deltaExportUrl(loadId, "csv", exportFilters)} download>CSV</a><a className="btn sm" href={migrationApi.deltaExportUrl(loadId, "xlsx", exportFilters)} download>Excel</a></span></div><form className="toolbar migration-refusal-filters migration-findings-search" role="search" aria-label="Search delta findings" onSubmit={event => event.preventDefault()}>
+      <label className="field"><span className="lbl">Serial contains</span><input className="input" type="search" value={draft.serial} onChange={event => setDraft(current => ({ ...current, serial: event.target.value }))} placeholder="Type part of a serial" aria-describedby="migration-delta-search-hint" /></label>
       <label className="field"><span className="lbl">Kind</span><select className="select" value={draft.kind} onChange={event => setDraft(current => ({ ...current, kind: event.target.value }))}><option value="">Any kind · {(result?.loadTotal ?? 0).toLocaleString()}</option>{result?.counts.map(row => <option key={row.kind} value={row.kind}>{row.label} · {row.count.toLocaleString()}</option>)}</select></label>
       <label className="field"><span className="lbl">Item code</span><input className="input mono" value={draft.itemCode} onChange={event => setDraft(current => ({ ...current, itemCode: event.target.value }))} placeholder="Exact item code" /></label>
-      <label className="field"><span className="lbl">Serial contains</span><input className="input" type="search" value={draft.serial} onChange={event => setDraft(current => ({ ...current, serial: event.target.value }))} placeholder="Search serial" /></label>
-      <button className="btn" disabled={busy}>Apply filters</button><button type="button" className="btn ghost" disabled={busy || (!draft.kind && !draft.itemCode && !draft.serial && !filtered)} onClick={clearFilters}>Clear</button>
-    </form></div></section>
-    <ErrorNote error={error} />
-    <section className="card migration-refusals-card migration-delta-findings" aria-labelledby="migration-delta-findings"><div className="card-header"><h2 id="migration-delta-findings">Findings <span className="meta">{(result?.total ?? 0).toLocaleString()} · keyset paged · reasons in full</span></h2><span className="migration-export-actions" role="group" aria-label="Export filtered findings"><a className="btn sm" href={migrationApi.deltaExportUrl(loadId, "csv", exportFilters)} download>CSV</a><a className="btn sm" href={migrationApi.deltaExportUrl(loadId, "xlsx", exportFilters)} download>Excel</a></span></div><DataGrid columns={columns} page={{ rows: result?.items ?? [], total: result?.total ?? 0, page, pageSize, continuation: result?.nextCursor ?? null, totalIsExact: true, hasMore: !!result?.nextCursor }} rowId={row => row.itemId} onPage={go} loading={busy} emptyText="No delta findings match these filters." viewportHeight={12_000} /></section>
+      <button type="button" className="btn ghost" disabled={busy || (!draft.kind && !draft.itemCode && !draft.serial && !filtered)} onClick={clearFilters}>Clear</button>
+      <span className="muted" id="migration-delta-search-hint" role="status">{filtered ? `${(result?.total ?? 0).toLocaleString()} of ${(result?.loadTotal ?? 0).toLocaleString()} findings match` : "Results update as you type"}</span>
+    </form><DataGrid columns={columns} page={{ rows: result?.items ?? [], total: result?.total ?? 0, page, pageSize, continuation: result?.nextCursor ?? null, totalIsExact: true, hasMore: !!result?.nextCursor }} rowId={row => row.itemId} onPage={go} loading={busy} emptyText="No delta findings match these filters." viewportHeight={12_000} /></section>
   </MigrationPage>;
 }

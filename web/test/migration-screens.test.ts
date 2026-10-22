@@ -449,6 +449,9 @@ test("hand-over copy uses the tenant-local second and honours running and retain
 test("delta findings screen maps the approved filters, exact paging, links and filtered exports", () => {
   for (const text of ["Delta load", "Base load", "Batch", "Started by", "Findings", "Undo", "Findings by kind", "Owner differences are coexistence conflicts", "Any kind", "Item code", "Serial contains", "What happened", "Conflict open", "Open unit", "CSV", "Excel"]) assert.ok(deltaScreen.includes(text), text);
   assert.match(deltaScreen, /migrationApi\.loadSummary/);
+  // The serial search sits on the findings table and runs as the user types; no Apply press, no export needed.
+  assert.ok(deltaScreen.indexOf("migration-findings-search") > deltaScreen.indexOf("id=\"migration-delta-findings\""), "search inside the findings card");
+  assert.match(deltaScreen, /setTimeout\(\(\) => \{ setCursors\(\[undefined\]\); setPage\(1\); setFilters\(next\); \}, 300\)/); assert.ok(!deltaScreen.includes("Apply filters"));
   assert.match(deltaScreen, /migrationApi\.deltaFindings\(loadId, \{ \.\.\.active, cursor \}\)/);
   assert.match(deltaScreen, /pageSize = 100/);
   assert.match(deltaScreen, /totalIsExact: true/);
