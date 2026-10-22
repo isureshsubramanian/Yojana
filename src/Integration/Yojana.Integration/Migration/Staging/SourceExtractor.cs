@@ -18,6 +18,9 @@ public sealed record StagingLoadResult(
     long Absent,
     long DurationMilliseconds);
 
+/// <summary>One extraction: the source server's local clock when it began, and the per-table counts.</summary>
+public sealed record StagingExtraction(DateTime SourceClockAtStart, IReadOnlyList<StagingLoadResult> Tables);
+
 /// <summary>
 /// Read-only adapter for the incumbent ERP. Production users are expected to be database principals restricted to
 /// SELECT on the named extraction objects. Full-table query construction is isolated here so P9-T10 can add a delta
@@ -63,7 +66,7 @@ public sealed class SourceExtractor(
         }
     }
 
-    public async Task<IReadOnlyList<StagingLoadResult>> ExtractFullAsync(MigrationSource source, Guid batchId,
+    public async Task<StagingExtraction> ExtractFullAsync(MigrationSource source, Guid batchId,
         DateTime extractedAt, CancellationToken cancellationToken)
     {
         if (source.Runtime != MigrationSourceRuntime.SqlServer)
@@ -75,11 +78,12 @@ public sealed class SourceExtractor(
         try
         {
             var stagingConnection = (SqlConnection)db.Database.GetDbConnection();
+            var sourceClock = await SourceClockAsync(sourceConnection, cancellationToken);
             var results = new List<StagingLoadResult>(SourceProtocol.Tables.Count);
             foreach (var table in SourceProtocol.Tables)
                 results.Add(await ExtractTableAsync(source, sourceConnection, stagingConnection, table, batchId,
                     extractedAt, cancellationToken));
-            return results;
+            return new(sourceClock, results);
         }
         finally
         {
@@ -187,6 +191,21 @@ public sealed class SourceExtractor(
         command.Parameters.Add(new("@source_table", SqlDbType.NVarChar, 100) { Value = table.SourceTable });
         command.Parameters.Add(new("@batch_id", SqlDbType.UniqueIdentifier) { Value = batchId });
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+    }
+
+    // HIDDEN COUPLING (OD-60, connector hand-over after the final load)
+    // WHAT:  this is the source server's own local clock, read before the first table. The final load turns it into
+    //        the connector's starting watermark (IConnectorPoller.StartingWatermark), whose modified-since filter compares
+    //        against the incumbent's document update stamps, which that server writes in the same local time.
+    // WHY:   the incumbent stores no time zone with its stamps, so the product's UTC clock cannot be compared with them.
+    // WHAT BREAKS IF SEPARATED: reading the clock after the tables, or from another server, opens a window of
+    //        documents that are in neither the migrated history nor the connector's first poll.
+    private static async Task<DateTime> SourceClockAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT SYSDATETIME();";
+        return DateTime.SpecifyKind((DateTime)(await command.ExecuteScalarAsync(cancellationToken))!,
+            DateTimeKind.Unspecified);
     }
 
     private async Task<SqlConnection> OpenSourceAsync(MigrationSource source, CancellationToken cancellationToken)

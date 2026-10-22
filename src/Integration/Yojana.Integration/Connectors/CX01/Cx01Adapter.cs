@@ -35,6 +35,14 @@ public sealed class Cx01Adapter(
     public string ConnectorCode => Cx01Capabilities.ConnectorCode;
     public OutboundConnectorCapabilities Capabilities { get; } = new(false, OwnsConnectionLane: true);
 
+    // HIDDEN COUPLING (OD-60) with SourceExtractor.SourceClockAsync: the time given here is the source server's local
+    // clock read when the final load's extraction began. Cx01Watermark.From reads the remote's update stamps as that same
+    // local time (written as if UTC), so the two compare directly. If either side starts converting time zones, the
+    // other must too, or the first poll after the hand-over skips or repeats documents.
+    public string? StartingWatermark(DateTime sourceLocalTime) =>
+        new Cx01Watermark(new DateTimeOffset(DateTime.SpecifyKind(sourceLocalTime, DateTimeKind.Unspecified),
+            TimeSpan.Zero), "").ToString();
+
     public async Task<ConnectorPollResult> PollAsync(ConnectorPollRequest request,
         CancellationToken cancellationToken)
     {

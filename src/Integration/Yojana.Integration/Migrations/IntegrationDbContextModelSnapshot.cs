@@ -2587,9 +2587,17 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("already_applied");
 
+                    b.Property<long>("AlreadyInModule")
+                        .HasColumnType("bigint")
+                        .HasColumnName("already_in_module");
+
                     b.Property<long>("Applied")
                         .HasColumnType("bigint")
                         .HasColumnName("applied");
+
+                    b.Property<Guid?>("BaseLoadId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("base_load_id");
 
                     b.Property<Guid>("BatchId")
                         .HasColumnType("uniqueidentifier")
@@ -2602,6 +2610,14 @@ namespace Yojana.Integration.Migrations
                     b.Property<int?>("CoverGaps")
                         .HasColumnType("int")
                         .HasColumnName("cover_gaps");
+
+                    b.Property<long>("CoverRefused")
+                        .HasColumnType("bigint")
+                        .HasColumnName("cover_refused");
+
+                    b.Property<long>("CoverReplaced")
+                        .HasColumnType("bigint")
+                        .HasColumnName("cover_replaced");
 
                     b.Property<Guid?>("CursorPlanUnitId")
                         .HasColumnType("uniqueidentifier")
@@ -2628,9 +2644,25 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("gap_report_run_id");
 
+                    b.Property<long>("GoneFromSource")
+                        .HasColumnType("bigint")
+                        .HasColumnName("gone_from_source");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("initial")
+                        .HasColumnName("kind");
+
                     b.Property<Guid>("MapRunId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("map_run_id");
+
+                    b.Property<long>("OwnerDiffers")
+                        .HasColumnType("bigint")
+                        .HasColumnName("owner_differs");
 
                     b.Property<long>("Refused")
                         .HasColumnType("bigint")
@@ -2681,6 +2713,15 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("units_in_plan");
 
+                    b.Property<DateTime?>("WatermarkHandedOverFrom")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("watermark_handed_over_from");
+
+                    b.Property<string>("WatermarkNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("watermark_note");
+
                     b.HasKey("TenantId", "RunId")
                         .HasName("pk_migration_apply_run");
 
@@ -2695,8 +2736,156 @@ namespace Yojana.Integration.Migrations
 
                     b.ToTable("migration_apply_run", "migration", t =>
                         {
+                            t.HasCheckConstraint("ck_migration_apply_run_kind", "kind IN ('initial','delta')");
+
                             t.HasCheckConstraint("ck_migration_apply_run_status", "status IN ('queued','running','completed','failed','rolled_back')");
                         });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Apply.MigrationDeltaItem", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("item_id");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("detail");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("item_code");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid?>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<string>("PreviousCoverHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("previous_cover_hash")
+                        .IsFixedLength();
+
+                    b.Property<Guid?>("PreviousCoverLoadId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("previous_cover_load_id");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<string>("Serial")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("serial");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_key");
+
+                    b.Property<Guid?>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("TenantId", "ItemId")
+                        .HasName("pk_migration_delta_item");
+
+                    b.HasIndex("TenantId", "RunId", "ItemId")
+                        .HasDatabaseName("ix_migration_delta_item_tenant_id_run_id_item_id");
+
+                    b.HasIndex("TenantId", "RunId", "Kind", "ItemId")
+                        .HasDatabaseName("ix_migration_delta_item_tenant_id_run_id_kind_item_id");
+
+                    b.ToTable("migration_delta_item", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_delta_item_kind", "kind IN ('new_unit','already_in_module','cover_replaced','cover_refused','owner_differs','gone_from_source')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Apply.MigrationLoadedUnit", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<string>("SourceKeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("source_key_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("CoverHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("cover_hash")
+                        .IsFixedLength();
+
+                    b.Property<Guid>("CoverLoadId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("cover_load_id");
+
+                    b.Property<Guid>("LoadId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("load_id");
+
+                    b.Property<DateTime>("LoadedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("loaded_at");
+
+                    b.Property<string>("OwnerPartyCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("owner_party_code");
+
+                    b.Property<Guid>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_key");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("TenantId", "ConnectionId", "SourceKeyHash")
+                        .HasName("pk_migration_loaded_unit");
+
+                    b.HasIndex("TenantId", "CoverLoadId")
+                        .HasDatabaseName("ix_migration_loaded_unit_tenant_id_cover_load_id");
+
+                    b.HasIndex("TenantId", "LoadId")
+                        .HasDatabaseName("ix_migration_loaded_unit_tenant_id_load_id");
+
+                    b.HasIndex("TenantId", "UnitId")
+                        .HasDatabaseName("ix_migration_loaded_unit_tenant_id_unit_id");
+
+                    b.ToTable("migration_loaded_unit", "migration");
                 });
 
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationCanonRun", b =>
@@ -4120,6 +4309,18 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("nvarchar(32)")
                         .HasColumnName("origin");
 
+                    b.Property<string>("SourceKey")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_key");
+
+                    b.Property<string>("SourceKeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("source_key_hash")
+                        .IsFixedLength();
+
                     b.Property<string>("WarehouseCode")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
@@ -4131,6 +4332,9 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "MapRunId", "CandidateId")
                         .IsUnique()
                         .HasDatabaseName("ux_migration_plan_unit_tenant_id_map_run_id_candidate_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "SourceKeyHash")
+                        .HasDatabaseName("ix_migration_plan_unit_tenant_id_map_run_id_source_key_hash");
 
                     b.HasIndex("TenantId", "MapRunId", "ItemCode", "PlanUnitId")
                         .HasDatabaseName("ix_migration_plan_unit_tenant_id_map_run_id_item_code_plan_unit_id");
@@ -4244,6 +4448,10 @@ namespace Yojana.Integration.Migrations
                         .HasMaxLength(320)
                         .HasColumnType("nvarchar(320)")
                         .HasColumnName("requested_by");
+
+                    b.Property<DateTime?>("SourceClockAtStart")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("source_clock_at_start");
 
                     b.Property<string>("SourceSystem")
                         .IsRequired()
@@ -7507,6 +7715,16 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_migration_apply_run_tenant_id_map_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Apply.MigrationDeltaItem", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Apply.MigrationApplyRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_delta_item_tenant_id_run_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationCanonRun", b =>

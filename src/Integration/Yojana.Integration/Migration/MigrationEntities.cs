@@ -65,6 +65,11 @@ public sealed class MigrationBatch : ITenantScoped
     public DateTime? FinishedAt { get; set; }
     public required string Status { get; set; }
     public string? FailureText { get; set; }
+    /// <summary>
+    /// The source server's local clock when extraction began (no time zone: the incumbent stores none). A final load
+    /// hands the connector this point as its starting watermark (OD-60); null on batches extracted before P9-T10b.
+    /// </summary>
+    public DateTime? SourceClockAtStart { get; set; }
 }
 
 public sealed class MigrationBatchTable : ITenantScoped

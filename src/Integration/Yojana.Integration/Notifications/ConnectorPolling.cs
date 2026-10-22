@@ -29,6 +29,13 @@ public interface IConnectorPoller
 {
     string ConnectorCode { get; }
     Task<ConnectorPollResult> PollAsync(ConnectorPollRequest request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The watermark that makes the next poll start at <paramref name="sourceLocalTime"/>, a time on the remote's own
+    /// clock (the migration hand-over after a final load, OD-60). Null when the connector cannot start from a time; the
+    /// caller then leaves the watermark as it is and says so.
+    /// </summary>
+    string? StartingWatermark(DateTime sourceLocalTime) => null;
 }
 
 public sealed class ConnectionPollingService(
