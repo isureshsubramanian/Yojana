@@ -47,6 +47,7 @@ test("the ask box uses active person-or-role choices, the approved layout, and l
   assert.match(panel, /<optgroup label="People">/);
   assert.match(panel, /questionsApi\.search\(title\.trim\(\), true/);
   assert.match(panel, /reviewedEntries\.map/);
+  assert.match(panel, /item\.needsReview \? "may be out of date"/);
   assert.match(panel, /Already answered: read these before you ask/);
   assert.match(styles, /grid-template-columns: minmax\(0, 1fr\) 320px/);
   assert.match(styles, /\.card \.question-askbox \.row \.field \+ \.field \{ margin-top: 0; \}/);

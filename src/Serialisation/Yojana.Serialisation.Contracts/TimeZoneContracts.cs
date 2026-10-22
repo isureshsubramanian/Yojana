@@ -34,3 +34,9 @@ public sealed record UpdateTenantTimeZoneSettings(
     string? TenantTimeZone,
     IReadOnlyList<LegalEntityTimeZoneOverride> LegalEntityOverrides,
     string ExpectedVersion);
+
+/// <summary>Narrow tenant-zone read used by tenant-local scheduled work outside Serialisation.</summary>
+public interface ITenantTimeZoneReadPort
+{
+    Task<string> GetAsync(CancellationToken cancellationToken);
+}

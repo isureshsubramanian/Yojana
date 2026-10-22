@@ -424,8 +424,10 @@ public static class SerialisationModule
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>(),
             sp.GetRequiredService<IPartyNamePort>(),
             sp.GetRequiredService<Yojana.Platform.Contracts.Time.IClock>()));
-        builder.Services.TryAddScoped<ITimeZonePort>(sp => new TenantTimeZonePort(
+        builder.Services.TryAddScoped(sp => new TenantTimeZonePort(
             sp.GetRequiredService<TenantTimeZoneSettings>(), sp.GetRequiredService<ITimeZoneSourcePort>()));
+        builder.Services.TryAddScoped<ITimeZonePort>(sp => sp.GetRequiredService<TenantTimeZonePort>());
+        builder.Services.TryAddScoped<ITenantTimeZoneReadPort>(sp => sp.GetRequiredService<TenantTimeZonePort>());
         builder.Services.TryAddSingleton<IWarrantyClaimsPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
         builder.Services.TryAddSingleton<IWarrantyCertificatePort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
 

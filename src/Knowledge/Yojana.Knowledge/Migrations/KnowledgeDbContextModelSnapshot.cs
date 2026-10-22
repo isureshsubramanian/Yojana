@@ -59,6 +59,14 @@ namespace Yojana.Knowledge.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("last_saved_by");
 
+                    b.Property<bool>("NeedsReview")
+                        .HasColumnType("bit")
+                        .HasColumnName("needs_review");
+
+                    b.Property<DateTime?>("NeedsReviewSince")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("needs_review_since");
+
                     b.Property<string>("Problem")
                         .IsRequired()
                         .HasMaxLength(8000)
@@ -72,6 +80,10 @@ namespace Yojana.Knowledge.Migrations
                     b.Property<Guid?>("PublishedBy")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("published_by");
+
+                    b.Property<int?>("PublishedVersion")
+                        .HasColumnType("int")
+                        .HasColumnName("published_version");
 
                     b.Property<DateTime?>("RetiredAt")
                         .HasColumnType("datetime2(3)")
@@ -128,12 +140,19 @@ namespace Yojana.Knowledge.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_knowledge_entry_tenant_id_source_question_id");
 
+                    b.HasIndex("TenantId", "NeedsReview", "NeedsReviewSince", "EntryId")
+                        .HasDatabaseName("ix_knowledge_entry_tenant_id_needs_review_needs_review_since_entry_id");
+
                     b.HasIndex("TenantId", "Status", "LastSavedAt", "EntryId")
                         .HasDatabaseName("ix_knowledge_entry_tenant_id_status_last_saved_at_entry_id");
 
                     b.ToTable("knowledge_entry", "knowledge", t =>
                         {
+                            t.HasCheckConstraint("ck_knowledge_entry_needs_review_state", "(needs_review = 1 AND needs_review_since IS NOT NULL AND published_version IS NOT NULL) OR (needs_review = 0 AND needs_review_since IS NULL)");
+
                             t.HasCheckConstraint("ck_knowledge_entry_published_state", "(status IN ('published','retired') AND published_by IS NOT NULL AND published_at IS NOT NULL) OR status NOT IN ('published','retired')");
+
+                            t.HasCheckConstraint("ck_knowledge_entry_published_version", "published_version IS NULL OR (published_version >= 1 AND published_version <= current_version)");
 
                             t.HasCheckConstraint("ck_knowledge_entry_retired_state", "(status = 'retired' AND retired_by IS NOT NULL AND retired_at IS NOT NULL AND retirement_note IS NOT NULL) OR status <> 'retired'");
 
@@ -173,6 +192,87 @@ namespace Yojana.Knowledge.Migrations
                         .HasDatabaseName("ix_knowledge_entry_record_link_tenant_id_record_kind_record_id_entry_id_version");
 
                     b.ToTable("knowledge_entry_record_link", "knowledge");
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.KnowledgeEntryReviewReason", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ReasonId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reason_id");
+
+                    b.Property<string>("Clearance")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("clearance");
+
+                    b.Property<DateTime?>("ClearedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("cleared_at");
+
+                    b.Property<int?>("ClearedAtVersion")
+                        .HasColumnType("int")
+                        .HasColumnName("cleared_at_version");
+
+                    b.Property<Guid?>("ClearedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("cleared_by");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("detail");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entry_id");
+
+                    b.Property<DateTime>("FlaggedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("flagged_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("label");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("reference");
+
+                    b.Property<Guid>("TriggerId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("trigger_id");
+
+                    b.HasKey("TenantId", "ReasonId")
+                        .HasName("pk_knowledge_entry_review_reason");
+
+                    b.HasIndex("TenantId", "EntryId", "ClearedAt", "FlaggedAt", "ReasonId")
+                        .HasDatabaseName("ix_knowledge_entry_review_reason_tenant_id_entry_id_cleared_at_flagged_at_reason_id");
+
+                    b.HasIndex("TenantId", "EntryId", "Kind", "Reference", "TriggerId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_knowledge_entry_review_reason_tenant_id_entry_id_kind_reference_trigger_id");
+
+                    b.ToTable("knowledge_entry_review_reason", "knowledge", t =>
+                        {
+                            t.HasCheckConstraint("ck_knowledge_entry_review_reason_clearance", "(cleared_at IS NULL AND cleared_by IS NULL AND cleared_at_version IS NULL AND clearance IS NULL) OR (cleared_at IS NOT NULL AND cleared_by IS NOT NULL AND cleared_at_version IS NOT NULL AND clearance IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_knowledge_entry_review_reason_kind", "kind IN ('policy_version_superseded','screen_changed')");
+                        });
                 });
 
             modelBuilder.Entity("Yojana.Knowledge.Data.Entities.KnowledgeEntryReviewRound", b =>
@@ -346,6 +446,93 @@ namespace Yojana.Knowledge.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.KnowledgeEntryWrittenAgainst", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entry_id");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int")
+                        .HasColumnName("version");
+
+                    b.Property<string>("Kind")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("reference");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("label");
+
+                    b.HasKey("TenantId", "EntryId", "Version", "Kind", "Reference")
+                        .HasName("pk_knowledge_entry_written_against");
+
+                    b.HasIndex("TenantId", "Kind", "Reference", "EntryId", "Version")
+                        .HasDatabaseName("ix_knowledge_entry_written_against_tenant_id_kind_reference_entry_id_version");
+
+                    b.ToTable("knowledge_entry_written_against", "knowledge", t =>
+                        {
+                            t.HasCheckConstraint("ck_knowledge_entry_written_against_kind", "kind IN ('policy_version','screen')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.KnowledgeScreenChange", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ChangeId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("change_id");
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("changed_at");
+
+                    b.Property<Guid>("ChangedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("changed_by");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("ScreenLabel")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("screen_label");
+
+                    b.Property<string>("ScreenReference")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("screen_reference");
+
+                    b.HasKey("TenantId", "ChangeId")
+                        .HasName("pk_knowledge_screen_change");
+
+                    b.HasIndex("TenantId", "ScreenReference", "ChangedAt", "ChangeId")
+                        .HasDatabaseName("ix_knowledge_screen_change_tenant_id_screen_reference_changed_at_change_id");
+
+                    b.ToTable("knowledge_screen_change", "knowledge");
+                });
+
             modelBuilder.Entity("Yojana.Knowledge.Data.Entities.Question", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -512,6 +699,10 @@ namespace Yojana.Knowledge.Migrations
                         .HasColumnType("date")
                         .HasColumnName("digest_date");
 
+                    b.Property<Guid?>("EntryId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entry_id");
+
                     b.Property<Guid>("EventId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("event_id");
@@ -530,7 +721,7 @@ namespace Yojana.Knowledge.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("occurred_at");
 
-                    b.Property<Guid>("QuestionId")
+                    b.Property<Guid?>("QuestionId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("question_id");
 
@@ -540,6 +731,9 @@ namespace Yojana.Knowledge.Migrations
 
                     b.HasKey("TenantId", "NotificationId")
                         .HasName("pk_question_notification");
+
+                    b.HasIndex("TenantId", "EntryId")
+                        .HasDatabaseName("ix_question_notification_tenant_id_entry_id");
 
                     b.HasIndex("TenantId", "QuestionId")
                         .HasDatabaseName("ix_question_notification_tenant_id_question_id");
@@ -554,6 +748,8 @@ namespace Yojana.Knowledge.Migrations
                     b.ToTable("question_notification", "knowledge", t =>
                         {
                             t.HasCheckConstraint("ck_question_notification_delivery_mode", "delivery_mode IN ('immediately','daily_digest')");
+
+                            t.HasCheckConstraint("ck_question_notification_target", "(question_id IS NOT NULL AND entry_id IS NULL) OR (question_id IS NULL AND entry_id IS NOT NULL)");
                         });
                 });
 
@@ -745,6 +941,16 @@ namespace Yojana.Knowledge.Migrations
                         .HasConstraintName("fk_knowledge_entry_record_link_tenant_id_entry_id_version");
                 });
 
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.KnowledgeEntryReviewReason", b =>
+                {
+                    b.HasOne("Yojana.Knowledge.Data.Entities.KnowledgeEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EntryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_knowledge_entry_review_reason_tenant_id_entry_id");
+                });
+
             modelBuilder.Entity("Yojana.Knowledge.Data.Entities.KnowledgeEntryReviewRound", b =>
                 {
                     b.HasOne("Yojana.Knowledge.Data.Entities.KnowledgeEntryVersion", null)
@@ -775,13 +981,28 @@ namespace Yojana.Knowledge.Migrations
                         .HasConstraintName("fk_knowledge_entry_version_tenant_id_entry_id");
                 });
 
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.KnowledgeEntryWrittenAgainst", b =>
+                {
+                    b.HasOne("Yojana.Knowledge.Data.Entities.KnowledgeEntryVersion", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EntryId", "Version")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_knowledge_entry_written_against_tenant_id_entry_id_version");
+                });
+
             modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionNotification", b =>
                 {
+                    b.HasOne("Yojana.Knowledge.Data.Entities.KnowledgeEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EntryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_question_notification_tenant_id_entry_id");
+
                     b.HasOne("Yojana.Knowledge.Data.Entities.Question", null)
                         .WithMany()
                         .HasForeignKey("TenantId", "QuestionId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
                         .HasConstraintName("fk_question_notification_tenant_id_question_id");
                 });
 

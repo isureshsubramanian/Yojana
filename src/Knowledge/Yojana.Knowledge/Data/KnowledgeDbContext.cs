@@ -22,6 +22,9 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
     public DbSet<KnowledgeEntryTag> EntryTags => Set<KnowledgeEntryTag>();
     public DbSet<KnowledgeEntryRecordLink> EntryRecordLinks => Set<KnowledgeEntryRecordLink>();
     public DbSet<KnowledgeEntryReviewRound> EntryReviewRounds => Set<KnowledgeEntryReviewRound>();
+    public DbSet<KnowledgeEntryWrittenAgainst> EntryWrittenAgainst => Set<KnowledgeEntryWrittenAgainst>();
+    public DbSet<KnowledgeEntryReviewReason> EntryReviewReasons => Set<KnowledgeEntryReviewReason>();
+    public DbSet<KnowledgeScreenChange> ScreenChanges => Set<KnowledgeScreenChange>();
     public DbSet<QuestionNotificationPreference> NotificationPreferences => Set<QuestionNotificationPreference>();
     public DbSet<QuestionNotification> Notifications => Set<QuestionNotification>();
     public DbSet<QuestionDigest> Digests => Set<QuestionDigest>();
@@ -84,6 +87,10 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
                 table.HasCheckConstraint("ck_knowledge_entry_status",
                     "status IN ('draft','in_review','published','retired')");
                 table.HasCheckConstraint("ck_knowledge_entry_version", "current_version >= 1");
+                table.HasCheckConstraint("ck_knowledge_entry_published_version",
+                    "published_version IS NULL OR (published_version >= 1 AND published_version <= current_version)");
+                table.HasCheckConstraint("ck_knowledge_entry_needs_review_state",
+                    "(needs_review = 1 AND needs_review_since IS NOT NULL AND published_version IS NOT NULL) OR (needs_review = 0 AND needs_review_since IS NULL)");
                 table.HasCheckConstraint("ck_knowledge_entry_published_state",
                     "(status IN ('published','retired') AND published_by IS NOT NULL AND published_at IS NOT NULL) OR status NOT IN ('published','retired')");
                 table.HasCheckConstraint("ck_knowledge_entry_retired_state",
@@ -100,6 +107,7 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
             b.Property(x => x.RowVersion).IsRowVersion();
             b.HasIndex(x => new { x.TenantId, x.SourceQuestionId }).IsUnique();
             b.HasIndex(x => new { x.TenantId, x.Status, x.LastSavedAt, x.EntryId });
+            b.HasIndex(x => new { x.TenantId, x.NeedsReview, x.NeedsReviewSince, x.EntryId });
             b.HasOne<Question>().WithMany().HasForeignKey(x => new { x.TenantId, x.SourceQuestionId })
                 .OnDelete(DeleteBehavior.Restrict);
         });
@@ -157,6 +165,47 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
             b.HasOne<KnowledgeEntryVersion>().WithMany().HasForeignKey(x => new { x.TenantId, x.EntryId, x.Version })
                 .OnDelete(DeleteBehavior.Restrict);
         });
+        modelBuilder.Entity<KnowledgeEntryWrittenAgainst>(b =>
+        {
+            b.ToTable("knowledge_entry_written_against", table => table.HasCheckConstraint(
+                "ck_knowledge_entry_written_against_kind", "kind IN ('policy_version','screen')"));
+            b.HasKey(x => new { x.TenantId, x.EntryId, x.Version, x.Kind, x.Reference });
+            b.Property(x => x.Kind).HasMaxLength(32);
+            b.Property(x => x.Reference).HasMaxLength(500);
+            b.Property(x => x.Label).HasMaxLength(500);
+            b.HasIndex(x => new { x.TenantId, x.Kind, x.Reference, x.EntryId, x.Version });
+            b.HasOne<KnowledgeEntryVersion>().WithMany().HasForeignKey(x =>
+                new { x.TenantId, x.EntryId, x.Version }).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<KnowledgeEntryReviewReason>(b =>
+        {
+            b.ToTable("knowledge_entry_review_reason", table =>
+            {
+                table.HasCheckConstraint("ck_knowledge_entry_review_reason_kind",
+                    "kind IN ('policy_version_superseded','screen_changed')");
+                table.HasCheckConstraint("ck_knowledge_entry_review_reason_clearance",
+                    "(cleared_at IS NULL AND cleared_by IS NULL AND cleared_at_version IS NULL AND clearance IS NULL) OR (cleared_at IS NOT NULL AND cleared_by IS NOT NULL AND cleared_at_version IS NOT NULL AND clearance IS NOT NULL)");
+            });
+            b.HasKey(x => new { x.TenantId, x.ReasonId });
+            b.Property(x => x.Kind).HasMaxLength(40);
+            b.Property(x => x.Reference).HasMaxLength(500);
+            b.Property(x => x.Label).HasMaxLength(500);
+            b.Property(x => x.Detail).HasMaxLength(1000);
+            b.Property(x => x.Clearance).HasMaxLength(32);
+            b.HasIndex(x => new { x.TenantId, x.EntryId, x.ClearedAt, x.FlaggedAt, x.ReasonId });
+            b.HasIndex(x => new { x.TenantId, x.EntryId, x.Kind, x.Reference, x.TriggerId }).IsUnique();
+            b.HasOne<KnowledgeEntry>().WithMany().HasForeignKey(x => new { x.TenantId, x.EntryId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<KnowledgeScreenChange>(b =>
+        {
+            b.ToTable("knowledge_screen_change");
+            b.HasKey(x => new { x.TenantId, x.ChangeId });
+            b.Property(x => x.ScreenReference).HasMaxLength(500);
+            b.Property(x => x.ScreenLabel).HasMaxLength(500);
+            b.Property(x => x.Reason).HasMaxLength(500);
+            b.HasIndex(x => new { x.TenantId, x.ScreenReference, x.ChangedAt, x.ChangeId });
+        });
         modelBuilder.Entity<QuestionNotificationPreference>(b =>
         {
             b.ToTable("question_notification_preference", table => table.HasCheckConstraint(
@@ -167,14 +216,25 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
         });
         modelBuilder.Entity<QuestionNotification>(b =>
         {
-            b.ToTable("question_notification", table => table.HasCheckConstraint(
-                "ck_question_notification_delivery_mode", "delivery_mode IN ('immediately','daily_digest')"));
+            b.ToTable("question_notification", table =>
+            {
+                table.HasCheckConstraint("ck_question_notification_delivery_mode",
+                    "delivery_mode IN ('immediately','daily_digest')");
+                table.HasCheckConstraint("ck_question_notification_target",
+                    "(question_id IS NOT NULL AND entry_id IS NULL) OR (question_id IS NULL AND entry_id IS NOT NULL)");
+            });
             b.HasKey(x => new { x.TenantId, x.NotificationId });
             b.Property(x => x.EventKind).HasMaxLength(24);
             b.Property(x => x.DeliveryMode).HasMaxLength(24);
+            // Coupled to QuestionNotificationHandler's locked insert: this key is the database arbiter for concurrent
+            // redelivery. A read-before-write seam cannot prevent two handlers from queuing the same mail; changing this
+            // key without changing that insert removes the exactly-once notification decision.
             b.HasIndex(x => new { x.TenantId, x.RecipientUserId, x.EventKind, x.EventId }).IsUnique();
             b.HasIndex(x => new { x.TenantId, x.DeliveryMode, x.DigestDate, x.RecipientUserId, x.OccurredAt });
-            b.HasOne<Question>().WithMany().HasForeignKey(x => new { x.TenantId, x.QuestionId }).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<Question>().WithMany().HasForeignKey(x => new { x.TenantId, x.QuestionId })
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<KnowledgeEntry>().WithMany().HasForeignKey(x => new { x.TenantId, x.EntryId })
+                .OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<QuestionDigest>(b =>
         {

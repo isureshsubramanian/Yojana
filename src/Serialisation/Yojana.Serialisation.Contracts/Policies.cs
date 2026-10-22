@@ -112,6 +112,18 @@ public sealed record ValidatePolicyDraft(Guid PolicyVersionId);
 
 public sealed record PublishPolicyVersion(Guid PolicyVersionId, string ActorRef);
 
+/// <summary>
+/// Tells dependent modules that a newly published immutable version replaced the previous version of one policy.
+/// The event exposes policy identity only; consumers never read Serialisation persistence.
+/// </summary>
+public sealed record WarrantyPolicyVersionSuperseded(
+    Guid SupersededPolicyVersionId,
+    Guid NewPolicyVersionId,
+    string PolicyCode,
+    int SupersededVersion,
+    int NewVersion,
+    DateTime PublishedAt);
+
 public sealed record DiscardPolicyDraft(Guid PolicyVersionId, string ActorRef);
 
 public sealed record PolicyDraftResult(Guid PolicyVersionId, string PolicyCode, int Version, string Status, PolicyValidation Validation);

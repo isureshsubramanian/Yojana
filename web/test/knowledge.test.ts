@@ -8,6 +8,8 @@ const subnav = readFileSync(new URL("../src/questions/KnowledgeSubnav.tsx", impo
 const api = readFileSync(new URL("../src/questions/api.ts", import.meta.url), "utf8");
 const routes = readFileSync(new URL("../src/routes.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/questions/questions.css", import.meta.url), "utf8");
+const settings = readFileSync(new URL("../src/settings/Settings.tsx", import.meta.url), "utf8");
+const screenChanges = readFileSync(new URL("../src/settings/KnowledgeScreenChanges.tsx", import.meta.url), "utf8");
 
 test("Knowledge base searches its server-paged table as you type and browses by role and task", () => {
   assert.match(routes, /path: "knowledge".*KnowledgeBase/s);
@@ -27,7 +29,10 @@ test("Knowledge entry page shows reviewed case text, tags, written-against data 
   assert.match(base, /entry\.recordLinks\.hiddenCount/);
   assert.match(base, /you can’t open/);
   assert.match(base, /caseDisclosureTier/);
-  assert.doesNotMatch(base, /Needs review|may be out of date/i);
+  assert.match(base, /row\.needsReview/);
+  assert.match(base, /May be out of date/);
+  assert.match(base, /entry\.reviewReasons\.map/);
+  assert.match(base, /It stays available while a reviewer checks it/);
 });
 
 test("Entry editor keeps aligned side-by-side controls, version history and reviewer decisions", () => {
@@ -42,7 +47,22 @@ test("Entry editor keeps aligned side-by-side controls, version history and revi
   assert.match(editor, /note\.trim\(\)/);
   assert.match(styles, /\.knowledge-form-grid .*align-items: start/);
   assert.match(styles, /\.card \.knowledge-form-grid \.field \+ \.field \{ margin-top: 0; \}/);
-  assert.doesNotMatch(editor, /Needs review|may be out of date/i);
+  assert.match(editor, /filter === "needs_review"/);
+  assert.match(editor, />Needs review</);
+  assert.match(editor, /entry\.reviewReasons\.map/);
+  assert.match(editor, /allowedActions\.canConfirmStillCorrect/);
+  assert.match(editor, /knowledgeApi\.stillCorrect/);
+  assert.match(editor, />Still correct</);
+});
+
+test("Tenant settings let an administrator record a referenced screen change", () => {
+  assert.match(settings, /<KnowledgeScreenChanges \/>/);
+  assert.match(screenChanges, /knowledgeApi\.screens/);
+  assert.match(screenChanges, /knowledgeApi\.markScreenChanged/);
+  assert.match(screenChanges, /screen\.label/);
+  assert.match(screenChanges, /lastChangedByName/);
+  assert.match(screenChanges, /Mark screen changed/);
+  assert.match(screenChanges, /recorded and audited/);
 });
 
 test("Only the approved live sub-navigation items are visible", () => {
@@ -53,7 +73,7 @@ test("Only the approved live sub-navigation items are visible", () => {
 });
 
 test("Knowledge mutations are actor-free and use the entry endpoints", () => {
-  for (const operation of ["browse", "entry", "review", "tagChoices", "changes", "save", "submit", "approve", "sendBack", "retire"])
+  for (const operation of ["browse", "entry", "review", "tagChoices", "changes", "save", "submit", "approve", "sendBack", "retire", "stillCorrect", "screens", "markScreenChanged"])
     assert.match(api, new RegExp(`${operation}:`));
   assert.doesNotMatch(api, /actor|authorId|reviewerId|submittedBy/i);
 });

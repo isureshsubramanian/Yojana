@@ -22,6 +22,7 @@ public sealed record EditEntryRequest(string Title, string Problem, string Answe
     IReadOnlyList<WrittenAgainstInput> WrittenAgainst);
 public sealed record EntryDecisionRequest(string? Note);
 public sealed record RetireEntryRequest(string Note);
+public sealed record MarkKnowledgeScreenChangedRequest(string ScreenReference, string Reason);
 
 public static class KnowledgeEndpoints
 {
@@ -98,9 +99,9 @@ public static class KnowledgeEndpoints
         var entries = app.MapGroup("/api/knowledge/entries").RequireAuthorization(YojanaPolicy.StaffMember);
         entries.MapGet("/tag-choices", async (KnowledgeEntryQueries queries, CancellationToken ct) =>
             await Read(async () => Results.Ok(await queries.TagChoicesAsync(ct))));
-        entries.MapGet("/review", async (string? cursor, int? take, ClaimsPrincipal user,
+        entries.MapGet("/review", async (string? filter, string? cursor, int? take, ClaimsPrincipal user,
             KnowledgeEntryQueries queries, CancellationToken ct) => await Read(async () => Results.Ok(
-                await queries.ReviewQueueAsync(cursor, take ?? 25, Viewer(user), ct))));
+                await queries.ReviewQueueAsync(filter, cursor, take ?? 25, Viewer(user), ct))));
         entries.MapGet("/", async (string? query, string? role, string? task, string? cursor, int? take,
             KnowledgeEntryQueries queries, CancellationToken ct) => await Read(async () => Results.Ok(
                 await queries.BrowseAsync(query, role, task, cursor, take ?? 25, ct))));
@@ -128,6 +129,18 @@ public static class KnowledgeEndpoints
         entries.MapPost("/{entryId:guid}/retire", (Guid entryId, RetireEntryRequest request,
             ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<EntryChangeResult>(bus, tenant, new RetireEntry(entryId, request.Note, Actor(user)), ct));
+        entries.MapPost("/{entryId:guid}/still-correct", (Guid entryId, ClaimsPrincipal user,
+            IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntryChangeResult>(bus, tenant,
+                new ConfirmKnowledgeEntryStillCorrect(entryId, Actor(user)), ct));
+
+        var screens = app.MapGroup("/api/knowledge/screens")
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        screens.MapGet("/", async (string? cursor, int? take, KnowledgeScreenQueries queries,
+            CancellationToken ct) => await Read(async () =>
+                Results.Ok(await queries.ListAsync(cursor, take ?? 50, ct))));
+        screens.MapPost("/changed", (MarkKnowledgeScreenChangedRequest request, ClaimsPrincipal user,
+            IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<ScreenChangeResult>(bus, tenant,
+                new MarkKnowledgeScreenChanged(request.ScreenReference, request.Reason, Actor(user)), ct));
         return app;
     }
 
@@ -163,12 +176,13 @@ public static class KnowledgeEndpoints
             "record_not_visible" or "accept_answer_forbidden" or "close_question_forbidden" or
                 "reopen_question_forbidden" or "question_edit_author_only" or "reply_edit_author_only" or
                 "entry_edit_author_only" or "entry_submit_author_only" or "entry_self_review_forbidden" or
-                "entry_review_role_required" or "entry_link_not_visible"
+                "entry_review_role_required" or "entry_link_not_visible" or "screen_change_admin_required"
                 => StatusCodes.Status403Forbidden,
             "record_not_found" or "question_not_found" or "reply_not_found" or "entry_not_found" or
-                "entry_link_not_found" => StatusCodes.Status404NotFound,
+                "entry_link_not_found" or "screen_reference_not_found" => StatusCodes.Status404NotFound,
             "question_not_open" or "question_already_open" or "entry_already_exists" or "entry_not_draft" or
-                "entry_not_in_review" or "entry_not_published" => StatusCodes.Status409Conflict,
+                "entry_not_in_review" or "entry_not_published" or "entry_not_needing_review"
+                => StatusCodes.Status409Conflict,
             _ => StatusCodes.Status422UnprocessableEntity,
         };
         return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: status,

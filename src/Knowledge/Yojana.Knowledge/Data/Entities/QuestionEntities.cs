@@ -81,7 +81,8 @@ public sealed class QuestionNotification : ITenantScoped
 {
     public TenantId TenantId { get; set; }
     public Guid NotificationId { get; set; }
-    public Guid QuestionId { get; set; }
+    public Guid? QuestionId { get; set; }
+    public Guid? EntryId { get; set; }
     public Guid RecipientUserId { get; set; }
     public required string EventKind { get; set; }
     public Guid EventId { get; set; }

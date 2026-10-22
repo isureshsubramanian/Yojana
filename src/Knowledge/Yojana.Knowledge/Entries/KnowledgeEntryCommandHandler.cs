@@ -54,8 +54,9 @@ public static class KnowledgeEntryCommandHandler
         var entry = await FindAsync(db, tenant, command.EntryId, cancellationToken);
         if (entry.AuthorId != command.Actor.UserId)
             throw Rule("entry_edit_author_only", "Only the entry author may edit its draft.");
-        if (entry.Status != KnowledgeEntryStatus.Draft)
-            throw Rule("entry_not_draft", "Only a draft entry can be edited.");
+        var revisingPublishedEntry = entry.Status == KnowledgeEntryStatus.Published && entry.NeedsReview;
+        if (entry.Status != KnowledgeEntryStatus.Draft && !revisingPublishedEntry)
+            throw Rule("entry_not_draft", "Only a draft or a published entry needing review can be edited.");
         ValidateDraft(command.Draft);
         var tags = await tagLabels.ResolveAsync(command.Draft.Tags, cancellationToken);
         var links = await LinksAsync(entry, command.Draft.RecordLinks, db, records, tenant,
@@ -67,6 +68,7 @@ public static class KnowledgeEntryCommandHandler
         entry.Steps = command.Draft.Steps.Trim();
         entry.WrittenAgainstJson = JsonSerializer.Serialize(command.Draft.WrittenAgainst);
         entry.CurrentVersion++;
+        if (revisingPublishedEntry) entry.Status = KnowledgeEntryStatus.Draft;
         entry.LastSavedBy = command.Actor.UserId;
         entry.LastSavedAt = now;
         AddVersion(db, entry, command.Actor.UserId, now, tags, links);
@@ -81,8 +83,9 @@ public static class KnowledgeEntryCommandHandler
         var entry = await FindAsync(db, tenant, command.EntryId, cancellationToken);
         if (entry.AuthorId != command.Actor.UserId)
             throw Rule("entry_submit_author_only", "Only the entry author may submit it for review.");
-        if (entry.Status != KnowledgeEntryStatus.Draft)
-            throw Rule("entry_not_draft", "Only a draft entry can be submitted for review.");
+        if (entry.Status != KnowledgeEntryStatus.Draft
+            && !(entry.Status == KnowledgeEntryStatus.Published && entry.NeedsReview))
+            throw Rule("entry_not_draft", "Only a draft or a published entry needing review can be submitted for review.");
         var round = (await db.EntryReviewRounds.Where(x => x.TenantId == tenant.TenantId
             && x.EntryId == entry.EntryId).MaxAsync(x => (int?)x.Round, cancellationToken) ?? 0) + 1;
         var now = clock.UtcNow;
@@ -109,8 +112,11 @@ public static class KnowledgeEntryCommandHandler
         round.ReviewedAt = now;
         round.Note = Optional(command.Note, 1000, "entry_review_note_too_long", "Review note");
         entry.Status = KnowledgeEntryStatus.Published;
+        entry.PublishedVersion = entry.CurrentVersion;
         entry.PublishedBy = command.Actor.UserId;
         entry.PublishedAt = now;
+        await ClearReviewReasonsAsync(entry, command.Actor.UserId, now, "approved", db, tenant,
+            cancellationToken);
         await PublishAsync(bus, tenant, new KnowledgeEntryApproved(entry.EntryId, entry.CurrentVersion, round.Round,
             command.Actor.UserId, now), cancellationToken);
         return new EntryChangeResult(entry.EntryId, entry.Status, entry.CurrentVersion);
@@ -233,6 +239,35 @@ public static class KnowledgeEntryCommandHandler
             TenantId = entry.TenantId, EntryId = entry.EntryId, Version = entry.CurrentVersion,
             RecordKind = x.RecordKind, RecordId = x.RecordId,
         }));
+        db.EntryWrittenAgainst.AddRange(WrittenAgainst(entry.WrittenAgainstJson).Select(x =>
+            new KnowledgeEntryWrittenAgainst
+            {
+                TenantId = entry.TenantId, EntryId = entry.EntryId, Version = entry.CurrentVersion,
+                Kind = x.Kind, Reference = x.Reference.Trim(), Label = x.Label.Trim(),
+            }));
+    }
+
+    internal static async Task ClearReviewReasonsAsync(KnowledgeEntry entry, Guid reviewer, DateTime at,
+        string clearance, KnowledgeDbContext db, ITenantContext tenant, CancellationToken cancellationToken)
+    {
+        if (!entry.NeedsReview) return;
+        var reasons = await db.EntryReviewReasons.Where(x => x.TenantId == tenant.TenantId
+            && x.EntryId == entry.EntryId && x.ClearedAt == null).ToListAsync(cancellationToken);
+        foreach (var reason in reasons)
+        {
+            reason.ClearedBy = reviewer;
+            reason.ClearedAt = at;
+            reason.ClearedAtVersion = entry.CurrentVersion;
+            reason.Clearance = clearance;
+        }
+        entry.NeedsReview = false;
+        entry.NeedsReviewSince = null;
+    }
+
+    private static List<WrittenAgainstInput> WrittenAgainst(string json)
+    {
+        try { return JsonSerializer.Deserialize<List<WrittenAgainstInput>>(json) ?? []; }
+        catch (JsonException) { return []; }
     }
 
     private static void ValidateDraft(EntryDraftInput draft)
