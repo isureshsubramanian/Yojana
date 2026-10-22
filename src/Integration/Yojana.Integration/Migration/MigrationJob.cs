@@ -7,13 +7,15 @@ using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Integration.LegacyMigration.Validation;
+using Yojana.Integration.LegacyMigration.Apply;
 
 namespace Yojana.Integration.LegacyMigration;
 
 [DisallowConcurrentExecution]
 public sealed class MigrationExtractionJob(ITenantContextSetter setter, MigrationBatchService batches,
     MigrationProfileService profiles, CanonicalisationService canonicalisation,
-    ReconstructionService reconstruction, MappingService mapping, IMigrationValidationQueue validation)
+    ReconstructionService reconstruction, MappingService mapping, IMigrationValidationQueue validation,
+    ApplyService apply)
     : TenantJob(setter)
 {
     public const string JobName = "integration.migration-extraction";
@@ -32,5 +34,7 @@ public sealed class MigrationExtractionJob(ITenantContextSetter setter, Migratio
         await mapping.RunPendingAsync(cancellationToken);
         await validation.EnqueueEligibleAsync(cancellationToken);
         await validation.RunPendingAsync(cancellationToken);
+        // Loads are only ever requested by a person (POST .../apply); the job just runs what is queued.
+        await apply.RunPendingAsync(cancellationToken);
     }
 }

@@ -64,19 +64,27 @@ test("review queue is enabled while later migration tabs remain disabled", () =>
 });
 
 test("migration API adapter covers the merged endpoints and sends no browser actor", () => {
-  for (const fragment of ["/sources", "/licence", "/test", "/batches", "/profile", "/samples", "/profiling/outcomes", "/canonicalisation", "/canonicalise", "/review"]) assert.match(api, new RegExp(fragment.replace("/", "\\/")));
+  for (const fragment of ["/sources", "/licence", "/test", "/batches", "/profile", "/samples", "/profiling/outcomes", "/canonicalisation", "/canonicalise", "/review", "/review/export.csv", "/canonicalisation/families/catalogue"]) assert.match(api, new RegExp(fragment.replace("/", "\\/")));
   assert.match(api, /method: "POST", body: \{ sourceId \}/);
   assert.match(api, /method: "PUT", body: \{ classes, expectedVersion \}/);
   assert.doesNotMatch(api, /actor|requestedBy|confirmedBy/i);
 });
 
 test("review screen maps every answered mockup element to paged API data", () => {
-  for (const text of ["Review queue", "Waiting", "Merged", "Kept apart", "Fix in the incumbent", "Carried over from earlier extractions", "Serial as stored", "Rule tried", "Candidates", "Suggested", "Any item family", "All statuses"]) assert.ok(reviewScreen.includes(text), text);
+  for (const text of ["Review queue", "Waiting", "Decided", "Merged candidate rows", "Carried over from earlier extractions", "Serial as stored", "Rule tried", "Candidates", "Suggested", "Any item family", "All statuses", "Serial or item code", "CSV"]) assert.ok(reviewScreen.includes(text), text);
   assert.match(reviewScreen, /<DataGrid/); assert.match(reviewScreen, /<KpiStrip/); assert.match(reviewScreen, /<Rail/);
   assert.match(reviewScreen, /nextCursor/); assert.match(reviewScreen, /keyset paged/);
   assert.match(reviewScreen, /migrationApi\.canonicalisation/); assert.match(reviewScreen, /migrationApi\.review\(/); assert.match(reviewScreen, /migrationApi\.reviewDetail/);
-  assert.doesNotMatch(reviewScreen, /label: "Decided", value:/);
-  assert.doesNotMatch(reviewScreen, /same item.*across items/i);
+  assert.match(reviewScreen, /migrationApi\.canonicalFamilyCatalogue/); assert.match(reviewScreen, /reviewExportUrl/);
+  assert.match(reviewScreen, /waitingReviewItemsByKind/); assert.match(reviewScreen, /decidedReviewItemsByDecision/);
+  assert.match(reviewScreen, /find: find\.trim\(\)/);
+});
+
+test("review rows and lineage use server-supplied readable labels", () => {
+  assert.match(reviewScreen, /Merge into \{row\.suggestedKeepLabel/);
+  assert.match(reviewScreen, /candidate\.cardNumber/); assert.match(reviewScreen, /candidate\.contractNumber/);
+  assert.match(reviewScreen, /candidate\.receiptDocumentNumber/); assert.match(reviewScreen, /candidate\.receiptDocumentLine/);
+  assert.doesNotMatch(reviewScreen, />\{row\.suggestedKeepSourceKey\}</);
 });
 
 test("Migration leads see read screens and decisions, but administrator actions stay hidden", () => {
@@ -190,8 +198,8 @@ const reviewDetail: MigrationReviewDetail = {
   itemCode: "RS-1100", itemName: "Rack server", ruleTried: "trimmed_upper", suggestion: "merge_into",
   suggestedKeepSourceKey: "candidate-a", suggestionReason: "A has the stronger lineage.", hint: null,
   candidates: [
-    { sourceKey: "candidate-a", serialAsStored: "RS-101", itemCode: "RS-1100", itemName: "Rack server", transactions: 12, firstReceipt: "2026-09-01", lastDelivery: "2026-09-03", lastDeliveryParty: "Asterra Compute Works", hasEquipmentCard: true, hasContract: true, disposition: "review" },
-    { sourceKey: "candidate-b", serialAsStored: " rs-101 ", itemCode: "RS-1100", itemName: "Rack server", transactions: 1, firstReceipt: "2026-09-01", lastDelivery: null, lastDeliveryParty: null, hasEquipmentCard: false, hasContract: false, disposition: "review" },
+    { sourceKey: "candidate-a", serialAsStored: "RS-101", itemCode: "RS-1100", itemName: "Rack server", transactions: 12, firstReceipt: "2026-09-01", lastDelivery: "2026-09-03", lastDeliveryParty: "Asterra Compute Works", hasEquipmentCard: true, cardNumber: "48810", hasContract: true, contractNumber: "CT-2025-0911", receiptDocumentNumber: 70110, receiptDocumentLine: 0, disposition: "review" },
+    { sourceKey: "candidate-b", serialAsStored: " rs-101 ", itemCode: "RS-1100", itemName: "Rack server", transactions: 1, firstReceipt: "2026-09-01", lastDelivery: null, lastDeliveryParty: null, hasEquipmentCard: false, cardNumber: null, hasContract: false, contractNumber: null, receiptDocumentNumber: 70110, receiptDocumentLine: 0, disposition: "review" },
   ],
   earlierDecisions: [],
 };
@@ -206,6 +214,9 @@ test("drawer decision options offer each same-item merge target and never offer 
   assert.doesNotMatch(orphanWithoutHint.map(option => option.label).join(" "), /Attach/);
   const orphanWithHint = reviewDecisionOptions({ ...reviewDetail, kind: "orphan_equipment_card", hint: "Nearest same-item serial is one edit away." });
   assert.deepEqual(orphanWithHint.map(option => option.label), ["Attach to A", "Keep apart", "Fix in the incumbent"]);
+  const history = reviewDecisionOptions({ ...reviewDetail, kind: "history_needs_review", suggestion: "accept_as_recorded" });
+  assert.deepEqual(history.map(option => option.label), ["Accept as recorded", "Exclude from history", "Fix in the incumbent"]);
+  assert.equal(history[0]!.suggested, true);
 });
 
 test("drawer requires a reason, requires a correction note, and keeps refusal rules readable", () => {
@@ -222,7 +233,7 @@ test("drawer requires a reason, requires a correction note, and keeps refusal ru
 test("review catalogue and pure formatting never expose stored codes or candidate keys", () => {
   for (const kind of REVIEW_KINDS) assert.doesNotMatch(reviewKindLabel(kind), /_/);
   for (const status of REVIEW_STATUSES) assert.doesNotMatch(reviewStatusLabel(status), /_/);
-  for (const decision of ["merge_into", "keep_apart", "fix_in_incumbent"] as const) assert.doesNotMatch(reviewDecisionLabel(decision), /_/);
+  for (const decision of ["merge_into", "keep_apart", "fix_in_incumbent", "accept_as_recorded", "exclude_from_history"] as const) assert.doesNotMatch(reviewDecisionLabel(decision), /_/);
   for (const rule of ["exact", "trimmed_upper", "family_normalised", "reviewed", "no_serial_match"]) assert.doesNotMatch(matchRuleLabel(rule), /_/);
   for (const status of ["queued", "running", "completed", "failed", "not_run"]) assert.doesNotMatch(canonicalisationStatusLabel(status), /_/);
   assert.equal(serialAsStored(" RS-101 "), '" RS-101 "');

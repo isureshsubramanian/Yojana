@@ -10,6 +10,8 @@ using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Integration.LegacyMigration.Validation;
+using Yojana.Integration.LegacyMigration.Apply;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.LegacyMigration;
 
@@ -176,6 +178,28 @@ public static class MigrationEndpoints
         review.MapGet("/plan/units/{planUnitId:guid}", async (Guid planUnitId, MappingService service,
             CancellationToken ct) => await service.UnitAsync(planUnitId, ct) is { } result
                 ? Results.Ok(result) : Results.NotFound());
+        admin.MapPost("/batches/{batchId:guid}/apply", async (Guid batchId, StartApplyRequest request,
+            ClaimsPrincipal user, ApplyService service, CancellationToken ct) =>
+        {
+            try
+            {
+                var result = await service.EnqueueAsync(batchId, request, Actor(user), ct);
+                return Results.Accepted($"/api/migration/batches/{batchId:D}/apply", result);
+            }
+            catch (ApplyRuleException ex) { return Problem(ex); }
+        });
+        review.MapGet("/batches/{batchId:guid}/apply", async (Guid batchId, ApplyService service,
+            CancellationToken ct) => await service.GetAsync(batchId, ct) is { } result
+                ? Results.Ok(result) : Results.NotFound());
+        review.MapGet("/loads/{loadId:guid}/refusals", async (Guid loadId, string? cursor, int? take,
+            ApplyService service, CancellationToken ct) =>
+            Results.Ok(await service.RefusalsAsync(loadId, cursor, take ?? 50, ct)));
+        admin.MapPost("/loads/{loadId:guid}/rollback", async (Guid loadId, ClaimsPrincipal user,
+            ApplyService service, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await service.RollBackAsync(loadId, Actor(user), ct)); }
+            catch (ApplyRuleException ex) { return Problem(ex); }
+        });
         review.MapGet("/mapping/settings", (MappingSettings mappingSettings, CancellationToken ct) =>
             InvokeMapping(() => mappingSettings.GetAsync(ct)));
         admin.MapPut("/mapping/settings", (UpdateMappingSettingsRequest request,
@@ -236,15 +260,34 @@ public static class MigrationEndpoints
         admin.MapPut("/validation/settings", (UpdateValidationSettingsRequest request,
             ValidationSettings validationSettings, CancellationToken ct) =>
             InvokeValidation(() => validationSettings.SetAsync(request, ct)));
-        review.MapGet("/review", (Guid batchId, string? kind, string? family, string? status,
+        review.MapGet("/review", (Guid batchId, string? kind, string? family, string? status, string? find,
             string? cursor, int? take, CanonicalisationService service, CancellationToken ct) =>
-            Invoke(() => service.ListAsync(batchId, kind, family, status, cursor, take ?? 25, ct)));
+            Invoke(() => service.ListAsync(batchId, kind, family, status, find, cursor, take ?? 25, ct)));
+        review.MapGet("/review/export.csv", async (Guid batchId, string? kind, string? family, string? status,
+            string? find, HttpContext http, CanonicalisationService service,
+            [Microsoft.AspNetCore.Mvc.FromServices] ITabularExporter exporter,
+            CancellationToken ct) =>
+        {
+            if (await service.ExportTooLargeAsync(batchId, kind, family, status, find, ct))
+                return Results.Problem(title: "migration_review_export_too_large",
+                    detail: $"Export exceeds {CanonicalisationService.MaximumExportRows:N0} review items. Narrow the filters.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            http.Response.Headers["X-Export-Row-Limit"] =
+                CanonicalisationService.MaximumExportRows.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return Results.Stream(stream => exporter.WriteAsync("csv", new TabularExport(
+                ["Serial as stored", "Item code", "Item", "Item family", "Kind", "Rule tried",
+                    "Candidates", "Suggested", "Status"],
+                service.ExportAsync(batchId, kind, family, status, find, http.RequestAborted)),
+                stream, http.RequestAborted), exporter.ContentType("csv"), "migration-review.csv");
+        });
         review.MapGet("/review/{itemId:guid}", async (Guid itemId, CanonicalisationService service,
             CancellationToken ct) => await service.DetailAsync(itemId, ct) is { } result
                 ? Results.Ok(result) : Results.NotFound());
         review.MapPost("/review/{itemId:guid}/decision", (Guid itemId,
             MigrationReviewDecisionRequest request, ClaimsPrincipal user, CanonicalisationService service,
             CancellationToken ct) => Invoke(() => service.DecideAsync(itemId, request, Actor(user), ct)));
+        review.MapGet("/canonicalisation/families/catalogue", (CanonicalisationService service,
+            CancellationToken ct) => Invoke(() => service.FamilyCatalogueAsync(ct)));
         admin.MapGet("/canonicalisation/families", (CanonicalFamilySettings settings, CancellationToken ct) =>
             Invoke(() => settings.GetAsync(ct)));
         admin.MapPut("/canonicalisation/families", (UpdateCanonicalFamilySettingsRequest request,
@@ -295,6 +338,10 @@ public static class MigrationEndpoints
         extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
 
     private static IResult Problem(TemplateMappingRuleException ex) => Results.Problem(title: ex.Rule,
+        detail: ex.Message, statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
+        extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+
+    private static IResult Problem(ApplyRuleException ex) => Results.Problem(title: ex.Rule,
         detail: ex.Message, statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
         extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
 

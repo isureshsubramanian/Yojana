@@ -52,7 +52,7 @@ const failureLabels: Record<string, string> = {
   migration_extraction_cancelled: "The extraction was cancelled.",
 };
 
-export const REVIEW_KINDS: readonly MigrationReviewKind[] = ["same_serial_one_item", "same_serial_different_items", "orphan_equipment_card", "serial_in_user_field"];
+export const REVIEW_KINDS: readonly MigrationReviewKind[] = ["same_serial_one_item", "same_serial_different_items", "orphan_equipment_card", "serial_in_user_field", "history_needs_review"];
 export const REVIEW_STATUSES: readonly MigrationReviewStatus[] = ["waiting", "decided", "carried_over"];
 export function mayReadMigration(roles: readonly string[]): boolean { return roles.some(role => role === "tenant_administrator" || role === "migration_lead"); }
 export function mayAdministerMigration(roles: readonly string[]): boolean { return roles.includes("tenant_administrator"); }
@@ -71,9 +71,10 @@ const reviewKindLabels: Record<MigrationReviewKind, string> = {
   same_serial_different_items: "Same serial on different items",
   orphan_equipment_card: "Orphan equipment card",
   serial_in_user_field: "Serial in a user field",
+  history_needs_review: "History needs review",
 };
 const reviewStatusLabels: Record<MigrationReviewStatus, string> = { waiting: "Waiting", decided: "Decided", carried_over: "Carried over" };
-const reviewDecisionLabels: Record<MigrationReviewDecision, string> = { merge_into: "Merge into", keep_apart: "Keep apart", fix_in_incumbent: "Fix in the incumbent" };
+const reviewDecisionLabels: Record<MigrationReviewDecision, string> = { merge_into: "Merge into", keep_apart: "Keep apart", fix_in_incumbent: "Fix in the incumbent", accept_as_recorded: "Accept as recorded", exclude_from_history: "Exclude from history" };
 const matchRuleLabels: Record<string, string> = {
   exact: "Exact",
   trimmed_upper: "Trimmed and upper-cased",
@@ -173,6 +174,11 @@ export function candidateLetter(index: number): string {
 
 export interface ReviewDecisionOption { decision: MigrationReviewDecision; keepSourceKey: string | null; label: string; help: string; suggested: boolean }
 export function reviewDecisionOptions(detail: MigrationReviewDetail): ReviewDecisionOption[] {
+  if (detail.kind === "history_needs_review") return [
+    { decision: "accept_as_recorded", keepSourceKey: null, label: "Accept as recorded", help: "Keep the flagged source events in history.", suggested: detail.suggestion === "accept_as_recorded" },
+    { decision: "exclude_from_history", keepSourceKey: null, label: "Exclude from history", help: "Drop only the flagged events; keep the rest of this serial's history.", suggested: detail.suggestion === "exclude_from_history" },
+    { decision: "fix_in_incumbent", keepSourceKey: null, label: "Fix in the incumbent", help: "Send the issue back with a note.", suggested: detail.suggestion === "fix_in_incumbent" },
+  ];
   const sameItem = new Set(detail.candidates.map(candidate => candidate.itemCode)).size === 1;
   const merge = detail.kind === "same_serial_one_item" && sameItem
     ? detail.candidates.map((candidate, index) => ({

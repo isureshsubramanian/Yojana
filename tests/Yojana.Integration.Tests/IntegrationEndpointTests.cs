@@ -154,11 +154,12 @@ public sealed class IntegrationEndpointTests
         builder.Services.AddScoped<MappingSettings>();
         builder.Services.AddScoped<ValidationService>();
         builder.Services.AddScoped<ValidationSettings>();
+        builder.Services.AddScoped<Yojana.Integration.LegacyMigration.Apply.ApplyService>();
         var app = builder.Build();
         app.MapMigrationEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
-        Assert.Equal(52, endpoints.Count);
+        Assert.Equal(58, endpoints.Count);
         var readPaths = new HashSet<string>(StringComparer.Ordinal)
         {
             "/api/migration/batches", "/api/migration/batches/{batchId:guid}",
@@ -167,6 +168,7 @@ public sealed class IntegrationEndpointTests
             "/api/migration/batches/{batchId:guid}/profile",
             "/api/migration/batches/{batchId:guid}/profile/{classCode}/samples",
             "/api/migration/batches/{batchId:guid}/canonicalisation", "/api/migration/review",
+            "/api/migration/review/export.csv", "/api/migration/canonicalisation/families/catalogue",
             "/api/migration/review/{itemId:guid}", "/api/migration/review/{itemId:guid}/decision",
             "/api/migration/batches/{batchId:guid}/reconstruction",
             "/api/migration/candidates/{candidateId:guid}/history",
@@ -181,6 +183,7 @@ public sealed class IntegrationEndpointTests
             "/api/migration/signoff-records/{recordId:guid}",
             "/api/migration/signoff-records/{recordId:guid}/export.csv",
             "/api/migration/validation/settings",
+            "/api/migration/batches/{batchId:guid}/apply", "/api/migration/loads/{loadId:guid}/refusals",
         };
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             policy => policy.Policy == (IsReviewEndpoint(endpoint)
@@ -236,6 +239,15 @@ public sealed class IntegrationEndpointTests
             YojanaPolicy.TenantAdministrator)).Succeeded);
         Assert.Contains(endpoints, endpoint => endpoint.RoutePattern.RawText ==
             "/api/migration/batches/{batchId:guid}/canonicalise" &&
+            endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(policy =>
+                policy.Policy == YojanaPolicy.TenantAdministrator));
+        Assert.Contains(endpoints, endpoint => endpoint.RoutePattern.RawText ==
+            "/api/migration/canonicalisation/families/catalogue" &&
+            endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(policy =>
+                policy.Policy == YojanaPolicy.MigrationReview));
+        Assert.Contains(endpoints, endpoint => endpoint.RoutePattern.RawText ==
+            "/api/migration/canonicalisation/families" &&
+            endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Contains("PUT") &&
             endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(policy =>
                 policy.Policy == YojanaPolicy.TenantAdministrator));
 

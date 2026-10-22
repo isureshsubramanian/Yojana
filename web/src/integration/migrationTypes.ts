@@ -87,11 +87,12 @@ export type MigrationOutcome = "stop_load" | "needs_person" | "fixed_by_rule" | 
 export interface MigrationOutcomeChoice { classCode: string; outcome: MigrationOutcome }
 export interface MigrationOutcomeSettings { classes: MigrationOutcomeChoice[]; version: string }
 
-export type MigrationReviewKind = "same_serial_one_item" | "same_serial_different_items" | "orphan_equipment_card" | "serial_in_user_field";
+export type MigrationReviewKind = "same_serial_one_item" | "same_serial_different_items" | "orphan_equipment_card" | "serial_in_user_field" | "history_needs_review";
 export type MigrationReviewStatus = "waiting" | "decided" | "carried_over";
-export type MigrationReviewDecision = "merge_into" | "keep_apart" | "fix_in_incumbent";
+export type MigrationReviewDecision = "merge_into" | "keep_apart" | "fix_in_incumbent" | "accept_as_recorded" | "exclude_from_history";
 
 export interface CanonicalisationGap { kind: MigrationReviewKind; reason: string }
+export interface MigrationReviewCount { key: string; count: number }
 export interface CanonicalisationRun {
   runId: string;
   batchId: string;
@@ -99,18 +100,24 @@ export interface CanonicalisationRun {
   finishedAt: string | null;
   status: string;
   failure: string | null;
-  serialsInSource: number;
-  exact: number;
-  trimmedUpper: number;
-  familyNormalised: number;
-  waitingForPerson: number;
-  merged: number;
-  keptApart: number;
-  fixInIncumbent: number;
-  carriedOver: number;
+  candidateRowsTotal: number;
+  candidateRowsExact: number;
+  candidateRowsTrimmedUpper: number;
+  candidateRowsFamilyNormalised: number;
+  candidateRowsMerged: number;
+  waitingReviewItems: number;
+  waitingSameItemReviewItems: number;
+  waitingAcrossItemsReviewItems: number;
+  waitingReviewItemsByKind: MigrationReviewCount[];
+  decidedReviewItems: number;
+  decidedReviewItemsByDecision: MigrationReviewCount[];
+  carriedOverReviewItems: number;
   unverifiedDates: number;
   gaps: CanonicalisationGap[];
 }
+
+export interface CanonicalFamilyCatalogueItem { code: string; label: string }
+export interface CanonicalFamilyCatalogue { families: CanonicalFamilyCatalogueItem[] }
 
 export interface MigrationReviewRow {
   itemId: string;
@@ -122,6 +129,8 @@ export interface MigrationReviewRow {
   ruleTried: string;
   candidateSummary: string;
   suggestion: MigrationReviewDecision | null;
+  suggestedKeepSourceKey: string | null;
+  suggestedKeepLabel: string | null;
   suggestionReason: string | null;
   hint: string | null;
   status: MigrationReviewStatus;
@@ -140,7 +149,11 @@ export interface MigrationCandidateLineage {
   lastDelivery: string | null;
   lastDeliveryParty: string | null;
   hasEquipmentCard: boolean;
+  cardNumber: string | null;
   hasContract: boolean;
+  contractNumber: string | null;
+  receiptDocumentNumber: number | null;
+  receiptDocumentLine: number | null;
   disposition: string;
 }
 

@@ -5172,6 +5172,56 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.MigrationLoadUnit", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("LoadId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("load_id");
+
+                    b.Property<Guid>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<DateTime>("AppliedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("applied_at");
+
+                    b.Property<Guid>("CreatedEventId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("created_event_id");
+
+                    b.Property<DateTime>("CreatedEventTime")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_event_time");
+
+                    b.Property<int>("EventCount")
+                        .HasColumnType("int")
+                        .HasColumnName("event_count");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("TenantId", "LoadId", "PlanUnitId")
+                        .HasName("pk_migration_load_unit");
+
+                    b.HasIndex("TenantId", "UnitId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_load_unit_tenant_id_unit_id");
+
+                    b.ToTable("migration_load_unit", "serialisation");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.NumberSeries", b =>
                 {
                     b.Property<Guid>("TenantId")

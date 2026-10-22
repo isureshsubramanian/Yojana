@@ -96,6 +96,7 @@ internal static class MigrationModel
         Reconstruction.ReconstructionModel.Configure(modelBuilder);
         Mapping.MappingModel.Configure(modelBuilder);
         Validation.ValidationModel.Configure(modelBuilder);
+        Apply.ApplyModel.Configure(modelBuilder);
         Staging.SourceProtocol.Configure(modelBuilder);
     }
 }

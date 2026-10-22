@@ -12,8 +12,8 @@ using Yojana.Integration.Data;
 namespace Yojana.Integration.Migrations
 {
     [DbContext(typeof(IntegrationDbContext))]
-    [Migration("20261021233529_P9T08Validation")]
-    partial class P9T08Validation
+    [Migration("20261021235041_P9T10Apply")]
+    partial class P9T10Apply
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -2537,6 +2537,145 @@ namespace Yojana.Integration.Migrations
                         .HasDatabaseName("ix_tenant_data_key_rewrap_checkpoint_tenant_id_updated_at_operation_id");
 
                     b.ToTable("tenant_data_key_rewrap_checkpoint", "integration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Apply.MigrationApplyRefusal", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RefusalId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("refusal_id");
+
+                    b.Property<Guid>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<string>("Reasons")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("reasons");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.HasKey("TenantId", "RefusalId")
+                        .HasName("pk_migration_apply_refusal");
+
+                    b.HasIndex("TenantId", "RunId", "PlanUnitId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_apply_refusal_tenant_id_run_id_plan_unit_id");
+
+                    b.HasIndex("TenantId", "RunId", "RefusalId")
+                        .HasDatabaseName("ix_migration_apply_refusal_tenant_id_run_id_refusal_id");
+
+                    b.ToTable("migration_apply_refusal", "migration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Apply.MigrationApplyRun", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<long>("AlreadyApplied")
+                        .HasColumnType("bigint")
+                        .HasColumnName("already_applied");
+
+                    b.Property<long>("Applied")
+                        .HasColumnType("bigint")
+                        .HasColumnName("applied");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("batch_id");
+
+                    b.Property<Guid?>("CursorPlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("cursor_plan_unit_id");
+
+                    b.Property<long>("EventsWritten")
+                        .HasColumnType("bigint")
+                        .HasColumnName("events_written");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("failure_code");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("finished_at");
+
+                    b.Property<Guid>("MapRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("map_run_id");
+
+                    b.Property<long>("Refused")
+                        .HasColumnType("bigint")
+                        .HasColumnName("refused");
+
+                    b.Property<bool>("Rehearsal")
+                        .HasColumnType("bit")
+                        .HasColumnName("rehearsal");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("requested_at");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("requested_by");
+
+                    b.Property<DateTime?>("RolledBackAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("rolled_back_at");
+
+                    b.Property<string>("RolledBackBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("rolled_back_by");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<long>("UnitsInPlan")
+                        .HasColumnType("bigint")
+                        .HasColumnName("units_in_plan");
+
+                    b.HasKey("TenantId", "RunId")
+                        .HasName("pk_migration_apply_run");
+
+                    b.HasIndex("TenantId", "MapRunId")
+                        .HasDatabaseName("ix_migration_apply_run_tenant_id_map_run_id");
+
+                    b.HasIndex("TenantId", "BatchId", "RequestedAt", "RunId")
+                        .HasDatabaseName("ix_migration_apply_run_tenant_id_batch_id_requested_at_run_id");
+
+                    b.HasIndex("TenantId", "Status", "RequestedAt", "RunId")
+                        .HasDatabaseName("ix_migration_apply_run_tenant_id_status_requested_at_run_id");
+
+                    b.ToTable("migration_apply_run", "migration", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_apply_run_status", "status IN ('queued','running','completed','failed','rolled_back')");
+                        });
                 });
 
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationCanonRun", b =>
@@ -6471,545 +6610,6 @@ namespace Yojana.Integration.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationSignoffLine", b =>
-                {
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<Guid>("LineId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("line_id");
-
-                    b.Property<decimal?>("Difference")
-                        .HasPrecision(19, 6)
-                        .HasColumnType("decimal(19,6)")
-                        .HasColumnName("difference");
-
-                    b.Property<string>("Explanation")
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)")
-                        .HasColumnName("explanation");
-
-                    b.Property<int>("Position")
-                        .HasColumnType("int")
-                        .HasColumnName("position");
-
-                    b.Property<DateTime>("PreparedAt")
-                        .HasColumnType("datetime2(3)")
-                        .HasColumnName("prepared_at");
-
-                    b.Property<string>("Preparer")
-                        .IsRequired()
-                        .HasMaxLength(320)
-                        .HasColumnType("nvarchar(320)")
-                        .HasColumnName("preparer");
-
-                    b.Property<Guid>("RecordId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("record_id");
-
-                    b.Property<string>("ReportName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)")
-                        .HasColumnName("report_name");
-
-                    b.Property<string>("Result")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)")
-                        .HasColumnName("result");
-
-                    b.Property<DateTime>("ReviewedAt")
-                        .HasColumnType("datetime2(3)")
-                        .HasColumnName("reviewed_at");
-
-                    b.Property<string>("Reviewer")
-                        .IsRequired()
-                        .HasMaxLength(320)
-                        .HasColumnType("nvarchar(320)")
-                        .HasColumnName("reviewer");
-
-                    b.Property<long?>("SourceTotal")
-                        .HasColumnType("bigint")
-                        .HasColumnName("source_total");
-
-                    b.Property<long?>("TargetTotal")
-                        .HasColumnType("bigint")
-                        .HasColumnName("target_total");
-
-                    b.HasKey("TenantId", "LineId")
-                        .HasName("pk_migration_signoff_line");
-
-                    b.HasIndex("TenantId", "RecordId", "Position")
-                        .IsUnique()
-                        .HasDatabaseName("ux_migration_signoff_line_tenant_id_record_id_position");
-
-                    b.ToTable("migration_signoff_line", "migration");
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationSignoffRecord", b =>
-                {
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<Guid>("RecordId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("record_id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2(3)")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasMaxLength(320)
-                        .HasColumnType("nvarchar(320)")
-                        .HasColumnName("created_by");
-
-                    b.Property<bool>("Rehearsal")
-                        .HasColumnType("bit")
-                        .HasColumnName("rehearsal");
-
-                    b.Property<Guid>("RunId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("run_id");
-
-                    b.HasKey("TenantId", "RecordId")
-                        .HasName("pk_migration_signoff_record");
-
-                    b.HasIndex("TenantId", "RunId")
-                        .IsUnique()
-                        .HasDatabaseName("ux_migration_signoff_record_tenant_id_run_id");
-
-                    b.ToTable("migration_signoff_record", "migration");
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationValidationCheck", b =>
-                {
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<Guid>("CheckId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("check_id");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(80)
-                        .HasColumnType("nvarchar(80)")
-                        .HasColumnName("code");
-
-                    b.Property<decimal?>("Difference")
-                        .HasPrecision(19, 6)
-                        .HasColumnType("decimal(19,6)")
-                        .HasColumnName("difference");
-
-                    b.Property<long>("DurationMilliseconds")
-                        .HasColumnType("bigint")
-                        .HasColumnName("duration_milliseconds");
-
-                    b.Property<DateTime?>("ExplainedAt")
-                        .HasColumnType("datetime2(3)")
-                        .HasColumnName("explained_at");
-
-                    b.Property<string>("ExplainedBy")
-                        .HasMaxLength(320)
-                        .HasColumnType("nvarchar(320)")
-                        .HasColumnName("explained_by");
-
-                    b.Property<string>("Explanation")
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)")
-                        .HasColumnName("explanation");
-
-                    b.Property<string>("HowCounted")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)")
-                        .HasColumnName("how_counted");
-
-                    b.Property<string>("Label")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)")
-                        .HasColumnName("label");
-
-                    b.Property<string>("LimitKind")
-                        .IsRequired()
-                        .HasMaxLength(80)
-                        .HasColumnType("nvarchar(80)")
-                        .HasColumnName("limit_kind");
-
-                    b.Property<string>("OriginalResult")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)")
-                        .HasColumnName("original_result");
-
-                    b.Property<DateTime>("RanAt")
-                        .HasColumnType("datetime2(3)")
-                        .HasColumnName("ran_at");
-
-                    b.Property<string>("Result")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)")
-                        .HasColumnName("result");
-
-                    b.Property<string>("ResultFingerprint")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nchar(64)")
-                        .HasColumnName("result_fingerprint")
-                        .IsFixedLength();
-
-                    b.Property<Guid>("RunId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("run_id");
-
-                    b.Property<long?>("SourceTotal")
-                        .HasColumnType("bigint")
-                        .HasColumnName("source_total");
-
-                    b.Property<long?>("TargetTotal")
-                        .HasColumnType("bigint")
-                        .HasColumnName("target_total");
-
-                    b.HasKey("TenantId", "CheckId")
-                        .HasName("pk_migration_validation_check");
-
-                    b.HasIndex("TenantId", "RunId", "Code")
-                        .IsUnique()
-                        .HasDatabaseName("ux_migration_validation_check_tenant_id_run_id_code");
-
-                    b.ToTable("migration_validation_check", "migration", t =>
-                        {
-                            t.HasCheckConstraint("ck_migration_validation_check_result", "result IN ('pass','explained','fail','hard_fail','report')");
-                        });
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationValidationCheckPart", b =>
-                {
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<Guid>("PartId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("part_id");
-
-                    b.Property<Guid>("CheckId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("check_id");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(80)
-                        .HasColumnType("nvarchar(80)")
-                        .HasColumnName("code");
-
-                    b.Property<string>("Label")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)")
-                        .HasColumnName("label");
-
-                    b.Property<decimal>("Value")
-                        .HasPrecision(19, 6)
-                        .HasColumnType("decimal(19,6)")
-                        .HasColumnName("value");
-
-                    b.HasKey("TenantId", "PartId")
-                        .HasName("pk_migration_validation_check_part");
-
-                    b.HasIndex("TenantId", "CheckId", "Code")
-                        .IsUnique()
-                        .HasDatabaseName("ux_migration_validation_check_part_tenant_id_check_id_code");
-
-                    b.ToTable("migration_validation_check_part", "migration");
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationValidationDifference", b =>
-                {
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<Guid>("DifferenceId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("difference_id");
-
-                    b.Property<Guid>("CheckId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("check_id");
-
-                    b.Property<string>("Detail")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)")
-                        .HasColumnName("detail");
-
-                    b.Property<decimal>("Difference")
-                        .HasPrecision(19, 6)
-                        .HasColumnType("decimal(19,6)")
-                        .HasColumnName("difference");
-
-                    b.Property<string>("ItemCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasColumnName("item_code");
-
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)")
-                        .HasColumnName("kind");
-
-                    b.Property<string>("Serial")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)")
-                        .HasColumnName("serial");
-
-                    b.Property<decimal>("SourceValue")
-                        .HasPrecision(19, 6)
-                        .HasColumnType("decimal(19,6)")
-                        .HasColumnName("source_value");
-
-                    b.Property<decimal>("TargetValue")
-                        .HasPrecision(19, 6)
-                        .HasColumnType("decimal(19,6)")
-                        .HasColumnName("target_value");
-
-                    b.Property<string>("WarehouseCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasColumnName("warehouse_code");
-
-                    b.HasKey("TenantId", "DifferenceId")
-                        .HasName("pk_migration_validation_difference");
-
-                    b.HasIndex("TenantId", "CheckId", "DifferenceId")
-                        .HasDatabaseName("ix_migration_validation_difference_tenant_id_check_id_difference_id");
-
-                    b.ToTable("migration_validation_difference", "migration");
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationValidationRun", b =>
-                {
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<Guid>("RunId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("run_id");
-
-                    b.Property<Guid>("BatchId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("batch_id");
-
-                    b.Property<string>("FailureCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasColumnName("failure_code");
-
-                    b.Property<DateTime?>("FinishedAt")
-                        .HasColumnType("datetime2(3)")
-                        .HasColumnName("finished_at");
-
-                    b.Property<Guid>("MapRunId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("map_run_id");
-
-                    b.Property<bool>("Rehearsal")
-                        .HasColumnType("bit")
-                        .HasColumnName("rehearsal");
-
-                    b.Property<DateTime>("RequestedAt")
-                        .HasColumnType("datetime2(3)")
-                        .HasColumnName("requested_at");
-
-                    b.Property<int>("SampleSeed")
-                        .HasColumnType("int")
-                        .HasColumnName("sample_seed");
-
-                    b.Property<DateTime?>("StartedAt")
-                        .HasColumnType("datetime2(3)")
-                        .HasColumnName("started_at");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)")
-                        .HasColumnName("status");
-
-                    b.Property<string>("TargetKind")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)")
-                        .HasColumnName("target_kind");
-
-                    b.HasKey("TenantId", "RunId")
-                        .HasName("pk_migration_validation_run");
-
-                    b.HasIndex("TenantId", "MapRunId", "RunId")
-                        .HasDatabaseName("ix_migration_validation_run_tenant_id_map_run_id_run_id");
-
-                    b.HasIndex("TenantId", "BatchId", "RequestedAt", "RunId")
-                        .HasDatabaseName("ix_migration_validation_run_tenant_id_batch_id_requested_at_run_id");
-
-                    b.HasIndex("TenantId", "Status", "RequestedAt", "RunId")
-                        .HasDatabaseName("ix_migration_validation_run_tenant_id_status_requested_at_run_id");
-
-                    b.ToTable("migration_validation_run", "migration", t =>
-                        {
-                            t.HasCheckConstraint("ck_migration_validation_run_status", "status IN ('queued','running','completed','failed')");
-                        });
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationValidationSample", b =>
-                {
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<Guid>("SampleId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("sample_id");
-
-                    b.Property<string>("AgeBand")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)")
-                        .HasColumnName("age_band");
-
-                    b.Property<Guid>("CheckId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("check_id");
-
-                    b.Property<string>("ItemCode")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasColumnName("item_code");
-
-                    b.Property<string>("ItemFamily")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)")
-                        .HasColumnName("item_family");
-
-                    b.Property<string>("Note")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)")
-                        .HasColumnName("note");
-
-                    b.Property<string>("Outcome")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)")
-                        .HasColumnName("outcome");
-
-                    b.Property<Guid>("PlanUnitId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("plan_unit_id");
-
-                    b.Property<Guid>("RunId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("run_id");
-
-                    b.Property<string>("Serial")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)")
-                        .HasColumnName("serial");
-
-                    b.Property<string>("SourceTrailJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("source_trail_json");
-
-                    b.Property<string>("TargetTrailJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("target_trail_json");
-
-                    b.Property<DateTime?>("TracedAt")
-                        .HasColumnType("datetime2(3)")
-                        .HasColumnName("traced_at");
-
-                    b.Property<string>("TracedBy")
-                        .HasMaxLength(320)
-                        .HasColumnType("nvarchar(320)")
-                        .HasColumnName("traced_by");
-
-                    b.HasKey("TenantId", "SampleId")
-                        .HasName("pk_migration_validation_sample");
-
-                    b.HasIndex("TenantId", "CheckId", "SampleId")
-                        .HasDatabaseName("ix_migration_validation_sample_tenant_id_check_id_sample_id");
-
-                    b.HasIndex("TenantId", "RunId", "SampleId")
-                        .HasDatabaseName("ix_migration_validation_sample_tenant_id_run_id_sample_id");
-
-                    b.ToTable("migration_validation_sample", "migration", t =>
-                        {
-                            t.HasCheckConstraint("ck_migration_validation_sample_outcome", "outcome IS NULL OR outcome IN ('traced','mismatch')");
-                        });
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationValidationSignature", b =>
-                {
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<Guid>("SignatureId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("signature_id");
-
-                    b.Property<string>("Actor")
-                        .IsRequired()
-                        .HasMaxLength(320)
-                        .HasColumnType("nvarchar(320)")
-                        .HasColumnName("actor");
-
-                    b.Property<Guid?>("CarriedFromSignatureId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("carried_from_signature_id");
-
-                    b.Property<Guid>("CheckId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("check_id");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)")
-                        .HasColumnName("role");
-
-                    b.Property<DateTime>("SignedAt")
-                        .HasColumnType("datetime2(3)")
-                        .HasColumnName("signed_at");
-
-                    b.Property<bool>("Superseded")
-                        .HasColumnType("bit")
-                        .HasColumnName("superseded");
-
-                    b.Property<DateTime?>("SupersededAt")
-                        .HasColumnType("datetime2(3)")
-                        .HasColumnName("superseded_at");
-
-                    b.HasKey("TenantId", "SignatureId")
-                        .HasName("pk_migration_validation_signature");
-
-                    b.HasIndex("TenantId", "CheckId", "Role", "Superseded", "SignatureId")
-                        .HasDatabaseName("ix_migration_validation_signature_tenant_id_check_id_role_superseded_signature_id");
-
-                    b.ToTable("migration_validation_signature", "migration");
-                });
-
             modelBuilder.Entity("Yojana.Integration.Relays.RelayNonce", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -7238,6 +6838,26 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_reconciliation_location_tenant_id_reconciliation_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Apply.MigrationApplyRefusal", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Apply.MigrationApplyRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_apply_refusal_tenant_id_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Apply.MigrationApplyRun", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationMapRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "MapRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_apply_run_tenant_id_map_run_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationCanonRun", b =>
@@ -7569,86 +7189,6 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_template_mapping_block_tenant_id_template_mapping_id");
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationSignoffLine", b =>
-                {
-                    b.HasOne("Yojana.Integration.LegacyMigration.Validation.MigrationSignoffRecord", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId", "RecordId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_migration_signoff_line_tenant_id_record_id");
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationSignoffRecord", b =>
-                {
-                    b.HasOne("Yojana.Integration.LegacyMigration.Validation.MigrationValidationRun", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId", "RunId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_migration_signoff_record_tenant_id_run_id");
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationValidationCheck", b =>
-                {
-                    b.HasOne("Yojana.Integration.LegacyMigration.Validation.MigrationValidationRun", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId", "RunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_migration_validation_check_tenant_id_run_id");
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationValidationCheckPart", b =>
-                {
-                    b.HasOne("Yojana.Integration.LegacyMigration.Validation.MigrationValidationCheck", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId", "CheckId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_migration_validation_check_part_tenant_id_check_id");
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationValidationDifference", b =>
-                {
-                    b.HasOne("Yojana.Integration.LegacyMigration.Validation.MigrationValidationCheck", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId", "CheckId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_migration_validation_difference_tenant_id_check_id");
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationValidationRun", b =>
-                {
-                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationMapRun", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId", "MapRunId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_migration_validation_run_tenant_id_map_run_id");
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationValidationSample", b =>
-                {
-                    b.HasOne("Yojana.Integration.LegacyMigration.Validation.MigrationValidationCheck", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId", "CheckId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_migration_validation_sample_tenant_id_check_id");
-                });
-
-            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Validation.MigrationValidationSignature", b =>
-                {
-                    b.HasOne("Yojana.Integration.LegacyMigration.Validation.MigrationValidationCheck", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId", "CheckId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_migration_validation_signature_tenant_id_check_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.Relays.RelayRequestRow", b =>

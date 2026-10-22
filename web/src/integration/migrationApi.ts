@@ -1,6 +1,6 @@
 import { api } from "../api/client";
 import type {
-  CanonicalisationRun, MigrationBatch, MigrationBatchPage, MigrationOutcomeChoice, MigrationOutcomeSettings,
+  CanonicalFamilyCatalogue, CanonicalisationRun, MigrationBatch, MigrationBatchPage, MigrationOutcomeChoice, MigrationOutcomeSettings,
   MigrationProfile, MigrationProfileSamples, MigrationReviewDecision, MigrationReviewDecisionResponse,
   MigrationReviewDetail, MigrationReviewKind, MigrationReviewPage, MigrationReviewStatus, MigrationSource,
   MigrationSourcePage, MigrationSourceTestResult, PolicyCatalogue, StartMigrationBatchResponse,
@@ -30,11 +30,14 @@ export const migrationApi = {
   saveOutcomes: (classes: MigrationOutcomeChoice[], expectedVersion: string) => api<MigrationOutcomeSettings>(`${root}/profiling/outcomes`, { method: "PUT", body: { classes, expectedVersion } }),
   canonicalisation: (batchId: string, signal?: AbortSignal) => api<CanonicalisationRun>(`${root}/batches/${batchId}/canonicalisation`, { signal }),
   runCanonicalisation: (batchId: string) => api<{ runId: string; batchId: string; status: string }>(`${root}/batches/${batchId}/canonicalise`, { method: "POST" }),
-  review: (filters: { batchId: string; kind?: MigrationReviewKind | ""; family?: string; status?: MigrationReviewStatus | ""; cursor?: string | undefined; take?: number }, signal?: AbortSignal) =>
+  review: (filters: { batchId: string; kind?: MigrationReviewKind | ""; family?: string; status?: MigrationReviewStatus | ""; find?: string; cursor?: string | undefined; take?: number }, signal?: AbortSignal) =>
     api<MigrationReviewPage>(`${root}/review${query({ ...filters, take: filters.take ?? 25 })}`, { signal }),
+  reviewExportUrl: (filters: { batchId: string; kind?: MigrationReviewKind | ""; family?: string; status?: MigrationReviewStatus | ""; find?: string }) =>
+    `${root}/review/export.csv${query(filters)}`,
   reviewDetail: (itemId: string, signal?: AbortSignal) => api<MigrationReviewDetail>(`${root}/review/${itemId}`, { signal }),
   decideReview: (itemId: string, decision: MigrationReviewDecision, keepSourceKey: string | null, reason: string, note?: string) =>
     api<MigrationReviewDecisionResponse>(`${root}/review/${itemId}/decision`, { method: "POST", body: { decision, keepSourceKey, reason, note: note?.trim() || null } }),
+  canonicalFamilyCatalogue: (signal?: AbortSignal) => api<CanonicalFamilyCatalogue>(`${root}/canonicalisation/families/catalogue`, { signal }),
   templateSummary: (signal?: AbortSignal) => api<TemplateMappingSummaryView>(`${root}/templates/summary`, { signal }),
   templatePatterns: (filters: { state?: TemplateMappingState | ""; deletedInSource?: boolean; cursor?: string; take?: number }, signal?: AbortSignal) =>
     api<TemplatePatternPage>(`${root}/templates${query({ ...filters, take: filters.take ?? 25 })}`, { signal }),

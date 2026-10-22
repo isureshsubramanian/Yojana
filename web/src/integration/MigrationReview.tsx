@@ -15,7 +15,7 @@ import {
   serialAsStored, statusTone,
 } from "./migrationModel";
 import type {
-  CanonicalisationRun, MigrationBatch, MigrationBatchPage, MigrationCandidateLineage, MigrationReviewDecision,
+  CanonicalFamilyCatalogueItem, CanonicalisationRun, MigrationBatch, MigrationBatchPage, MigrationCandidateLineage, MigrationReviewDecision,
   MigrationReviewDetail, MigrationReviewKind, MigrationReviewPage, MigrationReviewRow, MigrationReviewStatus,
 } from "./migrationTypes";
 
@@ -32,7 +32,8 @@ function MigrationReview() {
   const [kind, setKind] = useState<MigrationReviewKind | "">("");
   const [family, setFamily] = useState("");
   const [status, setStatus] = useState<MigrationReviewStatus | "">("waiting");
-  const [families, setFamilies] = useState<string[]>([]);
+  const [find, setFind] = useState("");
+  const [families, setFamilies] = useState<CanonicalFamilyCatalogueItem[]>([]);
   const [pageNumber, setPageNumber] = useState(1);
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const [page, setPage] = useState<MigrationReviewPage | null>(null);
@@ -42,6 +43,14 @@ function MigrationReview() {
   const [error, setError] = useState<unknown>(null);
   const [runError, setRunError] = useState<unknown>(null);
   const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    migrationApi.canonicalFamilyCatalogue(controller.signal)
+      .then(catalogue => { if (!controller.signal.aborted) setFamilies(catalogue.families); })
+      .catch(reason => { if (!controller.signal.aborted) setError(reason); });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const available = batches.result?.items;
@@ -71,13 +80,12 @@ function MigrationReview() {
     if (!batchId || !canList) { setPage(null); setLoading(false); return; }
     setLoading(true); setError(null);
     try {
-      const next = await migrationApi.review({ batchId, kind, family: family.trim(), status, cursor, take: TAKE }, signal);
+      const next = await migrationApi.review({ batchId, kind, family, status, find: find.trim(), cursor, take: TAKE }, signal);
       setPage(next); setPageNumber(target);
-      setFamilies(current => [...new Set([...current, ...next.items.map(row => row.family).filter((value): value is string => !!value)])].sort((a, b) => a.localeCompare(b)));
     } catch (reason) {
       if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason);
     } finally { if (!signal?.aborted) setLoading(false); }
-  }, [batchId, canList, family, kind, status]);
+  }, [batchId, canList, family, find, kind, status]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -142,20 +150,21 @@ function MigrationReview() {
 
   const gaps = run?.gaps.filter(gap => gap.kind === "serial_in_user_field") ?? [];
   const heading = status === "waiting" ? "Waiting for a decision" : status === "decided" ? "Decided review items" : status === "carried_over" ? "Carried-over decisions" : "All review items";
-  return <><MigrationPage title="Review queue" eyebrow={currentBatch ? <>{batchLabel(currentBatch, batches.grid.page === 1 && batches.result?.items[0]?.batchId === currentBatch.batchId)} · canonicalisation · decisions carry over to later extractions</> : "Canonicalisation decisions"} sub="Source rows that the match rules could not settle. Nothing here is merged until a person decides, and nothing is ever merged across two items." waitingReviews={run?.waitingForPerson}>
+  const exportFilters = { batchId, kind, family, status, find: find.trim() };
+  const actions = batchId && canList ? <a className="btn" href={migrationApi.reviewExportUrl(exportFilters)} download>CSV</a> : undefined;
+  return <><MigrationPage title="Review queue" eyebrow={currentBatch ? <>{batchLabel(currentBatch, batches.grid.page === 1 && batches.result?.items[0]?.batchId === currentBatch.batchId)} · canonicalisation · decisions carry over to later extractions</> : "Canonicalisation decisions"} sub="Source rows that the match rules could not settle. Nothing here is merged until a person decides, and nothing is ever merged across two items." actions={actions} waitingReviews={run?.waitingReviewItems}>
     <div className="toolbar migration-review-toolbar"><label className="field"><span className="lbl">Extraction</span><select className="select" value={batchId} onChange={event => setBatchId(event.target.value)}><option value="">Choose an extraction</option>{batches.result?.items.map((batch, index) => <option value={batch.batchId} key={batch.batchId}>{batchLabel(batch, batches.grid.page === 1 && index === 0)} · {date(batch.requestedAt)}</option>)}</select></label><button type="button" className="btn sm" disabled={batches.grid.page === 1 || batches.busy} onClick={() => batches.onPage(batches.grid.page - 1)}>Newer extractions</button><button type="button" className="btn sm" disabled={!batches.grid.hasMore || batches.busy} onClick={() => batches.onPage(batches.grid.page + 1)}>Older extractions</button></div>
     <ReviewError error={batches.error ?? runError ?? error} />{notice && <div className="note" role="status">{notice}</div>}
     {run !== undefined && run?.status !== "completed" && <section className="card migration-canonical-state" aria-labelledby="canonical-state"><div className="card-header"><h2 id="canonical-state">Canonicalisation <span className="meta">{canonicalisationStatusLabel(run?.status ?? "not_run")}</span></h2>{run && <StatusBadge tone={statusTone(run.status)}>{canonicalisationStatusLabel(run.status)}</StatusBadge>}</div><div className="card-body"><p className="muted">This extraction has no completed canonicalisation run, so its review queue is not available yet.</p>{run?.failure && <ReviewError error={new Error(refusalRuleLabel(run.failure))} />}{admin && <button type="button" className="btn primary" disabled={runBusy || /^(queued|running)$/.test(run?.status ?? "")} onClick={() => void start()}>{runBusy ? "Queuing…" : "Run canonicalisation"}</button>}</div></section>}
     {run?.status === "completed" && <KpiStrip label="Canonicalisation review figures" kpis={[
-      { label: "Waiting", value: run.waitingForPerson.toLocaleString() },
-      { label: "Merged", value: run.merged.toLocaleString(), detail: "candidate rows merged" },
-      { label: "Kept apart", value: run.keptApart.toLocaleString(), detail: "different units, same serial text" },
-      { label: "Fix in the incumbent", value: run.fixInIncumbent.toLocaleString(), detail: "sent back with a note" },
-      { label: "Carried over from earlier extractions", value: run.carriedOver.toLocaleString(), detail: "matching lineage and source facts" },
+      { label: "Waiting", value: run.waitingReviewItems.toLocaleString(), detail: reviewCountsDetail(run.waitingReviewItemsByKind, value => reviewKindLabel(value as MigrationReviewKind)) },
+      { label: "Decided", value: run.decidedReviewItems.toLocaleString(), detail: reviewCountsDetail(run.decidedReviewItemsByDecision, value => reviewDecisionLabel(value as MigrationReviewDecision).toLowerCase()) },
+      { label: "Merged candidate rows", value: run.candidateRowsMerged.toLocaleString(), detail: "source candidate rows, not review items" },
+      { label: "Carried over from earlier extractions", value: run.carriedOverReviewItems.toLocaleString(), detail: "review items with matching lineage and source facts" },
     ]} />}
     {gaps.map(gap => <div className="note warn" role="note" key={gap.kind}><strong>{reviewKindLabel(gap.kind)} is not available:</strong>&nbsp;{gap.reason}</div>)}
     <section className="card migration-review-card" aria-labelledby="review-items"><div className="card-header"><h2 id="review-items">{heading} <span className="meta">oldest first</span></h2>{run && <StatusBadge tone={statusTone(run.status)}>{canonicalisationStatusLabel(run.status)}</StatusBadge>}</div>
-      <div className="toolbar flat"><select className="select" aria-label="Kind" value={kind} onChange={event => setKind(event.target.value as MigrationReviewKind | "")}><option value="">Any kind</option>{REVIEW_KINDS.map(value => <option value={value} key={value}>{reviewKindLabel(value)}</option>)}</select><label className="migration-family-filter"><span className="sr-only">Item family</span><input className="input" list="migration-review-families" value={family} onChange={event => setFamily(event.target.value)} placeholder="Any item family" aria-label="Item family" /></label><datalist id="migration-review-families">{families.map(value => <option value={value} key={value} />)}</datalist><select className="select" aria-label="Status" value={status} onChange={event => setStatus(event.target.value as MigrationReviewStatus | "")}><option value="">All statuses</option>{REVIEW_STATUSES.map(value => <option value={value} key={value}>{reviewStatusLabel(value)}</option>)}</select></div>
+      <div className="toolbar flat"><select className="select" aria-label="Kind" value={kind} onChange={event => setKind(event.target.value as MigrationReviewKind | "")}><option value="">Any kind</option>{REVIEW_KINDS.map(value => <option value={value} key={value}>{reviewKindLabel(value)}</option>)}</select><select className="select migration-family-filter" aria-label="Item family" value={family} onChange={event => setFamily(event.target.value)}><option value="">Any item family</option>{families.map(value => <option value={value.code} key={value.code}>{value.label}</option>)}</select><select className="select" aria-label="Status" value={status} onChange={event => setStatus(event.target.value as MigrationReviewStatus | "")}><option value="">All statuses</option>{REVIEW_STATUSES.map(value => <option value={value} key={value}>{reviewStatusLabel(value)}</option>)}</select><input className="input" type="search" value={find} onChange={event => setFind(event.target.value)} placeholder="Serial or item code" aria-label="Find" /></div>
       <DataGrid columns={columns} page={{ rows, total: rows.length, page: pageNumber, pageSize: TAKE, continuation: page?.nextCursor ?? null, totalIsExact: false, hasMore: !!page?.nextCursor }} rowId={row => row.itemId} onPage={go} onRowClick={row => void openItem(row)} activeRowId={active} loading={loading} viewportHeight={540} emptyText={canList ? "No review items match these filters." : "Choose an extraction with completed canonicalisation."} footer={<><span className="muted">{rows.length.toLocaleString()} on this page · {TAKE} a page · keyset paged</span><span className="grow" /><div className="pager"><button type="button" className="btn sm" disabled={pageNumber === 1 || loading} onClick={() => go(pageNumber - 1)}>Previous</button><span className="pg">Page {pageNumber}</span><button type="button" className="btn sm" disabled={!page?.nextCursor || loading} onClick={() => go(pageNumber + 1)}>Next</button></div></>} />
     </section>
   </MigrationPage><Rail label="Review queue"><Section title="Final decisions"><p className="muted">Every decision keeps its reason and reviewer. A later extraction carries it over only while the candidate lineage and source facts still match.</p></Section></Rail></>;
@@ -163,9 +172,11 @@ function MigrationReview() {
 
 function Suggestion({ row }: { row: MigrationReviewRow }) {
   if (row.status !== "waiting") return <StatusBadge tone={row.status === "carried_over" ? "ok" : "neutral"}>{reviewStatusLabel(row.status)}</StatusBadge>;
-  if (row.suggestion === "merge_into") return <StatusBadge tone="info">Merge suggested</StatusBadge>;
+  if (row.suggestion === "merge_into") return <StatusBadge tone="info">Merge into {row.suggestedKeepLabel ?? "suggested side"}</StatusBadge>;
   if (row.suggestion === "keep_apart") return <StatusBadge tone="neutral">Keep apart</StatusBadge>;
   if (row.suggestion === "fix_in_incumbent") return <StatusBadge tone="warn">Fix in the incumbent</StatusBadge>;
+  if (row.suggestion === "accept_as_recorded") return <StatusBadge tone="info">Accept as recorded</StatusBadge>;
+  if (row.suggestion === "exclude_from_history") return <StatusBadge tone="warn">Exclude from history</StatusBadge>;
   return <StatusBadge tone={row.hint ? "warn" : "neutral"}>{row.hint ? "Review hint" : "No suggestion"}</StatusBadge>;
 }
 
@@ -206,10 +217,10 @@ export function ReviewDrawer({ detail, onSaved, onSkip, hasNext }: { detail: Mig
 function CandidateCard({ candidate, index, suggested }: { candidate: MigrationCandidateLineage; index: number; suggested: boolean }) {
   const facts = [
     `${candidate.transactions.toLocaleString()} ${candidate.transactions === 1 ? "transaction" : "transactions"}`,
-    candidate.firstReceipt ? `first receipt ${fmtDate(candidate.firstReceipt)}` : "no receipt recorded",
+    candidate.firstReceipt ? `first receipt ${fmtDate(candidate.firstReceipt)}${candidate.receiptDocumentNumber !== null ? ` · document ${candidate.receiptDocumentNumber}${candidate.receiptDocumentLine !== null ? ` line ${candidate.receiptDocumentLine}` : ""}` : ""}` : "no receipt recorded",
     candidate.lastDelivery ? `last delivery ${fmtDate(candidate.lastDelivery)}${candidate.lastDeliveryParty ? ` to ${candidate.lastDeliveryParty}` : ""}` : "no delivery recorded",
-    candidate.hasEquipmentCard ? "equipment card" : "no equipment card",
-    candidate.hasContract ? "contract" : "no contract",
+    candidate.hasEquipmentCard ? `equipment card${candidate.cardNumber ? ` ${candidate.cardNumber}` : ""}` : "no equipment card",
+    candidate.hasContract ? `contract${candidate.contractNumber ? ` ${candidate.contractNumber}` : ""}` : "no contract",
   ];
   return <article className={`migration-candidate${suggested ? " suggested" : ""}`}><div className="k">{candidateLetter(index)}{suggested ? " · suggested" : ""}</div><div className="serial">{serialAsStored(candidate.serialAsStored)}</div><div className="primary">{candidate.itemName ?? candidate.itemCode}<span className="sub">{candidate.itemName ? candidate.itemCode : "Item name unavailable"}</span></div><p className="muted">{facts.join(" · ")}</p></article>;
 }
@@ -230,5 +241,10 @@ function ReviewError({ error }: { error: unknown }) {
 }
 
 function emptyRun(runId: string, batchId: string, status: string): CanonicalisationRun {
-  return { runId, batchId, status, startedAt: null, finishedAt: null, failure: null, serialsInSource: 0, exact: 0, trimmedUpper: 0, familyNormalised: 0, waitingForPerson: 0, merged: 0, keptApart: 0, fixInIncumbent: 0, carriedOver: 0, unverifiedDates: 0, gaps: [] };
+  return { runId, batchId, status, startedAt: null, finishedAt: null, failure: null, candidateRowsTotal: 0, candidateRowsExact: 0, candidateRowsTrimmedUpper: 0, candidateRowsFamilyNormalised: 0, candidateRowsMerged: 0, waitingReviewItems: 0, waitingSameItemReviewItems: 0, waitingAcrossItemsReviewItems: 0, waitingReviewItemsByKind: [], decidedReviewItems: 0, decidedReviewItemsByDecision: [], carriedOverReviewItems: 0, unverifiedDates: 0, gaps: [] };
+}
+
+function reviewCountsDetail(counts: readonly { key: string; count: number }[], label: (key: string) => string): string {
+  const visible = counts.filter(row => row.count > 0);
+  return visible.length ? visible.map(row => `${row.count.toLocaleString()} ${label(row.key).toLowerCase()}`).join(" · ") : "no review items";
 }

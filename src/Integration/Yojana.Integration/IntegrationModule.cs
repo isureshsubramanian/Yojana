@@ -232,8 +232,10 @@ public static class IntegrationModule
         builder.Services.AddScoped<IMigrationValidationTarget>(services =>
             services.GetRequiredService<PlanMigrationValidationTarget>());
         builder.Services.AddScoped<ValidationService>();
+        builder.Services.AddScoped<IMigrationSignoffStatus, MigrationSignoffStatus>();
         builder.Services.AddScoped<IMigrationValidationQueue>(services =>
             services.GetRequiredService<ValidationService>());
+        builder.Services.AddScoped<Yojana.Integration.LegacyMigration.Apply.ApplyService>();
         builder.Services.AddSingleton(RecurringTenantJob.For<MigrationExtractionJob>(
             MigrationExtractionJob.JobName, MigrationExtractionJob.Cron));
 
