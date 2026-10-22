@@ -141,6 +141,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<ClaimRiskFlag> ClaimRiskFlags => Set<ClaimRiskFlag>();
     public DbSet<MigrationLoadUnit> MigrationLoadUnits => Set<MigrationLoadUnit>();
+    public DbSet<MigrationCoverReplacement> MigrationCoverReplacements => Set<MigrationCoverReplacement>();
 
     public DbSet<CoverageDecision> CoverageDecisions => Set<CoverageDecision>();
 
@@ -1067,6 +1068,19 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasKey(u => new { u.TenantId, u.LoadId, u.PlanUnitId });
             b.Property(u => u.ActorRef).HasMaxLength(200);
             b.HasIndex(u => new { u.TenantId, u.UnitId }).IsUnique();
+        });
+
+        // P9-T10b: idempotency and exact undo boundary for delta cover replacement.
+        modelBuilder.Entity<MigrationCoverReplacement>(b =>
+        {
+            b.ToTable("migration_cover_replacement", t =>
+                t.HasCheckConstraint("ck_migration_cover_replacement_closed_entitlements_json",
+                    "ISJSON(closed_entitlements) = 1"));
+            b.HasKey(r => new { r.TenantId, r.LoadId, r.UnitId });
+            b.Property(r => r.ClosedEntitlements).HasDefaultValue("[]");
+            b.Property(r => r.ActorRef).HasMaxLength(200);
+            b.HasIndex(r => new { r.TenantId, r.UnitId, r.ReplacedAt });
+            b.HasIndex(r => new { r.TenantId, r.LoadId, r.PlanUnitId });
         });
 
         modelBuilder.Entity<ClaimRiskFlag>(b =>

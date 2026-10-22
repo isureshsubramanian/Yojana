@@ -5252,6 +5252,60 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.MigrationCoverReplacement", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("LoadId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("load_id");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<string>("ClosedEntitlements")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(max)")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("closed_entitlements");
+
+                    b.Property<int>("EventsWritten")
+                        .HasColumnType("int")
+                        .HasColumnName("events_written");
+
+                    b.Property<Guid>("PlanUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("plan_unit_id");
+
+                    b.Property<DateTime>("ReplacedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("replaced_at");
+
+                    b.HasKey("TenantId", "LoadId", "UnitId")
+                        .HasName("pk_migration_cover_replacement");
+
+                    b.HasIndex("TenantId", "LoadId", "PlanUnitId")
+                        .HasDatabaseName("ix_migration_cover_replacement_tenant_id_load_id_plan_unit_id");
+
+                    b.HasIndex("TenantId", "UnitId", "ReplacedAt")
+                        .HasDatabaseName("ix_migration_cover_replacement_tenant_id_unit_id_replaced_at");
+
+                    b.ToTable("migration_cover_replacement", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_migration_cover_replacement_closed_entitlements_json", "ISJSON(closed_entitlements) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.MigrationLoadUnit", b =>
                 {
                     b.Property<Guid>("TenantId")
