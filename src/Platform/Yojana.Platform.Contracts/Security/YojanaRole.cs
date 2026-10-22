@@ -98,6 +98,9 @@ public static class YojanaPolicy
     /// <summary>Any signed-in user with a selected tenant.</summary>
     public const string TenantMember = "tenant_member";
 
+    /// <summary>Any signed-in tenant user holding a staff role; customer portal principals are excluded.</summary>
+    public const string StaffMember = "staff_member";
+
     /// <summary>A signed-in external principal bound to one tenant and one customer party.</summary>
     public const string CustomerPortal = "customer_portal";
 }

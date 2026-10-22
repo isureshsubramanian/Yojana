@@ -61,6 +61,7 @@ test-db: build ## Database tests; need YOJANA_TEST_SQL (a SQL Server connection 
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Platform.DatabaseTests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Serialisation.DatabaseTests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Integration.DatabaseTests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
+	MSBUILDDISABLENODEREUSE=1 dotnet test tests/Yojana.Knowledge.DatabaseTests -c $(CONFIG) --no-build $(DOTNET_BUILD_FLAGS)
 
 licences: ## Gate 1: every package carries an allow-listed licence or an approved exception
 	$(GATES) licences

@@ -4,6 +4,10 @@
     <Project Path="src/Integration/Yojana.Integration.Contracts/Yojana.Integration.Contracts.csproj" />
     <Project Path="src/Integration/Yojana.Integration/Yojana.Integration.csproj" />
   </Folder>
+  <Folder Name="/src/Knowledge/">
+    <Project Path="src/Knowledge/Yojana.Knowledge.Contracts/Yojana.Knowledge.Contracts.csproj" />
+    <Project Path="src/Knowledge/Yojana.Knowledge/Yojana.Knowledge.csproj" />
+  </Folder>
   <Folder Name="/src/Relay/">
     <Project Path="src/Relay/Yojana.Relay/Yojana.Relay.csproj" />
     <Project Path="src/Relay/Yojana.Relay.Contracts/Yojana.Relay.Contracts.csproj" />
@@ -30,6 +34,7 @@
     <Project Path="tests/Yojana.Platform.DatabaseTests/Yojana.Platform.DatabaseTests.csproj" />
     <Project Path="tests/Yojana.Platform.Tests/Yojana.Platform.Tests.csproj" />
     <Project Path="tests/Yojana.Integration.DatabaseTests/Yojana.Integration.DatabaseTests.csproj" />
+    <Project Path="tests/Yojana.Knowledge.DatabaseTests/Yojana.Knowledge.DatabaseTests.csproj" />
     <Project Path="tests/Yojana.RenderWorker.Tests/Yojana.RenderWorker.Tests.csproj" />
     <Project Path="tests/Yojana.Serialisation.DatabaseTests/Yojana.Serialisation.DatabaseTests.csproj" />
     <Project Path="tests/Yojana.Serialisation.Tests/Yojana.Serialisation.Tests.csproj" />

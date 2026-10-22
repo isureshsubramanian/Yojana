@@ -30,6 +30,7 @@ using Yojana.Serialisation.Jurisdictions;
 using Yojana.Serialisation.Imports;
 using Yojana.Serialisation.Reports;
 using Yojana.Serialisation.MigrationLoads;
+using Yojana.Platform.Contracts.Records;
 
 namespace Yojana.Serialisation;
 
@@ -41,6 +42,15 @@ public static class SerialisationModule
     public static IHostApplicationBuilder AddSerialisationModule(this IHostApplicationBuilder builder)
     {
         builder.AddModuleDbContext<SerialisationDbContext>(Schema);
+        foreach (var recordKind in new[]
+                 {
+                     RecordKind.Unit, RecordKind.Claim, RecordKind.Rma, RecordKind.RefurbishmentWorkOrder,
+                     RecordKind.WarrantyPolicy, RecordKind.Certificate, RecordKind.ImportJob,
+                 })
+        {
+            builder.Services.AddKeyedScoped<IRecordReferenceResolver>(recordKind, (services, key) =>
+                new SerialisationRecordReferenceResolver(services.GetRequiredService<SerialisationDbContext>(), (string)key!));
+        }
         var importFiles = builder.Configuration.GetSection(ImportFileStorageOptions.SectionName)
             .Get<ImportFileStorageOptions>() ?? new ImportFileStorageOptions();
         if (string.IsNullOrWhiteSpace(importFiles.DatabaseConnectionString))

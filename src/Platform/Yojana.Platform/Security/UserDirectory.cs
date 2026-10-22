@@ -6,7 +6,7 @@ using Yojana.Platform.Data.Platform;
 namespace Yojana.Platform.Security;
 
 /// <summary><see cref="IUserDirectory"/> over the registry tables, limited to members of the current tenant.</summary>
-public sealed class UserDirectory(PlatformDbContext db, ITenantContext tenant) : IUserDirectory
+public sealed class UserDirectory(PlatformDbContext db, ITenantContext tenant) : IUserDirectory, ITenantStaffDirectory
 {
     public async Task<IReadOnlyDictionary<string, string>> DisplayNamesAsync(IReadOnlyCollection<string> references, CancellationToken cancellationToken)
     {
@@ -44,4 +44,13 @@ public sealed class UserDirectory(PlatformDbContext db, ITenantContext tenant) :
 
         return names;
     }
+
+    public Task<bool> ActiveStaffMemberExistsAsync(Guid userId, CancellationToken cancellationToken) =>
+        db.Memberships.AsNoTracking().AnyAsync(m => m.TenantId == tenant.TenantId && m.UserId == userId
+            && m.DeactivatedAt == null && m.CustomerPartyRef == null && m.User!.IsActive && m.Roles.Count > 0,
+            cancellationToken);
+
+    public Task<bool> ActiveStaffRoleExistsAsync(string role, CancellationToken cancellationToken) =>
+        db.Memberships.AsNoTracking().AnyAsync(m => m.TenantId == tenant.TenantId && m.DeactivatedAt == null
+            && m.CustomerPartyRef == null && m.User!.IsActive && m.Roles.Contains(role), cancellationToken);
 }
