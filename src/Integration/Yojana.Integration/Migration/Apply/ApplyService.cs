@@ -32,7 +32,7 @@ public sealed record MigrationApplyRefusalView(Guid RefusalId, Guid PlanUnitId, 
 public sealed record MigrationApplyRefusalPage(IReadOnlyList<MigrationApplyRefusalView> Items, string? NextCursor);
 public sealed record RollBackLoadResponse(Guid LoadId, string Outcome, int UnitsRemoved, int EventsRemoved,
     IReadOnlyList<Guid> TouchedUnitIds, int EntitlementsRemoved = 0, int ReplacementLinksRemoved = 0,
-    int CertificatesRemoved = 0);
+    int CertificatesRemoved = 0, int CoverReplacementsReversed = 0);
 
 public sealed class ApplyRuleException(string rule, string message) : InvalidOperationException(message)
 {
@@ -190,7 +190,8 @@ public sealed partial class ApplyService(IntegrationDbContext db, ITenantContext
             await db.SaveChangesAsync(cancellationToken);
         }
         return new(loadId, result.Outcome, result.UnitsRemoved, result.EventsRemoved, result.TouchedUnitIds,
-            result.EntitlementsRemoved, result.ReplacementLinksRemoved, result.CertificatesRemoved);
+            result.EntitlementsRemoved, result.ReplacementLinksRemoved, result.CertificatesRemoved,
+            result.CoverReplacementsReversed);
     }
 
     private async Task ApplyAsync(Guid runId, CancellationToken cancellationToken)

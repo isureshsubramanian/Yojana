@@ -192,6 +192,23 @@ public static class MigrationEndpoints
         review.MapGet("/batches/{batchId:guid}/apply", async (Guid batchId, ApplyService service,
             CancellationToken ct) => await service.GetAsync(batchId, ct) is { } result
                 ? Results.Ok(result) : Results.NotFound());
+        // The delta load at cutover is started by a tenant administrator by hand, never on a schedule (OD-59).
+        admin.MapPost("/batches/{batchId:guid}/delta", async (Guid batchId, ClaimsPrincipal user,
+            ApplyService service, CancellationToken ct) =>
+        {
+            try
+            {
+                var result = await service.EnqueueDeltaAsync(batchId, Actor(user), ct);
+                return Results.Accepted($"/api/migration/batches/{batchId:D}/apply", result);
+            }
+            catch (ApplyRuleException ex) { return Problem(ex); }
+        });
+        review.MapGet("/loads/{loadId:guid}/delta", async (Guid loadId, string? kind, string? cursor, int? take,
+            ApplyService service, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await service.DeltaItemsAsync(loadId, kind, cursor, take ?? 50, ct)); }
+            catch (ApplyRuleException ex) { return Problem(ex); }
+        });
         review.MapGet("/loads/{loadId:guid}/refusals", async (Guid loadId, string? cursor, int? take,
             ApplyService service, CancellationToken ct) =>
             Results.Ok(await service.RefusalsAsync(loadId, cursor, take ?? 50, ct)));
