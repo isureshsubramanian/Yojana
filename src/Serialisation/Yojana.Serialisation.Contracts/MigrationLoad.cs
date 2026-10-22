@@ -134,14 +134,47 @@ public sealed record ApplyMigratedUnitsResult(IReadOnlyList<MigratedUnitOutcome>
 /// </summary>
 public sealed record RollBackMigrationLoad(Guid LoadId, string ActorRef);
 
+/// <remarks>
+/// A delta load (P9-T10b, OD-62) is undone the same way: its new units are removed and every cover it replaced is
+/// restored (its entitlements removed, the closed migrated entitlements reopened as they were), refused as a whole
+/// while any of those units carries a fact neither migration wrote.
+/// </remarks>
 public sealed record RollBackMigrationLoadResult(Guid LoadId, string Outcome, int UnitsRemoved, int EventsRemoved,
     IReadOnlyList<Guid> TouchedUnitIds, int EntitlementsRemoved = 0, int ReplacementLinksRemoved = 0,
-    int CertificatesRemoved = 0)
+    int CertificatesRemoved = 0, int CoverReplacementsReversed = 0)
 {
     public const string RolledBack = "rolled_back";
     public const string RefusedTouched = "refused_touched";
     public const string NothingToRemove = "nothing_to_remove";
 }
+
+/// <summary>
+/// Delta load at cutover (P9-T10b, OD-61): the source changed the cover of units an earlier load already wrote. For
+/// each unit, every live migrated entitlement (written by any migration load or an earlier replacement) is closed and
+/// the given cover is written in its place under <see cref="LoadId"/>, with the same validation as a first load. A unit
+/// carrying any fact a migration did not write is refused as touched and left as it is (OD-61 e). Re-sending the same
+/// load and unit comes back as already replaced. Publishes nothing per unit (OD-52).
+/// </summary>
+public sealed record ReplaceMigratedCover(
+    Guid LoadId,
+    Guid LegalEntityId,
+    string ActorRef,
+    IReadOnlyList<MigratedCoverChange> Units,
+    DateOnly? CutoverDate = null);
+
+/// <summary>One unit's new cover. An empty list closes the migrated cover and writes none.</summary>
+public sealed record MigratedCoverChange(Guid UnitId, Guid PlanUnitId, IReadOnlyList<MigratedEntitlement> Entitlements);
+
+public sealed record MigratedCoverOutcome(Guid UnitId, string Outcome, IReadOnlyList<string> Reasons)
+{
+    public const string Replaced = "replaced";
+    public const string AlreadyReplaced = "already_replaced";
+    public const string RefusedTouched = "refused_touched";
+    public const string Refused = "refused";
+}
+
+public sealed record ReplaceMigratedCoverResult(IReadOnlyList<MigratedCoverOutcome> Units, int Replaced,
+    int AlreadyReplaced, int Refused, int EntitlementsClosed, int EntitlementsWritten, int EventsWritten);
 
 /// <summary>Units of a load: the plan unit, the module unit and when it was written. Read by validation and rollback.</summary>
 public sealed record MigrationLoadUnitsQuery(Guid LoadId, Guid? AfterPlanUnitId = null, int Take = 1000);
