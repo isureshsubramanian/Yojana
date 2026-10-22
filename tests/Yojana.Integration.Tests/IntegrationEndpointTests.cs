@@ -162,7 +162,7 @@ public sealed class IntegrationEndpointTests
         app.MapMigrationEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
-        Assert.Equal(66, endpoints.Count);
+        Assert.Equal(68, endpoints.Count);
         var readPaths = new HashSet<string>(StringComparer.Ordinal)
         {
             "/api/migration/batches", "/api/migration/batches/{batchId:guid}",
@@ -191,6 +191,7 @@ public sealed class IntegrationEndpointTests
             "/api/migration/batches/{batchId:guid}/apply", "/api/migration/loads/{loadId:guid}/refusals",
             "/api/migration/loads/{loadId:guid}/refusals/export.csv",
             "/api/migration/loads/{loadId:guid}/rollback/touched-units",
+            "/api/migration/loads/{loadId:guid}/delta",
             "/api/migration/batches/{batchId:guid}/links/export.csv", "/api/migration/link-overrides",
         };
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
