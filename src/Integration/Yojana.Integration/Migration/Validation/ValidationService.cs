@@ -32,7 +32,8 @@ public sealed class ValidationService(
     ValidationSettings settings,
     MappingSettings mappingSettings,
     IMigrationValidationTarget target,
-    IUserDirectory people) : IMigrationValidationQueue
+    IUserDirectory people,
+    ValidationSourceReader sourceReader) : IMigrationValidationQueue
 {
     private const int MaxPageSize = 200;
     private static readonly IReadOnlyDictionary<string, int> CheckPositions = new[]
@@ -370,6 +371,8 @@ public sealed class ValidationService(
             x.RunId == run.MapRunId, cancellationToken);
         var reconstruction = await db.MigrationReconstructionRuns.AsNoTracking().SingleAsync(x =>
             x.TenantId == tenant.TenantId && x.RunId == map.ReconstructionRunId, cancellationToken);
+        var batch = await db.MigrationBatches.AsNoTracking().SingleAsync(x => x.TenantId == tenant.TenantId &&
+            x.BatchId == run.BatchId, cancellationToken);
         var canon = await db.MigrationCanonRuns.AsNoTracking().SingleAsync(x => x.TenantId == tenant.TenantId &&
             x.RunId == reconstruction.CanonicalisationRunId, cancellationToken);
         var snapshot = await target.ReadAsync(map.RunId, map.CutoverDate, cancellationToken);
@@ -463,7 +466,7 @@ public sealed class ValidationService(
             snapshot.UnitsWithExactlyOneCurrentRow, snapshot.Units == snapshot.UnitsWithExactlyOneCurrentRow ?
                 ValidationResult.Pass : ValidationResult.Fail,
             "Target units compared with units carrying exactly one current location or custody state.");
-        await AddSignedQuantityCheckAsync(run, map, cancellationToken);
+        await AddSignedQuantityCheckAsync(run, map, batch.SourceSystem, cancellationToken);
         await AddSampleAsync(run, map, canon, configured, cancellationToken);
 
         var policyGapCounts = await db.MigrationPlanGaps.AsNoTracking().Where(x =>
@@ -544,7 +547,7 @@ public sealed class ValidationService(
             var query = db.MigrationPlanUnits.AsNoTracking().Where(unit => unit.TenantId == tenant.TenantId &&
                 unit.MapRunId == map.RunId);
             if (after is not null) query = query.Where(unit => unit.PlanUnitId.CompareTo(after.Value) > 0);
-            var rows = await query.OrderBy(unit => unit.PlanUnitId).Take(5000).Select(unit => new
+            var rows = await query.OrderBy(unit => unit.PlanUnitId).Take(20_000).Select(unit => new
             {
                 unit.PlanUnitId,
                 CardStatus = (from sourceRow in db.MigrationUnitCandidateSources
@@ -584,70 +587,29 @@ public sealed class ValidationService(
     }
 
     private async Task AddSignedQuantityCheckAsync(MigrationValidationRun run, MigrationMapRun map,
+        string sourceSystem,
         CancellationToken cancellationToken)
     {
         var check = AddCheck(run, "signed_quantity", "Signed quantity per serial", "zero", 0, 0,
             ValidationResult.Pass,
             "Signed stock-affecting transaction quantities summed per serial and compared with source quantity on hand.");
-        var quantities = await db.Set<SerialQuantityStagingRow>().AsNoTracking().Where(x =>
-                x.TenantId == tenant.TenantId && x.BatchId == run.BatchId && x.ItemCode != null &&
-                x.SystemNumber != null).GroupBy(x => new { x.ItemCode, x.SystemNumber }).Select(g => new
-            {
-                Item = g.Key.ItemCode!, System = g.Key.SystemNumber!.Value,
-                Quantity = g.Sum(x => x.Quantity ?? 0),
-            }).ToListAsync(cancellationToken);
-        var movements = await (from line in db.Set<TransactionLogLineStagingRow>().AsNoTracking()
-            join header in db.Set<TransactionLogHeaderStagingRow>().AsNoTracking()
-                on new { line.TenantId, line.BatchId, line.LogEntry } equals
-                new { header.TenantId, header.BatchId, header.LogEntry }
-            where line.TenantId == tenant.TenantId && line.BatchId == run.BatchId &&
-                line.ItemCode != null && line.SystemNumber != null && header.StockEffect == 1
-            group line by new { line.ItemCode, line.SystemNumber } into grouped
-            select new
-            {
-                Item = grouped.Key.ItemCode!, System = grouped.Key.SystemNumber!.Value,
-                Quantity = grouped.Sum(x => x.Quantity ?? 0),
-            }).ToListAsync(cancellationToken);
-        var quantityBySerial = quantities.ToDictionary(x => (x.Item, x.System), x => x.Quantity);
-        var movementBySerial = movements.ToDictionary(x => (x.Item, x.System), x => x.Quantity);
-        long total = 0;
-        long mismatches = 0;
-        Guid? after = null;
-        while (true)
-        {
-            var units = from unit in db.MigrationPlanUnits.AsNoTracking()
-                join candidate in db.MigrationUnitCandidates.AsNoTracking()
-                    on new { unit.TenantId, unit.CandidateId } equals
-                    new { candidate.TenantId, candidate.CandidateId }
-                join master in db.Set<SerialMasterStagingRow>().AsNoTracking()
-                    on new { candidate.TenantId, BatchId = run.BatchId, SourcePk = candidate.PrimarySourceKey }
-                    equals new { master.TenantId, master.BatchId, SourcePk = master.SourcePk }
-                where unit.TenantId == tenant.TenantId && unit.MapRunId == map.RunId &&
-                    master.ItemCode != null && master.SystemNumber != null
-                select new { unit.PlanUnitId, Item = master.ItemCode!, System = master.SystemNumber!.Value,
-                    master.SerialNumber };
-            if (after is not null) units = units.Where(x => x.PlanUnitId.CompareTo(after.Value) > 0);
-            var page = await units.OrderBy(x => x.PlanUnitId).Take(1000).ToListAsync(cancellationToken);
-            if (page.Count == 0) break;
-            foreach (var row in page)
-            {
-                total++;
-                var quantity = quantityBySerial.GetValueOrDefault((row.Item, row.System));
-                var movement = movementBySerial.GetValueOrDefault((row.Item, row.System));
-                if (quantity == movement) continue;
-                mismatches++;
-                AddDifference(check, "serial_quantity", row.Item, null, row.SerialNumber, quantity,
-                    movement, null);
-            }
-            if (db.MigrationValidationDifferences.Local.Any(x => x.CheckId == check.CheckId))
-            {
-                await db.SaveChangesAsync(cancellationToken);
-                foreach (var difference in db.MigrationValidationDifferences.Local.Where(x =>
-                             x.CheckId == check.CheckId).ToList())
-                    db.Entry(difference).State = EntityState.Detached;
-            }
-            after = page[^1].PlanUnitId;
-        }
+        var units = from unit in db.MigrationPlanUnits.AsNoTracking()
+            join candidate in db.MigrationUnitCandidates.AsNoTracking()
+                on new { unit.TenantId, unit.CandidateId } equals
+                new { candidate.TenantId, candidate.CandidateId }
+            join master in db.Set<SerialMasterStagingRow>().AsNoTracking()
+                on new { candidate.TenantId, BatchId = run.BatchId, SourcePk = candidate.PrimarySourceKey }
+                equals new { master.TenantId, master.BatchId, SourcePk = master.SourcePk }
+            where unit.TenantId == tenant.TenantId && unit.MapRunId == map.RunId &&
+                master.ItemCode != null && master.SystemNumber != null
+            select new { Item = master.ItemCode!, System = master.SystemNumber!.Value, master.SerialNumber };
+        var total = await units.LongCountAsync(cancellationToken);
+        var mismatchRows = await sourceReader.SignedQuantityMismatchesAsync(run.BatchId, map.RunId, sourceSystem,
+            cancellationToken);
+        foreach (var row in mismatchRows)
+            AddDifference(check, "serial_quantity", row.Item, null, row.Serial, row.SourceQuantity,
+                row.MovementQuantity, null);
+        var mismatches = mismatchRows.Count;
         check.SourceTotal = total;
         check.TargetTotal = total - mismatches;
         check.Difference = -mismatches;
@@ -657,49 +619,75 @@ public sealed class ValidationService(
     private async Task AddSampleAsync(MigrationValidationRun run, MigrationMapRun map, MigrationCanonRun canon,
         ValidationSettingsView configured, CancellationToken cancellationToken)
     {
-        var candidates = await (from unit in db.MigrationPlanUnits.AsNoTracking()
+        var candidates = from unit in db.MigrationPlanUnits.AsNoTracking()
             join candidate in db.MigrationUnitCandidates.AsNoTracking()
                 on new { unit.TenantId, unit.CandidateId } equals new { candidate.TenantId, candidate.CandidateId }
             join master in db.Set<SerialMasterStagingRow>().AsNoTracking()
                 on new { candidate.TenantId, BatchId = run.BatchId, SourcePk = candidate.PrimarySourceKey } equals
                 new { master.TenantId, master.BatchId, SourcePk = master.SourcePk }
             where unit.TenantId == tenant.TenantId && unit.MapRunId == map.RunId
-            select new { unit.PlanUnitId, candidate.CandidateId, candidate.StoredSerial,
-                candidate.CanonicalSerial, candidate.ItemCode, candidate.Family, master.InboundDate })
-            .ToListAsync(cancellationToken);
-        var selected = candidates.OrderBy(x => SampleRank(run.SampleSeed, x.CandidateId))
-            .GroupBy(x => new { x.Family, Age = AgeBand(x.InboundDate, map.CutoverDate, configured.AgeBandYears) })
-            .SelectMany(g => g.Take(Math.Max(1, configured.SampleSize / Math.Max(1, candidates.Select(x => new
-                { x.Family, Age = AgeBand(x.InboundDate, map.CutoverDate, configured.AgeBandYears) }).Distinct().Count()))))
-            .Concat(candidates.OrderBy(x => SampleRank(run.SampleSeed, x.CandidateId))).DistinctBy(x => x.CandidateId)
-            .Take(Math.Min(configured.SampleSize, candidates.Count)).OrderBy(x => SampleRank(run.SampleSeed,
-                x.CandidateId)).ToList();
+            select new SampleCandidate
+            {
+                PlanUnitId = unit.PlanUnitId, CandidateId = candidate.CandidateId,
+                StoredSerial = candidate.StoredSerial, CanonicalSerial = candidate.CanonicalSerial,
+                ItemCode = candidate.ItemCode, Family = candidate.Family, InboundDate = master.InboundDate,
+            };
+        var byStratum = new Dictionary<(string Family, string Age), List<RankedSampleCandidate>>();
+        var global = new List<RankedSampleCandidate>();
+        var candidateCount = 0;
+        await foreach (var candidate in candidates.AsAsyncEnumerable().WithCancellation(cancellationToken))
+        {
+            candidateCount++;
+            var ranked = new RankedSampleCandidate(candidate, SampleRank(run.SampleSeed, candidate.CandidateId));
+            AddBest(global, ranked, configured.SampleSize);
+            var key = (candidate.Family, AgeBand(candidate.InboundDate, map.CutoverDate,
+                configured.AgeBandYears));
+            if (!byStratum.TryGetValue(key, out var stratum)) byStratum[key] = stratum = [];
+            AddBest(stratum, ranked, configured.SampleSize);
+        }
+        var perStratum = Math.Max(1, configured.SampleSize / Math.Max(1, byStratum.Count));
+        var selected = byStratum.Values.OrderBy(rows => rows.Min(row => row.Rank))
+            .SelectMany(rows => rows.OrderBy(row => row.Rank).Take(perStratum))
+            .Concat(global.OrderBy(row => row.Rank)).DistinctBy(row => row.Candidate.CandidateId)
+            .Take(Math.Min(configured.SampleSize, candidateCount)).OrderBy(row => row.Rank)
+            .Select(row => row.Candidate).ToList();
         var check = AddCheck(run, "stratified_sample", "Stratified sample", "all", selected.Count, 0,
             selected.Count == 0 ? ValidationResult.Pass : ValidationResult.Fail,
             "Deterministic sample stratified by item family and configured age band; every source trail is compared beside its plan events and traced by a person.");
+        var planUnitIds = selected.Select(row => row.PlanUnitId).ToList();
+        var candidateIds = selected.Select(row => row.CandidateId).ToList();
+        var targetTrails = await db.MigrationPlanEvents.AsNoTracking().Where(x =>
+                x.TenantId == tenant.TenantId && planUnitIds.Contains(x.PlanUnitId))
+            .OrderBy(x => x.PlanUnitId).ThenBy(x => x.Sequence).Select(x => new TargetTrailRow
+            {
+                PlanUnitId = x.PlanUnitId, EffectiveDate = x.EffectiveDate, MovementKind = x.MovementKind,
+                DocumentNumber = x.DocumentNumber, Quantity = x.Quantity, WarehouseCode = x.WarehouseCode,
+            }).ToListAsync(cancellationToken);
+        var sourceTrails = await (from source in db.MigrationEventCandidates.AsNoTracking()
+            join history in db.MigrationHistoryEvents.AsNoTracking()
+                on new { source.TenantId, source.EventCandidateId } equals
+                new { history.TenantId, EventCandidateId = history.EventCandidateId!.Value }
+            where source.TenantId == tenant.TenantId && source.RunId == canon.RunId &&
+                  candidateIds.Contains(source.CandidateId) && history.EventCandidateId != null
+            orderby source.CandidateId, history.Sequence
+            select new SourceTrailRow
+            {
+                CandidateId = source.CandidateId, EffectiveDate = history.EffectiveDate,
+                MovementKind = history.MovementKind, DocumentNumber = history.DocumentNumber,
+                Quantity = history.Quantity, Warehouse = history.Warehouse,
+            }).ToListAsync(cancellationToken);
+        var targetByUnit = targetTrails.ToLookup(row => row.PlanUnitId);
+        var sourceByCandidate = sourceTrails.ToLookup(row => row.CandidateId);
         foreach (var row in selected)
         {
-            var events = await db.MigrationPlanEvents.AsNoTracking().Where(x => x.TenantId == tenant.TenantId &&
-                    x.PlanUnitId == row.PlanUnitId).OrderBy(x => x.Sequence).Select(x => new
-                    { x.EffectiveDate, x.MovementKind, x.DocumentNumber, x.Quantity, x.WarehouseCode })
-                .ToListAsync(cancellationToken);
-            var sourceTrail = await (from source in db.MigrationEventCandidates.AsNoTracking()
-                join history in db.MigrationHistoryEvents.AsNoTracking()
-                    on new { source.TenantId, source.EventCandidateId } equals
-                    new { history.TenantId, EventCandidateId = history.EventCandidateId!.Value }
-                where source.TenantId == tenant.TenantId && source.RunId == canon.RunId &&
-                    source.CandidateId == row.CandidateId && history.EventCandidateId != null
-                orderby history.Sequence
-                select new { history.EffectiveDate, history.MovementKind, history.DocumentNumber,
-                    history.Quantity, history.Warehouse }).ToListAsync(cancellationToken);
             db.MigrationValidationSamples.Add(new MigrationValidationSample
             {
                 TenantId = tenant.TenantId, SampleId = Guid.CreateVersion7(clock.UtcNow), RunId = run.RunId,
                 CheckId = check.CheckId, PlanUnitId = row.PlanUnitId,
                 Serial = row.StoredSerial ?? row.CanonicalSerial, ItemCode = row.ItemCode,
                 ItemFamily = row.Family, AgeBand = AgeBand(row.InboundDate, map.CutoverDate,
-                    configured.AgeBandYears), SourceTrailJson = JsonSerializer.Serialize(sourceTrail),
-                TargetTrailJson = JsonSerializer.Serialize(events),
+                    configured.AgeBandYears), SourceTrailJson = JsonSerializer.Serialize(sourceByCandidate[
+                        row.CandidateId]), TargetTrailJson = JsonSerializer.Serialize(targetByUnit[row.PlanUnitId]),
             });
         }
         AddPart(check, "seed", "Deterministic seed", run.SampleSeed);
@@ -978,6 +966,15 @@ public sealed class ValidationService(
             check.Result, check.Explanation))));
     private static long SampleRank(int seed, Guid id) => BitConverter.ToInt64(SHA256.HashData(
         Encoding.UTF8.GetBytes($"{seed}:{id:D}")), 0) & long.MaxValue;
+    private static void AddBest(List<RankedSampleCandidate> rows, RankedSampleCandidate candidate, int maximum)
+    {
+        rows.Add(candidate);
+        if (rows.Count <= maximum) return;
+        var worst = 0;
+        for (var index = 1; index < rows.Count; index++)
+            if (rows[index].Rank > rows[worst].Rank) worst = index;
+        rows.RemoveAt(worst);
+    }
     private static string AgeBand(DateTime? inbound, DateOnly cutover, IReadOnlyList<int> bands)
     {
         if (inbound is null) return "unknown";
@@ -1001,5 +998,40 @@ public sealed class ValidationService(
             IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture), _ => value.ToString() ?? "" };
         if (value is string && text.Length != 0 && text[0] is '=' or '+' or '-' or '@') text = "'" + text;
         return '"' + text.Replace("\"", "\"\"") + '"';
+    }
+
+    private sealed class SampleCandidate
+    {
+        public Guid PlanUnitId { get; init; }
+        public Guid CandidateId { get; init; }
+        public string? StoredSerial { get; init; }
+        public required string CanonicalSerial { get; init; }
+        public required string ItemCode { get; init; }
+        public required string Family { get; init; }
+        public DateTime? InboundDate { get; init; }
+    }
+
+    private sealed record RankedSampleCandidate(SampleCandidate Candidate, long Rank);
+
+    private sealed class TargetTrailRow
+    {
+        [System.Text.Json.Serialization.JsonIgnore]
+        public Guid PlanUnitId { get; init; }
+        public DateTime EffectiveDate { get; init; }
+        public required string MovementKind { get; init; }
+        public int? DocumentNumber { get; init; }
+        public decimal Quantity { get; init; }
+        public string? WarehouseCode { get; init; }
+    }
+
+    private sealed class SourceTrailRow
+    {
+        [System.Text.Json.Serialization.JsonIgnore]
+        public Guid CandidateId { get; init; }
+        public DateTime EffectiveDate { get; init; }
+        public required string MovementKind { get; init; }
+        public int? DocumentNumber { get; init; }
+        public decimal Quantity { get; init; }
+        public string? Warehouse { get; init; }
     }
 }

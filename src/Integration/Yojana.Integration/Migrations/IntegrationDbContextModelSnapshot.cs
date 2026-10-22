@@ -3634,11 +3634,13 @@ namespace Yojana.Integration.Migrations
                     b.HasKey("TenantId", "CandidateSourceId")
                         .HasName("pk_migration_unit_candidate_source");
 
-                    b.HasIndex("TenantId", "CandidateId")
-                        .HasDatabaseName("ix_migration_unit_candidate_source_tenant_id_candidate_id");
-
                     b.HasIndex("TenantId", "RunId", "CandidateId")
                         .HasDatabaseName("ix_migration_unit_candidate_source_tenant_id_run_id_candidate_id");
+
+                    b.HasIndex("TenantId", "CandidateId", "SourceKind", "Role")
+                        .HasDatabaseName("ix_migration_unit_candidate_source_tenant_id_candidate_id_source_kind_role");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "CandidateId", "SourceKind", "Role"), new[] { "SourceKey" });
 
                     b.HasIndex("TenantId", "RunId", "CandidateId", "SourceKind", "SourceKey")
                         .IsUnique()
@@ -3809,6 +3811,38 @@ namespace Yojana.Integration.Migrations
                         {
                             t.HasCheckConstraint("ck_migration_map_run_status", "status IN ('queued','running','completed','failed')");
                         });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationMapWaitingCandidate", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("MapRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("map_run_id");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("candidate_id");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_key");
+
+                    b.HasKey("TenantId", "MapRunId", "CandidateId")
+                        .HasName("pk_migration_map_waiting_candidate");
+
+                    b.HasIndex("TenantId", "CandidateId")
+                        .HasDatabaseName("ix_migration_map_waiting_candidate_tenant_id_candidate_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "SourceKey")
+                        .HasDatabaseName("ix_migration_map_waiting_candidate_tenant_id_map_run_id_source_key");
+
+                    b.ToTable("migration_map_waiting_candidate", "migration");
                 });
 
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanAttachment", b =>
@@ -4066,8 +4100,10 @@ namespace Yojana.Integration.Migrations
                     b.HasKey("TenantId", "PlanEventId")
                         .HasName("pk_migration_plan_event");
 
-                    b.HasIndex("TenantId", "PlanUnitId")
-                        .HasDatabaseName("ix_migration_plan_event_tenant_id_plan_unit_id");
+                    b.HasIndex("TenantId", "PlanUnitId", "Sequence")
+                        .HasDatabaseName("ix_migration_plan_event_tenant_id_plan_unit_id_sequence");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "PlanUnitId", "Sequence"), new[] { "MovementKind" });
 
                     b.HasIndex("TenantId", "MapRunId", "PlanUnitId", "Sequence")
                         .IsUnique()
@@ -4452,6 +4488,11 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "MapRunId", "CandidateId")
                         .IsUnique()
                         .HasDatabaseName("ux_migration_plan_unit_tenant_id_map_run_id_candidate_id");
+
+                    b.HasIndex("TenantId", "MapRunId", "PlanUnitId")
+                        .HasDatabaseName("ix_migration_plan_unit_tenant_id_map_run_id_plan_unit_id");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "MapRunId", "PlanUnitId"), new[] { "CandidateId", "ConditionGrade" });
 
                     b.HasIndex("TenantId", "MapRunId", "SourceKeyHash")
                         .HasDatabaseName("ix_migration_plan_unit_tenant_id_map_run_id_source_key_hash");
@@ -6814,6 +6855,10 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "BatchId", "SourceSystem", "DocumentType", "LogEntry")
                         .HasDatabaseName("ix_stg_src_oitl_tenant_id_batch_id_source_system_document_type_log_entry");
 
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "LogEntry")
+                        .HasDatabaseName("ix_stg_src_oitl_tenant_id_batch_id_source_system_log_entry")
+                        .HasAnnotation("SqlServer:Include", new[] { "AbsentSinceBatchId", "StockEffect" });
+
                     b.ToTable("stg_src_oitl", "migration");
                 });
 
@@ -8028,6 +8073,23 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_migration_map_run_tenant_id_reconstruction_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationMapWaitingCandidate", b =>
+                {
+                    b.HasOne("Yojana.Integration.LegacyMigration.Canonicalisation.MigrationUnitCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CandidateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_map_waiting_candidate_tenant_id_candidate_id");
+
+                    b.HasOne("Yojana.Integration.LegacyMigration.Mapping.MigrationMapRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "MapRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_migration_map_waiting_candidate_tenant_id_map_run_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.LegacyMigration.Mapping.MigrationPlanAttachment", b =>

@@ -19,6 +19,17 @@ internal static class MappingModel
             builder.HasOne<Reconstruction.MigrationReconstructionRun>().WithMany()
                 .HasForeignKey(x => new { x.TenantId, x.ReconstructionRunId }).OnDelete(DeleteBehavior.Cascade);
         });
+        modelBuilder.Entity<MigrationMapWaitingCandidate>(builder =>
+        {
+            builder.ToTable("migration_map_waiting_candidate", MigrationModel.Schema);
+            builder.HasKey(x => new { x.TenantId, x.MapRunId, x.CandidateId });
+            builder.Property(x => x.SourceKey).HasMaxLength(1000);
+            builder.HasIndex(x => new { x.TenantId, x.MapRunId, x.SourceKey });
+            builder.HasOne<MigrationMapRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.MapRunId })
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<Canonicalisation.MigrationUnitCandidate>().WithMany()
+                .HasForeignKey(x => new { x.TenantId, x.CandidateId }).OnDelete(DeleteBehavior.Restrict);
+        });
         modelBuilder.Entity<MigrationPlanUnit>(builder =>
         {
             builder.ToTable("migration_plan_unit", MigrationModel.Schema);
@@ -38,6 +49,8 @@ internal static class MappingModel
             builder.Property(x => x.SourceKeyHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
             builder.HasIndex(x => new { x.TenantId, x.MapRunId, x.SourceKeyHash });
             builder.HasIndex(x => new { x.TenantId, x.MapRunId, x.ItemCode, x.PlanUnitId });
+            builder.HasIndex(x => new { x.TenantId, x.MapRunId, x.PlanUnitId })
+                .IncludeProperties(x => new { x.CandidateId, x.ConditionGrade });
             builder.HasOne<MigrationMapRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.MapRunId })
                 .OnDelete(DeleteBehavior.Cascade);
         });
@@ -65,6 +78,8 @@ internal static class MappingModel
             builder.Property(x => x.Provenance).HasMaxLength(20);
             builder.HasIndex(x => new { x.TenantId, x.MapRunId, x.PlanUnitId, x.Sequence }).IsUnique();
             builder.HasIndex(x => new { x.TenantId, x.MapRunId, x.Provenance, x.PlanEventId });
+            builder.HasIndex(x => new { x.TenantId, x.PlanUnitId, x.Sequence })
+                .IncludeProperties(x => x.MovementKind);
             UnitForeignKey(builder, x => new { x.TenantId, x.PlanUnitId });
         });
         modelBuilder.Entity<MigrationPlanOwnership>(builder =>

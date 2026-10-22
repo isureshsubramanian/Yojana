@@ -164,6 +164,13 @@ public sealed class MigrationCanonicalisationTests(IntegrationHostFixture fixtur
                 row.Key == MigrationReviewDecisionKind.FixInIncumbent).Count);
             Assert.Equal(0, afterDecisions.DecidedReviewItemsByDecision.Single(row =>
                 row.Key == MigrationReviewDecisionKind.MergeInto).Count);
+            var storedRun = await db.MigrationCanonRuns.AsNoTracking().SingleAsync(row => row.RunId == status.RunId);
+            Assert.Equal(await db.MigrationReviewItems.LongCountAsync(row => row.RunId == status.RunId &&
+                row.Status == MigrationReviewStatus.Waiting), storedRun.WaitingCount);
+            Assert.Equal(await db.MigrationUnitCandidates.LongCountAsync(row => row.RunId == status.RunId &&
+                row.Disposition == CandidateDisposition.Merged), storedRun.MergedCount);
+            Assert.Equal(1, storedRun.KeptApartCount);
+            Assert.Equal(1, storedRun.FixInIncumbentCount);
 
             Assert.Single((await canonical.ListAsync(batchId, null, null, null,
                 "trim-1", null, 25, default)).Items);

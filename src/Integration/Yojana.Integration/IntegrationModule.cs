@@ -196,10 +196,12 @@ public static class IntegrationModule
         builder.Services.AddSingleton(RecurringTenantJob.For<BackfillJob>(
             BackfillJob.JobName, BackfillJob.Cron));
         builder.Services.AddScoped<MigrationLicenceSettings>();
+        builder.Services.AddScoped<MigrationBulkWriter>();
         builder.Services.AddScoped<MigrationSourceSecret>();
         builder.Services.AddScoped<SourceExtractor>();
         builder.Services.AddScoped<MigrationSourceService>();
         builder.Services.AddScoped<SourceHistoryReader>();
+        builder.Services.AddScoped<ValidationSourceReader>();
         builder.Services.AddScoped<StagingMismatchProfileReader>();
         builder.Services.AddScoped<MigrationBatchService>();
         builder.Services.AddScoped<TemplateKeywordRules>();

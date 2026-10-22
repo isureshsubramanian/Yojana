@@ -77,6 +77,8 @@ internal static class CanonicalisationModel
             builder.Property(x => x.Role).HasMaxLength(20);
             builder.HasIndex(x => new { x.TenantId, x.RunId, x.CandidateId, x.SourceKind, x.SourceKey }).IsUnique();
             builder.HasIndex(x => new { x.TenantId, x.RunId, x.CandidateId });
+            builder.HasIndex(x => new { x.TenantId, x.CandidateId, x.SourceKind, x.Role })
+                .IncludeProperties(x => x.SourceKey);
             builder.HasOne<MigrationUnitCandidate>().WithMany()
                 .HasForeignKey(x => new { x.TenantId, x.CandidateId }).OnDelete(DeleteBehavior.Restrict);
         });

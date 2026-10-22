@@ -263,6 +263,19 @@ public sealed class CanonicalisationService(
             throw new MigrationRuleException("migration_review_note_required",
                 "A note is required when the issue will be fixed in the incumbent system.");
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var wasWaiting = item.Status == MigrationReviewStatus.Waiting;
+        var earlierDecision = item.AppliedDecisionId is { } appliedDecisionId
+            ? await db.MigrationReviewDecisions.AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
+                    row.DecisionId == appliedDecisionId).Select(row => row.Decision)
+                .SingleOrDefaultAsync(cancellationToken)
+            : null;
+        var candidateKeys = JsonSerializer.Deserialize<List<string>>(item.CandidateSourceKeysJson) ?? [];
+        var mergedBefore = await db.MigrationUnitCandidates.LongCountAsync(row =>
+            row.TenantId == tenant.TenantId && row.RunId == item.RunId &&
+            candidateKeys.Contains(row.PrimarySourceKey) && row.Disposition == CandidateDisposition.Merged,
+            cancellationToken);
+        var run = await db.MigrationCanonRuns.SingleAsync(row => row.TenantId == tenant.TenantId &&
+            row.RunId == item.RunId, cancellationToken);
         await ApplyDecisionAsync(item, request.Decision, request.KeepSourceKey, carriedOver: false,
             cancellationToken);
         var decision = new MigrationReviewDecision
@@ -283,13 +296,26 @@ public sealed class CanonicalisationService(
         db.MigrationReviewDecisions.Add(decision);
         item.AppliedDecisionId = decision.DecisionId;
         item.Status = MigrationReviewStatus.Decided;
-        var run = await db.MigrationCanonRuns.SingleAsync(row => row.TenantId == tenant.TenantId &&
-            row.RunId == item.RunId, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
-        await RefreshCountsAsync(run, cancellationToken);
+        var mergedAfter = await db.MigrationUnitCandidates.LongCountAsync(row =>
+            row.TenantId == tenant.TenantId && row.RunId == item.RunId &&
+            candidateKeys.Contains(row.PrimarySourceKey) && row.Disposition == CandidateDisposition.Merged,
+            cancellationToken);
+        if (wasWaiting) run.WaitingCount = Math.Max(0, run.WaitingCount - 1);
+        run.MergedCount += mergedAfter - mergedBefore;
+        AdjustDecisionCount(run, earlierDecision, -1);
+        AdjustDecisionCount(run, request.Decision, 1);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new(decision.DecisionId, item.ReviewItemId, decision.Decision, item.Status, decision.DecidedAt);
+    }
+
+    private static void AdjustDecisionCount(MigrationCanonRun run, string? decision, int change)
+    {
+        if (decision == MigrationReviewDecisionKind.KeepApart)
+            run.KeptApartCount = Math.Max(0, run.KeptApartCount + change);
+        else if (decision == MigrationReviewDecisionKind.FixInIncumbent)
+            run.FixInIncumbentCount = Math.Max(0, run.FixInIncumbentCount + change);
     }
 
     private MigrationCanonRun NewRun(Guid batchId, Guid profileRunId) => new()
@@ -548,17 +574,21 @@ public sealed class CanonicalisationService(
 
     public async Task ApplyCarryOversAsync(Guid canonicalisationRunId, CancellationToken cancellationToken)
     {
-        var items = await db.MigrationReviewItems.Where(row => row.TenantId == tenant.TenantId &&
-            row.RunId == canonicalisationRunId && row.Status == MigrationReviewStatus.Waiting)
+        var items = await db.MigrationReviewItems.Where(item => item.TenantId == tenant.TenantId &&
+                item.RunId == canonicalisationRunId && item.Status == MigrationReviewStatus.Waiting)
             .ToListAsync(cancellationToken);
+        if (items.Count == 0) return;
+        var fingerprints = items.Select(item => item.Fingerprint).Distinct(StringComparer.Ordinal).ToList();
+        var priorDecisions = await db.MigrationReviewDecisions.AsNoTracking().Where(decision =>
+                decision.TenantId == tenant.TenantId && fingerprints.Contains(decision.Fingerprint))
+            .OrderByDescending(decision => decision.DecidedAt).ThenByDescending(decision => decision.DecisionId)
+            .ToListAsync(cancellationToken);
+        var decisionsByFingerprint = priorDecisions.GroupBy(decision => decision.Fingerprint,
+                StringComparer.Ordinal).ToDictionary(group => group.Key, group => group.First(),
+                StringComparer.Ordinal);
         foreach (var item in items)
         {
-            var decision = await db.MigrationReviewDecisions.AsNoTracking().Where(row =>
-                    row.TenantId == tenant.TenantId && row.Fingerprint == item.Fingerprint &&
-                    row.ReviewItemId != item.ReviewItemId)
-                .OrderByDescending(row => row.DecidedAt).ThenByDescending(row => row.DecisionId)
-                .FirstOrDefaultAsync(cancellationToken);
-            if (decision is null) continue;
+            if (!decisionsByFingerprint.TryGetValue(item.Fingerprint, out var decision)) continue;
             try
             {
                 await ApplyDecisionAsync(item, decision.Decision, decision.KeepSourceKey, carriedOver: true,

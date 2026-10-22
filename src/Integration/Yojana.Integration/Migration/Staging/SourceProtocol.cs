@@ -333,9 +333,15 @@ internal static class SourceProtocol
                         nameof(ItemSerialSettingStagingRow.ItemCode))
                     .IncludeProperties(nameof(ItemSerialSettingStagingRow.ManagementMethod));
             if (table.RowType == typeof(TransactionLogHeaderStagingRow))
+            {
                 builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
                     nameof(StagingRow.SourceSystem), nameof(TransactionLogHeaderStagingRow.DocumentType),
                     nameof(TransactionLogHeaderStagingRow.LogEntry));
+                builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
+                        nameof(StagingRow.SourceSystem), nameof(TransactionLogHeaderStagingRow.LogEntry))
+                    .IncludeProperties(nameof(StagingRow.AbsentSinceBatchId),
+                        nameof(TransactionLogHeaderStagingRow.StockEffect));
+            }
             if (table.RowType == typeof(TransactionLogLineStagingRow))
                 builder.HasIndex(nameof(StagingRow.TenantId), nameof(StagingRow.BatchId),
                     nameof(StagingRow.SourceSystem), nameof(TransactionLogLineStagingRow.ItemCode),

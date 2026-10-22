@@ -74,7 +74,8 @@ public sealed class BenchOptions
                 case "--tenant":
                 {
                     var tenant = Next();
-                    if (o.Command == "migration-rehearsal") o.TenantSelection = tenant;
+                    if (o.Command is "migration-rehearsal" or "migration-plan-fingerprint")
+                        o.TenantSelection = tenant;
                     else o.TenantIndex = int.Parse(tenant, CultureInfo.InvariantCulture);
                     break;
                 }
@@ -109,9 +110,10 @@ public sealed class BenchOptions
             o.Database = source.InitialCatalog;
             return o;
         }
-        if (o.Command == "migration-rehearsal")
+        if (o.Command is "migration-rehearsal" or "migration-plan-fingerprint")
         {
-            if (string.IsNullOrWhiteSpace(o.TargetConnectionString) || string.IsNullOrWhiteSpace(o.SourceConnectionString))
+            if (string.IsNullOrWhiteSpace(o.TargetConnectionString) ||
+                o.Command == "migration-rehearsal" && string.IsNullOrWhiteSpace(o.SourceConnectionString))
                 throw new ArgumentException("migration-rehearsal needs --target <db> and --source <db>.");
             if (string.IsNullOrWhiteSpace(o.TenantSelection))
                 throw new ArgumentException("migration-rehearsal needs --tenant <new|id>.");
