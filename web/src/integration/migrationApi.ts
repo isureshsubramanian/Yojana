@@ -1,4 +1,4 @@
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type {
   CanonicalFamilyCatalogue, CanonicalisationRun, MigrationBatch, MigrationBatchPage, MigrationOutcomeChoice, MigrationOutcomeSettings,
   MigrationProfile, MigrationProfileSamples, MigrationReviewDecision, MigrationReviewDecisionResponse,
@@ -9,6 +9,7 @@ import type {
   TemplateMappingSummaryView, TemplatePatternPage, MigrationValidation, SignoffRecord,
   StartMigrationApplyResponse, StartValidationResponse, ValidationCheck, ValidationCheckDetail, ValidationDifferencePage,
   ValidationSample, ValidationSampleOutcome, ValidationSamplePage, ValidationSettings, ValidationSignatureRole,
+  CurrencyInfo, LinkOverridePage, LinkOverrideUploadResponse, MappingSettings,
 } from "./migrationTypes";
 
 const root = "/api/migration";
@@ -16,6 +17,17 @@ function query(values: Record<string, string | number | boolean | undefined>) {
   const result = new URLSearchParams();
   for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== "") result.set(key, String(value));
   return `?${result}`;
+}
+
+async function uploadCsv(path: string, file: File): Promise<LinkOverrideUploadResponse> {
+  const body = new FormData(); body.append("file", file);
+  const response = await fetch(path, { method: "POST", credentials: "same-origin", headers: { accept: "application/json" }, body });
+  if (!response.ok) {
+    let problem: { title?: string; detail?: string; rule?: string } = {};
+    try { problem = await response.json() as typeof problem; } catch { /* The status still gives a useful refusal. */ }
+    throw new ApiError(response.status, problem.detail ?? problem.title ?? `Something went wrong (HTTP ${response.status})`, problem.title ?? null, problem.detail ?? null, problem.rule ?? null);
+  }
+  return await response.json() as LinkOverrideUploadResponse;
 }
 
 export const migrationApi = {
@@ -62,6 +74,19 @@ export const migrationApi = {
   approveTemplatePattern: (patternKey: string) => api<{ patternKey: string; approved: number }>(`${root}/templates/approve-pattern`, { method: "POST", body: { patternKey } }),
   templateKeywordRules: (signal?: AbortSignal) => api<TemplateKeywordRules>(`${root}/templates/keyword-rules`, { signal }),
   saveTemplateKeywordRules: (rules: TemplateKeywordRule[], expectedVersion: string) => api<TemplateKeywordRules>(`${root}/templates/keyword-rules`, { method: "PUT", body: { rules, expectedVersion } }),
+  mappingSettings: (signal?: AbortSignal) => api<MappingSettings>(`${root}/mapping/settings`, { signal }),
+  saveMappingSettings: (settings: MappingSettings) => api<MappingSettings>(`${root}/mapping/settings`, { method: "PUT", body: {
+    allowWaitingReviews: settings.allowWaitingReviews, cutoverDate: settings.cutoverDate,
+    conditionMap: settings.conditionMap, linkDefaults: settings.linkDefaults,
+    cardCoverPolicyId: settings.cardCoverPolicyId, serialMasterCoverPolicyId: settings.serialMasterCoverPolicyId,
+    expectedVersion: settings.version,
+  } }),
+  currencyCatalogue: (signal?: AbortSignal) => api<CurrencyInfo[]>("/api/tenant/currency/catalogue", { signal }),
+  linkOverrides: (batchId: string | undefined, unused: boolean | undefined, cursor?: string, signal?: AbortSignal) =>
+    api<LinkOverridePage>(`${root}/link-overrides${query({ batchId, unused: unused || undefined, cursor, take: 12 })}`, { signal }),
+  linkExportUrl: (batchId: string) => `${root}/batches/${batchId}/links/export.csv`,
+  uploadLinkOverrides: (file: File) => uploadCsv(`${root}/link-overrides/upload`, file),
+  removeLinkOverrides: () => api<{ removed: number }>(`${root}/link-overrides`, { method: "DELETE", body: { confirm: true } }),
   validation: (batchId: string, signal?: AbortSignal) => api<MigrationValidation>(`${root}/batches/${batchId}/validation`, { signal }),
   validationExportUrl: (batchId: string, format: "csv" | "xlsx") => `${root}/batches/${batchId}/validation/export.${format}`,
   runValidation: (batchId: string, rehearsal: boolean) => api<StartValidationResponse>(`${root}/batches/${batchId}/validate`, { method: "POST", body: { rehearsal } }),

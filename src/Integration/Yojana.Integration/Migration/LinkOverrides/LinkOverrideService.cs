@@ -5,13 +5,15 @@ using Yojana.Integration.Data;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Contracts.Security;
 
 namespace Yojana.Integration.LegacyMigration.LinkOverrides;
 
 public sealed record LinkOverrideView(string SourceKey, string? Direction, string? ReplacementReason,
     string? State, string? ReplacementConditionAllowed, string? PricePolicy, decimal? DifferenceAmount,
-    string? Currency, DateTime UploadedAt, string UploadedBy, string UploadFileName);
-public sealed record LinkOverridePage(IReadOnlyList<LinkOverrideView> Items, string? NextCursor);
+    string? Currency, DateTime UploadedAt, string UploadedByName, string UploadFileName, bool Unused);
+public sealed record LinkOverridePage(IReadOnlyList<LinkOverrideView> Items, string? NextCursor,
+    int TotalCount, int UnusedCount);
 public sealed record LinkOverrideUploadError(int Row, string Column, string Reason);
 public sealed record LinkOverrideUploadResponse(int Added, int Changed, int Removed, int Unchanged,
     int ErrorTotal, IReadOnlyList<LinkOverrideUploadError> Errors);
@@ -24,7 +26,7 @@ public sealed class LinkOverrideRuleException(string rule, string message) : Inv
 }
 
 public sealed class LinkOverrideService(IntegrationDbContext db, ITenantContext tenant, IClock clock,
-    MappingSettings mappingSettings, ReplacementLinkValueValidator validator)
+    MappingSettings mappingSettings, ReplacementLinkValueValidator validator, IUserDirectory people)
 {
     public const int MaxFileBytes = 5 * 1024 * 1024;
     public const int MaxRows = 10_000;
@@ -207,16 +209,44 @@ public sealed class LinkOverrideService(IntegrationDbContext db, ITenantContext 
         return new(added, changed, removed, unchanged, 0, []);
     }
 
-    public async Task<LinkOverridePage> ListAsync(string? cursor, int take, CancellationToken cancellationToken)
+    public Task<LinkOverridePage> ListAsync(string? cursor, int take, CancellationToken cancellationToken) =>
+        ListAsync(null, null, cursor, take, cancellationToken);
+
+    public async Task<LinkOverridePage> ListAsync(Guid? batchId, bool? unused, string? cursor, int take,
+        CancellationToken cancellationToken)
     {
         take = Math.Clamp(take, 1, 200);
-        var query = db.Set<MigrationLinkOverride>().AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
-            (cursor == null || row.SourceKey.CompareTo(cursor) > 0)).OrderBy(row => row.SourceKey);
-        var rows = await query.Take(take + 1).ToListAsync(cancellationToken);
-        var items = rows.Take(take).Select(row => new LinkOverrideView(row.SourceKey, row.Direction,
-            row.ReplacementReason, row.State, row.ReplacementConditionAllowed, row.PricePolicy,
-            row.DifferenceAmount, row.Currency, row.UploadedAt, row.UploadedBy, row.UploadFileName)).ToList();
-        return new(items, rows.Count > take ? items[^1].SourceKey : null);
+        var selectedBatchId = batchId ?? await db.MigrationBatches.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId)
+            .OrderByDescending(row => row.RequestedAt).ThenByDescending(row => row.BatchId)
+            .Select(row => (Guid?)row.BatchId).FirstOrDefaultAsync(cancellationToken);
+        var runId = selectedBatchId is null ? null : await db.MigrationMapRuns.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && row.BatchId == selectedBatchId &&
+                row.Status == MappingRunStatus.Completed)
+            .OrderByDescending(row => row.FinishedAt).ThenByDescending(row => row.RunId)
+            .Select(row => (Guid?)row.RunId).FirstOrDefaultAsync(cancellationToken);
+        var projected = db.Set<MigrationLinkOverride>().AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId)
+            .Select(row => new
+            {
+                Row = row,
+                Unused = runId == null || !db.MigrationPlanReplacementLinks.Any(link =>
+                    link.TenantId == tenant.TenantId && link.MapRunId == runId &&
+                    link.SourceKey == row.SourceKey),
+            });
+        var totalCount = await projected.CountAsync(cancellationToken);
+        var unusedCount = await projected.CountAsync(row => row.Unused, cancellationToken);
+        if (unused == true) projected = projected.Where(row => row.Unused);
+        if (cursor is not null) projected = projected.Where(row => row.Row.SourceKey.CompareTo(cursor) > 0);
+        var rows = await projected.OrderBy(row => row.Row.SourceKey).Take(take + 1).ToListAsync(cancellationToken);
+        var pageRows = rows.Take(take).ToList();
+        var actors = pageRows.Select(row => row.Row.UploadedBy).Distinct(StringComparer.Ordinal).ToList();
+        var names = await people.DisplayNamesAsync(actors, cancellationToken);
+        var items = pageRows.Select(item => new LinkOverrideView(item.Row.SourceKey, item.Row.Direction,
+            item.Row.ReplacementReason, item.Row.State, item.Row.ReplacementConditionAllowed, item.Row.PricePolicy,
+            item.Row.DifferenceAmount, item.Row.Currency, item.Row.UploadedAt,
+            ActorName(item.Row.UploadedBy, names), item.Row.UploadFileName, item.Unused)).ToList();
+        return new(items, rows.Count > take ? items[^1].SourceKey : null, totalCount, unusedCount);
     }
 
     public async Task<DeleteLinkOverridesResponse> DeleteAllAsync(DeleteLinkOverridesRequest request,
@@ -243,6 +273,8 @@ public sealed class LinkOverrideService(IntegrationDbContext db, ITenantContext 
         return !flagged && normalised == defaultValue ? null : normalised;
     }
     private static string SafeFileName(string value) => Path.GetFileName(value) is { Length: > 260 } name ? name[..260] : Path.GetFileName(value);
+    private static string ActorName(string actor, IReadOnlyDictionary<string, string> names) =>
+        names.GetValueOrDefault(actor) ?? (Guid.TryParse(actor, out _) ? "Former tenant user" : actor);
     private static string Column(string rule) => rule switch
     {
         "replacement_direction_unknown" => "direction",

@@ -243,6 +243,22 @@ public sealed class IntegrationEndpointTests
         Assert.True((await authorisation.AuthorizeAsync(migrationLead, null, YojanaPolicy.MigrationReview)).Succeeded);
         Assert.False((await authorisation.AuthorizeAsync(migrationLead, null,
             YojanaPolicy.TenantAdministrator)).Succeeded);
+        var tenantAdministrator = Principal(YojanaRole.TenantAdministrator);
+        var otherRole = Principal(YojanaRole.IntegrationOperator);
+        Assert.True((await authorisation.AuthorizeAsync(tenantAdministrator, null,
+            YojanaPolicy.MigrationReview)).Succeeded);
+        Assert.False((await authorisation.AuthorizeAsync(otherRole, null,
+            YojanaPolicy.MigrationReview)).Succeeded);
+        foreach (var (method, path) in new[]
+                 {
+                     ("PUT", "/api/migration/mapping/settings"),
+                     ("POST", "/api/migration/link-overrides/upload"),
+                     ("DELETE", "/api/migration/link-overrides"),
+                 })
+            Assert.Contains(endpoints, endpoint => endpoint.RoutePattern.RawText == path &&
+                endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Contains(method) &&
+                endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(policy =>
+                    policy.Policy == YojanaPolicy.MigrationReview));
         Assert.Contains(endpoints, endpoint => endpoint.RoutePattern.RawText ==
             "/api/migration/batches/{batchId:guid}/canonicalise" &&
             endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(policy =>
@@ -261,8 +277,8 @@ public sealed class IntegrationEndpointTests
         {
             var methods = endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods;
             return (methods.Contains("GET") && readPaths.Contains(endpoint.RoutePattern.RawText!)) ||
-                (methods.Contains("PUT") && endpoint.RoutePattern.RawText ==
-                    "/api/migration/templates/{templateKey}") ||
+                (methods.Contains("PUT") && endpoint.RoutePattern.RawText is
+                    "/api/migration/templates/{templateKey}" or "/api/migration/mapping/settings") ||
                 (methods.Contains("POST") && endpoint.RoutePattern.RawText is
                     "/api/migration/templates/{templateKey}/approve" or
                     "/api/migration/templates/approve-pattern") ||
@@ -275,5 +291,11 @@ public sealed class IntegrationEndpointTests
                     "/api/migration/link-overrides/upload") ||
                 (methods.Contains("DELETE") && endpoint.RoutePattern.RawText == "/api/migration/link-overrides");
         }
+
+        static ClaimsPrincipal Principal(string role) => new(new ClaimsIdentity(
+        [
+            new Claim(YojanaClaim.TenantId, Guid.NewGuid().ToString("D")),
+            new Claim(YojanaClaim.Role, role),
+        ], "test"));
     }
 }

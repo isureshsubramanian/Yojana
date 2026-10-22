@@ -193,6 +193,15 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         var accepted = await settings.SetAsync(new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap,
             null, baseV1, supplierV1), default);
         Assert.Equal((baseV1, supplierV1), (accepted.CardCoverPolicyId, accepted.SerialMasterCoverPolicyId));
+        Assert.Equal("Fictional hardware base_warranty cover", accepted.CardCoverPolicy!.PolicyName);
+        Assert.Equal(1, accepted.CardCoverPolicy.Version);
+        Assert.Equal("Fictional hardware supplier_warranty cover", accepted.SerialMasterCoverPolicy!.PolicyName);
+        Assert.Contains(accepted.ApprovedPublishedPolicies!, row => row.PolicyId == baseV1);
+        Assert.DoesNotContain(accepted.ApprovedPublishedPolicies!, row => row.PolicyId == draftOnly);
+        var stale = await Assert.ThrowsAsync<TenantSettingVersionConflictException>(() => settings.SetAsync(
+            new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap, null, baseV1, supplierV1,
+                defaults.Version), default));
+        Assert.Equal(MappingSettings.SettingsDocumentKey, stale.Key);
         var cleared = await settings.SetAsync(new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap),
             default);
         Assert.Null(cleared.CardCoverPolicyId);
