@@ -457,6 +457,8 @@ public sealed class MappingService(
                 PlanUnitId = planUnitId,
                 MapRunId = run.RunId,
                 CandidateId = candidate.CandidateId,
+                SourceKey = candidate.PrimarySourceKey,
+                SourceKeyHash = MigrationSourceKey.Hash(candidate.PrimarySourceKey),
                 ItemCode = candidate.ItemCode,
                 ItemName = candidate.ItemName,
                 Origin = UnitOrigin.Migrated,

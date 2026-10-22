@@ -48,6 +48,12 @@ public static class CoexistenceConflictKind
 {
     public const string FieldChangedInIncumbent = "field_changed_in_incumbent";
     public const string ContractChangedInIncumbent = "contract_changed_in_incumbent";
+    /// <summary>
+    /// A delta load at cutover found the source naming another owner with no delivery behind it (P9-T10b, OD-61 c).
+    /// Raised by Migration/Apply (ApplyService.Delta), never by the drift scan, so no scan closes it: a person
+    /// accepts it (and records the owner in the module) or dismisses it. CoexistenceConflicts refuses keep_module for it.
+    /// </summary>
+    public const string MigrationOwnerDiffers = "migration_owner_differs";
 }
 
 public static class CoexistenceConflictStatus

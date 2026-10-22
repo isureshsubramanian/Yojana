@@ -124,9 +124,10 @@ public sealed class MigrationBatchService(
                 if (source.Runtime != MigrationSourceRuntime.SqlServer)
                     throw new MigrationRuleException("migration_source_runtime_unsupported",
                         "Only sql_server migration sources are extractable in this build.");
-                var results = await extractor.ExtractFullAsync(source, batch.BatchId, clock.UtcNow,
+                var extraction = await extractor.ExtractFullAsync(source, batch.BatchId, clock.UtcNow,
                     cancellationToken);
-                db.MigrationBatchTables.AddRange(results.Select(result => new MigrationBatchTable
+                batch.SourceClockAtStart = extraction.SourceClockAtStart;
+                db.MigrationBatchTables.AddRange(extraction.Tables.Select(result => new MigrationBatchTable
                 {
                     TenantId = tenant.TenantId,
                     BatchId = batch.BatchId,

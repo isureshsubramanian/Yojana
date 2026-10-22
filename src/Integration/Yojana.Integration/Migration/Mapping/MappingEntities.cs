@@ -107,6 +107,14 @@ public sealed class MigrationPlanUnit : ITenantScoped
     public required string ConditionGrade { get; set; }
     public required string ConditionProvenance { get; set; }
     public string? Note { get; set; }
+    /// <summary>
+    /// The serial-master source key this unit came from, the one identity that survives a new extraction (candidate and
+    /// plan ids are new on every run). A delta load (P9-T10b) finds the unit an earlier load wrote through it. Null on
+    /// plans mapped before P9-T10b.
+    /// </summary>
+    public string? SourceKey { get; set; }
+    /// <summary>SHA-256 of <see cref="SourceKey"/> as 64 hex characters, the indexable form (a source key can exceed an index key).</summary>
+    public string? SourceKeyHash { get; set; }
 }
 
 public sealed class MigrationPlanIdentifier : ITenantScoped

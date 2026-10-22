@@ -69,6 +69,12 @@ public sealed class CoexistenceConflicts(IntegrationDbContext db, ITenantContext
             ?? throw new CoexistenceRuleException("conflict_not_found", "The conflict was not found.");
         if (conflict.Status == CoexistenceConflictStatus.Closed)
             throw new CoexistenceRuleException("conflict_closed", "The conflict is already closed.");
+        // HIDDEN COUPLING with ApplyService.Delta: its owner findings have no drift-scan record behind them, so a remote
+        // revert task would never be closed by a scan. Keeping the module owner is a dismissal for them.
+        if (conflict.Kind == CoexistenceConflictKind.MigrationOwnerDiffers
+            && request.Decision == CoexistenceConflictDecision.KeepModule)
+            throw new CoexistenceRuleException("conflict_decision_invalid",
+                "For an owner found by a delta load, accept the source owner (and record it in the module) or dismiss to keep the module owner.");
         if (conflict.Status == CoexistenceConflictStatus.AwaitingRemoteRevert
             && request.Decision == CoexistenceConflictDecision.KeepModule)
             throw new CoexistenceRuleException("conflict_awaiting_revert", "The remote revert is already requested.");

@@ -34,6 +34,9 @@ internal static class MappingModel
             builder.Property(x => x.ConditionProvenance).HasMaxLength(20);
             builder.Property(x => x.Note).HasMaxLength(2000);
             builder.HasIndex(x => new { x.TenantId, x.MapRunId, x.CandidateId }).IsUnique();
+            builder.Property(x => x.SourceKey).HasMaxLength(1000);
+            builder.Property(x => x.SourceKeyHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            builder.HasIndex(x => new { x.TenantId, x.MapRunId, x.SourceKeyHash });
             builder.HasIndex(x => new { x.TenantId, x.MapRunId, x.ItemCode, x.PlanUnitId });
             builder.HasOne<MigrationMapRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.MapRunId })
                 .OnDelete(DeleteBehavior.Cascade);

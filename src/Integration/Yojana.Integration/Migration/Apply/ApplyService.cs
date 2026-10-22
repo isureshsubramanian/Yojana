@@ -2,7 +2,9 @@ using System.Data;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Wolverine;
+using Yojana.Integration.Connectors;
 using Yojana.Integration.Data;
+using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Gateway;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Integration.LegacyMigration.LinkOverrides;
@@ -21,7 +23,10 @@ public sealed record MigrationApplyView(Guid LoadId, Guid BatchId, Guid MapRunId
     long UnitsInPlan, long Applied, long AlreadyApplied, long Refused, long EventsWritten,
     long EntitlementsWritten, long ReplacementLinksWritten, long CertificatesRecorded,
     string? RolledBackBy, DateTime? RolledBackAt, Guid? GapReportRunId = null, int? CoverGaps = null,
-    long ReplacementLinksUsingOverride = 0, IReadOnlyList<MigrationGapCount>? GapsByKind = null);
+    long ReplacementLinksUsingOverride = 0, IReadOnlyList<MigrationGapCount>? GapsByKind = null,
+    string Kind = ApplyRunKind.Initial, Guid? BaseLoadId = null, DateTime? WatermarkHandedOverFrom = null,
+    string? WatermarkNote = null, long CoverReplaced = 0, long CoverRefused = 0, long AlreadyInModule = 0,
+    long OwnerDiffers = 0, long GoneFromSource = 0);
 public sealed record MigrationApplyRefusalView(Guid RefusalId, Guid PlanUnitId, string ItemCode, string? Serial,
     IReadOnlyList<string> Reasons);
 public sealed record MigrationApplyRefusalPage(IReadOnlyList<MigrationApplyRefusalView> Items, string? NextCursor);
@@ -41,9 +46,9 @@ public sealed class ApplyRuleException(string rule, string message) : InvalidOpe
 /// units are listed with their rules. One summary <see cref="MigrationLoadApplied"/> is published when the load
 /// completes; nothing is published per unit. A rehearsal load can be rolled back while no unit in it was touched.
 /// </summary>
-public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant, IClock clock, IMessageBus bus,
+public sealed partial class ApplyService(IntegrationDbContext db, ITenantContext tenant, IClock clock, IMessageBus bus,
     GatewayReferenceStore references, IMigrationSignoffStatus signoff, MappingSettings mappingSettings,
-    ReplacementLinkValueValidator linkValidator)
+    ReplacementLinkValueValidator linkValidator, IConnectorAdapterResolver connectors)
 {
     public const int ChunkSize = 500;
 
@@ -60,11 +65,18 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
         if (!request.Rehearsal && !await signoff.HasFinalSignoffAsync(map.RunId, cancellationToken))
             throw new ApplyRuleException("migration_apply_signoff_required",
                 "A final load needs the validation sign-off record of this load plan. Run a rehearsal load, or sign off validation first.");
+        // OD-60: from the final load on, movements come only through the connector, starting at the extraction. A
+        // connection already polling would bring documents in before (or beside) the units they move, and a delivery
+        // of a serial not yet loaded opens a provisional unit that then blocks the migrated one.
+        if (!request.Rehearsal && await SourceConnectionRunningAsync(batchId, cancellationToken))
+            throw new ApplyRuleException("migration_apply_connection_running",
+                "Stop the sync of the source connection before a final load. The load hands the connector the extraction time, and you resume the sync after it.");
         var open = await db.Set<MigrationApplyRun>().AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
                 (row.Status == ApplyRunStatus.Queued || row.Status == ApplyRunStatus.Running ||
                  row.Status == ApplyRunStatus.Completed || row.Status == ApplyRunStatus.Failed))
-            .Select(row => new { row.RunId, row.BatchId, row.Status }).FirstOrDefaultAsync(cancellationToken);
-        if (open is { Status: ApplyRunStatus.Failed } && open.BatchId == batchId)
+            .OrderBy(row => row.Status == ApplyRunStatus.Failed ? 0 : 1)
+            .Select(row => new { row.RunId, row.BatchId, row.Status, row.Kind }).FirstOrDefaultAsync(cancellationToken);
+        if (open is { Status: ApplyRunStatus.Failed, Kind: ApplyRunKind.Initial } && open.BatchId == batchId)
         {
             // A failed load resumes from its cursor under the same load id; the module skips units it already holds.
             var failed = await db.Set<MigrationApplyRun>().SingleAsync(row => row.TenantId == tenant.TenantId &&
@@ -101,7 +113,8 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
             if (run is null) return completed;
             try
             {
-                await ApplyAsync(run.RunId, cancellationToken);
+                if (run.Kind == ApplyRunKind.Delta) await ApplyDeltaAsync(run.RunId, cancellationToken);
+                else await ApplyAsync(run.RunId, cancellationToken);
                 completed++;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -154,9 +167,15 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
         var run = await db.Set<MigrationApplyRun>().SingleOrDefaultAsync(row => row.TenantId == tenant.TenantId &&
                 row.RunId == loadId, cancellationToken)
             ?? throw new ApplyRuleException("migration_apply_load_not_found", "The load does not exist.");
-        if (!run.Rehearsal)
+        if (!run.Rehearsal && run.Kind != ApplyRunKind.Delta)
             throw new ApplyRuleException("migration_apply_final_load",
                 "A final load is not rolled back here; follow the cutover rollback runbook.");
+        // Deltas stack: each one replaced what the one before it left, so only the latest can be undone (OD-62).
+        if (run.Kind == ApplyRunKind.Delta && await db.Set<MigrationApplyRun>().AnyAsync(row =>
+                row.TenantId == tenant.TenantId && row.Kind == ApplyRunKind.Delta && row.BaseLoadId == run.RunId &&
+                row.Status != ApplyRunStatus.RolledBack, cancellationToken))
+            throw new ApplyRuleException("migration_delta_not_latest",
+                "A later delta load was built on this one. Undo the later delta first.");
         if (run.Status is not (ApplyRunStatus.Completed or ApplyRunStatus.Failed))
             throw new ApplyRuleException("migration_apply_not_rollbackable",
                 $"A load that is {run.Status} cannot be rolled back.");
@@ -164,6 +183,7 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
             Options(), cancellationToken);
         if (result.Outcome != RollBackMigrationLoadResult.RefusedTouched)
         {
+            await ForgetLoadedUnitsAsync(run.RunId, cancellationToken);
             run.Status = ApplyRunStatus.RolledBack;
             run.RolledBackBy = actor;
             run.RolledBackAt = clock.UtcNow;
@@ -204,6 +224,7 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
                     new ApplyMigratedUnits(run.RunId, legalEntity, run.RequestedBy, source, units, map.CutoverDate), Options(), cancellationToken);
             run = await db.Set<MigrationApplyRun>().SingleAsync(row => row.TenantId == tenant.TenantId &&
                 row.RunId == runId, cancellationToken);
+            await RememberLoadedUnitsAsync(batch.ConnectionId, run.RunId, plans, units, result.Units, cancellationToken);
             var refusals = missing.Concat(result.Units.Where(u => u.Outcome == MigratedUnitOutcome.Refused)
                 .Select(u => (u.PlanUnitId, u.Reasons))).ToList();
             var known = refusals.Select(r => r.PlanUnitId).ToList();
@@ -232,16 +253,24 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
             run = await Run(runId, cancellationToken);
         }
 
+        await FinishAsync(runId, cancellationToken, batch);
+    }
+
+    /// <summary>The last steps of every load, initial or delta: the gap report, the hand-over of a final load, the summary event.</summary>
+    private async Task FinishAsync(Guid runId, CancellationToken cancellationToken, MigrationBatch? batch = null)
+    {
         // Last step of every load (P9-T09, ADR "Entitlement gap report and backfill"): the standing gap report over
         // migrated owners, run once per load (its id derives from the load). Backfill itself stays a service-manager
         // approved selection set on the gap report screen; it is never committed here on nobody's authority.
         var gaps = await bus.InvokeAsync<EntitlementGapRunResult>(new RunEntitlementGapReport(
             DeterministicId.Create(runId, "entitlement-gap-report"), EntitlementGapTrigger.MigrationLoad,
             new EntitlementGapFilters(Channels: [EpisodeSource.Migration])), Options(), cancellationToken);
-        run = await db.Set<MigrationApplyRun>().SingleAsync(row => row.TenantId == tenant.TenantId &&
+        var run = await db.Set<MigrationApplyRun>().SingleAsync(row => row.TenantId == tenant.TenantId &&
             row.RunId == runId, cancellationToken);
         run.GapReportRunId = gaps.RunId;
         run.CoverGaps = gaps.Total;
+        if (!run.Rehearsal && run.Kind == ApplyRunKind.Initial && batch is not null)
+            await HandOverWatermarksAsync(run, batch, cancellationToken);
         run.Status = ApplyRunStatus.Completed;
         run.FinishedAt = clock.UtcNow;
         await bus.PublishAsync(new MigrationLoadApplied(run.RunId, run.BatchId, run.Rehearsal,
@@ -442,6 +471,8 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
             run.RequestedAt, run.StartedAt, run.FinishedAt, run.FailureCode, run.UnitsInPlan, run.Applied,
             run.AlreadyApplied, run.Refused, run.EventsWritten, run.EntitlementsWritten,
             run.ReplacementLinksWritten, run.CertificatesRecorded, run.RolledBackBy, run.RolledBackAt,
-            run.GapReportRunId, run.CoverGaps, run.ReplacementLinksUsingOverride, gaps);
+            run.GapReportRunId, run.CoverGaps, run.ReplacementLinksUsingOverride, gaps, run.Kind, run.BaseLoadId,
+            run.WatermarkHandedOverFrom, run.WatermarkNote, run.CoverReplaced, run.CoverRefused, run.AlreadyInModule,
+            run.OwnerDiffers, run.GoneFromSource);
     }
 }
