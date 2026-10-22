@@ -74,10 +74,12 @@ public sealed record MigrationPlanUnitView(
     IReadOnlyList<MigrationPlanLogView> Log);
 
 public sealed record ConditionMappingRule(string? CardStatus, string? LastMovementKind, string Grade);
+public sealed record ReplacementLinkValues(string Direction, string ReplacementReason, string State,
+    string ReplacementConditionAllowed, string PricePolicy, decimal DifferenceAmount, string Currency);
 public sealed record MappingSettingsView(bool AllowWaitingReviews, DateOnly? CutoverDate,
-    IReadOnlyList<ConditionMappingRule> ConditionMap);
+    IReadOnlyList<ConditionMappingRule> ConditionMap, ReplacementLinkValues LinkDefaults);
 public sealed record UpdateMappingSettingsRequest(bool AllowWaitingReviews, DateOnly? CutoverDate,
-    IReadOnlyList<ConditionMappingRule> ConditionMap);
+    IReadOnlyList<ConditionMappingRule> ConditionMap, ReplacementLinkValues? LinkDefaults = null);
 
 public sealed class MappingRuleException(string rule, string message,
     IReadOnlyList<MappingWaitingReviewCount>? waitingReviews = null) : InvalidOperationException(message)

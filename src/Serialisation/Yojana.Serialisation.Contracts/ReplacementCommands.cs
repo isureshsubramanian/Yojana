@@ -37,6 +37,13 @@ public static class ReplacementLinkState
     public static readonly IReadOnlyList<string> All = [Proposed, AwaitingReturn, ClosedReturned, ClosedBilled, Cancelled, Corrected];
 }
 
+/// <summary>Terminal states a reconstructed historical link can carry without inventing live workflow data.</summary>
+public static class MigratedReplacementLinkState
+{
+    public static readonly IReadOnlyList<string> All =
+        [ReplacementLinkState.ClosedReturned, ReplacementLinkState.ClosedBilled];
+}
+
 public static class WarrantyReplacementStatus
 {
     public const string Proposed = "proposed";

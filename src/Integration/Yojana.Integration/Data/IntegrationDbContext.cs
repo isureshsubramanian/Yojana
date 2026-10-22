@@ -86,6 +86,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<MigrationPlanEvent> MigrationPlanEvents => Set<MigrationPlanEvent>();
     public DbSet<MigrationPlanOwnership> MigrationPlanOwnership => Set<MigrationPlanOwnership>();
     public DbSet<MigrationPlanReplacementLink> MigrationPlanReplacementLinks => Set<MigrationPlanReplacementLink>();
+    public DbSet<LegacyMigration.LinkOverrides.MigrationLinkOverride> MigrationLinkOverrides => Set<LegacyMigration.LinkOverrides.MigrationLinkOverride>();
     public DbSet<MigrationPlanEntitlement> MigrationPlanEntitlements => Set<MigrationPlanEntitlement>();
     public DbSet<MigrationPlanWarrantyEvidence> MigrationPlanWarrantyEvidence => Set<MigrationPlanWarrantyEvidence>();
     public DbSet<MigrationPlanAttachment> MigrationPlanAttachments => Set<MigrationPlanAttachment>();

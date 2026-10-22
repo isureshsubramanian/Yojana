@@ -48,7 +48,8 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "migration_plan_gap", "migration_plan_log", "migration_validation_run",
             "migration_validation_check", "migration_validation_check_part", "migration_validation_difference",
             "migration_validation_sample", "migration_validation_signature", "migration_signoff_record",
-            "migration_signoff_line", "migration_apply_run", "migration_apply_refusal");
+            "migration_signoff_line", "migration_apply_run", "migration_apply_refusal",
+            "migration_link_override");
         var columns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'manual_outbound_task'").ToListAsync();
         Assert.Contains("desk", columns);
         var healthColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'connection_health'").ToListAsync();
@@ -56,6 +57,8 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
         var batchColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'migration_batch'").ToListAsync();
         AssertSuperset(batchColumns, "tenant_id", "display_number");
         var validationColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'migration_validation_run'").ToListAsync();
+        var applyColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'migration_apply_run'").ToListAsync();
+        Assert.Contains("replacement_links_using_override", applyColumns);
         AssertSuperset(validationColumns, "tenant_id", "failure_code", "failure_detail");
     }
 

@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.LegacyMigration.Apply;
+using Yojana.Integration.LegacyMigration.LinkOverrides;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Integration.LegacyMigration.Validation;
 using Yojana.Platform.Contracts.Tenancy;
@@ -59,6 +60,19 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
         }
         await db.SaveChangesAsync();
 
+        var linkSourceKey = await db.MigrationPlanReplacementLinks.Where(row => row.MapRunId == map.RunId)
+            .Select(row => row.SourceKey).SingleAsync();
+        db.MigrationLinkOverrides.Add(new MigrationLinkOverride
+        {
+            TenantId = tenant, SourceKey = linkSourceKey, Direction = ReplacementDirection.VendorFacing,
+            ReplacementReason = ReplacementReason.Goodwill, State = ReplacementLinkState.ClosedBilled,
+            ReplacementConditionAllowed = ReplacementConditionAllowed.New,
+            PricePolicy = ReplacementPricePolicy.Difference, DifferenceAmount = 25m, Currency = "EUR",
+            UploadedAt = fixture.Clock.UtcNow, UploadedBy = "user:migration-lead",
+            UploadFileName = "replacement-links.csv",
+        });
+        await db.SaveChangesAsync();
+
         var apply = scope.ServiceProvider.GetRequiredService<ApplyService>();
         var final = await Assert.ThrowsAsync<ApplyRuleException>(() => apply.EnqueueAsync(ids.BatchId, new(false), "user:admin", default));
         Assert.Equal("migration_apply_signoff_required", final.Rule);
@@ -85,12 +99,20 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
         Assert.Equal(expectedEntitlements, view.EntitlementsWritten);
         Assert.Equal(await db.MigrationPlanReplacementLinks.LongCountAsync(row => row.MapRunId == map.RunId),
             view.ReplacementLinksWritten);
+        Assert.Equal(1, view.ReplacementLinksUsingOverride);
         Assert.Equal(view.Applied, view.CertificatesRecorded);
         var refusal = Assert.Single(refusalItems);
         Assert.Equal(Unsynced, refusal.ItemCode);
         Assert.Equal(["item_not_synced"], refusal.Reasons);
 
         var serialisation = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var overriddenLink = await serialisation.ReplacementLinks.SingleAsync(row => row.MigrationLoadId == view.LoadId);
+        Assert.Equal((ReplacementDirection.VendorFacing, ReplacementReason.Goodwill,
+                ReplacementLinkState.ClosedBilled, ReplacementConditionAllowed.New,
+                ReplacementPricePolicy.Difference, 25m, "EUR"),
+            (overriddenLink.Direction, overriddenLink.ReplacementReason, overriddenLink.State,
+                overriddenLink.ReplacementConditionAllowed, overriddenLink.PricePolicy,
+                overriddenLink.DifferenceAmount, overriddenLink.Currency));
         var loaded = await serialisation.MigrationLoadUnits.Where(row => row.LoadId == view.LoadId).Select(row => row.UnitId).ToListAsync();
         Assert.Equal(planned - 1, loaded.Count);
         Assert.All(await serialisation.Units.Where(row => loaded.Contains(row.UnitId)).ToListAsync(),
@@ -163,10 +185,22 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
         Assert.Equal(ApplyRunStatus.RolledBack, (await apply.GetAsync(ids.BatchId, default))!.Status);
 
         // After a rollback the next rehearsal loads the same plan afresh.
+        Assert.Equal(1, (await scope.ServiceProvider.GetRequiredService<LinkOverrideService>()
+            .DeleteAllAsync(new(true), default)).Removed);
         var second = await apply.EnqueueAsync(ids.BatchId, new(true), "user:admin", default);
         Assert.NotEqual(view.LoadId, second.LoadId);
         Assert.Equal(1, await apply.RunPendingAsync(default));
-        Assert.Equal(planned - 1, (await apply.GetAsync(ids.BatchId, default))!.Applied);
+        var secondRun = await db.Set<MigrationApplyRun>().SingleAsync(row => row.RunId == second.LoadId);
+        Assert.Equal(planned - 1, secondRun.Applied);
+        Assert.Equal(0, secondRun.ReplacementLinksUsingOverride);
+        var defaultLink = await serialisation.ReplacementLinks.AsNoTracking()
+            .SingleAsync(row => row.MigrationLoadId == second.LoadId);
+        Assert.Equal((ReplacementDirection.CustomerFacing, ReplacementReason.WarrantyDefect,
+                ReplacementLinkState.ClosedReturned, ReplacementConditionAllowed.Any,
+                ReplacementPricePolicy.Zero, 0m, "XXX"),
+            (defaultLink.Direction, defaultLink.ReplacementReason, defaultLink.State,
+                defaultLink.ReplacementConditionAllowed, defaultLink.PricePolicy,
+                defaultLink.DifferenceAmount, defaultLink.Currency));
     }
 
     [DatabaseFact]
