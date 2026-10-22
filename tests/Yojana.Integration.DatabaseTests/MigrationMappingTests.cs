@@ -9,6 +9,9 @@ using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Staging;
 using Yojana.Integration.LegacyMigration.Templates;
+using Yojana.Integration.LegacyMigration.Validation;
+using Yojana.Integration.LegacyMigration.Profiling;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
@@ -165,6 +168,10 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         var mapping = scope.ServiceProvider.GetRequiredService<MappingService>();
         var missing = await Assert.ThrowsAsync<MappingRuleException>(() => mapping.EnqueueAsync(batchId, default));
         Assert.Equal("migration_mapping_reconstruction_missing", missing.Rule);
+        var validation = scope.ServiceProvider.GetRequiredService<ValidationService>();
+        var validationMissing = await Assert.ThrowsAsync<ValidationRuleException>(() =>
+            validation.EnqueueAsync(batchId, true, default));
+        Assert.Equal("migration_validation_map_missing", validationMissing.Rule);
 
         var profileId = Guid.CreateVersion7();
         var canonicalId = Guid.CreateVersion7();
@@ -186,6 +193,194 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         Assert.Equal("migration_mapping_profile_blocked", blocked.Rule);
         Assert.Equal(0, await mapping.EnqueueEligibleAsync(default));
         Assert.Equal(0, await db.MigrationMapRuns.CountAsync());
+
+        var completedMap = new MigrationMapRun
+        {
+            TenantId = tenant, RunId = Guid.CreateVersion7(), ReconstructionRunId = reconstructionId,
+            BatchId = batchId, CutoverDate = new(2026, 9, 1), RequestedAt = Extracted,
+            FinishedAt = Extracted, Status = MappingRunStatus.Completed,
+        };
+        var newerMap = new MigrationMapRun
+        {
+            TenantId = tenant, RunId = Guid.CreateVersion7(), ReconstructionRunId = reconstructionId,
+            BatchId = batchId, CutoverDate = new(2026, 9, 1), RequestedAt = Extracted.AddMinutes(1),
+            Status = MappingRunStatus.Running,
+        };
+        db.MigrationMapRuns.AddRange(completedMap, newerMap);
+        await db.SaveChangesAsync();
+        var superseded = await Assert.ThrowsAsync<ValidationRuleException>(() =>
+            validation.EnqueueAsync(batchId, true, default));
+        Assert.Equal("migration_validation_map_superseded", superseded.Rule);
+        newerMap.Status = MappingRunStatus.Failed;
+        await db.SaveChangesAsync();
+        var failed = await Assert.ThrowsAsync<ValidationRuleException>(() =>
+            validation.EnqueueAsync(batchId, true, default));
+        Assert.Equal("migration_validation_map_failed", failed.Rule);
+    }
+
+    [DatabaseFact]
+    public async Task Validation_records_checks_signatures_re_runs_samples_and_rehearsal_signoff()
+    {
+        var tenant = await fixture.NewTenantAsync("validation");
+        var policyId = await PublishedPolicyAsync(tenant);
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var ids = SeedPipeline(db, tenant, policyId);
+        await db.SaveChangesAsync();
+        var mappingSettings = scope.ServiceProvider.GetRequiredService<MappingSettings>();
+        var defaults = await mappingSettings.GetAsync(default);
+        await mappingSettings.SetAsync(new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap), default);
+        var mapping = scope.ServiceProvider.GetRequiredService<MappingService>();
+        await mapping.EnqueueAsync(ids.BatchId, default);
+        Assert.Equal(1, await mapping.RunPendingAsync(default));
+
+        var profileRunId = await db.MigrationCanonRuns.Where(x => x.BatchId == ids.BatchId)
+            .Select(x => x.ProfileRunId).SingleAsync();
+        db.MigrationProfileResults.Add(new()
+        {
+            TenantId = tenant, RunId = profileRunId,
+            ClassCode = MigrationProfileClasses.NegativeQuantity.Code,
+            Outcome = MigrationProfileOutcome.StopLoad, RowCount = 1, SamplesJson = "[]",
+        });
+        await db.SaveChangesAsync();
+
+        var validation = scope.ServiceProvider.GetRequiredService<ValidationService>();
+        var validationSettings = scope.ServiceProvider.GetRequiredService<ValidationSettings>();
+        var validationDefaults = await validationSettings.GetAsync(default);
+        Assert.Equal(0.1m, validationDefaults.HistoricalTolerancePercent);
+        Assert.Equal(200, validationDefaults.SampleSize);
+        Assert.Equal([1, 3, 5], validationDefaults.AgeBandYears);
+        await validationSettings.SetAsync(new(0.25m, 100, [1, 2, 5], validationDefaults.Version), default);
+        var queued = await validation.EnqueueAsync(ids.BatchId, true, default);
+        var duplicate = await Assert.ThrowsAsync<ValidationRuleException>(() =>
+            validation.EnqueueAsync(ids.BatchId, true, default));
+        Assert.Equal("migration_validation_already_running", duplicate.Rule);
+        var stopwatch = Stopwatch.StartNew();
+        Assert.Equal(1, await validation.RunPendingAsync(default));
+        stopwatch.Stop();
+        var view = await validation.GetAsync(ids.BatchId, default);
+        Assert.NotNull(view);
+        Assert.Equal(14, view.ChecksTotal);
+        Assert.Equal(ValidationTargetKind.Plan, view.TargetKind);
+        foreach (var code in new[]
+                 {
+                     "unit_master", "active_cover", "open_service_calls", "stock_by_item_warehouse",
+                     "serial_in_multiple_warehouses", "historical_events", "status_histogram",
+                     "event_per_unit", "one_current_row", "signed_quantity",
+                 })
+            Assert.Equal(ValidationResult.Pass, view.Checks.Single(x => x.Code == code).Result);
+        Assert.Contains(view.Checks, x => x.Code == "negative_quantity" &&
+            x.Result == ValidationResult.HardFail);
+        Assert.Contains(view.Checks, x => x.Code == "cover_gap_report" && x.Result == ValidationResult.Report);
+        Assert.Contains(view.Checks, x => x.Code == "attachments_by_hash" && x.Result == ValidationResult.Report);
+        Assert.Contains(view.Checks, x => x.Code == "historical_events" && x.LimitKind == "< 0.25%");
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(30), $"Tiny validation took {stopwatch.Elapsed}.");
+
+        var hard = view.Checks.Single(x => x.Code == "negative_quantity");
+        var hardExplain = await Assert.ThrowsAsync<ValidationRuleException>(() =>
+            validation.ExplainAsync(hard.CheckId, "Cannot waive this.", "preparer", default));
+        Assert.Equal("migration_validation_hard_fail_not_explainable", hardExplain.Rule);
+
+        var calls = view.Checks.Single(x => x.Code == "open_service_calls");
+        await validation.SignAsync(calls.CheckId, ValidationSignatureRole.Preparer, "person-a",
+            [YojanaRole.MigrationLead], default);
+        var same = await Assert.ThrowsAsync<ValidationRuleException>(() => validation.SignAsync(calls.CheckId,
+            ValidationSignatureRole.Reviewer, "person-a", [YojanaRole.TenantAdministrator], default));
+        Assert.Equal("migration_validation_distinct_signers_required", same.Rule);
+        await validation.SignAsync(calls.CheckId, ValidationSignatureRole.Reviewer, "person-b",
+            [YojanaRole.TenantAdministrator], default);
+
+        var unchanged = view.Checks.Single(x => x.Code == "attachments_by_hash");
+        await validation.SignAsync(unchanged.CheckId, ValidationSignatureRole.Preparer, "person-a",
+            [YojanaRole.MigrationLead], default);
+        await validation.SignAsync(unchanged.CheckId, ValidationSignatureRole.Reviewer, "person-b",
+            [YojanaRole.TenantAdministrator], default);
+
+        var firstSample = await validation.SampleAsync(queued.RunId, null, 200, default);
+        foreach (var sample in firstSample.Items)
+            await validation.TraceAsync(sample.SampleId, "traced", "Trail checked.", "person-a", default);
+        Assert.Equal(ValidationResult.Pass,
+            (await validation.CheckAsync(view.Checks.Single(x => x.Code == "stratified_sample").CheckId,
+                default))!.Check.Result);
+        db.Set<ServiceCallStagingRow>().Add(Stage(new ServiceCallStagingRow
+        {
+            SourceSystem = "fixture-source", SourceTable = "fixture", SourcePk = "call:1", RowHash = [1],
+            CallId = 1, ItemCode = "SERVER-CONTRACT", InternalSerial = "SER-101", Status = 1,
+            OpenedAt = Extracted,
+        }, tenant, ids.BatchId, "call:1"));
+        var quantity = await db.Set<SerialQuantityStagingRow>().SingleAsync(x =>
+            x.BatchId == ids.BatchId && x.SystemNumber == 101);
+        quantity.Quantity = 2;
+        var entitlement = await db.MigrationPlanEntitlements.FirstAsync(x => x.MapRunId == view.MapRunId &&
+            x.EndDate >= new DateOnly(2026, 9, 1));
+        db.MigrationPlanEntitlements.Remove(entitlement);
+        var sourceEvent = await db.MigrationPlanEvents.FirstAsync(x => x.MapRunId == view.MapRunId &&
+            x.Provenance == HistoryProvenance.Source);
+        db.MigrationPlanEvents.Remove(sourceEvent);
+        db.MigrationPlanUnits.Add(new()
+        {
+            TenantId = tenant, PlanUnitId = Guid.CreateVersion7(), MapRunId = view.MapRunId,
+            CandidateId = Guid.CreateVersion7(), ItemCode = "SERVER-EXTRA", Origin = UnitOrigin.Migrated,
+            HistoryDepth = Yojana.Integration.LegacyMigration.Reconstruction.HistoryDepth.Full,
+            LocationState = "", ConditionGrade = ConditionGrades.Defective,
+            ConditionProvenance = "inferred",
+        });
+        db.MigrationProfileResults.Add(new()
+        {
+            TenantId = tenant, RunId = profileRunId,
+            ClassCode = MigrationProfileClasses.SerialInMultipleWarehouses.Code,
+            Outcome = MigrationProfileOutcome.StopLoad, RowCount = 1, SamplesJson = "[]",
+        });
+        await db.SaveChangesAsync();
+        fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddSeconds(1);
+        var second = await validation.EnqueueAsync(ids.BatchId, true, default);
+        Assert.Equal(1, await validation.RunPendingAsync(default));
+        var secondSample = await validation.SampleAsync(second.RunId, null, 200, default);
+        Assert.Equal(firstSample.Items.Select(x => x.Serial).Order(), secondSample.Items.Select(x => x.Serial).Order());
+        var secondView = await validation.GetAsync(ids.BatchId, default);
+        Assert.NotNull(secondView);
+        var changedCalls = secondView.Checks.Single(x => x.Code == "open_service_calls");
+        Assert.Equal(ValidationResult.Explained, changedCalls.Result);
+        Assert.Empty(changedCalls.Signatures);
+        Assert.Equal(2, secondView.Checks.Single(x => x.Code == "attachments_by_hash").Signatures.Count);
+        foreach (var code in new[]
+                 {
+                     "unit_master", "active_cover", "stock_by_item_warehouse", "historical_events", "status_histogram",
+                     "event_per_unit", "one_current_row", "signed_quantity",
+                 })
+            Assert.Equal(ValidationResult.Fail, secondView.Checks.Single(x => x.Code == code).Result);
+        foreach (var code in new[]
+                 {
+                     "serial_in_multiple_warehouses", "negative_quantity",
+                 })
+            Assert.Equal(ValidationResult.HardFail, secondView.Checks.Single(x => x.Code == code).Result);
+        Assert.Equal(ValidationResult.Fail,
+            secondView.Checks.Single(x => x.Code == "stratified_sample").Result);
+        var cover = secondView.Checks.Single(x => x.Code == "active_cover");
+        Assert.Equal(ValidationResult.Explained, (await validation.ExplainAsync(cover.CheckId,
+            "The unresolved template approvals are tracked for this rehearsal.", "person-a", default)).Result);
+        var callHistory = await validation.CheckAsync(calls.CheckId, default);
+        Assert.NotNull(callHistory);
+        Assert.All(callHistory.SignatureHistory, x => Assert.True(x.Superseded));
+
+        var rehearsal = await validation.CreateSignoffAsync(second.RunId, "person-b", default);
+        Assert.True(rehearsal.Rehearsal);
+        Assert.Equal(14, rehearsal.Lines.Count);
+        Assert.Contains("REHEARSAL", System.Text.Encoding.UTF8.GetString(
+            await validation.ExportCsvAsync(rehearsal.RecordId, default)));
+
+        fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddSeconds(1);
+        var finalRun = await validation.EnqueueAsync(ids.BatchId, false, default);
+        Assert.Equal(1, await validation.RunPendingAsync(default));
+        var blocked = await Assert.ThrowsAsync<ValidationRuleException>(() =>
+            validation.CreateSignoffAsync(finalRun.RunId, "person-b", default));
+        Assert.Equal("migration_signoff_hard_fail", blocked.Rule);
+
+        var otherTenant = await fixture.NewTenantAsync("valother");
+        using var otherScope = fixture.ScopeFor(otherTenant);
+        var otherDb = otherScope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        Assert.Empty(await otherDb.MigrationValidationRuns.ToListAsync());
+        Assert.Empty(await otherDb.MigrationValidationChecks.ToListAsync());
     }
 
     internal static (Guid BatchId, Guid ReconstructionId) SeedPipeline(IntegrationDbContext db, TenantId tenant,
@@ -260,6 +455,23 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         var differingShipment = History(db, tenant, reconstructionId, notApproved, 1,
             HistoryMovementKind.Shipped, new(2026, 7, 1), "event:not-approved-shipped",
             party: "SHIP-OLDER");
+        _ = History(db, tenant, reconstructionId, draft, 1, HistoryMovementKind.OpeningBalance,
+            new(2026, 3, 1), "opening:303", provenance: HistoryProvenance.Reconstructed);
+        _ = History(db, tenant, reconstructionId, noTemplate, 1, HistoryMovementKind.OpeningBalance,
+            new(2026, 3, 1), "opening:707", provenance: HistoryProvenance.Reconstructed);
+        _ = History(db, tenant, reconstructionId, masterOnly, 1, HistoryMovementKind.OpeningBalance,
+            new(2025, 8, 1), "opening:808", provenance: HistoryProvenance.Reconstructed);
+        db.Set<TransactionLogHeaderStagingRow>().Add(Stage(new TransactionLogHeaderStagingRow
+        {
+            SourceSystem = "fixture-source", SourceTable = "fixture", SourcePk = "transaction-header:1",
+            RowHash = [1], LogEntry = 1, ItemCode = contract.ItemCode, StockEffect = 1,
+            DocumentDate = new(2026, 1, 1),
+        }, tenant, batchId, "transaction-header:1"));
+        db.Set<TransactionLogLineStagingRow>().Add(Stage(new TransactionLogLineStagingRow
+        {
+            SourceSystem = "fixture-source", SourceTable = "fixture", SourcePk = "transaction-line:1",
+            RowHash = [1], LogEntry = 1, ItemCode = contract.ItemCode, SystemNumber = 101, Quantity = 1,
+        }, tenant, batchId, "transaction-line:1"));
         db.MigrationOwnershipEpisodes.Add(new()
         {
             TenantId = tenant, OwnershipEpisodeId = Guid.CreateVersion7(),
@@ -298,11 +510,11 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         Contract(db, tenant, batchId, canonicalId, draft, 502, "Draft policy coverage",
             new(2026, 3, 1), new(2027, 3, 1), null);
         Contract(db, tenant, batchId, canonicalId, notApproved, 503, "Awaiting approval",
-            new(2026, 3, 1), new(2027, 3, 1), null);
+            new(2026, 3, 1), new(2027, 3, 1), null, status: "I");
         Contract(db, tenant, batchId, canonicalId, noTemplate, 504, null,
-            new(2026, 3, 1), new(2027, 3, 1), null);
+            new(2026, 3, 1), new(2027, 3, 1), null, status: "I");
         Contract(db, tenant, batchId, canonicalId, masterOnly, 505, "Approved coverage",
-            new(2026, 3, 1), new(2027, 3, 1), null, serviceType: "S");
+            new(2026, 3, 1), new(2027, 3, 1), null, serviceType: "S", status: "I");
         var approvedMapping = Mapping(db, tenant, batchId, policyId, "Approved coverage", "base", approved: true);
         _ = approvedMapping;
         _ = Mapping(db, tenant, batchId, Guid.CreateVersion7(), "Draft policy coverage", "base", approved: true);
@@ -378,7 +590,7 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
 
     private static void Contract(IntegrationDbContext db, TenantId tenant, Guid batchId, Guid canonicalId,
         MigrationUnitCandidate candidate, int contractId, string? template, DateTime start,
-        DateTime end, DateTime? termination, string serviceType = "W")
+        DateTime end, DateTime? termination, string serviceType = "W", string status = "A")
     {
         var contractKey = $"contract:{contractId}";
         var lineKey = $"contract-line:{contractId}:0";
@@ -386,7 +598,7 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         {
             SourceSystem = "fixture-source", SourceTable = "fixture", SourcePk = contractKey, RowHash = [1],
             ContractId = contractId, CustomerCode = "FIC-CUSTOMER", StartDate = start, EndDate = end,
-            TerminationDate = termination, Status = "A", TemplateName = template, ServiceType = serviceType,
+            TerminationDate = termination, Status = status, TemplateName = template, ServiceType = serviceType,
         }, tenant, batchId, contractKey));
         db.Set<ContractLineStagingRow>().Add(Stage(new ContractLineStagingRow
         {

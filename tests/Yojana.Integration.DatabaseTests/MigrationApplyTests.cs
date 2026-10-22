@@ -4,6 +4,8 @@ using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.LegacyMigration.Apply;
 using Yojana.Integration.LegacyMigration.Mapping;
+using Yojana.Integration.LegacyMigration.Validation;
+using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 
@@ -114,5 +116,69 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
         Assert.NotEqual(view.LoadId, second.LoadId);
         Assert.Equal(1, await apply.RunPendingAsync(default));
         Assert.Equal(planned - 1, (await apply.GetAsync(ids.BatchId, default))!.Applied);
+    }
+
+    [DatabaseFact]
+    public async Task A_final_load_needs_the_final_signoff_record_of_exactly_this_load_plan()
+    {
+        var tenant = await fixture.NewTenantAsync("apply-final");
+        var policyId = await new MigrationMappingTests(fixture).PublishedPolicyAsync(tenant);
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var ids = MigrationMappingTests.SeedPipeline(db, tenant, policyId);
+        await db.SaveChangesAsync();
+        var mappingSettings = scope.ServiceProvider.GetRequiredService<MappingSettings>();
+        var defaults = await mappingSettings.GetAsync(default);
+        await mappingSettings.SetAsync(new(true, new DateOnly(2026, 9, 1), defaults.ConditionMap), default);
+        var mapping = scope.ServiceProvider.GetRequiredService<MappingService>();
+        await mapping.EnqueueAsync(ids.BatchId, default);
+        Assert.Equal(1, await mapping.RunPendingAsync(default));
+        var older = (await mapping.GetAsync(ids.BatchId, default))!;
+        // A final sign-off of an older load plan of the same batch does not carry over to the plan mapped after it.
+        AddSignoff(db, tenant, ids.BatchId, older.RunId, rehearsal: false);
+        await db.SaveChangesAsync();
+        // The second plan must be later on the clock: run ids alone do not order by time in SQL Server.
+        var startedAt = fixture.Clock.UtcNow;
+        fixture.Clock.UtcNow = startedAt.AddMinutes(5);
+        try
+        {
+            await mapping.EnqueueAsync(ids.BatchId, default);
+            Assert.Equal(1, await mapping.RunPendingAsync(default));
+        }
+        finally
+        {
+            fixture.Clock.UtcNow = startedAt;
+        }
+        var map = (await mapping.GetAsync(ids.BatchId, default))!;
+        Assert.NotEqual(older.RunId, map.RunId);
+        var apply = scope.ServiceProvider.GetRequiredService<ApplyService>();
+
+        // Nor does a rehearsal sign-off of this plan.
+        AddSignoff(db, tenant, ids.BatchId, map.RunId, rehearsal: true);
+        await db.SaveChangesAsync();
+        var refused = await Assert.ThrowsAsync<ApplyRuleException>(() => apply.EnqueueAsync(ids.BatchId, new(false), "user:admin", default));
+        Assert.Equal("migration_apply_signoff_required", refused.Rule);
+
+        AddSignoff(db, tenant, ids.BatchId, map.RunId, rehearsal: false);
+        await db.SaveChangesAsync();
+        var queued = await apply.EnqueueAsync(ids.BatchId, new(false), "user:admin", default);
+        Assert.False(queued.Rehearsal);
+        Assert.Equal(ApplyRunStatus.Queued, queued.Status);
+    }
+
+    private void AddSignoff(IntegrationDbContext db, TenantId tenant, Guid batchId, Guid mapRunId,
+        bool rehearsal)
+    {
+        var runId = Guid.CreateVersion7();
+        db.Set<MigrationValidationRun>().Add(new MigrationValidationRun
+        {
+            TenantId = tenant, RunId = runId, BatchId = batchId, MapRunId = mapRunId, TargetKind = ValidationTargetKind.Plan, Rehearsal = rehearsal,
+            RequestedAt = fixture.Clock.UtcNow, FinishedAt = fixture.Clock.UtcNow, Status = ValidationRunStatus.Completed,
+        });
+        db.Set<MigrationSignoffRecord>().Add(new MigrationSignoffRecord
+        {
+            TenantId = tenant, RecordId = Guid.CreateVersion7(), RunId = runId, Rehearsal = rehearsal,
+            CreatedAt = fixture.Clock.UtcNow, CreatedBy = "user:admin",
+        });
     }
 }

@@ -9,6 +9,7 @@ using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Mapping;
+using Yojana.Integration.LegacyMigration.Validation;
 using Yojana.Integration.LegacyMigration.Apply;
 using Yojana.Serialisation.Contracts;
 
@@ -204,6 +205,61 @@ public static class MigrationEndpoints
         admin.MapPut("/mapping/settings", (UpdateMappingSettingsRequest request,
             MappingSettings mappingSettings, CancellationToken ct) =>
             InvokeMapping(() => mappingSettings.SetAsync(request, ct)));
+        admin.MapPost("/batches/{batchId:guid}/validate", async (Guid batchId,
+            StartValidationRequest request, ValidationService service, CancellationToken ct) =>
+        {
+            try
+            {
+                var result = await service.EnqueueAsync(batchId, request.Rehearsal, ct);
+                return Results.Accepted($"/api/migration/batches/{batchId:D}/validation", result);
+            }
+            catch (ValidationRuleException ex) { return Problem(ex); }
+        });
+        review.MapGet("/batches/{batchId:guid}/validation", async (Guid batchId,
+            ValidationService service, CancellationToken ct) =>
+            await service.GetAsync(batchId, ct) is { } result ? Results.Ok(result) : Results.NotFound());
+        review.MapGet("/validation/checks/{checkId:guid}", async (Guid checkId,
+            ValidationService service, CancellationToken ct) =>
+            await service.CheckAsync(checkId, ct) is { } result ? Results.Ok(result) : Results.NotFound());
+        review.MapGet("/validation/checks/{checkId:guid}/differences", (Guid checkId, string? cursor,
+            int? take, ValidationService service, CancellationToken ct) =>
+            InvokeValidation(() => service.DifferencesAsync(checkId, cursor, take ?? 50, ct)));
+        review.MapPost("/validation/checks/{checkId:guid}/explain", (Guid checkId,
+            ExplainValidationCheckRequest request, ClaimsPrincipal user, ValidationService service,
+            CancellationToken ct) => InvokeValidation(() => service.ExplainAsync(checkId,
+                request.Explanation, Actor(user), ct)));
+        review.MapPost("/validation/checks/{checkId:guid}/sign", (Guid checkId,
+            SignValidationCheckRequest request, ClaimsPrincipal user, ValidationService service,
+            CancellationToken ct) => InvokeValidation(() => service.SignAsync(checkId, request.Role,
+                Actor(user), user.FindAll(YojanaClaim.Role).Select(x => x.Value).ToList(), ct)));
+        review.MapGet("/validation/runs/{runId:guid}/sample", (Guid runId, string? cursor, int? take,
+            ValidationService service, CancellationToken ct) => InvokeValidation(() =>
+                service.SampleAsync(runId, cursor, take ?? 50, ct)));
+        review.MapPost("/validation/sample/{sampleId:guid}/trace", (Guid sampleId,
+            TraceValidationSampleRequest request, ClaimsPrincipal user, ValidationService service,
+            CancellationToken ct) => InvokeValidation(() => service.TraceAsync(sampleId, request.Outcome,
+                request.Note, Actor(user), ct)));
+        admin.MapPost("/validation/runs/{runId:guid}/signoff-record", (Guid runId,
+            ClaimsPrincipal user, ValidationService service, CancellationToken ct) =>
+            InvokeValidation(() => service.CreateSignoffAsync(runId, Actor(user), ct)));
+        review.MapGet("/signoff-records/{recordId:guid}", async (Guid recordId,
+            ValidationService service, CancellationToken ct) =>
+            await service.SignoffAsync(recordId, ct) is { } result ? Results.Ok(result) : Results.NotFound());
+        review.MapGet("/signoff-records/{recordId:guid}/export.csv", async (Guid recordId,
+            ValidationService service, CancellationToken ct) =>
+        {
+            try
+            {
+                return Results.File(await service.ExportCsvAsync(recordId, ct), "text/csv; charset=utf-8",
+                    $"migration-signoff-{recordId:D}.csv");
+            }
+            catch (ValidationRuleException ex) { return Problem(ex); }
+        });
+        review.MapGet("/validation/settings", (ValidationSettings validationSettings,
+            CancellationToken ct) => InvokeValidation(() => validationSettings.GetAsync(ct)));
+        admin.MapPut("/validation/settings", (UpdateValidationSettingsRequest request,
+            ValidationSettings validationSettings, CancellationToken ct) =>
+            InvokeValidation(() => validationSettings.SetAsync(request, ct)));
         review.MapGet("/review", (Guid batchId, string? kind, string? family, string? status, string? find,
             string? cursor, int? take, CanonicalisationService service, CancellationToken ct) =>
             Invoke(() => service.ListAsync(batchId, kind, family, status, find, cursor, take ?? 25, ct)));
@@ -265,6 +321,18 @@ public static class MigrationEndpoints
         catch (MappingRuleException ex) { return Problem(ex); }
     }
 
+    private static async Task<IResult> InvokeValidation<T>(Func<Task<T>> action)
+    {
+        try { return Results.Ok(await action()); }
+        catch (ValidationRuleException ex) { return Problem(ex); }
+        catch (TenantSettingVersionConflictException ex)
+        {
+            return Results.Problem(title: "tenant_setting_changed", detail: ex.Message,
+                statusCode: StatusCodes.Status409Conflict,
+                extensions: new Dictionary<string, object?> { ["rule"] = "tenant_setting_changed" });
+        }
+    }
+
     private static IResult Problem(MigrationRuleException ex) => Results.Problem(title: ex.Rule,
         detail: ex.Message, statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
         extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
@@ -284,4 +352,8 @@ public static class MigrationEndpoints
             ["rule"] = ex.Rule,
             ["waitingReviews"] = ex.WaitingReviews,
         });
+
+    private static IResult Problem(ValidationRuleException ex) => Results.Problem(title: ex.Rule,
+        detail: ex.Message, statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
+        extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
 }

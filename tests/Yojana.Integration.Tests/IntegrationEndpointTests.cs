@@ -14,6 +14,7 @@ using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Mapping;
+using Yojana.Integration.LegacyMigration.Validation;
 
 namespace Yojana.Integration.Tests;
 
@@ -151,12 +152,14 @@ public sealed class IntegrationEndpointTests
         builder.Services.AddScoped<ReconstructionService>();
         builder.Services.AddScoped<MappingService>();
         builder.Services.AddScoped<MappingSettings>();
+        builder.Services.AddScoped<ValidationService>();
+        builder.Services.AddScoped<ValidationSettings>();
         builder.Services.AddScoped<Yojana.Integration.LegacyMigration.Apply.ApplyService>();
         var app = builder.Build();
         app.MapMigrationEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
-        Assert.Equal(45, endpoints.Count);
+        Assert.Equal(58, endpoints.Count);
         var readPaths = new HashSet<string>(StringComparer.Ordinal)
         {
             "/api/migration/batches", "/api/migration/batches/{batchId:guid}",
@@ -173,6 +176,13 @@ public sealed class IntegrationEndpointTests
             "/api/migration/batches/{batchId:guid}/map/gaps",
             "/api/migration/plan/units/{planUnitId:guid}",
             "/api/migration/mapping/settings",
+            "/api/migration/batches/{batchId:guid}/validation",
+            "/api/migration/validation/checks/{checkId:guid}",
+            "/api/migration/validation/checks/{checkId:guid}/differences",
+            "/api/migration/validation/runs/{runId:guid}/sample",
+            "/api/migration/signoff-records/{recordId:guid}",
+            "/api/migration/signoff-records/{recordId:guid}/export.csv",
+            "/api/migration/validation/settings",
             "/api/migration/batches/{batchId:guid}/apply", "/api/migration/loads/{loadId:guid}/refusals",
         };
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
@@ -212,6 +222,11 @@ public sealed class IntegrationEndpointTests
             property.Name.Contains("Actor", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(typeof(MigrationReviewDecisionRequest).GetProperties(), property =>
             property.Name.Contains("Actor", StringComparison.OrdinalIgnoreCase));
+        foreach (var type in new[] { typeof(StartValidationRequest), typeof(ExplainValidationCheckRequest),
+                     typeof(SignValidationCheckRequest), typeof(TraceValidationSampleRequest),
+                     typeof(UpdateValidationSettingsRequest) })
+            Assert.DoesNotContain(type.GetProperties(), property => property.Name.Contains("Actor",
+                StringComparison.OrdinalIgnoreCase));
         Assert.True(YojanaRole.IsKnown(YojanaRole.MigrationLead));
         var migrationLead = new ClaimsPrincipal(new ClaimsIdentity(
         [
@@ -246,7 +261,11 @@ public sealed class IntegrationEndpointTests
                     "/api/migration/templates/{templateKey}/approve" or
                     "/api/migration/templates/approve-pattern") ||
                 (methods.Contains("POST") && endpoint.RoutePattern.RawText ==
-                    "/api/migration/review/{itemId:guid}/decision");
+                    "/api/migration/review/{itemId:guid}/decision") ||
+                (methods.Contains("POST") && endpoint.RoutePattern.RawText is
+                    "/api/migration/validation/checks/{checkId:guid}/explain" or
+                    "/api/migration/validation/checks/{checkId:guid}/sign" or
+                    "/api/migration/validation/sample/{sampleId:guid}/trace");
         }
     }
 }
