@@ -211,7 +211,9 @@ public sealed partial class ApplyService
                     }
                     else
                     {
-                        items.Add(Item(DeltaItemKind.CoverRefused, plan, row.UnitId, string.Join(' ', outcome.Reasons)));
+                        // A touched unit comes back with its outcome alone; the finding names it so the list reads on its own.
+                        items.Add(Item(DeltaItemKind.CoverRefused, plan, row.UnitId,
+                            string.Join(' ', outcome.Reasons.Count == 0 ? [outcome.Outcome] : outcome.Reasons)));
                         run.CoverRefused++;
                     }
                 }

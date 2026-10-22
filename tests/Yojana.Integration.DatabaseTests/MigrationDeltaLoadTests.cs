@@ -151,11 +151,13 @@ public sealed class MigrationDeltaLoadTests(IntegrationHostFixture fixture)
         var before = await db.Set<MigrationLoadedUnit>().AsNoTracking().SingleAsync(row =>
             row.SourceKeyHash == covered.SourceKeyHash);
 
-        var delta = await CloneAsync(db, tenant, setup, plan, coverEndChange: (covered.PlanUnitId, new DateOnly(2027, 6, 30)));
+        var delta = await CloneAsync(db, tenant, setup, plan, coverStartChange: (covered.PlanUnitId, new DateOnly(2026, 1, 15)));
         var queued = await apply.EnqueueDeltaAsync(delta.BatchId, Admin, default);
         Assert.Equal(1, await apply.RunPendingAsync(default));
         var view = (await apply.GetAsync(delta.BatchId, default))!;
-        Assert.Equal(1, view.CoverReplaced);
+        var coverFindings = await apply.DeltaItemsAsync(view.LoadId, null, null, 50, default);
+        Assert.True(view.CoverReplaced == 1, string.Join("; ", coverFindings.Items.Select(row =>
+            $"{row.Kind}:{row.ItemCode}:{row.Detail}")) + $" refused={view.Refused}");
         Assert.Equal(0, view.Applied);
         var after = await db.Set<MigrationLoadedUnit>().AsNoTracking().SingleAsync(row =>
             row.SourceKeyHash == covered.SourceKeyHash);
@@ -163,7 +165,7 @@ public sealed class MigrationDeltaLoadTests(IntegrationHostFixture fixture)
         Assert.Equal(queued.LoadId, after.CoverLoadId);
         var serialisation = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         Assert.True(await serialisation.Entitlements.AnyAsync(row => row.UnitId == before.UnitId &&
-            row.MigrationLoadId == queued.LoadId && row.EndDate == new DateOnly(2027, 6, 30)));
+            row.MigrationLoadId == queued.LoadId && row.StartDate == new DateOnly(2026, 1, 15)));
 
         var undone = await apply.RollBackAsync(view.LoadId, Admin, default);
         Assert.Equal(RollBackMigrationLoadResult.RolledBack, undone.Outcome);
@@ -238,7 +240,7 @@ public sealed class MigrationDeltaLoadTests(IntegrationHostFixture fixture)
     /// </summary>
     private async Task<(Guid BatchId, Guid MapRunId)> CloneAsync(IntegrationDbContext db, TenantId tenant, Setup setup,
         List<MigrationPlanUnit> units, (Guid PlanUnitId, string Owner)? ownerChange = null,
-        (Guid PlanUnitId, DateOnly End)? coverEndChange = null,
+        (Guid PlanUnitId, DateOnly Start)? coverStartChange = null,
         IReadOnlyList<(MigrationPlanUnit Template, string SourceKey, string? Serial, string? MakerSerial)>? extra = null)
     {
         var baseBatch = await db.MigrationBatches.AsNoTracking().SingleAsync(row => row.BatchId == setup.BatchId);
@@ -309,14 +311,17 @@ public sealed class MigrationDeltaLoadTests(IntegrationHostFixture fixture)
                     EvidenceSource = row.EvidenceSource, EvidenceDate = row.EvidenceDate,
                 });
             }
-            var newEnd = !fresh && coverEndChange is { } cover && cover.PlanUnitId == unit.PlanUnitId ? cover.End : (DateOnly?)null;
-            foreach (var row in await db.MigrationPlanEntitlements.AsNoTracking().Where(row => row.PlanUnitId == unit.PlanUnitId).ToListAsync())
+            var newStart = !fresh && coverStartChange is { } cover && cover.PlanUnitId == unit.PlanUnitId ? cover.Start : (DateOnly?)null;
+            var entitlements = await db.MigrationPlanEntitlements.AsNoTracking().Where(row => row.PlanUnitId == unit.PlanUnitId).ToListAsync();
+            // The source changed the start of the named cover: that entitlement and the evidence row it was selected from.
+            var changedCover = newStart is null ? null : entitlements.FirstOrDefault(row => row.PolicyId != null);
+            foreach (var row in entitlements)
             {
                 db.MigrationPlanEntitlements.Add(new MigrationPlanEntitlement
                 {
                     TenantId = tenant, PlanEntitlementId = Guid.CreateVersion7(), MapRunId = mapRunId, PlanUnitId = id,
                     CoverageFamily = row.CoverageFamily, PolicyId = row.PolicyId, PolicyVersion = row.PolicyVersion,
-                    StartDate = row.StartDate, EndDate = newEnd ?? row.EndDate, TerminationDate = row.TerminationDate,
+                    StartDate = row == changedCover ? newStart : row.StartDate, EndDate = row.EndDate, TerminationDate = row.TerminationDate,
                     RemainingDays = row.RemainingDays, Expired = row.Expired, Direction = row.Direction,
                     Provenance = row.Provenance, DateSource = row.DateSource, SourceKey = row.SourceKey,
                 });
@@ -326,8 +331,10 @@ public sealed class MigrationDeltaLoadTests(IntegrationHostFixture fixture)
                 db.MigrationPlanWarrantyEvidence.Add(new MigrationPlanWarrantyEvidence
                 {
                     TenantId = tenant, PlanWarrantyEvidenceId = Guid.CreateVersion7(), MapRunId = mapRunId, PlanUnitId = id,
-                    SourceKind = row.SourceKind, SourceKey = row.SourceKey, StartDate = row.StartDate,
-                    EndDate = newEnd is not null && row.SelectedForEntitlement ? newEnd : row.EndDate,
+                    SourceKind = row.SourceKind, SourceKey = row.SourceKey,
+                    StartDate = changedCover is not null && row.SelectedForEntitlement && row.SourceKind == changedCover.DateSource
+                        && row.SourceKey == changedCover.SourceKey ? newStart : row.StartDate,
+                    EndDate = row.EndDate,
                     TerminationDate = row.TerminationDate, Direction = row.Direction,
                     SelectedForEntitlement = row.SelectedForEntitlement,
                 });
