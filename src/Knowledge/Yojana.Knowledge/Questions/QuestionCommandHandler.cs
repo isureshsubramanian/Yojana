@@ -3,6 +3,7 @@ using Wolverine;
 using Yojana.Knowledge.Contracts;
 using Yojana.Knowledge.Data;
 using Yojana.Knowledge.Data.Entities;
+using Yojana.Knowledge.Reports;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Records;
 using Yojana.Platform.Contracts.Security;
@@ -15,7 +16,8 @@ public static class QuestionCommandHandler
 {
     public static async Task<AskQuestionResult> Handle(AskQuestion command, KnowledgeDbContext db,
         RecordReferenceLookup records, ITenantStaffDirectory staff, ITenantContext tenant, IClock clock,
-        IMessageBus bus, CancellationToken cancellationToken)
+        IQuestionTextSearch textSearch, KnowledgeReportSettings reportSettings, IMessageBus bus,
+        CancellationToken cancellationToken)
     {
         Required(command.Title, 240, "question_title_required", "question_title_too_long", "Question title");
         Required(command.Body, 8000, "question_body_required", "question_body_too_long", "Question body");
@@ -46,6 +48,27 @@ public static class QuestionCommandHandler
             Status = QuestionStatus.Open, DirectedToUser = command.DirectedToUser,
             DirectedToRole = command.DirectedToRole, AskedBy = command.Actor.UserId, AskedAt = now, UpdatedAt = now,
         });
+        var threshold = await reportSettings.SimilarEntryRankAsync(cancellationToken);
+        // The ask panel runs the existing similar-question search from the title. Repeat that exact ranking at the
+        // command boundary so the report does not depend on whether this browser completed its debounced preview.
+        var similar = await textSearch.SearchEntriesAsync(command.Title, 10, null,
+            cancellationToken);
+        var matchingEntries = similar.Where(match => match.Rank >= threshold).ToList();
+        if (matchingEntries.Count > 0)
+        {
+            var ids = matchingEntries.Select(match => match.EntryId).ToList();
+            var existingAtAsking = await db.Entries.AsNoTracking().Where(entry => entry.TenantId == tenant.TenantId
+                    && ids.Contains(entry.EntryId) && entry.Status == KnowledgeEntryStatus.Published
+                    && entry.PublishedAt != null && entry.PublishedAt <= now)
+                .Select(entry => entry.EntryId).ToListAsync(cancellationToken);
+            var existing = existingAtAsking.ToHashSet();
+            db.SimilarEntries.AddRange(matchingEntries.Where(match => existing.Contains(match.EntryId)).Select(match =>
+                new QuestionSimilarEntry
+                {
+                    TenantId = tenant.TenantId, QuestionId = questionId, EntryId = match.EntryId,
+                    Rank = match.Rank, MatchedAt = now,
+                }));
+        }
         db.Participants.Add(new QuestionParticipant
         {
             TenantId = tenant.TenantId, QuestionId = questionId, UserId = command.Actor.UserId, Asked = true,
@@ -148,6 +171,7 @@ public static class QuestionCommandHandler
             throw new QuestionRuleException("reply_not_found", "The reply does not belong to this question.");
         question.Status = QuestionStatus.Answered;
         question.UpdatedAt = clock.UtcNow;
+        question.AcceptedAt = question.UpdatedAt;
         question.AcceptedReplyId = command.ReplyId;
         question.ClosedReason = null;
         question.ClosedBy = null;
@@ -169,6 +193,7 @@ public static class QuestionCommandHandler
         var now = clock.UtcNow;
         question.Status = QuestionStatus.ClosedWithoutAnswer;
         question.AcceptedReplyId = null;
+        question.AcceptedAt = null;
         question.ClosedReason = command.Reason.Trim();
         question.ClosedBy = command.Actor.UserId;
         question.ClosedAt = now;
@@ -188,6 +213,7 @@ public static class QuestionCommandHandler
             throw new QuestionRuleException("question_already_open", "The question is already open.");
         question.Status = QuestionStatus.Open;
         question.AcceptedReplyId = null;
+        question.AcceptedAt = null;
         question.ClosedReason = null;
         question.ClosedBy = null;
         question.ClosedAt = null;

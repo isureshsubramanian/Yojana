@@ -49,4 +49,7 @@ public interface ITenantTrainingDirectory
 
     Task<IReadOnlyList<TenantTrainingMember>> AllActiveMembersInRoleAsync(string role,
         CancellationToken cancellationToken);
+
+    /// <summary>Membership dates for aggregate new-team-member reporting; no question counts cross this boundary.</summary>
+    Task<IReadOnlyList<TenantTrainingMember>> AllActiveMembersAsync(CancellationToken cancellationToken);
 }

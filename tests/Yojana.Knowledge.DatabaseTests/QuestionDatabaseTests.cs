@@ -490,10 +490,10 @@ public sealed class QuestionDatabaseTests(KnowledgeHostFixture fixture)
             "knowledge_entry_review_round", "knowledge_entry_tag", "knowledge_entry_version",
             "knowledge_entry_written_against", "knowledge_screen_change", "question", "question_digest",
             "question_notification", "question_notification_preference", "question_participant", "question_reply",
-            "question_reply_revision", "training_path", "training_path_entry", "training_path_version",
+            "question_reply_revision", "question_similar_entry", "training_path", "training_path_entry", "training_path_version",
             "training_progress", "training_welcome_dismissal" }, tables.Order());
         var predicates = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM sys.security_predicates p JOIN sys.tables t ON t.object_id=p.target_object_id WHERE t.schema_id=SCHEMA_ID('knowledge')").SingleAsync();
-        Assert.Equal(60, predicates);
+        Assert.Equal(63, predicates);
         var searchKeys = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM sys.indexes WHERE name IN ('ux_question_question_id', 'ux_question_reply_reply_id', 'ux_knowledge_entry_entry_id')").SingleAsync();
         Assert.Equal(3, searchKeys);
         var fullTextInstalled = await db.Database.SqlQueryRaw<int>("SELECT CONVERT(int, FULLTEXTSERVICEPROPERTY('IsFullTextInstalled')) AS [Value]").SingleAsync();

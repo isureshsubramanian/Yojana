@@ -17,6 +17,7 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
     public DbSet<QuestionReply> Replies => Set<QuestionReply>();
     public DbSet<QuestionReplyRevision> Revisions => Set<QuestionReplyRevision>();
     public DbSet<QuestionParticipant> Participants => Set<QuestionParticipant>();
+    public DbSet<QuestionSimilarEntry> SimilarEntries => Set<QuestionSimilarEntry>();
     public DbSet<KnowledgeEntry> Entries => Set<KnowledgeEntry>();
     public DbSet<KnowledgeEntryVersion> EntryVersions => Set<KnowledgeEntryVersion>();
     public DbSet<KnowledgeEntryTag> EntryTags => Set<KnowledgeEntryTag>();
@@ -45,6 +46,8 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
                     "(directed_to_user IS NOT NULL AND directed_to_role IS NULL) OR (directed_to_user IS NULL AND directed_to_role IS NOT NULL)");
                 table.HasCheckConstraint("ck_question_closed_state",
                     "(status = 'closed_without_answer' AND closed_reason IS NOT NULL AND closed_by IS NOT NULL AND closed_at IS NOT NULL) OR status <> 'closed_without_answer'");
+                table.HasCheckConstraint("ck_question_answered_state",
+                    "(status = 'answered' AND accepted_reply_id IS NOT NULL AND accepted_at IS NOT NULL) OR status <> 'answered'");
             });
             b.HasKey(x => new { x.TenantId, x.QuestionId });
             b.Property(x => x.RecordKind).HasMaxLength(64);
@@ -59,6 +62,9 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
             b.HasIndex(x => new { x.TenantId, x.DirectedToUser, x.Status, x.AskedAt, x.QuestionId });
             b.HasIndex(x => new { x.TenantId, x.DirectedToRole, x.Status, x.AskedAt, x.QuestionId });
             b.HasIndex(x => new { x.TenantId, x.Status, x.UpdatedAt, x.QuestionId });
+            b.HasIndex(x => new { x.TenantId, x.AskedAt, x.QuestionId })
+                .IncludeProperties(x => new { x.Status, x.RecordKind, x.RecordId, x.DirectedToRole,
+                    x.AcceptedAt });
         });
         modelBuilder.Entity<QuestionReply>(b =>
         {
@@ -84,6 +90,17 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
             b.HasKey(x => new { x.TenantId, x.QuestionId, x.UserId });
             b.HasIndex(x => new { x.TenantId, x.UserId, x.LastReadAt, x.QuestionId });
             b.HasOne<Question>().WithMany().HasForeignKey(x => new { x.TenantId, x.QuestionId }).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<QuestionSimilarEntry>(b =>
+        {
+            b.ToTable("question_similar_entry", table => table.HasCheckConstraint(
+                "ck_question_similar_entry_rank", "rank BETWEEN 1 AND 1000"));
+            b.HasKey(x => new { x.TenantId, x.QuestionId, x.EntryId });
+            b.HasIndex(x => new { x.TenantId, x.EntryId, x.MatchedAt, x.QuestionId });
+            b.HasOne<Question>().WithMany().HasForeignKey(x => new { x.TenantId, x.QuestionId })
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<KnowledgeEntry>().WithMany().HasForeignKey(x => new { x.TenantId, x.EntryId })
+                .OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<KnowledgeEntry>(b =>
         {
@@ -250,6 +267,7 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
                 "ck_training_progress_entry_version", "read_entry_version >= 1"));
             b.HasKey(x => new { x.TenantId, x.PathId, x.EntryId, x.UserId });
             b.HasIndex(x => new { x.TenantId, x.UserId, x.ReadAt, x.PathId, x.EntryId });
+            b.HasIndex(x => new { x.TenantId, x.ReadAt, x.EntryId, x.UserId });
             b.HasOne<TrainingPath>().WithMany().HasForeignKey(x => new { x.TenantId, x.PathId })
                 .OnDelete(DeleteBehavior.Restrict);
             b.HasOne<KnowledgeEntry>().WithMany().HasForeignKey(x => new { x.TenantId, x.EntryId })

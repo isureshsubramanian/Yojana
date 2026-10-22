@@ -138,6 +138,12 @@ public sealed class UserDirectory(PlatformDbContext db, ITenantContext tenant) :
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<TenantTrainingMember>> AllActiveMembersAsync(
+        CancellationToken cancellationToken) => await ActiveTrainingMembers()
+        .OrderBy(m => m.UserId)
+        .Select(m => new TenantTrainingMember(m.UserId, m.User!.DisplayName, m.Roles, m.CreatedAt))
+        .ToListAsync(cancellationToken);
+
     private IQueryable<Data.Platform.Entities.UserTenantMembership> ActiveTrainingMembers() =>
         db.Memberships.AsNoTracking().Where(m => m.TenantId == tenant.TenantId && m.DeactivatedAt == null
             && m.CustomerPartyRef == null && m.User!.IsActive && m.Roles.Count > 0);
