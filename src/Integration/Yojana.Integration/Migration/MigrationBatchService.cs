@@ -23,6 +23,17 @@ public sealed class MigrationBatchService(
         CancellationToken cancellationToken)
     {
         Actor(actor);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable,
+            cancellationToken);
+        var numberLock = $"yojana:migration-batch-number:{tenant.TenantId}";
+        // The per-tenant display number and this transaction lock are one invariant: removing the lock permits
+        // concurrent extractions to choose the same number; changing the lock name creates separate allocators.
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            DECLARE @result int;
+            EXEC @result = sys.sp_getapplock @Resource={numberLock}, @LockMode=N'Exclusive',
+                @LockOwner=N'Transaction', @LockTimeout=20000;
+            IF @result < 0 THROW 51000, 'Migration batch number allocation timed out.', 1;
+            """, cancellationToken);
         var source = await db.MigrationSources.AsNoTracking().SingleOrDefaultAsync(x =>
             x.TenantId == tenant.TenantId && x.ConnectionId == request.SourceId, cancellationToken)
             ?? throw new MigrationRuleException("migration_source_not_found", "The migration source was not found.");
@@ -31,10 +42,14 @@ public sealed class MigrationBatchService(
             : source.Runtime != MigrationSourceRuntime.SqlServer
                 ? "migration_source_runtime_unsupported" : null;
         var now = clock.UtcNow;
+        var displayNumber = (await db.MigrationBatches.AsNoTracking()
+            .Where(x => x.TenantId == tenant.TenantId).MaxAsync(x => (int?)x.DisplayNumber,
+                cancellationToken) ?? 0) + 1;
         var batch = new MigrationBatch
         {
             TenantId = tenant.TenantId,
             BatchId = Guid.CreateVersion7(now),
+            DisplayNumber = displayNumber,
             SourceSystem = source.SourceSystem,
             ConnectionId = source.ConnectionId,
             Kind = "full",
@@ -46,6 +61,7 @@ public sealed class MigrationBatchService(
         };
         db.MigrationBatches.Add(batch);
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return new(batch.BatchId, batch.Status, batch.FailureText);
     }
 
@@ -189,9 +205,11 @@ public sealed class MigrationBatchService(
     }
 
     private static MigrationBatchView View(MigrationBatch row, string requestedByName,
-        IReadOnlyList<MigrationBatchTableView>? tables = null) => new(row.BatchId, row.ConnectionId,
+        IReadOnlyList<MigrationBatchTableView>? tables = null) => new(row.BatchId, FormatNumber(row.DisplayNumber), row.ConnectionId,
         row.SourceSystem, row.Kind, requestedByName, row.RequestedAt, row.StartedAt, row.FinishedAt, row.Status,
         row.FailureText, tables);
+
+    private static string FormatNumber(int value) => $"MB-{value:0000}";
 
     private static void Actor(string actor)
     {

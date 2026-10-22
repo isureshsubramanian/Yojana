@@ -51,6 +51,7 @@ const failureLabels: Record<string, string> = {
   migration_source_runtime_unsupported: "This source type cannot be extracted in this build.",
   migration_extraction_failed: "The extraction failed. Check the source connection and try again.",
   migration_extraction_cancelled: "The extraction was cancelled.",
+  migration_validation_failed: "Validation failed.",
   migration_apply_cancelled: "The load was cancelled.",
   migration_apply_failed: "The load failed.",
 };
@@ -266,6 +267,7 @@ export function validationAttentionCount(run: MigrationValidation | null | undef
 }
 export function signoffDisabledReason(run: MigrationValidation | null | undefined): string | null {
   if (!run) return "Run validation checks first";
+  if (run.signoffRecordId) return "A sign-off record exists for this run";
   if (run.status !== "completed") return "Validation checks have not completed";
   if (run.rehearsal) return null;
   const reasons: string[] = [];
@@ -394,7 +396,7 @@ export function duration(milliseconds: number | null | undefined): string {
 }
 export function elapsed(start: string | null, end: string | null): string { return start && end ? duration(new Date(end).getTime() - new Date(start).getTime()) : "—"; }
 export function signedChange(value: number | null): string { return value === null ? "—" : value > 0 ? `+${value.toLocaleString()}` : value < 0 ? `−${Math.abs(value).toLocaleString()}` : "0"; }
-export function batchLabel(batch: Pick<MigrationBatch, "requestedAt">, latest = false): string { return latest ? "Latest extraction" : `Extraction ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(asUtc(batch.requestedAt))}`; }
+export function batchLabel(batch: Pick<MigrationBatch, "displayNumber">, latest = false): string { return latest ? `Latest extraction · ${batch.displayNumber}` : `Extraction ${batch.displayNumber}`; }
 export function batchTotals(tables: readonly MigrationBatchTable[]) { return tables.reduce((sum, row) => ({ rowsRead: sum.rowsRead + row.rowsRead, inserted: sum.inserted + row.inserted, updated: sum.updated + row.updated, unchanged: sum.unchanged + row.unchanged, absent: sum.absent + row.absent, durationMilliseconds: sum.durationMilliseconds + row.durationMilliseconds }), { rowsRead: 0, inserted: 0, updated: 0, unchanged: 0, absent: 0, durationMilliseconds: 0 }); }
 export function batchResult(batch: MigrationBatch): string {
   const failure = failureLabel(batch.failure); if (failure) return failure;

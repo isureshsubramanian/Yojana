@@ -218,6 +218,12 @@ public static class MigrationEndpoints
         review.MapGet("/batches/{batchId:guid}/validation", async (Guid batchId,
             ValidationService service, CancellationToken ct) =>
             await service.GetAsync(batchId, ct) is { } result ? Results.Ok(result) : Results.NotFound());
+        review.MapGet("/batches/{batchId:guid}/validation/export.csv", (Guid batchId, HttpContext http,
+            ValidationService service, [Microsoft.AspNetCore.Mvc.FromServices] ITabularExporter exporter,
+            CancellationToken ct) => ValidationExport(batchId, "csv", http, service, exporter, ct));
+        review.MapGet("/batches/{batchId:guid}/validation/export.xlsx", (Guid batchId, HttpContext http,
+            ValidationService service, [Microsoft.AspNetCore.Mvc.FromServices] ITabularExporter exporter,
+            CancellationToken ct) => ValidationExport(batchId, "xlsx", http, service, exporter, ct));
         review.MapGet("/validation/checks/{checkId:guid}", async (Guid checkId,
             ValidationService service, CancellationToken ct) =>
             await service.CheckAsync(checkId, ct) is { } result ? Results.Ok(result) : Results.NotFound());
@@ -331,6 +337,18 @@ public static class MigrationEndpoints
                 statusCode: StatusCodes.Status409Conflict,
                 extensions: new Dictionary<string, object?> { ["rule"] = "tenant_setting_changed" });
         }
+    }
+
+    private static async Task<IResult> ValidationExport(Guid batchId, string format, HttpContext http,
+        ValidationService service, ITabularExporter exporter, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var table = await service.ExportChecksAsync(batchId, cancellationToken);
+            return Results.Stream(stream => exporter.WriteAsync(format, table, stream, http.RequestAborted),
+                exporter.ContentType(format), $"migration-validation{exporter.Extension(format)}");
+        }
+        catch (ValidationRuleException ex) { return Problem(ex); }
     }
 
     private static IResult Problem(MigrationRuleException ex) => Results.Problem(title: ex.Rule,

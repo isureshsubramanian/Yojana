@@ -14,6 +14,7 @@ internal static class ValidationModel
             b.Property(x => x.TargetKind).HasMaxLength(20);
             b.Property(x => x.Status).HasMaxLength(20);
             b.Property(x => x.FailureCode).HasMaxLength(100);
+            b.Property(x => x.FailureDetail).HasMaxLength(2000);
             b.HasIndex(x => new { x.TenantId, x.BatchId, x.RequestedAt, x.RunId });
             b.HasIndex(x => new { x.TenantId, x.Status, x.RequestedAt, x.RunId });
             b.HasIndex(x => new { x.TenantId, x.MapRunId, x.RunId });

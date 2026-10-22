@@ -46,6 +46,9 @@ internal static class MigrationModel
             builder.Property(x => x.RequestedBy).HasMaxLength(320);
             builder.Property(x => x.Status).HasMaxLength(20);
             builder.Property(x => x.FailureText).HasMaxLength(2000);
+            // This unique index is the database half of MigrationBatchService's transaction-locked allocator.
+            // Removing it loses the final duplicate backstop; changing its key breaks per-tenant numbering.
+            builder.HasIndex(x => new { x.TenantId, x.DisplayNumber }).IsUnique();
             builder.HasIndex(x => new { x.TenantId, x.RequestedAt, x.BatchId });
             // This filtered index is the database backstop for the worker's claim transaction. The worker and index
             // are coupled only by the literal running state; changing that state without this filter permits two

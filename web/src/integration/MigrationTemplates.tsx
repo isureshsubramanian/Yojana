@@ -7,11 +7,11 @@ import { ErrorNote, Section } from "../units/common";
 import { MigrationAccess, MigrationPage } from "./MigrationCommon";
 import { migrationApi } from "./migrationApi";
 import {
-  TEMPLATE_STATES, mayAdministerMigration, templateFamilyLabel,
+  TEMPLATE_STATES, batchLabel, mayAdministerMigration, templateFamilyLabel,
   templateResolutionLabel, templateStateLabel, templateStateTone, templateTermsLabel,
 } from "./migrationModel";
 import type {
-  PolicyCatalogue, TemplateKeywordRule, TemplateKeywordRules, TemplateMappingDetail,
+  MigrationBatch, PolicyCatalogue, TemplateKeywordRule, TemplateKeywordRules, TemplateMappingDetail,
   TemplateMappingState, TemplateMappingSummary, TemplateMappingSummaryView, TemplatePattern,
   TemplatePatternPage,
 } from "./migrationTypes";
@@ -23,6 +23,7 @@ export function Component() { return <MigrationAccess><TemplateScreen /></Migrat
 function TemplateScreen() {
   const admin = mayAdministerMigration(useSession().roles);
   const [summary, setSummary] = useState<TemplateMappingSummaryView | null>(null);
+  const [latestBatch, setLatestBatch] = useState<MigrationBatch | null>(null);
   const [catalogue, setCatalogue] = useState<PolicyCatalogue | null>(null);
   const [result, setResult] = useState<TemplatePatternPage | null>(null);
   const [state, setState] = useState<TemplateMappingState | "">("");
@@ -43,9 +44,10 @@ function TemplateScreen() {
     Promise.all([
       migrationApi.templatePatterns({ state, ...(deleted ? { deletedInSource: deleted === "true" } : {}), ...(cursor ? { cursor } : {}), take: TAKE }, controller.signal),
       migrationApi.templateSummary(controller.signal), migrationApi.templateCatalogue(controller.signal),
-    ]).then(([page, totals, policies]) => {
+      migrationApi.batches(undefined, controller.signal),
+    ]).then(([page, totals, policies, batches]) => {
       if (controller.signal.aborted) return;
-      setResult(page); setSummary(totals); setCatalogue(policies);
+      setResult(page); setSummary(totals); setCatalogue(policies); setLatestBatch(batches.items[0] ?? null);
       setSelectedPatternKey(current => page.items.some(pattern => pattern.patternKey === current) ? current : page.items[0]?.patternKey ?? "");
     }).catch(reason => { if (!controller.signal.aborted) setError(reason); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -104,7 +106,7 @@ function TemplateScreen() {
   ], []);
 
   const actions = admin ? <><button type="button" className="btn" onClick={() => void showKeywordRules()}>Keyword rules</button><button type="button" className="btn" disabled={busy} onClick={() => void proposeAgain()}>{busy ? "Working…" : "Propose again"}</button></> : undefined;
-  return <><MigrationPage title="Contract templates" eyebrow="Service-contract templates in the latest extraction · approvals carry over to later unchanged extractions" sub="Each source template is split into a base warranty and reusable add-on cover blocks. Templates with the same blocks form one approval pattern." actions={actions}>
+  return <><MigrationPage title="Contract templates" eyebrow={`Service-contract templates in ${latestBatch ? batchLabel(latestBatch, true).toLowerCase() : "the latest extraction"} · approvals carry over to later unchanged extractions`} sub="Each source template is split into a base warranty and reusable add-on cover blocks. Templates with the same blocks form one approval pattern." actions={actions}>
     {summary && <KpiStrip label="Contract template figures" kpis={[
       { label: "Templates", value: summary.templates.toLocaleString(), detail: `${summary.patterns.toLocaleString()} patterns · ${summary.activeContracts.toLocaleString()} active contracts` },
       { label: "Approved", value: summary.approved.templates.toLocaleString(), detail: `${summary.approved.patterns.toLocaleString()} patterns · ${summary.approved.activeContracts.toLocaleString()} active contracts` },

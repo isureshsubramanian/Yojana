@@ -136,6 +136,20 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
         var gapRun = await serialisation.EntitlementGapRuns.SingleAsync(row => row.RunId == view.GapReportRunId);
         Assert.Equal(EntitlementGapTrigger.MigrationLoad, gapRun.RunTrigger);
 
+        var moduleValidationId = Guid.CreateVersion7(fixture.Clock.UtcNow.AddMilliseconds(1));
+        db.MigrationValidationRuns.Add(new MigrationValidationRun
+        {
+            TenantId = tenant, RunId = moduleValidationId, BatchId = ids.BatchId, MapRunId = map.RunId,
+            TargetKind = ValidationTargetKind.Module, Rehearsal = true, RequestedAt = fixture.Clock.UtcNow,
+            StartedAt = fixture.Clock.UtcNow, FinishedAt = fixture.Clock.UtcNow,
+            Status = ValidationRunStatus.Completed,
+        });
+        await db.SaveChangesAsync();
+        var moduleValidation = await scope.ServiceProvider.GetRequiredService<ValidationService>()
+            .GetAsync(ids.BatchId, default);
+        Assert.Equal(view.FinishedAt, moduleValidation!.LoadDate);
+        Assert.Equal(1, moduleValidation.RehearsalNumber);
+
         var again = await Assert.ThrowsAsync<ApplyRuleException>(() => apply.EnqueueAsync(ids.BatchId, new(true), "user:admin", default));
         Assert.Equal("migration_apply_load_open", again.Rule);
 

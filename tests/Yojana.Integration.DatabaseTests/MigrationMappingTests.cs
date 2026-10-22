@@ -260,6 +260,8 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         stopwatch.Stop();
         var view = await validation.GetAsync(ids.BatchId, default);
         Assert.NotNull(view);
+        Assert.Equal(1, view.RehearsalNumber);
+        Assert.Null(view.LoadDate);
         Assert.Equal(14, view.ChecksTotal);
         Assert.Equal(ValidationTargetKind.Plan, view.TargetKind);
         foreach (var code in new[]
@@ -339,6 +341,7 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         Assert.Equal(firstSample.Items.Select(x => x.Serial).Order(), secondSample.Items.Select(x => x.Serial).Order());
         var secondView = await validation.GetAsync(ids.BatchId, default);
         Assert.NotNull(secondView);
+        Assert.Equal(2, secondView.RehearsalNumber);
         var changedCalls = secondView.Checks.Single(x => x.Code == "open_service_calls");
         Assert.Equal(ValidationResult.Explained, changedCalls.Result);
         Assert.Empty(changedCalls.Signatures);
@@ -368,6 +371,23 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         Assert.Equal(14, rehearsal.Lines.Count);
         Assert.Contains("REHEARSAL", System.Text.Encoding.UTF8.GetString(
             await validation.ExportCsvAsync(rehearsal.RecordId, default)));
+        var reloaded = await validation.GetAsync(ids.BatchId, default);
+        Assert.Equal(rehearsal.RecordId, reloaded!.SignoffRecordId);
+        Assert.True(reloaded.SignoffRehearsal);
+        Assert.Equal(rehearsal.CreatedAt, reloaded.SignoffCreatedAt);
+        Assert.Equal(rehearsal.CreatedByName, reloaded.SignoffCreatedByName);
+
+        var checksExport = await validation.ExportChecksAsync(ids.BatchId, default);
+        await using var checksCsv = new MemoryStream();
+        await scope.ServiceProvider.GetRequiredService<ITabularExporter>()
+            .WriteAsync("csv", checksExport, checksCsv, default);
+        var checksText = System.Text.Encoding.UTF8.GetString(checksCsv.ToArray());
+        Assert.StartsWith("Check,Limit,Source total,Plan total,Difference,Result,Explanation,Explained by,Explained at,How counted,Ran at,Duration (milliseconds),Prepared by,Prepared at,Reviewed by,Reviewed at\r\n", checksText);
+        Assert.Contains("Unit master count,Zero", checksText);
+        Assert.DoesNotContain("unit_master", checksText);
+        Assert.DoesNotContain("person-a", checksText);
+        Assert.DoesNotContain("person-b", checksText);
+        Assert.Contains("Unknown user", checksText);
 
         fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddSeconds(1);
         var finalRun = await validation.EnqueueAsync(ids.BatchId, false, default);
@@ -375,6 +395,18 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
         var blocked = await Assert.ThrowsAsync<ValidationRuleException>(() =>
             validation.CreateSignoffAsync(finalRun.RunId, "person-b", default));
         Assert.Equal("migration_signoff_hard_fail", blocked.Rule);
+        var finalView = await validation.GetAsync(ids.BatchId, default);
+        Assert.NotNull(finalView);
+        Assert.Null(finalView.RehearsalNumber);
+
+        var failed = await db.MigrationValidationRuns.SingleAsync(x => x.RunId == finalRun.RunId);
+        failed.Status = ValidationRunStatus.Failed;
+        failed.FailureCode = "migration_validation_failed";
+        failed.FailureDetail = "Validation could not read the loaded unit totals.";
+        await db.SaveChangesAsync();
+        var failedView = await validation.GetAsync(ids.BatchId, default);
+        Assert.Equal("migration_validation_failed", failedView!.FailureCode);
+        Assert.Equal("Validation could not read the loaded unit totals.", failedView.FailureDetail);
 
         var otherTenant = await fixture.NewTenantAsync("valother");
         using var otherScope = fixture.ScopeFor(otherTenant);
@@ -711,7 +743,7 @@ public sealed class MigrationMappingTests(IntegrationHostFixture fixture)
 
     private static MigrationBatch Batch(TenantId tenant, Guid sourceId, Guid batchId) => new()
     {
-        TenantId = tenant, BatchId = batchId, ConnectionId = sourceId, SourceSystem = "fixture-source",
+        TenantId = tenant, BatchId = batchId, DisplayNumber = 1, ConnectionId = sourceId, SourceSystem = "fixture-source",
         Kind = "full", RequestedBy = "fictional-migration-lead", RequestedAt = Extracted,
         StartedAt = Extracted, FinishedAt = Extracted, Status = MigrationBatchStatus.Succeeded,
     };

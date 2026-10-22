@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
-  OUTCOMES, REVIEW_KINDS, REVIEW_STATUSES, batchResult, batchStatusLabel, batchTotals, candidateLetter,
+  OUTCOMES, REVIEW_KINDS, REVIEW_STATUSES, batchLabel, batchResult, batchStatusLabel, batchTotals, candidateLetter,
   canonicalisationStatusLabel, countTotal, duration, factLabel, factValue, finalLoadDisabledReason, loadStatusLabel,
   loadStatusTone, mappingGapLabel, matchRuleLabel, mayAdministerMigration, phaseStatusLabel, phaseStatusTone,
   mayPrepareValidation, mayReadMigration, mayReviewValidation, outcomeLabel, percentage, profileClass, profileStatusLabel, profileTotals, refusalRuleLabel,
@@ -25,7 +25,7 @@ const integrationTabs = readFileSync(new URL("../src/integration/Common.tsx", im
 const gapReportScreen = readFileSync(new URL("../src/entitlements/GapReport.tsx", import.meta.url), "utf8");
 
 const batch: MigrationBatch = {
-  batchId: "internal-only", sourceId: "source-internal", sourceSystem: "source-one", kind: "full",
+  batchId: "internal-only", displayNumber: "MB-0007", sourceId: "source-internal", sourceSystem: "source-one", kind: "full",
   requestedByName: "R. Okafor", requestedAt: "2026-09-01T08:00:00Z", startedAt: "2026-09-01T08:00:00Z",
   finishedAt: "2026-09-01T09:02:03Z", status: "succeeded", failure: null,
   tables: [
@@ -80,7 +80,9 @@ test("migration API adapter covers the merged endpoints and sends no browser act
 
 const validationRun: MigrationValidation = {
   runId: "run-internal", batchId: "batch-internal", mapRunId: "map-internal", targetKind: "module",
-  rehearsal: false, status: "completed", startedAt: "2026-09-01T08:00:00Z", finishedAt: "2026-09-01T08:01:00Z",
+  rehearsal: false, rehearsalNumber: null, status: "completed", startedAt: "2026-09-01T08:00:00Z", finishedAt: "2026-09-01T08:01:00Z",
+  loadDate: "2026-09-01T07:55:00Z", signoffRecordId: null, signoffRehearsal: null,
+  signoffCreatedAt: null, signoffCreatedByName: null, failureCode: null, failureDetail: null,
   checksTotal: 3, passed: 1, explained: 0, failed: 2, hardFailed: 1, signedChecks: 1,
   units: 409_118, events: 3_611_402, eventsShortPercent: 0.04, sampleTraced: 199, sampleTotal: 200,
   hardFailSummary: "One hard fail.", checks: [
@@ -96,6 +98,10 @@ test("validation screen maps fixture fields into the approved grid and KPI struc
   for (const field of ["checksTotal", "signedChecks", "units", "events", "eventsShortPercent", "sampleTraced", "sampleTotal", "sourceTotal", "targetTotal", "difference"]) assert.match(validationScreen, new RegExp(`run\\.${field}|check\\.${field}`));
   assert.equal(validationRun.units.toLocaleString("en"), "409,118");
   assert.equal(percentage(validationRun.eventsShortPercent), "0.04%");
+  assert.equal(batchLabel(batch), "Extraction MB-0007");
+  assert.equal(batchLabel(batch, true), "Latest extraction · MB-0007");
+  for (const screen of [consoleScreen, profilingScreen, reviewScreen, templateScreen, validationScreen]) assert.match(screen, /batchLabel/);
+  assert.match(validationScreen, /load date/);
 });
 
 test("hard failures show the approved cutover warning and final sign-off reason", () => {
@@ -106,11 +112,22 @@ test("hard failures show the approved cutover warning and final sign-off reason"
 });
 
 test("rehearsal sign-off bypasses the final gate and carries a visible stamp", () => {
-  assert.equal(signoffDisabledReason({ ...validationRun, rehearsal: true }), null);
+  assert.equal(signoffDisabledReason({ ...validationRun, rehearsal: true, rehearsalNumber: 3 }), null);
   assert.match(validationScreen, /record\.rehearsal \? "REHEARSAL" : "FINAL"/);
   assert.match(validationScreen, /Creates a REHEARSAL record/);
   assert.match(validationScreen, /signoffExportUrl/);
-  assert.doesNotMatch(validationScreen, /Excel/);
+  assert.match(validationScreen, /Rehearsal R/);
+  assert.match(validationScreen, /validationExportUrl\(batchId, "csv"\)/);
+  assert.match(validationScreen, /validationExportUrl\(batchId, "xlsx"\)/);
+  assert.match(validationScreen, />Excel</);
+});
+
+test("a sign-off returned by a reload keeps the action disabled and the CSV available", () => {
+  const reloaded = { ...validationRun, signoffRecordId: "signoff-internal", signoffRehearsal: false,
+    signoffCreatedAt: "2026-09-01T08:30:00Z", signoffCreatedByName: "Anika Iyer" };
+  assert.equal(signoffDisabledReason(reloaded), "A sign-off record exists for this run");
+  assert.match(validationScreen, /run\?\.signoffRecordId/);
+  assert.match(validationScreen, /migrationApi\.signoffExportUrl\(signoffRecordId\)/);
 });
 
 test("validation actions follow preparer and reviewer role gates", () => {

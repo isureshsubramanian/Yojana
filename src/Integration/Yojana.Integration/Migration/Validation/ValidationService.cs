@@ -1,11 +1,13 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.Data;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
+using Yojana.Integration.LegacyMigration.Apply;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Reconstruction;
@@ -101,10 +103,13 @@ public sealed class ValidationService(
                 await db.SaveChangesAsync(cancellationToken);
                 completed++;
             }
-            catch
+            catch (Exception ex)
             {
                 run.Status = ValidationRunStatus.Failed;
                 run.FailureCode = "migration_validation_failed";
+                run.FailureDetail = ex is ValidationRuleException rule
+                    ? rule.Message
+                    : "Validation could not be completed. Run the checks again; if it fails again, ask an administrator to inspect the service log.";
                 run.FinishedAt = clock.UtcNow;
                 await db.SaveChangesAsync(CancellationToken.None);
                 throw;
@@ -119,6 +124,18 @@ public sealed class ValidationService(
                 x.BatchId == batchId).OrderByDescending(x => x.RequestedAt).ThenByDescending(x => x.RunId)
             .FirstOrDefaultAsync(cancellationToken);
         return run is null ? null : await ViewAsync(run, cancellationToken);
+    }
+
+    public async Task<TabularExport> ExportChecksAsync(Guid batchId, CancellationToken cancellationToken)
+    {
+        var view = await GetAsync(batchId, cancellationToken) ?? throw new ValidationRuleException(
+            "migration_validation_run_not_found", "The validation run was not found.");
+        var target = view.TargetKind == ValidationTargetKind.Module ? "Module total" : "Plan total";
+        return new TabularExport(
+            ["Check", "Limit", "Source total", target, "Difference", "Result", "Explanation",
+                "Explained by", "Explained at", "How counted", "Ran at", "Duration (milliseconds)",
+                "Prepared by", "Prepared at", "Reviewed by", "Reviewed at"],
+            ExportRows(view.Checks, cancellationToken));
     }
 
     public async Task<ValidationCheckDetail?> CheckAsync(Guid checkId, CancellationToken cancellationToken)
@@ -776,8 +793,27 @@ public sealed class ValidationService(
         var samples = await db.MigrationValidationSamples.AsNoTracking().Where(x => x.TenantId == tenant.TenantId &&
             x.RunId == run.RunId).Select(x => x.Outcome).ToListAsync(cancellationToken);
         var hard = checks.Where(x => x.Result == ValidationResult.HardFail).ToList();
-        return new(run.RunId, run.BatchId, run.MapRunId, run.TargetKind, run.Rehearsal, run.Status, run.StartedAt,
-            run.FinishedAt, checks.Count, checks.Count(x => x.Result == ValidationResult.Pass),
+        var rehearsalNumber = run.Rehearsal
+            ? await db.MigrationValidationRuns.AsNoTracking().CountAsync(x => x.TenantId == tenant.TenantId &&
+                x.Rehearsal && (x.RequestedAt < run.RequestedAt ||
+                    (x.RequestedAt == run.RequestedAt && x.RunId.CompareTo(run.RunId) <= 0)), cancellationToken)
+            : (int?)null;
+        var loadDate = run.TargetKind == ValidationTargetKind.Module
+            ? await db.Set<MigrationApplyRun>().AsNoTracking().Where(x => x.TenantId == tenant.TenantId &&
+                    x.MapRunId == run.MapRunId && x.FinishedAt != null &&
+                    (x.Status == ApplyRunStatus.Completed || x.Status == ApplyRunStatus.RolledBack))
+                .OrderByDescending(x => x.FinishedAt).ThenByDescending(x => x.RunId)
+                .Select(x => x.FinishedAt).FirstOrDefaultAsync(cancellationToken)
+            : null;
+        var signoff = await db.MigrationSignoffRecords.AsNoTracking().Where(x => x.TenantId == tenant.TenantId &&
+                x.RunId == run.RunId).OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.RecordId)
+            .Select(x => new { x.RecordId, x.Rehearsal, x.CreatedAt, x.CreatedBy })
+            .FirstOrDefaultAsync(cancellationToken);
+        var signoffNames = await ResolveNamesAsync(signoff is null ? [] : [signoff.CreatedBy], cancellationToken);
+        return new(run.RunId, run.BatchId, run.MapRunId, run.TargetKind, run.Rehearsal, rehearsalNumber,
+            run.Status, run.StartedAt, run.FinishedAt, loadDate, signoff?.RecordId, signoff?.Rehearsal,
+            signoff?.CreatedAt, signoff is null ? null : Name(signoffNames, signoff.CreatedBy), run.FailureCode,
+            run.FailureDetail, checks.Count, checks.Count(x => x.Result == ValidationResult.Pass),
             checks.Count(x => x.Result == ValidationResult.Explained),
             checks.Count(x => x.Result is ValidationResult.Fail or ValidationResult.HardFail), hard.Count,
             checks.Count(x => signatures.GetValueOrDefault(x.CheckId, []).Count(s => !s.Superseded) == 2),
@@ -786,6 +822,50 @@ public sealed class ValidationService(
             samples.Count(x => x == "traced"), samples.Count,
             hard.Count == 0 ? null : $"{hard.Count} hard fail{(hard.Count == 1 ? "" : "s")} stop the cutover. Fix in the source application; the next extraction and rehearsal check again.", views);
     }
+
+    private static async IAsyncEnumerable<IReadOnlyList<string?>> ExportRows(
+        IReadOnlyList<ValidationCheckView> checks,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await Task.CompletedTask;
+        foreach (var check in checks)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var preparer = check.Signatures.FirstOrDefault(x => x.Role == ValidationSignatureRole.Preparer);
+            var reviewer = check.Signatures.FirstOrDefault(x => x.Role == ValidationSignatureRole.Reviewer);
+            yield return [check.Label, LimitLabel(check.LimitKind), Text(check.SourceTotal),
+                Text(check.TargetTotal), Text(check.Difference), ResultLabel(check.Result), check.Explanation,
+                check.ExplainedByName, Text(check.ExplainedAt), check.HowCounted, Text(check.RanAt),
+                check.DurationMilliseconds.ToString(CultureInfo.InvariantCulture), preparer?.ActorName,
+                Text(preparer?.SignedAt), reviewer?.ActorName, Text(reviewer?.SignedAt)];
+        }
+    }
+
+    private static string LimitLabel(string value)
+    {
+        if (value == "zero") return "Zero";
+        if (value == "none") return "None";
+        if (value == "all") return "All";
+        return value.StartsWith('<') ? $"Less than {value[1..].Trim()}" : value;
+    }
+
+    private static string ResultLabel(string value) => value switch
+    {
+        ValidationResult.Pass => "Pass",
+        ValidationResult.Explained => "Explained",
+        ValidationResult.Fail => "Fail",
+        ValidationResult.HardFail => "Hard fail",
+        ValidationResult.Report => "Report",
+        _ => value,
+    };
+
+    private static string? Text<T>(T? value) => value switch
+    {
+        null => null,
+        DateTime date => date.ToString("O", CultureInfo.InvariantCulture),
+        IFormattable formatted => formatted.ToString(null, CultureInfo.InvariantCulture),
+        _ => value.ToString(),
+    };
 
     private async Task<ValidationCheckView> CheckViewAsync(MigrationValidationCheck check,
         IReadOnlyList<ValidationSignatureView> signatures, CancellationToken cancellationToken)
@@ -855,8 +935,12 @@ public sealed class ValidationService(
             await people.DisplayNamesAsync(refs, cancellationToken);
     }
 
-    private static string? Name(IReadOnlyDictionary<string, string> names, string? actor) => actor is null ? null :
-        names.GetValueOrDefault(actor, actor);
+    private static string? Name(IReadOnlyDictionary<string, string> names, string? actor)
+    {
+        if (actor is null) return null;
+        if (actor == "unsigned") return "Unsigned";
+        return names.GetValueOrDefault(actor, "Unknown user");
+    }
     private static int Seed(Guid mapRunId) => BitConverter.ToInt32(SHA256.HashData(mapRunId.ToByteArray()), 0) & int.MaxValue;
     private static string Fingerprint(MigrationValidationCheck check) => Convert.ToHexString(SHA256.HashData(
         Encoding.UTF8.GetBytes(string.Join('|', check.Code, check.SourceTotal, check.TargetTotal, check.Difference,

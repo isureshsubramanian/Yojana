@@ -260,6 +260,7 @@ public sealed class MigrationCanonicalisationTests(IntegrationHostFixture fixtur
             {
                 TenantId = tenant,
                 BatchId = Guid.CreateVersion7(fixture.Clock.UtcNow.AddSeconds(1)),
+                DisplayNumber = await db.MigrationBatches.MaxAsync(x => x.DisplayNumber) + 1,
                 ConnectionId = sourceId,
                 SourceSystem = "canonical-source",
                 Kind = "full",

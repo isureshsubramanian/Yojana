@@ -53,6 +53,10 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
         Assert.Contains("desk", columns);
         var healthColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'connection_health'").ToListAsync();
         AssertSuperset(healthColumns, "tenant_id", "inbound_count_date_utc", "completed_inbound_days_json");
+        var batchColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'migration_batch'").ToListAsync();
+        AssertSuperset(batchColumns, "tenant_id", "display_number");
+        var validationColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'migration_validation_run'").ToListAsync();
+        AssertSuperset(validationColumns, "tenant_id", "failure_code", "failure_detail");
     }
 
     [DatabaseFact]
