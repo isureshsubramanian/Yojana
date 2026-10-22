@@ -6,13 +6,17 @@ namespace Yojana.Serialisation.Contracts;
 // already written by the same load comes back as already applied, so a chunk can be resent after a failure.
 // Migrated history fires no per-unit published events (OD-52): the apply step publishes one MigrationLoadApplied.
 
-/// <summary>Write one chunk of migrated units: units, identifiers, history, current custody and ownership.</summary>
+/// <summary>
+/// Write one chunk of migrated units with identifiers, history, current custody and ownership, reviewed cover,
+/// replacement links and one lazy-rendered certificate record per unit.
+/// </summary>
 public sealed record ApplyMigratedUnits(
     Guid LoadId,
     Guid LegalEntityId,
     string ActorRef,
     string Source,
-    IReadOnlyList<MigratedUnit> Units);
+    IReadOnlyList<MigratedUnit> Units,
+    DateOnly? CutoverDate = null);
 
 /// <summary>
 /// One unit from the load plan. <see cref="CreatedAt"/> is the business time of the creating fact (the first
@@ -28,7 +32,53 @@ public sealed record MigratedUnit(
     MigratedCustody? Custody,
     MigratedOwnership? Ownership,
     string? ConditionGrade,
-    string? ConditionProvenance = null);
+    string? ConditionProvenance = null,
+    IReadOnlyList<MigratedEntitlement>? Entitlements = null,
+    IReadOnlyList<MigratedReplacementLink>? ReplacementLinks = null,
+    MigratedCertificate? Certificate = null);
+
+/// <summary>
+/// A plan entitlement names the exact published policy version, but its dates remain source evidence: migration never
+/// recalculates, caps or floors them from that policy. Evidence contains every source row considered, with the selected
+/// row marked, so a later reviewer can see both the result and the alternatives.
+/// </summary>
+public sealed record MigratedEntitlement(
+    Guid PlanEntitlementId,
+    string CoverageFamily,
+    Guid PolicyVersionId,
+    int PolicyVersion,
+    DateOnly? StartDate,
+    DateOnly? EndDate,
+    DateOnly? TerminationDate,
+    string Direction,
+    string DateSource,
+    string SourceKey,
+    IReadOnlyList<MigratedWarrantyEvidence> Evidence);
+
+public sealed record MigratedWarrantyEvidence(
+    string SourceKind,
+    string SourceKey,
+    DateOnly? StartDate,
+    DateOnly? EndDate,
+    DateOnly? TerminationDate,
+    string Direction,
+    bool Selected);
+
+/// <summary>A historical replacement pair. The carrier is chosen by the caller; both plan ids remain explicit.</summary>
+public sealed record MigratedReplacementLink(
+    Guid PlanReplacementLinkId,
+    Guid ReplacedPlanUnitId,
+    Guid ReplacementPlanUnitId,
+    string PolicyApplied,
+    string SourceKey);
+
+/// <summary>Version-one release record reconstructed from the plan; rendering stays lazy.</summary>
+public sealed record MigratedCertificate(
+    Guid PlanCertificateId,
+    int Version,
+    string Provenance,
+    IReadOnlyList<string> Unknowns,
+    IReadOnlyList<string> Evidence);
 
 /// <summary>
 /// One reconstructed movement as the source recorded it. Kept as a state-neutral ledger fact
@@ -63,7 +113,8 @@ public sealed record MigratedUnitOutcome(Guid PlanUnitId, Guid? UnitId, string O
 }
 
 public sealed record ApplyMigratedUnitsResult(IReadOnlyList<MigratedUnitOutcome> Units, int Applied, int AlreadyApplied,
-    int Refused, int EventsWritten);
+    int Refused, int EventsWritten, int EntitlementsWritten = 0, int ReplacementLinksWritten = 0,
+    int CertificatesRecorded = 0);
 
 /// <summary>
 /// Undo a rehearsal load (OD-53): every row the load wrote is removed. Refused as a whole when any unit of the load
@@ -72,7 +123,8 @@ public sealed record ApplyMigratedUnitsResult(IReadOnlyList<MigratedUnitOutcome>
 public sealed record RollBackMigrationLoad(Guid LoadId, string ActorRef);
 
 public sealed record RollBackMigrationLoadResult(Guid LoadId, string Outcome, int UnitsRemoved, int EventsRemoved,
-    IReadOnlyList<Guid> TouchedUnitIds)
+    IReadOnlyList<Guid> TouchedUnitIds, int EntitlementsRemoved = 0, int ReplacementLinksRemoved = 0,
+    int CertificatesRemoved = 0)
 {
     public const string RolledBack = "rolled_back";
     public const string RefusedTouched = "refused_touched";
@@ -88,4 +140,4 @@ public sealed record MigrationLoadUnitsPage(IReadOnlyList<MigrationLoadUnitRow> 
 
 /// <summary>One summary fact per applied load (OD-52): the only event migrated history publishes.</summary>
 public sealed record MigrationLoadApplied(Guid LoadId, Guid BatchId, bool Rehearsal, int Units, int Events,
-    DateTime AppliedAt);
+    DateTime AppliedAt, int Entitlements = 0, int ReplacementLinks = 0, int Certificates = 0);

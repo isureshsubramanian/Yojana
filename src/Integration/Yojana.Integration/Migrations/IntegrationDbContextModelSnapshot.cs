@@ -2595,9 +2595,17 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("batch_id");
 
+                    b.Property<long>("CertificatesRecorded")
+                        .HasColumnType("bigint")
+                        .HasColumnName("certificates_recorded");
+
                     b.Property<Guid?>("CursorPlanUnitId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("cursor_plan_unit_id");
+
+                    b.Property<long>("EntitlementsWritten")
+                        .HasColumnType("bigint")
+                        .HasColumnName("entitlements_written");
 
                     b.Property<long>("EventsWritten")
                         .HasColumnType("bigint")
@@ -2623,6 +2631,10 @@ namespace Yojana.Integration.Migrations
                     b.Property<bool>("Rehearsal")
                         .HasColumnType("bit")
                         .HasColumnName("rehearsal");
+
+                    b.Property<long>("ReplacementLinksWritten")
+                        .HasColumnType("bigint")
+                        .HasColumnName("replacement_links_written");
 
                     b.Property<DateTime>("RequestedAt")
                         .HasColumnType("datetime2(3)")

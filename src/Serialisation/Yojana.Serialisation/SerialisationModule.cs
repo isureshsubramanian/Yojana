@@ -29,6 +29,7 @@ using Yojana.Serialisation.Labels;
 using Yojana.Serialisation.Jurisdictions;
 using Yojana.Serialisation.Imports;
 using Yojana.Serialisation.Reports;
+using Yojana.Serialisation.MigrationLoads;
 
 namespace Yojana.Serialisation;
 
@@ -69,6 +70,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<IUnitEventAppendObserver, LedgerBaseOrderReferenceObserver>();
         builder.Services.AddScoped<UnitHistoryQuery>();
         builder.Services.AddScoped<BulkIngestion>();
+        builder.Services.AddScoped<MigrationCoverBulkWriter>();
         builder.Services.AddScoped<ISerialisedOnHandQuery, Ports.SerialisedOnHandQuery>();
         var baseOrderBackfill = builder.Configuration.GetSection(LedgerBaseOrderBackfillOptions.SectionName)
             .Get<LedgerBaseOrderBackfillOptions>() ?? new LedgerBaseOrderBackfillOptions();

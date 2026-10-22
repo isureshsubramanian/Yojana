@@ -36,6 +36,9 @@ public sealed class MigrationApplyRun : ITenantScoped
     public long AlreadyApplied { get; set; }
     public long Refused { get; set; }
     public long EventsWritten { get; set; }
+    public long EntitlementsWritten { get; set; }
+    public long ReplacementLinksWritten { get; set; }
+    public long CertificatesRecorded { get; set; }
     public string? RolledBackBy { get; set; }
     public DateTime? RolledBackAt { get; set; }
 }

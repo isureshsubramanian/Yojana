@@ -21,7 +21,7 @@ public sealed class WarrantyReplacementQueries(SerialisationDbContext db, ITenan
         var ids = await source.OrderByDescending(row => row.CreatedAt).ThenBy(row => row.WarrantyReplacementId)
             .Skip(skip).Take(take).Select(row => row.WarrantyReplacementId).ToListAsync(cancellationToken);
         var data = await (from document in db.WarrantyReplacements.AsNoTracking()
-                          join link in db.ReplacementLinks.AsNoTracking() on new { document.TenantId, document.WarrantyReplacementId } equals new { link.TenantId, link.WarrantyReplacementId }
+                          join link in db.ReplacementLinks.AsNoTracking() on new { document.TenantId, WarrantyReplacementId = (Guid?)document.WarrantyReplacementId } equals new { link.TenantId, link.WarrantyReplacementId }
                           where document.TenantId == tenantId && ids.Contains(document.WarrantyReplacementId)
                           select new { Document = document, Link = link }).ToListAsync(cancellationToken);
         var byId = data.ToDictionary(row => row.Document.WarrantyReplacementId);
@@ -39,7 +39,7 @@ public sealed class WarrantyReplacementQueries(SerialisationDbContext db, ITenan
         IJurisdictionRuleResolver rules, CancellationToken cancellationToken)
     {
         var data = await (from document in db.WarrantyReplacements.AsNoTracking()
-                          join link in db.ReplacementLinks.AsNoTracking() on new { document.TenantId, document.WarrantyReplacementId } equals new { link.TenantId, link.WarrantyReplacementId }
+                          join link in db.ReplacementLinks.AsNoTracking() on new { document.TenantId, WarrantyReplacementId = (Guid?)document.WarrantyReplacementId } equals new { link.TenantId, link.WarrantyReplacementId }
                           where document.TenantId == tenantId && document.WarrantyReplacementId == id
                               && link.State != ReplacementLinkState.Corrected
                           select new { Document = document, Link = link }).FirstOrDefaultAsync(cancellationToken);
@@ -105,7 +105,7 @@ public sealed class WarrantyReplacementQueries(SerialisationDbContext db, ITenan
             : l.NonReturnPriceBasis is not null && l.NonReturnAmount is { } agreedAmount
                 ? new WarrantyReplacementNonReturnCharge("agreed", l.NonReturnPriceBasis, agreedAmount, null)
                 : null;
-        return new WarrantyReplacementDetail(row, l.SourceEntitlementId, l.TargetEntitlementId, l.ReplacementLinkId, l.PreviousReplacementLinkId,
+        return new WarrantyReplacementDetail(row, l.SourceEntitlementId!.Value, l.TargetEntitlementId, l.ReplacementLinkId, l.PreviousReplacementLinkId,
             invoice, d.ReturnReasonCode, d.RestockingFeeRule, d.StockPostingReference,
             lines.Select(line => new WarrantyReplacementLineRow(line.LineId, line.Sequence, line.Kind, line.ItemId, line.Description,
                 line.Quantity, line.UnitAmount, line.LineAmount, line.Currency, line.RevenueRule)).ToList(),

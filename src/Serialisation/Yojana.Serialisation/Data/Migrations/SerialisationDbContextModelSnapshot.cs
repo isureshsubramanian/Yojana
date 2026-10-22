@@ -748,6 +748,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("varchar(20)")
                         .HasColumnName("language");
 
+                    b.Property<Guid?>("MigrationLoadId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("migration_load_id");
+
                     b.Property<string>("OwnerSnapshot")
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("owner_snapshot");
@@ -829,6 +833,10 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "TrackingNumber")
                         .IsUnique()
                         .HasDatabaseName("ux_certificate_instance_tenant_id_tracking_number");
+
+                    b.HasIndex("TenantId", "MigrationLoadId", "CertificateId")
+                        .HasDatabaseName("ix_certificate_instance_tenant_id_migration_load_id_certificate_id")
+                        .HasFilter("[migration_load_id] IS NOT NULL");
 
                     b.HasIndex("TenantId", "UnitId", "DocumentKind", "IssuedAt")
                         .HasDatabaseName("ix_certificate_instance_tenant_id_unit_id_document_kind_issued_at");
@@ -3125,6 +3133,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("merged_from_unit_id");
 
+                    b.Property<Guid?>("MigrationLoadId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("migration_load_id");
+
                     b.Property<Guid>("ObligorEntityId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("obligor_entity_id");
@@ -3349,6 +3361,10 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "InstalledParentUnitId", "InstallationLinkId")
                         .HasDatabaseName("ix_entitlement_tenant_id_installed_parent_unit_id_installation_link_id");
 
+                    b.HasIndex("TenantId", "MigrationLoadId", "UnitId")
+                        .HasDatabaseName("ix_entitlement_tenant_id_migration_load_id_unit_id")
+                        .HasFilter("[migration_load_id] IS NOT NULL");
+
                     b.HasIndex("TenantId", "OwnerPartyRef", "Status")
                         .HasDatabaseName("ix_entitlement_tenant_id_owner_party_ref_status");
 
@@ -3476,6 +3492,70 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ix_entitlement_amendment_tenant_id_entitlement_id_at");
 
                     b.ToTable("entitlement_amendment", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.EntitlementEvidence", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("EvidenceId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("evidence_id");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("direction");
+
+                    b.Property<DateOnly?>("EndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("end_date");
+
+                    b.Property<Guid>("EntitlementId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entitlement_id");
+
+                    b.Property<Guid>("MigrationLoadId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("migration_load_id");
+
+                    b.Property<bool>("Selected")
+                        .HasColumnType("bit")
+                        .HasColumnName("selected");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("source_key");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("source_kind");
+
+                    b.Property<DateOnly?>("StartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("start_date");
+
+                    b.Property<DateOnly?>("TerminationDate")
+                        .HasColumnType("date")
+                        .HasColumnName("termination_date");
+
+                    b.HasKey("TenantId", "EvidenceId")
+                        .HasName("pk_entitlement_evidence");
+
+                    b.HasIndex("TenantId", "MigrationLoadId", "EntitlementId")
+                        .HasDatabaseName("ix_entitlement_evidence_tenant_id_migration_load_id_entitlement_id");
+
+                    b.HasIndex("TenantId", "EntitlementId", "SourceKind", "EvidenceId")
+                        .HasDatabaseName("ix_entitlement_evidence_tenant_id_entitlement_id_source_kind_evidence_id");
+
+                    b.ToTable("entitlement_evidence", "serialisation");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.EntitlementGapRun", b =>
@@ -6715,6 +6795,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("varchar(20)")
                         .HasColumnName("direction");
 
+                    b.Property<Guid?>("MigrationLoadId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("migration_load_id");
+
                     b.Property<decimal?>("NonReturnAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)")
@@ -6807,7 +6891,7 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("shipped_event_id");
 
-                    b.Property<Guid>("SourceEntitlementId")
+                    b.Property<Guid?>("SourceEntitlementId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("source_entitlement_id");
 
@@ -6839,7 +6923,7 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("target_entitlement_id");
 
-                    b.Property<Guid>("WarrantyReplacementId")
+                    b.Property<Guid?>("WarrantyReplacementId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("warranty_replacement_id");
 
@@ -6875,6 +6959,10 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "WarrantyReplacementId")
                         .HasDatabaseName("ix_replacement_link_tenant_id_warranty_replacement_id");
 
+                    b.HasIndex("TenantId", "MigrationLoadId", "ReplacementLinkId")
+                        .HasDatabaseName("ix_replacement_link_tenant_id_migration_load_id_replacement_link_id")
+                        .HasFilter("[migration_load_id] IS NOT NULL");
+
                     b.HasIndex("TenantId", "OriginalUnitId", "CreatedAt")
                         .HasDatabaseName("ix_replacement_link_tenant_id_original_unit_id_created_at");
 
@@ -6897,7 +6985,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                             t.HasCheckConstraint("ck_replacement_link_reason", "replacement_reason IN ('warranty_defect', 'dead_on_arrival', 'seller_error', 'goodwill', 'recall')");
 
-                            t.HasCheckConstraint("ck_replacement_link_source_kind", "source_kind IN ('claim', 'rma', 'loan')");
+                            t.HasCheckConstraint("ck_replacement_link_source_kind", "source_kind IN ('claim', 'rma', 'loan', 'migrated')");
+
+                            t.HasCheckConstraint("ck_replacement_link_source_relationship", "(source_kind = 'migrated' AND warranty_replacement_id IS NULL AND source_entitlement_id IS NULL AND migration_load_id IS NOT NULL) OR (source_kind <> 'migrated' AND warranty_replacement_id IS NOT NULL AND source_entitlement_id IS NOT NULL AND migration_load_id IS NULL)");
 
                             t.HasCheckConstraint("ck_replacement_link_state", "state IN ('proposed', 'awaiting_return', 'closed_returned', 'closed_billed', 'cancelled', 'corrected')");
 
@@ -10888,6 +10978,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasConstraintName("fk_customer_reconciliation_row_tenant_id_reconciliation_id");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.EntitlementEvidence", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.Entitlement", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EntitlementId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_entitlement_evidence_tenant_id_entitlement_id");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ImportFileDownloadAudit", b =>
                 {
                     b.HasOne("Yojana.Serialisation.Data.Entities.ImportJob", null)
@@ -11068,7 +11168,6 @@ namespace Yojana.Serialisation.Data.Migrations
                         .WithMany()
                         .HasForeignKey("TenantId", "WarrantyReplacementId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
                         .HasConstraintName("fk_replacement_link_tenant_id_warranty_replacement_id");
                 });
 

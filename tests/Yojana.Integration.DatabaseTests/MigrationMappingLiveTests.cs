@@ -114,15 +114,19 @@ public sealed class MigrationMappingLiveTests(IntegrationHostFixture fixture)
         var started = DateTime.UtcNow;
         Assert.Equal(1, await apply.RunPendingAsync(default));
         var load = (await apply.GetAsync(batch.BatchId, default))!;
-        Console.WriteLine("APPLY status={0} plan={1} applied={2} refused={3} events={4} took={5}", load.Status,
-            load.UnitsInPlan, load.Applied, load.Refused, load.EventsWritten, DateTime.UtcNow - started);
+        Console.WriteLine("APPLY status={0} plan={1} applied={2} refused={3} events={4} entitlements={5} links={6} certificates={7} took={8}",
+            load.Status, load.UnitsInPlan, load.Applied, load.Refused, load.EventsWritten,
+            load.EntitlementsWritten, load.ReplacementLinksWritten, load.CertificatesRecorded,
+            DateTime.UtcNow - started);
         foreach (var refusal in (await apply.RefusalsAsync(load.LoadId, null, 200, default)).Items
                      .GroupBy(row => string.Join(' ', row.Reasons)))
             Console.WriteLine("APPLY_REFUSED {0}: {1}", refusal.Key, refusal.Count());
         Assert.Equal(LegacyMigration.Apply.ApplyRunStatus.Completed, load.Status);
         Assert.Equal(load.UnitsInPlan, load.Applied + load.Refused);
         var rollback = await apply.RollBackAsync(load.LoadId, Actor, default);
-        Console.WriteLine("ROLLBACK outcome={0} units={1} events={2}", rollback.Outcome, rollback.UnitsRemoved, rollback.EventsRemoved);
+        Console.WriteLine("ROLLBACK outcome={0} units={1} events={2} entitlements={3} links={4} certificates={5}",
+            rollback.Outcome, rollback.UnitsRemoved, rollback.EventsRemoved, rollback.EntitlementsRemoved,
+            rollback.ReplacementLinksRemoved, rollback.CertificatesRemoved);
         Assert.Equal(Yojana.Serialisation.Contracts.RollBackMigrationLoadResult.RolledBack, rollback.Outcome);
     }
 

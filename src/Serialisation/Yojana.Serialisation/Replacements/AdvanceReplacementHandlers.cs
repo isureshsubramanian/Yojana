@@ -49,7 +49,7 @@ public static class ExtendReturnDueHandler
         await writer.AppendAsync([new UnitEventDraft
         {
             UnitId = link.OriginalUnitId, EventTime = command.EventTime, EventType = ReplacementEventType.ReturnDueExtended, PresetEventId = eventId,
-            LegalEntityId = await LegalEntityAsync(db, tenant.TenantId, link.WarrantyReplacementId, cancellationToken), ActorRef = command.ActorRef,
+            LegalEntityId = await LegalEntityAsync(db, tenant.TenantId, link.WarrantyReplacementId!.Value, cancellationToken), ActorRef = command.ActorRef,
             DocumentType = "warranty_replacement", DocumentId = link.WarrantyReplacementId, IdempotencyKey = key,
             Attributes = JsonObjectText.Of(new { replacement_link_id = link.ReplacementLinkId, previous_return_due = previous, new_return_due = command.NewReturnDue, reason = command.Reason.Trim() }),
         }], cancellationToken);
@@ -87,7 +87,7 @@ public static class BillNonReturnHandler
         await writer.AppendAsync([new UnitEventDraft
         {
             UnitId = link.OriginalUnitId, EventTime = command.EventTime, EventType = ReplacementEventType.NonReturnBilled, PresetEventId = eventId,
-            LegalEntityId = await ExtendReturnDueHandler.LegalEntityAsync(db, tenant.TenantId, link.WarrantyReplacementId, cancellationToken), ActorRef = command.ActorRef,
+            LegalEntityId = await ExtendReturnDueHandler.LegalEntityAsync(db, tenant.TenantId, link.WarrantyReplacementId!.Value, cancellationToken), ActorRef = command.ActorRef,
             DocumentType = "warranty_replacement", DocumentId = link.WarrantyReplacementId, IdempotencyKey = key,
             Attributes = JsonObjectText.Of(new { replacement_link_id = link.ReplacementLinkId, price_basis = command.PriceBasis, amount = command.Amount, currency = link.Currency, billing_date = command.BillingDate, reason = command.Reason.Trim() }),
         }], cancellationToken);
@@ -135,7 +135,7 @@ public static class ReplacementOverdueSweepHandler
         var links = await db.ReplacementLinks.Where(row => row.TenantId == tenantId && row.State == ReplacementLinkState.AwaitingReturn
             && row.ReturnDue < command.AsOf && row.OverdueEventId == null).OrderBy(row => row.ReturnDue).ThenBy(row => row.ReplacementLinkId).ToListAsync(cancellationToken);
         if (links.Count == 0) return new(0, 0);
-        var documentIds = links.Select(row => row.WarrantyReplacementId).Distinct().ToList();
+        var documentIds = links.Select(row => row.WarrantyReplacementId!.Value).Distinct().ToList();
         var entities = await db.WarrantyReplacements.AsNoTracking().Where(row => row.TenantId == tenantId && documentIds.Contains(row.WarrantyReplacementId))
             .ToDictionaryAsync(row => row.WarrantyReplacementId, row => row.LegalEntityId, cancellationToken);
         var partyRefs = links.Select(row => row.CounterpartyPartyRef).OfType<Guid>().Distinct().ToList();
@@ -153,7 +153,7 @@ public static class ReplacementOverdueSweepHandler
             drafts.Add(new UnitEventDraft
             {
                 UnitId = link.OriginalUnitId, EventTime = overdueAt, EventType = ReplacementEventType.ReturnOverdue, PresetEventId = eventId,
-                LegalEntityId = entities[link.WarrantyReplacementId], ActorRef = "system:replacement-overdue", DocumentType = "warranty_replacement",
+                LegalEntityId = entities[link.WarrantyReplacementId!.Value], ActorRef = "system:replacement-overdue", DocumentType = "warranty_replacement",
                 DocumentId = link.WarrantyReplacementId,
                 IdempotencyKey = IdempotencyKey.ForCommand("serialisation", link.ReplacementLinkId, link.OriginalUnitId, ReplacementEventType.ReturnOverdue, overdueAt),
                 Attributes = JsonObjectText.Of(new { replacement_link_id = link.ReplacementLinkId, original_unit_id = link.OriginalUnitId,

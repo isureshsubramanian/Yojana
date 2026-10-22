@@ -69,11 +69,22 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
         var view = (await apply.GetAsync(ids.BatchId, default))!;
         Assert.Equal(ApplyRunStatus.Completed, view.Status);
         var planned = map.UnitsByOrigin.Single(row => row.Key == UnitOrigin.Migrated).Count;
+        var refusalItems = (await apply.RefusalsAsync(view.LoadId, null, 50, default)).Items;
+        var refusalSummary = string.Join("; ", refusalItems.Select(row =>
+            $"{row.ItemCode}:{string.Join(',', row.Reasons)}"));
         Assert.Equal(planned, view.UnitsInPlan);
-        Assert.Equal(planned - 1, view.Applied);
+        Assert.True(view.Applied == planned - 1, refusalSummary);
         Assert.Equal(1, view.Refused);
         Assert.True(view.EventsWritten >= view.Applied);
-        var refusal = Assert.Single((await apply.RefusalsAsync(view.LoadId, null, 50, default)).Items);
+        // Plan cover with no policy named (equipment-card or serial-master dates) is not loaded; backfill closes it.
+        var expectedEntitlements = await db.MigrationPlanEntitlements.LongCountAsync(row =>
+            row.MapRunId == map.RunId && row.PolicyId != null && db.MigrationPlanUnits.Any(unit =>
+                unit.PlanUnitId == row.PlanUnitId && unit.ItemCode != Unsynced));
+        Assert.Equal(expectedEntitlements, view.EntitlementsWritten);
+        Assert.Equal(await db.MigrationPlanReplacementLinks.LongCountAsync(row => row.MapRunId == map.RunId),
+            view.ReplacementLinksWritten);
+        Assert.Equal(view.Applied, view.CertificatesRecorded);
+        var refusal = Assert.Single(refusalItems);
         Assert.Equal(Unsynced, refusal.ItemCode);
         Assert.Equal(["item_not_synced"], refusal.Reasons);
 
@@ -82,6 +93,21 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
         Assert.Equal(planned - 1, loaded.Count);
         Assert.All(await serialisation.Units.Where(row => loaded.Contains(row.UnitId)).ToListAsync(),
             unit => Assert.Equal(UnitOrigin.Migrated, unit.Origin));
+        var publishedPlan = await db.MigrationPlanUnits.SingleAsync(row => row.MapRunId == map.RunId
+            && row.ItemCode == "SERVER-CONTRACT");
+        var publishedUnit = await serialisation.MigrationLoadUnits.Where(row => row.LoadId == view.LoadId
+            && row.PlanUnitId == publishedPlan.PlanUnitId).Select(row => row.UnitId).SingleAsync();
+        var appliedEntitlement = await serialisation.Entitlements.SingleAsync(row =>
+            row.UnitId == publishedUnit && row.Provenance == EntitlementProvenance.Migrated);
+        Assert.Equal(policyId, appliedEntitlement.PolicyVersionId);
+        Assert.Equal(new DateOnly(2026, 10, 15), appliedEntitlement.EndDate);
+        var draftPlan = await db.MigrationPlanUnits.SingleAsync(row => row.MapRunId == map.RunId
+            && row.ItemCode == "STORAGE-DRAFT");
+        var draftUnit = await serialisation.MigrationLoadUnits.Where(row => row.LoadId == view.LoadId
+            && row.PlanUnitId == draftPlan.PlanUnitId).Select(row => row.UnitId).SingleAsync();
+        Assert.False(await serialisation.Entitlements.AnyAsync(row => row.UnitId == draftUnit));
+        Assert.True(await db.MigrationPlanGaps.AnyAsync(row => row.MapRunId == map.RunId
+            && row.PlanUnitId == draftPlan.PlanUnitId && row.Kind == PlanGapKind.PolicyNotPublished));
         // The in-stock server sits in custody at its warehouse; shipped units have an owner and no custody row.
         var stockPlan = await db.MigrationPlanUnits.Where(plan => plan.MapRunId == map.RunId && plan.ItemCode == "SERVER-CONTRACT")
             .Select(plan => plan.PlanUnitId).SingleAsync();
@@ -106,6 +132,9 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
         var rolledBack = await apply.RollBackAsync(view.LoadId, "user:admin", default);
         Assert.Equal(RollBackMigrationLoadResult.RolledBack, rolledBack.Outcome);
         Assert.Equal(planned - 1, rolledBack.UnitsRemoved);
+        Assert.Equal(view.EntitlementsWritten, rolledBack.EntitlementsRemoved);
+        Assert.Equal(view.ReplacementLinksWritten, rolledBack.ReplacementLinksRemoved);
+        Assert.Equal(view.CertificatesRecorded, rolledBack.CertificatesRemoved);
         Assert.Equal(0, await serialisation.Units.CountAsync(row => loaded.Contains(row.UnitId)));
         Assert.Equal(ApplyRunStatus.RolledBack, (await apply.GetAsync(ids.BatchId, default))!.Status);
 

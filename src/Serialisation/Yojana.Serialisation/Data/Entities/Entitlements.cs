@@ -182,6 +182,9 @@ public sealed class Entitlement : ITenantScoped
 
     public Guid EntitlementId { get; set; }
 
+    /// <summary>The rehearsal load that owns this row; null for every live-domain entitlement.</summary>
+    public Guid? MigrationLoadId { get; set; }
+
     public Guid UnitId { get; set; }
 
     public Guid? MergedFromUnitId { get; set; }
@@ -331,6 +334,22 @@ public sealed class Entitlement : ITenantScoped
     public Guid CreatedEventId { get; set; }
 
     public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>One source row considered when migrated cover dates were selected.</summary>
+public sealed class EntitlementEvidence : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid EvidenceId { get; set; }
+    public Guid EntitlementId { get; set; }
+    public Guid MigrationLoadId { get; set; }
+    public required string SourceKind { get; set; }
+    public required string SourceKey { get; set; }
+    public DateOnly? StartDate { get; set; }
+    public DateOnly? EndDate { get; set; }
+    public DateOnly? TerminationDate { get; set; }
+    public required string Direction { get; set; }
+    public bool Selected { get; set; }
 }
 
 /// <summary>One live entitlement exposed by the narrow operational warranty view.</summary>
