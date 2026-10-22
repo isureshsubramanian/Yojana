@@ -4,6 +4,7 @@ using Yojana.Knowledge.Data;
 using Yojana.Knowledge.Questions;
 using Yojana.Knowledge.Entries;
 using Yojana.Knowledge.Training;
+using Yojana.Knowledge.Reports;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Scheduling;
@@ -38,6 +39,8 @@ public static class KnowledgeModule
             sp.GetRequiredService<Yojana.Platform.Contracts.Security.ITenantTrainingDirectory>()));
         builder.Services.AddScoped<TrainingPathQueries>();
         builder.Services.AddScoped<QuestionQueries>();
+        builder.Services.AddScoped(sp => new KnowledgeReportSettings(sp.GetRequiredService<ITenantSettings>()));
+        builder.Services.AddScoped<KnowledgeReportQueries>();
         builder.Services.AddScoped(sp => new QuestionNotificationDefaults(
             sp.GetRequiredService<ITenantSettings>()));
         builder.Services.AddScoped<QuestionNotificationService>();

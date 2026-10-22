@@ -13,6 +13,7 @@ const screenChanges = readFileSync(new URL("../src/settings/KnowledgeScreenChang
 const training = readFileSync(new URL("../src/questions/TrainingPaths.tsx", import.meta.url), "utf8");
 const welcome = readFileSync(new URL("../src/questions/TrainingWelcomeCard.tsx", import.meta.url), "utf8");
 const overview = readFileSync(new URL("../src/pages/Overview.tsx", import.meta.url), "utf8");
+const reports = readFileSync(new URL("../src/questions/KnowledgeReports.tsx", import.meta.url), "utf8");
 
 test("Knowledge base searches its server-paged table as you type and browses by role and task", () => {
   assert.match(routes, /path: "knowledge".*KnowledgeBase/s);
@@ -68,11 +69,23 @@ test("Tenant settings let an administrator record a referenced screen change", (
   assert.match(screenChanges, /recorded and audited/);
 });
 
-test("Approved sub-navigation makes Training paths live while Reports stays hidden", () => {
-  for (const label of ["My questions", "Knowledge base", "Entries to review", "Training paths"])
+test("Approved sub-navigation makes Training paths and Reports live", () => {
+  for (const label of ["My questions", "Knowledge base", "Entries to review", "Training paths", "Reports"])
     assert.ok(subnav.includes(label), label);
-  for (const hidden of ["Reports"])
-    assert.doesNotMatch(subnav, new RegExp(hidden));
+});
+
+test("Knowledge reports follow the approved periods, filtering, metrics and privacy help", () => {
+  assert.match(routes, /path: "knowledge\/reports".*KnowledgeReports/s);
+  for (const label of ["30 days", "90 days", "12 months", "By directed role", "By record kind", "By topic", "Asked again despite an entry", "Unanswered by age", "Read by new team members", "Export CSV"])
+    assert.ok(reports.includes(label), label);
+  assert.match(reports, /reportsApi\.report\(filters/);
+  assert.match(reports, /select\("directedRole"/);
+  assert.match(reports, /select\("recordKind"/);
+  assert.match(reports, /select\("topic"/);
+  assert.match(reports, /PERCENTILE_CONT/);
+  assert.match(reports, /tenant-local calendar dates/);
+  assert.match(reports, /question text are blank/);
+  assert.doesNotMatch(reports, /per-person question/i);
 });
 
 test("Training paths implement ordered reading, reviewer maintenance and team-safe progress", () => {

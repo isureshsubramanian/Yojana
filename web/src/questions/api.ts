@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import type { AddresseePage, EntryDraftRequest, EntryFieldChange, EntryReviewPage, EntryTagChoices, KnowledgeEntry, KnowledgeEntryPage, KnowledgeScreenReferencePage, MyQuestionPage, PolicyVersionChoicePage, QuestionBellSummary, QuestionNotificationMode, QuestionNotificationPreference, QuestionPage, QuestionThread, ReferenceChoicePage, Revision, SearchPage, TrainingPath, TrainingPathList, TrainingTeam, TrainingWelcome } from "./types";
+import type { AddresseePage, EntryDraftRequest, EntryFieldChange, EntryReviewPage, EntryTagChoices, KnowledgeEntry, KnowledgeEntryPage, KnowledgeReport, KnowledgeReportFilters, KnowledgeScreenReferencePage, MyQuestionPage, PolicyVersionChoicePage, QuestionBellSummary, QuestionNotificationMode, QuestionNotificationPreference, QuestionPage, QuestionThread, ReferenceChoicePage, Revision, SearchPage, TrainingPath, TrainingPathList, TrainingTeam, TrainingWelcome } from "./types";
 
 const root = "/api/questions";
 const qs = (values: Record<string, string | number | boolean | null | undefined>) => {
@@ -56,4 +56,10 @@ export const trainingApi = {
   team: (role: string, cursor?: string, signal?: AbortSignal) => api<TrainingTeam>(`${trainingRoot}/${encodeURIComponent(role)}/team${qs({ cursor, take: 25 })}`, { signal }),
   welcome: (signal?: AbortSignal) => api<TrainingWelcome | undefined>(`${trainingRoot}/welcome`, { signal }),
   dismissWelcome: (pathId: string) => api(`${trainingRoot}/welcome/${pathId}/dismiss`, { method: "POST" }),
+};
+
+const reportsRoot = "/api/knowledge/reports";
+export const reportsApi = {
+  report: (filters: KnowledgeReportFilters, signal?: AbortSignal) => api<KnowledgeReport>(`${reportsRoot}${qs({ period: filters.period, directedRole: filters.directedRole, recordKind: filters.recordKind, topic: filters.topic })}`, { signal }),
+  exportUrl: (filters: KnowledgeReportFilters) => `${reportsRoot}/export${qs({ period: filters.period, directedRole: filters.directedRole, recordKind: filters.recordKind, topic: filters.topic })}`,
 };

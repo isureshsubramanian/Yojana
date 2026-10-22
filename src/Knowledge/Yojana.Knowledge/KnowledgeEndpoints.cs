@@ -6,6 +6,7 @@ using Wolverine;
 using Yojana.Knowledge.Contracts;
 using Yojana.Knowledge.Entries;
 using Yojana.Knowledge.Questions;
+using Yojana.Knowledge.Reports;
 using Yojana.Knowledge.Training;
 using Yojana.Platform.Contracts.Records;
 using Yojana.Platform.Contracts.Security;
@@ -169,6 +170,27 @@ public static class KnowledgeEndpoints
             TrainingPathQueries queries, CancellationToken ct) => await Read(async () => Results.Ok(
                 await queries.TeamAsync(role, cursor, take ?? 25, Viewer(user), ct))));
 
+        var reports = app.MapGroup("/api/knowledge/reports")
+            .RequireAuthorization(YojanaPolicy.StaffMember);
+        reports.MapGet("/", async (string? period, string? directedRole, string? recordKind, string? topic,
+            ClaimsPrincipal user, KnowledgeReportQueries queries, CancellationToken ct) => await Read(async () =>
+                Results.Ok(await queries.ReportAsync(new KnowledgeReportFilters(
+                    period ?? KnowledgeReportPeriod.NinetyDays, directedRole, recordKind, topic), Viewer(user), ct))));
+        reports.MapGet("/export", async (string? period, string? directedRole, string? recordKind, string? topic,
+            ClaimsPrincipal user, KnowledgeReportQueries queries, ITabularExporter exporter, HttpContext http,
+            CancellationToken ct) => await Read(async () =>
+        {
+            var filters = new KnowledgeReportFilters(period ?? KnowledgeReportPeriod.NinetyDays,
+                directedRole, recordKind, topic);
+            await queries.EnsureAllowedAsync(Viewer(user), ct);
+            return Results.Stream(stream => exporter.WriteAsync("csv", new TabularExport(
+            [
+                "Asked at", "Status", "Record kind", "Directed to", "Title", "Question text",
+                "First reply at", "Accepted at", "Seconds to first reply", "Seconds to accepted answer", "Tags",
+            ], queries.ExportAsync(filters, Viewer(user), http.RequestAborted)), stream, http.RequestAborted),
+                exporter.ContentType("csv"), "knowledge-questions.csv");
+        }));
+
         var screens = app.MapGroup("/api/knowledge/screens")
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         screens.MapGet("/", async (string? cursor, int? take, KnowledgeScreenQueries queries,
@@ -214,7 +236,7 @@ public static class KnowledgeEndpoints
                 "entry_edit_author_only" or "entry_submit_author_only" or "entry_self_review_forbidden" or
                 "entry_review_role_required" or "entry_link_not_visible" or "screen_change_admin_required"
                 or "training_path_reviewer_role_required" or "training_path_role_required"
-                or "training_team_view_forbidden"
+                or "training_team_view_forbidden" or "knowledge_report_role_required"
                 => StatusCodes.Status403Forbidden,
             "record_not_found" or "question_not_found" or "reply_not_found" or "entry_not_found" or
                 "entry_link_not_found" or "screen_reference_not_found" => StatusCodes.Status404NotFound,

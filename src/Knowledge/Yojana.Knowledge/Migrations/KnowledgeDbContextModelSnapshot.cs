@@ -543,6 +543,10 @@ namespace Yojana.Knowledge.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("question_id");
 
+                    b.Property<DateTime?>("AcceptedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("accepted_at");
+
                     b.Property<Guid?>("AcceptedReplyId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("accepted_reply_id");
@@ -623,6 +627,11 @@ namespace Yojana.Knowledge.Migrations
                     b.HasKey("TenantId", "QuestionId")
                         .HasName("pk_question");
 
+                    b.HasIndex("TenantId", "AskedAt", "QuestionId")
+                        .HasDatabaseName("ix_question_tenant_id_asked_at_question_id");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "AskedAt", "QuestionId"), new[] { "Status", "RecordKind", "RecordId", "DirectedToRole", "AcceptedAt" });
+
                     b.HasIndex("TenantId", "Status", "UpdatedAt", "QuestionId")
                         .HasDatabaseName("ix_question_tenant_id_status_updated_at_question_id");
 
@@ -640,6 +649,8 @@ namespace Yojana.Knowledge.Migrations
 
                     b.ToTable("question", "knowledge", t =>
                         {
+                            t.HasCheckConstraint("ck_question_answered_state", "(status = 'answered' AND accepted_reply_id IS NOT NULL AND accepted_at IS NOT NULL) OR status <> 'answered'");
+
                             t.HasCheckConstraint("ck_question_closed_state", "(status = 'closed_without_answer' AND closed_reason IS NOT NULL AND closed_by IS NOT NULL AND closed_at IS NOT NULL) OR status <> 'closed_without_answer'");
 
                             t.HasCheckConstraint("ck_question_directed_exactly_one", "(directed_to_user IS NOT NULL AND directed_to_role IS NULL) OR (directed_to_user IS NULL AND directed_to_role IS NOT NULL)");
@@ -921,6 +932,40 @@ namespace Yojana.Knowledge.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionSimilarEntry", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("question_id");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("entry_id");
+
+                    b.Property<DateTime>("MatchedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("matched_at");
+
+                    b.Property<int>("Rank")
+                        .HasColumnType("int")
+                        .HasColumnName("rank");
+
+                    b.HasKey("TenantId", "QuestionId", "EntryId")
+                        .HasName("pk_question_similar_entry");
+
+                    b.HasIndex("TenantId", "EntryId", "MatchedAt", "QuestionId")
+                        .HasDatabaseName("ix_question_similar_entry_tenant_id_entry_id_matched_at_question_id");
+
+                    b.ToTable("question_similar_entry", "knowledge", t =>
+                        {
+                            t.HasCheckConstraint("ck_question_similar_entry_rank", "rank BETWEEN 1 AND 1000");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Knowledge.Data.Entities.TrainingPath", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -1095,6 +1140,9 @@ namespace Yojana.Knowledge.Migrations
                     b.HasIndex("TenantId", "EntryId")
                         .HasDatabaseName("ix_training_progress_tenant_id_entry_id");
 
+                    b.HasIndex("TenantId", "ReadAt", "EntryId", "UserId")
+                        .HasDatabaseName("ix_training_progress_tenant_id_read_at_entry_id_user_id");
+
                     b.HasIndex("TenantId", "UserId", "ReadAt", "PathId", "EntryId")
                         .HasDatabaseName("ix_training_progress_tenant_id_user_id_read_at_path_id_entry_id");
 
@@ -1244,6 +1292,23 @@ namespace Yojana.Knowledge.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_question_reply_revision_tenant_id_question_id");
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionSimilarEntry", b =>
+                {
+                    b.HasOne("Yojana.Knowledge.Data.Entities.KnowledgeEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EntryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_question_similar_entry_tenant_id_entry_id");
+
+                    b.HasOne("Yojana.Knowledge.Data.Entities.Question", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "QuestionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_question_similar_entry_tenant_id_question_id");
                 });
 
             modelBuilder.Entity("Yojana.Knowledge.Data.Entities.TrainingPathEntry", b =>

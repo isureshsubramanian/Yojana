@@ -17,11 +17,25 @@ public sealed class Question : ITenantScoped
     public DateTime AskedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public Guid? AcceptedReplyId { get; set; }
+    public DateTime? AcceptedAt { get; set; }
     public string? ClosedReason { get; set; }
     public Guid? ClosedBy { get; set; }
     public DateTime? ClosedAt { get; set; }
     public int ReopenedCount { get; set; }
     public byte[] RowVersion { get; set; } = [];
+}
+
+/// <summary>
+/// Snapshot of a published entry offered by the existing similar-question search when the question was asked.
+/// Keeping the rank makes the later report reproducible even when the entry or full-text catalogue changes.
+/// </summary>
+public sealed class QuestionSimilarEntry : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid QuestionId { get; set; }
+    public Guid EntryId { get; set; }
+    public int Rank { get; set; }
+    public DateTime MatchedAt { get; set; }
 }
 
 public sealed class QuestionReply : ITenantScoped

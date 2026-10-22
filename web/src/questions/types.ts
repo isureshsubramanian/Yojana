@@ -59,3 +59,19 @@ export interface TrainingPath { pathId: string; role: string; roleLabel: string;
 export interface TrainingWelcome { pathId: string; role: string; roleLabel: string; introduction: string; entries: number; readEntries: number }
 export interface TrainingTeamMember { name: string; joinedAt: string; newMember: boolean; readEntries: number; totalEntries: number; lastReadAt: string | null; finished: boolean }
 export interface TrainingTeam { role: string; roleLabel: string; people: TrainingTeamMember[]; nextCursor: string | null; questionsAskedInFirstThirtyDays: number }
+
+export type KnowledgeReportPeriod = "30_days" | "90_days" | "12_months";
+export interface KnowledgeReportFilters { period: KnowledgeReportPeriod; directedRole?: string; recordKind?: string; topic?: string }
+export interface KnowledgeReportTiming { medianSeconds: number | null; ninetiethPercentileSeconds: number | null; samples: number }
+export interface KnowledgeReportRank { key: string; label: string; count: number }
+export interface KnowledgeReportRecurrence { entryId: string; title: string; reviewedBy: string; askedAgain: number; pointedToIt: number; lastAskedAt: string }
+export interface KnowledgeReportAge { key: string; label: string; count: number }
+export interface KnowledgeReportEntryRead { entryId: string; title: string; reads: number }
+export interface KnowledgeReport {
+  window: { from: string; through: string; timeZone: string; fromUtc: string; toUtc: string };
+  questions: number; firstReply: KnowledgeReportTiming; acceptedAnswer: KnowledgeReportTiming; unanswered: number; pointedToAnEntry: number;
+  byDirectedRole: KnowledgeReportRank[]; byRecordKind: KnowledgeReportRank[]; byTopic: KnowledgeReportRank[];
+  askedAgainDespiteEntry: KnowledgeReportRecurrence[]; unansweredByAge: KnowledgeReportAge[];
+  readByNewTeamMembers: { newMembers: number; reads: number; entries: KnowledgeReportEntryRead[] };
+  similarEntryMinimumRank: number; visibilityNote: string; similarityNote: string;
+}
