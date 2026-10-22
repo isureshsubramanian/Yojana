@@ -8,6 +8,8 @@ namespace Yojana.Knowledge.Questions;
 
 public sealed record QuestionTextMatch(Guid QuestionId, int Rank);
 public sealed record QuestionTextCursor(int Rank, Guid QuestionId);
+public sealed record EntryTextMatch(Guid EntryId, int Rank);
+public sealed record EntryTextCursor(int Rank, Guid EntryId);
 
 /// <summary>
 /// Narrow seam around SQL Server full-text. Test hosts whose SQL edition has no full-text feature replace only this
@@ -20,6 +22,9 @@ public interface IQuestionTextSearch
         CancellationToken cancellationToken);
 
     Task<IReadOnlySet<Guid>> MatchingIdsAsync(string query, IReadOnlyCollection<Guid> questionIds,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<EntryTextMatch>> SearchEntriesAsync(string query, int take, EntryTextCursor? before,
         CancellationToken cancellationToken);
 }
 
@@ -99,6 +104,31 @@ public sealed class SqlServerFullTextQuestionSearch(KnowledgeDbContext db, ITena
             new SqlParameter("@tenant", tenant.TenantId.Value), new SqlParameter("@query", fullText))
             .ToListAsync(cancellationToken);
         return rows.Select(x => x.QuestionId).ToHashSet();
+    }
+
+    public async Task<IReadOnlyList<EntryTextMatch>> SearchEntriesAsync(string query, int take,
+        EntryTextCursor? before, CancellationToken cancellationToken)
+    {
+        var fullText = FullTextExpression(query);
+        if (fullText is null) return [];
+        await EnsureAvailableAsync(cancellationToken);
+        // Coupled to ux_knowledge_entry_entry_id and the full-text index created by P13T08Entries. SQL Server's
+        // full-text key must be one column; tenant isolation remains enforced by the composite key and RLS.
+        const string sql = """
+            SELECT TOP (@take) e.entry_id AS EntryId, ft.[RANK] AS [Rank]
+            FROM CONTAINSTABLE(knowledge.knowledge_entry, (title, problem, answer, steps), @query) ft
+            JOIN knowledge.knowledge_entry e ON e.entry_id = ft.[KEY]
+            WHERE e.tenant_id = @tenant AND e.status = 'published'
+                AND (@beforeRank IS NULL OR ft.[RANK] < @beforeRank
+                    OR (ft.[RANK] = @beforeRank AND e.entry_id < @beforeId))
+            ORDER BY ft.[RANK] DESC, e.entry_id DESC
+            """;
+        return await db.Database.SqlQueryRaw<EntryTextMatch>(sql,
+            new SqlParameter("@query", fullText), new SqlParameter("@tenant", tenant.TenantId.Value),
+            new SqlParameter("@take", take),
+            new SqlParameter("@beforeRank", SqlDbType.Int) { Value = (object?)before?.Rank ?? DBNull.Value },
+            new SqlParameter("@beforeId", SqlDbType.UniqueIdentifier) { Value = (object?)before?.EntryId ?? DBNull.Value })
+            .ToListAsync(cancellationToken);
     }
 
     private async Task EnsureAvailableAsync(CancellationToken cancellationToken)

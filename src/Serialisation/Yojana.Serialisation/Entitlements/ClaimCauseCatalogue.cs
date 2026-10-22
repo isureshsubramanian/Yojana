@@ -11,7 +11,7 @@ using Yojana.Serialisation.Data.Entities;
 
 namespace Yojana.Serialisation.Entitlements;
 
-public sealed class ClaimCauseCatalogue(SerialisationDbContext db, ITenantContext tenant)
+public sealed class ClaimCauseCatalogue(SerialisationDbContext db, ITenantContext tenant) : IClaimCauseNamePort
 {
     public static readonly IReadOnlyList<ClaimCause> Defaults = [
         new("STOPPED_WORKING", "Stopped working"), new("LIQUID_SPILL", "Liquid spill"),
@@ -27,6 +27,9 @@ public sealed class ClaimCauseCatalogue(SerialisationDbContext db, ITenantContex
         return rows.Count == 0 ? Defaults : rows.OrderBy(x => Rank(x.Code)).ThenBy(x => x.Code, StringComparer.Ordinal)
             .Select(x => new ClaimCause(x.Code, x.CustomerWording, x.Active)).ToList();
     }
+
+    async Task<IReadOnlyList<ClaimCauseLabel>> IClaimCauseNamePort.ListAsync(CancellationToken cancellationToken) =>
+        (await ReadAsync(cancellationToken)).Select(x => new ClaimCauseLabel(x.Code, x.CustomerWording, x.Active)).ToList();
 
     public static string Version(IReadOnlyList<ClaimCause> causes) => DocumentVersion.Encode(
         SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(causes.OrderBy(x => x.Code, StringComparer.Ordinal))));

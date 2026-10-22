@@ -59,6 +59,12 @@ public static class PortalDisclosureField
 public sealed record DisclosurePolicyRow(string Field, string Tier, bool Enabled);
 public sealed record DisclosurePolicyView(bool PublicTierEnabled, IReadOnlyList<DisclosurePolicyRow> Fields,
     string SettingsVersion);
+
+/// <summary>Read-only disclosure policy boundary for modules that render references to serialisation cases.</summary>
+public interface IDisclosurePolicyReadPort
+{
+    Task<DisclosurePolicyView> ReadAsync(CancellationToken cancellationToken);
+}
 public sealed record UpdateDisclosureFields(IReadOnlyList<DisclosurePolicyRow> Fields);
 public sealed record UpdatePublicPortalSetting(bool Enabled, string ExpectedVersion);
 

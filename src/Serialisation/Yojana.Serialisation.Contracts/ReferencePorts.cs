@@ -26,6 +26,14 @@ public interface IItemFamilyNamePort
     Task<IReadOnlyList<ItemFamilyLabel>> ListAsync(CancellationToken cancellationToken);
 }
 
+public sealed record ClaimCauseLabel(string Code, string Label, bool Active);
+
+/// <summary>Readable tenant claim-cause labels without exposing the claims catalogue persistence model.</summary>
+public interface IClaimCauseNamePort
+{
+    Task<IReadOnlyList<ClaimCauseLabel>> ListAsync(CancellationToken cancellationToken);
+}
+
 /// <summary>A business-partner label supplied by the party-owning module or a connector.</summary>
 public sealed record PartyLabel(Guid PartyRef, string Code, string? Name, string? PartyType);
 

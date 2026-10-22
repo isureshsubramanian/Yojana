@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Wolverine;
 using Yojana.Knowledge.Contracts;
+using Yojana.Knowledge.Entries;
 using Yojana.Knowledge.Questions;
 using Yojana.Platform.Contracts.Records;
 using Yojana.Platform.Contracts.Security;
@@ -16,6 +17,11 @@ public sealed record AskQuestionRequest(Guid RecordId, string RecordKind, string
 public sealed record QuestionBodyRequest(string Body);
 public sealed record AcceptAnswerRequest(Guid ReplyId);
 public sealed record CloseQuestionRequest(string Reason);
+public sealed record EditEntryRequest(string Title, string Problem, string Answer, string Steps,
+    IReadOnlyList<EntryTagInput> Tags, IReadOnlyList<EntryRecordLinkInput> RecordLinks,
+    IReadOnlyList<WrittenAgainstInput> WrittenAgainst);
+public sealed record EntryDecisionRequest(string? Note);
+public sealed record RetireEntryRequest(string Note);
 
 public static class KnowledgeEndpoints
 {
@@ -47,6 +53,9 @@ public static class KnowledgeEndpoints
         questions.MapPost("/{questionId:guid}/reopen", (Guid questionId, ClaimsPrincipal user,
             IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<QuestionChangeResult>(bus, tenant,
                 new ReopenQuestion(questionId, Actor(user)), ct));
+        questions.MapPost("/{questionId:guid}/entry", (Guid questionId, ClaimsPrincipal user,
+            IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntryChangeResult>(bus, tenant,
+                new CreateEntryFromAnswer(questionId, Actor(user)), ct));
 
         questions.MapGet("/addressees", async (string? search, string? cursor, int? take,
             QuestionQueries queries, CancellationToken ct) => await Read(async () =>
@@ -75,6 +84,40 @@ public static class KnowledgeEndpoints
             Guid replyId, ClaimsPrincipal user, QuestionQueries queries, CancellationToken ct) => await Read(async () =>
                 await queries.RevisionsAsync(questionId, replyId, Viewer(user), ct) is { } result
                     ? Results.Ok(result) : Results.NotFound()));
+
+        var entries = app.MapGroup("/api/knowledge/entries").RequireAuthorization(YojanaPolicy.StaffMember);
+        entries.MapGet("/tag-choices", async (KnowledgeEntryQueries queries, CancellationToken ct) =>
+            await Read(async () => Results.Ok(await queries.TagChoicesAsync(ct))));
+        entries.MapGet("/review", async (string? cursor, int? take, ClaimsPrincipal user,
+            KnowledgeEntryQueries queries, CancellationToken ct) => await Read(async () => Results.Ok(
+                await queries.ReviewQueueAsync(cursor, take ?? 25, Viewer(user), ct))));
+        entries.MapGet("/", async (string? query, string? role, string? task, string? cursor, int? take,
+            KnowledgeEntryQueries queries, CancellationToken ct) => await Read(async () => Results.Ok(
+                await queries.BrowseAsync(query, role, task, cursor, take ?? 25, ct))));
+        entries.MapGet("/{entryId:guid}", async (Guid entryId, ClaimsPrincipal user,
+            KnowledgeEntryQueries queries, CancellationToken ct) => await Read(async () =>
+                await queries.EntryAsync(entryId, Viewer(user), ct) is { } result
+                    ? Results.Ok(result) : Results.NotFound()));
+        entries.MapGet("/{entryId:guid}/changes-since-last-round", async (Guid entryId, ClaimsPrincipal user,
+            KnowledgeEntryQueries queries, CancellationToken ct) => await Read(async () =>
+                await queries.ChangesSinceLastRoundAsync(entryId, Viewer(user), ct) is { } result
+                    ? Results.Ok(result) : Results.NotFound()));
+        entries.MapPut("/{entryId:guid}", (Guid entryId, EditEntryRequest request, ClaimsPrincipal user,
+            IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntryChangeResult>(bus, tenant,
+                new EditDraft(entryId, new EntryDraftInput(request.Title, request.Problem, request.Answer,
+                    request.Steps, request.Tags, request.RecordLinks, request.WrittenAgainst), Actor(user)), ct));
+        entries.MapPost("/{entryId:guid}/submit", (Guid entryId, ClaimsPrincipal user,
+            IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntryChangeResult>(bus, tenant,
+                new SubmitEntryForReview(entryId, Actor(user)), ct));
+        entries.MapPost("/{entryId:guid}/approve", (Guid entryId, EntryDecisionRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<EntryChangeResult>(bus, tenant, new ApproveEntry(entryId, request.Note, Actor(user)), ct));
+        entries.MapPost("/{entryId:guid}/send-back", (Guid entryId, EntryDecisionRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<EntryChangeResult>(bus, tenant, new SendBackEntry(entryId, request.Note ?? "", Actor(user)), ct));
+        entries.MapPost("/{entryId:guid}/retire", (Guid entryId, RetireEntryRequest request,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<EntryChangeResult>(bus, tenant, new RetireEntry(entryId, request.Note, Actor(user)), ct));
         return app;
     }
 
@@ -108,10 +151,14 @@ public static class KnowledgeEndpoints
         var status = ex.Rule switch
         {
             "record_not_visible" or "accept_answer_forbidden" or "close_question_forbidden" or
-                "reopen_question_forbidden" or "question_edit_author_only" or "reply_edit_author_only"
+                "reopen_question_forbidden" or "question_edit_author_only" or "reply_edit_author_only" or
+                "entry_edit_author_only" or "entry_submit_author_only" or "entry_self_review_forbidden" or
+                "entry_review_role_required" or "entry_link_not_visible"
                 => StatusCodes.Status403Forbidden,
-            "record_not_found" or "question_not_found" or "reply_not_found" => StatusCodes.Status404NotFound,
-            "question_not_open" or "question_already_open" => StatusCodes.Status409Conflict,
+            "record_not_found" or "question_not_found" or "reply_not_found" or "entry_not_found" or
+                "entry_link_not_found" => StatusCodes.Status404NotFound,
+            "question_not_open" or "question_already_open" or "entry_already_exists" or "entry_not_draft" or
+                "entry_not_in_review" or "entry_not_published" => StatusCodes.Status409Conflict,
             _ => StatusCodes.Status422UnprocessableEntity,
         };
         return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: status,

@@ -2,6 +2,7 @@
   <ItemGroup>
     <ProjectReference Include="../Yojana.Knowledge.Contracts/Yojana.Knowledge.Contracts.csproj" />
     <ProjectReference Include="../../Platform/Yojana.Platform/Yojana.Platform.csproj" />
+    <ProjectReference Include="../../Serialisation/Yojana.Serialisation.Contracts/Yojana.Serialisation.Contracts.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 </Project>
