@@ -166,15 +166,6 @@ const loadStatusLabels: Record<string, string> = {
 const rollbackOutcomeLabels: Record<string, string> = {
   rolled_back: "Rolled back", refused_touched: "Refused because units were touched", nothing_to_remove: "Nothing to remove",
 };
-const mappingGapLabels: Record<string, string> = {
-  template_not_approved: "Template not approved",
-  policy_not_published: "Policy not published",
-  no_template: "No template",
-  replacement_unit_missing: "Replacement unit missing",
-  attachment_path_missing: "Attachment path missing",
-  attachment_unit_unknown: "Attachment unit unknown",
-  waiting_review: "Waiting for review",
-};
 const refusalReasonLabels: Record<string, string> = {
   item_not_synced: "Item has not synced",
   item_unknown: "Item is not known",
@@ -228,6 +219,7 @@ const validationCheckLabels: Record<string, string> = {
 };
 const validationResultLabels: Record<ValidationResult, string> = {
   pass: "Pass", explained: "Explained", fail: "Fail", hard_fail: "Hard fail", report: "Report",
+  warning: "Warning",
 };
 const validationRoleLabels: Record<ValidationSignatureRole, string> = { preparer: "Prepared", reviewer: "Reviewed" };
 const validationDifferenceLabels: Record<string, string> = {
@@ -252,7 +244,7 @@ export function canonicalisationStatusLabel(value: string): string { return cano
 export function refusalRuleLabel(value: string | null | undefined): string { return value ? refusalRuleLabels[value] ?? readable(value) : "Request refused"; }
 export function validationCheckLabel(code: string, supplied?: string): string { return validationCheckLabels[code] ?? (supplied?.trim() || readable(code)); }
 export function validationResultLabel(value: ValidationResult): string { return validationResultLabels[value]; }
-export function validationResultTone(value: ValidationResult): Tone { return value === "pass" ? "ok" : value === "explained" ? "warn" : value === "fail" || value === "hard_fail" ? "bad" : "info"; }
+export function validationResultTone(value: ValidationResult): Tone { return value === "pass" ? "ok" : value === "explained" || value === "warning" ? "warn" : value === "fail" || value === "hard_fail" ? "bad" : "info"; }
 export function validationLimitLabel(value: string): string {
   if (value === "zero") return "Zero";
   if (value === "none") return "None";
@@ -301,7 +293,6 @@ export function phaseStatusTone(value: string | null | undefined): Tone {
 export function loadStatusLabel(value: string): string { return loadStatusLabels[value] ?? readable(value); }
 export function loadStatusTone(value: string): Tone { return value === "completed" ? "ok" : value === "failed" ? "bad" : /^(queued|running)$/.test(value) ? "info" : "neutral"; }
 export function rollbackOutcomeLabel(value: string): string { return rollbackOutcomeLabels[value] ?? readable(value); }
-export function mappingGapLabel(value: string): string { return mappingGapLabels[value] ?? readable(value); }
 export function refusalReasonLabel(value: string): string {
   const separator = value.indexOf(":");
   if (separator < 0) return refusalReasonLabels[value] ?? readable(value);

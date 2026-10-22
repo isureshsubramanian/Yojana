@@ -6851,7 +6851,7 @@ namespace Yojana.Integration.Migrations
 
                     b.ToTable("migration_validation_check", "migration", t =>
                         {
-                            t.HasCheckConstraint("ck_migration_validation_check_result", "result IN ('pass','explained','fail','hard_fail','report')");
+                            t.HasCheckConstraint("ck_migration_validation_check_result", "result IN ('pass','explained','fail','hard_fail','report','warning')");
                         });
                 });
 

@@ -2,6 +2,7 @@ namespace Yojana.Integration.LegacyMigration.Mapping;
 
 public sealed record StartMappingResponse(Guid RunId, Guid BatchId, string Status);
 public sealed record MappingCount(string Key, long Count);
+public sealed record MigrationGapCount(string Kind, string Label, long Count);
 public sealed record MappingWaitingReviewCount(string Kind, long Count);
 
 public sealed record MigrationMapView(
@@ -22,12 +23,12 @@ public sealed record MigrationMapView(
     IReadOnlyList<MappingCount> EntitlementsByFamily,
     IReadOnlyList<MappingCount> EntitlementsByDateSource,
     long ExpiredEntitlements,
-    IReadOnlyList<MappingCount> GapsByKind,
+    IReadOnlyList<MigrationGapCount> GapsByKind,
     long ExcludedCandidates,
     long WaitingCandidatesLeftOut);
 
-public sealed record MigrationPlanGapView(Guid GapId, Guid? PlanUnitId, string Kind, string Reason,
-    string? SourceKey);
+public sealed record MigrationPlanGapView(Guid GapId, Guid? PlanUnitId, string? ItemCode, string? ItemName,
+    string? Serial, string Kind, string Label, string Reason, string? SourceKey);
 public sealed record MigrationPlanGapPage(IReadOnlyList<MigrationPlanGapView> Items, string? NextCursor);
 
 public sealed record MigrationPlanIdentifierView(string Type, string RawValue, string Issuer,
@@ -75,9 +76,11 @@ public sealed record MigrationPlanUnitView(
 
 public sealed record ConditionMappingRule(string? CardStatus, string? LastMovementKind, string Grade);
 public sealed record MappingSettingsView(bool AllowWaitingReviews, DateOnly? CutoverDate,
-    IReadOnlyList<ConditionMappingRule> ConditionMap);
+    IReadOnlyList<ConditionMappingRule> ConditionMap, Guid? CardCoverPolicyId = null,
+    Guid? SerialMasterCoverPolicyId = null);
 public sealed record UpdateMappingSettingsRequest(bool AllowWaitingReviews, DateOnly? CutoverDate,
-    IReadOnlyList<ConditionMappingRule> ConditionMap);
+    IReadOnlyList<ConditionMappingRule> ConditionMap, Guid? CardCoverPolicyId = null,
+    Guid? SerialMasterCoverPolicyId = null);
 
 public sealed class MappingRuleException(string rule, string message,
     IReadOnlyList<MappingWaitingReviewCount>? waitingReviews = null) : InvalidOperationException(message)

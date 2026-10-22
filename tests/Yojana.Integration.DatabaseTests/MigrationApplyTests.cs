@@ -77,6 +77,10 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
         Assert.Equal(planned, view.UnitsInPlan);
         Assert.True(view.Applied == planned - 1, refusalSummary);
         Assert.Equal(1, view.Refused);
+        var cardPolicyGap = Assert.Single(view.GapsByKind!, row =>
+            row.Kind == PlanGapKind.CardCoverPolicyNotSet);
+        Assert.Equal((PlanGapKind.CardCoverPolicyNotSet, 1), (cardPolicyGap.Kind, cardPolicyGap.Count));
+        Assert.DoesNotContain(view.GapsByKind!, row => row.Kind == PlanGapKind.SerialMasterCoverPolicyNotSet);
         Assert.True(view.EventsWritten >= view.Applied);
         // Plan cover with no policy named (equipment-card or serial-master dates) is not loaded; backfill closes it.
         var expectedEntitlements = await db.MigrationPlanEntitlements.LongCountAsync(row =>

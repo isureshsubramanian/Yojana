@@ -19,7 +19,8 @@ public sealed record MigrationApplyView(Guid LoadId, Guid BatchId, Guid MapRunId
     string RequestedBy, DateTime RequestedAt, DateTime? StartedAt, DateTime? FinishedAt, string? Failure,
     long UnitsInPlan, long Applied, long AlreadyApplied, long Refused, long EventsWritten,
     long EntitlementsWritten, long ReplacementLinksWritten, long CertificatesRecorded,
-    string? RolledBackBy, DateTime? RolledBackAt, Guid? GapReportRunId = null, int? CoverGaps = null);
+    string? RolledBackBy, DateTime? RolledBackAt, Guid? GapReportRunId = null, int? CoverGaps = null,
+    IReadOnlyList<MigrationGapCount>? GapsByKind = null);
 public sealed record MigrationApplyRefusalView(Guid RefusalId, Guid PlanUnitId, string ItemCode, string? Serial,
     IReadOnlyList<string> Reasons);
 public sealed record MigrationApplyRefusalPage(IReadOnlyList<MigrationApplyRefusalView> Items, string? NextCursor);
@@ -120,7 +121,7 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
             .Where(row => row.TenantId == tenant.TenantId && row.BatchId == batchId)
             .OrderByDescending(row => row.RequestedAt).ThenByDescending(row => row.RunId)
             .FirstOrDefaultAsync(cancellationToken);
-        return run is null ? null : View(run);
+        return run is null ? null : await ViewAsync(run, cancellationToken);
     }
 
     public async Task<MigrationApplyRefusalPage> RefusalsAsync(Guid loadId, string? cursor, int take,
@@ -402,9 +403,25 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
 
     private DeliveryOptions Options() => new() { TenantId = tenant.TenantId.ToString() };
 
-    private static MigrationApplyView View(MigrationApplyRun run) => new(run.RunId, run.BatchId, run.MapRunId,
-        run.Rehearsal, run.Status, run.RequestedBy, run.RequestedAt, run.StartedAt, run.FinishedAt, run.FailureCode,
-        run.UnitsInPlan, run.Applied, run.AlreadyApplied, run.Refused, run.EventsWritten,
-        run.EntitlementsWritten, run.ReplacementLinksWritten, run.CertificatesRecorded, run.RolledBackBy,
-        run.RolledBackAt, run.GapReportRunId, run.CoverGaps);
+    private async Task<MigrationApplyView> ViewAsync(MigrationApplyRun run, CancellationToken cancellationToken)
+    {
+        var cursor = run.CursorPlanUnitId;
+        var rows = await (from gap in db.MigrationPlanGaps.AsNoTracking()
+                          where gap.TenantId == tenant.TenantId && gap.MapRunId == run.MapRunId &&
+                                cursor != null && gap.PlanUnitId != null &&
+                                gap.PlanUnitId.Value.CompareTo(cursor.Value) <= 0 &&
+                                !db.Set<MigrationApplyRefusal>().Any(refusal =>
+                                    refusal.TenantId == gap.TenantId && refusal.RunId == run.RunId &&
+                                    refusal.PlanUnitId == gap.PlanUnitId)
+                          select new { gap.Kind, PlanUnitId = gap.PlanUnitId!.Value })
+            .Distinct().ToListAsync(cancellationToken);
+        var gaps = rows.GroupBy(row => row.Kind).OrderBy(group => group.Key)
+            .Select(group => new MigrationGapCount(group.Key, PlanGapKind.Label(group.Key), group.LongCount()))
+            .ToList();
+        return new(run.RunId, run.BatchId, run.MapRunId, run.Rehearsal, run.Status, run.RequestedBy,
+            run.RequestedAt, run.StartedAt, run.FinishedAt, run.FailureCode, run.UnitsInPlan, run.Applied,
+            run.AlreadyApplied, run.Refused, run.EventsWritten, run.EntitlementsWritten,
+            run.ReplacementLinksWritten, run.CertificatesRecorded, run.RolledBackBy, run.RolledBackAt,
+            run.GapReportRunId, run.CoverGaps, gaps);
+    }
 }

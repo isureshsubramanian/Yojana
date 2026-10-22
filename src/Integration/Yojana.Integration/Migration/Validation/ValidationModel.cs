@@ -24,7 +24,8 @@ internal static class ValidationModel
         modelBuilder.Entity<MigrationValidationCheck>(b =>
         {
             b.ToTable("migration_validation_check", MigrationModel.Schema, t => t.HasCheckConstraint(
-                "ck_migration_validation_check_result", "result IN ('pass','explained','fail','hard_fail','report')"));
+                "ck_migration_validation_check_result",
+                "result IN ('pass','explained','fail','hard_fail','report','warning')"));
             b.HasKey(x => new { x.TenantId, x.CheckId });
             b.Property(x => x.Code).HasMaxLength(80);
             b.Property(x => x.Label).HasMaxLength(200);

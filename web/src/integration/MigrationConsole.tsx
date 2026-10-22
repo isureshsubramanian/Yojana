@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { DataGrid, KpiStrip, StatusBadge, type GridColumn } from "../components";
 import { ApiError } from "../api/client";
@@ -11,7 +11,7 @@ import { MigrationAccess, MigrationPage } from "./MigrationCommon";
 import { migrationApi } from "./migrationApi";
 import {
   batchLabel, batchResult, batchStatusLabel, batchTotals, countTotal, duration, elapsed, failureLabel,
-  finalLoadDisabledReason, loadStatusLabel, loadStatusTone, mappingGapLabel, mayAdministerMigration,
+  finalLoadDisabledReason, loadStatusLabel, loadStatusTone, mayAdministerMigration,
   phaseStatusLabel, phaseStatusTone, profileTotals, refusalReasonLabel,
   rollbackOutcomeLabel, routeLabel, runtimeLabel, statusTone,
 } from "./migrationModel";
@@ -181,19 +181,21 @@ function PhaseStrip({ batch, profile, canonicalisation, reconstruction, map, val
   const reconstructEvents = countTotal(reconstruction?.eventsByMovementKind ?? []);
   const reconstructReviews = countTotal(reconstruction?.queuedForReviewByReason ?? []);
   const mappedUnits = countTotal(map?.unitsByOrigin ?? []);
-  const mapGaps = map?.gapsByKind.map(row => `${mappingGapLabel(row.key)} ${row.count.toLocaleString()}`).join(" · ");
+  const mapGaps = map?.gapsByKind.map(row => <Link key={row.kind} className="migration-phase-link"
+    to={`/integration/migration/validation?batchId=${encodeURIComponent(batch?.batchId ?? "")}&gapKind=${encodeURIComponent(row.kind)}#migration-plan-gaps`}>
+    {row.label} {row.count.toLocaleString()}</Link>);
   return <section className="card" aria-labelledby="migration-phases"><div className="card-header"><h2 id="migration-phases">Migration phases <span className="meta">{batch ? date(batch.requestedAt) : "not run"}</span></h2><span className="muted">The selected extraction and its latest run in each phase</span></div><div className="card-body"><div className="migration-phases">
     <PhaseCard label="0 · Extract" headline={tables.length ? `${tables.length} tables` : "—"} detail={tables.length ? `${totals.rowsRead.toLocaleString()} rows read · ${elapsed(batch?.startedAt ?? null, batch?.finishedAt ?? null)}` : "No table results yet"} status={batch?.status} href="#migration-tables" />
     <PhaseCard label="1 · Profile" headline={profile ? `${profile.classes.length} classes` : "—"} detail={profile ? `${profileCount.toLocaleString()} rows flagged` : "No profiling run yet"} status={profile?.status} href="/integration/migration/profiling" />
     <PhaseCard label="2 · Canonicalise" headline={canonicalisation ? `${canonicalisation.candidateRowsTotal.toLocaleString()} candidates` : "—"} detail={canonicalisation ? canonicalisation.failure ? failureLabel(canonicalisation.failure)! : `${canonicalisation.waitingReviewItems.toLocaleString()} waiting for review` : "No canonicalisation run yet"} status={canonicalisation?.status} href="/integration/migration/review" />
     <PhaseCard label="3 · Reconstruct" headline={reconstruction ? `${reconstruction.candidatesReconstructed.toLocaleString()} units` : "—"} detail={reconstruction ? reconstruction.failure ? failureLabel(reconstruction.failure)! : `${reconstructEvents.toLocaleString()} events · ${reconstructReviews.toLocaleString()} to review` : "No reconstruction run yet"} status={reconstruction?.status} />
-    <PhaseCard label="4 · Map" headline={map ? `${mappedUnits.toLocaleString()} units` : "—"} detail={map ? map.failure ? failureLabel(map.failure)! : mapGaps || "No mapping gaps" : "No map run yet"} status={map?.status} />
+    <PhaseCard label="4 · Map" headline={map ? `${mappedUnits.toLocaleString()} units` : "—"} detail={map ? map.failure ? failureLabel(map.failure)! : mapGaps?.length ? <>{mapGaps}</> : "No mapping gaps" : "No map run yet"} status={map?.status} />
     <PhaseCard label="5 · Validate" headline={validation ? `${validation.hardFailed.toLocaleString()} hard fails open` : "—"} detail={validation ? `${validation.signedChecks.toLocaleString()} of ${validation.checksTotal.toLocaleString()} checks signed` : "No validation run yet"} status={validation?.status} href="/integration/migration/validation" />
     <LoadPhaseCard batchId={batch?.batchId ?? ""} load={load} validation={validation} admin={admin} onChanged={onChanged} />
   </div></div></section>;
 }
 
-function PhaseCard({ label, headline, detail, status, href }: { label: string; headline: string; detail: string; status: string | null | undefined; href?: string }) {
+function PhaseCard({ label, headline, detail, status, href }: { label: string; headline: string; detail: ReactNode; status: string | null | undefined; href?: string }) {
   const body = <><div className="l">{label}</div><div className="n">{headline}</div><div className="s">{detail}</div><StatusBadge tone={phaseStatusTone(status)}>{phaseStatusLabel(status)}</StatusBadge></>;
   if (href?.startsWith("/")) return <Link className="migration-phase" to={href}>{body}</Link>;
   if (href) return <a className="migration-phase" href={href}>{body}</a>;
@@ -223,6 +225,9 @@ function LoadPhaseCard({ batchId, load, validation, admin, onChanged }: { batchI
   return <div className="migration-phase migration-load-phase"><div className="l">6 · Load{load ? ` · ${load.rehearsal ? "rehearsal" : "final"}` : ""}</div><div className="n">{load ? `${load.applied.toLocaleString()} applied` : "—"}</div><div className="s">{load ? <>{load.refused.toLocaleString()} refused · {load.eventsWritten.toLocaleString()} facts written<br />{load.entitlementsWritten.toLocaleString()} cover rows written · {load.replacementLinksWritten.toLocaleString()} links · {load.certificatesRecorded.toLocaleString()} certificates</> : "No load run yet"}</div><StatusBadge tone={load ? loadStatusTone(load.status) : "neutral"}>{load ? loadStatusLabel(load.status) : "Not run"}</StatusBadge>
     {failure && <p className="migration-phase-note">{failure}</p>}
     {load?.coverGaps !== null && load?.coverGaps !== undefined && <Link className="migration-phase-link" to="/entitlements/gaps?channels=migration">{load.coverGaps.toLocaleString()} sold units with no base cover</Link>}
+    {load?.gapsByKind.map(row => <Link key={row.kind} className="migration-phase-link"
+      to={`/integration/migration/validation?batchId=${encodeURIComponent(batchId)}&gapKind=${encodeURIComponent(row.kind)}#migration-plan-gaps`}>
+      {row.label} {row.count.toLocaleString()}</Link>)}
     {load && load.refused > 0 && <button type="button" className="btn sm" onClick={() => openRefusals(load)}>View {load.refused.toLocaleString()} refusals</button>}
     {admin && <div className="migration-load-actions"><button type="button" className="btn sm" disabled={busy || !batchId || !!loadOpenReason} title={loadOpenReason ?? "Loads the plan as a rehearsal"} onClick={() => void start(true)}>Load as rehearsal</button><button type="button" className="btn primary sm" disabled={busy || !batchId || !!loadOpenReason || !!finalReason} title={loadOpenReason ?? finalReason ?? "Loads the signed-off final plan"} onClick={() => setConfirmFinal(true)}>Final load</button>{canRollback && !confirmRollback && <button type="button" className="btn danger sm" disabled={busy} onClick={() => setConfirmRollback(true)}>Roll back rehearsal</button>}</div>}
     {admin && finalReason && <p className="migration-phase-note">Final load unavailable: {finalReason}.</p>}

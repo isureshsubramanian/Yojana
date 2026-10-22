@@ -159,4 +159,10 @@ public sealed class MigrationMappingLiveTests(IntegrationHostFixture fixture)
     {
         foreach (var count in counts) Console.WriteLine("{0} {1}: {2}", heading, count.Key, count.Count);
     }
+
+    private static void Print(string heading, IReadOnlyList<MigrationGapCount> counts)
+    {
+        foreach (var count in counts)
+            Console.WriteLine("{0} {1} ({2}): {3}", heading, count.Kind, count.Label, count.Count);
+    }
 }
