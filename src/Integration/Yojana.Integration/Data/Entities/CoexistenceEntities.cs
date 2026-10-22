@@ -94,6 +94,35 @@ public sealed class ParallelRunPlan : ITenantScoped
     public DateOnly StartDate { get; set; }
     public required string StartedBy { get; set; }
     public DateTime StartedAt { get; set; }
+    // The month-end close planned inside the run (P9-T11); the retire step waits for it to be confirmed.
+    public DateOnly? MonthEndCloseOn { get; set; }
+}
+
+/// <summary>
+/// One kind of record handed from the incumbent to the module during the parallel run (P9-T11, OD-64): planned
+/// by a tenant administrator, then confirmed "module owns" with evidence that the incumbent is read-only for it.
+/// </summary>
+public sealed class ParallelRunHandover : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ConnectionId { get; set; }
+    public required string Kind { get; set; }
+    public DateOnly? PlannedOn { get; set; }
+    public DateOnly? OwnedSince { get; set; }
+    public string? Evidence { get; set; }
+    public string? ConfirmedBy { get; set; }
+    public DateTime? ConfirmedAt { get; set; }
+}
+
+/// <summary>An issued go-live record: a frozen snapshot of the go-live items and handover steps (P9-T11).</summary>
+public sealed class GoLiveRecord : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid RecordId { get; set; }
+    public Guid ConnectionId { get; set; }
+    public DateTime IssuedAt { get; set; }
+    public required string IssuedBy { get; set; }
+    public required string SnapshotJson { get; set; }
 }
 
 /// <summary>An operator's confirmation of one manual parallel-run checklist item, with evidence.</summary>

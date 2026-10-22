@@ -26,7 +26,7 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "dead_letter_item", "dead_letter_event", "manual_outbound_task", "connection_onboarding_confirmation");
         AssertSuperset(tables, "relay", "relay_request", "relay_nonce");
         AssertSuperset(tables, "coexistence_baseline", "coexistence_conflict", "coexistence_scan_state",
-            "parallel_run_plan", "parallel_run_confirmation");
+            "parallel_run_plan", "parallel_run_confirmation", "parallel_run_handover", "go_live_record");
         AssertSuperset(tables, "connection_health", "cx01_survey", "connection_notification_receipt",
             "connection_notification_watchdog", "outbound_document_receipt");
         AssertSuperset(tables, "reconciliation_run", "reconciliation_entity_day",

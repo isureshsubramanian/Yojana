@@ -61,6 +61,8 @@ public static class IntegrationModule
         builder.Services.AddScoped<CoexistenceConflicts>();
         builder.Services.AddScoped<SyncControl>();
         builder.Services.AddScoped<ParallelRun>();
+        builder.Services.AddScoped<ParallelRunDashboardService>();
+        builder.Services.AddScoped<IMigrationGoLiveFacts, Yojana.Integration.LegacyMigration.Apply.MigrationGoLiveFactsReader>();
         builder.Services.AddSingleton(RecurringTenantJob.For<CoexistenceDriftJob>(CoexistenceDriftJob.JobName, CoexistenceDriftJob.Cron));
         builder.Services.AddKeyedScoped<ICoexistenceDriftReader, Cx01CoexistenceDriftReader>(Cx01Capabilities.ConnectorCode);
         builder.Services.AddScoped<IdempotencyIndex>();

@@ -194,6 +194,10 @@ public static class PlatformSetup
             auth.AddPolicy(YojanaPolicy.MigrationReview, p => p.RequireAuthenticatedUser()
                 .RequireClaim(YojanaClaim.TenantId)
                 .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator, YojanaRole.MigrationLead));
+            auth.AddPolicy(YojanaPolicy.ParallelRunRead, p => p.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId)
+                .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator, YojanaRole.IntegrationOperator,
+                    YojanaRole.MigrationLead));
             auth.AddPolicy(YojanaPolicy.LabelPrinter, p => p.RequireAuthenticatedUser()
                 .RequireClaim(YojanaClaim.TenantId)
                 .RequireClaim(YojanaClaim.Role,

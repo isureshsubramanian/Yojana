@@ -77,6 +77,12 @@ public static class YojanaPolicy
     /// <summary>Tenant administrators and migration leads may read migration work and decide review items.</summary>
     public const string MigrationReview = "migration_review";
 
+    /// <summary>
+    /// Read-only parallel-run dashboard and go-live record (P9-T11): administrators, integration operators and migration
+    /// leads, because the dashboard sits on the migration console. Every write stays on the narrower policies.
+    /// </summary>
+    public const string ParallelRunRead = "parallel_run_read";
+
     /// <summary>Operational label printing across service, warehouse, shipping and production roles.</summary>
     public const string LabelPrinter = "label_printer";
 

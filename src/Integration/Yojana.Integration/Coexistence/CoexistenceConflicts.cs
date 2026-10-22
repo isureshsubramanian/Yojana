@@ -145,9 +145,23 @@ public sealed class CoexistenceConflicts(IntegrationDbContext db, ITenantContext
             .ToDictionaryAsync(x => x.ConnectionId, x => x.DisplayLabel, ct);
     }
 
-    private static CoexistenceConflictView View(CoexistenceConflict x, IReadOnlyDictionary<Guid, string> labels) =>
-        new(x.ConflictId, x.ConnectionId, labels.GetValueOrDefault(x.ConnectionId, "Connection"), x.RecordType,
+    private static CoexistenceConflictView View(CoexistenceConflict x, IReadOnlyDictionary<Guid, string> labels)
+    {
+        var (role, module) = Decider(x);
+        return new(x.ConflictId, x.ConnectionId, labels.GetValueOrDefault(x.ConnectionId, "Connection"), x.RecordType,
             x.RecordKey, x.RecordLabel, x.Kind, x.FieldName, x.BaselineValue, x.RemoteValue, x.Status, x.DetectedAt,
             x.LastSeenAt, x.IncumbentChangedAt, x.Decision, x.DecisionNote, x.DecidedBy, x.DecidedAt,
-            x.ManualTaskId, x.ClosedAt);
+            x.ManualTaskId, x.ClosedAt, role, module);
+    }
+
+    // Who decides and what the module holds, for the parallel-run dashboard (P9-T11): contract changes are cover, a
+    // service manager's call; owner and status changes are the service desk's. The module side is the baseline value
+    // the drift scan keeps for the field, not a fresh read of the module.
+    private static (string Role, string? Module) Decider(CoexistenceConflict x) => x.Kind switch
+    {
+        CoexistenceConflictKind.ContractChangedInIncumbent => ("Service manager", "Cover kept in the module"),
+        CoexistenceConflictKind.MigrationOwnerDiffers => ("Service desk",
+            x.BaselineValue is null ? null : $"Owner {x.BaselineValue}"),
+        _ => ("Service desk", x.BaselineValue is null ? "Empty in the module" : $"{x.BaselineValue} kept in the module"),
+    };
 }

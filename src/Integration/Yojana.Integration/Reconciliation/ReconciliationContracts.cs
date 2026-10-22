@@ -18,7 +18,10 @@ public sealed record ReconciliationRunRow(
     DateTime? CompletedAt,
     int MismatchCount,
     int LocationMismatchCount,
-    string RequestedByName);
+    string RequestedByName,
+    DateTime? ExplainedAt = null,
+    string? ExplainedByName = null,
+    string? ExplanationNote = null);
 
 public sealed record ReconciliationRunPage(
     IReadOnlyList<ReconciliationRunRow> Items,

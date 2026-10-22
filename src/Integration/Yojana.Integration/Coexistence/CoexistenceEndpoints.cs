@@ -50,6 +50,47 @@ public static class CoexistenceEndpoints
         group.MapPost("/connections/{connectionId:guid}/parallel-run/{itemCode}/confirm", (Guid connectionId,
             string itemCode, ConfirmParallelRunItem request, ClaimsPrincipal user, ParallelRun run, CancellationToken ct) =>
                 Invoke(() => run.ConfirmAsync(connectionId, itemCode, request, Actor(user), ct)));
+        group.MapPut("/connections/{connectionId:guid}/parallel-run/month-end-close", (Guid connectionId,
+            SetMonthEndClose request, ClaimsPrincipal user, ParallelRunDashboardService dashboard, CancellationToken ct) =>
+                Invoke(() => dashboard.SetMonthEndCloseAsync(connectionId, request, Actor(user), ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        group.MapPut("/connections/{connectionId:guid}/parallel-run/handover/{kind}/plan", (Guid connectionId, string kind,
+            PlanHandover request, ClaimsPrincipal user, ParallelRunDashboardService dashboard, CancellationToken ct) =>
+                Invoke(() => dashboard.PlanHandoverAsync(connectionId, kind, request, Actor(user), ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        group.MapPost("/connections/{connectionId:guid}/parallel-run/handover/{kind}/confirm", (Guid connectionId,
+            string kind, ConfirmHandover request, ClaimsPrincipal user, ParallelRunDashboardService dashboard,
+            CancellationToken ct) => Invoke(() => dashboard.ConfirmHandoverAsync(connectionId, kind, request, Actor(user), ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        group.MapPost("/connections/{connectionId:guid}/go-live/{itemCode}/confirm", (Guid connectionId, string itemCode,
+            ConfirmGoLiveItem request, ClaimsPrincipal user, ParallelRunDashboardService dashboard, CancellationToken ct) =>
+                // The customer's own sign-off is a tenant administrator's to record; the other items are operations'.
+                itemCode == GoLiveItemCodes.CustomerSignoff && !user.HasClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator)
+                    ? Task.FromResult(Results.Forbid())
+                    : Invoke(() => dashboard.ConfirmGoLiveItemAsync(connectionId, itemCode, request, Actor(user), ct)));
+        group.MapPost("/connections/{connectionId:guid}/go-live/record", (Guid connectionId, ClaimsPrincipal user,
+            ParallelRunDashboardService dashboard, CancellationToken ct) =>
+                Invoke(() => dashboard.IssueRecordAsync(connectionId, Actor(user), ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        // Reads only, on the wider policy: migration leads see the dashboard from the migration console (P9-T11).
+        var reads = app.MapGroup("/api/integration").RequireAuthorization(YojanaPolicy.ParallelRunRead);
+        reads.MapGet("/connections/{connectionId:guid}/parallel-run/dashboard", (Guid connectionId,
+            ParallelRunDashboardService dashboard, CancellationToken ct) => Invoke(() => dashboard.ViewAsync(connectionId, ct)));
+        reads.MapGet("/go-live/records/{recordId:guid}", (Guid recordId, ParallelRunDashboardService dashboard,
+            CancellationToken ct) => Invoke(() => dashboard.RecordAsync(recordId, ct)));
+        reads.MapGet("/go-live/records/{recordId:guid}/csv", async (Guid recordId, ParallelRunDashboardService dashboard,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                return Results.File(await dashboard.RecordCsvAsync(recordId, ct), "text/csv", $"go-live-record-{recordId:N}.csv");
+            }
+            catch (CoexistenceRuleException ex)
+            {
+                return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status404NotFound,
+                    extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+            }
+        });
         return app;
     }
 

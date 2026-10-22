@@ -17,7 +17,8 @@ public sealed record MigrationLoadSummary(Guid LoadId, string Label, string Kind
     DateTime? StartedAt, DateTime? FinishedAt, long Applied, long Refused, long AlreadyInModule, long CoverReplaced,
     long CoverRefused, long OwnerDiffers, long GoneFromSource, long EventsWritten, long EntitlementsWritten,
     long ReplacementLinksWritten, DateTime? RolledBackAt, string? RolledBackByName, LoadUndo Undo,
-    LoadHandOver? HandOver, DateTime? BatchStartedAt = null, DateTime? BatchFinishedAt = null);
+    LoadHandOver? HandOver, DateTime? BatchStartedAt = null, DateTime? BatchFinishedAt = null,
+    DateTime? RollbackStartedAt = null);
 public sealed record MigrationLoadSummaryPage(IReadOnlyList<MigrationLoadSummary> Items, string? NextCursor);
 
 /// <summary>
@@ -248,7 +249,8 @@ public sealed partial class ApplyService
                 run.OwnerDiffers, run.GoneFromSource, run.EventsWritten, run.EntitlementsWritten,
                 run.ReplacementLinksWritten, run.RolledBackAt,
                 run.RolledBackBy is null ? null : names.GetValueOrDefault(run.RolledBackBy) ?? "Unknown user",
-                new(blocked is null, blocked?.Message), await HandOverAsync(run, connectionId, cancellationToken)));
+                new(blocked is null, blocked?.Message), await HandOverAsync(run, connectionId, cancellationToken))
+                { RollbackStartedAt = run.RollbackStartedAt });
         }
         return items;
     }

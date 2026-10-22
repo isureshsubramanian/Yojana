@@ -1490,6 +1490,44 @@ namespace Yojana.Integration.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.GoLiveRecord", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RecordId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("record_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<DateTime>("IssuedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("issued_at");
+
+                    b.Property<string>("IssuedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("issued_by");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("snapshot_json");
+
+                    b.HasKey("TenantId", "RecordId")
+                        .HasName("pk_go_live_record");
+
+                    b.HasIndex("TenantId", "ConnectionId", "IssuedAt")
+                        .HasDatabaseName("ix_go_live_record_tenant_id_connection_id_issued_at");
+
+                    b.ToTable("go_live_record", "integration");
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.IdempotencyClaim", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -2022,6 +2060,49 @@ namespace Yojana.Integration.Migrations
                     b.ToTable("parallel_run_confirmation", "integration");
                 });
 
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ParallelRunHandover", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<string>("Kind")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTime?>("ConfirmedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("confirmed_at");
+
+                    b.Property<string>("ConfirmedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("confirmed_by");
+
+                    b.Property<string>("Evidence")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("evidence");
+
+                    b.Property<DateOnly?>("OwnedSince")
+                        .HasColumnType("date")
+                        .HasColumnName("owned_since");
+
+                    b.Property<DateOnly?>("PlannedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("planned_on");
+
+                    b.HasKey("TenantId", "ConnectionId", "Kind")
+                        .HasName("pk_parallel_run_handover");
+
+                    b.ToTable("parallel_run_handover", "integration");
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.ParallelRunPlan", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -2035,6 +2116,10 @@ namespace Yojana.Integration.Migrations
                     b.Property<int>("Days")
                         .HasColumnType("int")
                         .HasColumnName("days");
+
+                    b.Property<DateOnly?>("MonthEndCloseOn")
+                        .HasColumnType("date")
+                        .HasColumnName("month_end_close_on");
 
                     b.Property<DateOnly>("StartDate")
                         .HasColumnType("date")
@@ -2250,6 +2335,20 @@ namespace Yojana.Integration.Migrations
                     b.Property<Guid>("ConnectionId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("connection_id");
+
+                    b.Property<DateTime?>("ExplainedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("explained_at");
+
+                    b.Property<string>("ExplainedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("explained_by");
+
+                    b.Property<string>("ExplanationNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("explanation_note");
 
                     b.Property<string>("Failure")
                         .HasMaxLength(4000)
@@ -2689,6 +2788,10 @@ namespace Yojana.Integration.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("requested_by");
+
+                    b.Property<DateTime?>("RollbackStartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("rollback_started_at");
 
                     b.Property<DateTime?>("RolledBackAt")
                         .HasColumnType("datetime2(3)")

@@ -39,6 +39,10 @@ public enum ConnectionAuditEventType
     DocumentSettingsChanged,
     MigrationLicenceConfirmed,
     MigrationLicenceWithdrawn,
+    ParallelRunHandoverPlanned,
+    ParallelRunHandoverConfirmed,
+    GoLiveRecordIssued,
+    ReconciliationExplained,
 }
 
 public sealed record ConnectionAuditEvent(

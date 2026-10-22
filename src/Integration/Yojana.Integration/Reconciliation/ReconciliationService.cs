@@ -1,3 +1,5 @@
+using Yojana.Integration.Contracts;
+using Yojana.Integration.Security.Audit;
 using Yojana.Integration.Connections;
 using System.Text;
 using System.Text.Json;
@@ -26,7 +28,8 @@ public sealed partial class ReconciliationService(
     ReconciliationBusinessDay businessDay,
     IReconciliationBackfillScheduler backfills,
     DeadLetterService deadLetters,
-    IUserDirectory people)
+    IUserDirectory people,
+    IConnectionAuditSink audit)
 {
     public async Task<IReadOnlyList<Guid>> RunScheduledAsync(CancellationToken cancellationToken)
     {
@@ -152,11 +155,14 @@ public sealed partial class ReconciliationService(
                     MismatchCount = run.MismatchCount,
                     LocationMismatchCount = run.LocationMismatchCount,
                     RequestedBy = run.RequestedBy,
+                    ExplainedAt = run.ExplainedAt,
+                    ExplainedBy = run.ExplainedBy,
+                    ExplanationNote = run.ExplanationNote,
                 }).OrderByDescending(row => row.StartedAt).ThenByDescending(row => row.RunId)
             .Take(take + 1).ToListAsync(cancellationToken);
         var more = rows.Count > take;
-        var names = await people.DisplayNamesAsync(rows.Take(take).Where(row => row.RequestedBy is not null)
-            .Select(row => row.RequestedBy!).Distinct().ToList(), cancellationToken);
+        var names = await people.DisplayNamesAsync(rows.Take(take).SelectMany(row => new[] { row.RequestedBy, row.ExplainedBy })
+            .OfType<string>().Distinct().ToList(), cancellationToken);
         var page = rows.Take(take).Select(row => View(row, names)).ToList();
         return new(page, more && page.Count != 0
             ? Encode(new(page[^1].StartedAt, page[^1].RunId)) : null);
@@ -177,11 +183,13 @@ public sealed partial class ReconciliationService(
         var locations = await db.ReconciliationLocationResults.AsNoTracking()
             .Where(row => row.TenantId == tenant.TenantId && row.ReconciliationRunId == runId)
             .OrderBy(row => row.LocationCode).ThenBy(row => row.ItemCode).ToListAsync(cancellationToken);
-        var names = run.RequestedBy is null ? new Dictionary<string, string>()
-            : await people.DisplayNamesAsync([run.RequestedBy], cancellationToken);
+        var actors = new[] { run.RequestedBy, run.ExplainedBy }.OfType<string>().Distinct().ToList();
+        var names = actors.Count == 0 ? new Dictionary<string, string>()
+            : await people.DisplayNamesAsync(actors, cancellationToken);
         return new(new(run.ReconciliationRunId, run.ConnectionId, connectionName, run.RangeStart,
                 run.RangeEnd, run.Trigger, run.Status, run.StartedAt, run.CompletedAt,
-                run.MismatchCount, run.LocationMismatchCount, RequestedByName(run.Trigger, run.RequestedBy, names)), run.Failure,
+                run.MismatchCount, run.LocationMismatchCount, RequestedByName(run.Trigger, run.RequestedBy, names),
+                run.ExplainedAt, ExplainedByName(run.ExplainedBy, names), run.ExplanationNote), run.Failure,
             entityRows.Select(row => new ReconciliationEntityDayView(row.ReconciliationEntityDayResultId,
                 row.Entity, row.BusinessDate, row.SourceCount, row.ModuleCount, row.SourceQuantity,
                 row.ModuleQuantity, row.SourceDistinctSerials, row.ModuleDistinctSerials,
@@ -344,7 +352,37 @@ public sealed partial class ReconciliationService(
     private static ReconciliationRunRow View(RunProjection row, IReadOnlyDictionary<string, string> names) => new(
         row.RunId, row.ConnectionId, row.ConnectionName, row.RangeStart, row.RangeEnd, row.Trigger, row.Status,
         row.StartedAt, row.CompletedAt, row.MismatchCount, row.LocationMismatchCount,
-        RequestedByName(row.Trigger, row.RequestedBy, names));
+        RequestedByName(row.Trigger, row.RequestedBy, names), row.ExplainedAt, ExplainedByName(row.ExplainedBy, names),
+        row.ExplanationNote);
+
+    private static string? ExplainedByName(string? explainedBy, IReadOnlyDictionary<string, string> names) =>
+        explainedBy is null ? null : names.GetValueOrDefault(explainedBy) ?? "Unknown user";
+
+    /// <summary>
+    /// A person's explanation of a mismatched run (P9-T11, OD-64 d): the run stays a mismatch, but the parallel-run
+    /// dashboard counts it as explained. Clean, running and failed runs have nothing to explain.
+    /// </summary>
+    public async Task<ReconciliationRunDetail> ExplainAsync(Guid runId, string note, string actor,
+        CancellationToken cancellationToken)
+    {
+        var text = note?.Trim();
+        if (string.IsNullOrEmpty(text) || text.Length > 500)
+            throw new ReconciliationRuleException("reconciliation_explanation_required",
+                "Explain the difference in at most 500 characters.");
+        var run = await db.ReconciliationRuns.SingleOrDefaultAsync(row => row.TenantId == tenant.TenantId
+            && row.ReconciliationRunId == runId, cancellationToken)
+            ?? throw new ReconciliationRuleException("reconciliation_run_not_found", "The reconciliation run was not found.");
+        if (run.Status != ReconciliationRunStatus.Mismatch)
+            throw new ReconciliationRuleException("reconciliation_run_not_mismatch", "Only a run with differences can be explained.");
+        run.ExplainedAt = clock.UtcNow;
+        run.ExplainedBy = actor;
+        run.ExplanationNote = text;
+        await db.SaveChangesAsync(cancellationToken);
+        await audit.AppendAsync(new(tenant.TenantId, Guid.CreateVersion7(clock.UtcNow), run.ConnectionId,
+            ConnectionAuditEventType.ReconciliationExplained, actor, clock.UtcNow,
+            JsonSerializer.Serialize(new { RunId = runId }, IntegrationContracts.Json)), cancellationToken);
+        return (await DetailAsync(runId, cancellationToken))!;
+    }
 
     // Never a raw user reference on screen: a name, "Scheduled", or "Not recorded" for runs from before the column.
     private static string RequestedByName(string trigger, string? requestedBy, IReadOnlyDictionary<string, string> names) =>
@@ -391,5 +429,8 @@ public sealed partial class ReconciliationService(
         public int MismatchCount { get; init; }
         public string? RequestedBy { get; init; }
         public int LocationMismatchCount { get; init; }
+        public DateTime? ExplainedAt { get; init; }
+        public string? ExplainedBy { get; init; }
+        public string? ExplanationNote { get; init; }
     }
 }

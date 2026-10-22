@@ -210,6 +210,7 @@ public sealed partial class ApplyService(IntegrationDbContext db, ITenantContext
         var run = await db.Set<MigrationApplyRun>().SingleOrDefaultAsync(row => row.TenantId == tenant.TenantId &&
                 row.RunId == loadId, cancellationToken)
             ?? throw new ApplyRuleException("migration_apply_load_not_found", "The load does not exist.");
+        var startedAt = clock.UtcNow;
         // One rule set for the Undo button and this command (OD-53, OD-62, OD-63): a final load only once no delta
         // built on it stands and the source connection is stopped; a delta only while it is the latest.
         if (await UndoBlockedAsync(run, cancellationToken) is { } blocked)
@@ -228,6 +229,7 @@ public sealed partial class ApplyService(IntegrationDbContext db, ITenantContext
             }
             run.Status = ApplyRunStatus.RolledBack;
             run.RolledBackBy = actor;
+            run.RollbackStartedAt = startedAt;
             run.RolledBackAt = clock.UtcNow;
             await db.SaveChangesAsync(cancellationToken);
         }
