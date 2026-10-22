@@ -69,6 +69,7 @@ export const router = createBrowserRouter([
           { path: "integration/migration/review", lazy: () => import("./integration/MigrationReview") },
           { path: "integration/migration/templates", lazy: () => import("./integration/MigrationTemplates") },
           { path: "integration/migration/validation", lazy: () => import("./integration/MigrationValidation") },
+          { path: "integration/migration/parallel-run", lazy: () => import("./integration/MigrationParallelRun") },
           { path: "integration/migration/settings", lazy: () => import("./integration/MigrationSettings") },
           { path: "integration/migration/loads/:loadId/refusals", lazy: () => import("./integration/MigrationRefusals") },
           { path: "integration/migration/loads/:loadId/delta", lazy: () => import("./integration/MigrationDelta") },
