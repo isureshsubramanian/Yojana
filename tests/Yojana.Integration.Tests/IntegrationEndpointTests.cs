@@ -159,7 +159,7 @@ public sealed class IntegrationEndpointTests
         app.MapMigrationEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
-        Assert.Equal(58, endpoints.Count);
+        Assert.Equal(60, endpoints.Count);
         var readPaths = new HashSet<string>(StringComparer.Ordinal)
         {
             "/api/migration/batches", "/api/migration/batches/{batchId:guid}",
@@ -177,6 +177,8 @@ public sealed class IntegrationEndpointTests
             "/api/migration/plan/units/{planUnitId:guid}",
             "/api/migration/mapping/settings",
             "/api/migration/batches/{batchId:guid}/validation",
+            "/api/migration/batches/{batchId:guid}/validation/export.csv",
+            "/api/migration/batches/{batchId:guid}/validation/export.xlsx",
             "/api/migration/validation/checks/{checkId:guid}",
             "/api/migration/validation/checks/{checkId:guid}/differences",
             "/api/migration/validation/runs/{runId:guid}/sample",

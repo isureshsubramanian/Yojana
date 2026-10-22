@@ -55,6 +55,7 @@ public sealed class MigrationBatch : ITenantScoped
 {
     public TenantId TenantId { get; set; }
     public Guid BatchId { get; set; }
+    public int DisplayNumber { get; set; }
     public required string SourceSystem { get; set; }
     public Guid ConnectionId { get; set; }
     public required string Kind { get; set; }

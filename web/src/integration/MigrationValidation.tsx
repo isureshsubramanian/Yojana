@@ -10,7 +10,7 @@ import { date, useCursorPage } from "./AdminCommon";
 import { MigrationAccess, MigrationPage } from "./MigrationCommon";
 import { migrationApi } from "./migrationApi";
 import {
-  batchLabel, compactNumber, duration, mayAdministerMigration, mayPrepareValidation, mayReviewValidation,
+  batchLabel, compactNumber, duration, failureLabel, mayAdministerMigration, mayPrepareValidation, mayReviewValidation,
   percentage, refusalRuleLabel, signoffDisabledReason, signedChange, validationAttentionCount,
   validationCheckLabel, validationDifferenceLabel, validationLimitLabel, validationResultLabel,
   validationResultTone, validationRoleLabel, validationTrail, validationTrailLine,
@@ -92,7 +92,11 @@ function MigrationValidation() {
     finally { setBusy(false); }
   };
 
-  const disabledReason = signoff ? "A sign-off record was created for this run" : signoffDisabledReason(run);
+  const disabledReason = signoff ? "A sign-off record exists for this run" : signoffDisabledReason(run);
+  const signoffRecordId = signoff?.recordId ?? run?.signoffRecordId ?? null;
+  const signoffRehearsal = signoff?.rehearsal ?? run?.signoffRehearsal ?? null;
+  const signoffCreatedAt = signoff?.createdAt ?? run?.signoffCreatedAt ?? null;
+  const signoffCreatedByName = signoff?.createdByName ?? run?.signoffCreatedByName ?? null;
   const actions = admin ? <>
     <button type="button" className="btn" disabled={busy || !batchId} onClick={() => void rerun(run?.rehearsal ?? true)}>{busy ? "Working…" : "Run checks again"}</button>
     <button type="button" className="btn" disabled={busy || !batchId} title={run?.rehearsal === false ? "Runs the checks as a rehearsal; its sign-off record is stamped REHEARSAL" : "Runs the checks for the final load; its sign-off record lets the final load start"} onClick={() => void rerun(run?.rehearsal === false)}>{run?.rehearsal === false ? "Run rehearsal checks" : "Run final checks"}</button>
@@ -100,7 +104,7 @@ function MigrationValidation() {
   </> : undefined;
 
   const eyebrow = run && currentBatch
-    ? <>{run.rehearsal ? "Rehearsal" : "Final validation"} · {batchLabel(currentBatch, latest)} · cutover needs every check signed by a preparer and a reviewer</>
+    ? <>{run.rehearsal ? `Rehearsal R${run.rehearsalNumber}` : "Final validation"} · {batchLabel(currentBatch, latest)} · {run.loadDate ? `load date ${date(run.loadDate)}` : "plan validation"} · cutover needs every check signed by a preparer and a reviewer</>
     : currentBatch ? <>{batchLabel(currentBatch, latest)} · no validation run yet</> : "Validation and sign-off";
   const unit = run?.checks.find(check => check.code === "unit_master") ?? null;
   const history = run?.checks.find(check => check.code === "historical_events") ?? null;
@@ -136,6 +140,8 @@ function MigrationValidation() {
     <div className="toolbar migration-review-toolbar"><label className="field"><span className="lbl">Extraction</span><select className="select" value={batchId} onChange={event => setBatchId(event.target.value)}><option value="">Choose an extraction</option>{batches.result?.items.map((batch, index) => <option value={batch.batchId} key={batch.batchId}>{batchLabel(batch, batches.grid.page === 1 && index === 0)} · {date(batch.requestedAt)}</option>)}</select></label><button type="button" className="btn sm" disabled={batches.grid.page === 1 || batches.busy} onClick={() => batches.onPage(batches.grid.page - 1)}>Newer extractions</button><button type="button" className="btn sm" disabled={!batches.grid.hasMore || batches.busy} onClick={() => batches.onPage(batches.grid.page + 1)}>Older extractions</button></div>
     <ValidationError error={batches.error ?? error} />
     {notice && <div className="note" role="status"><strong>{signoff?.rehearsal ? "REHEARSAL · " : signoff ? "FINAL · " : ""}</strong>{notice}{signoff && <> <a className="btn sm" href={migrationApi.signoffExportUrl(signoff.recordId)} download>CSV</a></>}</div>}
+    {signoffRecordId && <div className="note" role="status"><strong>{signoffRehearsal ? "REHEARSAL" : "FINAL"} sign-off record.</strong>&nbsp;Created {fmtDateTime(signoffCreatedAt)} by {signoffCreatedByName ?? "Name unavailable"}. <a className="btn sm" href={migrationApi.signoffExportUrl(signoffRecordId)} download>CSV</a></div>}
+    {run?.status === "failed" && <div className="note bad" role="alert"><strong>{failureLabel(run.failureCode) ?? "Validation failed."}</strong>&nbsp;{run.failureDetail ?? "Run the validation checks again."}</div>}
     {run?.hardFailed ? <div className="note migration-hard-fail" role="alert"><strong>{run.hardFailed.toLocaleString()} hard fail{run.hardFailed === 1 ? " stops" : "s stop"} the cutover.</strong>&nbsp;{hardFailFacts(run.checks)} Fix them in the incumbent; the next extraction and rehearsal will check again.</div> : null}
     {run && <KpiStrip label="Validation figures" kpis={[
       { label: "Checks", value: run.checksTotal.toLocaleString(), detail: `${run.passed.toLocaleString()} pass · ${run.explained.toLocaleString()} explained · ${run.failed.toLocaleString()} fail` },
@@ -144,7 +150,7 @@ function MigrationValidation() {
       { label: "History events", value: compactNumber(run.events), detail: `${percentage(run.eventsShortPercent)} short · limit ${settings ? percentage(settings.historicalTolerancePercent) : validationLimitLabel(history?.limitKind ?? "")}` },
       { label: "Sample traced", value: `${run.sampleTraced.toLocaleString()} of ${run.sampleTotal.toLocaleString()}`, detail: "stratified by item family and age" },
     ]} />}
-    <section className="card migration-validation-card" aria-labelledby="validation-checks"><div className="card-header"><h2 id="validation-checks">Checks <span className="meta">source total, {targetLabel.toLowerCase()} total, difference</span></h2>{run?.rehearsal && <StatusBadge tone="info">Rehearsal</StatusBadge>}</div>
+    <section className="card migration-validation-card" aria-labelledby="validation-checks"><div className="card-header"><h2 id="validation-checks">Checks <span className="meta">source total, {targetLabel.toLowerCase()} total, difference</span></h2><div className="right">{run && <><a className="btn sm" href={migrationApi.validationExportUrl(batchId, "csv")} download>CSV</a><a className="btn sm" href={migrationApi.validationExportUrl(batchId, "xlsx")} download>Excel</a></>}{run?.rehearsal && <StatusBadge tone="info">Rehearsal</StatusBadge>}</div></div>
       <DataGrid columns={columns} page={{ rows: run?.checks ?? [], total: run?.checks.length ?? 0, page: 1, pageSize: run?.checks.length || 1, continuation: null, totalIsExact: true, hasMore: false }} rowId={check => check.checkId} onPage={() => undefined} onRowClick={check => void openCheck(check)} loading={loading} viewportHeight={620} emptyText={batchId ? "No validation run exists for this extraction." : "Choose an extraction."} footer={<span className="muted">{run ? `${run.checks.length.toLocaleString()} checks · select a row for counts, differences and signatures` : admin ? "Run the checks to create the first validation result." : "An administrator must start validation."}</span>} />
     </section>
   </MigrationPage><Rail label="Validation settings"><ValidationSettingsPanel settings={settings} admin={admin} onSaved={setSettings} /></Rail></>;

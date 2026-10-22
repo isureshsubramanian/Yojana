@@ -54,6 +54,7 @@ export const migrationApi = {
   templateKeywordRules: (signal?: AbortSignal) => api<TemplateKeywordRules>(`${root}/templates/keyword-rules`, { signal }),
   saveTemplateKeywordRules: (rules: TemplateKeywordRule[], expectedVersion: string) => api<TemplateKeywordRules>(`${root}/templates/keyword-rules`, { method: "PUT", body: { rules, expectedVersion } }),
   validation: (batchId: string, signal?: AbortSignal) => api<MigrationValidation>(`${root}/batches/${batchId}/validation`, { signal }),
+  validationExportUrl: (batchId: string, format: "csv" | "xlsx") => `${root}/batches/${batchId}/validation/export.${format}`,
   runValidation: (batchId: string, rehearsal: boolean) => api<StartValidationResponse>(`${root}/batches/${batchId}/validate`, { method: "POST", body: { rehearsal } }),
   validationCheck: (checkId: string, signal?: AbortSignal) => api<ValidationCheckDetail>(`${root}/validation/checks/${checkId}`, { signal }),
   validationDifferences: (checkId: string, cursor?: string, signal?: AbortSignal) => api<ValidationDifferencePage>(`${root}/validation/checks/${checkId}/differences${query({ cursor, take: 25 })}`, { signal }),

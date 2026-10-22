@@ -4136,6 +4136,10 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("connection_id");
 
+                    b.Property<int>("DisplayNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("display_number");
+
                     b.Property<string>("FailureText")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)")
@@ -4182,6 +4186,10 @@ namespace Yojana.Integration.Migrations
 
                     b.HasIndex("TenantId", "ConnectionId")
                         .HasDatabaseName("ix_migration_batch_tenant_id_connection_id");
+
+                    b.HasIndex("TenantId", "DisplayNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ux_migration_batch_tenant_id_display_number");
 
                     b.HasIndex("TenantId", "SourceSystem")
                         .IsUnique()
@@ -6970,6 +6978,11 @@ namespace Yojana.Integration.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("failure_code");
+
+                    b.Property<string>("FailureDetail")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("failure_detail");
 
                     b.Property<DateTime?>("FinishedAt")
                         .HasColumnType("datetime2(3)")

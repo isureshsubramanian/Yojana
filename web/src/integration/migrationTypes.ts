@@ -40,6 +40,7 @@ export interface MigrationBatchTable {
 
 export interface MigrationBatch {
   batchId: string;
+  displayNumber: string;
   sourceId: string;
   sourceSystem: string;
   kind: string;
@@ -281,9 +282,17 @@ export interface MigrationValidation {
   mapRunId: string;
   targetKind: string;
   rehearsal: boolean;
+  rehearsalNumber: number | null;
   status: string;
   startedAt: string | null;
   finishedAt: string | null;
+  loadDate: string | null;
+  signoffRecordId: string | null;
+  signoffRehearsal: boolean | null;
+  signoffCreatedAt: string | null;
+  signoffCreatedByName: string | null;
+  failureCode: string | null;
+  failureDetail: string | null;
   checksTotal: number;
   passed: number;
   explained: number;

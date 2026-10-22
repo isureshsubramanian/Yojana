@@ -14,7 +14,7 @@ namespace Yojana.Integration.DatabaseTests;
 [Collection("integration host")]
 public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
 {
-    private const string SourceDatabase = "yojana_src_p9t02fix";
+    private const string SourceDatabase = "yojana_src_p9t08gaps";
     private const string Actor = "fictional-migration-admin";
     private const string SecretMarker = "P9T02-secret-marker";
 
@@ -149,6 +149,46 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Batch_display_numbers_continue_existing_rows_and_are_gap_free_back_to_back()
+    {
+        var tenant = await fixture.NewTenantAsync("mignumber");
+        using var scope = fixture.ScopeFor(tenant);
+        var settings = scope.ServiceProvider.GetRequiredService<ITenantSettings>();
+        await settings.SetAsync(MigrationLicenceSettings.SettingKey, MigrationLicencePosition.Confirmed, default);
+        var source = await scope.ServiceProvider.GetRequiredService<MigrationSourceService>().CreateAsync(
+            new("Fictional archive", "number-source", MigrationSourceRuntime.UnsupportedColumnar,
+                MigrationSourceRoute.CrossDatabase, "fictional_archive", LicenceContractReference: "FICTIONAL-NUMBERING",
+                LicenceNote: "Read-only archive access confirmed."), Actor, default);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var existingId = Guid.CreateVersion7(fixture.Clock.UtcNow.AddMinutes(-1));
+        db.MigrationBatches.Add(new MigrationBatch
+        {
+            TenantId = tenant, BatchId = existingId, DisplayNumber = 1, SourceSystem = source.SourceSystem,
+            ConnectionId = source.SourceId, Kind = "full", RequestedBy = Actor,
+            RequestedAt = fixture.Clock.UtcNow.AddMinutes(-1), FinishedAt = fixture.Clock.UtcNow.AddMinutes(-1),
+            Status = MigrationBatchStatus.Succeeded,
+        });
+        await db.SaveChangesAsync();
+
+        var batches = scope.ServiceProvider.GetRequiredService<MigrationBatchService>();
+        using var secondScope = fixture.ScopeFor(tenant);
+        using var thirdScope = fixture.ScopeFor(tenant);
+        var started = await Task.WhenAll(
+            secondScope.ServiceProvider.GetRequiredService<MigrationBatchService>()
+                .StartAsync(new(source.SourceId), Actor, default),
+            thirdScope.ServiceProvider.GetRequiredService<MigrationBatchService>()
+                .StartAsync(new(source.SourceId), Actor, default));
+
+        Assert.Equal("MB-0001", (await batches.DetailAsync(existingId, default))!.DisplayNumber);
+        var allocated = new List<string>();
+        foreach (var response in started)
+            allocated.Add((await batches.DetailAsync(response.BatchId, default))!.DisplayNumber);
+        Assert.Equal(["MB-0002", "MB-0003"], allocated.Order().ToArray());
+        Assert.Equal(["MB-0001", "MB-0002", "MB-0003"],
+            (await batches.ListAsync(null, 10, default)).Items.Select(x => x.DisplayNumber).Order().ToArray());
+    }
+
+    [DatabaseFact]
     public async Task Database_prevents_two_running_batches_for_one_tenant_source()
     {
         var tenant = await fixture.NewTenantAsync("miglock");
@@ -166,6 +206,7 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
             {
                 TenantId = tenant,
                 BatchId = Guid.CreateVersion7(fixture.Clock.UtcNow.AddMilliseconds(offset)),
+                DisplayNumber = offset + 1,
                 SourceSystem = source.SourceSystem,
                 ConnectionId = source.SourceId,
                 Kind = "full",

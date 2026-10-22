@@ -71,6 +71,7 @@ public sealed record MigrationBatchTableView(
 
 public sealed record MigrationBatchView(
     Guid BatchId,
+    string DisplayNumber,
     Guid SourceId,
     string SourceSystem,
     string Kind,

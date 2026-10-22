@@ -45,6 +45,7 @@ public sealed class MigrationValidationRun : ITenantScoped
     public DateTime? FinishedAt { get; set; }
     public required string Status { get; set; }
     public string? FailureCode { get; set; }
+    public string? FailureDetail { get; set; }
 }
 
 public sealed class MigrationValidationCheck : ITenantScoped
