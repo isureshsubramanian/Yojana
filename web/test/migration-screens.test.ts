@@ -3,14 +3,15 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   OUTCOMES, REVIEW_KINDS, REVIEW_STATUSES, batchResult, batchStatusLabel, batchTotals, candidateLetter,
-  canonicalisationStatusLabel, duration, factLabel, factValue, matchRuleLabel, mayAdministerMigration,
+  canonicalisationStatusLabel, countTotal, duration, factLabel, factValue, finalLoadDisabledReason, loadStatusLabel,
+  loadStatusTone, mappingGapLabel, matchRuleLabel, mayAdministerMigration, phaseStatusLabel, phaseStatusTone,
   mayPrepareValidation, mayReadMigration, mayReviewValidation, outcomeLabel, percentage, profileClass, profileStatusLabel, profileTotals, refusalRuleLabel,
-  reviewDecisionLabel, reviewDecisionOptions, reviewKindLabel, reviewStatusLabel, routeLabel, runtimeLabel,
+  refusalReasonLabel, reviewDecisionLabel, reviewDecisionOptions, reviewKindLabel, reviewStatusLabel, rollbackOutcomeLabel, routeLabel, runtimeLabel,
   sampleExample, sampleFacts, serialAsStored, signoffDisabledReason, signedChange, templateResolutionLabel, templateStateLabel,
   templateStateTone, templateTermsLabel, validationAttentionCount, validationCheckLabel, validationDifferenceLabel,
   validationLimitLabel, validationResultLabel, validationRoleLabel, validationTrail, validationTrailLine,
 } from "../src/integration/migrationModel.ts";
-import type { MigrationBatch, MigrationProfile, MigrationReviewDetail, MigrationValidation, TemplateSourceTerms } from "../src/integration/migrationTypes.ts";
+import type { MigrationApply, MigrationBatch, MigrationProfile, MigrationReviewDetail, MigrationValidation, TemplateSourceTerms } from "../src/integration/migrationTypes.ts";
 
 const consoleScreen = readFileSync(new URL("../src/integration/MigrationConsole.tsx", import.meta.url), "utf8");
 const profilingScreen = readFileSync(new URL("../src/integration/MigrationProfiling.tsx", import.meta.url), "utf8");
@@ -21,6 +22,7 @@ const common = readFileSync(new URL("../src/integration/MigrationCommon.tsx", im
 const api = readFileSync(new URL("../src/integration/migrationApi.ts", import.meta.url), "utf8");
 const routes = readFileSync(new URL("../src/routes.tsx", import.meta.url), "utf8");
 const integrationTabs = readFileSync(new URL("../src/integration/Common.tsx", import.meta.url), "utf8");
+const gapReportScreen = readFileSync(new URL("../src/entitlements/GapReport.tsx", import.meta.url), "utf8");
 
 const batch: MigrationBatch = {
   batchId: "internal-only", sourceId: "source-internal", sourceSystem: "source-one", kind: "full",
@@ -70,7 +72,7 @@ test("validation is enabled while the later migration tab remains disabled", () 
 });
 
 test("migration API adapter covers the merged endpoints and sends no browser actor", () => {
-  for (const fragment of ["/sources", "/licence", "/test", "/batches", "/profile", "/samples", "/profiling/outcomes", "/canonicalisation", "/canonicalise", "/review", "/review/export.csv", "/canonicalisation/families/catalogue", "/validate", "/validation/checks", "/differences", "/explain", "/sign", "/sample", "/trace", "/signoff-record", "/validation/settings"]) assert.match(api, new RegExp(fragment.replace("/", "\\/")));
+  for (const fragment of ["/sources", "/licence", "/test", "/batches", "/profile", "/samples", "/profiling/outcomes", "/canonicalisation", "/canonicalise", "/reconstruction", "/map", "/apply", "/loads/", "/refusals", "/rollback", "/review", "/review/export.csv", "/canonicalisation/families/catalogue", "/validate", "/validation/checks", "/differences", "/explain", "/sign", "/sample", "/trace", "/signoff-record", "/validation/settings"]) assert.match(api, new RegExp(fragment.replace("/", "\\/")));
   assert.match(api, /method: "POST", body: \{ sourceId \}/);
   assert.match(api, /method: "PUT", body: \{ classes, expectedVersion \}/);
   assert.doesNotMatch(api, /actor|requestedBy|confirmedBy/i);
@@ -229,6 +231,84 @@ test("console uses the house grid, KPI, drawer, source test and licence form", (
   assert.match(consoleScreen, /migrationApi\.startBatch/); assert.match(consoleScreen, /startNotice\.startsWith\("Extraction refused"\)/);
   assert.match(consoleScreen, /requestedByName/);
   assert.doesNotMatch(consoleScreen, /Matched so far|Cutover target|Waiting for a person/);
+});
+
+test("console phase cards read every real phase for the selected extraction", () => {
+  for (const label of ["2 · Canonicalise", "3 · Reconstruct", "4 · Map", "5 · Validate", "6 · Load"]) assert.ok(consoleScreen.includes(label), label);
+  for (const call of ["profile", "canonicalisation", "reconstruction", "map", "validation", "load"]) assert.match(consoleScreen, new RegExp(`migrationApi\\.${call}\\(phaseBatchId`));
+  for (const field of ["candidateRowsTotal", "waitingReviewItems", "candidatesReconstructed", "eventsByMovementKind", "queuedForReviewByReason", "unitsByOrigin", "gapsByKind", "hardFailed", "signedChecks", "checksTotal"]) assert.ok(consoleScreen.includes(field), field);
+  assert.match(consoleScreen, /\/integration\/migration\/profiling/);
+  assert.match(consoleScreen, /\/integration\/migration\/review/);
+  assert.match(consoleScreen, /\/integration\/migration\/validation/);
+  assert.doesNotMatch(consoleScreen, /Not built yet/);
+  assert.equal(countTotal([{ key: "migrated", count: 580 }, { key: "opening", count: 13 }]), 593);
+});
+
+test("phase cards format every state as a readable badge", () => {
+  const fixtures: [string | null, string, string][] = [
+    [null, "Not run", "neutral"], ["queued", "Waiting", "neutral"], ["running", "Running", "info"],
+    ["completed", "Done", "ok"], ["failed", "Failed", "bad"],
+  ];
+  for (const [status, label, tone] of fixtures) { assert.equal(phaseStatusLabel(status), label); assert.equal(phaseStatusTone(status), tone); }
+});
+
+const loadFixture: MigrationApply = {
+  loadId: "load-internal", batchId: "batch-internal", mapRunId: "map-internal", rehearsal: true, status: "completed",
+  requestedBy: "actor-internal", requestedAt: "2026-09-01T08:00:00Z", startedAt: "2026-09-01T08:00:01Z", finishedAt: "2026-09-01T08:02:00Z", failure: null,
+  unitsInPlan: 593, applied: 580, alreadyApplied: 0, refused: 13, eventsWritten: 2267, entitlementsWritten: 341,
+  replacementLinksWritten: 5, certificatesRecorded: 580, rolledBackBy: null, rolledBackAt: null, gapReportRunId: "gap-internal", coverGaps: 17,
+};
+
+test("load card maps fixture counts, watches active loads and filters the cover-gap link", () => {
+  for (const field of ["applied", "refused", "eventsWritten", "entitlementsWritten", "replacementLinksWritten", "certificatesRecorded", "coverGaps"]) assert.match(consoleScreen, new RegExp(`load\\.${field}`));
+  assert.deepEqual([loadFixture.applied, loadFixture.refused, loadFixture.eventsWritten, loadFixture.entitlementsWritten, loadFixture.replacementLinksWritten, loadFixture.certificatesRecorded, loadFixture.coverGaps], [580, 13, 2267, 341, 5, 580, 17]);
+  assert.match(consoleScreen, /setInterval\(\(\) => void loadPhases\(\), 3000\)/);
+  assert.match(consoleScreen, /\/entitlements\/gaps\?channels=migration/);
+  assert.match(gapReportScreen, /searchParams\.get\("channels"\)/);
+  for (const status of ["queued", "running", "completed", "failed", "rolled_back"]) { assert.doesNotMatch(loadStatusLabel(status), /_/); assert.ok(loadStatusTone(status)); }
+});
+
+test("final load gives a distinct disabled reason for each incomplete gate", () => {
+  const ready = { ...validationRun, rehearsal: false, status: "completed", hardFailed: 0, signedChecks: validationRun.checksTotal };
+  assert.equal(finalLoadDisabledReason(null), "Run final validation first");
+  assert.equal(finalLoadDisabledReason({ ...ready, rehearsal: true }), "The latest validation run is a rehearsal; run final validation");
+  assert.equal(finalLoadDisabledReason({ ...ready, signedChecks: 1 }), "2 checks are not signed");
+  assert.equal(finalLoadDisabledReason({ ...ready, hardFailed: 1 }), "1 hard fail");
+  assert.equal(finalLoadDisabledReason(ready), null);
+  assert.match(consoleScreen, /disabled=\{busy \|\| !batchId \|\| !!loadOpenReason \|\| !!finalReason\}/);
+  assert.match(consoleScreen, /<ErrorNote error=\{error\}/);
+});
+
+test("rehearsal rollback uses an inline confirmation and keeps touched loads in place", () => {
+  for (const text of ["Roll back this rehearsal?", "Every unit, fact, cover row, link and certificate this load wrote will be removed", "Keep the load", "The rehearsal load stays in place"]) assert.ok(consoleScreen.includes(text), text);
+  assert.doesNotMatch(consoleScreen, /window\.confirm|confirm\(/);
+  assert.match(consoleScreen, /result\.touchedUnitIds\.length/);
+  assert.doesNotMatch(consoleScreen, /result\.touchedUnitIds\.map|\{result\.touchedUnitIds\}/);
+  for (const outcome of ["rolled_back", "refused_touched", "nothing_to_remove"]) assert.doesNotMatch(rollbackOutcomeLabel(outcome), /_/);
+});
+
+test("load actions are administrator-only while refusals stay readable to Migration leads", () => {
+  assert.match(consoleScreen, /\{admin && <div className="migration-load-actions"/);
+  assert.match(consoleScreen, /load && load\.refused > 0.*openRefusals/s);
+  assert.match(consoleScreen, /keyset order/);
+  assert.match(consoleScreen, /<DataGrid columns=\{columns\}.*nextCursor/s);
+  assert.doesNotMatch(consoleScreen, />\{row\.(?:refusalId|planUnitId)\}</);
+});
+
+test("every emitted load refusal and map gap has readable formatting", () => {
+  const refusals = [
+    "item_not_synced", "item_unknown", "item_not_serial_tracked", "already_open_on_another_unit", "duplicate_in_batch", "replacement_unit_not_loaded",
+    "entitlement_policy_unknown", "entitlement_policy_not_published", "entitlement_policy_version_differs", "entitlement_policy_family_differs",
+    "entitlement_direction_unknown", "entitlement_start_required", "entitlement_dates_invalid", "entitlement_termination_before_start",
+    "entitlement_evidence_required", "entitlement_selected_evidence_required", "entitlement_selected_evidence_differs", "family_occupied",
+    "migration_certificate_version_not_one", "migration_certificate_provenance_invalid", "migration_certificate_unknowns_required",
+    "migration_certificate_evidence_required", "migration_certificate_required", "replacement_link_invalid", "replacement_policy_must_be_unknown",
+    "identifier_required", "history_depth_unknown", "condition_grade_unknown", "ownership_party_is_us", "identifier_type_repeated",
+    "internal_serial:character_not_encodable_in_code128:*",
+  ];
+  for (const reason of refusals) assert.doesNotMatch(refusalReasonLabel(reason), /_/);
+  for (const kind of ["template_not_approved", "policy_not_published", "no_template", "replacement_unit_missing", "attachment_path_missing", "attachment_unit_unknown", "waiting_review"]) assert.doesNotMatch(mappingGapLabel(kind), /_/);
+  assert.equal(refusalReasonLabel("duplicate_in_batch"), "Identifier is duplicated in this load");
 });
 
 test("profiling screen has batch paging, blocked warning, filters and sample drawer", () => {

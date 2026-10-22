@@ -2,11 +2,12 @@ import { api } from "../api/client";
 import type {
   CanonicalFamilyCatalogue, CanonicalisationRun, MigrationBatch, MigrationBatchPage, MigrationOutcomeChoice, MigrationOutcomeSettings,
   MigrationProfile, MigrationProfileSamples, MigrationReviewDecision, MigrationReviewDecisionResponse,
+  MigrationApply, MigrationApplyRefusalPage, MigrationMap, MigrationReconstruction, RollBackMigrationLoadResponse,
   MigrationReviewDetail, MigrationReviewKind, MigrationReviewPage, MigrationReviewStatus, MigrationSource,
   MigrationSourcePage, MigrationSourceTestResult, PolicyCatalogue, StartMigrationBatchResponse,
   TemplateKeywordRule, TemplateKeywordRules, TemplateMappingDetail, TemplateMappingState,
   TemplateMappingSummaryView, TemplatePatternPage, MigrationValidation, SignoffRecord,
-  StartValidationResponse, ValidationCheck, ValidationCheckDetail, ValidationDifferencePage,
+  StartMigrationApplyResponse, StartValidationResponse, ValidationCheck, ValidationCheckDetail, ValidationDifferencePage,
   ValidationSample, ValidationSampleOutcome, ValidationSamplePage, ValidationSettings, ValidationSignatureRole,
 } from "./migrationTypes";
 
@@ -32,6 +33,12 @@ export const migrationApi = {
   saveOutcomes: (classes: MigrationOutcomeChoice[], expectedVersion: string) => api<MigrationOutcomeSettings>(`${root}/profiling/outcomes`, { method: "PUT", body: { classes, expectedVersion } }),
   canonicalisation: (batchId: string, signal?: AbortSignal) => api<CanonicalisationRun>(`${root}/batches/${batchId}/canonicalisation`, { signal }),
   runCanonicalisation: (batchId: string) => api<{ runId: string; batchId: string; status: string }>(`${root}/batches/${batchId}/canonicalise`, { method: "POST" }),
+  reconstruction: (batchId: string, signal?: AbortSignal) => api<MigrationReconstruction>(`${root}/batches/${batchId}/reconstruction`, { signal }),
+  map: (batchId: string, signal?: AbortSignal) => api<MigrationMap>(`${root}/batches/${batchId}/map`, { signal }),
+  apply: (batchId: string, rehearsal: boolean) => api<StartMigrationApplyResponse>(`${root}/batches/${batchId}/apply`, { method: "POST", body: { rehearsal } }),
+  load: (batchId: string, signal?: AbortSignal) => api<MigrationApply>(`${root}/batches/${batchId}/apply`, { signal }),
+  loadRefusals: (loadId: string, cursor?: string, signal?: AbortSignal) => api<MigrationApplyRefusalPage>(`${root}/loads/${loadId}/refusals${query({ cursor, take: 50 })}`, { signal }),
+  rollbackLoad: (loadId: string) => api<RollBackMigrationLoadResponse>(`${root}/loads/${loadId}/rollback`, { method: "POST" }),
   review: (filters: { batchId: string; kind?: MigrationReviewKind | ""; family?: string; status?: MigrationReviewStatus | ""; find?: string; cursor?: string | undefined; take?: number }, signal?: AbortSignal) =>
     api<MigrationReviewPage>(`${root}/review${query({ ...filters, take: filters.take ?? 25 })}`, { signal }),
   reviewExportUrl: (filters: { batchId: string; kind?: MigrationReviewKind | ""; family?: string; status?: MigrationReviewStatus | ""; find?: string }) =>
