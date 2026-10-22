@@ -14,7 +14,7 @@
 .migration-phase .s { min-height: 34px; color: var(--text-3); font-size: 12px; line-height: 1.4; }
 .migration-load-phase .migration-phase-link { display: block; margin-top: 7px; }
 .migration-load-action-row { display: grid; gap: 12px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
-.migration-load-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.migration-load-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .migration-load-action { display: grid; align-content: start; gap: 6px; min-width: 0; }
 .migration-load-action .btn { justify-self: start; }
 .migration-disabled-reason { color: var(--text-3); font-size: 12px; line-height: 1.4; }
@@ -24,7 +24,13 @@
 .migration-phases .migration-phase-link { display: block; }
 .migration-load-confirm { display: grid; gap: 8px; }
 .migration-load-confirm p { margin: 0; }
+.migration-load-confirm ul { margin: 0; padding-left: 20px; line-height: 1.5; }
 .migration-load-confirm > div { display: flex; gap: 6px; flex-wrap: wrap; }
+.migration-undo-control { display: grid; align-content: start; justify-items: start; gap: 6px; min-width: 0; }
+.migration-hand-over { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.migration-hand-over > span { min-width: 0; }
+.migration-loads-card .table { min-width: 1500px; }
+.migration-loads-card > .card-body:empty { display: none; }
 .migration-touched-grid { margin-top: 12px; color: var(--text-1); background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-s); overflow: hidden; }
 .migration-touched-grid .card-footer { background: var(--surface-1); }
 .migration-refusal-filters { align-items: end; flex-wrap: wrap; }
@@ -33,6 +39,11 @@
 .migration-refusals-card .table { min-width: 900px; }
 /* A table cell treats height as a minimum, so long reasons wrap and short rows keep the house row height. */
 .migration-refusals-card .table td { height: 44px; padding-block: 10px; white-space: normal; overflow-wrap: anywhere; line-height: 1.45; }
+.migration-delta-kv { display: grid; grid-template-columns: 140px minmax(0, 1fr) 140px minmax(0, 1fr); gap: 12px 16px; }
+.migration-delta-kv .k { color: var(--text-3); }
+.migration-delta-kv .v { min-width: 0; overflow-wrap: anywhere; }
+.migration-delta-findings .table { min-width: 1120px; }
+.migration-export-actions { display: flex; gap: 8px; }
 .migration-reason-list { list-style: none; margin: 0; padding: 6px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); column-gap: 8px; }
 .migration-reason { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: baseline; width: 100%; padding: 9px 20px; border: 0; background: none; color: var(--text-1); font: inherit; text-align: left; cursor: pointer; }
 .migration-reason .lbl { overflow-wrap: anywhere; }
@@ -148,4 +159,5 @@
 .migration-settings-layout .grid-viewport .select { min-width: 135px; }
 @media (max-width: 1300px) { .migration-phases { grid-template-columns: repeat(3, minmax(0, 1fr)); } .migration-phase:nth-child(3n + 1) { border-left: 0; } .migration-phase:nth-child(n + 4) { border-top: 1px solid var(--border); } }
 @media (max-width: 1000px) { .migration-settings-layout { grid-template-columns: 1fr; } .migration-overrides-table { grid-column: 1; } }
-@media (max-width: 720px) { .migration-phases, .migration-load-actions { grid-template-columns: 1fr; } .migration-phase + .migration-phase { border-left: 0; border-top: 1px solid var(--border); } .migration-licence, .migration-outcome-row, .migration-canonical-state .card-body, .migration-template-header .right { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; } .migration-family-filter { flex-basis: 100%; } .migration-keyword-rule, .migration-trails { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .migration-load-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } .migration-delta-kv { grid-template-columns: 120px minmax(0, 1fr); } }
+@media (max-width: 720px) { .migration-phases, .migration-load-actions { grid-template-columns: 1fr; } .migration-phase + .migration-phase { border-left: 0; border-top: 1px solid var(--border); } .migration-licence, .migration-hand-over, .migration-outcome-row, .migration-canonical-state .card-body, .migration-template-header .right { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; } .migration-family-filter { flex-basis: 100%; } .migration-keyword-rule, .migration-trails { grid-template-columns: 1fr; } }
