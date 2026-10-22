@@ -31,6 +31,7 @@
 .migration-hand-over > span { min-width: 0; }
 .migration-loads-card .table { min-width: 1500px; }
 .migration-loads-card > .card-body:empty { display: none; }
+.migration-loads-card .table td:last-child { white-space: normal; line-height: 1.35; }
 .migration-touched-grid { margin-top: 12px; color: var(--text-1); background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-s); overflow: hidden; }
 .migration-touched-grid .card-footer { background: var(--surface-1); }
 .migration-refusal-filters { align-items: end; flex-wrap: wrap; }

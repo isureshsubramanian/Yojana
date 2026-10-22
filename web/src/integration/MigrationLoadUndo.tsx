@@ -7,15 +7,16 @@ import type { MigrationLoadSummary, RollBackMigrationLoadResponse, TouchedMigrat
 
 export type UndoableLoad = Pick<MigrationLoadSummary, "loadId" | "label" | "kind" | "undo">;
 
-export function UndoLoadButton({ load, busy = false, hideWhenDisabled = false, onRequest }: {
+export function UndoLoadButton({ load, busy = false, hideWhenDisabled = false, small = true, onRequest }: {
   load: UndoableLoad;
+  small?: boolean;
   busy?: boolean;
   hideWhenDisabled?: boolean;
   onRequest: (load: UndoableLoad) => void;
 }) {
   const reason = busy ? "Another load action is running" : load.undo.allowed ? null : load.undo.reason ?? "This load cannot be undone";
   if (hideWhenDisabled && reason) return null;
-  return <span className="migration-undo-control"><button type="button" className="btn danger sm" disabled={!!reason} onClick={() => onRequest(load)}>Undo {load.label}</button>{reason && <span className="migration-disabled-reason">{reason}</span>}</span>;
+  return <span className="migration-undo-control"><button type="button" className={`btn danger${small ? " sm" : ""}`} disabled={!!reason} onClick={() => onRequest(load)}>Undo {load.label}</button>{reason && <span className="migration-disabled-reason">{reason}</span>}</span>;
 }
 
 export function useMigrationLoadUndo(onChanged: () => void | Promise<void>) {

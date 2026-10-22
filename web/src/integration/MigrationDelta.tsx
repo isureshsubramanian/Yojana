@@ -75,7 +75,7 @@ function MigrationDelta() {
   ], []);
 
   const exportFilters = { kind: filters.kind, itemCode: filters.itemCode, serial: filters.serial };
-  const actions = <><Link className="btn" to="/integration/migration">Back to console</Link>{admin && load && <UndoLoadButton load={load} hideWhenDisabled onRequest={undo.request} />}</>;
+  const actions = <><Link className="btn" to="/integration/migration">Back to console</Link>{admin && load && <UndoLoadButton load={load} hideWhenDisabled small={false} onRequest={undo.request} />}</>;
   const filtered = !!(filters.kind || filters.itemCode || filters.serial);
   const extraction = load?.batchStartedAt ? `${date(load.batchStartedAt)}${load.batchFinishedAt ? `–${date(load.batchFinishedAt)}` : ""}` : "Extraction time not recorded";
 

@@ -283,18 +283,18 @@ function LoadsTable({ source, admin, onChanged }: { source: ReturnType<typeof us
   const undo = useMigrationLoadUndo(onChanged);
   const columns: GridColumn<MigrationLoadSummary>[] = [
     { key: "load", label: "Load", width: 7, mono: true, render: row => row.kind === "delta" ? <Link to={`/integration/migration/loads/${row.loadId}/delta`}>{row.label}</Link> : row.label },
-    { key: "kind", label: "Kind", width: 8, render: row => <StatusBadge tone={loadKindTone(row.kind)}>{loadKindLabel(row.kind)}</StatusBadge> },
-    { key: "batch", label: "Batch", width: 9, mono: true, render: row => row.batchDisplayNumber },
-    { key: "base", label: "Base", width: 6, mono: true, render: row => row.baseLabel ?? "—" },
-    { key: "started", label: "Started", width: 12, render: row => date(row.startedAt ?? row.requestedAt) },
-    { key: "by", label: "By", width: 11, render: row => row.requestedByName },
+    { key: "kind", label: "Kind", width: 9, render: row => <StatusBadge tone={loadKindTone(row.kind)}>{loadKindLabel(row.kind)}</StatusBadge> },
+    { key: "batch", label: "Batch", width: 8, mono: true, render: row => row.batchDisplayNumber },
+    { key: "base", label: "Base", width: 5, mono: true, render: row => row.baseLabel ?? "—" },
+    { key: "started", label: "Started", width: 10, render: row => date(row.startedAt ?? row.requestedAt) },
+    { key: "by", label: "By", width: 8, render: row => row.requestedByName },
     { key: "status", label: "Status", width: 9, render: row => <StatusBadge tone={loadStatusTone(row.status)}>{loadStatusLabel(row.status)}</StatusBadge> },
     { key: "written", label: "Written", width: 7, numeric: true, render: row => row.applied.toLocaleString() },
-    { key: "cover", label: "Cover replaced", width: 8, numeric: true, render: row => row.coverReplaced.toLocaleString() },
+    { key: "cover", label: "Cover replaced", width: 11, numeric: true, render: row => row.coverReplaced.toLocaleString() },
     { key: "refused", label: "Refused", width: 6, numeric: true, render: row => row.refused.toLocaleString() },
-    { key: "owner", label: "Owner differs", width: 7, numeric: true, render: row => row.ownerDiffers.toLocaleString() },
+    { key: "owner", label: "Owner differs", width: 10, numeric: true, render: row => row.ownerDiffers.toLocaleString() },
     { key: "gone", label: "Gone", width: 5, numeric: true, render: row => row.goneFromSource.toLocaleString() },
-    { key: "undo", label: "", width: 10, render: row => !admin ? null : row.undo.allowed
+    { key: "undo", label: "", width: 14, render: row => !admin ? null : row.undo.allowed
       ? <button type="button" className="btn danger sm" disabled={undo.busy} onClick={() => undo.request(row)}>Undo {row.label}</button>
       : <span className="migration-disabled-reason">{row.undo.reason ?? "Not available"}</span> },
   ];
