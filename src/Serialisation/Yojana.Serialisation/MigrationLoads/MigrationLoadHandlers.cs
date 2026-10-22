@@ -445,18 +445,25 @@ public static class ApplyMigratedUnitsHandler
                     cancellationToken);
                 eventsWritten += coverEvents.EventsInserted;
             }
-            foreach (var (unit, _) in prepared.Where(row => row.Unit.Certificate is not null))
+            // One batched issue for the chunk (OD-55, P9-T10c): the engine applies the same rules and writes the same
+            // rows as a single issue, with one read per table instead of about fifteen round trips per unit.
+            var certificateUnits = prepared.Where(row => row.Unit.Certificate is not null).Select(row => row.Unit).ToList();
+            var issuedCertificates = await certificates.IssueMigratedReleaseRecordsAsync(certificateUnits.Select(unit =>
             {
                 var certificate = unit.Certificate!;
                 var mapped = planUnits[unit.PlanUnitId];
-                var issued = await certificates.IssueAsync(new IssueCertificateVersion(mapped.CreatedEventId,
+                return new IssueCertificateVersion(mapped.CreatedEventId,
                     mapped.UnitId, CertificateDocumentKind.ReleaseRecord, CertificateFormType.GenericRelease,
                     null, now, command.ActorRef, command.LegalEntityId, certificate.Provenance,
                     certificate.Unknowns, certificate.Evidence, TriggerSchema: "Migration.PlanCertificate",
-                    MigrationLoadId: command.LoadId), cancellationToken);
+                    MigrationLoadId: command.LoadId);
+            }).ToList(), cancellationToken);
+            for (var index = 0; index < certificateUnits.Count; index++)
+            {
+                var issued = issuedCertificates[index];
                 if (!issued.Issued)
                     throw new CommandRefusedException(issued.RefusalRule ?? "migration_certificate_refused",
-                        issued.RefusalDetail ?? $"Certificate for plan unit {unit.PlanUnitId} was refused.");
+                        issued.RefusalDetail ?? $"Certificate for plan unit {certificateUnits[index].PlanUnitId} was refused.");
                 certificatesRecorded++;
                 eventsWritten++;
             }

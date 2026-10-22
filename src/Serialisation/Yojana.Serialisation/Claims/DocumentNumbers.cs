@@ -25,9 +25,19 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
 
     public static readonly IReadOnlyList<string> Series = [Rma, Claim, WarrantyReplacement, Refurbishment, Recovery, Certificate, PrintJob];
 
-    public async Task<string> NextAsync(string series, DateTime at, CancellationToken cancellationToken)
+    public async Task<string> NextAsync(string series, DateTime at, CancellationToken cancellationToken) =>
+        (await NextRangeAsync(series, at, 1, cancellationToken))[0];
+
+    /// <summary>
+    /// Allocates <paramref name="count"/> consecutive numbers of one series and year in a single allocation (a migration
+    /// load records thousands of certificates per chunk). Gap-free series stay gap-free: the counter moves by the whole
+    /// range under the same locks, inside the caller's transaction.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> NextRangeAsync(string series, DateTime at, int count,
+        CancellationToken cancellationToken)
     {
         ValidateSeries(series);
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
         var ownsTransaction = db.Database.CurrentTransaction is null;
         await using var transaction = ownsTransaction ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
         await db.Database.OpenConnectionAsync(cancellationToken);
@@ -35,7 +45,7 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
         {
             await AcquireLockAsync(ModeLock(tenant.TenantId.Value, series), "Shared", cancellationToken);
             var mode = await ModeAsync(series, cancellationToken);
-            int value;
+            int first;
             if (mode == NumberingMode.GapFree)
             {
                 // TIGHT COUPLING (document-number lock order)
@@ -44,14 +54,14 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
                 // MERGE range locks deadlock when first creators race. WHAT BREAKS IF SEPARATED: reversing or omitting
                 // this order can deadlock first allocation or let a mode switch overtake an in-flight document number.
                 await AcquireLockAsync(CounterLock(tenant.TenantId.Value, series, at.Year), "Exclusive", cancellationToken);
-                value = await NextGapFreeAsync(series, at.Year, cancellationToken);
+                first = await NextGapFreeAsync(series, at.Year, count, cancellationToken);
             }
             else
             {
-                value = await NextSequenceAsync(series, at.Year, cancellationToken);
+                first = await NextSequenceAsync(series, at.Year, count, cancellationToken);
             }
             if (transaction is not null) await transaction.CommitAsync(cancellationToken);
-            return Format(series, at.Year, value);
+            return Enumerable.Range(first, count).Select(value => Format(series, at.Year, value)).ToList();
         }
         finally
         {
@@ -109,23 +119,27 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
         return await command.ExecuteScalarAsync(cancellationToken) as string ?? NumberingMode.Sequence;
     }
 
-    private async Task<int> NextGapFreeAsync(string series, int year, CancellationToken cancellationToken)
+    /// <summary>Returns the first value of the allocated range.</summary>
+    private async Task<int> NextGapFreeAsync(string series, int year, int count, CancellationToken cancellationToken)
     {
         await using var command = Command("""
             MERGE [serialisation].[number_series] WITH (HOLDLOCK) AS target
             USING (SELECT @tenant_id AS tenant_id, @series AS series, @year AS [year]) AS source
             ON target.tenant_id = source.tenant_id AND target.series = source.series AND target.[year] = source.[year]
-            WHEN MATCHED THEN UPDATE SET last_value = target.last_value + 1
-            WHEN NOT MATCHED THEN INSERT (tenant_id, series, [year], last_value) VALUES (source.tenant_id, source.series, source.[year], 1)
+            WHEN MATCHED THEN UPDATE SET last_value = target.last_value + @count
+            WHEN NOT MATCHED THEN INSERT (tenant_id, series, [year], last_value) VALUES (source.tenant_id, source.series, source.[year], @count)
             OUTPUT inserted.last_value;
             """);
         Add(command, "@tenant_id", tenant.TenantId.Value);
         Add(command, "@series", series);
         Add(command, "@year", year);
-        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        Add(command, "@count", count);
+        var last = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        return last - count + 1;
     }
 
-    private async Task<int> NextSequenceAsync(string series, int year, CancellationToken cancellationToken)
+    /// <summary>Returns the first value of the allocated range; a range comes from sp_sequence_get_range in one call.</summary>
+    private async Task<int> NextSequenceAsync(string series, int year, int count, CancellationToken cancellationToken)
     {
         var start = await db.NumberSeries.AsNoTracking().Where(n => n.Series == series && n.Year == year)
             .Select(n => (int?)n.LastValue + 1).SingleOrDefaultAsync(cancellationToken) ?? 1;
@@ -134,8 +148,19 @@ public sealed class DocumentNumbers(SerialisationDbContext db, ITenantContext te
         {
             await EnsureSequenceCommittedAsync(name, start, cancellationToken);
         }
-        await using var command = Command($"SELECT NEXT VALUE FOR [serialisation].[{name}];");
-        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        if (count == 1)
+        {
+            await using var command = Command($"SELECT NEXT VALUE FOR [serialisation].[{name}];");
+            return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        }
+        await using var range = Command("""
+            DECLARE @first sql_variant;
+            EXEC sys.sp_sequence_get_range @sequence_name = @name, @range_size = @count, @range_first_value = @first OUTPUT;
+            SELECT CONVERT(int, @first);
+            """);
+        Add(range, "@name", $"serialisation.{name}");
+        Add(range, "@count", (long)count);
+        return Convert.ToInt32(await range.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private async Task EnsureSequenceAsync(string series, int year, int start, bool restartExisting, CancellationToken cancellationToken)
