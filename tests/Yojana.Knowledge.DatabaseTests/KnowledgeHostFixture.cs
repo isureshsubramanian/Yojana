@@ -8,9 +8,12 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Data.SqlClient;
 using Yojana.Integration;
 using Yojana.Knowledge;
+using Yojana.Knowledge.Questions;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
@@ -55,6 +58,8 @@ public sealed class KnowledgeHostFixture : IAsyncLifetime
         builder.AddSerialisationModule();
         builder.AddIntegrationModule();
         builder.AddKnowledgeModule();
+        if (!await FullTextInstalledAsync())
+            builder.Services.Replace(ServiceDescriptor.Scoped<IQuestionTextSearch, TestOnlyLikeQuestionSearch>());
         var app = builder.Build();
         app.UseApiProblemDetails();
         app.UseYojanaPlatform();
@@ -150,6 +155,16 @@ public sealed class KnowledgeHostFixture : IAsyncLifetime
             Convert.ToBase64String(Enumerable.Range(1, 32).Select(x => (byte)x).ToArray());
         configuration["Integration:Security:LocalKeyEncryption:AllowInProduction"] = "true";
         configuration["Integration:Security:LocalKeyEncryption:ProductionOverrideReason"] = "isolated database test host";
+    }
+
+    private static async Task<bool> FullTextInstalledAsync()
+    {
+        var connectionString = new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = "master" }.ConnectionString;
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT CONVERT(int, FULLTEXTSERVICEPROPERTY('IsFullTextInstalled'))";
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) == 1;
     }
 }
 

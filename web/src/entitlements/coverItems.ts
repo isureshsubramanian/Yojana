@@ -28,7 +28,7 @@ export const coverItemsApi = {
 };
 export const coverLabel = (c: ItemCover) => `${c.familyName} · ${c.policyName} v${c.policyVersion}`;
 export const usageLabel = (c: ItemCover) => c.usage.map((u) => `${u.remaining} ${humanise(u.meterType)} left / ${u.period === "contract_year" ? "contract year" : "term"}`).join(" · ");
-export const unitTabs = ["history", "entitlements", "whats-covered", "cover", "identifiers", "custody", "asbuilt"] as const;
+export const unitTabs = ["history", "entitlements", "whats-covered", "cover", "questions", "identifiers", "custody", "asbuilt"] as const;
 export type UnitTab = typeof unitTabs[number];
 export function unitTab(value: string | null): UnitTab { return unitTabs.includes(value as UnitTab) ? value as UnitTab : "entitlements"; }
 

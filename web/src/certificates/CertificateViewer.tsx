@@ -9,6 +9,8 @@ import { Rail } from "../shell/Drawer";
 import { openDrawer } from "../shell/drawerStore";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { useReferenceNames } from "../corrections/ReferenceFields";
+import { QuestionsPanel } from "../questions/QuestionsPanel";
+import { RecordQuestionsTabs, useQuestionsTab } from "../questions/RecordQuestionsTabs";
 import { certificateApi } from "./api";
 import { certificateEventLabel, formLabel, humanise, shortHash, statusTone } from "./format";
 import type { CertificateDetail, CertificateListRow, CertificateVersionChain } from "./types";
@@ -16,6 +18,7 @@ import "./certificates.css";
 
 export function Component() {
   const { id = "" } = useParams();
+  const questionsTab = useQuestionsTab();
   const [certificate, setCertificate] = useState<CertificateDetail | null>(null);
   const [chain, setChain] = useState<CertificateVersionChain | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -53,6 +56,9 @@ export function Component() {
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Certificates", to: "/certificates" }, { label: certificate.trackingNumber }]} />
       <PageHeader eyebrow={eyebrow} title={`${certificate.primarySerial} · ${itemName}`} sub={`A signed ${humanise(certificate.documentKind).toLowerCase()} whose payload and presentation snapshot never change.`}
         actions={<><PresenceChips users={presence} />{chain?.releaseRecords.length && chain.warrantyCertificates.length ? <a className="btn" href={`/api/certificates/units/${certificate.unitId}/composite`} target="_blank" rel="noreferrer">Composite print</a> : null}<Link className="btn" to={`/units/${certificate.unitId}`}>Open unit</Link></>} />
+      <RecordQuestionsTabs recordKind="certificate" recordId={id} />
+      {questionsTab && <QuestionsPanel recordKind="certificate" recordId={id} />}
+      <div hidden={questionsTab}>
       <div className="stack">
         <KpiStrip kpis={[
           { label: "Status", value: humanise(certificate.status), detail: "current state of this version" },
@@ -79,6 +85,7 @@ export function Component() {
             ]} /></div></section>
           </div>
         </div>
+      </div>
       </div>
     </main>
     <Rail label="Certificate"><Section title="Integrity"><Kv rows={[["Tracking number", <span className="mono" key="tracking">{certificate.trackingNumber}</span>], ["Payload SHA-256", <span className="mono" key="payload">{shortHash(certificate.payloadHash)}</span>], ["Signatures", certificate.signatures.length], ["Certificate version", `v${certificate.version}`]]} /></Section><Section title="Rendering boundary"><p className="muted">The stored HTML is displayed in a sandboxed iframe with no script permission. The renderer also sends a content-security policy that blocks scripts and network resources.</p></Section></Rail>

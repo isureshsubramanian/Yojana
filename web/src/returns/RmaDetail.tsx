@@ -7,6 +7,8 @@ import { usePeople } from "../people/people";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
+import { QuestionsPanel } from "../questions/QuestionsPanel";
+import { RecordQuestionsTabs, useQuestionsTab } from "../questions/RecordQuestionsTabs";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { returnsApi } from "./api";
 import { dispositionOptionState, humanise, initialDisposition, receiptTone, stageNumber, stageTone } from "./format";
@@ -24,6 +26,7 @@ const DISPOSITIONS = [
 export function Component() {
   const tenantTime = useTenantTime();
   const { rmaId = "" } = useParams();
+  const questionsTab = useQuestionsTab();
   const [detail, setDetail] = useState<RmaDetail | null>(null);
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [vendors, setVendors] = useState<Record<string, string | null>>({});
@@ -91,6 +94,9 @@ export function Component() {
         {detail.stage === "received" && <button type="button" className="btn primary" disabled={busy || !canDisposition} title={!canDisposition ? "Choose an enabled disposition for every line and any required vendor" : undefined} onClick={() => void disposition()}><Icon name="check" />Disposition {detail.lines.length === 1 ? "line" : `${detail.lines.length} lines`}</button>}
         {detail.stage === "dispositioned" && <button type="button" className="btn primary" disabled={busy} onClick={() => { setCloseFollowUps(detail.openFollowUps); setDialog("close"); }}><Icon name="check" />Close RMA</button>}
       </div></div>
+      <RecordQuestionsTabs recordKind="rma" recordId={rmaId} />
+      {questionsTab && <QuestionsPanel recordKind="rma" recordId={rmaId} />}
+      <div hidden={questionsTab}>
       <PresenceAdvisory users={presence} editing={rmaEditing} documentLabel="RMA" />
       <div className="cols-3-2 returns-document-layout">
         <div className="stack">
@@ -108,6 +114,7 @@ export function Component() {
           ].map(([label, at], index) => { const skipped = !at && index + 1 < stageNumber(detail.stage); return <li key={label}><span>{label}<span className="s">{at ? tenantTime.dateTime(at) : skipped ? "not required" : "waiting"}</span></span><StatusBadge tone={at ? "ok" : index + 1 === stageNumber(detail.stage) ? "info" : "neutral"}>{at ? "Recorded" : index + 1 === stageNumber(detail.stage) ? "Current" : skipped ? "Skipped" : "Pending"}</StatusBadge></li>; })}</ol>{detail.dispatch && <div className="note info returns-card-note"><strong>Dispatch recorded.</strong>&nbsp;{detail.dispatch.carrierName ?? "Carrier not recorded"}{detail.dispatch.trackingReference ? ` · ${detail.dispatch.trackingReference}` : ""} · by {people(detail.dispatch.dispatchedBy)}</div>}</div></section>
           {detail.lines.filter((line) => line.receiptBusinessTime).map((line) => <section className="card" key={line.rmaLineId}><div className="card-header"><h2>Receipt · line {line.sequence}</h2></div><div className="card-body"><Kv rows={[["Received unit", line.receivedUnitId ? <UnitLink unitId={line.receivedUnitId}>{line.receivedSerial ?? "Open unit"}</UnitLink> : "Provisional identity"], ["Grade", `${humanise(line.conditionGrade)} · ${humanise(line.valuationRule)}`], ["Outcome", humanise(line.receiptOutcome)], ["Location", names.location(line.receivingLocationId)], ["Business time", tenantTime.dateTime(line.receiptBusinessTime)], ["Posting period", line.postingPeriod ?? "—"], ["Received by", people(line.receivedBy)]]} /></div></section>)}
         </div>
+      </div>
       </div>
     </main>
     <Rail label="Return"><Section title="Return"><Kv rows={[["Number", detail.rmaNumber ?? "Awaiting authorisation"], ["Customer", names.party(detail.returningPartyRef)], ["Stage", humanise(detail.stage)], ["Country", detail.serviceCountry], ["Currency", detail.currency]]} /></Section></Rail>

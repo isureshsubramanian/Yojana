@@ -52,6 +52,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, lazy: () => import("./pages/Overview") },
           { path: "search", lazy: () => import("./pages/Search") },
+          { path: "questions", lazy: () => import("./questions/MyQuestions") },
           { path: "lookup", lazy: () => import("./p7/InternalLookup") },
           { path: "imports", lazy: () => import("./p7/ImportJob") },
           { path: "imports/history", lazy: () => import("./p7/ImportHistory") },

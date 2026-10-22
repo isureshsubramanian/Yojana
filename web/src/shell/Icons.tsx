@@ -1,6 +1,6 @@
 // One inline SVG sprite for the whole product (MOD-02 invariant 2). Symbols are the vetted mockup set.
 export type IconName =
-  | "units" | "ent" | "corr" | "claim" | "rma" | "cert" | "import" | "int" | "set" | "scan" | "chev" | "bell"
+  | "units" | "ent" | "corr" | "claim" | "rma" | "cert" | "import" | "int" | "set" | "scan" | "chev" | "bell" | "questions"
   | "home" | "plus" | "filter" | "print" | "x" | "down" | "search" | "range" | "tree" | "check" | "panel"
   | "campaign" | "recover" | "policy" | "layers" | "upload" | "coins" | "sliders" | "list" | "grid" | "returns"
   | "swap" | "refurb" | "cycle" | "label" | "sun" | "moon" | "templates" | "globe"
@@ -47,6 +47,7 @@ export function IconSprite() {
       <symbol id="i-disclosure" viewBox="0 0 24 24"><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="3" /><path d="M4 4l16 16" /></symbol>
       <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" /></symbol>
       <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4l2-2z" /><path d="M10 20a2 2 0 0 0 4 0" /></symbol>
+      <symbol id="i-questions" viewBox="0 0 24 24"><path d="M4 5h16v12H9l-5 4z" /><path d="M10 9a2 2 0 1 1 3 1.7c-.7.4-1 .8-1 1.3" /><path d="M12 15h.01" /></symbol>
       <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7" /><path d="M5 10v10h14V10" /></symbol>
       <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
       <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6 8v6l-4-2v-4L4 5z" /></symbol>

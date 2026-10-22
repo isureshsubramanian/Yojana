@@ -201,6 +201,151 @@ public sealed class QuestionDatabaseTests(KnowledgeHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Thread_returns_server_decided_allowed_actions_for_each_viewer()
+    {
+        var setup = await SetupAsync("actions");
+        var asked = await AskAsync(setup.Tenant, setup.RecordId, setup.Other, [YojanaRole.Technician],
+            null, YojanaRole.ServiceSupervisor);
+        var reply = await InvokeAsync<ReplyToQuestionResult>(setup.Tenant,
+            new ReplyToQuestion(asked.QuestionId, "Replace the failed controller after retaining the media.",
+                Actor(setup.Staff, YojanaRole.ServiceSupervisor)));
+        using var scope = fixture.ScopeFor(setup.Tenant);
+        var queries = scope.ServiceProvider.GetRequiredService<QuestionQueries>();
+        var asker = (await queries.ThreadAsync(asked.QuestionId,
+            new RecordReferenceViewer(setup.Other, [YojanaRole.Technician]), default))!;
+        Assert.Equal(new QuestionAllowedActions(true, true, true, true, false), asker.AllowedActions);
+        Assert.False(asker.Replies.Single().CanEdit);
+        var directedRole = (await queries.ThreadAsync(asked.QuestionId,
+            new RecordReferenceViewer(setup.Staff, [YojanaRole.ServiceSupervisor]), default))!;
+        Assert.True(directedRole.AllowedActions.CanAcceptAnswer);
+        Assert.True(directedRole.Replies.Single().CanEdit);
+        var unrelated = (await queries.ThreadAsync(asked.QuestionId,
+            new RecordReferenceViewer(setup.Administrator, [YojanaRole.Technician]), default))!;
+        Assert.Equal(new QuestionAllowedActions(false, true, false, false, false), unrelated.AllowedActions);
+        var administrator = (await queries.ThreadAsync(asked.QuestionId,
+            new RecordReferenceViewer(setup.Administrator, [YojanaRole.TenantAdministrator]), default))!;
+        Assert.Equal(new QuestionAllowedActions(false, true, true, true, false), administrator.AllowedActions);
+        await InvokeAsync<QuestionChangeResult>(setup.Tenant,
+            new AcceptQuestionAnswer(asked.QuestionId, reply.ReplyId, Actor(setup.Staff, YojanaRole.ServiceSupervisor)));
+        var answered = (await queries.ThreadAsync(asked.QuestionId,
+            new RecordReferenceViewer(setup.Other, [YojanaRole.Technician]), default))!;
+        Assert.Equal(new QuestionAllowedActions(true, false, false, false, true), answered.AllowedActions);
+    }
+
+    [DatabaseFact]
+    public async Task Addressee_lookup_is_names_only_server_paged_and_lists_only_present_roles()
+    {
+        var setup = await SetupAsync("picker");
+        using var scope = fixture.ScopeFor(setup.Tenant);
+        var queries = scope.ServiceProvider.GetRequiredService<QuestionQueries>();
+        var first = await queries.AddresseesAsync("Fictional", null, 2, default);
+        Assert.Equal(2, first.People.Items.Count);
+        Assert.NotNull(first.People.NextCursor);
+        Assert.DoesNotContain(first.People.Items, person => string.IsNullOrWhiteSpace(person.Name));
+        Assert.Contains(first.Roles, role => role.Role == YojanaRole.ServiceSupervisor && role.People == 1);
+        Assert.DoesNotContain(first.Roles, role => role.Role == YojanaRole.Quality);
+        var second = await queries.AddresseesAsync("Fictional", first.People.NextCursor, 2, default);
+        Assert.Single(second.People.Items);
+        Assert.Empty(first.People.Items.Select(x => x.UserId).Intersect(second.People.Items.Select(x => x.UserId)));
+    }
+
+    [DatabaseFact]
+    public async Task My_questions_filters_waiting_order_and_keyset_pages_on_the_server()
+    {
+        fixture.Clock.UtcNow = new DateTime(2026, 9, 10, 9, 0, 0, DateTimeKind.Utc);
+        var setup = await SetupAsync("mine");
+        var oldest = await AskAsync(setup.Tenant, setup.RecordId, setup.Other, [YojanaRole.Technician],
+            null, YojanaRole.ServiceSupervisor);
+        fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddDays(2);
+        _ = await AskAsync(setup.Tenant, setup.RecordId, setup.Administrator, [YojanaRole.TenantAdministrator],
+            setup.Staff, null);
+        fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddDays(2);
+        _ = await AskAsync(setup.Tenant, setup.RecordId, setup.Staff, [YojanaRole.ServiceSupervisor],
+            setup.Other, null);
+        using var scope = fixture.ScopeFor(setup.Tenant);
+        var queries = scope.ServiceProvider.GetRequiredService<QuestionQueries>();
+        var viewer = new RecordReferenceViewer(setup.Staff, [YojanaRole.ServiceSupervisor]);
+        var first = await queries.MyAsync("all", QuestionStatus.Open, RecordKind.ImportJob, null,
+            null, null, 1, viewer, default);
+        Assert.Equal(oldest.QuestionId, first.Items.Single().QuestionId);
+        Assert.NotNull(first.NextCursor);
+        Assert.Equal(3, first.Summary.WaitingByRecordKind.Single().Count);
+        var second = await queries.MyAsync("all", QuestionStatus.Open, RecordKind.ImportJob, null,
+            null, first.NextCursor, 1, viewer, default);
+        Assert.Single(second.Items);
+        Assert.NotEqual(oldest.QuestionId, second.Items.Single().QuestionId);
+        var directed = await queries.MyAsync("directed_to_me", null, null, null, null, null, 10, viewer, default);
+        Assert.Single(directed.Items);
+        var roles = await queries.MyAsync("directed_to_roles", null, null, "four_to_seven_days",
+            null, null, 10, viewer, default);
+        Assert.Single(roles.Items);
+        var searched = await queries.MyAsync("all", QuestionStatus.Open, null, null,
+            "Storage", null, 10, viewer, default);
+        Assert.Equal(3, searched.Items.Count);
+        Assert.Empty((await queries.MyAsync("all", QuestionStatus.Open, null, null,
+            "nonmatchingterm", null, 10, viewer, default)).Items);
+    }
+
+    [DatabaseFact]
+    public async Task Search_ranks_accepted_answers_first_and_filters_record_visibility_tenant_and_portal()
+    {
+        fixture.Clock.UtcNow = new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+        var setup = await SetupAsync("search");
+        var answered = await InvokeAsync<AskQuestionResult>(setup.Tenant,
+            new AskQuestion(setup.RecordId, RecordKind.ImportJob, "Controller replacement", "Which part is covered?",
+                null, YojanaRole.ServiceSupervisor, Actor(setup.Administrator, YojanaRole.TenantAdministrator)));
+        var accepted = await InvokeAsync<ReplyToQuestionResult>(setup.Tenant,
+            new ReplyToQuestion(answered.QuestionId, "Retain the media before replacing the controller.",
+                Actor(setup.Staff, YojanaRole.ServiceSupervisor)));
+        await InvokeAsync<QuestionChangeResult>(setup.Tenant, new AcceptQuestionAnswer(answered.QuestionId,
+            accepted.ReplyId, Actor(setup.Staff, YojanaRole.ServiceSupervisor)));
+        _ = await InvokeAsync<AskQuestionResult>(setup.Tenant,
+            new AskQuestion(setup.RecordId, RecordKind.ImportJob, "Media retention controller", "Still investigating.",
+                setup.Staff, null, Actor(setup.Other, YojanaRole.Technician)));
+
+        var hiddenId = Guid.CreateVersion7();
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var integration = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+            integration.InboundMessages.Add(Inbound(setup.Tenant, hiddenId));
+            await integration.SaveChangesAsync();
+        }
+        var hidden = await InvokeAsync<AskQuestionResult>(setup.Tenant,
+            new AskQuestion(hiddenId, RecordKind.IntegrationMessage, "Controller message", "Hidden controller detail.",
+                setup.Staff, null, Actor(setup.Administrator, YojanaRole.TenantAdministrator)));
+
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            var queries = scope.ServiceProvider.GetRequiredService<QuestionQueries>();
+            var results = await queries.SearchAsync("controller", false, null, 10,
+                new RecordReferenceViewer(setup.Other, [YojanaRole.Technician]), default);
+            Assert.Equal(answered.QuestionId, results.Questions[0].QuestionId);
+            Assert.DoesNotContain(results.Questions, row => row.QuestionId == hidden.QuestionId);
+            Assert.Empty(results.ReviewedEntries);
+            var first = await queries.SearchAsync("controller", false, null, 1,
+                new RecordReferenceViewer(setup.Other, [YojanaRole.Technician]), default);
+            Assert.Equal(answered.QuestionId, first.Questions.Single().QuestionId);
+            Assert.NotNull(first.NextCursor);
+            var second = await queries.SearchAsync("controller", false, first.NextCursor, 1,
+                new RecordReferenceViewer(setup.Other, [YojanaRole.Technician]), default);
+            Assert.Single(second.Questions);
+            Assert.NotEqual(answered.QuestionId, second.Questions.Single().QuestionId);
+        }
+
+        var other = await SetupAsync("searchother");
+        using (var scope = fixture.ScopeFor(other.Tenant))
+        {
+            var results = await scope.ServiceProvider.GetRequiredService<QuestionQueries>().SearchAsync(
+                "controller", false, null, 10,
+                new RecordReferenceViewer(other.Staff, [YojanaRole.ServiceSupervisor]), default);
+            Assert.Empty(results.Questions);
+        }
+        using var portal = await fixture.ClientAsync(setup.Tenant, setup.Other, portal: true);
+        using var response = await portal.GetAsync("/api/questions/search?query=controller");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [DatabaseFact]
     public async Task Schema_contains_all_tables_with_tenant_first_keys_and_rls()
     {
         var setup = await fixture.NewTenantAsync("schema");
@@ -211,6 +356,11 @@ public sealed class QuestionDatabaseTests(KnowledgeHostFixture fixture)
         Assert.Equal(new[] { "question", "question_participant", "question_reply", "question_reply_revision" }, tables.Order());
         var predicates = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM sys.security_predicates p JOIN sys.tables t ON t.object_id=p.target_object_id WHERE t.schema_id=SCHEMA_ID('knowledge')").SingleAsync();
         Assert.Equal(12, predicates);
+        var searchKeys = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM sys.indexes WHERE name IN ('ux_question_question_id', 'ux_question_reply_reply_id')").SingleAsync();
+        Assert.Equal(2, searchKeys);
+        var fullTextInstalled = await db.Database.SqlQueryRaw<int>("SELECT CONVERT(int, FULLTEXTSERVICEPROPERTY('IsFullTextInstalled')) AS [Value]").SingleAsync();
+        var fullTextIndexes = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM sys.fulltext_indexes WHERE object_id IN (OBJECT_ID('knowledge.question'), OBJECT_ID('knowledge.question_reply'))").SingleAsync();
+        Assert.Equal(fullTextInstalled == 1 ? 2 : 0, fullTextIndexes);
     }
 
     private async Task<(TenantId Tenant, Guid Administrator, Guid Staff, Guid Other, Guid RecordId)> SetupAsync(string prefix)

@@ -10,6 +10,8 @@ import { openDrawer } from "../shell/drawerStore";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDateTime } from "../units/format";
+import { QuestionsPanel } from "../questions/QuestionsPanel";
+import { RecordQuestionsTabs, useQuestionsTab } from "../questions/RecordQuestionsTabs";
 import { units, type UnitDetail } from "../api/units";
 import { refurbishmentsApi } from "./api";
 import { completedOperations, hours, humanise, identityOutcome, identityTitle, money, operationTone, releaseBlocked, refurbishmentTone } from "./format";
@@ -79,6 +81,7 @@ function RefurbishmentScreen({ row, unit, sanitisation, tests, usage, attributes
   completing: RefurbishmentOperationRow | null; setCompleting: (value: RefurbishmentOperationRow | null) => void;
   busy: boolean; setBusy: (value: boolean) => void; error: unknown; setError: (value: unknown) => void; reload: () => Promise<void>;
 }) {
+  const questionsTab = useQuestionsTab();
   const editing = dialog !== null || completing !== null;
   const presence = useDocumentPresence("refurbishment_work_order", row.workOrderId, editing);
   const currentParts = unit?.asBuilt.filter((part) => part.removedAt === null) ?? [];
@@ -99,6 +102,9 @@ function RefurbishmentScreen({ row, unit, sanitisation, tests, usage, attributes
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Refurbishment", to: "/refurbishments" }, { label: row.workOrderNumber }]} />
       <div className="page-header"><div><div className="eyebrow">Refurbishment work order {row.workOrderNumber} · {humanise(row.kind)} · {humanise(row.status)} · opened {fmtDateTime(row.openedAt)} by {people(row.openedBy)} · cycle {row.cycleNumber} of {row.maxCycles}</div><h1>{row.targetSerial ?? "Serial unavailable"} · {names.item(row.itemId)}</h1><p className="sub">A work order against the existing unit, never a production order · parts and labour roll into this unit’s cost · release applies {identityTitle(row.identityPolicy).toLowerCase()}</p><PresenceChips users={presence} /></div>{row.status === "open" && <div className="actions"><button type="button" className="btn" onClick={() => setDialog("labour")}>Record labour</button><button type="button" className="btn" onClick={() => setDialog("cost")}>Record cost</button><button type="button" className="btn" onClick={() => setDialog("cancel")}>Cancel…</button><button type="button" className="btn primary" disabled={releaseIsBlocked} title={releaseIsBlocked ? "Complete the server release checks first" : undefined} onClick={() => setDialog("release")}><Icon name="check" />Release<Shortcut keys="mod+enter" /></button></div>}</div>
+      <RecordQuestionsTabs recordKind="refurbishment_work_order" recordId={row.workOrderId} />
+      {questionsTab && <QuestionsPanel recordKind="refurbishment_work_order" recordId={row.workOrderId} />}
+      <div hidden={questionsTab}>
       <PresenceAdvisory users={presence} editing={editing} documentLabel="refurbishment work order" />
       <ErrorNote error={error} onReload={() => { setDialog(null); setCompleting(null); void reload(); }} />
       <div className="stack">
@@ -118,6 +124,7 @@ function RefurbishmentScreen({ row, unit, sanitisation, tests, usage, attributes
             <section className="card" aria-labelledby="refurb-record"><div className="card-header"><h2 id="refurb-record">{row.status === "released" ? "Recorded on release" : "Will be recorded on release"}</h2></div><table className="table dense"><tbody><tr><td className="primary">Refurbishment.Released</td><td>{humanise(grade)} · cycle {row.cycleNumber}</td></tr><tr><td className="primary">Unit.Graded</td><td>{humanise(grade)} · valuation rule entered at release</td></tr><tr><td className="primary">Identity</td><td>{identityTitle(row.identityPolicy)}</td></tr><tr><td className="primary">Custody</td><td>In repair → warehouse</td></tr></tbody></table></section>
           </div>
         </div>
+      </div>
       </div>
     </main>
     <Rail label="Refurbishment work order"><Section title="Work order"><Kv rows={[["Number", row.workOrderNumber], ["Status", humanise(row.status)], ["Kind", humanise(row.kind)], ["Opened", fmtDateTime(row.openedAt)], ["Opened by", people(row.openedBy)], ["Identity policy", identityTitle(row.identityPolicy)], ["Cycle", `${row.cycleNumber} of ${row.maxCycles}`], ["Total cost", money(row.totalCost, row.currency)]]} /></Section><Section title="Unit"><div className="act"><Link className="btn block" to={`/units/${row.targetUnitId}`}>Open unit history</Link></div></Section></Rail>

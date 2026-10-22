@@ -20,6 +20,7 @@ export const navigation: NavEntry[] = [
   { path: "/units/receive", label: "Receive and commission", icon: "import", section: "Work" },
   { path: "/units/ranges", label: "Serial ranges", icon: "range", section: "Work" },
   { path: "/units/completeness", label: "As-built completeness", icon: "tree", section: "Work" },
+  { path: "/questions", label: "Questions", icon: "questions", section: "Work" },
   { path: "/entitlements", label: "Entitlement gaps", icon: "ent", section: "Work" },
   { path: "/entitlements/cover-changes", label: "Cover changes since sale", icon: "cover", section: "Work" },
   { path: "/entitlements/policies", label: "Warranty policies", icon: "policy", section: "Work" },

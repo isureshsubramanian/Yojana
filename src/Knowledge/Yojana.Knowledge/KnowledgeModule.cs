@@ -15,6 +15,7 @@ public static class KnowledgeModule
     {
         builder.AddModuleDbContext<KnowledgeDbContext>(Schema);
         builder.Services.AddScoped<RecordReferenceLookup>();
+        builder.Services.AddScoped<IQuestionTextSearch, SqlServerFullTextQuestionSearch>();
         builder.Services.AddScoped<QuestionQueries>();
         return builder;
     }

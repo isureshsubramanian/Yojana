@@ -48,6 +48,17 @@ public static class KnowledgeEndpoints
             IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<QuestionChangeResult>(bus, tenant,
                 new ReopenQuestion(questionId, Actor(user)), ct));
 
+        questions.MapGet("/addressees", async (string? search, string? cursor, int? take,
+            QuestionQueries queries, CancellationToken ct) => await Read(async () =>
+                Results.Ok(await queries.AddresseesAsync(search, cursor, take ?? 25, ct))));
+        questions.MapGet("/mine", async (string? scope, string? status, string? recordKind, string? age,
+            string? search, string? cursor, int? take, ClaimsPrincipal user, QuestionQueries queries,
+            CancellationToken ct) => await Read(async () => Results.Ok(await queries.MyAsync(scope, status,
+                recordKind, age, search, cursor, take ?? 25, Viewer(user), ct))));
+        questions.MapGet("/search", async (string query, bool? answeredOnly, string? cursor, int? take,
+            ClaimsPrincipal user, QuestionQueries queries, CancellationToken ct) => await Read(async () =>
+                Results.Ok(await queries.SearchAsync(query, answeredOnly ?? false, cursor, take ?? 10,
+                    Viewer(user), ct))));
         questions.MapGet("/{questionId:guid}", async (Guid questionId, ClaimsPrincipal user,
             QuestionQueries queries, CancellationToken ct) => await Read(async () =>
                 await queries.ThreadAsync(questionId, Viewer(user), ct) is { } result
@@ -85,6 +96,11 @@ public static class KnowledgeEndpoints
     {
         try { return await action(); }
         catch (QuestionRuleException ex) { return Problem(ex); }
+        catch (QuestionSearchUnavailableException ex)
+        {
+            return Results.Problem(title: "question_search_unavailable", detail: ex.Message,
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
     }
 
     private static IResult Problem(QuestionRuleException ex)

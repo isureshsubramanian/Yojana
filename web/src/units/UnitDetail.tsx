@@ -19,6 +19,7 @@ import { EntitlementPanel, openAmendEntitlement, openAttachEntitlement, type Ent
 import { CoverSinceSalePanel } from "../entitlements/CoverSinceSalePanel";
 import type { UnitEntitlementDetail } from "../entitlements/types";
 import { useReferenceNames } from "../corrections/ReferenceFields";
+import { QuestionsPanel } from "../questions/QuestionsPanel";
 
 const HISTORY_PAGE = 20;
 const FLAGS = ["lost", "stolen", "written_off", "clone_seen", "recalled", "authenticity_failed"];
@@ -162,10 +163,11 @@ export function Component() {
           </div>
         )}
 
-        <UnitTabBar search={params} counts={{ history: detail?.eventCount, entitlements: entitlementSummary ? `${entitlementSummary.live} live · ${entitlementSummary.closed} closed` : undefined,
+        <UnitTabBar search={params} recordId={unitId} counts={{ history: detail?.eventCount, entitlements: entitlementSummary ? `${entitlementSummary.live} live · ${entitlementSummary.closed} closed` : undefined,
           "whats-covered": whatsCovered ? `${whatsCovered.coveredCount} covered · ${whatsCovered.excludedCount} not` : undefined,
           cover: changeCount === undefined ? undefined : `${changeCount} changes`, identifiers: detail?.identifiers.length,
           custody: detail?.episodes.length, asbuilt: detail ? `${detail.asBuilt.filter((r) => !r.removedAt).length} of ${detail.asBuilt.length}` : undefined }} />
+        {tab === "questions" && <QuestionsPanel recordKind="unit" recordId={unitId} />}
         {tab === "whats-covered" && <WhatsCoveredPanel unitId={unitId} summary={whatsCovered} />}
 
 
@@ -173,7 +175,7 @@ export function Component() {
 
         {tab === "cover" && <CoverSinceSalePanel unitId={unitId} />}
 
-        {tab !== "entitlements" && tab !== "cover" && tab !== "whats-covered" && <div className={`cols-2 unit-tab-content tab-${tab}`}>
+        {tab !== "entitlements" && tab !== "cover" && tab !== "whats-covered" && tab !== "questions" && <div className={`cols-2 unit-tab-content tab-${tab}`}>
           <section className="card unit-history" aria-labelledby="h-tl">
             <div className="card-header"><h2 id="h-tl">History <span className="meta">{detail?.eventCount.toLocaleString() ?? "…"} events</span></h2><span className="meta">Business time · recorded time on hover · click for the attributes</span></div>
             <div className="card-body" style={{ paddingTop: 4 }}>
