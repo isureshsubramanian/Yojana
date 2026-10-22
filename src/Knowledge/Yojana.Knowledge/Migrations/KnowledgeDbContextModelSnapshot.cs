@@ -659,6 +659,73 @@ namespace Yojana.Knowledge.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionAttachment", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("FileId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("file_id");
+
+                    b.Property<long>("ContentLength")
+                        .HasColumnType("bigint")
+                        .HasColumnName("content_length");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("content_type");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)")
+                        .HasColumnName("file_name");
+
+                    b.Property<bool>("QuestionBody")
+                        .HasColumnType("bit")
+                        .HasColumnName("question_body");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("question_id");
+
+                    b.Property<Guid?>("ReplyId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reply_id");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("sha256")
+                        .IsFixedLength();
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("uploaded_at");
+
+                    b.Property<Guid>("UploadedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("uploaded_by");
+
+                    b.HasKey("TenantId", "FileId")
+                        .HasName("pk_question_attachment");
+
+                    b.HasIndex("TenantId", "QuestionId", "ReplyId", "UploadedAt", "FileId")
+                        .HasDatabaseName("ix_question_attachment_tenant_id_question_id_reply_id_uploaded_at_file_id");
+
+                    b.ToTable("question_attachment", "knowledge", t =>
+                        {
+                            t.HasCheckConstraint("ck_question_attachment_target", "(question_body = 1 AND reply_id IS NULL) OR (question_body = 0 AND reply_id IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionDigest", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -688,6 +755,36 @@ namespace Yojana.Knowledge.Migrations
                         .HasDatabaseName("ix_question_digest_tenant_id_digest_date_user_id");
 
                     b.ToTable("question_digest", "knowledge");
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionFilePurgePending", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("FileId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("file_id");
+
+                    b.Property<DateTime>("QueuedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("queued_at");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)")
+                        .HasColumnName("reason");
+
+                    b.HasKey("TenantId", "FileId")
+                        .HasName("pk_question_file_purge_pending");
+
+                    b.HasIndex("TenantId", "QueuedAt", "FileId")
+                        .HasDatabaseName("ix_question_file_purge_pending_tenant_id_queued_at_file_id");
+
+                    b.ToTable("question_file_purge_pending", "knowledge");
                 });
 
             modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionNotification", b =>
@@ -833,6 +930,142 @@ namespace Yojana.Knowledge.Migrations
                         .HasDatabaseName("ix_question_participant_tenant_id_user_id_last_read_at_question_id");
 
                     b.ToTable("question_participant", "knowledge");
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionPersonalDataRedaction", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RedactionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("redaction_id");
+
+                    b.Property<int>("AttachmentsPurged")
+                        .HasColumnType("int")
+                        .HasColumnName("attachments_purged");
+
+                    b.Property<DateTime>("PerformedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("performed_at");
+
+                    b.Property<Guid>("PerformedByUserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("performed_by_user_id");
+
+                    b.Property<Guid>("PersonId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("person_id");
+
+                    b.Property<int>("QuestionsRedacted")
+                        .HasColumnType("int")
+                        .HasColumnName("questions_redacted");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("reason");
+
+                    b.Property<int>("RepliesRedacted")
+                        .HasColumnType("int")
+                        .HasColumnName("replies_redacted");
+
+                    b.Property<Guid>("RequestedByUserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("requested_by_user_id");
+
+                    b.Property<int>("RevisionsRedacted")
+                        .HasColumnType("int")
+                        .HasColumnName("revisions_redacted");
+
+                    b.Property<string>("ScopeJson")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("scope_json");
+
+                    b.HasKey("TenantId", "RedactionId")
+                        .HasName("pk_question_personal_data_redaction");
+
+                    b.HasIndex("TenantId", "PersonId", "PerformedAt", "RedactionId")
+                        .HasDatabaseName("ix_question_personal_data_redaction_tenant_id_person_id_performed_at_redaction_id");
+
+                    b.ToTable("question_personal_data_redaction", "knowledge");
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionPurgeRun", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("run_id");
+
+                    b.Property<int>("AttachmentsPurged")
+                        .HasColumnType("int")
+                        .HasColumnName("attachments_purged");
+
+                    b.Property<DateTime>("CompletedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTime>("Cutoff")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("cutoff");
+
+                    b.Property<int>("QuestionsPurged")
+                        .HasColumnType("int")
+                        .HasColumnName("questions_purged");
+
+                    b.Property<int>("RepliesPurged")
+                        .HasColumnType("int")
+                        .HasColumnName("replies_purged");
+
+                    b.Property<int>("RetentionYears")
+                        .HasColumnType("int")
+                        .HasColumnName("retention_years");
+
+                    b.Property<int>("RevisionsPurged")
+                        .HasColumnType("int")
+                        .HasColumnName("revisions_purged");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("TriggeredByKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .HasColumnName("triggered_by_kind");
+
+                    b.Property<string>("TriggeredByLabel")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("triggered_by_label");
+
+                    b.Property<Guid?>("TriggeredByUserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("triggered_by_user_id");
+
+                    b.HasKey("TenantId", "RunId")
+                        .HasName("pk_question_purge_run");
+
+                    b.HasIndex("TenantId", "CompletedAt", "RunId")
+                        .HasDatabaseName("ix_question_purge_run_tenant_id_completed_at_run_id");
+
+                    b.ToTable("question_purge_run", "knowledge", t =>
+                        {
+                            t.HasCheckConstraint("ck_question_purge_run_trigger", "triggered_by_kind IN ('system','user')");
+
+                            t.HasCheckConstraint("ck_question_purge_run_years", "retention_years BETWEEN 1 AND 100");
+                        });
                 });
 
             modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionReply", b =>
@@ -1247,6 +1480,16 @@ namespace Yojana.Knowledge.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_knowledge_entry_written_against_tenant_id_entry_id_version");
+                });
+
+            modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionAttachment", b =>
+                {
+                    b.HasOne("Yojana.Knowledge.Data.Entities.Question", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "QuestionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_question_attachment_tenant_id_question_id");
                 });
 
             modelBuilder.Entity("Yojana.Knowledge.Data.Entities.QuestionNotification", b =>

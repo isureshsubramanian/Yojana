@@ -114,3 +114,63 @@ public sealed class QuestionDigest : ITenantScoped
     public Guid MailId { get; set; }
     public DateTime QueuedAt { get; set; }
 }
+
+/// <summary>Immutable link to bytes owned by Platform. Exactly one of question-body or reply is the attachment target.</summary>
+public sealed class QuestionAttachment : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid FileId { get; set; }
+    public Guid QuestionId { get; set; }
+    public Guid? ReplyId { get; set; }
+    public bool QuestionBody { get; set; }
+    public required string FileName { get; set; }
+    public required string ContentType { get; set; }
+    public long ContentLength { get; set; }
+    public required string Sha256 { get; set; }
+    public Guid UploadedBy { get; set; }
+    public DateTime UploadedAt { get; set; }
+}
+
+/// <summary>One immutable audit row per completed scheduled retention batch; purged question ids are not retained.</summary>
+public sealed class QuestionPurgeRun : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid RunId { get; set; }
+    public required string TriggeredByKind { get; set; }
+    public Guid? TriggeredByUserId { get; set; }
+    public required string TriggeredByLabel { get; set; }
+    public DateTime StartedAt { get; set; }
+    public DateTime CompletedAt { get; set; }
+    public DateTime Cutoff { get; set; }
+    public int RetentionYears { get; set; }
+    public int QuestionsPurged { get; set; }
+    public int RepliesPurged { get; set; }
+    public int RevisionsPurged { get; set; }
+    public int AttachmentsPurged { get; set; }
+}
+
+/// <summary>Audit of a personal-data redaction. It records scope and identities, never the removed text.</summary>
+public sealed class QuestionPersonalDataRedaction : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid RedactionId { get; set; }
+    public Guid PersonId { get; set; }
+    public Guid RequestedByUserId { get; set; }
+    public Guid PerformedByUserId { get; set; }
+    public DateTime PerformedAt { get; set; }
+    public required string ScopeJson { get; set; }
+    public required string Reason { get; set; }
+    public int QuestionsRedacted { get; set; }
+    public int RepliesRedacted { get; set; }
+    public int RevisionsRedacted { get; set; }
+    public int AttachmentsPurged { get; set; }
+}
+
+/// <summary>Short-lived cross-database hand-off; removed immediately after Platform confirms byte deletion.</summary>
+public sealed class QuestionFilePurgePending : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid FileId { get; set; }
+    public DateTime QueuedAt { get; set; }
+    public required string Reason { get; set; }
+}

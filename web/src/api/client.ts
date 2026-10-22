@@ -42,11 +42,13 @@ export async function api<T>(path: string, init?: {
   signal?: AbortSignal | undefined;
   acceptedStatuses?: readonly number[] | undefined;
 }): Promise<T> {
+  const multipart = typeof FormData !== "undefined" && init?.body instanceof FormData;
+  const requestBody: BodyInit | null = init?.body === undefined ? null : multipart ? init.body as FormData : JSON.stringify(init.body);
   const response = await fetch(path, {
     method: init?.method ?? "GET",
     credentials: "same-origin",
-    headers: init?.body === undefined ? { accept: "application/json" } : { accept: "application/json", "content-type": "application/json" },
-    body: init?.body === undefined ? null : JSON.stringify(init.body),
+    headers: init?.body === undefined || multipart ? { accept: "application/json" } : { accept: "application/json", "content-type": "application/json" },
+    body: requestBody,
     ...(init?.signal ? { signal: init.signal } : {}),
   });
   if (!response.ok && !init?.acceptedStatuses?.includes(response.status)) {

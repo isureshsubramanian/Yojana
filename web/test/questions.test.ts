@@ -54,6 +54,19 @@ test("the ask box uses active person-or-role choices, the approved layout, and l
   assert.doesNotMatch(api, /actor|askedBy|requestedBy/i);
 });
 
+test("ask and reply composers upload immutable attachments and the thread lists downloadable metadata", () => {
+  assert.match(panel, /type="file" multiple/);
+  assert.match(panel, /questionsApi\.attach\(result\.questionId, file\)/);
+  assert.match(panel, /questionsApi\.attach\(thread\.questionId, file, sent\.replyId\)/);
+  assert.match(panel, /item\.fileName/);
+  assert.match(panel, /item\.uploadedByName/);
+  assert.match(panel, /questionsApi\.attachmentUrl/);
+  assert.match(api, /new FormData\(\)/);
+  assert.match(api, /body\.append\("file", file\)/);
+  assert.match(styles, /\.question-attachments/);
+  assert.doesNotMatch(panel, /not scanned|virus/i);
+});
+
 test("an answered thread offers the server-authorised turn-into-entry action", () => {
   assert.match(panel, /allowedActions\.canTurnIntoEntry/);
   assert.match(panel, /questionsApi\.createEntry\(thread\.questionId\)/);

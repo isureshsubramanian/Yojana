@@ -9,6 +9,7 @@ using Yojana.Knowledge.Questions;
 using Yojana.Knowledge.Reports;
 using Yojana.Knowledge.Training;
 using Yojana.Platform.Contracts.Records;
+using Yojana.Platform.Contracts.Files;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
@@ -27,6 +28,9 @@ public sealed record EntryDecisionRequest(string? Note);
 public sealed record RetireEntryRequest(string Note);
 public sealed record MarkKnowledgeScreenChangedRequest(string ScreenReference, string Reason);
 public sealed record SaveTrainingPathRequest(string Introduction, IReadOnlyList<Guid> EntryIds, int ExpectedVersion);
+public sealed record RedactQuestionPersonalDataRequest(Guid PersonId, Guid RequestedByUserId,
+    IReadOnlyList<Guid> QuestionIds, IReadOnlyList<Guid> ReplyIds, IReadOnlyList<Guid> AttachmentIds,
+    string Reason);
 
 public static class KnowledgeEndpoints
 {
@@ -61,6 +65,42 @@ public static class KnowledgeEndpoints
         questions.MapPost("/{questionId:guid}/entry", (Guid questionId, ClaimsPrincipal user,
             IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<EntryChangeResult>(bus, tenant,
                 new CreateEntryFromAnswer(questionId, Actor(user)), ct));
+        questions.MapPost("/{questionId:guid}/attachments", async (Guid questionId, HttpRequest request,
+            ClaimsPrincipal user, QuestionAttachmentService attachments, CancellationToken ct) =>
+            await UploadAttachment(questionId, null, request, user, attachments, ct))
+            .DisableAntiforgery().WithMetadata(new Microsoft.AspNetCore.Mvc.RequestFormLimitsAttribute
+            { MultipartBodyLengthLimit = 101L * 1024 * 1024 });
+        questions.MapPost("/{questionId:guid}/replies/{replyId:guid}/attachments", async (Guid questionId,
+            Guid replyId, HttpRequest request, ClaimsPrincipal user, QuestionAttachmentService attachments,
+            CancellationToken ct) => await UploadAttachment(questionId, replyId, request, user, attachments, ct))
+            .DisableAntiforgery().WithMetadata(new Microsoft.AspNetCore.Mvc.RequestFormLimitsAttribute
+            { MultipartBodyLengthLimit = 101L * 1024 * 1024 });
+        questions.MapGet("/{questionId:guid}/attachments/{fileId:guid}", async (Guid questionId, Guid fileId,
+            ClaimsPrincipal user, QuestionAttachmentService attachments, CancellationToken ct) =>
+        {
+            try
+            {
+                var opened = await attachments.OpenAsync(questionId, fileId, Caller(user), ct);
+                return opened is null ? Results.NotFound() : Results.Stream(opened.Content,
+                    opened.Metadata.ContentType, opened.Metadata.FileName, enableRangeProcessing: false);
+            }
+            catch (TenantFileRuleException ex) { return FileProblem(ex); }
+        });
+
+        var privacy = app.MapGroup("/api/questions/personal-data")
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        privacy.MapPost("/redactions", async (RedactQuestionPersonalDataRequest request, ClaimsPrincipal user,
+            QuestionPrivacyService service, CancellationToken ct) => await Read(async () => Results.Ok(
+                await service.RedactAsync(new RedactQuestionPersonalData(request.PersonId,
+                    request.RequestedByUserId, request.QuestionIds, request.ReplyIds, request.AttachmentIds,
+                    request.Reason, Actor(user)), ct))));
+        privacy.MapGet("/export", async (Guid personId, QuestionPrivacyService service,
+            ITabularExporter exporter, HttpContext http, CancellationToken ct) =>
+            Results.Stream(stream => exporter.WriteAsync("csv", new TabularExport(
+            [
+                "Type", "Written at", "Record kind", "Question status", "Question title", "Text", "Edited at",
+            ], service.ExportAsync(personId, http.RequestAborted)), stream, http.RequestAborted),
+                exporter.ContentType("csv"), "person-questions-and-replies.csv"));
 
         questions.MapGet("/addressees", async (string? search, string? cursor, int? take,
             QuestionQueries queries, CancellationToken ct) => await Read(async () =>
@@ -227,6 +267,28 @@ public static class KnowledgeEndpoints
         }
     }
 
+    private static async Task<IResult> UploadAttachment(Guid questionId, Guid? replyId, HttpRequest request,
+        ClaimsPrincipal user, QuestionAttachmentService attachments, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!request.HasFormContentType)
+                return Results.Problem(title: "attachment_form_required",
+                    detail: "Upload one file as multipart form data.", statusCode: StatusCodes.Status400BadRequest);
+            var form = await request.ReadFormAsync(cancellationToken);
+            var file = form.Files.GetFile("file");
+            if (file is null)
+                return Results.Problem(title: "attachment_required", detail: "Choose a file to attach.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            await using var content = file.OpenReadStream();
+            return Results.Ok(await attachments.UploadAsync(questionId, replyId,
+                new TenantFileUpload(file.FileName, file.ContentType, file.Length, content), Caller(user),
+                cancellationToken));
+        }
+        catch (QuestionRuleException ex) { return Problem(ex); }
+        catch (TenantFileRuleException ex) { return FileProblem(ex); }
+    }
+
     private static IResult Problem(QuestionRuleException ex)
     {
         var status = ex.Rule switch
@@ -237,9 +299,11 @@ public static class KnowledgeEndpoints
                 "entry_review_role_required" or "entry_link_not_visible" or "screen_change_admin_required"
                 or "training_path_reviewer_role_required" or "training_path_role_required"
                 or "training_team_view_forbidden" or "knowledge_report_role_required"
+                or "question_redaction_admin_required"
                 => StatusCodes.Status403Forbidden,
             "record_not_found" or "question_not_found" or "reply_not_found" or "entry_not_found" or
-                "entry_link_not_found" or "screen_reference_not_found" => StatusCodes.Status404NotFound,
+                "entry_link_not_found" or "screen_reference_not_found" or "question_redaction_scope_not_found"
+                => StatusCodes.Status404NotFound,
             "training_path_not_found" or "training_path_entry_not_found" or "training_member_not_found"
                 => StatusCodes.Status404NotFound,
             "question_not_open" or "question_already_open" or "entry_already_exists" or "entry_not_draft" or
@@ -256,6 +320,16 @@ public static class KnowledgeEndpoints
             });
     }
 
+    private static IResult FileProblem(TenantFileRuleException ex)
+    {
+        var status = ex.Rule is "file_portal_forbidden" or "file_record_not_visible"
+            ? StatusCodes.Status403Forbidden
+            : ex.Rule == "file_record_not_found" ? StatusCodes.Status404NotFound
+            : StatusCodes.Status422UnprocessableEntity;
+        return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: status,
+            extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+    }
+
     private static QuestionActor Actor(ClaimsPrincipal user) => new(
         Guid.Parse(user.FindFirstValue(YojanaClaim.UserId)
             ?? throw new InvalidOperationException("A signed-in staff user carries a user id claim.")),
@@ -265,5 +339,12 @@ public static class KnowledgeEndpoints
     {
         var actor = Actor(user);
         return new RecordReferenceViewer(actor.UserId, actor.Roles);
+    }
+
+    private static TenantFileCaller Caller(ClaimsPrincipal user)
+    {
+        var actor = Actor(user);
+        return new TenantFileCaller(actor.UserId, actor.Roles,
+            user.HasClaim(claim => claim.Type == YojanaClaim.CustomerPartyRef));
     }
 }

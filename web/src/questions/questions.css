@@ -21,6 +21,10 @@
 .question-thread .body { margin-top: 4px; line-height: 1.5; }
 .question-thread .body p { margin: 0 0 6px; white-space: pre-wrap; }
 .question-thread .acts { display: flex; gap: 12px; margin-top: 6px; }
+.question-attachments { display: grid; gap: 4px; margin: 8px 0 0; padding: 0; list-style: none; }
+.question-attachments li { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 12px; }
+.question-attachments li span { color: var(--text-3); }
+.question-files .hint { margin-top: 4px; }
 .link-button { border: 0; padding: 0; color: var(--accent); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
 .question-compose, .question-askbox { display: grid; gap: 10px; padding: 14px var(--card-pad); border-top: 1px solid var(--border); }
 .question-compose .textarea { min-height: 64px; }

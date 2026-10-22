@@ -39,6 +39,10 @@ public static class KnowledgeModule
             sp.GetRequiredService<Yojana.Platform.Contracts.Security.ITenantTrainingDirectory>()));
         builder.Services.AddScoped<TrainingPathQueries>();
         builder.Services.AddScoped<QuestionQueries>();
+        builder.Services.AddScoped<QuestionAttachmentService>();
+        builder.Services.AddScoped(sp => new QuestionRetentionSettings(sp.GetRequiredService<ITenantSettings>()));
+        builder.Services.AddScoped<QuestionRetentionService>();
+        builder.Services.AddScoped<QuestionPrivacyService>();
         builder.Services.AddScoped(sp => new KnowledgeReportSettings(sp.GetRequiredService<ITenantSettings>()));
         builder.Services.AddScoped<KnowledgeReportQueries>();
         builder.Services.AddScoped(sp => new QuestionNotificationDefaults(
@@ -47,6 +51,8 @@ public static class KnowledgeModule
         builder.Services.AddScoped<QuestionDailyDigestSchedule>();
         builder.Services.AddSingleton(RecurringTenantJob.For<QuestionDailyDigestJob>(
             QuestionDailyDigestJob.JobName, QuestionDailyDigestJob.Cron));
+        builder.Services.AddSingleton(RecurringTenantJob.For<QuestionRetentionJob>(
+            QuestionRetentionJob.JobName, QuestionRetentionJob.Cron));
         return builder;
     }
 }

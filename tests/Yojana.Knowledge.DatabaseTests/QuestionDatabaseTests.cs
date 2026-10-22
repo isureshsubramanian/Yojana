@@ -488,12 +488,14 @@ public sealed class QuestionDatabaseTests(KnowledgeHostFixture fixture)
         var tables = await db.Database.SqlQueryRaw<string>("SELECT name AS [Value] FROM sys.tables WHERE schema_id = SCHEMA_ID('knowledge') AND name <> '__migrations'").ToListAsync();
         Assert.Equal(new[] { "knowledge_entry", "knowledge_entry_record_link", "knowledge_entry_review_reason",
             "knowledge_entry_review_round", "knowledge_entry_tag", "knowledge_entry_version",
-            "knowledge_entry_written_against", "knowledge_screen_change", "question", "question_digest",
-            "question_notification", "question_notification_preference", "question_participant", "question_reply",
-            "question_reply_revision", "question_similar_entry", "training_path", "training_path_entry", "training_path_version",
+            "knowledge_entry_written_against", "knowledge_screen_change", "question", "question_attachment",
+            "question_digest", "question_file_purge_pending", "question_notification",
+            "question_notification_preference", "question_participant", "question_personal_data_redaction",
+            "question_purge_run", "question_reply", "question_reply_revision", "question_similar_entry",
+            "training_path", "training_path_entry", "training_path_version",
             "training_progress", "training_welcome_dismissal" }, tables.Order());
         var predicates = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM sys.security_predicates p JOIN sys.tables t ON t.object_id=p.target_object_id WHERE t.schema_id=SCHEMA_ID('knowledge')").SingleAsync();
-        Assert.Equal(63, predicates);
+        Assert.Equal(75, predicates);
         var searchKeys = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM sys.indexes WHERE name IN ('ux_question_question_id', 'ux_question_reply_reply_id', 'ux_knowledge_entry_entry_id')").SingleAsync();
         Assert.Equal(3, searchKeys);
         var fullTextInstalled = await db.Database.SqlQueryRaw<int>("SELECT CONVERT(int, FULLTEXTSERVICEPROPERTY('IsFullTextInstalled')) AS [Value]").SingleAsync();
