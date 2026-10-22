@@ -1,4 +1,5 @@
 using Microsoft.Data.SqlClient;
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Yojana.Integration.Data;
@@ -7,6 +8,7 @@ using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Reconstruction;
+using Yojana.Integration.LegacyMigration.Validation;
 
 namespace Yojana.Integration.DatabaseTests;
 
@@ -81,6 +83,27 @@ public sealed class MigrationMappingLiveTests(IntegrationHostFixture fixture)
             .GroupBy(row => row.Kind).Select(group => new { Kind = group.Key, Count = group.LongCount() })
             .OrderBy(row => row.Kind).ToListAsync();
         foreach (var gap in storedGaps) Console.WriteLine("GAP {0}: {1}", gap.Kind, gap.Count);
+
+        var validation = scope.ServiceProvider.GetRequiredService<ValidationService>();
+        var queuedValidation = await validation.EnqueueAsync(batch.BatchId, true, default);
+        var validationStopwatch = Stopwatch.StartNew();
+        Assert.Equal(1, await validation.RunPendingAsync(default));
+        validationStopwatch.Stop();
+        var validationView = await validation.GetAsync(batch.BatchId, default);
+        Assert.NotNull(validationView);
+        Assert.Equal(queuedValidation.RunId, validationView.RunId);
+        Assert.Equal(ValidationRunStatus.Completed, validationView.Status);
+        Assert.Equal(ValidationResult.Pass, validationView.Checks.Single(x =>
+            x.Code == "historical_events").Result);
+        Assert.Equal(ValidationResult.Fail, validationView.Checks.Single(x =>
+            x.Code == "active_cover").Result);
+        Assert.Equal(ValidationResult.Explained, validationView.Checks.Single(x =>
+            x.Code == "open_service_calls").Result);
+        Assert.Equal(2, validationView.Checks.Count(x => x.Result == ValidationResult.Report));
+        foreach (var check in validationView.Checks)
+            Console.WriteLine("VALIDATION {0}: source={1} target={2} difference={3} result={4}",
+                check.Label, check.SourceTotal, check.TargetTotal, check.Difference, check.Result);
+        Console.WriteLine("VALIDATION took={0}", validationStopwatch.Elapsed);
     }
 
     private static void Print(string heading, IReadOnlyList<MappingCount> counts)

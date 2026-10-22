@@ -95,6 +95,7 @@ internal static class MigrationModel
         Canonicalisation.CanonicalisationModel.Configure(modelBuilder);
         Reconstruction.ReconstructionModel.Configure(modelBuilder);
         Mapping.MappingModel.Configure(modelBuilder);
+        Validation.ValidationModel.Configure(modelBuilder);
         Staging.SourceProtocol.Configure(modelBuilder);
     }
 }

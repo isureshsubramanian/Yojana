@@ -36,6 +36,7 @@ using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Mapping;
+using Yojana.Integration.LegacyMigration.Validation;
 
 namespace Yojana.Integration;
 
@@ -226,6 +227,13 @@ public static class IntegrationModule
         builder.Services.AddScoped<ReconstructionService>();
         builder.Services.AddScoped<MappingSettings>();
         builder.Services.AddScoped<MappingService>();
+        builder.Services.AddScoped<ValidationSettings>();
+        builder.Services.AddScoped<PlanMigrationValidationTarget>();
+        builder.Services.AddScoped<IMigrationValidationTarget>(services =>
+            services.GetRequiredService<PlanMigrationValidationTarget>());
+        builder.Services.AddScoped<ValidationService>();
+        builder.Services.AddScoped<IMigrationValidationQueue>(services =>
+            services.GetRequiredService<ValidationService>());
         builder.Services.AddSingleton(RecurringTenantJob.For<MigrationExtractionJob>(
             MigrationExtractionJob.JobName, MigrationExtractionJob.Cron));
 
