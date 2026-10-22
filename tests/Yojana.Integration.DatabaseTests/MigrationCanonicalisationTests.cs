@@ -74,6 +74,19 @@ public sealed class MigrationCanonicalisationTests(IntegrationHostFixture fixtur
             Assert.Contains("one edit", orphan.Hint!, StringComparison.Ordinal);
 
             var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+            var storedFamilyKeys = await db.Set<SerialMasterStagingRow>().AsNoTracking()
+                .Where(row => row.BatchId == batchId && row.ItemCode == "STORAGE-FAMILY")
+                .OrderBy(row => row.SourcePk).Select(row => row.FamilyNormalisedSerialNumber).ToListAsync();
+            Assert.Equal(["ST1", "ST1"], storedFamilyKeys);
+            Assert.Equal("TRIM1", await db.Set<EquipmentCardStagingRow>().AsNoTracking()
+                .Where(row => row.BatchId == batchId && row.CardId == 51320)
+                .Select(row => row.FamilyNormalisedInternalSerial).SingleAsync());
+            var contractKeys = await db.Set<ContractLineStagingRow>().AsNoTracking()
+                .Where(row => row.BatchId == batchId && row.ContractId == 991)
+                .Select(row => new { row.NormalisedInternalSerial, row.FamilyNormalisedInternalSerial })
+                .SingleAsync();
+            Assert.Equal("TRIM-1", contractKeys.NormalisedInternalSerial);
+            Assert.Equal("TRIM1", contractKeys.FamilyNormalisedInternalSerial);
             var orphanDetail = await canonical.DetailAsync(orphan.ItemId, default);
             Assert.NotNull(orphanDetail);
             var hintedSource = Assert.Single(orphanDetail.Candidates).SourceKey;
