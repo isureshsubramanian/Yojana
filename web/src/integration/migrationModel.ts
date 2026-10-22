@@ -405,6 +405,6 @@ export function sampleExample(sample: MigrationProfileSample | undefined): strin
 }
 export function sampleFacts(sample: MigrationProfileSample): [string, string][] { return Object.entries(sample.facts).map(([key, value]) => [factLabel(key), factValue(value)]); }
 
-function readable(value: string): string { const text = value.replace(/_/g, " "); return text.charAt(0).toUpperCase() + text.slice(1); }
+function readable(value: string): string { const text = value.replace(/_/g, " ").replace(/([a-z0-9])([A-Z])/g, (_, a: string, b: string) => `${a} ${b.toLowerCase()}`); return text.charAt(0).toUpperCase() + text.slice(1); }
 function readableValue(value: string): string { return /^[a-z][a-z0-9_]*$/.test(value) ? readable(value) : value; }
 function asUtc(value: string): Date { return new Date(/(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? value : `${value}Z`); }

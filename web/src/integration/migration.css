@@ -21,6 +21,7 @@
 .migration-load-by { margin: 0; }
 .migration-phase-note { margin: 0; color: var(--text-3); font-size: 12px; line-height: 1.4; }
 .migration-phase-link { font-size: 12px; line-height: 1.35; }
+.migration-phases .migration-phase-link { display: block; }
 .migration-load-confirm { display: grid; gap: 8px; }
 .migration-load-confirm p { margin: 0; }
 .migration-load-confirm > div { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -30,7 +31,13 @@
 .migration-refusal-filters .field { flex: 1 1 210px; }
 .migration-refusal-filters .input, .migration-refusal-filters .select { width: 100%; }
 .migration-refusals-card .table { min-width: 900px; }
-.migration-refusals-card .table td { height: auto; min-height: 44px; white-space: normal; overflow-wrap: anywhere; line-height: 1.45; }
+/* A table cell treats height as a minimum, so long reasons wrap and short rows keep the house row height. */
+.migration-refusals-card .table td { height: 44px; padding-block: 10px; white-space: normal; overflow-wrap: anywhere; line-height: 1.45; }
+.migration-reason-list { list-style: none; margin: 0; padding: 4px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+.migration-reason { display: flex; width: 100%; gap: 16px; justify-content: space-between; align-items: baseline; padding: 10px 20px; border: 0; background: none; color: var(--text-1); font: inherit; text-align: left; cursor: pointer; }
+.migration-reason:hover { background: var(--surface-2); }
+.migration-reason[aria-pressed="true"] { background: var(--surface-2); font-weight: 600; }
+.migration-reason .num { font-variant-numeric: tabular-nums; color: var(--text-2); }
 .migration-table-card .table, .migration-profile-card .table { min-width: 900px; }
 .migration-table-name .sub { font-family: var(--font-mono); }
 .migration-outcome-chips { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px var(--card-pad); border-bottom: 1px solid var(--border); }

@@ -53,11 +53,15 @@ function MigrationRefusals() {
   const exportUrl = migrationApi.loadRefusalsExportUrl(loadId, filters);
   const kpis = [
     { label: "Total refused", value: (result?.loadTotal ?? 0).toLocaleString(), detail: result && result.total !== result.loadTotal ? `${result.total.toLocaleString()} match the filters` : "in this load" },
-    ...(result?.countsByReason.map(row => ({ label: row.label, value: row.count.toLocaleString(), detail: "refusal reason" })) ?? []),
+    { label: "Reasons", value: (result?.countsByReason.length ?? 0).toLocaleString(), detail: "a unit can carry more than one" },
   ];
+  const showReason = (reason: string) => { const next = { ...filters, reason }; setDraft(next); setCursors([undefined]); setPage(1); setFilters(next); };
 
-  return <MigrationPage title="Refused units" eyebrow="Migration load · units not written" sub="Find every refused serial, see the full blocking reason, and export the filtered result." actions={<><Link className="btn" to="/integration/migration">Back to console</Link><a className="btn" href={exportUrl} download>CSV</a></>}>
+  return <MigrationPage title="Refused units" eyebrow="Migration load · units not written" sub="Find every refused serial, see the full blocking reason, and export the filtered result." actions={<><Link className="btn" to="/integration/migration">Back to console</Link></>}>
     <KpiStrip label="Refusal counts" kpis={kpis} />
+    {!!result?.countsByReason.length && <section className="card" aria-labelledby="migration-refusal-reasons"><div className="card-header"><h2 id="migration-refusal-reasons">Refused by reason <span className="meta">whole load · select a reason to filter</span></h2></div><ul className="migration-reason-list">
+      {result.countsByReason.map(row => <li key={row.reason}><button type="button" className="migration-reason" aria-pressed={filters.reason === row.reason} onClick={() => showReason(row.reason)}><span>{row.label}</span><span className="num">{row.count.toLocaleString()}</span></button></li>)}
+    </ul></section>}
     <section className="card" aria-labelledby="migration-refusal-filters"><div className="card-header"><h2 id="migration-refusal-filters">Filters <span className="meta">server-side · exact total</span></h2></div><div className="card-body"><form className="toolbar migration-refusal-filters" role="search" aria-label="Refused unit filters" onSubmit={applyFilters}>
       <label className="field"><span className="lbl">Reason</span><select className="select" value={draft.reason} onChange={event => setDraft(current => ({ ...current, reason: event.target.value }))}><option value="">Any reason</option>{result?.countsByReason.map(row => <option key={row.reason} value={row.reason}>{row.label} · {row.count.toLocaleString()}</option>)}</select></label>
       <label className="field"><span className="lbl">Item code</span><input className="input" value={draft.itemCode} onChange={event => setDraft(current => ({ ...current, itemCode: event.target.value }))} placeholder="Exact item code" /></label>

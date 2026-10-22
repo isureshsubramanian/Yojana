@@ -624,6 +624,9 @@ internal static class ApplyRefusalReason
     private static string Humanise(string value)
     {
         var text = value.Replace('_', ' ').Replace('-', ' ').Replace('*', ' ').Trim();
+        // Identifier scopes arrive as type names (InternalSerial): read them as words, like the web label does.
+        text = string.Concat(text.Select((c, i) => i > 0 && char.IsUpper(c) && char.IsLetterOrDigit(text[i - 1])
+            && !char.IsUpper(text[i - 1]) ? " " + char.ToLowerInvariant(c) : c.ToString()));
         return text.Length == 0 ? "Unspecified" : char.ToUpperInvariant(text[0]) + text[1..];
     }
 }
