@@ -4,6 +4,7 @@ using Wolverine;
 using Yojana.Knowledge.Contracts;
 using Yojana.Knowledge.Data;
 using Yojana.Knowledge.Data.Entities;
+using Yojana.Knowledge.Entries;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Mail;
 using Yojana.Platform.Contracts.Records;
@@ -13,6 +14,7 @@ using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Mail;
 using Yojana.Platform.Scheduling;
 using Yojana.Platform.Tenancy;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Knowledge.Questions;
 
@@ -27,8 +29,8 @@ public static class QuestionNotificationSettings
 public sealed record QuestionNotificationPreferenceView(string PersonalDefault, string RoleDefault, string? Choice);
 public sealed record UpdateQuestionNotificationPreference(string? Mode);
 
-public sealed record QuestionBellItem(Guid QuestionId, string Title, string RecordKind, Guid RecordId,
-    string RecordName, string Reason, DateTime ActivityAt, string Link);
+public sealed record QuestionBellItem(string Id, Guid? QuestionId, Guid? EntryId, string Title, string RecordKind,
+    Guid? RecordId, string RecordName, string Reason, DateTime ActivityAt, string Link);
 public sealed record QuestionBellSummary(int Count, IReadOnlyList<QuestionBellItem> Items);
 
 public sealed class QuestionNotificationDefaults(ITenantSettings settings)
@@ -52,7 +54,8 @@ public sealed class QuestionNotificationDefaults(ITenantSettings settings)
 }
 
 public sealed class QuestionNotificationService(KnowledgeDbContext db, RecordReferenceLookup records,
-    QuestionNotificationDefaults defaults, ITenantContext tenant, IClock clock)
+    QuestionNotificationDefaults defaults, EntryReviewerSettings reviewerSettings, ITenantContext tenant,
+    IClock clock)
 {
     public async Task<QuestionNotificationPreferenceView> PreferenceAsync(Guid userId,
         CancellationToken cancellationToken)
@@ -120,17 +123,32 @@ public sealed class QuestionNotificationService(KnowledgeDbContext db, RecordRef
         var unread = await db.Participants.AsNoTracking().Where(p => p.TenantId == tenant.TenantId
                 && p.UserId == viewer.UserId && idsOnPage.Contains(p.QuestionId))
             .Select(p => new { p.QuestionId, p.LastReadAt }).ToDictionaryAsync(x => x.QuestionId, cancellationToken);
-        var items = ordered.Take(take).Select(x =>
+        var items = ordered.Select(x =>
         {
             var askedByMe = x.Question.AskedBy == viewer.UserId;
             var reason = askedByMe && unread.TryGetValue(x.Question.QuestionId, out var participant)
                 && (participant.LastReadAt == null || participant.LastReadAt < x.Question.UpdatedAt)
                 ? "New reply" : "Waiting for your reply";
-            return new QuestionBellItem(x.Question.QuestionId, x.Question.Title, x.Question.RecordKind,
-                x.Question.RecordId, x.Record.DisplayName!, reason, x.Question.UpdatedAt,
+            return new QuestionBellItem(x.Question.QuestionId.ToString("D"), x.Question.QuestionId, null,
+                x.Question.Title, x.Question.RecordKind, x.Question.RecordId, x.Record.DisplayName!, reason,
+                x.Question.UpdatedAt,
                 RecordLink(x.Question.RecordKind, x.Question.RecordId, x.Question.QuestionId));
         }).ToList();
-        return new QuestionBellSummary(ordered.Count, items);
+        var reviewerRoles = await reviewerSettings.GetAsync(cancellationToken);
+        if (reviewerRoles.Any(role => viewer.Roles.Contains(role, StringComparer.Ordinal)))
+        {
+            var entries = await db.Entries.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                    && x.NeedsReview && x.PublishedVersion != null && x.Status != KnowledgeEntryStatus.Retired
+                    && x.AuthorId != viewer.UserId)
+                .OrderByDescending(x => x.NeedsReviewSince).ThenByDescending(x => x.EntryId)
+                .Select(x => new { x.EntryId, x.Title, x.NeedsReviewSince }).ToListAsync(cancellationToken);
+            items.AddRange(entries.Select(entry => new QuestionBellItem($"entry:{entry.EntryId:D}", null,
+                entry.EntryId, entry.Title, "knowledge_entry", entry.EntryId, "Knowledge entry",
+                "May be out of date", entry.NeedsReviewSince!.Value, $"/knowledge/entries/{entry.EntryId:D}")));
+        }
+        return new QuestionBellSummary(items.Count,
+            items.OrderByDescending(x => x.ActivityAt).ThenByDescending(x => x.Id, StringComparer.Ordinal)
+                .Take(take).ToList());
     }
 
     public async Task MarkReadAsync(Guid questionId, Guid userId, CancellationToken cancellationToken)
@@ -166,19 +184,43 @@ public sealed class QuestionNotificationService(KnowledgeDbContext db, RecordRef
     }
 }
 
-public sealed record RunQuestionDailyDigest(DateOnly Date);
+public sealed record RunQuestionDailyDigest(DateOnly Date, DateTime CutoffAt);
+
+public sealed class QuestionDailyDigestSchedule(ITenantTimeZoneReadPort timeZones)
+{
+    public async Task<DateOnly> LocalDateAsync(DateTime utcNow, CancellationToken cancellationToken)
+    {
+        var local = await LocalAsync(utcNow, cancellationToken);
+        return DateOnly.FromDateTime(local);
+    }
+
+    public async Task<RunQuestionDailyDigest?> DueAsync(DateTime utcNow, CancellationToken cancellationToken)
+    {
+        var local = await LocalAsync(utcNow, cancellationToken);
+        return local.Hour == 7 && local.Minute == 0
+            ? new RunQuestionDailyDigest(DateOnly.FromDateTime(local), DateTime.SpecifyKind(utcNow, DateTimeKind.Utc))
+            : null;
+    }
+
+    private async Task<DateTime> LocalAsync(DateTime utcNow, CancellationToken cancellationToken)
+    {
+        var zoneId = await timeZones.GetAsync(cancellationToken);
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(zoneId);
+        return TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utcNow, DateTimeKind.Utc), zone);
+    }
+}
 
 [DisallowConcurrentExecution]
 public sealed class QuestionDailyDigestJob(ITenantContextSetter setter, ITenantContext tenant,
-    IMessageBus bus, IClock clock) : TenantJob(setter)
+    IMessageBus bus, IClock clock, QuestionDailyDigestSchedule schedule) : TenantJob(setter)
 {
     public const string JobName = "knowledge.question_daily_digest";
-    public const string Cron = "0 0 7 * * ?";
+    public const string Cron = "0 0/15 * * * ?";
 
     protected override async Task ExecuteForTenant(IJobExecutionContext context, CancellationToken cancellationToken)
     {
-        await bus.PublishAsync(new RunQuestionDailyDigest(DateOnly.FromDateTime(clock.UtcNow)),
-            new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
+        if (await schedule.DueAsync(clock.UtcNow, cancellationToken) is { } run)
+            await bus.PublishAsync(run, new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
     }
 }
 
@@ -202,13 +244,19 @@ public static class QuestionNotificationHandler
         NotifyAsync("answered", message.QuestionId, message.ReplyId, message.AnsweredBy, message.AnsweredAt, db, records,
             staff, users, defaults, mail, mailOptions, tenant, clock, cancellationToken);
 
+    public static Task Handle(KnowledgeEntryNeedsReview message, KnowledgeDbContext db,
+        ITenantStaffDirectory staff, EntryReviewerSettings reviewerSettings, QuestionNotificationDefaults defaults,
+        IMailOutbox mail, MailOptions mailOptions, ITenantContext tenant, IClock clock,
+        CancellationToken cancellationToken) => NotifyEntryAsync(message, db, staff, reviewerSettings, defaults,
+            mail, mailOptions, tenant, clock, cancellationToken);
+
     public static async Task Handle(RunQuestionDailyDigest message, KnowledgeDbContext db,
         RecordReferenceLookup records, ITenantStaffDirectory staff, IUserDirectory users, IMailOutbox mail,
         MailOptions mailOptions, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var pending = await db.Notifications.Where(x => x.TenantId == tenant.TenantId
             && x.DeliveryMode == QuestionNotificationMode.DailyDigest && x.DigestDate == null
-            && x.OccurredAt < message.Date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc))
+            && x.OccurredAt < message.CutoffAt)
             .OrderBy(x => x.OccurredAt).ToListAsync(cancellationToken);
         foreach (var group in pending.GroupBy(x => x.RecipientUserId))
         {
@@ -216,7 +264,7 @@ public static class QuestionNotificationHandler
                 && x.DigestDate == message.Date, cancellationToken)) continue;
             var recipient = (await staff.NotificationRecipientsAsync(group.Key, null, cancellationToken)).SingleOrDefault();
             if (recipient is null) continue;
-            var questionIds = group.Select(x => x.QuestionId).Distinct().ToList();
+            var questionIds = group.Select(x => x.QuestionId).OfType<Guid>().Distinct().ToList();
             var questions = await db.Questions.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
                 && questionIds.Contains(x.QuestionId)).ToListAsync(cancellationToken);
             var visible = new List<(Question Question, RecordReference Record)>();
@@ -229,21 +277,28 @@ public static class QuestionNotificationHandler
                     && record.Exists && record.MayView && !string.IsNullOrWhiteSpace(record.DisplayName))
                     .Select(q => (q, found[q.RecordId])));
             }
-            if (visible.Count == 0)
+            var entryIds = group.Select(x => x.EntryId).OfType<Guid>().Distinct().ToList();
+            var entries = await db.Entries.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && entryIds.Contains(x.EntryId) && x.NeedsReview && x.PublishedVersion != null
+                && x.Status != KnowledgeEntryStatus.Retired && x.AuthorId != recipient.UserId)
+                .Select(x => new { x.EntryId, x.Title }).ToListAsync(cancellationToken);
+            if (visible.Count == 0 && entries.Count == 0)
             {
                 foreach (var row in group) row.DigestDate = message.Date;
                 continue;
             }
             var facts = visible.OrderByDescending(x => x.Question.UpdatedAt).Select(x =>
-                ($"{x.Record.DisplayName}", x.Question.Title)).ToList();
-            var rendered = AccountMailLayout.Render(new AccountMailContent("Yojana", "Questions",
-                $"{visible.Count} question update{(visible.Count == 1 ? "" : "s")}",
-                ["Here are the question updates waiting for you."], facts,
-                ("Open questions", mailOptions.Link("/questions")),
+                ($"{x.Record.DisplayName}", x.Question.Title)).Concat(entries.Select(x =>
+                    ("Knowledge entry may be out of date", x.Title))).ToList();
+            var count = facts.Count;
+            var rendered = AccountMailLayout.Render(new AccountMailContent("Yojana", "Questions and knowledge",
+                $"{count} update{(count == 1 ? "" : "s")}",
+                ["Here are the question and knowledge updates waiting for you."], facts,
+                ("Open updates", mailOptions.Link("/questions")),
                 ["Only records available to your current role are included."], "Sent by Yojana."));
             var mailId = await mail.QueueAsync(new OutgoingMail("knowledge.question_digest", tenant.TenantId,
                 recipient.UserId, new MailRecipient(recipient.Email, recipient.Name),
-                $"{visible.Count} question update{(visible.Count == 1 ? "" : "s")}", rendered.Html, rendered.Text),
+                $"{count} question and knowledge update{(count == 1 ? "" : "s")}", rendered.Html, rendered.Text),
                 cancellationToken);
             db.Digests.Add(new QuestionDigest
             {
@@ -299,6 +354,56 @@ public static class QuestionNotificationHandler
             row.MailId = await mail.QueueAsync(new OutgoingMail("knowledge.question_immediate", tenant.TenantId,
                 recipient.UserId, new MailRecipient(recipient.Email, recipient.Name),
                 $"{actorName} {verb}: {question.Title}", rendered.Html, rendered.Text), cancellationToken);
+        }
+    }
+
+    private static async Task NotifyEntryAsync(KnowledgeEntryNeedsReview message, KnowledgeDbContext db,
+        ITenantStaffDirectory staff, EntryReviewerSettings reviewerSettings, QuestionNotificationDefaults defaults,
+        IMailOutbox mail, MailOptions mailOptions, ITenantContext tenant, IClock clock,
+        CancellationToken cancellationToken)
+    {
+        var entry = await db.Entries.AsNoTracking().FirstOrDefaultAsync(x => x.TenantId == tenant.TenantId
+            && x.EntryId == message.EntryId && x.NeedsReview, cancellationToken);
+        if (entry is null) return;
+        var roles = await reviewerSettings.GetAsync(cancellationToken);
+        var recipients = new List<TenantStaffNotificationRecipient>();
+        foreach (var role in roles)
+            recipients.AddRange(await staff.NotificationRecipientsAsync(null, role, cancellationToken));
+        var configured = await defaults.GetAsync(cancellationToken);
+        foreach (var recipient in recipients.Where(x => x.UserId != entry.AuthorId).DistinctBy(x => x.UserId))
+        {
+            var choice = await db.NotificationPreferences.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && x.UserId == recipient.UserId).Select(x => x.Mode).FirstOrDefaultAsync(cancellationToken);
+            var mode = choice ?? configured.Role;
+            if (mode == QuestionNotificationMode.Off) continue;
+            var notificationId = TimeOrderedId.New(clock.UtcNow);
+            // Coupled to the unique notification key in KnowledgeDbContext. The key-range lock is required because
+            // Wolverine can deliver the same event concurrently; separating them can queue duplicate reviewer mail.
+            var inserted = await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO knowledge.question_notification
+                    (tenant_id, notification_id, question_id, entry_id, recipient_user_id, event_kind,
+                     event_id, delivery_mode, occurred_at, mail_id, digest_date)
+                SELECT {tenant.TenantId.Value}, {notificationId}, NULL, {entry.EntryId}, {recipient.UserId},
+                       {"entry_needs_review"}, {message.ReasonId}, {mode}, {message.FlaggedAt}, NULL, NULL
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM knowledge.question_notification WITH (UPDLOCK, HOLDLOCK)
+                    WHERE tenant_id = {tenant.TenantId.Value} AND recipient_user_id = {recipient.UserId}
+                      AND event_kind = {"entry_needs_review"} AND event_id = {message.ReasonId})
+                """, cancellationToken);
+            if (inserted == 0) continue;
+            if (mode != QuestionNotificationMode.Immediately) continue;
+            var link = mailOptions.Link($"/knowledge/entries/{entry.EntryId:D}");
+            var rendered = AccountMailLayout.Render(new AccountMailContent("Yojana", "Knowledge",
+                entry.Title, ["A policy or screen this entry was written against changed."],
+                [("Reason", message.ReasonLabel)], ("Review entry", link),
+                ["The entry remains readable with an out-of-date warning until a reviewer clears it."],
+                "Sent by Yojana."));
+            var mailId = await mail.QueueAsync(new OutgoingMail("knowledge.entry_needs_review", tenant.TenantId,
+                recipient.UserId, new MailRecipient(recipient.Email, recipient.Name),
+                $"Knowledge entry needs review: {entry.Title}", rendered.Html, rendered.Text), cancellationToken);
+            await db.Notifications.Where(x => x.TenantId == tenant.TenantId
+                    && x.NotificationId == notificationId)
+                .ExecuteUpdateAsync(update => update.SetProperty(x => x.MailId, mailId), cancellationToken);
         }
     }
 }

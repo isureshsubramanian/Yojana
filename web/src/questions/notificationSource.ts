@@ -6,7 +6,7 @@ export const questionNotificationSource: ShellNotificationSource = {
   async load(signal) {
     const summary = await questionsApi.bell(signal);
     return { count: summary.count, items: summary.items.map(item => ({
-      id: item.questionId, title: item.title, detail: `${item.reason} · ${item.recordName}`,
+      id: item.id, title: item.title, detail: `${item.reason} · ${item.recordName}`,
       href: item.link, at: item.activityAt,
     })) };
   },

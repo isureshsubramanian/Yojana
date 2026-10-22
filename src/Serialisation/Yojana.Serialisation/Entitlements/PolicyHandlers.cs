@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Wolverine;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
@@ -94,9 +95,14 @@ public static class ValidatePolicyDraftHandler
 public static class PublishPolicyVersionHandler
 {
     public static async Task<PolicyDraftResult> Handle(PublishPolicyVersion command, SerialisationDbContext db, PolicyStore store,
-        ClaimWaitingPeriodSettings waitingPeriods, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ClaimWaitingPeriodSettings waitingPeriods, IMessageBus bus, ITenantContext tenant, IClock clock,
+        CancellationToken cancellationToken)
     {
         var row = await PolicyDrafts.DraftAsync(db, tenant.TenantId, command.PolicyVersionId, cancellationToken);
+        var superseded = await db.PolicyVersions.AsNoTracking().Where(version =>
+                version.TenantId == tenant.TenantId && version.PolicyCode == row.PolicyCode
+                && version.Status == PolicyVersionStatus.Published && version.Version < row.Version)
+            .OrderByDescending(version => version.Version).FirstOrDefaultAsync(cancellationToken);
         var terms = await store.ReadTermsAsync(row, cancellationToken, includeItems: true);
         if (terms.NoClaimWithinDaysOfPurchase is null)
         {
@@ -121,6 +127,12 @@ public static class PublishPolicyVersionHandler
         row.PublishedBy = command.ActorRef;
         row.LastModifiedAt = clock.UtcNow;
         row.LastModifiedBy = command.ActorRef;
+        if (superseded is not null)
+        {
+            await bus.PublishAsync(new WarrantyPolicyVersionSuperseded(superseded.PolicyVersionId,
+                row.PolicyVersionId, row.PolicyCode, superseded.Version, row.Version, row.PublishedAt.Value),
+                new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
+        }
         return new PolicyDraftResult(row.PolicyVersionId, row.PolicyCode, row.Version, row.Status, validation);
     }
 }

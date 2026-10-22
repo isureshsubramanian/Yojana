@@ -14,6 +14,9 @@ public sealed class KnowledgeEntry : ITenantScoped
     public required string Status { get; set; }
     public Guid SourceQuestionId { get; set; }
     public int CurrentVersion { get; set; }
+    public int? PublishedVersion { get; set; }
+    public bool NeedsReview { get; set; }
+    public DateTime? NeedsReviewSince { get; set; }
     public Guid AuthorId { get; set; }
     public DateTime CreatedAt { get; set; }
     public Guid LastSavedBy { get; set; }
@@ -71,4 +74,44 @@ public sealed class KnowledgeEntryReviewRound : ITenantScoped
     public Guid? Reviewer { get; set; }
     public DateTime? ReviewedAt { get; set; }
     public string? Note { get; set; }
+}
+
+public sealed class KnowledgeEntryWrittenAgainst : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid EntryId { get; set; }
+    public int Version { get; set; }
+    public required string Kind { get; set; }
+    public required string Reference { get; set; }
+    public required string Label { get; set; }
+}
+
+/// <summary>An append-only reason with its later clearance, preserving why a published entry was rechecked.</summary>
+public sealed class KnowledgeEntryReviewReason : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ReasonId { get; set; }
+    public Guid EntryId { get; set; }
+    public required string Kind { get; set; }
+    public required string Reference { get; set; }
+    public required string Label { get; set; }
+    public required string Detail { get; set; }
+    public Guid TriggerId { get; set; }
+    public DateTime FlaggedAt { get; set; }
+    public Guid? ClearedBy { get; set; }
+    public DateTime? ClearedAt { get; set; }
+    public int? ClearedAtVersion { get; set; }
+    public string? Clearance { get; set; }
+}
+
+/// <summary>Immutable tenant-administrator audit record for a screen contract changing.</summary>
+public sealed class KnowledgeScreenChange : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ChangeId { get; set; }
+    public required string ScreenReference { get; set; }
+    public required string ScreenLabel { get; set; }
+    public required string Reason { get; set; }
+    public Guid ChangedBy { get; set; }
+    public DateTime ChangedAt { get; set; }
 }

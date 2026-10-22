@@ -140,7 +140,8 @@ public static class DocumentTimeZoneFormatter
 /// entitlement calendars alike. Both purposes then inherit the tenant zone and finally UTC. Entitlement location
 /// lookup remains direct-or-null so the entitlement handler can try the obligor before those shared fallbacks.
 /// </summary>
-public sealed class TenantTimeZonePort(TenantTimeZoneSettings settings, ITimeZoneSourcePort source) : ITimeZonePort
+public sealed class TenantTimeZonePort(TenantTimeZoneSettings settings, ITimeZoneSourcePort source)
+    : ITimeZonePort, ITenantTimeZoneReadPort
 {
     // Coupled to CreateEntitlementHandler.ZoneAsync: calendar location lookup must return direct-or-null so that method
     // can try the obligor before this adapter applies tenant/UTC fallback through legal-entity lookup. Applying the
@@ -167,6 +168,9 @@ public sealed class TenantTimeZonePort(TenantTimeZoneSettings settings, ITimeZon
         if (entityZone is not null) return entityZone;
         return Known(policy?.TenantTimeZone) ?? "UTC";
     }
+
+    public async Task<string> GetAsync(CancellationToken cancellationToken) =>
+        Known((await PolicyAsync(cancellationToken))?.TenantTimeZone) ?? "UTC";
 
     // The adapter is scoped to one request or command, so the tenant setting is read once per scope rather than once
     // per unit; a bulk command over 500 units would otherwise issue 500 setting reads.

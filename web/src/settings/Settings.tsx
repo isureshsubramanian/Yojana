@@ -5,6 +5,7 @@ import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote } from "../units/common";
 import { numberingApi, type NumberingMode, type NumberingSeriesSetting } from "./numberingApi";
+import { KnowledgeScreenChanges } from "./KnowledgeScreenChanges";
 
 const sections = [
   ["Company", "Footer line, sender name and reply-to on every e-mail", "/settings/company"],
@@ -61,6 +62,7 @@ export function Component() {
           <span className="help">{saving === row.series ? "Saving…" : row.gapBehaviour}</span>
         </div>)}
       </div></section>
+      <KnowledgeScreenChanges />
       <section className="card" aria-labelledby="other-settings"><div className="card-header"><h2 id="other-settings">Other settings</h2></div><div className="card-body stack">
         {sections.map(([label, description, to]) => <Link className="btn" to={to} key={to}><Icon name="sliders" /><span>{label} · {description}</span></Link>)}
       </div></section>

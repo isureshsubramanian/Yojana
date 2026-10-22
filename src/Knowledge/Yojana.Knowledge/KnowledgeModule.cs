@@ -27,10 +27,12 @@ public static class KnowledgeModule
             sp.GetRequiredService<Yojana.Serialisation.Contracts.IItemFamilyNamePort>(),
             sp.GetRequiredService<Yojana.Serialisation.Contracts.IClaimCauseNamePort>()));
         builder.Services.AddScoped<KnowledgeEntryQueries>();
+        builder.Services.AddScoped<KnowledgeScreenQueries>();
         builder.Services.AddScoped<QuestionQueries>();
         builder.Services.AddScoped(sp => new QuestionNotificationDefaults(
             sp.GetRequiredService<ITenantSettings>()));
         builder.Services.AddScoped<QuestionNotificationService>();
+        builder.Services.AddScoped<QuestionDailyDigestSchedule>();
         builder.Services.AddSingleton(RecurringTenantJob.For<QuestionDailyDigestJob>(
             QuestionDailyDigestJob.JobName, QuestionDailyDigestJob.Cron));
         return builder;

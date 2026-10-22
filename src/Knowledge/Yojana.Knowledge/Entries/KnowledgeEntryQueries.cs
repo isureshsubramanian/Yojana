@@ -20,7 +20,9 @@ public sealed record EntryRecordLinksView(IReadOnlyList<VisibleEntryRecordLink> 
 public sealed record EntryReviewRoundView(int Round, int Version, Guid SubmittedBy, string SubmittedByName,
     DateTime SubmittedAt, string? Decision, Guid? Reviewer, string? ReviewerName, DateTime? ReviewedAt, string? Note);
 public sealed record EntryVersionView(int Version, Guid SavedBy, string SavedByName, DateTime SavedAt);
-public sealed record EntryAllowedActions(bool CanEdit, bool CanSubmit, bool CanApprove, bool CanSendBack, bool CanRetire);
+public sealed record EntryReviewReasonView(Guid ReasonId, string Kind, string Label, string Detail, DateTime FlaggedAt);
+public sealed record EntryAllowedActions(bool CanEdit, bool CanSubmit, bool CanApprove, bool CanSendBack,
+    bool CanRetire, bool CanConfirmStillCorrect);
 public sealed record EntrySourceView(Guid QuestionId, string Title, string RecordKind, Guid RecordId,
     string? RecordName, string AcceptedAnswer);
 public sealed record KnowledgeEntryView(Guid EntryId, string Title, string Problem, string Answer, string Steps,
@@ -29,15 +31,17 @@ public sealed record KnowledgeEntryView(Guid EntryId, string Title, string Probl
     IReadOnlyList<EntryTagView> Tags, IReadOnlyList<WrittenAgainstView> WrittenAgainst,
     EntryRecordLinksView RecordLinks, EntrySourceView Source, IReadOnlyList<EntryReviewRoundView> ReviewRounds,
     IReadOnlyList<EntryVersionView> Versions, IReadOnlyList<string> ReviewerRoles, string CaseDisclosureTier,
-    EntryAllowedActions AllowedActions);
+    bool NeedsReview, IReadOnlyList<EntryReviewReasonView> ReviewReasons, EntryAllowedActions AllowedActions);
 
 public sealed record KnowledgeEntryListItem(Guid EntryId, string Title, string Answer, int CurrentVersion,
-    string AuthorName, string ReviewerName, DateTime PublishedAt, IReadOnlyList<EntryTagView> Tags, int Rank);
+    string AuthorName, string ReviewerName, DateTime PublishedAt, IReadOnlyList<EntryTagView> Tags, int Rank,
+    bool NeedsReview, IReadOnlyList<EntryReviewReasonView> ReviewReasons);
 public sealed record KnowledgeFacet(string Value, string Label, int Count);
 public sealed record KnowledgeEntryPage(IReadOnlyList<KnowledgeEntryListItem> Items, string? NextCursor,
     IReadOnlyList<KnowledgeFacet> Roles, IReadOnlyList<KnowledgeFacet> Tasks);
 public sealed record EntryReviewListItem(Guid EntryId, string Title, int CurrentVersion, string AuthorName,
-    DateTime SubmittedAt, int Round);
+    DateTime ActivityAt, int? Round, string Status, bool NeedsReview,
+    IReadOnlyList<EntryReviewReasonView> ReviewReasons, bool CanConfirmStillCorrect);
 public sealed record EntryReviewPage(IReadOnlyList<EntryReviewListItem> Items, string? NextCursor);
 public sealed record EntryFieldChange(string Field, string Before, string After);
 public sealed record EntryTagChoices(IReadOnlyList<EntryTagView> Roles, IReadOnlyList<EntryTagView> Tasks,
@@ -56,15 +60,22 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
         if (entry is null) return null;
         var reviewerRoles = await reviewerSettings.GetAsync(cancellationToken);
         var isReviewer = HasReviewerRole(viewer, reviewerRoles);
-        if (entry.Status is not (KnowledgeEntryStatus.Published or KnowledgeEntryStatus.Retired)
+        var hasPublishedVersion = entry.PublishedVersion is not null;
+        if (!hasPublishedVersion && entry.Status is not KnowledgeEntryStatus.Retired
             && entry.AuthorId != viewer.UserId && !isReviewer) return null;
+        var selectedVersion = entry.Status is KnowledgeEntryStatus.Draft or KnowledgeEntryStatus.InReview
+            && entry.AuthorId != viewer.UserId && !isReviewer
+            ? entry.PublishedVersion!.Value : entry.CurrentVersion;
+        var selected = selectedVersion == entry.CurrentVersion ? null
+            : await db.EntryVersions.AsNoTracking().SingleAsync(x => x.TenantId == tenant.TenantId
+                && x.EntryId == entryId && x.Version == selectedVersion, cancellationToken);
 
         var tags = await db.EntryTags.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
-                && x.EntryId == entryId && x.Version == entry.CurrentVersion)
+                && x.EntryId == entryId && x.Version == selectedVersion)
             .OrderBy(x => x.Kind).ThenBy(x => x.Label).Select(x => new EntryTagView(x.Kind, x.Value, x.Label))
             .ToListAsync(cancellationToken);
         var linkRows = await db.EntryRecordLinks.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
-                && x.EntryId == entryId && x.Version == entry.CurrentVersion).ToListAsync(cancellationToken);
+                && x.EntryId == entryId && x.Version == selectedVersion).ToListAsync(cancellationToken);
         var question = await db.Questions.AsNoTracking().SingleAsync(x => x.TenantId == tenant.TenantId
             && x.QuestionId == entry.SourceQuestionId, cancellationToken);
         var firstVersion = await db.EntryVersions.AsNoTracking().SingleAsync(x => x.TenantId == tenant.TenantId
@@ -85,21 +96,32 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
         var partyPolicy = policy.Fields.FirstOrDefault(x => x.Field == PortalDisclosureField.PartyData);
         var currentRound = roundRows.FirstOrDefault(x => x.Decision == null);
         var canReview = entry.Status == KnowledgeEntryStatus.InReview && isReviewer && entry.AuthorId != viewer.UserId;
-        return new KnowledgeEntryView(entry.EntryId, entry.Title, entry.Problem, entry.Answer, entry.Steps,
+        var reasons = await ActiveReasonsAsync([entry.EntryId], cancellationToken);
+        var content = selected ?? new KnowledgeEntryVersion
+        {
+            TenantId = entry.TenantId, EntryId = entry.EntryId, Version = entry.CurrentVersion,
+            Title = entry.Title, Problem = entry.Problem, Answer = entry.Answer, Steps = entry.Steps,
+            WrittenAgainstJson = entry.WrittenAgainstJson, SavedBy = entry.LastSavedBy, SavedAt = entry.LastSavedAt,
+        };
+        var authorCanWork = entry.AuthorId == viewer.UserId && (entry.Status == KnowledgeEntryStatus.Draft
+            || (entry.Status == KnowledgeEntryStatus.Published && entry.NeedsReview));
+        return new KnowledgeEntryView(entry.EntryId, content.Title, content.Problem, content.Answer, content.Steps,
             entry.Status, entry.CurrentVersion, entry.AuthorId, Name(entry.AuthorId), entry.CreatedAt, entry.LastSavedAt,
             entry.PublishedBy, entry.PublishedBy is { } publishedBy ? Name(publishedBy) : null, entry.PublishedAt,
-            entry.RetirementNote, tags, WrittenAgainst(entry.WrittenAgainstJson), links,
+            entry.RetirementNote, tags, WrittenAgainst(content.WrittenAgainstJson), links,
             new EntrySourceView(question.QuestionId, question.Title, question.RecordKind, question.RecordId,
                 sourceRecord?.RecordName, firstVersion.Answer),
             roundRows.Select(x => new EntryReviewRoundView(x.Round, x.Version, x.SubmittedBy, Name(x.SubmittedBy),
                 x.SubmittedAt, x.Decision, x.Reviewer, x.Reviewer is { } reviewer ? Name(reviewer) : null,
                 x.ReviewedAt, x.Note)).ToList(),
             versionRows.Select(x => new EntryVersionView(x.Version, x.SavedBy, Name(x.SavedBy), x.SavedAt)).ToList(),
-            reviewerRoles, partyPolicy?.Tier ?? DisclosureTier.Internal,
-            new EntryAllowedActions(entry.Status == KnowledgeEntryStatus.Draft && entry.AuthorId == viewer.UserId,
-                entry.Status == KnowledgeEntryStatus.Draft && entry.AuthorId == viewer.UserId,
+            reviewerRoles, partyPolicy?.Tier ?? DisclosureTier.Internal, entry.NeedsReview,
+            reasons.GetValueOrDefault(entry.EntryId, []),
+            new EntryAllowedActions(authorCanWork, authorCanWork,
                 canReview && currentRound is not null, canReview && currentRound is not null,
-                entry.Status == KnowledgeEntryStatus.Published && isReviewer));
+                entry.Status == KnowledgeEntryStatus.Published && isReviewer,
+                entry.Status == KnowledgeEntryStatus.Published && entry.NeedsReview && isReviewer
+                    && entry.AuthorId != viewer.UserId));
     }
 
     public async Task<KnowledgeEntryPage> BrowseAsync(string? query, string? role, string? task, string? cursor,
@@ -151,13 +173,18 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
         return new KnowledgeEntryPage(items, next, roles, tasks);
     }
 
-    public async Task<EntryReviewPage> ReviewQueueAsync(string? cursor, int take, RecordReferenceViewer viewer,
+    public async Task<EntryReviewPage> ReviewQueueAsync(string? filter, string? cursor, int take,
+        RecordReferenceViewer viewer,
         CancellationToken cancellationToken)
     {
         ValidateTake(take);
         var roles = await reviewerSettings.GetAsync(cancellationToken);
         if (!HasReviewerRole(viewer, roles)) throw new QuestionRuleException("entry_review_role_required",
             "A role selected in the tenant's knowledge-review setting is required.");
+        if (filter is not (null or "pending" or "needs_review"))
+            throw new QuestionRuleException("entry_review_filter_unknown", "The review filter is unknown.");
+        if (filter == "needs_review")
+            return await NeedsReviewQueueAsync(cursor, take, viewer, cancellationToken);
         var query = from entry in db.Entries.AsNoTracking()
             join round in db.EntryReviewRounds.AsNoTracking()
                 on new { entry.TenantId, entry.EntryId } equals new { round.TenantId, round.EntryId }
@@ -175,9 +202,11 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
         var page = rows.Take(take).ToList();
         var names = await users.DisplayNamesAsync(page.Select(x => x.Entry.AuthorId.ToString("D")).Distinct().ToList(),
             cancellationToken);
+        var reasons = await ActiveReasonsAsync(page.Select(x => x.Entry.EntryId).ToList(), cancellationToken);
         return new EntryReviewPage(page.Select(x => new EntryReviewListItem(x.Entry.EntryId, x.Entry.Title,
                 x.Entry.CurrentVersion, names.GetValueOrDefault(x.Entry.AuthorId.ToString("D"), "Former staff member"),
-                x.Round.SubmittedAt, x.Round.Round)).ToList(),
+                x.Round.SubmittedAt, x.Round.Round, x.Entry.Status, x.Entry.NeedsReview,
+                reasons.GetValueOrDefault(x.Entry.EntryId, []), false)).ToList(),
             rows.Count > take && page.Count > 0 ? Encode(page[^1].Round.SubmittedAt, page[^1].Entry.EntryId) : null);
     }
 
@@ -218,7 +247,8 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
         var matches = await textSearch.SearchEntriesAsync(query, take, null, cancellationToken);
         var ids = matches.Select(x => x.EntryId).ToList();
         var entries = await db.Entries.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
-            && x.Status == KnowledgeEntryStatus.Published && ids.Contains(x.EntryId)).ToListAsync(cancellationToken);
+            && x.PublishedVersion != null && x.Status != KnowledgeEntryStatus.Retired
+            && ids.Contains(x.EntryId)).ToListAsync(cancellationToken);
         var byId = entries.ToDictionary(x => x.EntryId);
         return await ListItemsAsync(matches.Where(x => byId.ContainsKey(x.EntryId))
             .Select(x => (byId[x.EntryId], x.Rank)).ToList(), cancellationToken);
@@ -227,13 +257,13 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
     private IQueryable<KnowledgeEntry> FilteredEntries(string? role, string? task)
     {
         var query = db.Entries.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
-            && x.Status == KnowledgeEntryStatus.Published);
+            && x.PublishedVersion != null && x.Status != KnowledgeEntryStatus.Retired);
         if (!string.IsNullOrWhiteSpace(role)) query = query.Where(entry => db.EntryTags.Any(tag =>
-            tag.TenantId == tenant.TenantId && tag.EntryId == entry.EntryId && tag.Version == entry.CurrentVersion
-            && tag.Kind == KnowledgeTagKind.Role && tag.Value == role));
+            tag.TenantId == tenant.TenantId && tag.EntryId == entry.EntryId
+            && tag.Kind == KnowledgeTagKind.Role && tag.Value == role && tag.Version == entry.PublishedVersion));
         if (!string.IsNullOrWhiteSpace(task)) query = query.Where(entry => db.EntryTags.Any(tag =>
-            tag.TenantId == tenant.TenantId && tag.EntryId == entry.EntryId && tag.Version == entry.CurrentVersion
-            && tag.Kind == KnowledgeTagKind.Task && tag.Value == task));
+            tag.TenantId == tenant.TenantId && tag.EntryId == entry.EntryId
+            && tag.Kind == KnowledgeTagKind.Task && tag.Value == task && tag.Version == entry.PublishedVersion));
         return query;
     }
 
@@ -242,8 +272,9 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
         var rows = await (from tag in db.EntryTags.AsNoTracking()
             join entry in db.Entries.AsNoTracking()
                 on new { tag.TenantId, tag.EntryId, tag.Version }
-                equals new { entry.TenantId, entry.EntryId, Version = entry.CurrentVersion }
-            where tag.TenantId == tenant.TenantId && entry.Status == KnowledgeEntryStatus.Published && tag.Kind == kind
+                equals new { entry.TenantId, entry.EntryId, Version = entry.PublishedVersion!.Value }
+            where tag.TenantId == tenant.TenantId && entry.PublishedVersion != null
+                && entry.Status != KnowledgeEntryStatus.Retired && tag.Kind == kind
             group tag by new { tag.Value, tag.Label } into grouped
             select new { grouped.Key.Value, grouped.Key.Label, Count = grouped.Count() })
             .ToListAsync(cancellationToken);
@@ -255,18 +286,64 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
         IReadOnlyList<(KnowledgeEntry Entry, int Rank)> rows, CancellationToken cancellationToken)
     {
         var ids = rows.Select(x => x.Entry.EntryId).ToList();
+        var versions = await db.EntryVersions.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && ids.Contains(x.EntryId)).ToListAsync(cancellationToken);
         var tags = await db.EntryTags.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
                 && ids.Contains(x.EntryId)).ToListAsync(cancellationToken);
+        var reasons = await ActiveReasonsAsync(ids, cancellationToken);
         var actorIds = rows.Select(x => x.Entry.AuthorId).Concat(rows.Select(x => x.Entry.PublishedBy).OfType<Guid>())
             .Distinct().Select(x => x.ToString("D")).ToList();
         var names = await users.DisplayNamesAsync(actorIds, cancellationToken);
-        return rows.Select(x => new KnowledgeEntryListItem(x.Entry.EntryId, x.Entry.Title, x.Entry.Answer,
+        return rows.Select(x =>
+        {
+            var publishedVersion = x.Entry.PublishedVersion ?? x.Entry.CurrentVersion;
+            var content = versions.Single(v => v.EntryId == x.Entry.EntryId && v.Version == publishedVersion);
+            return new KnowledgeEntryListItem(x.Entry.EntryId, content.Title, content.Answer,
             x.Entry.CurrentVersion, names.GetValueOrDefault(x.Entry.AuthorId.ToString("D"), "Former staff member"),
             x.Entry.PublishedBy is { } reviewer
                 ? names.GetValueOrDefault(reviewer.ToString("D"), "Former staff member") : "",
             x.Entry.PublishedAt!.Value, tags.Where(t => t.EntryId == x.Entry.EntryId
-                && t.Version == x.Entry.CurrentVersion).OrderBy(t => t.Kind).ThenBy(t => t.Label)
-                .Select(t => new EntryTagView(t.Kind, t.Value, t.Label)).ToList(), x.Rank)).ToList();
+                && t.Version == publishedVersion).OrderBy(t => t.Kind).ThenBy(t => t.Label)
+                .Select(t => new EntryTagView(t.Kind, t.Value, t.Label)).ToList(), x.Rank,
+                x.Entry.NeedsReview, reasons.GetValueOrDefault(x.Entry.EntryId, []));
+        }).ToList();
+    }
+
+    private async Task<EntryReviewPage> NeedsReviewQueueAsync(string? cursor, int take,
+        RecordReferenceViewer viewer, CancellationToken cancellationToken)
+    {
+        var query = db.Entries.AsNoTracking().Where(x => x.TenantId == tenant.TenantId && x.NeedsReview
+            && x.PublishedVersion != null && x.Status != KnowledgeEntryStatus.Retired && x.AuthorId != viewer.UserId);
+        if (!string.IsNullOrWhiteSpace(cursor))
+        {
+            var (at, id) = Decode(cursor);
+            query = query.Where(x => x.NeedsReviewSince > at
+                || (x.NeedsReviewSince == at && x.EntryId.CompareTo(id) > 0));
+        }
+        var rows = await query.OrderBy(x => x.NeedsReviewSince).ThenBy(x => x.EntryId)
+            .Take(take + 1).ToListAsync(cancellationToken);
+        var page = rows.Take(take).ToList();
+        var names = await users.DisplayNamesAsync(page.Select(x => x.AuthorId.ToString("D")).Distinct().ToList(),
+            cancellationToken);
+        var reasons = await ActiveReasonsAsync(page.Select(x => x.EntryId).ToList(), cancellationToken);
+        return new EntryReviewPage(page.Select(x => new EntryReviewListItem(x.EntryId, x.Title, x.CurrentVersion,
+                names.GetValueOrDefault(x.AuthorId.ToString("D"), "Former staff member"),
+                x.NeedsReviewSince!.Value, null, x.Status, true, reasons.GetValueOrDefault(x.EntryId, []),
+                x.Status == KnowledgeEntryStatus.Published)).ToList(),
+            rows.Count > take && page.Count > 0
+                ? Encode(page[^1].NeedsReviewSince!.Value, page[^1].EntryId) : null);
+    }
+
+    private async Task<Dictionary<Guid, IReadOnlyList<EntryReviewReasonView>>> ActiveReasonsAsync(
+        List<Guid> entryIds, CancellationToken cancellationToken)
+    {
+        if (entryIds.Count == 0) return [];
+        var rows = await db.EntryReviewReasons.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && entryIds.Contains(x.EntryId) && x.ClearedAt == null)
+            .OrderBy(x => x.FlaggedAt).ThenBy(x => x.ReasonId).ToListAsync(cancellationToken);
+        return rows.GroupBy(x => x.EntryId).ToDictionary(group => group.Key,
+            group => (IReadOnlyList<EntryReviewReasonView>)group.Select(x => new EntryReviewReasonView(
+                x.ReasonId, x.Kind, x.Label, x.Detail, x.FlaggedAt)).ToList());
     }
 
     private async Task<EntryRecordLinksView> ResolveLinksAsync(IReadOnlyList<KnowledgeEntryRecordLink> links,

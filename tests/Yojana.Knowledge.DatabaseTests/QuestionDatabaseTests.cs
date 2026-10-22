@@ -467,7 +467,7 @@ public sealed class QuestionDatabaseTests(KnowledgeHostFixture fixture)
             [YojanaRole.TenantAdministrator], null, YojanaRole.ServiceSupervisor);
         await WaitForNotificationsAsync(setup.Tenant, setup.Staff, 1);
         fixture.Clock.UtcNow = new DateTime(2026, 9, 2, 7, 0, 0, DateTimeKind.Utc);
-        var run = new RunQuestionDailyDigest(new DateOnly(2026, 9, 2));
+        var run = new RunQuestionDailyDigest(new DateOnly(2026, 9, 2), fixture.Clock.UtcNow);
         await InvokeAsync(setup.Tenant, run);
         await InvokeAsync(setup.Tenant, run);
         using var scope = fixture.ScopeFor(setup.Tenant);
@@ -486,11 +486,13 @@ public sealed class QuestionDatabaseTests(KnowledgeHostFixture fixture)
         var db = scope.ServiceProvider.GetRequiredService<KnowledgeDbContext>();
         Assert.Empty(db.ValidateTenantKeyConventions());
         var tables = await db.Database.SqlQueryRaw<string>("SELECT name AS [Value] FROM sys.tables WHERE schema_id = SCHEMA_ID('knowledge') AND name <> '__migrations'").ToListAsync();
-        Assert.Equal(new[] { "knowledge_entry", "knowledge_entry_record_link", "knowledge_entry_review_round",
-            "knowledge_entry_tag", "knowledge_entry_version", "question", "question_digest", "question_notification",
-            "question_notification_preference", "question_participant", "question_reply", "question_reply_revision" }, tables.Order());
+        Assert.Equal(new[] { "knowledge_entry", "knowledge_entry_record_link", "knowledge_entry_review_reason",
+            "knowledge_entry_review_round", "knowledge_entry_tag", "knowledge_entry_version",
+            "knowledge_entry_written_against", "knowledge_screen_change", "question", "question_digest",
+            "question_notification", "question_notification_preference", "question_participant", "question_reply",
+            "question_reply_revision" }, tables.Order());
         var predicates = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM sys.security_predicates p JOIN sys.tables t ON t.object_id=p.target_object_id WHERE t.schema_id=SCHEMA_ID('knowledge')").SingleAsync();
-        Assert.Equal(36, predicates);
+        Assert.Equal(45, predicates);
         var searchKeys = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM sys.indexes WHERE name IN ('ux_question_question_id', 'ux_question_reply_reply_id', 'ux_knowledge_entry_entry_id')").SingleAsync();
         Assert.Equal(3, searchKeys);
         var fullTextInstalled = await db.Database.SqlQueryRaw<int>("SELECT CONVERT(int, FULLTEXTSERVICEPROPERTY('IsFullTextInstalled')) AS [Value]").SingleAsync();

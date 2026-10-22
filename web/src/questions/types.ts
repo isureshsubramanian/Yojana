@@ -16,7 +16,7 @@ export interface MyQuestion { questionId: string; title: string; status: Questio
 export interface MyQuestionPage { items: MyQuestion[]; nextCursor: string | null; summary: { waitingByAge: RankedCount[]; waitingByRecordKind: RankedCount[] } }
 export type QuestionNotificationMode = "immediately" | "daily_digest" | "off";
 export interface QuestionNotificationPreference { personalDefault: QuestionNotificationMode; roleDefault: QuestionNotificationMode; choice: QuestionNotificationMode | null }
-export interface QuestionBellItem { questionId: string; title: string; recordKind: string; recordId: string; recordName: string; reason: string; activityAt: string; link: string }
+export interface QuestionBellItem { id: string; questionId: string | null; entryId: string | null; title: string; recordKind: string; recordId: string | null; recordName: string; reason: string; activityAt: string; link: string }
 export interface QuestionBellSummary { count: number; items: QuestionBellItem[] }
 
 export type EntryStatus = "draft" | "in_review" | "published" | "retired";
@@ -27,19 +27,23 @@ export interface WrittenAgainst { kind: "policy_version" | "screen"; reference: 
 export interface EntryRecordLink { recordKind: string; recordId: string; recordName: string; source: boolean }
 export interface EntryRound { round: number; version: number; submittedByName: string; submittedAt: string; decision: "approve" | "send_back" | null; reviewerName: string | null; reviewedAt: string | null; note: string | null }
 export interface EntryVersion { version: number; savedByName: string; savedAt: string }
-export interface EntryAllowedActions { canEdit: boolean; canSubmit: boolean; canApprove: boolean; canSendBack: boolean; canRetire: boolean }
+export interface EntryReviewReason { reasonId: string; kind: "policy_version_superseded" | "screen_changed"; label: string; detail: string; flaggedAt: string }
+export interface EntryAllowedActions { canEdit: boolean; canSubmit: boolean; canApprove: boolean; canSendBack: boolean; canRetire: boolean; canConfirmStillCorrect: boolean }
 export interface KnowledgeEntry {
   entryId: string; title: string; problem: string; answer: string; steps: string; status: EntryStatus; currentVersion: number;
   authorName: string; createdAt: string; lastSavedAt: string; publishedByName: string | null; publishedAt: string | null; retirementNote: string | null;
   tags: EntryTag[]; writtenAgainst: WrittenAgainst[]; recordLinks: { visible: EntryRecordLink[]; hiddenCount: number };
   source: { questionId: string; title: string; recordKind: string; recordId: string; recordName: string | null; acceptedAnswer: string };
-  reviewRounds: EntryRound[]; versions: EntryVersion[]; reviewerRoles: string[]; caseDisclosureTier: string; allowedActions: EntryAllowedActions;
+  reviewRounds: EntryRound[]; versions: EntryVersion[]; reviewerRoles: string[]; caseDisclosureTier: string;
+  needsReview: boolean; reviewReasons: EntryReviewReason[]; allowedActions: EntryAllowedActions;
 }
-export interface KnowledgeEntryListItem { entryId: string; title: string; answer: string; currentVersion: number; authorName: string; reviewerName: string; publishedAt: string; tags: EntryTag[]; rank: number }
+export interface KnowledgeEntryListItem { entryId: string; title: string; answer: string; currentVersion: number; authorName: string; reviewerName: string; publishedAt: string; tags: EntryTag[]; rank: number; needsReview: boolean; reviewReasons: EntryReviewReason[] }
 export interface KnowledgeFacet { value: string; label: string; count: number }
 export interface KnowledgeEntryPage { items: KnowledgeEntryListItem[]; nextCursor: string | null; roles: KnowledgeFacet[]; tasks: KnowledgeFacet[] }
-export interface EntryReviewItem { entryId: string; title: string; currentVersion: number; authorName: string; submittedAt: string; round: number }
+export interface EntryReviewItem { entryId: string; title: string; currentVersion: number; authorName: string; activityAt: string; round: number | null; status: EntryStatus; needsReview: boolean; reviewReasons: EntryReviewReason[]; canConfirmStillCorrect: boolean }
 export interface EntryReviewPage { items: EntryReviewItem[]; nextCursor: string | null }
 export interface EntryFieldChange { field: string; before: string; after: string }
 export interface EntryTagChoices { roles: EntryTag[]; tasks: EntryTag[]; itemFamilies: EntryTag[]; claimCauses: EntryTag[] }
 export interface EntryDraftRequest { title: string; problem: string; answer: string; steps: string; tags: EntryTagInput[]; recordLinks: Array<{ recordKind: string; recordId: string }>; writtenAgainst: WrittenAgainst[] }
+export interface KnowledgeScreenReference { reference: string; label: string; publishedEntries: number; lastChangedAt: string | null; lastChangedByName: string | null }
+export interface KnowledgeScreenReferencePage { items: KnowledgeScreenReference[]; nextCursor: string | null }

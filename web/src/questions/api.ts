@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import type { AddresseePage, EntryDraftRequest, EntryFieldChange, EntryReviewPage, EntryTagChoices, KnowledgeEntry, KnowledgeEntryPage, MyQuestionPage, QuestionBellSummary, QuestionNotificationMode, QuestionNotificationPreference, QuestionPage, QuestionThread, Revision, SearchPage } from "./types";
+import type { AddresseePage, EntryDraftRequest, EntryFieldChange, EntryReviewPage, EntryTagChoices, KnowledgeEntry, KnowledgeEntryPage, KnowledgeScreenReferencePage, MyQuestionPage, QuestionBellSummary, QuestionNotificationMode, QuestionNotificationPreference, QuestionPage, QuestionThread, Revision, SearchPage } from "./types";
 
 const root = "/api/questions";
 const qs = (values: Record<string, string | number | boolean | null | undefined>) => {
@@ -32,7 +32,7 @@ const entriesRoot = "/api/knowledge/entries";
 export const knowledgeApi = {
   browse: (filters: { query: string; role: string; task: string }, cursor?: string, signal?: AbortSignal) => api<KnowledgeEntryPage>(`${entriesRoot}${qs({ ...filters, cursor, take: 12 })}`, { signal }),
   entry: (id: string, signal?: AbortSignal) => api<KnowledgeEntry>(`${entriesRoot}/${id}`, { signal }),
-  review: (cursor?: string, signal?: AbortSignal) => api<EntryReviewPage>(`${entriesRoot}/review${qs({ cursor, take: 20 })}`, { signal }),
+  review: (filter: "pending" | "needs_review", cursor?: string, signal?: AbortSignal) => api<EntryReviewPage>(`${entriesRoot}/review${qs({ filter, cursor, take: 20 })}`, { signal }),
   tagChoices: (signal?: AbortSignal) => api<EntryTagChoices>(`${entriesRoot}/tag-choices`, { signal }),
   changes: (id: string, signal?: AbortSignal) => api<EntryFieldChange[]>(`${entriesRoot}/${id}/changes-since-last-round`, { signal }),
   save: (id: string, body: EntryDraftRequest) => api(`${entriesRoot}/${id}`, { method: "PUT", body }),
@@ -40,4 +40,7 @@ export const knowledgeApi = {
   approve: (id: string, note: string) => api(`${entriesRoot}/${id}/approve`, { method: "POST", body: { note: note || null } }),
   sendBack: (id: string, note: string) => api(`${entriesRoot}/${id}/send-back`, { method: "POST", body: { note } }),
   retire: (id: string, note: string) => api(`${entriesRoot}/${id}/retire`, { method: "POST", body: { note } }),
+  stillCorrect: (id: string) => api(`${entriesRoot}/${id}/still-correct`, { method: "POST" }),
+  screens: (cursor?: string, signal?: AbortSignal) => api<KnowledgeScreenReferencePage>(`/api/knowledge/screens${qs({ cursor, take: 50 })}`, { signal }),
+  markScreenChanged: (screenReference: string, reason: string) => api(`/api/knowledge/screens/changed`, { method: "POST", body: { screenReference, reason } }),
 };

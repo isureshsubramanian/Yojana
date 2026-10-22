@@ -30,6 +30,14 @@ public static class WrittenAgainstKind
     public static readonly IReadOnlyList<string> All = [PolicyVersion, Screen];
 }
 
+public static class KnowledgeReviewReasonKind
+{
+    public const string PolicyVersionSuperseded = "policy_version_superseded";
+    public const string ScreenChanged = "screen_changed";
+
+    public static readonly IReadOnlyList<string> All = [PolicyVersionSuperseded, ScreenChanged];
+}
+
 public sealed record EntryTagInput(string Kind, string Value);
 
 public sealed record EntryRecordLinkInput(string RecordKind, Guid RecordId);
@@ -52,7 +60,14 @@ public sealed record SendBackEntry(Guid EntryId, string Note, QuestionActor Acto
 
 public sealed record RetireEntry(Guid EntryId, string Note, QuestionActor Actor);
 
+public sealed record ConfirmKnowledgeEntryStillCorrect(Guid EntryId, QuestionActor Actor);
+
+public sealed record MarkKnowledgeScreenChanged(string ScreenReference, string Reason, QuestionActor Actor);
+
 public sealed record EntryChangeResult(Guid EntryId, string Status, int CurrentVersion);
+
+public sealed record ScreenChangeResult(Guid ChangeId, string ScreenReference, string ScreenLabel,
+    int EntriesFlagged, DateTime ChangedAt);
 
 public sealed record KnowledgeEntryCreated(Guid EntryId, Guid SourceQuestionId, Guid AuthorId, DateTime CreatedAt);
 
@@ -66,3 +81,9 @@ public sealed record KnowledgeEntrySentBack(Guid EntryId, int Version, int Round
     string Note);
 
 public sealed record KnowledgeEntryRetired(Guid EntryId, Guid RetiredBy, DateTime RetiredAt, string Note);
+
+public sealed record KnowledgeEntryNeedsReview(Guid EntryId, Guid ReasonId, string ReasonKind,
+    string ReasonLabel, DateTime FlaggedAt);
+
+public sealed record KnowledgeEntryCurrentnessConfirmed(Guid EntryId, int Version, Guid Reviewer,
+    DateTime ConfirmedAt);
