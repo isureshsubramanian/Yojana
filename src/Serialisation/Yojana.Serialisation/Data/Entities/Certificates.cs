@@ -6,6 +6,12 @@ public sealed class CertificateInstance : ITenantScoped
 {
     public TenantId TenantId { get; set; }
     public Guid CertificateId { get; set; }
+    /// <summary>
+    /// The rehearsal load that owns a migrated certificate. Coupled to the rollback-only exception in
+    /// <c>tr_certificate_instance_immutable</c>: removing this value makes it impossible for the trigger to distinguish
+    /// an authorised rehearsal rollback from deletion of an ordinary immutable certificate.
+    /// </summary>
+    public Guid? MigrationLoadId { get; set; }
     public Guid UnitId { get; set; }
     public required string DocumentKind { get; set; }
     public required string FormType { get; set; }

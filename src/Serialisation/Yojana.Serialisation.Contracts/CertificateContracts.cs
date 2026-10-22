@@ -298,7 +298,8 @@ public interface ICertificateRenderer
 public sealed record IssueCertificateVersion(Guid TriggeringEventId, Guid UnitId, string DocumentKind, string FormType,
     string? SupersedeReason, DateTime EffectiveAt, string ActorRef, Guid IssuerEntityId,
     string Provenance = CertificateProvenance.SystemGenerated, IReadOnlyList<string>? Unknowns = null,
-    IReadOnlyList<string>? Evidence = null, string Language = "en", string? TriggerSchema = null);
+    IReadOnlyList<string>? Evidence = null, string Language = "en", string? TriggerSchema = null,
+    Guid? MigrationLoadId = null);
 
 public sealed record IssueCertificateVersionResult(bool Issued, bool Replayed, Guid? CertificateId, int? Version,
     string? TrackingNumber, string? RefusalRule = null, string? RefusalDetail = null, bool Absorbed = false);

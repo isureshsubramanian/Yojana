@@ -41,7 +41,7 @@ public sealed class ReplacementLinkQueries(SerialisationDbContext db, ITenantCon
         }
         var total = await source.CountAsync(cancellationToken);
         var data = await (from link in source
-                          join document in db.WarrantyReplacements.AsNoTracking() on new { link.TenantId, link.WarrantyReplacementId } equals new { document.TenantId, document.WarrantyReplacementId }
+                          join document in db.WarrantyReplacements.AsNoTracking() on new { link.TenantId, link.WarrantyReplacementId } equals new { document.TenantId, WarrantyReplacementId = (Guid?)document.WarrantyReplacementId }
                           orderby link.ReturnDue, link.ReplacementLinkId
                           select new
                           {
@@ -58,7 +58,7 @@ public sealed class ReplacementLinkQueries(SerialisationDbContext db, ITenantCon
                                   && identifier.Type == IdentifierType.InternalSerial).Select(identifier => identifier.RawValue).FirstOrDefault(),
                               PartyOnHold = link.CounterpartyPartyRef != null && db.PartyReplacementHolds.Any(hold => hold.TenantId == tenantId && hold.PartyRef == link.CounterpartyPartyRef && hold.LiftedAt == null),
                           }).Skip(skip).Take(take).ToListAsync(cancellationToken);
-        var rows = data.Select(row => new ReplacementLinkRow(row.ReplacementLinkId, row.WarrantyReplacementId, row.ReplacementNumber,
+        var rows = data.Select(row => new ReplacementLinkRow(row.ReplacementLinkId, row.WarrantyReplacementId!.Value, row.ReplacementNumber,
             row.Direction, row.State, row.OriginalUnitId, row.ReplacementUnitId, row.CounterpartyPartyRef, row.ReturnDue,
             row.ReturnDue is { } due && due < asOf ? asOf.DayNumber - due.DayNumber : null, row.NonReturnPriceBasis,
             row.NonReturnAmount, row.Currency, row.OverduePublishedAt, row.PartyOnHold, row.OriginalSerial,

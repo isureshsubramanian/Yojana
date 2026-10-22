@@ -5,7 +5,8 @@ public static class ReplacementSourceKind
     public const string Claim = "claim";
     public const string Rma = "rma";
     public const string Loan = "loan";
-    public static readonly IReadOnlyList<string> All = [Claim, Rma, Loan];
+    public const string Migrated = "migrated";
+    public static readonly IReadOnlyList<string> All = [Claim, Rma, Loan, Migrated];
 }
 
 public static class ReplacementDirection

@@ -41,13 +41,19 @@ public static partial class AttachExtendedWarrantyHandler
             ?? throw new CommandRefusedException("unit_unknown", $"Unit {command.UnitId} does not exist.");
         var family = await db.CoverageFamilies.AsNoTracking().FirstOrDefaultAsync(f => f.TenantId == tenantId && f.FamilyCode == command.CoverageFamily, cancellationToken)
             ?? throw new CommandRefusedException("family_unknown", $"Coverage family '{command.CoverageFamily}' is not defined for this tenant.");
-        if (!family.Active) throw new CommandRefusedException("family_inactive", $"Coverage family '{command.CoverageFamily}' is inactive.");
-        if (!family.Stacking)
+        var familyRefusal = EntitlementStackingRules.FamilyRefusal(family, addOn: true);
+        if (familyRefusal == "family_inactive")
+            throw new CommandRefusedException("family_inactive", $"Coverage family '{command.CoverageFamily}' is inactive.");
+        if (familyRefusal == "family_not_add_on")
         {
             throw new CommandRefusedException("family_not_add_on", $"'{command.CoverageFamily}' does not stack beside the base; a plan is sold in an add-on family.", "mark the family as stacking, or change coverage within it with SupersedeEntitlement");
         }
 
-        if (await db.Entitlements.AnyAsync(e => e.TenantId == tenantId && e.UnitId == command.UnitId && e.CoverageFamily == command.CoverageFamily && e.Status != EntitlementStatus.Closed, cancellationToken))
+        var familyRows = await db.Entitlements.AsNoTracking().Where(e => e.TenantId == tenantId
+                && e.UnitId == command.UnitId && e.CoverageFamily == command.CoverageFamily)
+            .Select(e => new { Family = e.CoverageFamily, e.Status }).ToListAsync(cancellationToken);
+        var familyStates = familyRows.Select(row => (row.Family, row.Status));
+        if (EntitlementStackingRules.FamilyOccupied(familyStates, command.CoverageFamily))
         {
             throw new CommandRefusedException("family_occupied", $"Unit {command.UnitId} already has a live {command.CoverageFamily} entitlement.", "supersede it (SupersedeEntitlement) or close it first; a family holds one live entitlement");
         }

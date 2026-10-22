@@ -213,7 +213,7 @@ public sealed class ShipWarrantyReplacementHandler
             IdempotencyKey.Derive(shipKey, "ownership"), command.EventTime, command.ActorRef, document.LegalEntityId,
             replacementDocument, null, cancellationToken);
 
-        var transfer = await TransferEntitlementHandler.Handle(new TransferEntitlement(command.CommandId, link.SourceEntitlementId,
+        var transfer = await TransferEntitlementHandler.Handle(new TransferEntitlement(command.CommandId, link.SourceEntitlementId!.Value,
             link.ReplacementUnitId, link.ReplacementLinkId, command.ReplacementDate, command.EventTime, command.ActorRef,
             document.ReplacementPolicyCode, Country: document.ServiceCountry, ConsumerContract: document.ConsumerContract),
             db, entitlementLedger, tenant, clock, corrections, jurisdictionRules, regions, cancellationToken);

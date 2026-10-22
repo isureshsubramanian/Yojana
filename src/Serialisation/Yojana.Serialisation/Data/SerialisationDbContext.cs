@@ -108,6 +108,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<Entitlement> Entitlements => Set<Entitlement>();
 
+    public DbSet<EntitlementEvidence> EntitlementEvidence => Set<EntitlementEvidence>();
+
     public DbSet<EntitlementRequirement> EntitlementRequirements => Set<EntitlementRequirement>();
 
     public DbSet<EntitlementGapRun> EntitlementGapRuns => Set<EntitlementGapRun>();
@@ -808,8 +810,23 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(e => new { e.TenantId, e.InstalledParentUnitId, e.InstallationLinkId });
             b.HasIndex(e => new { e.TenantId, e.OwnerPartyRef, e.Status });
             b.HasIndex(e => new { e.TenantId, e.PolicyVersionId });
+            b.HasIndex(e => new { e.TenantId, e.MigrationLoadId, e.UnitId })
+                .HasFilter("[migration_load_id] IS NOT NULL");
             b.HasIndex(e => new { e.TenantId, e.SourceDocumentType, e.SourceDocumentId });
             b.HasIndex(e => new { e.TenantId, e.MergedFromUnitId }).HasFilter(MergedFromFilter);
+        });
+
+        modelBuilder.Entity<EntitlementEvidence>(b =>
+        {
+            b.ToTable("entitlement_evidence");
+            b.HasKey(e => new { e.TenantId, e.EvidenceId });
+            b.Property(e => e.SourceKind).HasMaxLength(32);
+            b.Property(e => e.SourceKey).HasMaxLength(1000);
+            b.Property(e => e.Direction).HasMaxLength(24);
+            b.HasOne<Entitlement>().WithMany().HasForeignKey(e => new { e.TenantId, e.EntitlementId })
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(e => new { e.TenantId, e.EntitlementId, e.SourceKind, e.EvidenceId });
+            b.HasIndex(e => new { e.TenantId, e.MigrationLoadId, e.EntitlementId });
         });
 
         modelBuilder.Entity<EntitlementRequirement>(b =>
@@ -1550,7 +1567,9 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
                 t.HasCheckConstraint("ck_replacement_link_direction", "direction IN ('customer_facing', 'vendor_facing')");
                 t.HasCheckConstraint("ck_replacement_link_reason", "replacement_reason IN ('warranty_defect', 'dead_on_arrival', 'seller_error', 'goodwill', 'recall')");
                 t.HasCheckConstraint("ck_replacement_link_state", "state IN ('proposed', 'awaiting_return', 'closed_returned', 'closed_billed', 'cancelled', 'corrected')");
-                t.HasCheckConstraint("ck_replacement_link_source_kind", "source_kind IN ('claim', 'rma', 'loan')");
+                t.HasCheckConstraint("ck_replacement_link_source_kind", "source_kind IN ('claim', 'rma', 'loan', 'migrated')");
+                t.HasCheckConstraint("ck_replacement_link_source_relationship",
+                    "(source_kind = 'migrated' AND warranty_replacement_id IS NULL AND source_entitlement_id IS NULL AND migration_load_id IS NOT NULL) OR (source_kind <> 'migrated' AND warranty_replacement_id IS NOT NULL AND source_entitlement_id IS NOT NULL AND migration_load_id IS NULL)");
                 t.HasCheckConstraint("ck_replacement_link_units", "original_unit_id <> replacement_unit_id");
                 t.HasCheckConstraint("ck_replacement_link_price_policy", "price_policy IN ('zero', 'difference', 'full')");
                 t.HasCheckConstraint("ck_replacement_link_zero_price", "price_policy <> 'zero' OR difference_amount = 0");
@@ -1575,12 +1594,14 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(row => row.ReplacementCondition).HasMaxLength(40).IsUnicode(false);
             b.Property(row => row.CreatedBy).HasMaxLength(200);
             b.Property(row => row.ShippedBy).HasMaxLength(200);
-            b.HasOne<WarrantyReplacement>().WithMany().HasForeignKey(row => new { row.TenantId, row.WarrantyReplacementId }).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<WarrantyReplacement>().WithMany().HasForeignKey(row => new { row.TenantId, row.WarrantyReplacementId }).OnDelete(DeleteBehavior.Cascade).IsRequired(false);
             b.HasOne<ReplacementLink>().WithMany().HasForeignKey(row => new { row.TenantId, row.CorrectedByLinkId }).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(row => new { row.TenantId, row.WarrantyReplacementId });
             b.HasIndex(row => new { row.TenantId, row.OriginalUnitId, row.CreatedAt });
             b.HasIndex(row => new { row.TenantId, row.ReplacementUnitId, row.CreatedAt });
             b.HasIndex(row => new { row.TenantId, row.SourceKind, row.SourceId });
+            b.HasIndex(row => new { row.TenantId, row.MigrationLoadId, row.ReplacementLinkId })
+                .HasFilter("[migration_load_id] IS NOT NULL");
             b.HasIndex(row => new { row.TenantId, row.State, row.ReturnDue });
             b.HasIndex(row => new { row.TenantId, row.PreviousReplacementLinkId });
             b.HasIndex(row => new { row.TenantId, row.OverdueEventId }).IsUnique().HasFilter("[overdue_event_id] IS NOT NULL");
@@ -1664,6 +1685,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(row => new { row.TenantId, row.DocumentKind, row.FormType, row.Status, row.IssuedAt });
             b.HasIndex(row => new { row.TenantId, row.UnitId, row.DocumentKind, row.IssuedAt });
             b.HasIndex(row => new { row.TenantId, row.SupersedesCertificateId });
+            b.HasIndex(row => new { row.TenantId, row.MigrationLoadId, row.CertificateId })
+                .HasFilter("[migration_load_id] IS NOT NULL");
         });
 
         // TIGHT COUPLING (certificate chain serialization)

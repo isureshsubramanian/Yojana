@@ -340,7 +340,7 @@ public static class CorrectReplacementLinkHandler
             || corrected.ReplacementUnitId != command.ActualReplacementUnitId)
             throw new CommandRefusedException("command_id_reused",
                 "This command id already corrected a different replacement pair.", "send a new command id");
-        if (previous.TargetEntitlementId is null || corrected.TargetEntitlementId is null
+        if (previous.TargetEntitlementId is null || corrected.SourceEntitlementId is null || corrected.TargetEntitlementId is null
             || corrected.PolicyApplied is null || corrected.ComputedEnd is null || corrected.ShippedEventId is null)
             throw new CommandRefusedException("replacement_correction_replay_inconsistent",
                 "The corrected replacement link is missing its recorded result.");
@@ -348,8 +348,8 @@ public static class CorrectReplacementLinkHandler
             && row.UnitId == corrected.ReplacementUnitId && row.Type == IdentifierType.CustomerAssetTag
             && row.ValidTo == null && row.CorrectionReason == command.Reason, cancellationToken);
         var entitlementResult = new ReplacementLinkCorrectionEntitlements.Result(previous.TargetEntitlementId.Value,
-            corrected.SourceEntitlementId,
-            new(corrected.SourceEntitlementId, corrected.TargetEntitlementId.Value, Guid.Empty,
+            corrected.SourceEntitlementId.Value,
+            new(corrected.SourceEntitlementId.Value, corrected.TargetEntitlementId.Value, Guid.Empty,
                 corrected.PolicyApplied, corrected.ComputedEnd.Value, 0, corrected.ShippedEventId.Value, true), Guid.Empty);
         return Result(correction.CorrectionId, previous, corrected, entitlementResult, tag,
             corrected.ShippedEventId.Value, true);

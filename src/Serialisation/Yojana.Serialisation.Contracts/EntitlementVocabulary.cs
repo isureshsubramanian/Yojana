@@ -91,6 +91,7 @@ public static class EntitlementMissingInput
 public static class EntitlementClosedReason
 {
     public const string Expired = "expired";
+    public const string MigratedTermination = "terminated";
     public const string Replaced = "replaced";
     public const string Refunded = "refunded";
     public const string TransferredOut = "transferred_out";

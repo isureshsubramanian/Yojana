@@ -1,11 +1,14 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Commands;
+using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Ports;
@@ -26,7 +29,9 @@ public static class ApplyMigratedUnitsHandler
     public const int MaxUnitsPerChunk = 2000;
 
     public static async Task<ApplyMigratedUnitsResult> Handle(ApplyMigratedUnits command, SerialisationDbContext db, BulkIngestion bulk,
-        IdentifierService identifiers, EffectiveItemProfiles items, LedgerPublication publication, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        MigrationCoverBulkWriter coverWriter, CertificateVersioningEngine certificates, IdentifierService identifiers,
+        EffectiveItemProfiles items, LedgerPublication publication, ITenantContext tenant, IClock clock,
+        CancellationToken cancellationToken)
     {
         if (command.Units.Count > MaxUnitsPerChunk)
         {
@@ -37,15 +42,16 @@ public static class ApplyMigratedUnitsHandler
         // WHAT:  the ownership and custody facts below are the same event types a live sale writes, so the append
         //        observers (CustomerSaleCertificateObserver) would issue a release certificate per unit and the mapper
         //        would publish per-unit events. The scoped LedgerPublication switch is the seam both honour.
-        // WHY:   a first-customer load is ~420 000 units; per-unit certificates and outbound events would flood the
-        //        render worker and every connected system with facts that already happened in the source.
-        // WHAT BREAKS IF SEPARATED: dropping this line renders a certificate for every migrated owned unit. Migrated
-        //        certificates (provenance migrated) are a separate apply step; the summary MigrationLoadApplied is
-        //        published by the caller.
+        // WHY:   a first-customer load is ~420 000 units; automatic certificate instances and outbound events would
+        //        flood every connected system with facts that already happened in the source.
+        // WHAT BREAKS IF SEPARATED: dropping this line records an additional system-generated certificate for every
+        //        migrated owned unit. The single migrated certificate instance is recorded explicitly below, without
+        //        rendering; the summary MigrationLoadApplied is published by the caller.
         publication.Suppressed = true;
 
         var tenantId = tenant.TenantId;
         var now = clock.UtcNow;
+        var cutover = command.CutoverDate ?? DateOnly.FromDateTime(now);
         var planIds = command.Units.Select(u => u.PlanUnitId).ToList();
         var done = await db.MigrationLoadUnits.AsNoTracking()
             .Where(r => r.TenantId == tenantId && r.LoadId == command.LoadId && planIds.Contains(r.PlanUnitId))
@@ -56,6 +62,21 @@ public static class ApplyMigratedUnitsHandler
         {
             profiles[itemId] = await items.GetAsync(itemId, now, cancellationToken);
         }
+
+        var policyIds = command.Units.SelectMany(unit => unit.Entitlements ?? [])
+            .Select(entitlement => entitlement.PolicyVersionId).Distinct().ToList();
+        var policies = policyIds.Count == 0
+            ? new Dictionary<Guid, WarrantyPolicyVersion>()
+            : await db.PolicyVersions.AsNoTracking().Where(row => row.TenantId == tenantId
+                    && policyIds.Contains(row.PolicyVersionId))
+                .ToDictionaryAsync(row => row.PolicyVersionId, cancellationToken);
+        var familyCodes = command.Units.SelectMany(unit => unit.Entitlements ?? [])
+            .Select(entitlement => entitlement.CoverageFamily).Distinct().ToList();
+        var families = familyCodes.Count == 0
+            ? new Dictionary<string, CoverageFamily>(StringComparer.Ordinal)
+            : await db.CoverageFamilies.AsNoTracking().Where(row => row.TenantId == tenantId
+                    && familyCodes.Contains(row.FamilyCode))
+                .ToDictionaryAsync(row => row.FamilyCode, StringComparer.Ordinal, cancellationToken);
 
         var outcomes = new List<MigratedUnitOutcome>();
         var prepared = new List<(MigratedUnit Unit, List<PreparedIdentifier> Ids)>();
@@ -68,6 +89,7 @@ public static class ApplyMigratedUnitsHandler
             }
 
             var reasons = Refusals(unit);
+            reasons.AddRange(CoverRefusals(unit, cutover, policies, families));
             var profile = profiles[unit.ItemId];
             if (profile is null) reasons.Add("item_unknown");
             else if (profile.TrackingMode != ItemSerialisationProfile.TrackingModes.Serial) reasons.Add("item_not_serial_tracked");
@@ -102,12 +124,41 @@ public static class ApplyMigratedUnitsHandler
             });
         }
 
+        // A link rides on the endpoint with the greater plan id. The other endpoint is therefore in this chunk or an
+        // earlier register row; a refused/missing endpoint can be reported now without depending on a later chunk.
+        var relatedPlanIds = prepared.SelectMany(row => row.Unit.ReplacementLinks ?? [])
+            .SelectMany(link => new[] { link.ReplacedPlanUnitId, link.ReplacementPlanUnitId }).Distinct().ToList();
+        var loadedRelated = relatedPlanIds.Count == 0 ? new HashSet<Guid>() : (await db.MigrationLoadUnits.AsNoTracking()
+            .Where(row => row.TenantId == tenantId && row.LoadId == command.LoadId
+                && relatedPlanIds.Contains(row.PlanUnitId)).Select(row => row.PlanUnitId).ToListAsync(cancellationToken))
+            .ToHashSet();
+        while (true)
+        {
+            var available = prepared.Select(row => row.Unit.PlanUnitId).Concat(loadedRelated).ToHashSet();
+            var removed = prepared.RemoveAll(row =>
+            {
+                var broken = (row.Unit.ReplacementLinks ?? []).Any(link =>
+                    !available.Contains(link.ReplacedPlanUnitId) || !available.Contains(link.ReplacementPlanUnitId));
+                if (!broken) return false;
+                outcomes.Add(new MigratedUnitOutcome(row.Unit.PlanUnitId, null, MigratedUnitOutcome.Refused,
+                    ["replacement_unit_not_loaded"]));
+                return true;
+            });
+            if (removed == 0) break;
+        }
+
         var events = new List<UnitEventDraft>();
         var units = new List<Unit>();
         var identifierRows = new List<UnitIdentifier>();
         var assignments = new List<UnitItemAssignment>();
         var episodes = new List<CustodyEpisode>();
         var register = new List<MigrationLoadUnit>();
+        var entitlementRows = new List<Entitlement>();
+        var evidenceRows = new List<EntitlementEvidence>();
+        var usageRows = new List<EntitlementUsageLimit>();
+        var entitlementEvents = new List<UnitEventDraft>();
+        var replacementRows = new List<ReplacementLink>();
+        var planUnits = new Dictionary<Guid, (Guid UnitId, Guid ItemId, Guid CreatedEventId, DateTime CreatedAt)>();
         foreach (var (unit, ids) in prepared)
         {
             var unitId = TimeOrderedId.New(unit.CreatedAt);
@@ -207,6 +258,107 @@ public static class ApplyMigratedUnitsHandler
                 });
             }
 
+            var migratedCover = new List<Entitlement>();
+            var firstEntitlementEvent = entitlementEvents.Count;
+            foreach (var input in unit.Entitlements ?? [])
+            {
+                var policy = policies[input.PolicyVersionId];
+                var eventAt = input.StartDate is { } startDay
+                    ? DateTime.SpecifyKind(startDay.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc)
+                    : unit.CreatedAt;
+                if (eventAt < unit.CreatedAt) eventAt = unit.CreatedAt;
+                var entitlementEventId = TimeOrderedId.New(eventAt);
+                var terminated = input.TerminationDate is { } termination && termination <= cutover;
+                var expired = !terminated && input.EndDate is { } endAtCutover && endAtCutover < cutover;
+                var closed = terminated || expired;
+                var actualDays = input.StartDate is { } start && input.EndDate is { } end
+                    ? Math.Max(0, end.DayNumber - start.DayNumber + (policy.EndInclusive ? 1 : 0))
+                    : policy.DurationValue;
+                var entitlement = new Entitlement
+                {
+                    TenantId = tenantId, EntitlementId = TimeOrderedId.New(eventAt), MigrationLoadId = command.LoadId,
+                    UnitId = unitId, Scope = EntitlementScope.Unit, Type = policy.EntitlementType,
+                    CoverageFamily = input.CoverageFamily, Direction = input.Direction,
+                    OwnerPartyRef = input.Direction == EntitlementDirection.Outbound ? unit.Ownership?.PartyRef : null,
+                    OwnerPartyType = input.Direction == EntitlementDirection.Outbound ? unit.Ownership?.PartyType : null,
+                    ObligorEntityId = command.LegalEntityId, PolicyVersionId = policy.PolicyVersionId,
+                    StartTrigger = policy.StartTrigger, StartBasis = input.DateSource, StartEvidenceRef = input.SourceKey,
+                    PurchaseDate = input.Direction == EntitlementDirection.Outbound ? input.StartDate : null,
+                    StartDate = input.StartDate, StartTimeZone = "UTC", EndDate = input.EndDate,
+                    ComputedByRuleVersion = "migrated", DurationValue = actualDays, DurationUnit = DurationRule.Days,
+                    EndOfMonthRule = policy.EndOfMonthRule, EndInclusive = policy.EndInclusive,
+                    DurationBasis = policy.DurationBasis, Coverage = policy.Coverage, RegionScope = policy.RegionScope,
+                    Transferable = policy.Transferable, ConditionAtCreation = unit.ConditionGrade,
+                    AssuranceOrService = policy.AssuranceOrService,
+                    Status = closed ? EntitlementStatus.Closed
+                        : input.StartDate is null ? EntitlementStatus.PendingEvidence : EntitlementStatus.Active,
+                    ClosedReason = terminated ? EntitlementClosedReason.MigratedTermination
+                        : expired ? EntitlementClosedReason.Expired : null,
+                    ClosedEffective = terminated ? input.TerminationDate : expired ? input.EndDate : null,
+                    ClosedAt = closed ? now : null, Confidence = "medium", Provenance = EntitlementProvenance.Migrated,
+                    SourceDocumentType = "migration_cover", SourceDocumentId = input.PlanEntitlementId,
+                    CreatedEventId = entitlementEventId, CreatedAt = now,
+                };
+                entitlementRows.Add(entitlement);
+                migratedCover.Add(entitlement);
+                foreach (var evidence in input.Evidence)
+                {
+                    evidenceRows.Add(new EntitlementEvidence
+                    {
+                        TenantId = tenantId, EvidenceId = TimeOrderedId.New(now), EntitlementId = entitlement.EntitlementId,
+                        MigrationLoadId = command.LoadId, SourceKind = evidence.SourceKind, SourceKey = evidence.SourceKey,
+                        StartDate = evidence.StartDate, EndDate = evidence.EndDate,
+                        TerminationDate = evidence.TerminationDate, Direction = evidence.Direction,
+                        Selected = evidence.Selected,
+                    });
+                }
+                foreach (var limit in JsonSerializer.Deserialize<List<UsageLimitTerm>>(policy.UsageLimits,
+                             LedgerJson.Options) ?? [])
+                {
+                    usageRows.Add(new EntitlementUsageLimit
+                    {
+                        TenantId = tenantId, EntitlementId = entitlement.EntitlementId, MeterType = limit.MeterType,
+                        LimitValue = limit.Limit, Period = limit.Period,
+                    });
+                }
+                entitlementEvents.Add(new UnitEventDraft
+                {
+                    UnitId = unitId, EventTime = eventAt, EventType = EntitlementEventType.Created,
+                    PresetEventId = entitlementEventId, LegalEntityId = command.LegalEntityId,
+                    ActorRef = command.ActorRef, DocumentType = "migration_cover",
+                    DocumentId = input.PlanEntitlementId,
+                    IdempotencyKey = Key(EntitlementEventType.Created, eventAt),
+                    Attributes = JsonObjectText.Of(new
+                    {
+                        load_id = command.LoadId, entitlement_id = entitlement.EntitlementId,
+                        coverage_family = entitlement.CoverageFamily, entitlement_type = entitlement.Type,
+                        direction = entitlement.Direction, policy_code = policy.PolicyCode,
+                        policy_version = policy.Version, policy_version_id = policy.PolicyVersionId,
+                        status = entitlement.Status, closed_reason = entitlement.ClosedReason,
+                        start_date = entitlement.StartDate, end_date = entitlement.EndDate,
+                        termination_date = input.TerminationDate, start_basis = entitlement.StartBasis,
+                        owner_party_ref = entitlement.OwnerPartyRef, provenance = entitlement.Provenance,
+                        evidence_refs = input.Evidence.Select(row => row.SourceKey).ToList(),
+                        trail = new[]
+                        {
+                            "dates migrated from the reviewed load plan",
+                            "policy caps, floors and duration arithmetic were not applied",
+                        },
+                    }),
+                });
+            }
+
+            var coverage = EntitlementCoverage.From(migratedCover.Select(row =>
+                new EntitlementCoverageEntry(row.EntitlementId, row.Status, row.EndDate, row.Direction)));
+            for (var index = firstEntitlementEvent; index < entitlementEvents.Count; index++)
+            {
+                entitlementEvents[index] = entitlementEvents[index] with { Delta = new CurrentStateDelta
+                {
+                    LiveEntitlementIds = coverage.LiveEntitlementIds,
+                    WarrantyEndMax = new Optional<DateOnly?>(coverage.WarrantyEndMax),
+                } };
+            }
+
             units.Add(new Unit
             {
                 TenantId = tenantId, UnitId = unitId, LifecycleStatus = status, Origin = UnitOrigin.Migrated, BrandIsOurs = true,
@@ -222,18 +374,86 @@ public static class ApplyMigratedUnitsHandler
             register.Add(new MigrationLoadUnit
             {
                 TenantId = tenantId, LoadId = command.LoadId, PlanUnitId = unit.PlanUnitId, UnitId = unitId, CreatedEventId = createdEventId,
-                CreatedEventTime = unit.CreatedAt, EventCount = written, AppliedAt = now, ActorRef = command.ActorRef,
+                CreatedEventTime = unit.CreatedAt,
+                EventCount = written + (unit.Certificate is null ? 0 : 1),
+                AppliedAt = now, ActorRef = command.ActorRef,
             });
+            planUnits[unit.PlanUnitId] = (unitId, unit.ItemId, createdEventId, unit.CreatedAt);
             outcomes.Add(new MigratedUnitOutcome(unit.PlanUnitId, unitId, MigratedUnitOutcome.Applied, []));
         }
 
+        var links = prepared.SelectMany(row => row.Unit.ReplacementLinks ?? [])
+            .DistinctBy(link => link.PlanReplacementLinkId).ToList();
+        var priorPlanIds = links.SelectMany(link => new[] { link.ReplacedPlanUnitId, link.ReplacementPlanUnitId })
+            .Where(planId => !planUnits.ContainsKey(planId)).Distinct().ToList();
+        if (priorPlanIds.Count > 0)
+        {
+            var prior = await (from loaded in db.MigrationLoadUnits.AsNoTracking()
+                               join current in db.Current.AsNoTracking()
+                                   on new { loaded.TenantId, loaded.UnitId } equals new { current.TenantId, current.UnitId }
+                               where loaded.TenantId == tenantId && loaded.LoadId == command.LoadId
+                                   && priorPlanIds.Contains(loaded.PlanUnitId)
+                               select new { loaded.PlanUnitId, loaded.UnitId, current.ItemId, loaded.CreatedEventId,
+                                   CreatedAt = loaded.CreatedEventTime }).ToListAsync(cancellationToken);
+            foreach (var row in prior)
+                planUnits[row.PlanUnitId] = (row.UnitId, row.ItemId, row.CreatedEventId, row.CreatedAt);
+        }
+        foreach (var link in links)
+        {
+            var original = planUnits[link.ReplacedPlanUnitId];
+            var replacement = planUnits[link.ReplacementPlanUnitId];
+            replacementRows.Add(new ReplacementLink
+            {
+                TenantId = tenantId, ReplacementLinkId = link.PlanReplacementLinkId,
+                WarrantyReplacementId = null, MigrationLoadId = command.LoadId,
+                Direction = ReplacementDirection.CustomerFacing,
+                ReplacementReason = ReplacementReason.WarrantyDefect, State = ReplacementLinkState.ClosedReturned,
+                SourceKind = ReplacementSourceKind.Migrated, SourceId = command.LoadId,
+                SourceNumber = link.SourceKey.Length <= 40 ? link.SourceKey : link.SourceKey[..40],
+                OriginalUnitId = original.UnitId, ReplacementUnitId = replacement.UnitId,
+                OriginalItemId = original.ItemId, ReplacementItemId = replacement.ItemId,
+                SourceEntitlementId = null, PolicyApplied = link.PolicyApplied,
+                PricePolicy = ReplacementPricePolicy.Zero, DifferenceAmount = 0, Currency = "XXX",
+                ReplacementConditionAllowed = Yojana.Serialisation.Contracts.ReplacementConditionAllowed.Any,
+                CreatedAt = now, CreatedBy = command.ActorRef,
+            });
+        }
+
         var eventsWritten = 0;
+        var entitlementsWritten = 0;
+        var replacementLinksWritten = 0;
+        var certificatesRecorded = 0;
         if (prepared.Count > 0)
         {
             // The register commits with the ledger: either a unit and its register row exist, or neither does.
             await using var transaction = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
             var result = await bulk.IngestAsync(new BulkIngestion.Batch(events, units, identifierRows, assignments, episodes), cancellationToken);
             eventsWritten = result.EventsInserted;
+            var cover = await coverWriter.WriteAsync(new MigrationCoverBulkWriter.Batch(entitlementRows,
+                evidenceRows, usageRows, replacementRows), cancellationToken);
+            entitlementsWritten = cover.Entitlements;
+            replacementLinksWritten = cover.ReplacementLinks;
+            if (entitlementEvents.Count > 0)
+            {
+                var coverEvents = await bulk.IngestAsync(new BulkIngestion.Batch(entitlementEvents, [], [], [], []),
+                    cancellationToken);
+                eventsWritten += coverEvents.EventsInserted;
+            }
+            foreach (var (unit, _) in prepared.Where(row => row.Unit.Certificate is not null))
+            {
+                var certificate = unit.Certificate!;
+                var mapped = planUnits[unit.PlanUnitId];
+                var issued = await certificates.IssueAsync(new IssueCertificateVersion(mapped.CreatedEventId,
+                    mapped.UnitId, CertificateDocumentKind.ReleaseRecord, CertificateFormType.GenericRelease,
+                    null, now, command.ActorRef, command.LegalEntityId, certificate.Provenance,
+                    certificate.Unknowns, certificate.Evidence, TriggerSchema: "Migration.PlanCertificate",
+                    MigrationLoadId: command.LoadId), cancellationToken);
+                if (!issued.Issued)
+                    throw new CommandRefusedException(issued.RefusalRule ?? "migration_certificate_refused",
+                        issued.RefusalDetail ?? $"Certificate for plan unit {unit.PlanUnitId} was refused.");
+                certificatesRecorded++;
+                eventsWritten++;
+            }
             db.MigrationLoadUnits.AddRange(register);
             await db.SaveChangesAsync(cancellationToken);
             if (transaction is not null) await transaction.CommitAsync(cancellationToken);
@@ -242,7 +462,78 @@ public static class ApplyMigratedUnitsHandler
         return new ApplyMigratedUnitsResult(outcomes,
             outcomes.Count(o => o.Outcome == MigratedUnitOutcome.Applied),
             outcomes.Count(o => o.Outcome == MigratedUnitOutcome.AlreadyApplied),
-            outcomes.Count(o => o.Outcome == MigratedUnitOutcome.Refused), eventsWritten);
+            outcomes.Count(o => o.Outcome == MigratedUnitOutcome.Refused), eventsWritten,
+            entitlementsWritten, replacementLinksWritten, certificatesRecorded);
+    }
+
+    private static IEnumerable<string> CoverRefusals(MigratedUnit unit, DateOnly cutover,
+        Dictionary<Guid, WarrantyPolicyVersion> policies,
+        Dictionary<string, CoverageFamily> families)
+    {
+        var reasons = new List<string>();
+        var states = new List<(string Family, string Status)>();
+        foreach (var entitlement in unit.Entitlements ?? [])
+        {
+            if (!policies.TryGetValue(entitlement.PolicyVersionId, out var policy))
+            {
+                reasons.Add("entitlement_policy_unknown");
+                continue;
+            }
+            if (policy.Status != PolicyVersionStatus.Published) reasons.Add("entitlement_policy_not_published");
+            if (policy.Version != entitlement.PolicyVersion) reasons.Add("entitlement_policy_version_differs");
+            if (policy.CoverageFamily != entitlement.CoverageFamily) reasons.Add("entitlement_policy_family_differs");
+            families.TryGetValue(entitlement.CoverageFamily, out var family);
+            var addOn = policy.EntitlementType == EntitlementType.Extended;
+            if (EntitlementStackingRules.FamilyRefusal(family, addOn) is { } familyReason)
+                reasons.Add(familyReason);
+            if (entitlement.Direction is not (EntitlementDirection.Outbound or EntitlementDirection.Inbound))
+                reasons.Add("entitlement_direction_unknown");
+            if (entitlement.EndDate is not null && entitlement.StartDate is null)
+                reasons.Add("entitlement_start_required");
+            if (entitlement.StartDate is { } start && entitlement.EndDate is { } end && end < start)
+                reasons.Add("entitlement_dates_invalid");
+            if (entitlement.TerminationDate is { } termination && entitlement.StartDate is { } began
+                && termination < began)
+                reasons.Add("entitlement_termination_before_start");
+            if (entitlement.Evidence.Count == 0) reasons.Add("entitlement_evidence_required");
+            if (entitlement.Evidence.Count(row => row.Selected) != 1)
+                reasons.Add("entitlement_selected_evidence_required");
+            else
+            {
+                var selected = entitlement.Evidence.Single(row => row.Selected);
+                var selectedEnd = selected.TerminationDate is { } terminatedBeforeEnd
+                    && (selected.EndDate is null || terminatedBeforeEnd < selected.EndDate)
+                    ? terminatedBeforeEnd : selected.EndDate;
+                if (selected.SourceKind != entitlement.DateSource || selected.SourceKey != entitlement.SourceKey
+                    || selected.StartDate != entitlement.StartDate || selectedEnd != entitlement.EndDate
+                    || selected.TerminationDate != entitlement.TerminationDate
+                    || selected.Direction != entitlement.Direction)
+                    reasons.Add("entitlement_selected_evidence_differs");
+            }
+            var status = entitlement.TerminationDate is { } terminated && terminated <= cutover
+                || entitlement.EndDate is { } expired && expired < cutover
+                ? EntitlementStatus.Closed
+                : entitlement.StartDate is null ? EntitlementStatus.PendingEvidence : EntitlementStatus.Active;
+            if (EntitlementStackingRules.FamilyOccupied(states, entitlement.CoverageFamily)
+                && status != EntitlementStatus.Closed)
+                reasons.Add("family_occupied");
+            states.Add((entitlement.CoverageFamily, status));
+        }
+        if (unit.Certificate is { } certificate)
+        {
+            if (certificate.Version != 1) reasons.Add("migration_certificate_version_not_one");
+            if (certificate.Provenance != CertificateProvenance.Migrated)
+                reasons.Add("migration_certificate_provenance_invalid");
+            if (certificate.Unknowns.Count == 0) reasons.Add("migration_certificate_unknowns_required");
+            if (certificate.Evidence.Count == 0) reasons.Add("migration_certificate_evidence_required");
+        }
+        else reasons.Add("migration_certificate_required");
+        if ((unit.ReplacementLinks ?? []).Any(link => link.ReplacedPlanUnitId == link.ReplacementPlanUnitId
+                || unit.PlanUnitId != link.ReplacedPlanUnitId && unit.PlanUnitId != link.ReplacementPlanUnitId))
+            reasons.Add("replacement_link_invalid");
+        if ((unit.ReplacementLinks ?? []).Any(link => link.PolicyApplied != "unknown"))
+            reasons.Add("replacement_policy_must_be_unknown");
+        return reasons.Distinct(StringComparer.Ordinal);
     }
 
     private static List<string> Refusals(MigratedUnit unit)
@@ -297,10 +588,68 @@ public static class RollBackMigrationLoadHandler
         await using var transaction = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
         var unitsRemoved = 0;
         var eventsRemoved = 0;
+        var entitlementsRemoved = 0;
+        var replacementLinksRemoved = 0;
+        var certificatesRemoved = 0;
         while (true)
         {
             var ids = await rows.OrderBy(r => r.PlanUnitId).Select(r => r.UnitId).Take(Chunk).ToListAsync(cancellationToken);
             if (ids.Count == 0) break;
+            replacementLinksRemoved += await db.ReplacementLinks.Where(x => x.TenantId == tenantId
+                && x.MigrationLoadId == command.LoadId
+                && (ids.Contains(x.OriginalUnitId) || ids.Contains(x.ReplacementUnitId)))
+                .ExecuteDeleteAsync(cancellationToken);
+            await db.CoverDeviationChanges.Where(x => x.TenantId == tenantId && ids.Contains(x.UnitId))
+                .ExecuteDeleteAsync(cancellationToken);
+            await db.CoverDeviationValues.Where(x => x.TenantId == tenantId && ids.Contains(x.UnitId))
+                .ExecuteDeleteAsync(cancellationToken);
+            await db.CoverDeviations.Where(x => x.TenantId == tenantId && ids.Contains(x.UnitId))
+                .ExecuteDeleteAsync(cancellationToken);
+            var entitlementIds = await db.Entitlements.Where(x => x.TenantId == tenantId
+                    && x.MigrationLoadId == command.LoadId && ids.Contains(x.UnitId))
+                .Select(x => x.EntitlementId).ToListAsync(cancellationToken);
+            if (entitlementIds.Count > 0)
+            {
+                await db.EntitlementEvidence.Where(x => x.TenantId == tenantId
+                    && entitlementIds.Contains(x.EntitlementId)).ExecuteDeleteAsync(cancellationToken);
+                await db.EntitlementUsageLimits.Where(x => x.TenantId == tenantId
+                    && entitlementIds.Contains(x.EntitlementId)).ExecuteDeleteAsync(cancellationToken);
+                entitlementsRemoved += await db.Entitlements.Where(x => x.TenantId == tenantId
+                    && entitlementIds.Contains(x.EntitlementId)).ExecuteDeleteAsync(cancellationToken);
+            }
+            var certificateIds = await db.CertificateInstances.Where(x => x.TenantId == tenantId
+                    && x.MigrationLoadId == command.LoadId && ids.Contains(x.UnitId))
+                .Select(x => x.CertificateId).ToListAsync(cancellationToken);
+            if (certificateIds.Count > 0)
+            {
+                // TIGHT COUPLING (certificate immutability rollback exception)
+                // WHAT: the immutable instance/signature triggers read this session value and permit deletion only
+                // for provenance=migrated rows carrying this exact load id. WHY: OD-53 requires an untouched rehearsal
+                // to disappear, while every non-migration certificate remains immutable. WHAT BREAKS IF SEPARATED:
+                // rollback fails halfway, or a broader trigger exception permits deletion of issued certificates.
+                // Keep the matching trigger comments and predicates in P9T10MigrationCover in step.
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"EXEC sys.sp_set_session_context @key=N'yojana_migration_rollback_load_id', @value={command.LoadId}",
+                    cancellationToken);
+                try
+                {
+                    await db.ReprintLogs.Where(x => x.TenantId == tenantId
+                        && certificateIds.Contains(x.CertificateId)).ExecuteDeleteAsync(cancellationToken);
+                    await db.CertificateTriggers.Where(x => x.TenantId == tenantId
+                        && x.CertificateId != null && certificateIds.Contains(x.CertificateId.Value))
+                        .ExecuteDeleteAsync(cancellationToken);
+                    await db.CertificateSignatures.Where(x => x.TenantId == tenantId
+                        && certificateIds.Contains(x.CertificateId)).ExecuteDeleteAsync(cancellationToken);
+                    certificatesRemoved += await db.CertificateInstances.Where(x => x.TenantId == tenantId
+                        && certificateIds.Contains(x.CertificateId)).ExecuteDeleteAsync(cancellationToken);
+                }
+                finally
+                {
+                    await db.Database.ExecuteSqlRawAsync(
+                        "EXEC sys.sp_set_session_context @key=N'yojana_migration_rollback_load_id', @value=NULL",
+                        cancellationToken);
+                }
+            }
             await db.LedgerBaseOrderReferences.Where(x => x.TenantId == tenantId && ids.Contains(x.UnitId)).ExecuteDeleteAsync(cancellationToken);
             await db.Identifiers.Where(x => x.TenantId == tenantId && ids.Contains(x.UnitId)).ExecuteDeleteAsync(cancellationToken);
             await db.ItemAssignments.Where(x => x.TenantId == tenantId && ids.Contains(x.UnitId)).ExecuteDeleteAsync(cancellationToken);
@@ -313,7 +662,8 @@ public static class RollBackMigrationLoadHandler
         }
 
         if (transaction is not null) await transaction.CommitAsync(cancellationToken);
-        return new RollBackMigrationLoadResult(command.LoadId, RollBackMigrationLoadResult.RolledBack, unitsRemoved, eventsRemoved, []);
+        return new RollBackMigrationLoadResult(command.LoadId, RollBackMigrationLoadResult.RolledBack,
+            unitsRemoved, eventsRemoved, [], entitlementsRemoved, replacementLinksRemoved, certificatesRemoved);
     }
 }
 

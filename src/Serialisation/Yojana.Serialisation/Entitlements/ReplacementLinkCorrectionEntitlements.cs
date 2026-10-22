@@ -35,7 +35,10 @@ public sealed class ReplacementLinkCorrectionEntitlements(
             throw new CommandRefusedException("replacement_policy_missing",
                 "The recorded replacement link has no applied policy to preserve.");
 
-        var source = await ledger.LoadAsync(previousLink.SourceEntitlementId, cancellationToken);
+        var sourceEntitlementId = previousLink.SourceEntitlementId
+            ?? throw new CommandRefusedException("replacement_source_entitlement_missing",
+                "The recorded replacement link has no source entitlement to reverse.");
+        var source = await ledger.LoadAsync(sourceEntitlementId, cancellationToken);
         var wrong = await ledger.LoadAsync(wrongEntitlementId, cancellationToken);
         if (wrong.UnitId != previousLink.ReplacementUnitId || wrong.ReplacementLinkId != previousLink.ReplacementLinkId)
             throw new CommandRefusedException("replacement_entitlement_mismatch",

@@ -92,7 +92,8 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
             // an automatic version of a non-English certificate to English.
             if (string.IsNullOrWhiteSpace(command.Language))
                 command = command with { Language = previous?.Language ?? "en" };
-            if (command.DocumentKind == CertificateDocumentKind.ReleaseRecord)
+            if (command.DocumentKind == CertificateDocumentKind.ReleaseRecord
+                && command.Provenance != CertificateProvenance.Migrated)
             {
                 var triggerSchema = command.TriggerSchema ?? "Unit.ReleaseFact";
                 if (triggerSchema is CustodyChanged.Schema or OwnershipOpened.Schema
@@ -151,6 +152,7 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
             var certificate = new CertificateInstance
             {
                 TenantId = tenantId, CertificateId = TimeOrderedId.New(issuedAt), UnitId = command.UnitId,
+                MigrationLoadId = command.MigrationLoadId,
                 DocumentKind = command.DocumentKind, FormType = command.FormType, Version = version, TrackingNumber = tracking,
                 TemplateVersionId = templateVersionId.Value, AsBuiltRevisionId = built.AsBuiltRevisionId,
                 Payload = built.CanonicalPayload, PayloadHash = hash, FactsHash = factsHash,
@@ -200,7 +202,8 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
                     certificate_id = certificate.CertificateId, document_kind = certificate.DocumentKind, form_type = certificate.FormType,
                     certificate_version = certificate.Version, tracking_number = certificate.TrackingNumber, payload_hash = certificate.PayloadHash,
                     triggering_event_id = command.TriggeringEventId, supersedes_certificate_id = previous?.CertificateId,
-                    provenance = certificate.Provenance, issued_at = certificate.IssuedAt,
+                    provenance = certificate.Provenance, migration_load_id = certificate.MigrationLoadId,
+                    issued_at = certificate.IssuedAt,
                 }),
                 ProjectCurrentState = false,
             });

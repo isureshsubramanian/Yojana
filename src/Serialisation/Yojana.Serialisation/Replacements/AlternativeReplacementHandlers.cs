@@ -129,7 +129,7 @@ public static class ConvertLoanToReplacementHandler
     private static async Task<ConvertLoanToReplacementResult> ReplayLoanAsync(SerialisationDbContext db, TenantId tenantId, Guid documentId, CancellationToken cancellationToken)
     {
         var data = await (from document in db.WarrantyReplacements.AsNoTracking()
-                          join link in db.ReplacementLinks.AsNoTracking() on new { document.TenantId, document.WarrantyReplacementId } equals new { link.TenantId, link.WarrantyReplacementId }
+                          join link in db.ReplacementLinks.AsNoTracking() on new { document.TenantId, WarrantyReplacementId = (Guid?)document.WarrantyReplacementId } equals new { link.TenantId, link.WarrantyReplacementId }
                           where document.TenantId == tenantId && document.WarrantyReplacementId == documentId
                           select new { document, link }).SingleAsync(cancellationToken);
         return new(documentId, data.document.ReplacementNumber, data.link.ReplacementLinkId, data.link.TargetEntitlementId!.Value,
@@ -321,7 +321,7 @@ public static class ReceiveVendorReplacementHandler
     private static async Task<ReceiveVendorReplacementResult> ReplayVendorAsync(SerialisationDbContext db, TenantId tenantId, Guid documentId, CancellationToken cancellationToken)
     {
         var data = await (from document in db.WarrantyReplacements.AsNoTracking()
-                          join link in db.ReplacementLinks.AsNoTracking() on new { document.TenantId, document.WarrantyReplacementId } equals new { link.TenantId, link.WarrantyReplacementId }
+                          join link in db.ReplacementLinks.AsNoTracking() on new { document.TenantId, WarrantyReplacementId = (Guid?)document.WarrantyReplacementId } equals new { link.TenantId, link.WarrantyReplacementId }
                           where document.TenantId == tenantId && document.WarrantyReplacementId == documentId
                           select new { document, link }).SingleAsync(cancellationToken);
         return new(documentId, data.document.ReplacementNumber, data.link.ReplacementLinkId, data.link.TargetEntitlementId!.Value,

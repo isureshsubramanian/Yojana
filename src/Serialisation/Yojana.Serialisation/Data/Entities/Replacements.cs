@@ -6,7 +6,8 @@ public sealed class ReplacementLink : ITenantScoped
 {
     public TenantId TenantId { get; set; }
     public Guid ReplacementLinkId { get; set; }
-    public Guid WarrantyReplacementId { get; set; }
+    public Guid? WarrantyReplacementId { get; set; }
+    public Guid? MigrationLoadId { get; set; }
     public Guid? PreviousReplacementLinkId { get; set; }
     public Guid? CorrectedByLinkId { get; set; }
     public Guid? CorrectionCommandId { get; set; }
@@ -20,7 +21,7 @@ public sealed class ReplacementLink : ITenantScoped
     public Guid ReplacementUnitId { get; set; }
     public Guid OriginalItemId { get; set; }
     public Guid ReplacementItemId { get; set; }
-    public Guid SourceEntitlementId { get; set; }
+    public Guid? SourceEntitlementId { get; set; }
     public Guid? TargetEntitlementId { get; set; }
     public Guid? CounterpartyPartyRef { get; set; }
     public string? PolicyApplied { get; set; }

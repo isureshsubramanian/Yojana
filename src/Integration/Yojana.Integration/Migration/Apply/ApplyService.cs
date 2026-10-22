@@ -17,12 +17,14 @@ public sealed record StartApplyResponse(Guid LoadId, Guid BatchId, Guid MapRunId
 public sealed record MigrationApplyView(Guid LoadId, Guid BatchId, Guid MapRunId, bool Rehearsal, string Status,
     string RequestedBy, DateTime RequestedAt, DateTime? StartedAt, DateTime? FinishedAt, string? Failure,
     long UnitsInPlan, long Applied, long AlreadyApplied, long Refused, long EventsWritten,
+    long EntitlementsWritten, long ReplacementLinksWritten, long CertificatesRecorded,
     string? RolledBackBy, DateTime? RolledBackAt);
 public sealed record MigrationApplyRefusalView(Guid RefusalId, Guid PlanUnitId, string ItemCode, string? Serial,
     IReadOnlyList<string> Reasons);
 public sealed record MigrationApplyRefusalPage(IReadOnlyList<MigrationApplyRefusalView> Items, string? NextCursor);
 public sealed record RollBackLoadResponse(Guid LoadId, string Outcome, int UnitsRemoved, int EventsRemoved,
-    IReadOnlyList<Guid> TouchedUnitIds);
+    IReadOnlyList<Guid> TouchedUnitIds, int EntitlementsRemoved = 0, int ReplacementLinksRemoved = 0,
+    int CertificatesRemoved = 0);
 
 public sealed class ApplyRuleException(string rule, string message) : InvalidOperationException(message)
 {
@@ -163,7 +165,8 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
             run.RolledBackAt = clock.UtcNow;
             await db.SaveChangesAsync(cancellationToken);
         }
-        return new(loadId, result.Outcome, result.UnitsRemoved, result.EventsRemoved, result.TouchedUnitIds);
+        return new(loadId, result.Outcome, result.UnitsRemoved, result.EventsRemoved, result.TouchedUnitIds,
+            result.EntitlementsRemoved, result.ReplacementLinksRemoved, result.CertificatesRemoved);
     }
 
     private async Task ApplyAsync(Guid runId, CancellationToken cancellationToken)
@@ -194,7 +197,7 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
             var result = units.Count == 0
                 ? new ApplyMigratedUnitsResult([], 0, 0, 0, 0)
                 : await bus.InvokeAsync<ApplyMigratedUnitsResult>(
-                    new ApplyMigratedUnits(run.RunId, legalEntity, run.RequestedBy, source, units), Options(), cancellationToken);
+                    new ApplyMigratedUnits(run.RunId, legalEntity, run.RequestedBy, source, units, map.CutoverDate), Options(), cancellationToken);
             run = await db.Set<MigrationApplyRun>().SingleAsync(row => row.TenantId == tenant.TenantId &&
                 row.RunId == runId, cancellationToken);
             var refusals = missing.Concat(result.Units.Where(u => u.Outcome == MigratedUnitOutcome.Refused)
@@ -215,6 +218,9 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
             run.AlreadyApplied += result.AlreadyApplied;
             run.Refused += refusals.Count - already.Count;
             run.EventsWritten += result.EventsWritten;
+            run.EntitlementsWritten += result.EntitlementsWritten;
+            run.ReplacementLinksWritten += result.ReplacementLinksWritten;
+            run.CertificatesRecorded += result.CertificatesRecorded;
             run.CursorPlanUnitId = plans[^1].PlanUnitId;
             await db.SaveChangesAsync(cancellationToken);
             db.ChangeTracker.Clear();
@@ -226,12 +232,14 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
         run.Status = ApplyRunStatus.Completed;
         run.FinishedAt = clock.UtcNow;
         await bus.PublishAsync(new MigrationLoadApplied(run.RunId, run.BatchId, run.Rehearsal,
-            (int)(run.Applied + run.AlreadyApplied), (int)run.EventsWritten, run.FinishedAt.Value), Options());
+            (int)(run.Applied + run.AlreadyApplied), (int)run.EventsWritten, run.FinishedAt.Value,
+            (int)run.EntitlementsWritten, (int)run.ReplacementLinksWritten,
+            (int)run.CertificatesRecorded), Options());
         await db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task<(List<MigratedUnit> Units, List<(Guid PlanUnitId, IReadOnlyList<string> Reasons)> Missing)>
-        BuildChunkAsync(IReadOnlyList<MigrationPlanUnit> plans, Guid connectionId, DateTime cutover,
+        BuildChunkAsync(List<MigrationPlanUnit> plans, Guid connectionId, DateTime cutover,
             CancellationToken cancellationToken)
     {
         var ids = plans.Select(row => row.PlanUnitId).ToList();
@@ -244,6 +252,24 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
         var owners = (await db.MigrationPlanOwnership.AsNoTracking()
             .Where(row => row.TenantId == tenant.TenantId && ids.Contains(row.PlanUnitId)).ToListAsync(cancellationToken))
             .ToLookup(row => row.PlanUnitId);
+        var planEntitlements = (await db.MigrationPlanEntitlements.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && ids.Contains(row.PlanUnitId)).ToListAsync(cancellationToken))
+            .ToLookup(row => row.PlanUnitId);
+        var warrantyEvidence = (await db.MigrationPlanWarrantyEvidence.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && ids.Contains(row.PlanUnitId)).ToListAsync(cancellationToken))
+            .ToLookup(row => row.PlanUnitId);
+        var planCertificates = await db.MigrationPlanCertificates.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && ids.Contains(row.PlanUnitId))
+            .ToDictionaryAsync(row => row.PlanUnitId, cancellationToken);
+        var linkRows = await db.MigrationPlanReplacementLinks.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && row.MapRunId == plans[0].MapRunId
+                && (ids.Contains(row.ReplacedPlanUnitId) || ids.Contains(row.ReplacementPlanUnitId)))
+            .ToListAsync(cancellationToken);
+        var links = linkRows.Where(row =>
+                ids.Contains(row.ReplacedPlanUnitId.CompareTo(row.ReplacementPlanUnitId) > 0
+                    ? row.ReplacedPlanUnitId : row.ReplacementPlanUnitId))
+            .ToLookup(row => row.ReplacedPlanUnitId.CompareTo(row.ReplacementPlanUnitId) > 0
+                ? row.ReplacedPlanUnitId : row.ReplacementPlanUnitId);
         var itemCodes = plans.Select(row => row.ItemCode).Distinct().ToList();
         var items = await db.ExternalIdMaps.AsNoTracking().Where(row => row.TenantId == tenant.TenantId &&
                 row.ConnectionId == connectionId && row.EntityType == "item" && row.ValidTo == null &&
@@ -259,6 +285,10 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
                 missing.Add((plan.PlanUnitId, ["item_not_synced"]));
                 continue;
             }
+            // Cover whose dates come from the equipment card or serial master names no policy, and the load never
+            // infers one: the unit loads without it, and the gap report and backfill (P9-T09) close that cover.
+            var plannedCover = planEntitlements[plan.PlanUnitId]
+                .Where(row => row.PolicyId is not null && row.PolicyVersion is not null).ToList();
             var history = events[plan.PlanUnitId].OrderBy(row => row.Sequence).ToList();
             var created = history.Count == 0 ? cutover : Utc(history[0].EffectiveDate);
             MigratedCustody? custody = null;
@@ -274,18 +304,43 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
             if (plan.LocationState == PlanLocationState.Shipped && unitOwners.FirstOrDefault(row => row.IsCurrent) is { } current)
             {
                 var lastShipment = history.LastOrDefault(row => row.MovementKind == HistoryMovementKind.Shipped);
-                var from = current.EvidenceDate is { } evidence ? Utc(evidence)
+                var from = current.EvidenceDate is { } ownershipEvidence ? Utc(ownershipEvidence)
                     : lastShipment is null ? created : Utc(lastShipment.EffectiveDate);
                 var direct = unitOwners.FirstOrDefault(row => row.Tier == PlanOwnershipTier.DirectCustomer);
                 ownership = new MigratedOwnership(await PartyAsync(connectionId, current, cancellationToken),
                     PartyType.Customer, from, current.Pseudonymised,
                     direct is null ? null : await PartyAsync(connectionId, direct, cancellationToken));
             }
+            var evidence = warrantyEvidence[plan.PlanUnitId].Select(row => new MigratedWarrantyEvidence(
+                row.SourceKind, row.SourceKey, row.StartDate, row.EndDate, row.TerminationDate,
+                row.Direction, row.SelectedForEntitlement)).ToList();
+            var entitlements = plannedCover.Select(row => new MigratedEntitlement(row.PlanEntitlementId,
+                row.CoverageFamily, row.PolicyId!.Value, row.PolicyVersion!.Value, row.StartDate, row.EndDate,
+                row.TerminationDate, row.Direction, row.DateSource, row.SourceKey, evidence)).ToList();
+            var replacements = links[plan.PlanUnitId].Select(row => new MigratedReplacementLink(
+                row.PlanReplacementLinkId, row.ReplacedPlanUnitId, row.ReplacementPlanUnitId,
+                row.PolicyApplied, row.SourceKey)).ToList();
+            MigratedCertificate? certificate = null;
+            if (planCertificates.TryGetValue(plan.PlanUnitId, out var plannedCertificate))
+            {
+                var unknowns = new List<string> { "The source plan did not contain an as-built production record." };
+                if (plan.HistoryDepth != Yojana.Serialisation.Contracts.HistoryDepth.Full)
+                    unknowns.Add("History before the earliest retained source fact is unknown.");
+                if (unitOwners.Any(row => row.Pseudonymised))
+                    unknowns.Add("The source removed at least one customer identity.");
+                var certificateEvidence = evidence.Select(row => $"{row.SourceKind}:{row.SourceKey}")
+                    .Concat(identifiers[plan.PlanUnitId].Select(row => $"identifier:{row.IdentifierType}:{row.Provenance}"))
+                    .Concat(history.Select(row => $"history:{row.DocumentTypeLabel}:{row.Provenance}"))
+                    .Distinct(StringComparer.Ordinal).ToList();
+                certificate = new MigratedCertificate(plannedCertificate.PlanCertificateId,
+                    plannedCertificate.Version, plannedCertificate.Provenance, unknowns, certificateEvidence);
+            }
             units.Add(new MigratedUnit(plan.PlanUnitId, itemId, plan.HistoryDepth, created,
                 identifiers[plan.PlanUnitId].Select(row => new IdentifierInput(row.IdentifierType, row.RawValue)).ToList(),
                 history.Select(row => new MigratedHistoryEvent(Utc(row.EffectiveDate), row.MovementKind, row.Provenance,
                     row.DocumentTypeLabel, row.DocumentNumber, row.PartyCode, row.WarehouseCode, row.Quantity)).ToList(),
-                custody, ownership, plan.ConditionGrade, plan.ConditionProvenance));
+                custody, ownership, plan.ConditionGrade, plan.ConditionProvenance, entitlements, replacements,
+                certificate));
         }
         return (units, missing);
     }
@@ -337,6 +392,7 @@ public sealed class ApplyService(IntegrationDbContext db, ITenantContext tenant,
 
     private static MigrationApplyView View(MigrationApplyRun run) => new(run.RunId, run.BatchId, run.MapRunId,
         run.Rehearsal, run.Status, run.RequestedBy, run.RequestedAt, run.StartedAt, run.FinishedAt, run.FailureCode,
-        run.UnitsInPlan, run.Applied, run.AlreadyApplied, run.Refused, run.EventsWritten, run.RolledBackBy,
+        run.UnitsInPlan, run.Applied, run.AlreadyApplied, run.Refused, run.EventsWritten,
+        run.EntitlementsWritten, run.ReplacementLinksWritten, run.CertificatesRecorded, run.RolledBackBy,
         run.RolledBackAt);
 }
