@@ -192,9 +192,16 @@ public static class MigrationEndpoints
         review.MapGet("/batches/{batchId:guid}/apply", async (Guid batchId, ApplyService service,
             CancellationToken ct) => await service.GetAsync(batchId, ct) is { } result
                 ? Results.Ok(result) : Results.NotFound());
-        review.MapGet("/loads/{loadId:guid}/refusals", async (Guid loadId, string? cursor, int? take,
-            ApplyService service, CancellationToken ct) =>
-            Results.Ok(await service.RefusalsAsync(loadId, cursor, take ?? 50, ct)));
+        review.MapGet("/loads/{loadId:guid}/refusals", async (Guid loadId, string? reason, string? itemCode,
+            string? serial, string? cursor, int? take, ApplyService service, CancellationToken ct) =>
+            Results.Ok(await service.RefusalsAsync(loadId, reason, itemCode, serial, cursor, take ?? 50, ct)));
+        review.MapGet("/loads/{loadId:guid}/refusals/export.csv", async (Guid loadId, string? reason,
+            string? itemCode, string? serial, ApplyService service, CancellationToken ct) =>
+            Results.File(await service.ExportRefusalsAsync(loadId, reason, itemCode, serial, ct),
+                "text/csv; charset=utf-8", "migration-load-refusals.csv"));
+        review.MapGet("/loads/{loadId:guid}/rollback/touched-units", async (Guid loadId, string? cursor,
+            int? take, ApplyService service, CancellationToken ct) =>
+            Results.Ok(await service.TouchedUnitsAsync(loadId, cursor, take ?? 50, ct)));
         admin.MapPost("/loads/{loadId:guid}/rollback", async (Guid loadId, ClaimsPrincipal user,
             ApplyService service, CancellationToken ct) =>
         {

@@ -136,7 +136,7 @@ public sealed record RollBackMigrationLoad(Guid LoadId, string ActorRef);
 
 public sealed record RollBackMigrationLoadResult(Guid LoadId, string Outcome, int UnitsRemoved, int EventsRemoved,
     IReadOnlyList<Guid> TouchedUnitIds, int EntitlementsRemoved = 0, int ReplacementLinksRemoved = 0,
-    int CertificatesRemoved = 0)
+    int CertificatesRemoved = 0, int TouchedUnitCount = 0)
 {
     public const string RolledBack = "rolled_back";
     public const string RefusedTouched = "refused_touched";
@@ -149,6 +149,17 @@ public sealed record MigrationLoadUnitsQuery(Guid LoadId, Guid? AfterPlanUnitId 
 public sealed record MigrationLoadUnitRow(Guid PlanUnitId, Guid UnitId, DateTime AppliedAt);
 
 public sealed record MigrationLoadUnitsPage(IReadOnlyList<MigrationLoadUnitRow> Items, Guid? NextAfterPlanUnitId);
+
+/// <summary>
+/// Units that prevent a rehearsal rollback because later facts were written. This is a separate, keyset-paged read
+/// so a large touched load never makes the rollback command response unbounded.
+/// </summary>
+public sealed record TouchedMigrationLoadUnitsQuery(Guid LoadId, Guid? AfterUnitId = null, int Take = 50);
+
+public sealed record TouchedMigrationLoadUnitRow(Guid UnitId, string Serial);
+
+public sealed record TouchedMigrationLoadUnitsPage(IReadOnlyList<TouchedMigrationLoadUnitRow> Items, int Total,
+    Guid? NextAfterUnitId);
 
 /// <summary>One summary fact per applied load (OD-52): the only event migrated history publishes.</summary>
 public sealed record MigrationLoadApplied(Guid LoadId, Guid BatchId, bool Rehearsal, int Units, int Events,

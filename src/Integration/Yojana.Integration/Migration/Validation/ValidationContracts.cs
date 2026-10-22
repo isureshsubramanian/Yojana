@@ -12,7 +12,7 @@ public sealed record ValidationCheckView(Guid CheckId, string Code, string Label
 public sealed record MigrationValidationView(Guid RunId, Guid BatchId, Guid MapRunId, string TargetKind,
     bool Rehearsal, int? RehearsalNumber, string Status, DateTime? StartedAt, DateTime? FinishedAt,
     DateTime? LoadDate, Guid? SignoffRecordId, bool? SignoffRehearsal, DateTime? SignoffCreatedAt,
-    string? SignoffCreatedByName, string? FailureCode, string? FailureDetail, int ChecksTotal, int Passed,
+    string? SignoffCreatedByName, bool HasFinalSignoff, string? FailureCode, string? FailureDetail, int ChecksTotal, int Passed,
     int Explained, int Failed, int HardFailed, int SignedChecks, long Units, long Events,
     decimal? EventsShortPercent, int SampleTraced, int SampleTotal, string? HardFailSummary,
     IReadOnlyList<Mapping.MigrationGapCount> GapsByKind,

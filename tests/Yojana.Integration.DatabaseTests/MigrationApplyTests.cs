@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text;
+using Wolverine;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.LegacyMigration.Apply;
@@ -84,6 +86,7 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
 
         var view = (await apply.GetAsync(ids.BatchId, default))!;
         Assert.Equal(ApplyRunStatus.Completed, view.Status);
+        Assert.Equal("Unknown user", view.RequestedByName);
         var planned = map.UnitsByOrigin.Single(row => row.Key == UnitOrigin.Migrated).Count;
         var refusalItems = (await apply.RefusalsAsync(view.LoadId, null, 50, default)).Items;
         var refusalSummary = string.Join("; ", refusalItems.Select(row =>
@@ -108,6 +111,48 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
         var refusal = Assert.Single(refusalItems);
         Assert.Equal(Unsynced, refusal.ItemCode);
         Assert.Equal(["item_not_synced"], refusal.Reasons);
+        Assert.Equal(1, (await apply.RefusalsAsync(view.LoadId, "item_not_synced", null, null, null, 50,
+            default)).Total);
+
+        var extraPlan = await db.MigrationPlanUnits.Where(row => row.MapRunId == map.RunId &&
+                row.ItemCode != Unsynced && db.MigrationPlanIdentifiers.Any(identifier =>
+                    identifier.PlanUnitId == row.PlanUnitId && identifier.IdentifierType == IdentifierType.InternalSerial))
+            .OrderBy(row => row.PlanUnitId).Select(row => new
+            {
+                row.PlanUnitId,
+                row.ItemCode,
+                Serial = db.MigrationPlanIdentifiers.Where(identifier => identifier.PlanUnitId == row.PlanUnitId &&
+                        identifier.IdentifierType == IdentifierType.InternalSerial)
+                    .Select(identifier => identifier.RawValue).First(),
+            }).FirstAsync();
+        db.Set<MigrationApplyRefusal>().Add(new MigrationApplyRefusal
+        {
+            TenantId = tenant, RefusalId = Guid.CreateVersion7(fixture.Clock.UtcNow.AddMilliseconds(1)),
+            RunId = view.LoadId, PlanUnitId = extraPlan.PlanUnitId,
+            Reasons = "duplicate_in_batch condition_grade_unknown",
+        });
+        await db.SaveChangesAsync();
+        var refusalPage = await apply.RefusalsAsync(view.LoadId, null, null, null, null, 1, default);
+        Assert.Equal(2, refusalPage.Total);
+        Assert.Equal(2, refusalPage.LoadTotal);
+        Assert.Single(refusalPage.Items);
+        Assert.NotNull(refusalPage.NextCursor);
+        Assert.Contains(refusalPage.CountsByReason, row => row.Reason == "duplicate_in_batch" &&
+            row.Label == "Identifier is duplicated in this load" && row.Count == 1);
+        var byItem = await apply.RefusalsAsync(view.LoadId, null, extraPlan.ItemCode, null, null, 50, default);
+        Assert.Equal(extraPlan.PlanUnitId, Assert.Single(byItem.Items).PlanUnitId);
+        var bySerial = await apply.RefusalsAsync(view.LoadId, null, null,
+            extraPlan.Serial[^Math.Min(5, extraPlan.Serial.Length)..], null, 50, default);
+        Assert.Equal(extraPlan.Serial, Assert.Single(bySerial.Items).Serial);
+        var byReason = await apply.RefusalsAsync(view.LoadId, "condition_grade_unknown", null, null, null, 50,
+            default);
+        Assert.Equal(extraPlan.PlanUnitId, Assert.Single(byReason.Items).PlanUnitId);
+        var csv = Encoding.UTF8.GetString(await apply.ExportRefusalsAsync(view.LoadId, "duplicate_in_batch",
+            null, null, default));
+        Assert.Contains("Item code,Serial,Why it was refused", csv);
+        Assert.Contains("Identifier is duplicated in this load", csv);
+        Assert.Contains("Condition grade is not known", csv);
+        Assert.DoesNotContain("duplicate_in_batch", csv);
 
         var serialisation = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var overriddenLink = await serialisation.ReplacementLinks.SingleAsync(row => row.MigrationLoadId == view.LoadId);
@@ -205,6 +250,27 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
             (defaultLink.Direction, defaultLink.ReplacementReason, defaultLink.State,
                 defaultLink.ReplacementConditionAllowed, defaultLink.PricePolicy,
                 defaultLink.DifferenceAmount, defaultLink.Currency));
+
+        var touchedLoadUnit = await serialisation.MigrationLoadUnits.AsNoTracking()
+            .Where(row => row.LoadId == second.LoadId).OrderBy(row => row.PlanUnitId)
+            .Select(row => new { row.PlanUnitId, row.UnitId }).FirstAsync();
+        var touchedSerial = await db.MigrationPlanIdentifiers.AsNoTracking().Where(row =>
+                row.PlanUnitId == touchedLoadUnit.PlanUnitId && row.IdentifierType == IdentifierType.InternalSerial)
+            .Select(row => row.RawValue).FirstAsync();
+        var legalEntity = await db.ConnectionGatewaySettings.AsNoTracking().Where(row =>
+                row.ConnectionId == batch.ConnectionId).Select(row => row.LegalEntityId).SingleAsync();
+        await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<UnitFlagResult>(new SetUnitFlag(
+            Guid.NewGuid(), touchedLoadUnit.UnitId, OverlayFlag.Lost,
+            new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc), "user:stores", legalEntity,
+            "Missing at cycle count"), new DeliveryOptions { TenantId = tenant.ToString() }, default);
+        var refusedRollback = await apply.RollBackAsync(second.LoadId, "user:admin", default);
+        Assert.Equal(RollBackMigrationLoadResult.RefusedTouched, refusedRollback.Outcome);
+        Assert.Equal(1, refusedRollback.TouchedUnitCount);
+        Assert.Equal(touchedSerial, Assert.Single(refusedRollback.TouchedUnits).Serial);
+        Assert.Null(refusedRollback.TouchedNextCursor);
+        var touchedPage = await apply.TouchedUnitsAsync(second.LoadId, null, 50, default);
+        Assert.Equal(1, touchedPage.Total);
+        Assert.Equal(touchedSerial, Assert.Single(touchedPage.Items).Serial);
     }
 
     [DatabaseFact]
@@ -250,6 +316,8 @@ public sealed class MigrationApplyTests(IntegrationHostFixture fixture)
 
         AddSignoff(db, tenant, ids.BatchId, map.RunId, rehearsal: false);
         await db.SaveChangesAsync();
+        Assert.True((await scope.ServiceProvider.GetRequiredService<ValidationService>()
+            .GetAsync(ids.BatchId, default))!.HasFinalSignoff);
         var queued = await apply.EnqueueAsync(ids.BatchId, new(false), "user:admin", default);
         Assert.False(queued.Rehearsal);
         Assert.Equal(ApplyRunStatus.Queued, queued.Status);

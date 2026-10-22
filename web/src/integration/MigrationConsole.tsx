@@ -12,13 +12,13 @@ import { migrationApi } from "./migrationApi";
 import {
   batchLabel, batchResult, batchStatusLabel, batchTotals, countTotal, duration, elapsed, failureLabel,
   finalLoadDisabledReason, loadStatusLabel, loadStatusTone, mayAdministerMigration,
-  phaseStatusLabel, phaseStatusTone, profileTotals, refusalReasonLabel,
+  phaseStatusLabel, phaseStatusTone, profileTotals,
   rollbackOutcomeLabel, routeLabel, runtimeLabel, statusTone,
 } from "./migrationModel";
 import type {
-  CanonicalisationRun, MigrationApply, MigrationApplyRefusal, MigrationApplyRefusalPage, MigrationBatch,
+  CanonicalisationRun, MigrationApply, MigrationBatch,
   MigrationBatchPage, MigrationBatchTable, MigrationMap, MigrationProfile, MigrationReconstruction,
-  MigrationSource, MigrationSourceTestResult, MigrationValidation, RollBackMigrationLoadResponse,
+  MigrationSource, MigrationSourceTestResult, MigrationValidation, RollBackMigrationLoadResponse, TouchedMigrationLoadUnit,
 } from "./migrationTypes";
 
 export function Component() { return <MigrationAccess><MigrationConsole /></MigrationAccess>; }
@@ -191,8 +191,8 @@ function PhaseStrip({ batch, profile, canonicalisation, reconstruction, map, val
     <PhaseCard label="3 · Reconstruct" headline={reconstruction ? `${reconstruction.candidatesReconstructed.toLocaleString()} units` : "—"} detail={reconstruction ? reconstruction.failure ? failureLabel(reconstruction.failure)! : `${reconstructEvents.toLocaleString()} events · ${reconstructReviews.toLocaleString()} to review` : "No reconstruction run yet"} status={reconstruction?.status} />
     <PhaseCard label="4 · Map" headline={map ? `${mappedUnits.toLocaleString()} units` : "—"} detail={map ? map.failure ? failureLabel(map.failure)! : mapGaps?.length ? <>{mapGaps}</> : "No mapping gaps" : "No map run yet"} status={map?.status} />
     <PhaseCard label="5 · Validate" headline={validation ? `${validation.hardFailed.toLocaleString()} hard fails open` : "—"} detail={validation ? `${validation.signedChecks.toLocaleString()} of ${validation.checksTotal.toLocaleString()} checks signed` : "No validation run yet"} status={validation?.status} href="/integration/migration/validation" />
-    <LoadPhaseCard batchId={batch?.batchId ?? ""} load={load} validation={validation} admin={admin} onChanged={onChanged} />
-  </div></div></section>;
+    <LoadPhaseCard batchId={batch?.batchId ?? ""} load={load} />
+  </div><LoadActions batchId={batch?.batchId ?? ""} load={load} validation={validation} admin={admin} onChanged={onChanged} /></div></section>;
 }
 
 function PhaseCard({ label, headline, detail, status, href }: { label: string; headline: string; detail: ReactNode; status: string | null | undefined; href?: string }) {
@@ -202,13 +202,31 @@ function PhaseCard({ label, headline, detail, status, href }: { label: string; h
   return <div className="migration-phase">{body}</div>;
 }
 
-function LoadPhaseCard({ batchId, load, validation, admin, onChanged }: { batchId: string; load: MigrationApply | null; validation: MigrationValidation | null; admin: boolean; onChanged: () => void | Promise<void> }) {
+function LoadPhaseCard({ batchId, load }: { batchId: string; load: MigrationApply | null }) {
+  const failure = failureLabel(load?.failure ?? null);
+  const gapLink = load && load.refused > 0
+    ? <Link className="migration-phase-link" to={`/integration/migration/loads/${load.loadId}/refusals`}>View {load.refused.toLocaleString()} refusals</Link>
+    : load?.coverGaps !== null && load?.coverGaps !== undefined
+      ? <Link className="migration-phase-link" to="/entitlements/gaps?channels=migration">{load.coverGaps.toLocaleString()} sold units with no base cover</Link>
+      : load?.gapsByKind[0] ? <Link className="migration-phase-link"
+        to={`/integration/migration/validation?batchId=${encodeURIComponent(batchId)}&gapKind=${encodeURIComponent(load.gapsByKind[0].kind)}#migration-plan-gaps`}>
+        {load.gapsByKind[0].label} {load.gapsByKind[0].count.toLocaleString()}</Link> : null;
+  return <div className="migration-phase migration-load-phase"><div className="l">6 · Load{load ? ` · ${load.rehearsal ? "rehearsal" : "final"}` : ""}</div><div className="n">{load ? `${load.applied.toLocaleString()} applied` : "—"}</div><div className="s">{load ? <>{load.refused.toLocaleString()} refused · {load.eventsWritten.toLocaleString()} facts<br />{load.entitlementsWritten.toLocaleString()} cover · {load.replacementLinksWritten.toLocaleString()} links · {load.certificatesRecorded.toLocaleString()} certificates</> : "No load run yet"}</div><StatusBadge tone={load ? loadStatusTone(load.status) : "neutral"}>{load ? loadStatusLabel(load.status) : "Not run"}</StatusBadge>
+    {failure && <p className="migration-phase-note">{failure}</p>}
+    {gapLink}
+  </div>;
+}
+
+function LoadActions({ batchId, load, validation, admin, onChanged }: { batchId: string; load: MigrationApply | null; validation: MigrationValidation | null; admin: boolean; onChanged: () => void | Promise<void> }) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState("");
   const [confirmRollback, setConfirmRollback] = useState(false); const [confirmFinal, setConfirmFinal] = useState(false); const [rollback, setRollback] = useState<RollBackMigrationLoadResponse | null>(null);
   const finalReason = finalLoadDisabledReason(validation);
   const loadOpen = !!load && load.status !== "rolled_back";
   const loadOpenReason = loadOpen ? load?.status === "queued" || load?.status === "running" ? "A load is already in progress" : "Resolve the existing load before loading again" : null;
   const canRollback = !!load?.rehearsal && (load.status === "completed" || load.status === "failed");
+  const rehearsalReason = busy ? "Another load action is running" : !batchId ? "Choose an extraction first" : loadOpenReason;
+  const finalDisabledReason = busy ? "Another load action is running" : !batchId ? "Choose an extraction first" : loadOpenReason ?? finalReason;
+  const rollbackReason = busy ? "Another load action is running" : !load ? "Run a rehearsal load first" : !load.rehearsal ? "A final load cannot be rolled back here" : !canRollback ? `A ${loadStatusLabel(load.status).toLowerCase()} rehearsal cannot be rolled back` : null;
   const start = async (rehearsal: boolean) => {
     if (!batchId) return; setBusy(true); setError(null); setNotice(""); setRollback(null);
     try { await migrationApi.apply(batchId, rehearsal); setConfirmFinal(false); setNotice(rehearsal ? "Rehearsal load queued." : "Final load queued."); await onChanged(); }
@@ -221,45 +239,34 @@ function LoadPhaseCard({ batchId, load, validation, admin, onChanged }: { batchI
     catch (reason) { setError(reason); }
     finally { setBusy(false); }
   };
-  const failure = failureLabel(load?.failure ?? null);
-  return <div className="migration-phase migration-load-phase"><div className="l">6 · Load{load ? ` · ${load.rehearsal ? "rehearsal" : "final"}` : ""}</div><div className="n">{load ? `${load.applied.toLocaleString()} applied` : "—"}</div><div className="s">{load ? <>{load.refused.toLocaleString()} refused · {load.eventsWritten.toLocaleString()} facts written<br />{load.entitlementsWritten.toLocaleString()} cover rows written · {load.replacementLinksWritten.toLocaleString()} links · {load.certificatesRecorded.toLocaleString()} certificates</> : "No load run yet"}</div><StatusBadge tone={load ? loadStatusTone(load.status) : "neutral"}>{load ? loadStatusLabel(load.status) : "Not run"}</StatusBadge>
-    {failure && <p className="migration-phase-note">{failure}</p>}
-    {load?.coverGaps !== null && load?.coverGaps !== undefined && <Link className="migration-phase-link" to="/entitlements/gaps?channels=migration">{load.coverGaps.toLocaleString()} sold units with no base cover</Link>}
-    {load?.gapsByKind.map(row => <Link key={row.kind} className="migration-phase-link"
-      to={`/integration/migration/validation?batchId=${encodeURIComponent(batchId)}&gapKind=${encodeURIComponent(row.kind)}#migration-plan-gaps`}>
-      {row.label} {row.count.toLocaleString()}</Link>)}
-    {load && load.refused > 0 && <button type="button" className="btn sm" onClick={() => openRefusals(load)}>View {load.refused.toLocaleString()} refusals</button>}
-    {admin && <div className="migration-load-actions"><button type="button" className="btn sm" disabled={busy || !batchId || !!loadOpenReason} title={loadOpenReason ?? "Loads the plan as a rehearsal"} onClick={() => void start(true)}>Load as rehearsal</button><button type="button" className="btn primary sm" disabled={busy || !batchId || !!loadOpenReason || !!finalReason} title={loadOpenReason ?? finalReason ?? "Loads the signed-off final plan"} onClick={() => setConfirmFinal(true)}>Final load</button>{canRollback && !confirmRollback && <button type="button" className="btn danger sm" disabled={busy} onClick={() => setConfirmRollback(true)}>Roll back rehearsal</button>}</div>}
-    {admin && finalReason && <p className="migration-phase-note">Final load unavailable: {finalReason}.</p>}
-    {confirmFinal && <div className="migration-rollback-confirm" role="group" aria-labelledby="final-confirm-title"><strong id="final-confirm-title">Start the final load?</strong><p>The signed-off plan is written into the module for real. A final load cannot be rolled back.</p><div><button type="button" className="btn sm" disabled={busy} onClick={() => setConfirmFinal(false)}>Not yet</button><button type="button" className="btn primary sm" disabled={busy} onClick={() => void start(false)}>{busy ? "Starting…" : "Start the final load"}</button></div></div>}
-    {confirmRollback && <div className="migration-rollback-confirm" role="group" aria-labelledby="rollback-confirm-title"><strong id="rollback-confirm-title">Roll back this rehearsal?</strong><p>Every unit, fact, cover row, link and certificate this load wrote will be removed.</p><div><button type="button" className="btn sm" disabled={busy} onClick={() => setConfirmRollback(false)}>Keep the load</button><button type="button" className="btn danger sm" disabled={busy} onClick={() => void rollBack()}>{busy ? "Rolling back…" : "Roll back rehearsal"}</button></div></div>}
-    <ErrorNote error={error} />{notice && <p className="migration-phase-note" role="status">{notice}</p>}{rollback && <RollbackResult result={rollback} />}
+  if (!admin) return load ? <div className="migration-load-action-row"><p className="muted">Load requested by {load.requestedByName}.</p></div> : null;
+  return <div className="migration-load-action-row" aria-label="Load actions"><div className="migration-load-actions">
+    <LoadAction label="Load as rehearsal" reason={rehearsalReason} onClick={() => void start(true)} />
+    <LoadAction label="Final load" reason={finalDisabledReason} primary onClick={() => setConfirmFinal(true)} />
+    <LoadAction label="Roll back rehearsal" reason={rollbackReason} danger onClick={() => setConfirmRollback(true)} />
+  </div>{load && <p className="muted migration-load-by">Latest load requested by {load.requestedByName}.</p>}
+    {confirmFinal && <div className="note warn migration-load-confirm" role="group" aria-labelledby="final-confirm-title"><strong id="final-confirm-title">Start the final load?</strong><p>The signed-off plan is written into the module for real. A final load cannot be rolled back.</p><div><button type="button" className="btn sm" disabled={busy} onClick={() => setConfirmFinal(false)}>Not yet</button><button type="button" className="btn primary sm" disabled={busy} onClick={() => void start(false)}>{busy ? "Starting…" : "Start the final load"}</button></div></div>}
+    {confirmRollback && <div className="note warn migration-load-confirm" role="group" aria-labelledby="rollback-confirm-title"><strong id="rollback-confirm-title">Roll back this rehearsal?</strong><p>Every unit, fact, cover row, link and certificate this load wrote will be removed.</p><div><button type="button" className="btn sm" disabled={busy} onClick={() => setConfirmRollback(false)}>Keep the load</button><button type="button" className="btn danger sm" disabled={busy} onClick={() => void rollBack()}>{busy ? "Rolling back…" : "Roll back rehearsal"}</button></div></div>}
+    <ErrorNote error={error} />{notice && <div className="note" role="status">{notice}</div>}{rollback && <RollbackResult result={rollback} />}
   </div>;
+}
+
+function LoadAction({ label, reason, primary, danger, onClick }: { label: string; reason: string | null; primary?: boolean; danger?: boolean; onClick: () => void }) {
+  const enabledClass = primary ? " primary" : danger ? " danger" : "";
+  return <div className="migration-load-action"><button type="button" className={`btn sm${reason ? "" : enabledClass}`} disabled={!!reason} onClick={onClick}>{label}</button>{reason && <span className="migration-disabled-reason">{reason}.</span>}</div>;
 }
 
 function RollbackResult({ result }: { result: RollBackMigrationLoadResponse }) {
   const refused = result.outcome === "refused_touched";
+  const [items, setItems] = useState(result.touchedUnits); const [nextCursor, setNextCursor] = useState(result.touchedNextCursor);
+  const [page, setPage] = useState(1); const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]); const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
+  const go = async (target: number) => { const cursor = target > page ? nextCursor ?? undefined : cursors[target - 1]; if (target < 1 || (target > page && !cursor)) return; setBusy(true); setError(null); try { const response = await migrationApi.touchedLoadUnits(result.loadId, cursor); setItems(response.items); setNextCursor(response.nextCursor); setPage(target); setCursors(current => { const next = current.slice(); next[target - 1] = cursor; return next; }); } catch (reason) { setError(reason); } finally { setBusy(false); } };
+  const columns: GridColumn<TouchedMigrationLoadUnit>[] = [{ key: "serial", label: "Touched serial", width: 100, mono: true, render: row => row.serial }];
   return <div className={`note${refused ? " warn" : ""}`} role="status"><strong>{rollbackOutcomeLabel(result.outcome)}.</strong>&nbsp;{refused
-    ? `${result.touchedUnitIds.length.toLocaleString()} touched unit${result.touchedUnitIds.length === 1 ? "" : "s"} stop the rollback. The rehearsal load stays in place.`
-    : `${result.unitsRemoved.toLocaleString()} units, ${result.eventsRemoved.toLocaleString()} facts, ${result.entitlementsRemoved.toLocaleString()} cover rows, ${result.replacementLinksRemoved.toLocaleString()} links and ${result.certificatesRemoved.toLocaleString()} certificates removed.`}</div>;
-}
-
-function openRefusals(load: MigrationApply) {
-  openDrawer({ eyebrow: load.rehearsal ? "Rehearsal load" : "Final load", title: "Refused units" }, <RefusalDrawer loadId={load.loadId} />);
-}
-
-function RefusalDrawer({ loadId }: { loadId: string }) {
-  const [result, setResult] = useState<MigrationApplyRefusalPage | null>(null); const [page, setPage] = useState(1);
-  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]); const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
-  const loadPage = useCallback(async (target: number, cursor?: string) => { setBusy(true); setError(null); try { setResult(await migrationApi.loadRefusals(loadId, cursor)); setPage(target); } catch (reason) { setError(reason); } finally { setBusy(false); } }, [loadId]);
-  useEffect(() => { void loadPage(1); }, [loadPage]);
-  const go = (target: number) => { const cursor = target > page ? result?.nextCursor ?? undefined : cursors[target - 1]; if (target < 1 || (target > page && !cursor)) return; setCursors(current => { const next = current.slice(); next[target - 1] = cursor; return next; }); void loadPage(target, cursor); };
-  const columns: GridColumn<MigrationApplyRefusal>[] = [
-    { key: "item", label: "Item code", width: 25, render: row => row.itemCode },
-    { key: "serial", label: "Serial", width: 30, render: row => row.serial ?? "No serial recorded" },
-    { key: "reasons", label: "Why it was refused", width: 45, render: row => row.reasons.map(refusalReasonLabel).join(" · ") },
-  ];
-  return <><p className="muted">Units are listed from the load in keyset order. Internal load and plan identifiers are not shown.</p><ErrorNote error={error} /><DataGrid columns={columns} page={{ rows: result?.items ?? [], total: (page - 1) * 50 + (result?.items.length ?? 0), page, pageSize: 50, continuation: result?.nextCursor ?? null, totalIsExact: false, hasMore: !!result?.nextCursor }} rowId={row => row.refusalId} onPage={go} loading={busy} emptyText="This load has no refused units." viewportHeight={520} /></>;
+    ? `${result.touchedUnitCount.toLocaleString()} touched unit${result.touchedUnitCount === 1 ? "" : "s"} stop the rollback. The rehearsal load stays in place.`
+    : `${result.unitsRemoved.toLocaleString()} units, ${result.eventsRemoved.toLocaleString()} facts, ${result.entitlementsRemoved.toLocaleString()} cover rows, ${result.replacementLinksRemoved.toLocaleString()} links and ${result.certificatesRemoved.toLocaleString()} certificates removed.`}
+    {refused && <div className="migration-touched-grid"><ErrorNote error={error} /><DataGrid columns={columns} page={{ rows: items, total: result.touchedUnitCount, page, pageSize: 50, continuation: nextCursor, totalIsExact: true, hasMore: !!nextCursor }} rowId={row => row.serial} onPage={target => void go(target)} loading={busy} emptyText="No touched serials were returned." viewportHeight={260} /></div>}
+  </div>;
 }
 
 function BatchTables({ batch, latest }: { batch: MigrationBatch | null; latest: boolean }) {

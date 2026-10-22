@@ -245,7 +245,7 @@ export interface MigrationApply {
   mapRunId: string;
   rehearsal: boolean;
   status: string;
-  requestedBy: string;
+  requestedByName: string;
   requestedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -272,14 +272,26 @@ export interface MigrationApplyRefusal {
   serial: string | null;
   reasons: string[];
 }
-export interface MigrationApplyRefusalPage { items: MigrationApplyRefusal[]; nextCursor: string | null }
+export interface MigrationApplyRefusalCount { reason: string; label: string; count: number }
+export interface MigrationApplyRefusalPage {
+  items: MigrationApplyRefusal[];
+  nextCursor: string | null;
+  total: number;
+  loadTotal: number;
+  countsByReason: MigrationApplyRefusalCount[];
+}
+
+export interface TouchedMigrationLoadUnit { serial: string }
+export interface TouchedMigrationLoadUnitPage { items: TouchedMigrationLoadUnit[]; nextCursor: string | null; total: number }
 
 export interface RollBackMigrationLoadResponse {
   loadId: string;
   outcome: string;
   unitsRemoved: number;
   eventsRemoved: number;
-  touchedUnitIds: string[];
+  touchedUnitCount: number;
+  touchedUnits: TouchedMigrationLoadUnit[];
+  touchedNextCursor: string | null;
   entitlementsRemoved: number;
   replacementLinksRemoved: number;
   certificatesRemoved: number;
@@ -459,6 +471,7 @@ export interface MigrationValidation {
   signoffRehearsal: boolean | null;
   signoffCreatedAt: string | null;
   signoffCreatedByName: string | null;
+  hasFinalSignoff: boolean;
   failureCode: string | null;
   failureDetail: string | null;
   checksTotal: number;
