@@ -27,7 +27,6 @@ public sealed class CanonicalisationService(
     IUserDirectory people,
     IItemFamilyNamePort itemFamilies) : IMigrationReviewCarryOver
 {
-    private const string BinaryCollation = "Latin1_General_100_BIN2";
     public const int MaximumExportRows = 100_000;
     private static readonly string[] MigrationReviewKinds =
     [
@@ -352,14 +351,25 @@ public sealed class CanonicalisationService(
     private async Task BuildReviewQueueAsync(MigrationCanonRun run, string sourceSystem,
         CancellationToken cancellationToken)
     {
-        var duplicates = await db.MigrationUnitCandidates.Where(candidate =>
-                candidate.TenantId == tenant.TenantId && candidate.RunId == run.RunId &&
-                db.MigrationUnitCandidates.Any(other => other.TenantId == candidate.TenantId &&
-                    other.RunId == candidate.RunId && other.ItemCode == candidate.ItemCode &&
-                    other.CanonicalSerial == candidate.CanonicalSerial &&
-                    other.CandidateId != candidate.CandidateId))
-            .OrderBy(candidate => candidate.ItemCode).ThenBy(candidate => candidate.CanonicalSerial)
-            .ThenBy(candidate => candidate.PrimarySourceKey).ToListAsync(cancellationToken);
+        var duplicates = await db.MigrationUnitCandidates.FromSqlInterpolated($$"""
+            WITH duplicate_keys AS
+            (
+                SELECT item_code, canonical_serial
+                  FROM [migration].[migration_unit_candidate]
+                 WHERE tenant_id = {{tenant.TenantId.Value}} AND run_id = {{run.RunId}}
+                 GROUP BY item_code, canonical_serial
+                HAVING COUNT_BIG(1) > 1
+            )
+            SELECT candidate.*
+              FROM [migration].[migration_unit_candidate] AS candidate
+              JOIN duplicate_keys
+                ON duplicate_keys.item_code = candidate.item_code
+               AND duplicate_keys.canonical_serial = candidate.canonical_serial
+             WHERE candidate.tenant_id = {{tenant.TenantId.Value}} AND candidate.run_id = {{run.RunId}};
+            """).IgnoreQueryFilters().AsNoTracking().ToListAsync(cancellationToken);
+        duplicates = duplicates.OrderBy(candidate => candidate.ItemCode)
+            .ThenBy(candidate => candidate.CanonicalSerial)
+            .ThenBy(candidate => candidate.PrimarySourceKey, StringComparer.Ordinal).ToList();
         var facts = await LineageFactsAsync(run, sourceSystem,
             duplicates.Select(row => row.PrimarySourceKey).ToList(), cancellationToken);
         foreach (var group in duplicates.GroupBy(row => new { row.ItemCode, row.CanonicalSerial }))
@@ -387,17 +397,44 @@ public sealed class CanonicalisationService(
         }
         await db.SaveChangesAsync(cancellationToken);
 
-        var cross = await db.MigrationUnitCandidates.Where(candidate => candidate.TenantId == tenant.TenantId &&
-                candidate.RunId == run.RunId && candidate.Disposition == CandidateDisposition.Active &&
-                db.MigrationUnitCandidates.Any(other => other.TenantId == candidate.TenantId &&
-                    other.RunId == candidate.RunId && other.Disposition == CandidateDisposition.Active &&
-                    other.ItemCode != candidate.ItemCode &&
-                    ((candidate.StoredSerial != null && other.StoredSerial != null &&
-                      EF.Functions.Collate(candidate.StoredSerial, BinaryCollation) ==
-                      EF.Functions.Collate(other.StoredSerial, BinaryCollation)) ||
-                     other.TrimmedSerial == candidate.TrimmedSerial ||
-                     other.FamilyNormalisedSerial == candidate.FamilyNormalisedSerial)))
-            .OrderBy(candidate => candidate.PrimarySourceKey).ToListAsync(cancellationToken);
+        var cross = await db.MigrationUnitCandidates.FromSqlInterpolated($$"""
+            WITH candidate_keys AS
+            (
+                SELECT candidate_id, item_code, N'exact' AS match_rule,
+                       stored_serial COLLATE Latin1_General_100_BIN2 AS match_key
+                  FROM [migration].[migration_unit_candidate]
+                 WHERE tenant_id = {{tenant.TenantId.Value}} AND run_id = {{run.RunId}}
+                   AND disposition = N'active' AND stored_serial IS NOT NULL
+                UNION ALL
+                SELECT candidate_id, item_code, N'trimmed_upper', trimmed_serial
+                  FROM [migration].[migration_unit_candidate]
+                 WHERE tenant_id = {{tenant.TenantId.Value}} AND run_id = {{run.RunId}}
+                   AND disposition = N'active'
+                UNION ALL
+                SELECT candidate_id, item_code, N'family_normalised', family_normalised_serial
+                  FROM [migration].[migration_unit_candidate]
+                 WHERE tenant_id = {{tenant.TenantId.Value}} AND run_id = {{run.RunId}}
+                   AND disposition = N'active'
+            ), collision_keys AS
+            (
+                SELECT match_rule, match_key
+                  FROM candidate_keys
+                 GROUP BY match_rule, match_key
+                HAVING MIN(item_code COLLATE Latin1_General_100_BIN2) <>
+                       MAX(item_code COLLATE Latin1_General_100_BIN2)
+            ), matched_candidates AS
+            (
+                SELECT DISTINCT candidate_keys.candidate_id
+                  FROM candidate_keys
+                  JOIN collision_keys ON collision_keys.match_rule = candidate_keys.match_rule
+                                     AND collision_keys.match_key = candidate_keys.match_key
+            )
+            SELECT candidate.*
+              FROM [migration].[migration_unit_candidate] AS candidate
+              JOIN matched_candidates ON matched_candidates.candidate_id = candidate.candidate_id
+             WHERE candidate.tenant_id = {{tenant.TenantId.Value}} AND candidate.run_id = {{run.RunId}};
+            """).IgnoreQueryFilters().AsNoTracking().ToListAsync(cancellationToken);
+        cross = cross.OrderBy(candidate => candidate.PrimarySourceKey, StringComparer.Ordinal).ToList();
         var consumed = new HashSet<Guid>();
         foreach (var match in CrossGroups(cross))
         {
@@ -760,38 +797,47 @@ public sealed class CanonicalisationService(
                 HasContract = group.Any(row => row.SourceKind == CandidateSourceKind.Contract ||
                     row.SourceKind == CandidateSourceKind.ContractLine),
             }).ToListAsync(cancellationToken);
-        var receipts = await (from candidateEvent in db.MigrationEventCandidates.AsNoTracking()
-                              join line in db.Set<TransactionLogLineStagingRow>().AsNoTracking()
-                                  on new
-                                  {
-                                      candidateEvent.TenantId,
-                                      BatchId = run.BatchId,
-                                      SourceSystem = sourceSystem,
-                                      SourceKey = candidateEvent.TransactionSourceKey,
-                                  }
-                                  equals new
-                                  {
-                                      line.TenantId,
-                                      line.BatchId,
-                                      line.SourceSystem,
-                                      SourceKey = line.SourcePk,
-                                  }
-                              join header in db.Set<TransactionLogHeaderStagingRow>().AsNoTracking()
-                                  on new { line.TenantId, line.BatchId, line.SourceSystem, line.LogEntry }
-                                  equals new { header.TenantId, header.BatchId, header.SourceSystem, header.LogEntry }
-                              where candidateEvent.TenantId == tenant.TenantId && candidateEvent.RunId == run.RunId &&
-                                    sourceKeys.Contains(candidateEvent.SerialMasterSourceKey) &&
-                                    line.AbsentSinceBatchId == null && header.AbsentSinceBatchId == null &&
-                                    (line.Quantity ?? 0) > 0
-                              group header by candidateEvent.SerialMasterSourceKey into grouped
-                              select new
-                              {
-                                  SourceKey = grouped.Key,
-                                  FirstReceipt = grouped.Min(row => row.DocumentDate ?? row.CreatedDate),
-                                  ReceiptKey = grouped.OrderBy(row => row.DocumentDate ?? row.CreatedDate)
-                                      .Select(row => (row.DocumentEntry ?? 0) + "|" + (row.DocumentLine ?? 0))
-                                      .FirstOrDefault(),
-                              }).ToListAsync(cancellationToken);
+        var receiptRows = await (from candidateEvent in db.MigrationEventCandidates.AsNoTracking()
+                                 join line in db.Set<TransactionLogLineStagingRow>().AsNoTracking()
+                                     on new
+                                     {
+                                         candidateEvent.TenantId,
+                                         BatchId = run.BatchId,
+                                         SourceSystem = sourceSystem,
+                                         SourceKey = candidateEvent.TransactionSourceKey,
+                                     }
+                                     equals new
+                                     {
+                                         line.TenantId,
+                                         line.BatchId,
+                                         line.SourceSystem,
+                                         SourceKey = line.SourcePk,
+                                     }
+                                 join header in db.Set<TransactionLogHeaderStagingRow>().AsNoTracking()
+                                     on new { line.TenantId, line.BatchId, line.SourceSystem, line.LogEntry }
+                                     equals new { header.TenantId, header.BatchId, header.SourceSystem, header.LogEntry }
+                                 where candidateEvent.TenantId == tenant.TenantId &&
+                                       candidateEvent.RunId == run.RunId &&
+                                       sourceKeys.Contains(candidateEvent.SerialMasterSourceKey) &&
+                                       line.AbsentSinceBatchId == null && header.AbsentSinceBatchId == null &&
+                                       (line.Quantity ?? 0) > 0
+                                 select new
+                                 {
+                                     SourceKey = candidateEvent.SerialMasterSourceKey,
+                                     At = header.DocumentDate ?? header.CreatedDate,
+                                     Entry = header.DocumentEntry ?? 0,
+                                     Line = header.DocumentLine ?? 0,
+                                 }).ToListAsync(cancellationToken);
+        var receipts = receiptRows.GroupBy(row => row.SourceKey, StringComparer.Ordinal).Select(group =>
+        {
+            var first = group.OrderBy(row => row.At).ThenBy(row => row.Entry).ThenBy(row => row.Line).First();
+            return new
+            {
+                SourceKey = group.Key,
+                FirstReceipt = first.At,
+                ReceiptKey = first.Entry + "|" + first.Line,
+            };
+        }).ToList();
         var result = sourceKeys.Distinct(StringComparer.Ordinal).ToDictionary(key => key,
             CandidateFacts.Empty, StringComparer.Ordinal);
         foreach (var row in events) result[row.SourceKey] = result[row.SourceKey] with { Transactions = row.Transactions };

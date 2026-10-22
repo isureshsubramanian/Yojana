@@ -4,6 +4,50 @@ The benchmark tool targets an explicitly named SQL Server database. Never point 
 database. The P6 concurrency run uses a benchmark tenant prepared by this tool and signs in through the real web API.
 Passwords come from environment variables and are never written to a command line, report or file.
 
+## Migration source and end-to-end rehearsal
+
+`migration-source` recreates the synthetic source tables from the extraction protocol itself, then bulk-loads a
+repeatable first-customer-shaped data set. A database name uses `YOJANA_TEST_SQL` (or `YOJANA_BENCH_SQL`) only as the
+server and credential template; a full connection string is also accepted. Never use a live source or target.
+
+```sh
+dotnet run --project tools/Yojana.Bench -c Release -- migration-source \
+  --serials 20000 --seed 36 --connection yojana_src_p9t36
+
+dotnet run --project tools/Yojana.Bench -c Release -- migration-rehearsal \
+  --target yojana_test_p9t36 --source yojana_src_p9t36 --tenant new \
+  --seed 36 --out artifacts/p9t36-rehearsal
+```
+
+The fixed profile is deliberately named in `MigrationSourceProfile`: 40 item codes in eight IT-hardware families and
+50 contract templates. Of the requested serial population, the generator targets 65% delivered, 5% returned, 5%
+transferred, 1% cancelled-delivery pairs, 2% credit memos, 2% goods issues, 85% equipment cards, 35% service
+contracts, 1% replacements, 2% multi-partner cards, and 1% cards whose customer differs from the last delivery.
+Anomalies target 0.4% duplicates after normalisation, 1% whitespace/case variants, 0.3% placeholders, and 0.2%
+orphan cards. Small data sets use at least one row for the branches where exercising the branch matters.
+
+The rehearsal invokes the production extraction, profiling, canonicalisation, reconstruction, template decomposition,
+mapping, validation, final-load, delta-load and rollback services. Its only synthetic decisions are explicit: merge an
+unambiguous same-item duplicate into the suggested candidate, accept recorded history, leave an orphan excluded for
+source correction, and keep every other ambiguous record apart. It approves every unambiguous template proposal,
+publishes the resulting drafts, and selects published base and supplier fallback policies through the existing tenant
+mapping setting. Those choices belong to the rehearsal tenant only and are not production defaults.
+
+After the final-load watermark, the source mutation adds 0.5% serials, changes cover on 1% of non-contract cards,
+changes owners on 0.2% of different non-contract cards, and removes 0.1% of serial masters. The runner requires all
+four finding kinds, undoes the delta, undoes the final load, and verifies that no migrated-unit registration remains.
+On failure it records the completed phases and attempts both rollbacks; the report says if cleanup itself fails. A
+failed run is not resumed in place: inspect its report, correct the cause, and use a new rehearsal tenant. Source
+generation is deterministic for `(serials, seed)` and safely recreates only the extraction-protocol tables.
+The undos remove loaded unit data, but retain the tenant, settings, policies, migration batches, decisions and
+validation records as rehearsal evidence. Use a disposable target or rehearsal tenant when a pristine reset matters.
+
+Each run writes JSON and a Markdown table with wall time, rows in/out, a lower-bound SQL command count, database size,
+and the two slowest observed statements per phase. Add `--capture-plans` to a separate diagnostic run to write the two
+slowest actual post-execution plans as `.sqlplan` files. Actual-plan collection adds SQL Server instrumentation work,
+so do not use that run for the scaling curve. The Codex SQL container is Express: keep local runs at or below 20,000
+serials; run 420,000 only on the designated benchmark server.
+
 ## Build and migrate the benchmark database
 
 Set `YOJANA_BENCH_SQL` to the full connection string for the benchmark database and set

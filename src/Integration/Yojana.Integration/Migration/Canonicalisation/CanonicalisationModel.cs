@@ -54,6 +54,9 @@ internal static class CanonicalisationModel
             builder.Property(x => x.Note).HasMaxLength(2000);
             builder.HasIndex(x => new { x.TenantId, x.RunId, x.PrimarySourceKey }).IsUnique();
             builder.HasIndex(x => new { x.TenantId, x.RunId, x.ItemCode, x.CanonicalSerial });
+            builder.HasIndex(x => new { x.TenantId, x.RunId, x.ItemCode, x.StoredSerial });
+            builder.HasIndex(x => new { x.TenantId, x.RunId, x.ItemCode, x.TrimmedSerial });
+            builder.HasIndex(x => new { x.TenantId, x.RunId, x.ItemCode, x.FamilyNormalisedSerial });
             builder.HasIndex(x => new { x.TenantId, x.RunId, x.Family, x.FamilyNormalisedSerial });
             builder.HasOne<MigrationCanonRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.RunId })
                 .OnDelete(DeleteBehavior.Cascade);

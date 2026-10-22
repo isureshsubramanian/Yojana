@@ -189,26 +189,15 @@ public sealed class CanonicalisationWriter(IntegrationDbContext db, ITenantConte
 
     private static string CardSql(string values) => $$"""
         WITH {{FamilyCtes(values)}},
-        matches AS
+        card_keys AS
         (
-            SELECT card.source_pk AS card_source_key, candidate.candidate_id,
-                   candidate.primary_source_key,
-                   CASE WHEN card.internal_serial COLLATE Latin1_General_100_BIN2 = candidate.stored_serial COLLATE Latin1_General_100_BIN2
-                             OR (card.manufacturer_serial IS NOT NULL AND master.manufacturer_serial IS NOT NULL
-                                 AND card.manufacturer_serial COLLATE Latin1_General_100_BIN2 = master.manufacturer_serial COLLATE Latin1_General_100_BIN2) THEN 1
-                        WHEN card.normalised_internal_serial COLLATE Latin1_General_100_BIN2 = candidate.trimmed_serial COLLATE Latin1_General_100_BIN2 THEN 2
-                        WHEN [migration].[canonical_serial](card.internal_serial, family_rule.strip_hyphens,
-                             family_rule.strip_spaces, family_rule.strip_leading_zeros) COLLATE Latin1_General_100_BIN2 =
-                             candidate.family_normalised_serial COLLATE Latin1_General_100_BIN2 THEN 3 END AS priority,
+            SELECT card.source_pk AS card_source_key, card.item_code, card.internal_serial,
+                   card.manufacturer_serial, card.normalised_internal_serial,
+                   [migration].[canonical_serial](card.internal_serial, family_rule.strip_hyphens,
+                       family_rule.strip_spaces, family_rule.strip_leading_zeros)
+                       COLLATE Latin1_General_100_BIN2 AS family_key,
                    card.warranty_start, card.warranty_end
               FROM [migration].[stg_src_oins] AS card
-              JOIN [migration].[migration_unit_candidate] AS candidate
-                ON candidate.tenant_id = card.tenant_id AND candidate.run_id = @run
-               AND candidate.item_code = card.item_code
-              JOIN [migration].[stg_src_osrn] AS master
-                ON master.tenant_id = candidate.tenant_id AND master.batch_id = @batch
-               AND master.source_system = @source AND master.absent_since_batch_id IS NULL
-               AND master.source_pk = candidate.primary_source_key
               OUTER APPLY
               (
                   SELECT TOP (1) family_rules.* FROM family_rules
@@ -217,10 +206,58 @@ public sealed class CanonicalisationWriter(IntegrationDbContext db, ITenantConte
               ) AS family_rule
              WHERE card.tenant_id = @tenant AND card.batch_id = @batch
                AND card.source_system = @source AND card.absent_since_batch_id IS NULL
+        ),
+        matches AS
+        (
+            SELECT card.card_source_key, candidate.candidate_id, candidate.primary_source_key,
+                   1 AS priority, card.warranty_start, card.warranty_end
+              FROM card_keys AS card
+              JOIN [migration].[migration_unit_candidate] AS candidate
+                ON candidate.tenant_id = @tenant AND candidate.run_id = @run
+               AND candidate.item_code = card.item_code
+               AND candidate.stored_serial COLLATE Latin1_General_100_BIN2 =
+                   card.internal_serial COLLATE Latin1_General_100_BIN2
+            UNION ALL
+            SELECT card.card_source_key, candidate.candidate_id, candidate.primary_source_key,
+                   1, card.warranty_start, card.warranty_end
+              FROM card_keys AS card
+              JOIN [migration].[migration_unit_candidate] AS candidate
+                ON candidate.tenant_id = @tenant AND candidate.run_id = @run
+               AND candidate.item_code = card.item_code
+              JOIN [migration].[stg_src_osrn] AS master
+                ON master.tenant_id = candidate.tenant_id AND master.batch_id = @batch
+               AND master.source_system = @source AND master.absent_since_batch_id IS NULL
+               AND master.source_pk = candidate.primary_source_key
+               AND master.manufacturer_serial IS NOT NULL AND card.manufacturer_serial IS NOT NULL
+               AND master.manufacturer_serial COLLATE Latin1_General_100_BIN2 =
+                   card.manufacturer_serial COLLATE Latin1_General_100_BIN2
+            UNION ALL
+            SELECT card.card_source_key, candidate.candidate_id, candidate.primary_source_key,
+                   2, card.warranty_start, card.warranty_end
+              FROM card_keys AS card
+              JOIN [migration].[migration_unit_candidate] AS candidate
+                ON candidate.tenant_id = @tenant AND candidate.run_id = @run
+               AND candidate.item_code = card.item_code
+               AND candidate.trimmed_serial COLLATE Latin1_General_100_BIN2 =
+                   card.normalised_internal_serial COLLATE Latin1_General_100_BIN2
+            UNION ALL
+            SELECT card.card_source_key, candidate.candidate_id, candidate.primary_source_key,
+                   3, card.warranty_start, card.warranty_end
+              FROM card_keys AS card
+              JOIN [migration].[migration_unit_candidate] AS candidate
+                ON candidate.tenant_id = @tenant AND candidate.run_id = @run
+               AND candidate.item_code = card.item_code
+               AND candidate.family_normalised_serial COLLATE Latin1_General_100_BIN2 = card.family_key
+        ), deduplicated AS
+        (
+            SELECT card_source_key, candidate_id, primary_source_key, warranty_start, warranty_end,
+                   MIN(priority) AS priority
+              FROM matches
+             GROUP BY card_source_key, candidate_id, primary_source_key, warranty_start, warranty_end
         ), ranked AS
         (
             SELECT *, MIN(priority) OVER (PARTITION BY card_source_key) AS best_priority
-              FROM matches WHERE priority IS NOT NULL
+              FROM deduplicated
         ), chosen AS
         (
             SELECT *, COUNT_BIG(1) OVER (PARTITION BY card_source_key, priority) AS best_count
@@ -257,26 +294,16 @@ public sealed class CanonicalisationWriter(IntegrationDbContext db, ITenantConte
 
     private static string ContractSql(string values) => $$"""
         WITH {{FamilyCtes(values)}},
-        matches AS
+        line_keys AS
         (
-            SELECT line.source_pk AS line_source_key, line.contract_id, candidate.candidate_id,
-                   candidate.primary_source_key,
-                   CASE WHEN line.internal_serial COLLATE Latin1_General_100_BIN2 = candidate.stored_serial COLLATE Latin1_General_100_BIN2
-                             OR (line.manufacturer_serial IS NOT NULL AND master.manufacturer_serial IS NOT NULL
-                                 AND line.manufacturer_serial COLLATE Latin1_General_100_BIN2 = master.manufacturer_serial COLLATE Latin1_General_100_BIN2) THEN 1
-                        WHEN UPPER(TRIM(line.internal_serial)) COLLATE Latin1_General_100_BIN2 = candidate.trimmed_serial COLLATE Latin1_General_100_BIN2 THEN 2
-                        WHEN [migration].[canonical_serial](line.internal_serial, family_rule.strip_hyphens,
-                             family_rule.strip_spaces, family_rule.strip_leading_zeros) COLLATE Latin1_General_100_BIN2 =
-                             candidate.family_normalised_serial COLLATE Latin1_General_100_BIN2 THEN 3 END AS priority,
+            SELECT line.source_pk AS line_source_key, line.contract_id, line.item_code,
+                   line.internal_serial, line.manufacturer_serial,
+                   UPPER(TRIM(line.internal_serial)) COLLATE Latin1_General_100_BIN2 AS trimmed_key,
+                   [migration].[canonical_serial](line.internal_serial, family_rule.strip_hyphens,
+                       family_rule.strip_spaces, family_rule.strip_leading_zeros)
+                       COLLATE Latin1_General_100_BIN2 AS family_key,
                    line.start_date, line.end_date
               FROM [migration].[stg_src_ctr1] AS line
-              JOIN [migration].[migration_unit_candidate] AS candidate
-                ON candidate.tenant_id = line.tenant_id AND candidate.run_id = @run
-               AND candidate.item_code = line.item_code
-              JOIN [migration].[stg_src_osrn] AS master
-                ON master.tenant_id = candidate.tenant_id AND master.batch_id = @batch
-               AND master.source_system = @source AND master.absent_since_batch_id IS NULL
-               AND master.source_pk = candidate.primary_source_key
               OUTER APPLY
               (
                   SELECT TOP (1) family_rules.* FROM family_rules
@@ -285,10 +312,57 @@ public sealed class CanonicalisationWriter(IntegrationDbContext db, ITenantConte
               ) AS family_rule
              WHERE line.tenant_id = @tenant AND line.batch_id = @batch
                AND line.source_system = @source AND line.absent_since_batch_id IS NULL
+        ),
+        matches AS
+        (
+            SELECT line.line_source_key, line.contract_id, candidate.candidate_id,
+                   candidate.primary_source_key, 1 AS priority, line.start_date, line.end_date
+              FROM line_keys AS line
+              JOIN [migration].[migration_unit_candidate] AS candidate
+                ON candidate.tenant_id = @tenant AND candidate.run_id = @run
+               AND candidate.item_code = line.item_code
+               AND candidate.stored_serial COLLATE Latin1_General_100_BIN2 =
+                   line.internal_serial COLLATE Latin1_General_100_BIN2
+            UNION ALL
+            SELECT line.line_source_key, line.contract_id, candidate.candidate_id,
+                   candidate.primary_source_key, 1, line.start_date, line.end_date
+              FROM line_keys AS line
+              JOIN [migration].[migration_unit_candidate] AS candidate
+                ON candidate.tenant_id = @tenant AND candidate.run_id = @run
+               AND candidate.item_code = line.item_code
+              JOIN [migration].[stg_src_osrn] AS master
+                ON master.tenant_id = candidate.tenant_id AND master.batch_id = @batch
+               AND master.source_system = @source AND master.absent_since_batch_id IS NULL
+               AND master.source_pk = candidate.primary_source_key
+               AND master.manufacturer_serial IS NOT NULL AND line.manufacturer_serial IS NOT NULL
+               AND master.manufacturer_serial COLLATE Latin1_General_100_BIN2 =
+                   line.manufacturer_serial COLLATE Latin1_General_100_BIN2
+            UNION ALL
+            SELECT line.line_source_key, line.contract_id, candidate.candidate_id,
+                   candidate.primary_source_key, 2, line.start_date, line.end_date
+              FROM line_keys AS line
+              JOIN [migration].[migration_unit_candidate] AS candidate
+                ON candidate.tenant_id = @tenant AND candidate.run_id = @run
+               AND candidate.item_code = line.item_code
+               AND candidate.trimmed_serial COLLATE Latin1_General_100_BIN2 = line.trimmed_key
+            UNION ALL
+            SELECT line.line_source_key, line.contract_id, candidate.candidate_id,
+                   candidate.primary_source_key, 3, line.start_date, line.end_date
+              FROM line_keys AS line
+              JOIN [migration].[migration_unit_candidate] AS candidate
+                ON candidate.tenant_id = @tenant AND candidate.run_id = @run
+               AND candidate.item_code = line.item_code
+               AND candidate.family_normalised_serial COLLATE Latin1_General_100_BIN2 = line.family_key
+        ), deduplicated AS
+        (
+            SELECT line_source_key, contract_id, candidate_id, primary_source_key, start_date, end_date,
+                   MIN(priority) AS priority
+              FROM matches
+             GROUP BY line_source_key, contract_id, candidate_id, primary_source_key, start_date, end_date
         ), ranked AS
         (
             SELECT *, MIN(priority) OVER (PARTITION BY line_source_key) AS best_priority
-              FROM matches WHERE priority IS NOT NULL
+              FROM deduplicated
         ), chosen AS
         (
             SELECT *, COUNT_BIG(1) OVER (PARTITION BY line_source_key, priority) AS best_count

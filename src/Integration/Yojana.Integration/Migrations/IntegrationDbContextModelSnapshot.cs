@@ -3465,6 +3465,15 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "RunId", "ItemCode", "CanonicalSerial")
                         .HasDatabaseName("ix_migration_unit_candidate_tenant_id_run_id_item_code_canonical_serial");
 
+                    b.HasIndex("TenantId", "RunId", "ItemCode", "FamilyNormalisedSerial")
+                        .HasDatabaseName("ix_migration_unit_candidate_tenant_id_run_id_item_code_family_normalised_serial");
+
+                    b.HasIndex("TenantId", "RunId", "ItemCode", "StoredSerial")
+                        .HasDatabaseName("ix_migration_unit_candidate_tenant_id_run_id_item_code_stored_serial");
+
+                    b.HasIndex("TenantId", "RunId", "ItemCode", "TrimmedSerial")
+                        .HasDatabaseName("ix_migration_unit_candidate_tenant_id_run_id_item_code_trimmed_serial");
+
                     b.ToTable("migration_unit_candidate", "migration", t =>
                         {
                             t.HasCheckConstraint("ck_migration_unit_candidate_disposition", "disposition IN ('active','review','merged','excluded')");

@@ -272,17 +272,7 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
             }
             await using var source = new SqlConnection(ConnectionString(database));
             await source.OpenAsync();
-            foreach (var table in SourceProtocol.Tables)
-            foreach (var read in table.Reads)
-            {
-                var columns = string.Join(", ", table.Columns
-                    .Select(column => (Column: column, Name: SourceColumn(read, column)))
-                    .Where(item => item.Name is not null)
-                    .Select(item => $"[{Escape(item.Name!)}] {Declaration(item.Column)} NULL"));
-                await using var command = new SqlCommand(
-                    $"CREATE TABLE [dbo].[{Escape(read.SourceTable)}] ({columns});", source);
-                await command.ExecuteNonQueryAsync();
-            }
+            await SourceProtocolDatabase.CreateSchemaAsync(source);
         }
 
         public static Dictionary<string, object?> Serial(string item, int number, string serial, string notes) => new()
@@ -322,7 +312,8 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
         private static async Task InsertAsync(SqlConnection connection, SourceTableProtocol table, SourceRead read,
             IReadOnlyDictionary<string, object?> values)
         {
-            var projected = table.Columns.Select(column => (Column: column, Name: SourceColumn(read, column)))
+            var projected = table.Columns.Select(column => (Column: column,
+                    Name: SourceProtocolDatabase.SourceColumn(read, column)))
                 .Where(item => item.Name is not null).ToList();
             var names = projected.Select(x => $"[{Escape(x.Name!)}]").ToList();
             var parameters = projected.Select((_, index) => $"@p{index}").ToList();
@@ -345,9 +336,9 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
             await using var connection = new SqlConnection(ConnectionString(database));
             await connection.OpenAsync();
             var updateColumns = updates.Keys.Select((property, index) =>
-                $"[{Escape(SourceColumn(table.Reads[0], Column(table, property))!)}] = @u{index}").ToList();
+                $"[{Escape(SourceProtocolDatabase.SourceColumn(table.Reads[0], Column(table, property))!)}] = @u{index}").ToList();
             var keyColumns = keys.Keys.Select((property, index) =>
-                $"[{Escape(SourceColumn(table.Reads[0], Column(table, property))!)}] = @k{index}").ToList();
+                $"[{Escape(SourceProtocolDatabase.SourceColumn(table.Reads[0], Column(table, property))!)}] = @k{index}").ToList();
             await using var command = new SqlCommand($"UPDATE [dbo].[{Escape(table.Reads[0].SourceTable)}] SET " +
                 string.Join(',', updateColumns) + " WHERE " + string.Join(" AND ", keyColumns) + ";", connection);
             var index = 0;
@@ -364,7 +355,7 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
             await using var connection = new SqlConnection(ConnectionString(database));
             await connection.OpenAsync();
             var keyColumns = keys.Keys.Select((property, index) =>
-                $"[{Escape(SourceColumn(table.Reads[0], Column(table, property))!)}] = @k{index}").ToList();
+                $"[{Escape(SourceProtocolDatabase.SourceColumn(table.Reads[0], Column(table, property))!)}] = @k{index}").ToList();
             await using var command = new SqlCommand($"DELETE [dbo].[{Escape(table.Reads[0].SourceTable)}] WHERE " +
                 string.Join(" AND ", keyColumns) + ";", connection);
             var index = 0;
@@ -442,20 +433,6 @@ public sealed class MigrationExtractionTests(IntegrationHostFixture fixture)
 
         private static RawColumn Column(SourceTableProtocol table, string property) =>
             table.Columns.Single(x => x.PropertyName == property);
-        private static string? SourceColumn(SourceRead read, RawColumn column)
-        {
-            if (read.TextConstants?.ContainsKey(column.PropertyName) == true ||
-                read.NullProperties?.Contains(column.PropertyName) == true) return null;
-            return read.SourceColumnOverrides?.GetValueOrDefault(column.PropertyName) ?? column.SourceName;
-        }
-        private static string Declaration(RawColumn column) => column.Kind switch
-        {
-            RawColumnKind.Int32 => "int",
-            RawColumnKind.Int64 => "bigint",
-            RawColumnKind.Decimal => "decimal(28,8)",
-            RawColumnKind.DateTime => "datetime2(3)",
-            _ => $"nvarchar({column.MaxLength!.Value.ToString(CultureInfo.InvariantCulture)})",
-        };
         private static string Escape(string value) => value.Replace("]", "]]", StringComparison.Ordinal);
     }
 }
