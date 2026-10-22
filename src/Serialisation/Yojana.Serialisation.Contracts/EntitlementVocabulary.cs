@@ -104,6 +104,7 @@ public static class EntitlementClosedReason
     public const string VoidedDocumentCorrection = "voided_document_correction";
     public const string SourceDocumentCorrected = "source_document_corrected";
     public const string IncludedInError = "included_in_error";
+    public const string MigrationDeltaReplaced = "migration_delta_replaced";
     /// <summary>The unit was resold and the policy does not let cover follow it (case 45).</summary>
     public const string NotTransferable = "not_transferable";
 }
