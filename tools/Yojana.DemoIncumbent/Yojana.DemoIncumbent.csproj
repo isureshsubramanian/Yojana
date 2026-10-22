@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- P9-T32 shapes the owner's isolated demo company through its supported service API. Never shipped. -->
+  </PropertyGroup>
+</Project>
