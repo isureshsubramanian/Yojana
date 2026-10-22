@@ -131,6 +131,7 @@ public sealed class InvitationService(
         db.Memberships.Add(new UserTenantMembership
         {
             UserId = user.Id, TenantId = invitation.TenantId, Roles = invitation.Roles.ToList(),
+            CreatedAt = clock.UtcNow,
         });
         invitation.AcceptedAt = clock.UtcNow;
         invitation.AcceptedUserId = user.Id;
@@ -158,7 +159,8 @@ public sealed class InvitationService(
         if (membership is null)
         {
             db.Memberships.Add(new UserTenantMembership
-                { UserId = user.Id, TenantId = invitation.TenantId, Roles = invitation.Roles.ToList() });
+                { UserId = user.Id, TenantId = invitation.TenantId, Roles = invitation.Roles.ToList(),
+                    CreatedAt = clock.UtcNow });
         }
         else
         {
@@ -166,6 +168,7 @@ public sealed class InvitationService(
             membership.DeactivatedByUserId = null;
             membership.CustomerPartyRef = null;
             membership.Roles = invitation.Roles.ToList();
+            membership.CreatedAt = clock.UtcNow;
         }
         invitation.AcceptedAt = clock.UtcNow;
         invitation.AcceptedUserId = user.Id;

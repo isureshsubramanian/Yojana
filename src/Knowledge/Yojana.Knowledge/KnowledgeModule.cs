@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Yojana.Knowledge.Data;
 using Yojana.Knowledge.Questions;
 using Yojana.Knowledge.Entries;
+using Yojana.Knowledge.Training;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Scheduling;
@@ -26,8 +27,16 @@ public static class KnowledgeModule
         builder.Services.AddScoped(sp => new EntryTagLabelResolver(
             sp.GetRequiredService<Yojana.Serialisation.Contracts.IItemFamilyNamePort>(),
             sp.GetRequiredService<Yojana.Serialisation.Contracts.IClaimCauseNamePort>()));
+        builder.Services.AddScoped(sp => new WrittenAgainstResolver(
+            sp.GetRequiredService<Yojana.Serialisation.Contracts.IPolicyVersionPickerPort>(),
+            sp.GetRequiredService<ScreenReferenceCatalogue>()));
         builder.Services.AddScoped<KnowledgeEntryQueries>();
         builder.Services.AddScoped<KnowledgeScreenQueries>();
+        builder.Services.AddSingleton<ScreenReferenceCatalogue>();
+        builder.Services.AddScoped(sp => new TrainingSettings(sp.GetRequiredService<ITenantSettings>()));
+        builder.Services.AddScoped(sp => new TrainingMemberDirectory(
+            sp.GetRequiredService<Yojana.Platform.Contracts.Security.ITenantTrainingDirectory>()));
+        builder.Services.AddScoped<TrainingPathQueries>();
         builder.Services.AddScoped<QuestionQueries>();
         builder.Services.AddScoped(sp => new QuestionNotificationDefaults(
             sp.GetRequiredService<ITenantSettings>()));

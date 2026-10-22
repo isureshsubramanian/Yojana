@@ -119,6 +119,8 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             b.HasKey(m => new { m.UserId, m.TenantId });
             b.HasOne(m => m.User).WithMany(u => u.Memberships).HasForeignKey(m => m.UserId);
             b.HasOne(m => m.Tenant).WithMany().HasForeignKey(m => m.TenantId);
+            b.Property(m => m.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+            b.HasIndex(m => new { m.TenantId, m.CreatedAt, m.UserId });
             b.Property(m => m.Version).IsRowVersion();
             b.HasOne<AppUser>().WithMany().HasForeignKey(m => m.DeactivatedByUserId).OnDelete(DeleteBehavior.NoAction);
         });

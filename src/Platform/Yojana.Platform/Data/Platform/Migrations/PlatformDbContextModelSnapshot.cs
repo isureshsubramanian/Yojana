@@ -798,6 +798,12 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("tenant_id");
 
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
                     b.Property<Guid?>("CustomerPartyRef")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("customer_party_ref");
@@ -828,8 +834,8 @@ namespace Yojana.Platform.Data.Platform.Migrations
                     b.HasIndex("DeactivatedByUserId")
                         .HasDatabaseName("ix_user_tenant_membership_deactivated_by_user_id");
 
-                    b.HasIndex("TenantId")
-                        .HasDatabaseName("ix_user_tenant_membership_tenant_id");
+                    b.HasIndex("TenantId", "CreatedAt", "UserId")
+                        .HasDatabaseName("ix_user_tenant_membership_tenant_id_created_at_user_id");
 
                     b.ToTable("user_tenant_membership", "platform");
                 });

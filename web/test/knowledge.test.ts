@@ -10,6 +10,9 @@ const routes = readFileSync(new URL("../src/routes.tsx", import.meta.url), "utf8
 const styles = readFileSync(new URL("../src/questions/questions.css", import.meta.url), "utf8");
 const settings = readFileSync(new URL("../src/settings/Settings.tsx", import.meta.url), "utf8");
 const screenChanges = readFileSync(new URL("../src/settings/KnowledgeScreenChanges.tsx", import.meta.url), "utf8");
+const training = readFileSync(new URL("../src/questions/TrainingPaths.tsx", import.meta.url), "utf8");
+const welcome = readFileSync(new URL("../src/questions/TrainingWelcomeCard.tsx", import.meta.url), "utf8");
+const overview = readFileSync(new URL("../src/pages/Overview.tsx", import.meta.url), "utf8");
 
 test("Knowledge base searches its server-paged table as you type and browses by role and task", () => {
   assert.match(routes, /path: "knowledge".*KnowledgeBase/s);
@@ -65,15 +68,44 @@ test("Tenant settings let an administrator record a referenced screen change", (
   assert.match(screenChanges, /recorded and audited/);
 });
 
-test("Only the approved live sub-navigation items are visible", () => {
-  for (const label of ["My questions", "Knowledge base", "Entries to review"])
+test("Approved sub-navigation makes Training paths live while Reports stays hidden", () => {
+  for (const label of ["My questions", "Knowledge base", "Entries to review", "Training paths"])
     assert.ok(subnav.includes(label), label);
-  for (const hidden of ["Training paths", "Reports"])
+  for (const hidden of ["Reports"])
     assert.doesNotMatch(subnav, new RegExp(hidden));
 });
 
+test("Training paths implement ordered reading, reviewer maintenance and team-safe progress", () => {
+  assert.match(routes, /path: "knowledge\/training".*TrainingPaths/s);
+  assert.match(training, /trainingApi\.save/);
+  assert.match(training, /Move .* up/);
+  assert.match(training, /Remove/);
+  assert.match(training, /Mark as read/);
+  assert.match(training, /item\.warning/);
+  assert.match(training, /Questions asked in first 30 days · team total only/);
+  assert.match(training, /no scores, rankings or per-person question counts/i);
+  assert.doesNotMatch(training, /person\.questions/);
+});
+
+test("Overview shows the dismissible first-sign-in training card", () => {
+  assert.match(overview, /<TrainingWelcomeCard \/>/);
+  assert.match(welcome, /trainingApi\.welcome/);
+  assert.match(welcome, /trainingApi\.dismissWelcome/);
+  assert.match(welcome, /Start reading/);
+  assert.match(welcome, /Questions → Training paths/);
+});
+
+test("Entry editor uses policy-version and screen pickers and marks unknown legacy references", () => {
+  assert.match(editor, /knowledgeApi\.policyVersionChoices/);
+  assert.match(editor, /knowledgeApi\.screenChoices/);
+  assert.match(editor, /Search policy name or code/);
+  assert.match(editor, /Search screens/);
+  assert.match(editor, /Unknown reference/);
+  assert.doesNotMatch(editor, /Stable reference|Readable label/);
+});
+
 test("Knowledge mutations are actor-free and use the entry endpoints", () => {
-  for (const operation of ["browse", "entry", "review", "tagChoices", "changes", "save", "submit", "approve", "sendBack", "retire", "stillCorrect", "screens", "markScreenChanged"])
+  for (const operation of ["browse", "entry", "review", "tagChoices", "changes", "save", "submit", "approve", "sendBack", "retire", "stillCorrect", "screens", "markScreenChanged", "policyVersionChoices", "screenChoices"])
     assert.match(api, new RegExp(`${operation}:`));
   assert.doesNotMatch(api, /actor|authorId|reviewerId|submittedBy/i);
 });

@@ -14,7 +14,7 @@ using Yojana.Serialisation.Contracts;
 namespace Yojana.Knowledge.Entries;
 
 public sealed record EntryTagView(string Kind, string Value, string Label);
-public sealed record WrittenAgainstView(string Kind, string Reference, string Label);
+public sealed record WrittenAgainstView(string Kind, string Reference, string Label, bool Resolved);
 public sealed record VisibleEntryRecordLink(string RecordKind, Guid RecordId, string RecordName, bool Source);
 public sealed record EntryRecordLinksView(IReadOnlyList<VisibleEntryRecordLink> Visible, int HiddenCount);
 public sealed record EntryReviewRoundView(int Round, int Version, Guid SubmittedBy, string SubmittedByName,
@@ -50,7 +50,7 @@ public sealed record EntryTagChoices(IReadOnlyList<EntryTagView> Roles, IReadOnl
 public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReferenceLookup records,
     IUserDirectory users, IQuestionTextSearch textSearch, EntryReviewerSettings reviewerSettings,
     IItemFamilyNamePort itemFamilies, IClaimCauseNamePort claimCauses, IDisclosurePolicyReadPort disclosure,
-    ITenantContext tenant)
+    IPolicyVersionPickerPort policyVersions, ScreenReferenceCatalogue screenCatalogue, ITenantContext tenant)
 {
     public async Task<KnowledgeEntryView?> EntryAsync(Guid entryId, RecordReferenceViewer viewer,
         CancellationToken cancellationToken)
@@ -108,7 +108,7 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
         return new KnowledgeEntryView(entry.EntryId, content.Title, content.Problem, content.Answer, content.Steps,
             entry.Status, entry.CurrentVersion, entry.AuthorId, Name(entry.AuthorId), entry.CreatedAt, entry.LastSavedAt,
             entry.PublishedBy, entry.PublishedBy is { } publishedBy ? Name(publishedBy) : null, entry.PublishedAt,
-            entry.RetirementNote, tags, WrittenAgainst(content.WrittenAgainstJson), links,
+            entry.RetirementNote, tags, await WrittenAgainstAsync(content.WrittenAgainstJson, cancellationToken), links,
             new EntrySourceView(question.QuestionId, question.Title, question.RecordKind, question.RecordId,
                 sourceRecord?.RecordName, firstVersion.Answer),
             roundRows.Select(x => new EntryReviewRoundView(x.Round, x.Version, x.SubmittedBy, Name(x.SubmittedBy),
@@ -367,12 +367,25 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
         return new EntryRecordLinksView(visible, hidden);
     }
 
-    private static List<WrittenAgainstView> WrittenAgainst(string json)
+    private async Task<List<WrittenAgainstView>> WrittenAgainstAsync(string json,
+        CancellationToken cancellationToken)
     {
         try
         {
-            return (JsonSerializer.Deserialize<List<WrittenAgainstInput>>(json) ?? [])
-                .Select(x => new WrittenAgainstView(x.Kind, x.Reference, x.Label)).ToList();
+            var stored = JsonSerializer.Deserialize<List<WrittenAgainstInput>>(json) ?? [];
+            var policyIds = stored.Where(x => x.Kind == WrittenAgainstKind.PolicyVersion)
+                .Select(x => Guid.TryParse(x.Reference, out var id) ? id : (Guid?)null).OfType<Guid>()
+                .Distinct().ToList();
+            var policies = await policyVersions.ResolveAsync(policyIds, cancellationToken);
+            return stored.Select(x =>
+            {
+                if (x.Kind == WrittenAgainstKind.PolicyVersion && Guid.TryParse(x.Reference, out var id)
+                    && policies.TryGetValue(id, out var policyLabel))
+                    return new WrittenAgainstView(x.Kind, x.Reference, policyLabel, true);
+                if (x.Kind == WrittenAgainstKind.Screen && screenCatalogue.Resolve(x.Reference) is { } screen)
+                    return new WrittenAgainstView(x.Kind, x.Reference, screen.Label, true);
+                return new WrittenAgainstView(x.Kind, x.Reference, x.Label, false);
+            }).ToList();
         }
         catch (JsonException)
         {

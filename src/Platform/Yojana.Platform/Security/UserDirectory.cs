@@ -8,7 +8,8 @@ using Yojana.Platform.Data.Platform;
 namespace Yojana.Platform.Security;
 
 /// <summary><see cref="IUserDirectory"/> over the registry tables, limited to members of the current tenant.</summary>
-public sealed class UserDirectory(PlatformDbContext db, ITenantContext tenant) : IUserDirectory, ITenantStaffDirectory
+public sealed class UserDirectory(PlatformDbContext db, ITenantContext tenant) : IUserDirectory, ITenantStaffDirectory,
+    ITenantTrainingDirectory
 {
     public async Task<IReadOnlyDictionary<string, string>> DisplayNamesAsync(IReadOnlyCollection<string> references, CancellationToken cancellationToken)
     {
@@ -101,6 +102,45 @@ public sealed class UserDirectory(PlatformDbContext db, ITenantContext tenant) :
             .Select(m => new TenantStaffNotificationRecipient(m.UserId, m.User!.DisplayName, m.User.Email, m.Roles))
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<TenantTrainingMember?> ActiveMemberAsync(Guid userId,
+        CancellationToken cancellationToken) => await ActiveTrainingMembers()
+        .Where(m => m.UserId == userId)
+        .Select(m => new TenantTrainingMember(m.UserId, m.User!.DisplayName, m.Roles, m.CreatedAt))
+        .SingleOrDefaultAsync(cancellationToken);
+
+    public async Task<TenantTrainingMemberPage> ActiveMembersInRoleAsync(string role, string? cursor, int take,
+        CancellationToken cancellationToken)
+    {
+        if (!YojanaRole.IsKnown(role)) throw new ArgumentException("The role is not known.", nameof(role));
+        if (take is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(take));
+        var after = DecodeStaffCursor(cursor);
+        var query = ActiveTrainingMembers().Where(m => m.Roles.Contains(role));
+        if (after is not null)
+            query = query.Where(m => m.User!.DisplayName.CompareTo(after.Value.Name) > 0 ||
+                (m.User.DisplayName == after.Value.Name && m.UserId.CompareTo(after.Value.Id) > 0));
+        var rows = await query.OrderBy(m => m.User!.DisplayName).ThenBy(m => m.UserId).Take(take + 1)
+            .Select(m => new { m.UserId, m.User!.DisplayName, m.Roles, m.CreatedAt })
+            .ToListAsync(cancellationToken);
+        var page = rows.Take(take).Select(m => new TenantTrainingMember(m.UserId, m.DisplayName, m.Roles,
+            m.CreatedAt)).ToList();
+        return new TenantTrainingMemberPage(page, rows.Count > take && page.Count > 0
+            ? EncodeStaffCursor(page[^1].Name, page[^1].UserId) : null);
+    }
+
+    public async Task<IReadOnlyList<TenantTrainingMember>> AllActiveMembersInRoleAsync(string role,
+        CancellationToken cancellationToken)
+    {
+        if (!YojanaRole.IsKnown(role)) throw new ArgumentException("The role is not known.", nameof(role));
+        return await ActiveTrainingMembers().Where(m => m.Roles.Contains(role))
+            .OrderBy(m => m.User!.DisplayName).ThenBy(m => m.UserId)
+            .Select(m => new TenantTrainingMember(m.UserId, m.User!.DisplayName, m.Roles, m.CreatedAt))
+            .ToListAsync(cancellationToken);
+    }
+
+    private IQueryable<Data.Platform.Entities.UserTenantMembership> ActiveTrainingMembers() =>
+        db.Memberships.AsNoTracking().Where(m => m.TenantId == tenant.TenantId && m.DeactivatedAt == null
+            && m.CustomerPartyRef == null && m.User!.IsActive && m.Roles.Count > 0);
 
     private static string EncodeStaffCursor(string name, Guid id) => Convert.ToBase64String(
         Encoding.UTF8.GetBytes($"{name}\n{id:D}"));

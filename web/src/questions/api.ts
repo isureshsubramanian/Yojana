@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import type { AddresseePage, EntryDraftRequest, EntryFieldChange, EntryReviewPage, EntryTagChoices, KnowledgeEntry, KnowledgeEntryPage, KnowledgeScreenReferencePage, MyQuestionPage, QuestionBellSummary, QuestionNotificationMode, QuestionNotificationPreference, QuestionPage, QuestionThread, Revision, SearchPage } from "./types";
+import type { AddresseePage, EntryDraftRequest, EntryFieldChange, EntryReviewPage, EntryTagChoices, KnowledgeEntry, KnowledgeEntryPage, KnowledgeScreenReferencePage, MyQuestionPage, PolicyVersionChoicePage, QuestionBellSummary, QuestionNotificationMode, QuestionNotificationPreference, QuestionPage, QuestionThread, ReferenceChoicePage, Revision, SearchPage, TrainingPath, TrainingPathList, TrainingTeam, TrainingWelcome } from "./types";
 
 const root = "/api/questions";
 const qs = (values: Record<string, string | number | boolean | null | undefined>) => {
@@ -43,4 +43,17 @@ export const knowledgeApi = {
   stillCorrect: (id: string) => api(`${entriesRoot}/${id}/still-correct`, { method: "POST" }),
   screens: (cursor?: string, signal?: AbortSignal) => api<KnowledgeScreenReferencePage>(`/api/knowledge/screens${qs({ cursor, take: 50 })}`, { signal }),
   markScreenChanged: (screenReference: string, reason: string) => api(`/api/knowledge/screens/changed`, { method: "POST", body: { screenReference, reason } }),
+  policyVersionChoices: (search?: string, cursor?: string, signal?: AbortSignal) => api<PolicyVersionChoicePage>(`/api/knowledge/references/policy-versions${qs({ search, cursor, take: 25 })}`, { signal }),
+  screenChoices: (search?: string, cursor?: string, signal?: AbortSignal) => api<ReferenceChoicePage>(`/api/knowledge/references/screens${qs({ search, cursor, take: 25 })}`, { signal }),
+};
+
+const trainingRoot = "/api/knowledge/training-paths";
+export const trainingApi = {
+  list: (signal?: AbortSignal) => api<TrainingPathList>(trainingRoot, { signal }),
+  detail: (role: string, signal?: AbortSignal) => api<TrainingPath>(`${trainingRoot}/${encodeURIComponent(role)}`, { signal }),
+  save: (role: string, introduction: string, entryIds: string[], expectedVersion: number) => api(`${trainingRoot}/${encodeURIComponent(role)}`, { method: "PUT", body: { introduction, entryIds, expectedVersion } }),
+  markRead: (role: string, entryId: string) => api(`${trainingRoot}/${encodeURIComponent(role)}/entries/${entryId}/read`, { method: "POST" }),
+  team: (role: string, cursor?: string, signal?: AbortSignal) => api<TrainingTeam>(`${trainingRoot}/${encodeURIComponent(role)}/team${qs({ cursor, take: 25 })}`, { signal }),
+  welcome: (signal?: AbortSignal) => api<TrainingWelcome | undefined>(`${trainingRoot}/welcome`, { signal }),
+  dismissWelcome: (pathId: string) => api(`${trainingRoot}/welcome/${pathId}/dismiss`, { method: "POST" }),
 };

@@ -65,6 +65,38 @@
 .knowledge-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
 .knowledge-form-grid .span { grid-column: 1 / -1; }
 .card .knowledge-form-grid .field + .field { margin-top: 0; }
+
+.training-welcome .card-body { display: flex; align-items: center; justify-content: space-between; gap: var(--gap); }
+.training-welcome h2 { margin: 4px 0; }
+.training-role-picker { display: flex; justify-content: flex-end; margin-bottom: var(--gap); }
+.training-role-picker .field { min-width: 280px; }
+.training-grid { align-items: start; }
+.training-intro { margin-top: 0; }
+.training-path-list, .training-edit-list { list-style: none; padding: 0; margin: 0; }
+.training-path-list li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.training-path-list li:last-child { border-bottom: 0; }
+.training-path-list a { color: var(--text-1); font-weight: 600; }
+.training-path-list .sub { display: block; }
+.training-step { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); font-size: 12px; font-weight: 700; }
+.training-path-list .done .training-step { background: var(--success-soft); color: var(--success); }
+.training-team-total { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.training-team-total strong { font-size: 24px; font-variant-numeric: tabular-nums; }
+.training-edit-list li { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--rule); }
+.training-edit-list li > span:last-child { display: flex; gap: 6px; }
+.training-entry-results, .knowledge-reference-results { display: grid; border: 1px solid var(--border); border-radius: var(--radius-s); overflow: hidden; }
+.training-entry-results button, .training-result-button, .knowledge-reference-results button { border: 0; border-bottom: 1px solid var(--rule); background: var(--surface-1); color: var(--text-1); padding: 9px 12px; text-align: left; cursor: pointer; }
+.training-entry-results button:last-child, .knowledge-reference-results button:last-child { border-bottom: 0; }
+.training-entry-results button:hover, .training-result-button:hover, .knowledge-reference-results button:hover { background: var(--surface-2); }
+.training-entry-results button span, .knowledge-reference-results button { display: flex; justify-content: space-between; gap: 12px; }
+.knowledge-reference-picker { display: grid; gap: 8px; }
+.knowledge-reference-results { max-height: 220px; overflow: auto; }
+.tag.unknown { border-color: var(--warning); background: var(--warning-soft); }
+
+@media (max-width: 900px) {
+  .training-welcome .card-body { align-items: flex-start; flex-direction: column; }
+  .training-path-list li { grid-template-columns: 28px minmax(0, 1fr); }
+  .training-path-list li > span:last-child { grid-column: 2; }
+}
 .knowledge-form-grid .textarea { min-height: 78px; }
 .knowledge-inline-fields { display: grid; grid-template-columns: 170px minmax(0, 1fr) auto; gap: 8px; align-items: start; margin-top: 8px; }
 .knowledge-inline-fields.written { grid-template-columns: 150px minmax(140px, .7fr) minmax(180px, 1fr) auto; }

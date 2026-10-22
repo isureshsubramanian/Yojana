@@ -56,6 +56,7 @@ export const router = createBrowserRouter([
           { path: "knowledge", lazy: () => import("./questions/KnowledgeBase") },
           { path: "knowledge/entries/review", lazy: () => import("./questions/EntryEditor") },
           { path: "knowledge/entries/:entryId", lazy: () => import("./questions/EntryEditor") },
+          { path: "knowledge/training", lazy: () => import("./questions/TrainingPaths") },
           { path: "knowledge/:entryId", lazy: () => import("./questions/KnowledgeBase") },
           { path: "lookup", lazy: () => import("./p7/InternalLookup") },
           { path: "imports", lazy: () => import("./p7/ImportJob") },

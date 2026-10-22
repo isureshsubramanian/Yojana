@@ -37,6 +37,35 @@ public sealed class PolicyCatalogueQueryTests(SerialisationHostFixture fixture)
             (policy.Terms.PartsPct, policy.Terms.LabourPct, policy.Terms.TravelPct));
     }
 
+    [DatabaseFact]
+    public async Task Knowledge_picker_searches_published_versions_with_keyset_pages_and_resolves_labels()
+    {
+        var tenant = await fixture.NewTenantAsync("polpick", importJurisdictionStarter: false);
+        var other = await fixture.NewTenantAsync("polother", importJurisdictionStarter: false);
+        var firstId = Guid.CreateVersion7(); var secondId = Guid.CreateVersion7();
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            db.CoverageFamilies.Add(Family(tenant, "base", "Base warranty", false));
+            db.PolicyVersions.AddRange(Policy(tenant, firstId, "NBD-STORAGE", 1, PolicyVersionStatus.Published),
+                Policy(tenant, secondId, "NBD-STORAGE", 2, PolicyVersionStatus.Published),
+                Policy(tenant, Guid.CreateVersion7(), "NBD-STORAGE", 3, PolicyVersionStatus.Draft));
+            await db.SaveChangesAsync();
+            var picker = scope.ServiceProvider.GetRequiredService<IPolicyVersionPickerPort>();
+            var page1 = await picker.SearchAsync("RS-1100", null, 1, default);
+            Assert.Single(page1.Items); Assert.NotNull(page1.NextCursor);
+            var page2 = await picker.SearchAsync("RS-1100", page1.NextCursor, 1, default);
+            Assert.Single(page2.Items); Assert.Null(page2.NextCursor);
+            Assert.NotEqual(page1.Items[0].PolicyVersionId, page2.Items[0].PolicyVersionId);
+            var labels = await picker.ResolveAsync([firstId, secondId, Guid.CreateVersion7()], default);
+            Assert.Equal(2, labels.Count);
+            Assert.All(labels.Values, label => Assert.Contains("version", label, StringComparison.Ordinal));
+        }
+        using (var scope = fixture.ScopeFor(other))
+            Assert.Empty((await scope.ServiceProvider.GetRequiredService<IPolicyVersionPickerPort>()
+                .ResolveAsync([firstId], default)));
+    }
+
     private static CoverageFamily Family(Yojana.Platform.Contracts.Tenancy.TenantId tenant, string code,
         string name, bool stacking) => new()
     {

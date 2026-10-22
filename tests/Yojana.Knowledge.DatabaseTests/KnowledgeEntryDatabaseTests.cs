@@ -244,7 +244,7 @@ public sealed class KnowledgeEntryDatabaseTests(KnowledgeHostFixture fixture)
         [new(KnowledgeTagKind.Role, YojanaRole.ServiceDesk), new(KnowledgeTagKind.Task, "media_retention"),
             new(KnowledgeTagKind.ClaimCause, "POWER_SURGE")],
         links ?? [new(RecordKind.ImportJob, recordId)],
-        [new(WrittenAgainstKind.Screen, "claim.intake", "New claim")]);
+        [new(WrittenAgainstKind.Screen, "claims.intake", "New claim")]);
 
     private async Task SetReviewerRolesAsync(TenantId tenant, params string[] roles)
     {
