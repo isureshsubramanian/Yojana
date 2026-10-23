@@ -2,7 +2,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Yojana.Integration.Contracts;
+using Yojana.Integration.Connectors;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Gateway;
@@ -19,7 +21,8 @@ public sealed class ConnectorAcceptanceService(
     ITenantContext tenant,
     IClock clock,
     IUserDirectory people,
-    ConnectorVerificationManifestStore manifests)
+    ConnectorVerificationManifestStore manifests,
+    IServiceProvider services)
 {
     public async Task<ConnectorVerificationView> OverviewAsync(Guid connectionId,
         CancellationToken cancellationToken)
@@ -60,7 +63,9 @@ public sealed class ConnectorAcceptanceService(
             manifest.Facts.Count(fact => fact.Kind == ConnectorVerificationKind.Assumed),
             ConnectorAcceptanceScenarioCatalogue.All.Count, applicable,
             manifest.Facts.Select(fact => new VerificationFactView(fact.Id, fact.Fact, fact.ValueUsed,
-                fact.Kind, fact.SourceLabel, fact.DateRead, fact.UsedAt, fact.AcceptanceItem)).ToList(), summaries);
+                fact.Kind, fact.SourceLabel, fact.DateRead, fact.UsedAt, fact.AcceptanceItem)).ToList(), summaries,
+            services.GetKeyedService<IConnectionLifecycleAdapter>(connection.ConnectorCode)?.Features
+                ?? ConnectionFeatures.None);
     }
 
     public async Task<AcceptanceRunView> StartAsync(Guid connectionId, StartAcceptanceRunRequest request,

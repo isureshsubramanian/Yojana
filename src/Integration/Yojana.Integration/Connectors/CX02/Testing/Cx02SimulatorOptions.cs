@@ -23,6 +23,9 @@ public sealed record Cx02SimulatorOptions
 
     public int PageSizeCap { get; init; } = 20_000;
 
+    public IReadOnlySet<string> UnreachableResources { get; init; } =
+        new HashSet<string>(StringComparer.Ordinal);
+
     // ASSUMED P-17: continuation tokens are documented; the literal OData property is inferred.
     public bool IncludeNextLink { get; init; } = true;
 

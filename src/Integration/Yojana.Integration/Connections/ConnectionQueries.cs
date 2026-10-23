@@ -117,7 +117,8 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
                 (await throttles.GetAsync(new(tenant.TenantId, id), ct))?.Profile, connectorSettings, rules), secrets,
             await checklist.GenerateAsync(id, ct), connection.Status,
             await reconciliationSettings.WindowDaysAsync(id, ct), await reconciliationDay.TodayAsync(id, ct),
-            adapter is null ? null : await adapter.AuthorisationAsync(id, ct));
+            adapter is null ? null : await adapter.AuthorisationAsync(id, ct),
+            adapter?.Features ?? ConnectionFeatures.None);
     }
 
     public async Task<ConnectionHealthDetail> HealthAsync(Guid id, CancellationToken ct)
@@ -198,6 +199,7 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
         "ConsentPauseNotified" => "Connection sync pause notification sent",
         "ConsentReminderSettingsChanged" => "Connection consent reminder settings changed",
         "ConsentRenewed" => "Connection access renewed",
+        "ExtensionChecked" => "Tenant-side extension checked",
         _ => "Connection activity recorded",
     };
 

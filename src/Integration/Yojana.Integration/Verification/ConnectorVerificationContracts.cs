@@ -23,7 +23,8 @@ public sealed record ConnectorVerificationView(Guid ConnectionId, string Connect
     string ConnectorCode, ConnectorLiveVerification LiveVerification, bool AcceptancePassed,
     int DocumentedFacts, int InferredFacts, int AssumedFacts, int EdgeScenarios,
     int EdgeScenariosApplicable, IReadOnlyList<VerificationFactView> Facts,
-    IReadOnlyList<AcceptanceRunSummary> Runs);
+    IReadOnlyList<AcceptanceRunSummary> Runs,
+    Yojana.Integration.Connectors.ConnectionFeatures? Features = null);
 
 public sealed record StartAcceptanceRunRequest(string SandboxLabel);
 public sealed record MarkAcceptanceItemRequest(string Result, string? Note, string? Evidence);

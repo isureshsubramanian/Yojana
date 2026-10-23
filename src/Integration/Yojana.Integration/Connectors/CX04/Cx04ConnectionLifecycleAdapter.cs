@@ -10,6 +10,8 @@ namespace Yojana.Integration.Connectors.CX04;
 public sealed class Cx04ConnectionLifecycleAdapter(IntegrationDbContext db, Cx04Settings settings,
     Cx04Client client, Cx04Authorisation authorisation, IClock clock) : IConnectionLifecycleAdapter
 {
+    public ConnectionFeatures Features { get; } = new(TenantSideExtension: false, InteractiveSignIn: true);
+
     public ConnectionRegistrationForm RegistrationForm => new(
         [
             new("service_uri", "Service address", "url"),

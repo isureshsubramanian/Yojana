@@ -55,6 +55,24 @@ public sealed class UserDirectoryTests(PlatformHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Labels_automatic_actors_without_a_lookup()
+    {
+        var (tenant, member, _) = await ArrangeAsync();
+        using var scope = fixture.Services.CreateScope();
+        var directory = DirectoryFor(scope, tenant);
+        var byId = member.Id.ToString("D");
+
+        var names = await directory.DisplayNamesAsync(["system:certificates", "system:replacement-overdue",
+            "system:entitlement-requirement", "system:", byId], CancellationToken.None);
+
+        Assert.Equal(4, names.Count);
+        Assert.Equal("Certificates (automatic)", names["system:certificates"]);
+        Assert.Equal("Replacement overdue (automatic)", names["system:replacement-overdue"]);
+        Assert.Equal("Entitlement requirement (automatic)", names["system:entitlement-requirement"]);
+        Assert.Equal("Meena Member", names[byId]);
+    }
+
+    [DatabaseFact]
     public async Task Refuses_more_references_than_one_call_resolves()
     {
         var (tenant, _, _) = await ArrangeAsync();

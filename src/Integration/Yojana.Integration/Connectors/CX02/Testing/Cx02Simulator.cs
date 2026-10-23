@@ -442,6 +442,12 @@ public sealed class Cx02Simulator : IAsyncDisposable
             await ErrorAsync(response, HttpStatusCode.NotFound, "BadRequest_NotFound", "The resource was not found.");
             return;
         }
+        if (Options.UnreachableResources.Contains(resource))
+        {
+            await ErrorAsync(response, HttpStatusCode.NotFound, "BadRequest_NotFound",
+                "The resource is unavailable in this fictional environment.");
+            return;
+        }
         var key = ResourceKey(resourcePath);
         if (request.HttpMethod == "GET" && key is null)
         {
