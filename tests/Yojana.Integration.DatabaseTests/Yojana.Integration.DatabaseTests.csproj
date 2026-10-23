@@ -19,6 +19,8 @@
     <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01DocumentScenarios.cs" Link="Connectors/CX01/Cx01DocumentScenarios.cs" />
     <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01Simulator.cs"
              Link="Connectors/CX01/Cx01Simulator.cs" />
+    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX02/Testing/**/*.cs"
+             Link="Connectors/CX02/%(RecursiveDir)%(Filename)%(Extension)" />
     <Content Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Fixtures/**/*.json"
              Link="Connectors/CX01/Fixtures/%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />

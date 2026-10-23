@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.invalid/cx02/extension/v1.0/tracking-specification.schema.json",
+  "title": "Tracking specification page",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "itemNumber", "quantity", "sourceType", "sourceId", "sourceLineNumber", "serialNumber", "lotNumber", "packageNumber", "lastModifiedDateTime", "@odata.etag"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "itemNumber": { "type": "string" },
+    "locationCode": { "type": ["string", "null"] },
+    "quantity": { "type": "number" },
+    "quantityBase": { "type": ["number", "null"] },
+    "sourceType": { "type": "string" },
+    "sourceSubtype": { "type": ["string", "null"] },
+    "sourceId": { "type": "string", "format": "uuid" },
+    "sourceLineNumber": { "type": "integer" },
+    "serialNumber": { "type": "string" },
+    "lotNumber": { "type": "string" },
+    "packageNumber": { "type": "string" },
+    "lastModifiedDateTime": { "type": "string", "format": "date-time" },
+    "@odata.etag": { "type": "string" }
+  }
+}

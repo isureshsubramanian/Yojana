@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.invalid/cx02/extension/v1.0/tracked-item-ledger-entry.schema.json",
+  "title": "Tracked item ledger entry page",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "entryNumber", "itemNumber", "postingDate", "entryType", "documentNumber", "documentType", "quantity", "serialNumber", "lotNumber", "packageNumber", "lastModifiedDateTime", "@odata.etag"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "entryNumber": { "type": "integer" },
+    "itemNumber": { "type": "string" },
+    "postingDate": { "type": "string", "format": "date" },
+    "entryType": { "type": "string" },
+    "sourceNumber": { "type": ["string", "null"] },
+    "sourceType": { "type": ["string", "null"] },
+    "documentNumber": { "type": "string" },
+    "documentType": { "type": "string" },
+    "description": { "type": ["string", "null"] },
+    "locationCode": { "type": ["string", "null"] },
+    "quantity": { "type": "number" },
+    "serialNumber": { "type": "string" },
+    "lotNumber": { "type": "string" },
+    "packageNumber": { "type": "string" },
+    "lastModifiedDateTime": { "type": "string", "format": "date-time" },
+    "@odata.etag": { "type": "string" }
+  }
+}

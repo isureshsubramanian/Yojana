@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.invalid/cx02/extension/v1.0/service-item.schema.json",
+  "title": "Service item page",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "number", "serialNumber", "lastModifiedDateTime", "@odata.etag"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "number": { "type": "string" },
+    "serialNumber": { "type": "string" },
+    "itemNumber": { "type": ["string", "null"] },
+    "customerNumber": { "type": ["string", "null"] },
+    "status": { "type": ["string", "null"] },
+    "lastModifiedDateTime": { "type": "string", "format": "date-time" },
+    "@odata.etag": { "type": "string" }
+  }
+}
