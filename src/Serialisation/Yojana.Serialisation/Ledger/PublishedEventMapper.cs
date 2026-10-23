@@ -50,7 +50,7 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
             }
         }
 
-        await PublishDispositionChangesAsync(dispositionChanges, cancellationToken, searchRequests);
+        await PublishDispositionChangesAsync(dispositionChanges, searchRequests, cancellationToken);
 
         // One append can contain thousands of unit facts. Coalescing them here prevents the search safety net from
         // multiplying the transactional outbox and delaying delivery of the public facts it accompanies.
@@ -61,7 +61,7 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
     }
 
     private async Task PublishDispositionChangesAsync(IReadOnlyList<UnitDispositionTransition> changes,
-        CancellationToken cancellationToken, ICollection<SearchProjectionRequested>? searchRequests = null)
+        List<SearchProjectionRequested> searchRequests, CancellationToken cancellationToken)
     {
         if (publication.Suppressed) return;
         foreach (var change in changes)
@@ -71,7 +71,7 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                 change.Disposition, change.PreviousDisposition, change.Event.EventType);
             await bus.PublishAsync(message,
                 new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
-            if (searchRequests is not null && SearchProjectionRequestMapper.Map(message) is { } projection)
+            if (SearchProjectionRequestMapper.Map(message) is { } projection)
                 searchRequests.Add(projection);
         }
     }
