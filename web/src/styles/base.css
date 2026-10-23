@@ -475,3 +475,6 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); ba
 .cols-2-3.top, .cols-3-2.top { align-items: start; } .cols-2-3.top > .stack, .cols-3-2.top > .stack { align-content: start; }
 /* A number in a form field is as wide as a number, not the column; pages that need otherwise set their own width. */
 .field > .input[type="number"] { width: 140px; max-width: 100%; }
+/* A field the page has marked wrong, with its reason underneath. */
+.input[aria-invalid="true"], .select[aria-invalid="true"] { border-color: var(--danger); }
+.field .help.bad { color: var(--danger); }
