@@ -7,6 +7,8 @@ import { SearchPalette } from "../components/search/SearchPalette";
 import { Drawer } from "./Drawer";
 import { useDrawer } from "./drawerStore";
 import { questionNotificationSource } from "../questions/notificationSource";
+import { useSession } from "../session/session";
+import { useNavigationCounts } from "./navigationCounts";
 
 const notificationSources = [questionNotificationSource];
 
@@ -15,6 +17,8 @@ export function Frame() {
   const navigate = useNavigate();
   const navigation = useNavigation();
   const drawer = useDrawer();
+  const session = useSession();
+  const navigationCounts = useNavigationCounts(session.roles.some(role => role === "tenant_administrator" || role === "integration_operator"));
   useEffect(() => installShortcuts(navigate), [navigate]);
   return (
     <>
@@ -22,7 +26,7 @@ export function Frame() {
       <a className="skip" href="#main">Skip to content</a>
       <div className={`frame${drawer.open ? " drawer-open" : ""}`} id="frame">
         <TopBar notificationSources={notificationSources} />
-        <SideNav />
+        <SideNav counts={navigationCounts} />
         <Outlet />
         <Drawer />
       </div>

@@ -17,6 +17,84 @@
 .sidenav .section { height: 1px; padding: 0; margin: 8px 8px; background: var(--nav-border); font-size: 0; overflow: hidden; }
 .sidenav .foot { display: none; }
 
+/* Grouped rail and its click-opened screen list. */
+.sidenav.grouped { position: sticky; top: 56px; align-self: start; height: calc(100vh - 56px); }
+.sidenav.grouped button.item { width: 100%; border: 0; background: none; color: var(--nav-text); font: inherit; cursor: pointer; }
+.sidenav.grouped .item[data-active="true"] { background: var(--nav-active-bg); color: var(--nav-active-text); }
+.sidenav.grouped .item[data-active="true"]::before { content: ""; position: absolute; left: -10px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--nav-active-text); }
+.sidenav.grouped .item[aria-expanded="true"] { background: var(--nav-hover); outline: 1px solid var(--nav-border); }
+.sidenav.grouped .nav-waiting-dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--warning); box-shadow: 0 0 0 2px var(--nav-bg); }
+.nav-flyout {
+  position: fixed; left: var(--nav-w); top: 64px; z-index: 35; width: 288px; max-height: calc(100vh - 72px); overflow: auto;
+  padding: 8px; background: var(--surface-1); border: 1px solid var(--border-strong); border-radius: 0 var(--radius) var(--radius) 0;
+  box-shadow: 12px 12px 32px rgb(15 23 42 / 14%);
+}
+.nav-flyout-heading { padding: 8px 10px 6px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.nav-flyout a { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 6px 10px; border-radius: var(--radius-s); color: var(--text-1); font-size: 13px; text-decoration: none; }
+.nav-flyout a:hover, .nav-flyout a:focus-visible { background: var(--nav-hover); outline: none; }
+.nav-flyout a[aria-current="page"] { background: var(--nav-active-bg); color: var(--nav-active-text); font-weight: 600; }
+.nav-flyout a .count { margin-left: auto; min-width: 22px; height: 20px; padding: 0 7px; border-radius: 10px; background: var(--nav-count-bg); color: var(--nav-count-text); font-size: 11px; font-weight: 600; line-height: 20px; text-align: center; }
+@media (prefers-reduced-motion: no-preference) { .nav-flyout { animation: nav-fly-in 120ms ease-out; } }
+@keyframes nav-fly-in { from { opacity: 0; transform: translateX(-6px); } }
+
+/* Settings landing and the shared settings-page navigation both read the registry. */
+.settings-find { display: flex; align-items: center; gap: 8px; width: min(420px, 100%); height: 36px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-s); background: var(--surface-1); }
+.settings-find svg { width: 16px; height: 16px; color: var(--text-3); }
+.settings-find input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text-1); font: inherit; }
+.settings-group { margin-top: 24px; }
+.settings-group > h2 { margin: 0 0 10px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.setting-card { display: grid; grid-template-columns: 36px minmax(0, 1fr) 16px; gap: 4px 12px; align-items: start; min-height: 92px; padding: 14px 14px 14px 16px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-1); color: inherit; text-decoration: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
+.setting-card:hover, .setting-card:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); outline: none; text-decoration: none; }
+.setting-card .setting-icon { grid-row: span 3; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
+.setting-card .setting-icon svg { width: 18px; height: 18px; }
+.setting-card .name { grid-column: 2; grid-row: 1; font-weight: 600; color: var(--text-1); }
+.setting-card .desc, .setting-card .value { grid-column: 2 / span 2; font-size: 12px; line-height: 1.4; }
+.setting-card .desc { color: var(--text-3); }
+.setting-card .value { margin-top: 4px; color: var(--text-2); }
+.setting-card .go { grid-column: 3; grid-row: 1; width: 16px; height: 16px; transform: rotate(-90deg); color: var(--text-3); }
+.settings-empty { margin-top: 24px; color: var(--text-3); }
+
+.settings-route { grid-area: main; min-width: 0; }
+.settings-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; align-items: start; }
+.settings-body { min-width: 0; }
+.settings-body > .content { padding: 0 0 48px; }
+.settings-body > .content > .crumbs { display: none; }
+.settings-nav { position: sticky; top: 72px; align-self: start; max-height: calc(100vh - 92px); overflow: auto; padding: 4px 0; font-size: 13px; }
+.settings-nav .all { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; margin-bottom: 8px; border-radius: var(--radius-s); color: var(--text-2); font-weight: 500; text-decoration: none; }
+.settings-nav .all svg { width: 14px; height: 14px; transform: rotate(90deg); }
+.settings-nav .all:hover { background: var(--nav-hover); }
+.settings-nav .find { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px; margin-bottom: 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-s); background: var(--surface-1); }
+.settings-nav .find svg { width: 14px; height: 14px; color: var(--text-3); }
+.settings-nav .find input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text-1); font: inherit; font-size: 12px; }
+.settings-nav .grp { padding: 12px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.settings-nav a.page { display: block; height: 30px; padding: 0 10px; overflow: hidden; border-radius: var(--radius-s); color: var(--text-1); line-height: 30px; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.settings-nav a.page:hover { background: var(--nav-hover); }
+.settings-nav a.page[aria-current="page"] { background: var(--nav-active-bg); color: var(--nav-active-text); font-weight: 600; }
+.settings-nav-empty { padding: 8px 10px; color: var(--text-3); font-size: 12px; }
+.settings-mobile-select { display: none; }
+
+.numbering-guidance { margin-bottom: var(--gap); }
+.table.numbering th:nth-child(1) { width: 20%; }
+.table.numbering th:nth-child(2) { width: 20%; }
+.table.numbering th:nth-child(3) { width: 220px; }
+.table.numbering td { white-space: normal; line-height: 1.35; }
+.numbering-segmented { display: inline-flex; overflow: hidden; border: 1px solid var(--border-strong); border-radius: var(--radius-s); }
+.numbering-segmented button { height: 28px; padding: 0 12px; border: 0; background: var(--surface-1); color: var(--text-2); font: inherit; font-size: 12px; cursor: pointer; }
+.numbering-segmented button + button { border-left: 1px solid var(--border-strong); }
+.numbering-segmented button[aria-pressed="true"] { background: var(--accent); color: var(--accent-contrast); font-weight: 600; }
+.numbering-segmented button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.settings-unsaved { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: var(--gap); }
+.settings-unsaved .actions { display: flex; gap: 8px; margin-left: auto; }
+
+@media (max-width: 960px) {
+  .settings-layout { grid-template-columns: 1fr; gap: 16px; }
+  .settings-nav { display: none; }
+  .settings-mobile-select { display: grid; gap: 5px; }
+  .settings-mobile-select > span { font-size: 12px; font-weight: 600; color: var(--text-2); }
+  .settings-mobile-select select { width: 100%; height: 36px; padding: 0 34px 0 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-s); background: var(--surface-1); color: var(--text-1); font: inherit; }
+}
+
 /* Flat cards and denser tables */
 .card { box-shadow: none; border-color: var(--border-strong); }
 .card-header { height: 48px; padding: 0 var(--card-pad); background: var(--surface-2); }

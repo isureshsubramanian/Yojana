@@ -106,7 +106,7 @@ test("the risk-review screen uses the claim queue, four summary KPIs, report and
 test("claim adjudication and Settings wire the risk hold and administrator-only rule editor", () => {
   const adjudication = source("claims/ClaimAdjudication.tsx");
   const settings = source("settings/ClaimRiskRules.tsx");
-  const catalogue = source("settings/Settings.tsx");
+  const catalogue = source("settings/registry.ts");
   assert.match(adjudication, /openRiskFlags/); assert.match(adjudication, /ClaimRiskHoldNotice/);
   assert.match(adjudication, /claim_risk_review_pending/); assert.match(adjudication, /reason\.openRules/);
   assert.match(adjudication, /Deny…/); assert.match(adjudication, /heldRules\.length > 0/);

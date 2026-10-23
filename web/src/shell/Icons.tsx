@@ -4,7 +4,8 @@ export type IconName =
   | "home" | "plus" | "filter" | "print" | "x" | "down" | "search" | "range" | "tree" | "check" | "panel"
   | "campaign" | "recover" | "policy" | "layers" | "upload" | "coins" | "sliders" | "list" | "grid" | "returns"
   | "swap" | "refurb" | "cycle" | "label" | "sun" | "moon" | "templates" | "globe"
-  | "cover" | "lookup" | "reconcile" | "report" | "disclosure" | "converted" | "mail" | "key";
+  | "cover" | "lookup" | "reconcile" | "report" | "disclosure" | "converted" | "mail" | "key"
+  | "tool" | "db" | "book" | "eye" | "users" | "warn" | "file" | "shield";
 
 export function IconSprite() {
   return (
@@ -64,6 +65,14 @@ export function IconSprite() {
       {/* End P7 upload history icon block. */}
       <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" /></symbol>
       <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4" /><path d="M11 12l9-9M17 6l3 3M15 8l2 2" /></symbol>
+      <symbol id="i-tool" viewBox="0 0 24 24"><path d="M14.5 5.5a4 4 0 0 0-5 5L4 16l4 4 5.5-5.5a4 4 0 0 0 5-5L16 12l-2.5-.5L13 9z" /></symbol>
+      <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5" /><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" /></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" /><path d="M4 21V5M9 7h6" /></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3.5 3.3-5.5 6.5-5.5s5.7 2 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.9.8 3.1 2.6 3.5 5.2" /></symbol>
+      <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3zM12 10v5M12 18h.01" /></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h9l5 5v13H6zM15 3v5h5" /></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3zM12 8v5M12 16h.01" /></symbol>
       <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></symbol>
     </svg>
   );

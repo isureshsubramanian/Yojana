@@ -80,7 +80,7 @@ test("an answered thread offers the server-authorised turn-into-entry action", (
 
 test("My questions keeps search and chips on its server-paged table and summaries as ranked lists", () => {
   assert.match(routes, /path: "questions".*MyQuestions/s);
-  assert.match(navigation, /path: "\/questions", label: "Questions"/);
+  assert.match(navigation, /path: "\/questions", label: "My questions"/);
   assert.match(mine, /Search this table as you type/);
   assert.match(mine, /questionsApi\.mine\(filters, cursor/);
   assert.match(mine, /<DataGrid/);

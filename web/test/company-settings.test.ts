@@ -6,7 +6,7 @@ import { companyLine } from "../src/settings/companyApi.ts";
 const source = (path: string) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
 const company = source("settings/Company.tsx");
 const policy = source("settings/SignInPolicy.tsx");
-const settings = source("settings/Settings.tsx");
+const settings = source("settings/registry.ts");
 const routes = source("routes.tsx");
 
 test("the footer preview composes the line the server writes", () => {
@@ -17,7 +17,7 @@ test("the footer preview composes the line the server writes", () => {
 
 test("Settings › Company edits the footer line, sender and reply-to, and offers no logo", () => {
   assert.match(settings, /"\/settings\/company"/);
-  assert.match(routes, /settings\/company/);
+  assert.match(routes, /settingsRegistry\.map/);
   assert.match(company, /maxLength=\{120\}/);
   assert.match(company, /Send a test message to me/);
   assert.doesNotMatch(company, /type="file"/);

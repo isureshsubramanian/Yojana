@@ -2,11 +2,12 @@ import { createBrowserRouter, type RouteObject } from "react-router";
 import { ErrorPage } from "./pages/ErrorPage";
 import { ROOT_ROUTE_ID, requireSession } from "./session/session";
 import { Frame } from "./shell/Frame";
-import { navigation } from "./shell/navigation";
+import { navigationItems } from "./shell/navigation";
+import { settingsRegistry } from "./settings/registry";
 
 // Every route is lazy (per-route code splitting, MOD-02). Module placeholders come from the navigation
 // registry, so a later phase replaces one line here with its own lazy route and touches nothing else.
-const placeholders: RouteObject[] = navigation
+const placeholders: RouteObject[] = navigationItems
   .filter((e) => e.placeholder)
   .map((e) => ({ path: e.path.slice(1) + "/*", lazy: () => import("./pages/Placeholder") }));
 
@@ -19,6 +20,11 @@ const patterns: RouteObject[] = process.env.NODE_ENV === "production" ? [] : [
   { path: "patterns/form", lazy: () => import("./patterns/FormPattern") },
   { path: "patterns/document", lazy: () => import("./patterns/DocumentPattern") },
 ];
+
+const settingsChildren: RouteObject[] = settingsRegistry.map(entry => ({
+  path: entry.path.slice("/settings/".length),
+  lazy: entry.route,
+}));
 
 export const router = createBrowserRouter([
   { path: "/sign-in", lazy: () => import("./pages/SignIn"), errorElement: <ErrorPage /> },
@@ -87,7 +93,6 @@ export const router = createBrowserRouter([
           { path: "integration/migration/settings", lazy: () => import("./integration/MigrationSettings") },
           { path: "integration/migration/loads/:loadId/refusals", lazy: () => import("./integration/MigrationRefusals") },
           { path: "integration/migration/loads/:loadId/delta", lazy: () => import("./integration/MigrationDelta") },
-          { path: "settings/disclosure", lazy: () => import("./p7/Disclosure") },
           { path: "units", lazy: () => import("./units/UnitSearch") },
           { path: "units/receive", lazy: () => import("./units/Receive") },
           { path: "units/ranges", lazy: () => import("./units/SerialRanges") },
@@ -114,23 +119,14 @@ export const router = createBrowserRouter([
           { path: "claims/new", lazy: () => import("./claims/ClaimIntake") },
           { path: "claims/recovery", lazy: () => import("./recovery/RecoveryClaims") },
           { path: "claims/risk-review", lazy: () => import("./claims/ClaimRiskReview") },
-          // P6 OD-26 numbering settings route block.
-          { path: "settings", lazy: () => import("./settings/Settings") },
-          { path: "settings/users", lazy: () => import("./settings/Users") },
-          // End P6 OD-26 numbering settings route block.
-          { path: "settings/time-zone", lazy: () => import("./settings/TimeZoneSettings") },
-          { path: "settings/sign-in-policy", lazy: () => import("./settings/SignInPolicy") },
-          { path: "settings/company", lazy: () => import("./settings/Company") },
-          { path: "settings/import-files", lazy: () => import("./settings/ImportFileSettings") },
-          { path: "settings/currencies", lazy: () => import("./settings/Currencies") },
-          { path: "settings/recovery", lazy: () => import("./settings/SupplierRecovery") },
-          { path: "settings/claim-risk", lazy: () => import("./settings/ClaimRiskRules") },
-          { path: "settings/refurbishment", lazy: () => import("./settings/RefurbishmentPolicy") },
-          { path: "settings/workbench-choices", lazy: () => import("./corrections/WorkbenchChoices") },
-          { path: "settings/certificates", lazy: () => import("./settings/CertificateSettings") },
-          // P6 jurisdiction rules route block.
-          { path: "settings/jurisdictions", lazy: () => import("./jurisdictions/Jurisdictions") },
-          // End P6 jurisdiction rules route block.
+          {
+            path: "settings",
+            lazy: () => import("./settings/SettingsLayout"),
+            children: [
+              { index: true, lazy: () => import("./settings/Settings") },
+              ...settingsChildren,
+            ],
+          },
           { path: "replacements/awaiting", lazy: () => import("./replacements/AwaitingReturns") },
           { path: "refurbishments", lazy: () => import("./refurbishments/RefurbishmentList") },
           { path: "refurbishments/:id", lazy: () => import("./refurbishments/Refurbishment") },
@@ -138,7 +134,6 @@ export const router = createBrowserRouter([
           { path: "labels/print-jobs", lazy: () => import("./labels/PrintJobs") },
           { path: "labels/templates/new", lazy: () => import("./labels/LabelTemplateEditor") },
           { path: "labels/templates/:id", lazy: () => import("./labels/LabelTemplateEditor") },
-          { path: "settings/labels", lazy: () => import("./settings/LabelSettings") },
           { path: "account/security", lazy: () => import("./pages/AccountSecurity") },
           { path: "claims/campaigns", lazy: () => import("./campaigns/Campaigns") },
           { path: "claims/campaigns/new", lazy: () => import("./campaigns/CampaignEditor") },

@@ -8,7 +8,8 @@ const subnav = readFileSync(new URL("../src/questions/KnowledgeSubnav.tsx", impo
 const api = readFileSync(new URL("../src/questions/api.ts", import.meta.url), "utf8");
 const routes = readFileSync(new URL("../src/routes.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/questions/questions.css", import.meta.url), "utf8");
-const settings = readFileSync(new URL("../src/settings/Settings.tsx", import.meta.url), "utf8");
+const settingsRegistry = readFileSync(new URL("../src/settings/registry.ts", import.meta.url), "utf8");
+const screenChangesPage = readFileSync(new URL("../src/settings/KnowledgeScreenChangesPage.tsx", import.meta.url), "utf8");
 const screenChanges = readFileSync(new URL("../src/settings/KnowledgeScreenChanges.tsx", import.meta.url), "utf8");
 const training = readFileSync(new URL("../src/questions/TrainingPaths.tsx", import.meta.url), "utf8");
 const welcome = readFileSync(new URL("../src/questions/TrainingWelcomeCard.tsx", import.meta.url), "utf8");
@@ -60,7 +61,8 @@ test("Entry editor keeps aligned side-by-side controls, version history and revi
 });
 
 test("Tenant settings let an administrator record a referenced screen change", () => {
-  assert.match(settings, /<KnowledgeScreenChanges \/>/);
+  assert.match(settingsRegistry, /\/settings\/knowledge-screen-changes/);
+  assert.match(screenChangesPage, /<KnowledgeScreenChanges \/>/);
   assert.match(screenChanges, /knowledgeApi\.screens/);
   assert.match(screenChanges, /knowledgeApi\.markScreenChanged/);
   assert.match(screenChanges, /screen\.label/);
