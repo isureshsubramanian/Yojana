@@ -79,6 +79,12 @@ public sealed class Cx04Simulator : IAsyncDisposable
         get { lock (stateLock) return deliveredNotifications.ToArray(); }
     }
     public string? LastHandlerFailure { get; private set; }
+    public Func<Task>? BeforeNextWrite { get; set; }
+
+    public int EntityCount(string endpoint, string version, string entity)
+    {
+        lock (stateLock) return records.GetValueOrDefault((endpoint, version, entity))?.Count ?? 0;
+    }
 
     public void SeedEntity(string endpoint, string version, string entity, string json)
     {
@@ -252,6 +258,13 @@ public sealed class Cx04Simulator : IAsyncDisposable
                 return;
             }
 
+            if (Faults.ServiceUnavailableResponses > 0)
+            {
+                Faults.ServiceUnavailableResponses--;
+                await StandardErrorAsync(response, HttpStatusCode.ServiceUnavailable,
+                    "The service is unavailable.", "Fictional remote outage.", "System.ServiceUnavailableException");
+                return;
+            }
             if (Faults.TooManyRequestsStormRemaining > 0)
             {
                 Faults.TooManyRequestsStormRemaining--;
@@ -676,6 +689,24 @@ public sealed class Cx04Simulator : IAsyncDisposable
 
     private async Task PutEntityAsync(HttpListenerRequest request, HttpListenerResponse response, string version, string entity)
     {
+        if (Faults.RejectNextWriteAsValidationError)
+        {
+            Faults.RejectNextWriteAsValidationError = false;
+            await StandardErrorAsync(response, Cx04Status.UnprocessableEntity,
+                "The request failed validation.",
+                "Simulator assumption: a generic remote validation rejection stands in for a closed accounting period.",
+                "PX.Data.PXSetPropertyException");
+            return;
+        }
+        if (Faults.FailNextWriteAfterHook)
+        {
+            Faults.FailNextWriteAfterHook = false;
+            if (BeforeNextWrite is { } before) await before();
+            BeforeNextWrite = null;
+            await StandardErrorAsync(response, HttpStatusCode.ServiceUnavailable,
+                "The service is unavailable.", "Fictional in-flight failure.", "System.ServiceUnavailableException");
+            return;
+        }
         var body = JsonNode.Parse(await new StreamReader(request.InputStream).ReadToEndAsync()) as JsonObject;
         if (body is null)
         {

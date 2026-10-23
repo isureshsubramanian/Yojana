@@ -53,6 +53,11 @@ public interface IConnectorEdgeHarness : IAsyncDisposable
 {
     string ConnectorCode { get; }
     IReadOnlyDictionary<string, string> Capabilities { get; }
+    string OutboundValidationRejectionText => "period is closed";
+    bool NotificationAcceptancesAreHarnessSupplied => false;
+    bool SplitDeliveryShapeAcrossOpening => false;
+    string DeliveryLocationKind => Yojana.Serialisation.Contracts.LocationKind.InTransit;
+    int RemoteOwnerConflictCount => 1;
 
     Task StartAsync(CancellationToken cancellationToken);
     Task StopAsync(CancellationToken cancellationToken);
@@ -64,6 +69,8 @@ public interface IConnectorEdgeHarness : IAsyncDisposable
         CancellationToken cancellationToken);
     Task<InboundAcceptance> DeliveryAsync(ConnectorEdgeConnection connection,
         CancellationToken cancellationToken);
+    async Task<IReadOnlyList<InboundAcceptance>> DeliveryShapeAsync(ConnectorEdgeConnection connection,
+        CancellationToken cancellationToken) => [await DeliveryAsync(connection, cancellationToken)];
     Task<InboundAcceptance> DuplicateSerialReceiptAsync(ConnectorEdgeConnection connection,
         CancellationToken cancellationToken);
     Task<InboundAcceptance> InvoiceAsync(ConnectorEdgeConnection connection, string logicalReference,
@@ -73,6 +80,8 @@ public interface IConnectorEdgeHarness : IAsyncDisposable
     Task CancelShipmentAsync(ConnectorEdgeConnection connection, CancellationToken cancellationToken);
     Task<InboundAcceptance> CancellationAsync(ConnectorEdgeConnection connection,
         CancellationToken cancellationToken);
+    async Task<IReadOnlyList<InboundAcceptance>> CancellationShapeAsync(ConnectorEdgeConnection connection,
+        CancellationToken cancellationToken) => [await CancellationAsync(connection, cancellationToken)];
 
     void ScriptRemoteUnavailable();
     void RestoreRemote();

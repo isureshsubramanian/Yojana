@@ -8,6 +8,8 @@ using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
 using Yojana.Integration.Security.Audit;
 using Yojana.Integration.Security.Cryptography;
+using Yojana.Integration.Security.Workers;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Scheduling;
@@ -18,7 +20,9 @@ namespace Yojana.Integration.Connectors.CX04;
 public sealed record Cx04ConsentStart(Uri ConsentUrl, DateTime ExpiresAt);
 public sealed record Cx04ConsentCallback(string Code, string State);
 public sealed record Cx04ConsentResult(string Status, DateTime RefreshChainExpiresAt);
-public sealed record Cx04DisableResult(string Status, bool TokensDeleted, bool RemoteSignOutAttempted);
+public sealed record Cx04DisableRequest(string? Reason, bool Confirm);
+public sealed record Cx04DisableResult(string Status, bool TokensDeleted, bool RemoteSignOutAttempted,
+    DateTime DisabledAt, string Reason);
 
 public sealed class Cx04AuthorisationException(string rule, string message) : Exception(message)
 {
@@ -27,7 +31,8 @@ public sealed class Cx04AuthorisationException(string rule, string message) : Ex
 
 public sealed class Cx04Authorisation(IntegrationDbContext db, ITenantContext tenant, IClock clock,
     Cx04Settings settings, Cx04Client client, IConnectionCredentialStore credentials,
-    ConnectionCredentialProtector protector, IConnectionAuditSink audit)
+    ConnectionCredentialProtector protector, IConnectionAuditSink audit, Cx04ReminderSettings reminderSettings,
+    Cx04SignInNotifications notifications, IUserDirectory people, IConnectionThrottleProfileStore throttles)
 {
     private static readonly TimeSpan StateLifetime = TimeSpan.FromMinutes(10);
 
@@ -61,7 +66,7 @@ public sealed class Cx04Authorisation(IntegrationDbContext db, ITenantContext te
     {
         if (string.IsNullOrWhiteSpace(callback.Code) || string.IsNullOrWhiteSpace(callback.State))
             throw new Cx04AuthorisationException("oauth_callback_invalid", "The authorisation code and state are required.");
-        Actor(actor);
+        Cx04AuthorisationGuard.Actor(actor);
         await EnsureConnectionAsync(connectionId, ct);
         var presentedHash = SHA256.HashData(Encoding.ASCII.GetBytes(callback.State));
         var row = await db.Cx04AuthorisationStates.AsNoTracking().SingleAsync(value =>
@@ -122,8 +127,14 @@ public sealed class Cx04Authorisation(IntegrationDbContext db, ITenantContext te
             current.RefreshChainExpiresAt = expiry;
             current.RefreshExpiryMode = configured.RefreshExpiryMode;
             current.RefreshLifetimeDays = configured.RefreshLifetimeDays;
-            current.Reminder14DaysSent = false;
-            current.Reminder3DaysSent = false;
+            current.ReminderDaysSentJson = "[]";
+            current.SignedInBy = actor;
+            current.SignedInAt = clock.UtcNow;
+            current.DisabledBy = null;
+            current.DisabledAt = null;
+            current.DisabledReason = null;
+            current.PauseReason = null;
+            current.PauseNotifiedAt = null;
             current.UpdatedAt = clock.UtcNow;
             var connection = await db.Connections.SingleAsync(value => value.TenantId == tenant.TenantId
                 && value.ConnectionId == connectionId, ct);
@@ -144,9 +155,11 @@ public sealed class Cx04Authorisation(IntegrationDbContext db, ITenantContext te
                 && value.Purpose == purpose).ExecuteDeleteAsync(token);
     }
 
-    public async Task<Cx04DisableResult> DisableAsync(Guid connectionId, string actor, CancellationToken ct)
+    public async Task<Cx04DisableResult> DisableAsync(Guid connectionId, Cx04DisableRequest request,
+        string actor, CancellationToken ct)
     {
-        Actor(actor);
+        Cx04AuthorisationGuard.Actor(actor);
+        var reason = Cx04AuthorisationGuard.DisableReason(request.Reason, request.Confirm);
         await EnsureConnectionAsync(connectionId, ct);
         var signOutAttempted = await client.ReadTokenAsync(connectionId, ct) is not null;
         if (signOutAttempted)
@@ -159,10 +172,16 @@ public sealed class Cx04Authorisation(IntegrationDbContext db, ITenantContext te
         await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
         var row = await db.Cx04AuthorisationStates.SingleAsync(value => value.TenantId == tenant.TenantId
             && value.ConnectionId == connectionId, ct);
+        if (row.Status == Cx04AuthorisationStatus.Disabled)
+            throw new Cx04AuthorisationException("sign_in_already_disabled",
+                "The connection sign-in is already disabled.");
         row.Status = Cx04AuthorisationStatus.Disabled;
         row.PendingStateHash = null;
         row.PendingStateExpiresAt = null;
         row.RefreshChainExpiresAt = null;
+        row.DisabledBy = actor;
+        row.DisabledAt = clock.UtcNow;
+        row.DisabledReason = reason;
         row.UpdatedAt = clock.UtcNow;
         var connection = await db.Connections.SingleAsync(value => value.TenantId == tenant.TenantId
             && value.ConnectionId == connectionId, ct);
@@ -175,24 +194,54 @@ public sealed class Cx04Authorisation(IntegrationDbContext db, ITenantContext te
                 && value.ConnectionId == connectionId
                 && (value.Purpose == Cx04Client.TokenPurpose || value.Purpose == Cx04Client.PkcePurpose))
             .ExecuteDeleteAsync(ct);
-        await db.SaveChangesAsync(ct);
         // TIGHT COUPLING (Disable audit): the state change, token deletion and append-only audit share this scoped
         // serialisable transaction. Separating them could leave a disabled connection with tokens or no audit.
-        await AuditAsync(connectionId, ConnectionAuditEventType.ConsentDisabled, actor, new { remote_sign_out_attempted = signOutAttempted }, ct);
+        await AuditAsync(connectionId, ConnectionAuditEventType.ConsentDisabled, actor,
+            new { reason, remote_sign_out_attempted = signOutAttempted }, ct);
+        await notifications.NotifyPauseAsync(row, "disabled", "the connection sign-in was disabled", ct);
         await transaction.CommitAsync(ct);
-        return new(row.Status, true, signOutAttempted);
+        return new(row.Status, true, signOutAttempted, row.DisabledAt.Value, reason);
     }
 
-    public async Task<ConnectionAuthorisationView> ReadAsync(Guid connectionId, CancellationToken ct)
+    public async Task<ConnectionAuthorisationView> ReadAsync(Guid connectionId, string? cursor,
+        int take, CancellationToken ct)
     {
         await EnsureConnectionAsync(connectionId, ct);
+        take = Math.Clamp(take, 1, 100);
         var row = await db.Cx04AuthorisationStates.AsNoTracking().SingleAsync(value =>
             value.TenantId == tenant.TenantId && value.ConnectionId == connectionId, ct);
+        var configured = await settings.GetAsync(connectionId, ct);
+        var reminders = await reminderSettings.GetAsync(ct);
+        var sent = SentDays(row);
+        var actorRefs = new[] { row.SignedInBy, row.DisabledBy }.Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var names = actorRefs.Count == 0
+            ? new Dictionary<string, string>()
+            : await people.DisplayNamesAsync(actorRefs, ct);
+        var waiting = await db.OutboundCommands.AsNoTracking().CountAsync(value =>
+            value.TenantId == tenant.TenantId && value.ConnectionId == connectionId
+            && (value.Status == Data.Entities.OutboundCommandStatus.Pending
+                || value.Status == Data.Entities.OutboundCommandStatus.Retry
+                || value.Status == Data.Entities.OutboundCommandStatus.Processing), ct);
+        var licensed = configured.RequestsPerMinute
+            ?? Cx04Capabilities.PublishedRequestsPerMinute(configured.LicenceTier);
+        var throttle = await throttles.GetAsync(new(tenant.TenantId, connectionId), ct);
+        var governed = throttle?.Profile.RequestsPerMinute
+            ?? Cx04Capabilities.For(configured).Throttle.DefaultProfile.RequestsPerMinute
+            ?? throw new InvalidOperationException("The CX04 request lane has no per-minute limit.");
+        var history = await HistoryAsync(connectionId, cursor, take, ct);
         return new(row.Status, row.RefreshChainExpiresAt, row.RefreshExpiryMode, row.RefreshLifetimeDays,
-            row.Reminder14DaysSent, row.Reminder3DaysSent,
+            row.LastCallAt, reminders.DaysBeforeExpiry, reminders.RecipientRoles, sent,
+            reminders.DaysBeforeExpiry.FirstOrDefault(day => !sent.Contains(day)) is var next && next > 0 ? next : null,
+            Person(row.SignedInBy, names), row.SignedInAt, Person(row.DisabledBy, names), row.DisabledAt,
+            row.DisabledReason, waiting, configured.LicenceTier.ToString().ToLowerInvariant(), licensed,
+            governed, licensed - governed,
             row.Status is Cx04AuthorisationStatus.Active or Cx04AuthorisationStatus.ConsentPending,
-            row.Status != Cx04AuthorisationStatus.Active);
+            row.Status != Cx04AuthorisationStatus.Active, history);
     }
+
+    public Task<ConnectionAuthorisationView> ReadAsync(Guid connectionId, CancellationToken ct) =>
+        ReadAsync(connectionId, null, 50, ct);
 
     private async Task EnsureConnectionAsync(Guid connectionId, CancellationToken ct)
     {
@@ -208,37 +257,117 @@ public sealed class Cx04Authorisation(IntegrationDbContext db, ITenantContext te
 
     private static string Base64Url(ReadOnlySpan<byte> bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-    private static void Actor(string actor)
+    private async Task<Cx04SignInHistoryPage> HistoryAsync(Guid connectionId, string? cursor, int take,
+        CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(actor))
-            throw new Cx04AuthorisationException("audit_actor_required", "An authenticated actor is required.");
+        long? before = null;
+        if (!string.IsNullOrWhiteSpace(cursor)
+            && (!long.TryParse(cursor, out var parsed) || parsed < 1))
+            throw new Cx04AuthorisationException("cursor_invalid", "The sign-in history cursor is invalid.");
+        else if (!string.IsNullOrWhiteSpace(cursor)) before = long.Parse(cursor);
+        var since = clock.UtcNow.AddDays(-90);
+        var query = db.ConnectionEvents.AsNoTracking().Where(value => value.TenantId == tenant.TenantId
+            && value.ConnectionId == connectionId && value.OccurredAt >= since
+            && (value.EventType == nameof(ConnectionAuditEventType.ConsentGranted)
+                || value.EventType == nameof(ConnectionAuditEventType.ConsentDisabled)
+                || value.EventType == nameof(ConnectionAuditEventType.ConsentRequired)
+                || value.EventType == nameof(ConnectionAuditEventType.ConsentExpiry14Days)
+                || value.EventType == nameof(ConnectionAuditEventType.ConsentExpiry3Days)
+                || value.EventType == nameof(ConnectionAuditEventType.ConsentExpiryReminder)
+                || value.EventType == nameof(ConnectionAuditEventType.ConsentPauseNotified)
+                || value.EventType == nameof(ConnectionAuditEventType.ConsentRenewed)));
+        var eventQuery = query.Where(value => value.EventType != nameof(ConnectionAuditEventType.ConsentRenewed));
+        if (before is { } eventSequence)
+            eventQuery = eventQuery.Where(value => value.SequenceNo < eventSequence);
+        var rows = await eventQuery.OrderByDescending(value => value.SequenceNo).Take(take + 1).ToListAsync(ct);
+        var renewalQuery = query.Where(value => value.EventType == nameof(ConnectionAuditEventType.ConsentRenewed))
+            .GroupBy(value => value.OccurredAt.Date)
+            .Select(group => new Cx04RenewalHistoryProjection
+            {
+                Sequence = group.Max(value => value.SequenceNo),
+                OccurredAt = group.Key,
+                Count = group.Count(),
+            });
+        if (before is { } renewalSequence)
+            renewalQuery = renewalQuery.Where(value => value.Sequence < renewalSequence);
+        var renewals = await renewalQuery.OrderByDescending(value => value.Sequence).Take(take + 1).ToListAsync(ct);
+        var actorRefs = rows.Where(value => !value.ActorRef.StartsWith("system:", StringComparison.Ordinal))
+            .Select(value => value.ActorRef).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var names = actorRefs.Count == 0 ? new Dictionary<string, string>()
+            : await people.DisplayNamesAsync(actorRefs, ct);
+        var items = rows.Select(value => HistoryItem(value.SequenceNo, value.EventType, value.ActorRef,
+                value.OccurredAt, value.DetailsJson, names)).Concat(renewals.Select(value =>
+                new Cx04SignInHistoryItem(value.Sequence, "access_renewed", "System", value.OccurredAt,
+                    "ok", value.Count)))
+            .OrderByDescending(value => value.Sequence).Take(take + 1).ToList();
+        var page = items.Take(take).ToList();
+        return new(page, items.Count > take ? page[^1].Sequence.ToString(System.Globalization.CultureInfo.InvariantCulture) : null);
+    }
+
+    private static Cx04SignInHistoryItem HistoryItem(long sequence, string eventType, string actor,
+        DateTime occurredAt, string detailsJson, IReadOnlyDictionary<string, string> names)
+    {
+        using var details = JsonDocument.Parse(detailsJson);
+        var root = details.RootElement;
+        var kind = eventType switch
+        {
+            nameof(ConnectionAuditEventType.ConsentGranted) => "signed_in",
+            nameof(ConnectionAuditEventType.ConsentDisabled) => "disabled",
+            nameof(ConnectionAuditEventType.ConsentRequired) => "sign_in_required",
+            nameof(ConnectionAuditEventType.ConsentPauseNotified) => "sync_paused",
+            _ => "expiry_reminder",
+        };
+        var result = kind switch { "disabled" => "tokens_deleted", "sign_in_required" => "paused", _ => "sent" };
+        var reason = root.TryGetProperty("reason", out var reasonValue) ? reasonValue.GetString() : null;
+        int? days = root.TryGetProperty("days_before_expiry", out var dayValue) ? dayValue.GetInt32() : null;
+        var roles = root.TryGetProperty("recipient_roles", out var roleValue) && roleValue.ValueKind == JsonValueKind.Array
+            ? roleValue.EnumerateArray().Select(value => value.GetString()!).Where(value => value is not null).ToList()
+            : null;
+        return new(sequence, kind, actor.StartsWith("system:", StringComparison.Ordinal) ? "System"
+            : names.GetValueOrDefault(actor) ?? "Unknown user", occurredAt, result, 1, reason, days, roles);
+    }
+
+    private static List<int> SentDays(Cx04AuthorisationState row)
+    {
+        try { return JsonSerializer.Deserialize<List<int>>(row.ReminderDaysSentJson, IntegrationContracts.Json) ?? []; }
+        catch (JsonException) { return []; }
+    }
+
+    private static string? Person(string? actor, IReadOnlyDictionary<string, string> names) => actor is null ? null
+        : actor.StartsWith("system:", StringComparison.Ordinal) ? "System"
+        : names.GetValueOrDefault(actor) ?? "Unknown user";
+
+    private sealed class Cx04RenewalHistoryProjection
+    {
+        public long Sequence { get; init; }
+        public DateTime OccurredAt { get; init; }
+        public int Count { get; init; }
     }
 }
 
 public sealed class Cx04ConsentExpiryReminders(IntegrationDbContext db, ITenantContext tenant, IClock clock,
-    IConnectionAuditSink audit)
+    IConnectionAuditSink audit, Cx04ReminderSettings settings, Cx04SignInNotifications notifications)
 {
     public async Task<int> EvaluateAsync(CancellationToken ct)
     {
+        var configured = await settings.GetAsync(ct);
+        var largestDay = configured.DaysBeforeExpiry.Max();
         var rows = await db.Cx04AuthorisationStates.Where(value => value.TenantId == tenant.TenantId
                 && value.Status == Cx04AuthorisationStatus.Active && value.RefreshChainExpiresAt != null
-                && value.RefreshChainExpiresAt <= clock.UtcNow.AddDays(14))
+                && value.RefreshChainExpiresAt <= clock.UtcNow.AddDays(largestDay))
             .OrderBy(value => value.RefreshChainExpiresAt).ThenBy(value => value.ConnectionId).Take(100)
             .ToListAsync(ct);
-        var notifications = 0;
+        var notificationCount = 0;
         foreach (var row in rows)
         {
-            if (!row.Reminder14DaysSent)
+            var sent = SentDays(row).ToHashSet();
+            foreach (var days in configured.DaysBeforeExpiry.Where(days =>
+                         row.RefreshChainExpiresAt <= clock.UtcNow.AddDays(days) && !sent.Contains(days)))
             {
-                row.Reminder14DaysSent = true;
-                await NotifyAsync(row, ConnectionAuditEventType.ConsentExpiry14Days, 14, ct);
-                notifications++;
-            }
-            if (row.RefreshChainExpiresAt <= clock.UtcNow.AddDays(3) && !row.Reminder3DaysSent)
-            {
-                row.Reminder3DaysSent = true;
-                await NotifyAsync(row, ConnectionAuditEventType.ConsentExpiry3Days, 3, ct);
-                notifications++;
+                sent.Add(days);
+                row.ReminderDaysSentJson = JsonSerializer.Serialize(sent.OrderDescending(), IntegrationContracts.Json);
+                await notifications.NotifyReminderAsync(row, days, configured.RecipientRoles, ct);
+                notificationCount++;
             }
             if (row.RefreshChainExpiresAt <= clock.UtcNow)
             {
@@ -246,19 +375,24 @@ public sealed class Cx04ConsentExpiryReminders(IntegrationDbContext db, ITenantC
                 var connection = await db.Connections.SingleAsync(value => value.TenantId == tenant.TenantId
                     && value.ConnectionId == row.ConnectionId, ct);
                 connection.Status = Data.Entities.ConnectionStatus.Paused;
-                await NotifyAsync(row, ConnectionAuditEventType.ConsentRequired, 0, ct);
+                await audit.AppendAsync(new(tenant.TenantId, Guid.CreateVersion7(clock.UtcNow), row.ConnectionId,
+                    ConnectionAuditEventType.ConsentRequired, "system:cx04-authorisation", clock.UtcNow,
+                    JsonSerializer.Serialize(new { reason = "expired", expired_at = row.RefreshChainExpiresAt },
+                        IntegrationContracts.Json)), ct);
+                await notifications.NotifyPauseAsync(row, "expired",
+                    $"the sign-in expired at {row.RefreshChainExpiresAt:yyyy-MM-dd HH:mm} UTC", ct);
             }
             row.UpdatedAt = clock.UtcNow;
         }
         await db.SaveChangesAsync(ct);
-        return notifications;
+        return notificationCount;
     }
 
-    private Task<ConnectionAuditEvent> NotifyAsync(Cx04AuthorisationState row, ConnectionAuditEventType kind, int days,
-        CancellationToken ct) => audit.AppendAsync(new(tenant.TenantId, Guid.CreateVersion7(clock.UtcNow),
-        row.ConnectionId, kind, "system:cx04-authorisation", clock.UtcNow,
-        JsonSerializer.Serialize(new { days_before_expiry = days,
-            refresh_chain_expires_at = row.RefreshChainExpiresAt }, IntegrationContracts.Json)), ct);
+    private static List<int> SentDays(Cx04AuthorisationState row)
+    {
+        try { return JsonSerializer.Deserialize<List<int>>(row.ReminderDaysSentJson, IntegrationContracts.Json) ?? []; }
+        catch (JsonException) { return []; }
+    }
 }
 
 [DisallowConcurrentExecution]

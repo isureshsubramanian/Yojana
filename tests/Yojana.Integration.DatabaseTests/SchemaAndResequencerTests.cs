@@ -58,6 +58,11 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
         Assert.Contains("desk", columns);
         var healthColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'connection_health'").ToListAsync();
         AssertSuperset(healthColumns, "tenant_id", "inbound_count_date_utc", "completed_inbound_days_json");
+        var authorisationColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'cx04_authorisation_state' ORDER BY ORDINAL_POSITION").ToListAsync();
+        Assert.Equal("tenant_id", authorisationColumns[0]);
+        AssertSuperset(authorisationColumns, "reminder_days_sent_json", "signed_in_by", "signed_in_at",
+            "disabled_by", "disabled_at", "disabled_reason", "pause_reason", "pause_notified_at",
+            "last_call_at");
         var batchColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'migration_batch'").ToListAsync();
         AssertSuperset(batchColumns, "tenant_id", "display_number");
         var serialMasterColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'migration' AND TABLE_NAME = 'stg_src_osrn'").ToListAsync();

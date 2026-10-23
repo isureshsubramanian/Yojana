@@ -185,6 +185,10 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
         "ConsentRequired" => "Fresh connection consent required",
         "ConsentExpiry14Days" => "Connection consent expires within 14 days",
         "ConsentExpiry3Days" => "Connection consent expires within 3 days",
+        "ConsentExpiryReminder" => "Connection consent expiry reminder sent",
+        "ConsentPauseNotified" => "Connection sync pause notification sent",
+        "ConsentReminderSettingsChanged" => "Connection consent reminder settings changed",
+        "ConsentRenewed" => "Connection access renewed",
         _ => "Connection activity recorded",
     };
 

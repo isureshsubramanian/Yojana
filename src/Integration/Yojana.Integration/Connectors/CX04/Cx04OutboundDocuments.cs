@@ -62,7 +62,7 @@ public sealed class Cx04OutboundDocuments(Cx04Settings settings, Cx04Client clie
         var rows = await client.ReadCollectionAsync(lookup.ConnectionId,
             new Uri(Cx04Protocol.Collection(configured, entity) + "?" + filter), 2, 2, cancellationToken);
         if (rows.Count > 1) throw new InvalidOperationException("The CX04 outbound reference is not unique.");
-        return rows.SingleOrDefault() is { } row ? Document(entity, row) : null;
+        return rows.Count == 1 ? Document(entity, rows[0]) : null;
     }
 
     public async Task<OutboundCreateResult> CreateAsync(OutboundCreateRequest request, CancellationToken cancellationToken)

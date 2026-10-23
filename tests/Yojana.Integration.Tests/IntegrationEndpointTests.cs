@@ -17,11 +17,42 @@ using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Integration.LegacyMigration.LinkOverrides;
 using Yojana.Integration.LegacyMigration.Validation;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Yojana.Integration.Connectors.CX04;
 
 namespace Yojana.Integration.Tests;
 
 public sealed class IntegrationEndpointTests
 {
+    [Fact]
+    public async Task Cx04_sign_in_actions_use_the_shared_administrator_policy_and_validation_errors_are_bad_requests()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddAuthorization();
+        builder.Services.AddScoped<Cx04Authorisation>();
+        builder.Services.AddScoped<Cx04ReminderSettings>();
+        var app = builder.Build();
+        app.MapCx04AuthorisationEndpoints();
+        var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>().ToList();
+        Assert.Equal(6, endpoints.Count);
+        Assert.All(endpoints, endpoint => Assert.Equal([YojanaPolicy.IntegrationOperations], endpoint.Metadata
+            .GetOrderedMetadata<IAuthorizeData>().Select(value => value.Policy).ToList()));
+
+        foreach (var rule in new[] { "disable_confirmation_required", "disable_reason_invalid" })
+        {
+            var result = await Cx04AuthorisationEndpoints.Invoke<object>(() =>
+                Task.FromException<object>(new Cx04AuthorisationException(rule, "Fictional validation failure.")));
+            var problem = Assert.IsType<ProblemHttpResult>(result);
+            Assert.Equal(400, problem.StatusCode);
+            Assert.Equal(rule, problem.ProblemDetails.Extensions["rule"]);
+        }
+        Assert.DoesNotContain(typeof(Cx04DisableRequest).GetProperties(), property =>
+            property.Name.Contains("Actor", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(typeof(UpdateCx04ReminderSettings).GetProperties(), property =>
+            property.Name.Contains("Actor", StringComparison.OrdinalIgnoreCase));
+    }
+
     [Fact]
     public void Dead_letter_and_manual_task_endpoints_share_the_operator_policy()
     {

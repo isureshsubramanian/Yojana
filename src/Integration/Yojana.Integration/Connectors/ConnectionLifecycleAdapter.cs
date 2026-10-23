@@ -31,9 +31,35 @@ public interface IConnectionLifecycleAdapter
     Task ResumeNotificationsAsync(Guid connectionId, CancellationToken ct) => Task.CompletedTask;
 }
 
-public sealed record ConnectionAuthorisationView(string Status, DateTime? RefreshChainExpiresAt,
-    string RefreshExpiryMode, int RefreshLifetimeDays, bool Reminder14DaysSent, bool Reminder3DaysSent,
-    bool CanDisable, bool RequiresFreshConsent);
+public sealed record ConnectionAuthorisationView(
+    string Status,
+    DateTime? RefreshChainExpiresAt,
+    string RefreshExpiryMode,
+    int RefreshLifetimeDays,
+    DateTime? LastCallAt,
+    IReadOnlyList<int> ReminderDays,
+    IReadOnlyList<string> ReminderRecipientRoles,
+    IReadOnlyList<int> RemindersSent,
+    int? NextReminderDays,
+    string? SignedInBy,
+    DateTime? SignedInAt,
+    string? DisabledBy,
+    DateTime? DisabledAt,
+    string? DisabledReason,
+    int WaitingOutbound,
+    string LicenceTier,
+    int LicensedRequestsPerMinute,
+    int GovernedRequestsPerMinute,
+    int RequestHeadroomPerMinute,
+    bool CanDisable,
+    bool RequiresFreshConsent,
+    Cx04SignInHistoryPage History);
+
+public sealed record Cx04SignInHistoryItem(long Sequence, string Kind, string By, DateTime OccurredAt,
+    string Result, int Count, string? Reason = null, int? DaysBeforeExpiry = null,
+    IReadOnlyList<string>? RecipientRoles = null);
+
+public sealed record Cx04SignInHistoryPage(IReadOnlyList<Cx04SignInHistoryItem> Items, string? NextCursor);
 
 public sealed record ConnectionDeclaration(IReadOnlyDictionary<string, string> Capabilities,
     ConnectorThrottleDeclaration Throttle, IReadOnlyDictionary<string, string> PollEntities,

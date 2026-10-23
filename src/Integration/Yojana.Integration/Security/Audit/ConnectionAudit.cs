@@ -48,6 +48,10 @@ public enum ConnectionAuditEventType
     ConsentRequired,
     ConsentExpiry14Days,
     ConsentExpiry3Days,
+    ConsentExpiryReminder,
+    ConsentPauseNotified,
+    ConsentReminderSettingsChanged,
+    ConsentRenewed,
 }
 
 public sealed record ConnectionAuditEvent(
