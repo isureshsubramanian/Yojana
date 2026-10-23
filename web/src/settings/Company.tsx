@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
 import { ApiError } from "../api/client";
 import { useSession } from "../session/session";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
@@ -36,7 +35,7 @@ export function Component() {
   const tooLong = settings !== null && settings.footerLine.trim().length > 120;
   return <main className="content" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Settings", to: "/settings" }, { label: "Company" }]} />
-    <PageHeader eyebrow="Settings · tenant administrator" title="Company" sub="How the company appears on every e-mail it sends, account mail and customer mail alike. Every change is recorded in Security events." actions={<><Link className="btn" to="/settings">Back to settings</Link><button className="btn primary" type="button" disabled={busy || !settings || tooLong} onClick={() => void save()}>{busy ? "Saving…" : "Save"}</button></>} />
+    <PageHeader eyebrow="Settings · tenant administrator" title="Company" sub="How the company appears on every e-mail it sends, account mail and customer mail alike. Every change is recorded in Security events." actions={<button className="btn primary" type="button" disabled={busy || !settings || tooLong} onClick={() => void save()}>{busy ? "Saving…" : "Save"}</button>} />
     {!permitted && <div className="note bad"><strong>Tenant administrator access is required.</strong></div>}
     {error && <div className="note bad" role="alert">{error}</div>}
     {saved && <div className="note ok"><strong>Company settings saved.</strong> New e-mails use them from now on.</div>}

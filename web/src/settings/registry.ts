@@ -42,6 +42,7 @@ export const settingsRegistry: SettingsRegistryEntry[] = [
   { group: "Organisation", name: "Users", description: "Staff memberships, invitations and tenant roles", path: "/settings/users", icon: "users", roles: administrator, route: () => import("./Users") },
   { group: "Organisation", name: "Sign-in policy", description: "Password recovery, invitations and second-step rules", path: "/settings/sign-in-policy", icon: "key", roles: administrator,
     currentValue: signal => secondStepApi.settings(signal).then(value => { const count = value.roles.filter(role => role.mode === "required").length; return `Authenticator required for ${count} ${count === 1 ? "role" : "roles"}`; }), route: () => import("./SignInPolicy") },
+  { group: "Organisation", name: "Security events", description: "Sign-ins, lockouts and administrator security actions", path: "/settings/security-events", icon: "shield", roles: administrator, route: () => import("./SecurityEvents") },
   { group: "Organisation", name: "Time zone", description: "Document time plus issuing-entity overrides", path: "/settings/time-zone", icon: "globe", roles: administrator,
     currentValue: signal => timeZoneSettingsApi.get(signal).then(value => `${value.tenantTimeZone ?? "UTC"} · ${value.legalEntityOverrides.length} entity ${value.legalEntityOverrides.length === 1 ? "override" : "overrides"}`), route: () => import("./TimeZoneSettings") },
   { group: "Organisation", name: "Currencies", description: "Working and accepted currencies", path: "/settings/currencies", icon: "coins", roles: administrator,

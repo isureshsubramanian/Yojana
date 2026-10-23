@@ -14,7 +14,7 @@ export function Component() {
   const current = settingsRegistry.find(entry => entry.path === location.pathname);
   if (landing) return <Outlet />;
   return <div className="settings-route content">
-    <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Settings", to: "/settings" }, { label: current?.name ?? "Setting" }]} />
+    <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Settings", to: "/settings" }, { label: current?.name ?? "Setting not found" }]} />
     <div className="settings-layout">
       <SettingsNavigation currentPath={location.pathname} />
       <div className="settings-body"><Outlet /></div>
