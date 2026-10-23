@@ -25,6 +25,7 @@ using Yojana.Integration.Security.Persistence;
 using Yojana.Integration.Security.Webhooks;
 using Yojana.Integration.Security.Workers;
 using Yojana.Integration.Connectors.CX01;
+using Yojana.Integration.Connectors.CX02;
 using Yojana.Integration.Reconciliation;
 using Yojana.Integration.Backfills;
 using Yojana.Integration.Connectors;
@@ -58,6 +59,7 @@ public static class IntegrationModule
         builder.Services.AddScoped<ConnectionHealthProjection>();
         builder.Services.AddSingleton(RecurringTenantJob.For<ConnectionHealthJob>(ConnectionHealthJob.JobName, ConnectionHealthJob.Cron));
         builder.Services.AddKeyedScoped<IConnectionLifecycleAdapter, Cx01ConnectionLifecycleAdapter>(Cx01Capabilities.ConnectorCode);
+        builder.Services.AddKeyedScoped<IConnectionLifecycleAdapter, Cx02ConnectionLifecycleAdapter>(Cx02Capabilities.ConnectorCode);
         builder.Services.AddScoped<WarrantyContractMaintenanceSettings>();
         // Factory keeps the Serialisation implementation behind its Contracts port out of Wolverine's handler graph;
         // the two module DbContexts never participate in one inferred transaction.
@@ -78,6 +80,7 @@ public static class IntegrationModule
         builder.Services.AddScoped<IMigrationGoLiveFacts, Yojana.Integration.LegacyMigration.Apply.MigrationGoLiveFactsReader>();
         builder.Services.AddSingleton(RecurringTenantJob.For<CoexistenceDriftJob>(CoexistenceDriftJob.JobName, CoexistenceDriftJob.Cron));
         builder.Services.AddKeyedScoped<ICoexistenceDriftReader, Cx01CoexistenceDriftReader>(Cx01Capabilities.ConnectorCode);
+        builder.Services.AddKeyedScoped<ICoexistenceDriftReader, Cx02CoexistenceDriftReader>(Cx02Capabilities.ConnectorCode);
         builder.Services.AddScoped<IdempotencyIndex>();
         builder.Services.AddScoped<InboundMessageStore>();
         builder.Services.AddSingleton<IChangeMarkerComparer, ChangeMarkerComparer>();
@@ -89,6 +92,8 @@ public static class IntegrationModule
         builder.Services.AddSingleton<IConnectorOnboardingProfiles, ConnectorOnboardingProfiles>();
         builder.Services.AddKeyedSingleton<IConnectorOnboardingProfile, Cx01OnboardingProfile>(
             Cx01Capabilities.ConnectorCode);
+        builder.Services.AddKeyedSingleton<IConnectorOnboardingProfile, Cx02OnboardingProfile>(
+            Cx02Capabilities.ConnectorCode);
         builder.Services.AddScoped<InboundGateway>();
         builder.Services.AddSingleton(InboundTranslationRecoveryOptions.Default);
         builder.Services.AddScoped<InboundTranslationRecovery>();
@@ -146,6 +151,18 @@ public static class IntegrationModule
         builder.Services.AddScoped<Cx01WebhookEventTracker>();
         builder.Services.AddSingleton(RecurringTenantJob.For<Cx01WebhookWatchdogJob>(
             Cx01WebhookWatchdogJob.JobName, Cx01WebhookWatchdogJob.Cron));
+        builder.Services.AddSingleton<Cx02TokenRegistry>();
+        builder.Services.AddScoped<Cx02Settings>();
+        builder.Services.AddScoped<Cx02Transport>();
+        builder.Services.AddScoped<ICx02Transport>(services => services.GetRequiredService<Cx02Transport>());
+        builder.Services.AddScoped<Cx02Client>();
+        builder.Services.AddScoped<Cx02Adapter>();
+        builder.Services.AddKeyedScoped<IConnectorAdapter>(Cx02Capabilities.ConnectorCode, (services, _) =>
+            services.GetRequiredService<Cx02Adapter>());
+        builder.Services.AddScoped<Cx02NotificationTracker>();
+        builder.Services.AddScoped<Cx02WebhookMaintenance>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<Cx02WebhookMaintenanceJob>(
+            Cx02WebhookMaintenanceJob.JobName, Cx02WebhookMaintenanceJob.Cron));
         // The published-event chains already contain Serialisation handlers with their own EF transaction. Resolve the
         // staging service through a factory so Wolverine does not infer IntegrationDbContext as a second transaction
         // owner for that same public message. The stager owns and saves its narrow staging unit of work explicitly.
