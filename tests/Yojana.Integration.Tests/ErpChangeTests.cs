@@ -36,12 +36,14 @@ public sealed class ErpChangeTests
         builder.Services.AddScoped<ErpChangeDualRunService>();
         builder.Services.AddScoped<ErpChangeCutoverService>();
         builder.Services.AddScoped<ErpChangeCleanPeriodSettings>();
+        builder.Services.AddScoped<ErpChangeNotificationSettings>();
+        builder.Services.AddScoped<ErpChangeWorkService>();
         var app = builder.Build();
         app.MapErpChangeEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
 
-        Assert.Equal(36, endpoints.Count);
+        Assert.Equal(39, endpoints.Count);
         Assert.All(endpoints.Where(endpoint => endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods
                 .Contains("GET")), endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
                 policy => policy.Policy == YojanaPolicy.ErpChangeRead));
@@ -67,6 +69,11 @@ public sealed class ErpChangeTests
             Assert.Contains(endpoints.Single(endpoint => endpoint.RoutePattern.RawText == route)
                     .Metadata.GetOrderedMetadata<IAuthorizeData>(),
                 policy => policy.Policy == YojanaPolicy.ErpChangeControl);
+        var notificationsWrite = endpoints.Single(endpoint => endpoint.RoutePattern.RawText ==
+            "/api/integration/erp-change/settings/notifications" && endpoint.Metadata
+                .GetMetadata<HttpMethodMetadata>()!.HttpMethods.Contains("PUT"));
+        Assert.Contains(notificationsWrite.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+            policy => policy.Policy == YojanaPolicy.ErpChangeControl);
     }
 
     [Fact]
@@ -76,6 +83,7 @@ public sealed class ErpChangeTests
                  {
                      typeof(StartErpChangeRequest), typeof(CancelErpChangeRequest),
                      typeof(StartReverseErpChangeRequest), typeof(UpdateErpChangeCleanPeriodRequest),
+                     typeof(UpdateErpChangeNotificationSettings),
                      typeof(BeginCutoverRequest), typeof(RecordOutboundValidationRequest),
                      typeof(ConfirmFirstOutboundRequest), typeof(ConvertParkedOutboundRequest),
                      typeof(ExplainDivergenceRequest), typeof(RaiseDivergenceCorrectionRequest),

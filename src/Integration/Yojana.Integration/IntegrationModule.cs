@@ -261,6 +261,11 @@ public static class IntegrationModule
         builder.Services.AddScoped<ErpChangeMasterDataService>();
         builder.Services.AddScoped<ErpChangeStockService>();
         builder.Services.AddScoped<ErpChangeCleanPeriodSettings>();
+        builder.Services.AddScoped<ErpChangeNotificationSettings>();
+        builder.Services.AddScoped<ErpChangeWorkService>();
+        builder.Services.AddScoped<ErpChangeNotifications>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<ErpChangeNotificationJob>(
+            ErpChangeNotificationJob.JobName, ErpChangeNotificationJob.Cron));
         builder.Services.AddScoped<ErpChangeDualRunService>();
         builder.Services.AddScoped<IErpChangeDivergenceSink>(services =>
             services.GetRequiredService<ErpChangeDualRunService>());

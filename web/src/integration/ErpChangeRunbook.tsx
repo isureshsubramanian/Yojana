@@ -13,9 +13,10 @@ import { erpChangeApi } from "./erpChangeApi";
 import {
   canCancel, canReverse, checklistLabel, checklistState, checklistTone, commandName, connectionLine, criterionLabel, criterionTone,
   divergenceReviewer, divergenceState, exitCriteriaStates, mayDecideDivergence, runbookKpis, stepSummaries, stepTitles, validationCommand,
+  notificationRecipientRoles,
   type ErpChangeRights,
 } from "./erpChangeModel";
-import type { CutoverChecklistItemView, CutoverChecklistView, ErpChangeCleanPeriodView, ErpChangeDivergencePage, ErpChangeDivergenceRow, ErpChangeRunbookView } from "./erpChangeTypes";
+import type { CutoverChecklistItemView, CutoverChecklistView, ErpChangeCleanPeriodView, ErpChangeDivergencePage, ErpChangeDivergenceRow, ErpChangeNotificationSettingsView, ErpChangeRunbookView } from "./erpChangeTypes";
 import { parallelDate } from "./parallelRunModel";
 
 export function Component() { return <ErpChangeAccess><RunbookScreen /></ErpChangeAccess>; }
@@ -59,6 +60,7 @@ function RunbookBody({ run, rights, onChanged, refresh }: { run: ErpChangeRunboo
     {run.status !== "active" && <div className={`note ${run.status === "cancelled" ? "warn" : "ok"}`} role="status"><strong>{run.status === "cancelled" ? "Rolled back" : "Completed"}</strong> {run.closedAt ? parallelDate(run.closedAt, true) : ""}{run.closedBy ? ` by ${run.closedBy}` : ""}{run.closeReason ? ` · ${run.closeReason}` : ""}</div>}
     <ol className="erp-stages" aria-label="Steps">{steps.map(step => <li key={step.step}><Link to={target(step.step)} aria-current={step.current ? "true" : undefined}><div className="l">{step.label}</div><div className={`n${step.tone === "bad" ? " bad-text" : step.tone === "ok" ? " ok-text" : ""}`}>{step.value}</div><div className="s">{step.detail}</div></Link></li>)}</ol>
     <KpiStrip label="ERP change figures" kpis={runbookKpis(run)} />
+    {rights.control && <NotificationSettings />}
     <div className="erp-change-columns">
       <section className="card" aria-labelledby="erp-exit"><div className="card-header"><h2 id="erp-exit">Exit criteria</h2><span className="right"><span className="muted">a step opens only when the one before passes</span></span></div><div className="card-body">
         <ul className="erp-checks">{criteria.map(item => <li key={item.step}><span>{item.label}<span className="s">{item.detail}</span></span><StatusBadge tone={criterionTone(item.state)}>{criterionLabel(item.state)}</StatusBadge></li>)}</ul>
@@ -76,6 +78,42 @@ function RunbookBody({ run, rights, onChanged, refresh }: { run: ErpChangeRunboo
     <DivergencesCard run={run} rights={rights} refresh={refresh} />
     <CutoverCard run={run} rights={rights} refresh={refresh} />
   </>;
+}
+
+function NotificationSettings() {
+  const [setting, setSetting] = useState<ErpChangeNotificationSettingsView | null>(null);
+  const [draft, setDraft] = useState<ErpChangeNotificationSettingsView | null>(null);
+  const [error, setError] = useState<unknown>(null); const action = useAction();
+  useEffect(() => {
+    const controller = new AbortController();
+    void erpChangeApi.notificationSettings(controller.signal).then(value => {
+      if (controller.signal.aborted) return;
+      setSetting(value); setDraft(value);
+    }).catch(reason => { if (!controller.signal.aborted) setError(reason); });
+    return () => controller.abort();
+  }, []);
+  if (!setting || !draft) return error ? <ErrorNote error={error} /> : null;
+  const master = [...draft.masterDataRecipientRoles].sort(); const stock = [...draft.stockRecipientRoles].sort();
+  const changed = draft.digestEnabled !== setting.digestEnabled || draft.digestHour !== setting.digestHour
+    || master.join("|") !== [...setting.masterDataRecipientRoles].sort().join("|") || stock.join("|") !== [...setting.stockRecipientRoles].sort().join("|");
+  const save = () => void action.run(async () => {
+    const saved = await erpChangeApi.saveNotificationSettings({ ...draft, masterDataRecipientRoles: master, stockRecipientRoles: stock });
+    setSetting(saved); setDraft(saved);
+  }, "Notification settings saved.");
+  return <section className="card" aria-labelledby="erp-notifications"><div className="card-header"><h2 id="erp-notifications">Notifications</h2><span className="meta">tenant setting · step-open mail and morning digest</span></div>
+    <div className="card-body stack"><div className="toolbar">
+      <label className="field"><span className="lbl">Morning digest</span><select className="select" value={draft.digestEnabled ? "on" : "off"} onChange={event => setDraft({ ...draft, digestEnabled: event.target.value === "on" })}><option value="on">On</option><option value="off">Off</option></select></label>
+      <label className="field"><span className="lbl">Tenant-local hour (0–23)</span><input className="input" type="number" min={0} max={23} required value={draft.digestHour} onChange={event => setDraft({ ...draft, digestHour: Number(event.target.value) })} /></label>
+      <RecipientRoles legend="Master data exceptions go to" value={draft.masterDataRecipientRoles} onChange={roles => setDraft({ ...draft, masterDataRecipientRoles: roles })} />
+      <RecipientRoles legend="Stock differences and divergences go to" value={draft.stockRecipientRoles} onChange={roles => setDraft({ ...draft, stockRecipientRoles: roles })} />
+      <button type="button" className="btn" disabled={action.busy || !changed || draft.digestHour < 0 || draft.digestHour > 23 || master.length === 0 || stock.length === 0} onClick={save}>Save notifications</button>
+    </div><p className="hint">Only roles that can open the ERP change screens can be mailed. Integration operators and tenant administrators keep using the ERP change tab and are not mailed.</p><ErrorNote error={error} />{action.feedback}</div>
+  </section>;
+}
+
+function RecipientRoles({ legend, value, onChange }: { legend: string; value: readonly string[]; onChange: (roles: string[]) => void }) {
+  const toggle = (role: string, on: boolean) => onChange(on ? [...value.filter(item => item !== role), role] : value.filter(item => item !== role));
+  return <fieldset className="field"><legend className="lbl">{legend}</legend>{notificationRecipientRoles.map(([role, label]) => <label key={role}><input type="checkbox" checked={value.includes(role)} onChange={event => toggle(role, event.target.checked)} />{label}</label>)}</fieldset>;
 }
 
 function StepWork({ run, rights, onChanged, refresh }: { run: ErpChangeRunbookView; rights: ErpChangeRights; onChanged: (value: ErpChangeRunbookView) => void; refresh: () => void }) {
@@ -238,8 +276,11 @@ function ReverseForm({ run, onChanged }: { run: ErpChangeRunbookView; onChanged:
   const action = useAction();
   return <div className="erp-drawer-form">
     <p>There is no one-click undo after cutover. This starts a new ERP change at step 1, from "{run.target.name}" back to "{run.source.name}", and every step runs again with its own exit criteria.</p>
-    <p className="muted">If "{run.source.name}" has been archived, a new connection to it is needed instead.</p>
-    <button type="button" className="btn primary" disabled={action.busy} onClick={() => void action.run(async () => { onChanged(await erpChangeApi.reverse(run.runId)); closeDrawer(); }, "New ERP change started.")}>Start the change back</button>{action.feedback}
+    {run.archive?.sourceArchived ? <>
+      <p className="muted">"{run.source.name}" is archived, so it cannot be used again. Register a new connection to that ERP; it starts read-only with no outbound.</p>
+      <Registration title="New connection to the former ERP" submitLabel="Register read-only and start the change back" success="New ERP change started at step 1."
+        submit={async body => { const started = await erpChangeApi.reverse(run.runId, body); onChanged(started); closeDrawer(); return started.target.connectionId; }} complete={() => undefined} />
+    </> : <><button type="button" className="btn primary" disabled={action.busy} onClick={() => void action.run(async () => { onChanged(await erpChangeApi.reverse(run.runId)); closeDrawer(); }, "New ERP change started.")}>Start the change back</button>{action.feedback}</>}
   </div>;
 }
 

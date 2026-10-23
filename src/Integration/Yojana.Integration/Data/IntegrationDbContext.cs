@@ -116,6 +116,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<ErpChangeDivergence> ErpChangeDivergences => Set<ErpChangeDivergence>();
     public DbSet<ErpChangeDailyCheck> ErpChangeDailyChecks => Set<ErpChangeDailyCheck>();
     public DbSet<ErpChangeChecklistItem> ErpChangeChecklistItems => Set<ErpChangeChecklistItem>();
+    public DbSet<ErpChangeNotice> ErpChangeNotices => Set<ErpChangeNotice>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -260,6 +261,22 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.Evidence).HasMaxLength(2000);
             b.Property(x => x.CompletedBy).HasMaxLength(320);
             b.HasIndex(x => new { x.TenantId, x.ErpChangeRunId, x.Code }).IsUnique();
+            b.HasOne<ErpChangeRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.ErpChangeRunId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<ErpChangeNotice>(b =>
+        {
+            b.ToTable("erp_change_notice", table => table.HasCheckConstraint(
+                "ck_erp_change_notice_kind", "kind IN ('step_open','morning_digest')"));
+            b.HasKey(x => new { x.TenantId, x.ErpChangeNoticeId });
+            b.Property(x => x.Kind).HasMaxLength(24).IsUnicode(false);
+            b.Property(x => x.RecipientRole).HasMaxLength(80).IsUnicode(false);
+            b.Property(x => x.OccurrenceKey).HasMaxLength(20).IsUnicode(false);
+            b.Property(x => x.CountsJson).HasColumnType("nvarchar(max)");
+            b.Property(x => x.LinkPath).HasMaxLength(200).IsUnicode(false);
+            b.HasIndex(x => new { x.TenantId, x.ErpChangeRunId, x.Kind, x.Step,
+                x.RecipientRole, x.OccurrenceKey }).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.SentAt, x.ErpChangeNoticeId });
             b.HasOne<ErpChangeRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.ErpChangeRunId })
                 .OnDelete(DeleteBehavior.Restrict);
         });

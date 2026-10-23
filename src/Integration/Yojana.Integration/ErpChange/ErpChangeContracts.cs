@@ -7,6 +7,19 @@ public sealed record CancelErpChangeRequest(string Reason);
 public sealed record StartReverseErpChangeRequest;
 public sealed record UpdateErpChangeCleanPeriodRequest(int Days, string ExpectedVersion);
 public sealed record ErpChangeCleanPeriodView(int Days, string SettingsVersion);
+public sealed record ErpChangeNotificationSettingsView(bool DigestEnabled, int DigestHour,
+    IReadOnlyList<string> MasterDataRecipientRoles, IReadOnlyList<string> StockRecipientRoles,
+    string SettingsVersion);
+public sealed record UpdateErpChangeNotificationSettings(bool DigestEnabled, int DigestHour,
+    IReadOnlyList<string> MasterDataRecipientRoles, IReadOnlyList<string> StockRecipientRoles,
+    string ExpectedVersion);
+public sealed record ErpChangeMyWorkView(Guid RunId, int CurrentStep, string SourceName, string TargetName,
+    int MasterDataExceptions, int CoveredStockDifferences, int OtherStockDifferencesAwaitingSignOff,
+    int StockTypeDivergences, string ScreenPath)
+{
+    public int Total => MasterDataExceptions + CoveredStockDifferences
+        + OtherStockDifferencesAwaitingSignOff + StockTypeDivergences;
+}
 public sealed record StartDualRunResult(Guid RunId, DateTime StartedAt, int MinimumDays,
     int CleanDaysRequired, bool SourceReadOnly, string SourceOutboundMode,
     bool TargetReadOnly, string TargetOutboundMode);

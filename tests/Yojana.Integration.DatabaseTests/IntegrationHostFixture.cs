@@ -15,6 +15,7 @@ using Yojana.Integration.Security.Workers;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Contracts.Mail;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Tenancy;
@@ -34,6 +35,7 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
     public FakeOutboundConnector Connector { get; } = new();
     public FakeIntegrationTransport Transport { get; } = new();
     public FakeReconciliationSource ReconciliationSource { get; } = new();
+    public CapturingMailOutbox Mail { get; } = new();
 
     public async Task InitializeAsync()
     {
@@ -50,6 +52,7 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.Configuration["Platform:StartScheduler"] = "false";
         builder.Configuration["Platform:ServiceName"] = "yojana-integration-tests";
         builder.Configuration["Platform:SignIn:AuditHmacKey"] = "integration-database-tests-only-hmac-key";
+        builder.Configuration["Platform:Mail:LinkBaseUrl"] = "https://yojana.example";
         builder.Configuration["Serialisation:Documents:ConfirmDeliverySeparately"] = "false";
         ConfigureLocalKey(builder.Configuration);
         PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);
@@ -75,6 +78,7 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.Services.AddSingleton<IClock>(Clock);
         builder.Services.Replace(ServiceDescriptor.Singleton<IConnectionThrottleDelay>(
             new AdvancingDatabaseThrottleDelay(Clock)));
+        builder.Services.Replace(ServiceDescriptor.Singleton<IMailOutbox>(Mail));
         Host = builder.Build();
         await Host.StartAsync();
     }
@@ -143,6 +147,29 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
             Convert.ToBase64String(Enumerable.Range(1, 32).Select(x => (byte)x).ToArray());
         configuration["Integration:Security:LocalKeyEncryption:AllowInProduction"] = "true";
         configuration["Integration:Security:LocalKeyEncryption:ProductionOverrideReason"] = "isolated database test host";
+    }
+}
+
+public sealed class CapturingMailOutbox : IMailOutbox
+{
+    private readonly object sync = new();
+    private readonly List<OutgoingMail> messages = [];
+
+    public Task<Guid> QueueAsync(OutgoingMail mail, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (sync) messages.Add(mail);
+        return Task.FromResult(Guid.CreateVersion7());
+    }
+
+    public IReadOnlyList<OutgoingMail> Snapshot()
+    {
+        lock (sync) return messages.ToList();
+    }
+
+    public void Reset()
+    {
+        lock (sync) messages.Clear();
     }
 }
 

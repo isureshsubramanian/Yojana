@@ -26,7 +26,8 @@ public sealed class ErpChangeDualRunService(
     ErpChangeCleanPeriodSettings cleanPeriod,
     ReconciliationService reconciliation,
     ErpChangeStockService stock,
-    IUserDirectory people) : IErpChangeDivergenceSink
+    IUserDirectory people,
+    ErpChangeNotifications notifications) : IErpChangeDivergenceSink
 {
     public const int MinimumDays = 30;
 
@@ -88,8 +89,10 @@ public sealed class ErpChangeDualRunService(
             value.TenantId == tenant.TenantId && value.ErpChangeRunId == run.ErpChangeRunId
             && value.Kind == request.Kind && value.SubjectType == request.SubjectType
             && value.SubjectRef == request.SubjectRef, cancellationToken);
+        var created = false;
         if (row is null)
         {
+            created = true;
             row = new()
             {
                 TenantId = tenant.TenantId,
@@ -134,6 +137,8 @@ public sealed class ErpChangeDualRunService(
             }
         }
         await db.SaveChangesAsync(cancellationToken);
+        if (created && request.Kind == ErpChangeDivergenceKind.Stock)
+            await notifications.FirstStockDivergenceAsync(run.ErpChangeRunId, cancellationToken);
         return row;
     }
 

@@ -1,4 +1,5 @@
 import { Link, useLoaderData } from "react-router";
+import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Overview, OverviewCell, OverviewPanel, RailSection } from "../api/types";
 import { useSession } from "../session/session";
@@ -7,6 +8,9 @@ import { KpiStrip, ScanInput, Shortcut, openSearch } from "../components";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { Rail } from "../shell/Drawer";
 import { TrainingWelcomeCard } from "../questions/TrainingWelcomeCard";
+import { erpChangeApi } from "../integration/erpChangeApi";
+import { erpChangeWorkSummary } from "../integration/erpChangeModel";
+import type { ErpChangeMyWorkView } from "../integration/erpChangeTypes";
 
 export function loader({ request }: { request: Request }) {
   return api<Overview>("/api/shell/overview", { signal: request.signal });
@@ -37,6 +41,7 @@ export function Component() {
         />
         <div className="stack">
           <TrainingWelcomeCard />
+          <ErpChangeHomeNotice />
           <KpiStrip kpis={overview.kpis} />
           {overview.panels.length > 0 && (
             <div className={overview.panels.length > 1 ? "cols-3-2" : "stack"}>
@@ -58,6 +63,24 @@ export function Component() {
       </Rail>
     </>
   );
+}
+
+function ErpChangeHomeNotice() {
+  const session = useSession();
+  const eligible = session.roles.some(role => role === "item_master_owner" || role === "inventory_controller");
+  const [work, setWork] = useState<ErpChangeMyWorkView | null>(null);
+  useEffect(() => {
+    if (!eligible) return;
+    const controller = new AbortController();
+    void erpChangeApi.myWork(controller.signal).then(value => { if (!controller.signal.aborted) setWork(value); })
+      .catch(() => { if (!controller.signal.aborted) setWork(null); });
+    return () => controller.abort();
+  }, [eligible]);
+  if (!eligible || !work || work.total === 0) return null;
+  return <section className="card" aria-labelledby="erp-change-home-notice"><div className="card-header">
+    <h2 id="erp-change-home-notice">ERP change in progress — step {work.currentStep}: {erpChangeWorkSummary(work)}</h2>
+    <Link className="btn primary" to={work.screenPath}>Open my ERP change work</Link>
+  </div><div className="card-body"><p className="muted">From "{work.sourceName}" to "{work.targetName}".</p></div></section>;
 }
 
 function Cell({ cell, numeric }: { cell: OverviewCell; numeric: boolean }) {

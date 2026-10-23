@@ -34,7 +34,8 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "reconciliation_location", "backfill_cursor");
         AssertSuperset(tables, "erp_change_run", "erp_change_step_check", "erp_change_transition",
             "erp_change_master_exception", "erp_change_stock_difference", "erp_change_stock_signoff",
-            "erp_change_divergence", "erp_change_daily_check", "erp_change_checklist_item");
+            "erp_change_divergence", "erp_change_daily_check", "erp_change_checklist_item",
+            "erp_change_notice");
         var migrationTables = await db.Database.SqlQueryRaw<string>("SELECT TABLE_NAME AS Value FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'migration'").ToListAsync();
         AssertSuperset(migrationTables, "migration_source", "migration_batch", "migration_batch_table",
             "migration_profile_run", "migration_profile_result",

@@ -165,6 +165,25 @@ public sealed class ErpChangeChecklistItem : ITenantScoped
     public DateTime? CompletedAt { get; set; }
 }
 
+/// <summary>
+/// One role-targeted ERP-change mail batch. Recipient addresses remain in Platform's mail outbox; this Integration
+/// record carries only the non-PII facts needed to make step-open and daily batches idempotent and auditable.
+/// </summary>
+public sealed class ErpChangeNotice : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ErpChangeNoticeId { get; set; }
+    public Guid ErpChangeRunId { get; set; }
+    public required string Kind { get; set; }
+    public int Step { get; set; }
+    public required string RecipientRole { get; set; }
+    public required string OccurrenceKey { get; set; }
+    public int RecipientCount { get; set; }
+    public required string CountsJson { get; set; }
+    public required string LinkPath { get; set; }
+    public DateTime SentAt { get; set; }
+}
+
 public static class ErpChangeRunStatus
 {
     public const string Active = "active";

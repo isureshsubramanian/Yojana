@@ -53,6 +53,8 @@ public enum ConnectionAuditEventType
     ConsentReminderSettingsChanged,
     ConsentRenewed,
     ErpChangeCleanPeriodChanged,
+    ErpChangeNotificationSettingsChanged,
+    ErpChangeMailBatchQueued,
 }
 
 public sealed record ConnectionAuditEvent(

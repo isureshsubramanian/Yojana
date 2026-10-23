@@ -224,6 +224,8 @@ public static class PlatformSetup
                     YojanaRole.MigrationLead));
             // The ERP change screens hide what these policies would refuse (web/src/integration/erpChangeModel.ts,
             // erpChangeRights); change both together or the screens offer actions the server refuses.
+            // ERP change notification recipients are limited to the non-operator roles below
+            // (Integration/ErpChange/ErpChangeNotifications.cs): adding a reader role here means adding it there too.
             auth.AddPolicy(YojanaPolicy.ErpChangeRead, p => p.RequireAuthenticatedUser()
                 .RequireClaim(YojanaClaim.TenantId)
                 .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator, YojanaRole.IntegrationOperator,

@@ -19,7 +19,8 @@ public sealed class ErpChangeRunService(
     IMigrationReconciliationPort units,
     IUserDirectory people,
     ErpChangeDualRunService dualRun,
-    ErpChangeCutoverService cutover)
+    ErpChangeCutoverService cutover,
+    ErpChangeNotifications notifications)
 {
     public async Task<ErpChangeRunbookView> StartAsync(StartErpChangeRequest request, string actor,
         CancellationToken cancellationToken)
@@ -215,6 +216,8 @@ public sealed class ErpChangeRunService(
             OccurredAt = clock.UtcNow,
         });
         await db.SaveChangesAsync(cancellationToken);
+        if (run.Status == ErpChangeRunStatus.Active)
+            await notifications.StepOpenedAsync(runId, run.CurrentStep, cancellationToken);
         return await DetailAsync(runId, cancellationToken);
     }
 

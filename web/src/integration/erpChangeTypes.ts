@@ -25,6 +25,14 @@ export interface ErpChangeDivergenceRow {
 }
 export interface ErpChangeDivergencePage { items: ErpChangeDivergenceRow[]; nextCursor: string | null; open: number; agedOpen: number; resolved: number }
 export interface ErpChangeCleanPeriodView { days: number; settingsVersion: string }
+export interface ErpChangeNotificationSettingsView {
+  digestEnabled: boolean; digestHour: number; masterDataRecipientRoles: string[]; stockRecipientRoles: string[]; settingsVersion: string;
+}
+export interface ErpChangeMyWorkView {
+  runId: string; currentStep: number; sourceName: string; targetName: string; masterDataExceptions: number;
+  coveredStockDifferences: number; otherStockDifferencesAwaitingSignOff: number; stockTypeDivergences: number;
+  screenPath: string; total: number;
+}
 export interface ErpChangeDailyCheckView { businessDate: string; newDivergences: number; agedOpenDivergences: number; clean: boolean; consecutiveCleanDays: number; checkedAt: string; checkedBy: string }
 
 export interface MasterDataCandidate { moduleId: string; label: string }

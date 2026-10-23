@@ -1,7 +1,7 @@
 import type { Kpi, Tone } from "../components";
 import type {
   ConnectionAuthorisationView, CutoverChecklistItemView, ErpChangeConnectionView, ErpChangeDivergenceRow, ErpChangeRunbookView,
-  MasterDataExceptionRow, SignInHistoryItem, StockDifferenceRow,
+  MasterDataExceptionRow, SignInHistoryItem, StockDifferenceRow, ErpChangeMyWorkView,
 } from "./erpChangeTypes";
 import { human } from "./model.ts";
 
@@ -82,6 +82,18 @@ export function runbookKpis(run: ErpChangeRunbookView): Kpi[] {
 // Roll back before cutover cancels (the new connection is paused, OD-67); after step 5 only a new change back is offered.
 export const canCancel = (run: ErpChangeRunbookView) => run.status === "active" && run.currentStep < 5;
 export const canReverse = (run: ErpChangeRunbookView) => run.status === "active" && run.currentStep >= 5;
+
+export function erpChangeWorkSummary(work: ErpChangeMyWorkView): string {
+  if (work.currentStep === 2) return `${work.masterDataExceptions.toLocaleString()} master-data exception${work.masterDataExceptions === 1 ? "" : "s"} need your decision`;
+  if (work.currentStep === 3) return `${work.coveredStockDifferences.toLocaleString()} covered-unit difference${work.coveredStockDifferences === 1 ? "" : "s"} block it; ${work.otherStockDifferencesAwaitingSignOff.toLocaleString()} other${work.otherStockDifferencesAwaitingSignOff === 1 ? "" : "s"} need your sign-off`;
+  return `${work.stockTypeDivergences.toLocaleString()} stock-type divergence${work.stockTypeDivergences === 1 ? "" : "s"} need your review`;
+}
+
+/** Roles the server lets the notification setting mail (ErpChangeNotifications.cs): the non-operator ErpChangeRead roles. */
+export const notificationRecipientRoles = [
+  ["item_master_owner", "Item master owners"],
+  ["inventory_controller", "Inventory controllers"],
+] as const;
 
 const checklistLabels: Record<string, [string, string]> = {
   freeze_source: ["Stop outbound on the current ERP", "no new credit notes, journals or deliveries are sent there"],

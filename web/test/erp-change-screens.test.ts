@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import type { ConnectionAuthorisationView, ErpChangeRunbookView, MasterDataExceptionRow, SignInHistoryItem, StockDifferenceRow } from "../src/integration/erpChangeTypes.ts";
+import type { ConnectionAuthorisationView, ErpChangeMyWorkView, ErpChangeRunbookView, MasterDataExceptionRow, SignInHistoryItem, StockDifferenceRow } from "../src/integration/erpChangeTypes.ts";
 import {
   canCancel, canReverse, checklistLabel, daysUntil, erpChangeRights, exceptionDecision, exitCriteriaStates, historyBy, historyEvent, historyResult,
-  mayDecideDivergence, parseReminderDays, problemLabel, runbookKpis, signInNote, signInStatusLabel, stepSummaries, stockReasonLabel, stockReasonTone, suggestionLabel,
+  erpChangeWorkSummary, mayDecideDivergence, notificationRecipientRoles, parseReminderDays, problemLabel, runbookKpis, signInNote, signInStatusLabel, stepSummaries, stockReasonLabel, stockReasonTone, suggestionLabel,
 } from "../src/integration/erpChangeModel.ts";
 
 const read = (path: string) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
@@ -18,6 +18,7 @@ const api = read("integration/erpChangeApi.ts");
 const signIn = read("integration/ConnectionSignIn.tsx");
 const callback = read("integration/ConnectionSignInCallback.tsx");
 const connections = read("integration/Connections.tsx");
+const overview = read("pages/Overview.tsx");
 const screens = [runbook, master, stock, common, signIn, callback];
 
 const run: ErpChangeRunbookView = {
@@ -47,6 +48,23 @@ test("each action calls its exact ERP change endpoint", () => {
   for (const path of ["/check", "/advance", "/cancel", "/reverse", "/master-data/remap", "/choose-candidate", "/map`", "/not-needed", "/stock/reconcile", "/stock/sign-off", "/resolve`", "/dual-run/start", "/dual-run/check", "-divergences/${divergenceId}/accept-source", "-divergences/${divergenceId}/explain", "/cutover/start", "/cutover/validations", "/cutover/drain", "/cutover/enable-target", "/cutover/confirm-first-outbound", "/cutover/reconcile", "/archive", "/settings/clean-period", "/cx04`", "/authorisation", "/consent", "/callback", "/disable", "/reminder-settings"])
     assert.ok(api.includes(path), path);
   assert.match(api, /body: \{ reason, confirm: true \}/);
+});
+
+test("home notice is role-gated, hidden for zero work and links to the server-selected screen", () => {
+  const work: ErpChangeMyWorkView = { runId: "internal", currentStep: 3, sourceName: "Northstar Office Systems", targetName: "Silverline Systems", masterDataExceptions: 0, coveredStockDifferences: 41, otherStockDifferencesAwaitingSignOff: 171, stockTypeDivergences: 0, screenPath: "/integration/erp-change/stock", total: 212 };
+  assert.equal(erpChangeWorkSummary(work), "41 covered-unit differences block it; 171 others need your sign-off");
+  assert.match(overview, /item_master_owner.*inventory_controller/);
+  assert.match(overview, /!work \|\| work\.total === 0/);
+  assert.match(overview, /to=\{work\.screenPath\}/);
+  assert.match(overview, /ERP change in progress — step \{work\.currentStep\}/);
+});
+
+test("notification settings are visible only to ERP change controllers", () => {
+  assert.match(runbook, /rights\.control && <NotificationSettings/);
+  assert.match(runbook, /Morning digest/);
+  assert.match(runbook, /Tenant-local hour \(0–23\)/);
+  assert.match(api, /settings\/notifications/);
+  assert.deepEqual(notificationRecipientRoles.map(([role]) => role), ["item_master_owner", "inventory_controller"]);
 });
 
 test("rights mirror the server policies, and stock is the inventory controller's alone", () => {

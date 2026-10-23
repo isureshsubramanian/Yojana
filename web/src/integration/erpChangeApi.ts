@@ -4,6 +4,7 @@ import type {
   ErpChangeDailyCheckView, ErpChangeDivergencePage, ErpChangeDivergenceRow, ErpChangeRunbookView, MasterDataExceptionPage,
   MasterDataExceptionRow, ReconcileStockResult, ReminderSettingsView, ResolveStockDifferenceRequest, StockDifferencePage,
   StockDifferenceRow, StockResidualSignoffView,
+  ErpChangeMyWorkView, ErpChangeNotificationSettingsView,
 } from "./erpChangeTypes";
 
 const root = "/api/integration/erp-change";
@@ -27,7 +28,7 @@ export const erpChangeApi = {
   check: (runId: string) => api<ErpChangeRunbookView>(`${run(runId)}/check`, { method: "POST" }),
   advance: (runId: string) => api<ErpChangeRunbookView>(`${run(runId)}/advance`, { method: "POST" }),
   cancel: (runId: string, reason: string) => api<ErpChangeRunbookView>(`${run(runId)}/cancel`, { method: "POST", body: { reason } }),
-  reverse: (runId: string) => api<ErpChangeRunbookView>(`${run(runId)}/reverse`, { method: "POST", body: {} }),
+  reverse: (runId: string, newConnection?: unknown) => api<ErpChangeRunbookView>(`${run(runId)}/reverse`, { method: "POST", body: newConnection === undefined ? {} : { newConnection } }),
 
   masterData: (runId: string, filter: ListFilter, cursor?: string, signal?: AbortSignal) =>
     api<MasterDataExceptionPage>(`${run(runId)}/master-data/exceptions${query({ ...filter, cursor, take: 12 })}`, { signal }),
@@ -57,6 +58,15 @@ export const erpChangeApi = {
   cleanPeriod: (signal?: AbortSignal) => api<ErpChangeCleanPeriodView>(`${root}/settings/clean-period`, { signal }),
   saveCleanPeriod: (runId: string, days: number, expectedVersion: string) =>
     api<ErpChangeCleanPeriodView>(`${run(runId)}/settings/clean-period`, { method: "PUT", body: { days, expectedVersion } }),
+  myWork: (signal?: AbortSignal) => api<ErpChangeMyWorkView>(`${root}/my-work`, { signal }),
+  notificationSettings: (signal?: AbortSignal) => api<ErpChangeNotificationSettingsView>(`${root}/settings/notifications`, { signal }),
+  saveNotificationSettings: (value: ErpChangeNotificationSettingsView) => api<ErpChangeNotificationSettingsView>(`${root}/settings/notifications`, {
+    method: "PUT", body: {
+      digestEnabled: value.digestEnabled, digestHour: value.digestHour,
+      masterDataRecipientRoles: value.masterDataRecipientRoles, stockRecipientRoles: value.stockRecipientRoles,
+      expectedVersion: value.settingsVersion,
+    },
+  }),
 
   cutover: (runId: string, signal?: AbortSignal) => api<CutoverChecklistView>(`${run(runId)}/cutover`, { signal }),
   beginCutover: (runId: string, targetOutboundMode: "reference_only" | "documents") =>

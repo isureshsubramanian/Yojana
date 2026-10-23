@@ -37,6 +37,12 @@ public static class ErpChangeEndpoints
                 $"erp-change-{runId:N}-pending-actions.csv"));
         reads.MapGet("/settings/clean-period", (ErpChangeCleanPeriodSettings settings,
             CancellationToken ct) => Invoke(() => settings.GetAsync(ct)));
+        reads.MapGet("/settings/notifications", (ErpChangeNotificationSettings settings,
+            CancellationToken ct) => Invoke(() => settings.GetAsync(ct)));
+        reads.MapGet("/my-work", async (ClaimsPrincipal user, ErpChangeWorkService service,
+            CancellationToken ct) => await service.ForRolesAsync(
+                user.FindAll(YojanaClaim.Role).Select(claim => claim.Value).ToList(), ct) is { } work
+                ? Results.Ok(work) : Results.NotFound());
 
         var control = app.MapGroup("/api/integration/erp-change")
             .RequireAuthorization(YojanaPolicy.ErpChangeControl);
@@ -68,6 +74,9 @@ public static class ErpChangeEndpoints
             var run = await runs.DetailAsync(runId, ct);
             return await Invoke(() => settings.SetAsync(run.Target.ConnectionId, request, Actor(user), ct));
         });
+        control.MapPut("/settings/notifications", (UpdateErpChangeNotificationSettings request,
+            ClaimsPrincipal user, ErpChangeNotificationSettings settings, CancellationToken ct) =>
+            Invoke(() => settings.SetAsync(request, Actor(user), ct)));
         control.MapPost("/runs/{runId:guid}/cutover/start", (Guid runId, BeginCutoverRequest request,
             ClaimsPrincipal user, ErpChangeCutoverService service, CancellationToken ct) => Invoke(() =>
                 service.BeginAsync(runId, request, Actor(user), ct)));
@@ -172,6 +181,16 @@ public static class ErpChangeEndpoints
             return Results.Problem(title: "tenant_setting_version_conflict", detail: exception.Message,
                 statusCode: StatusCodes.Status409Conflict,
                 extensions: new Dictionary<string, object?> { ["rule"] = "tenant_setting_version_conflict" });
+        }
+        catch (Yojana.Serialisation.Contracts.CommandRefusedException exception)
+        {
+            return Results.Problem(title: exception.Rule, detail: exception.Message,
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["rule"] = exception.Rule,
+                    ["unblockingStep"] = exception.UnblockingStep,
+                });
         }
     }
 }

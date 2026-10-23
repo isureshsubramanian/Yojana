@@ -1861,6 +1861,81 @@ namespace Yojana.Integration.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ErpChangeNotice", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ErpChangeNoticeId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("erp_change_notice_id");
+
+                    b.Property<string>("CountsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("counts_json");
+
+                    b.Property<Guid>("ErpChangeRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("erp_change_run_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(24)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("LinkPath")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(200)")
+                        .HasColumnName("link_path");
+
+                    b.Property<string>("OccurrenceKey")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("occurrence_key");
+
+                    b.Property<int>("RecipientCount")
+                        .HasColumnType("int")
+                        .HasColumnName("recipient_count");
+
+                    b.Property<string>("RecipientRole")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(80)")
+                        .HasColumnName("recipient_role");
+
+                    b.Property<DateTime>("SentAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("sent_at");
+
+                    b.Property<int>("Step")
+                        .HasColumnType("int")
+                        .HasColumnName("step");
+
+                    b.HasKey("TenantId", "ErpChangeNoticeId")
+                        .HasName("pk_erp_change_notice");
+
+                    b.HasIndex("TenantId", "SentAt", "ErpChangeNoticeId")
+                        .HasDatabaseName("ix_erp_change_notice_tenant_id_sent_at_erp_change_notice_id");
+
+                    b.HasIndex("TenantId", "ErpChangeRunId", "Kind", "Step", "RecipientRole", "OccurrenceKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_erp_change_notice_tenant_id_erp_change_run_id_kind_step_recipient_role_occurrence_key");
+
+                    b.ToTable("erp_change_notice", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_erp_change_notice_kind", "kind IN ('step_open','morning_digest')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.ErpChangeRun", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -8868,6 +8943,16 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_erp_change_master_exception_tenant_id_erp_change_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ErpChangeNotice", b =>
+                {
+                    b.HasOne("Yojana.Integration.Data.Entities.ErpChangeRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ErpChangeRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_erp_change_notice_tenant_id_erp_change_run_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.Data.Entities.ErpChangeStepCheck", b =>
