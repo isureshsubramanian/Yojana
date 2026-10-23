@@ -13,6 +13,8 @@
              Link="Connectors/CX01/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX02/Testing/**/*.cs"
              Link="Connectors/CX02/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX04/Testing/**/*.cs"
+             Link="Connectors/CX04/%(RecursiveDir)%(Filename)%(Extension)" />
     <Content Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Fixtures/**/*.json"
              Link="Connectors/CX01/Fixtures/%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
