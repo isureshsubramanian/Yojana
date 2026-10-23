@@ -159,11 +159,22 @@ public sealed class SearchTests(SerialisationHostFixture fixture, ITestOutputHel
             .ExecuteAndWaitAsync(InvokeBulkAsync);
         Assert.NotNull(result);
         Assert.Equal(count, result.Commissioned);
-        using (var scope = fixture.ScopeFor(tenant))
+        // The tracked wait counts reindex executions host-wide, so a request left by an earlier test in the shared
+        // host can end it before this tenant's own reindex has committed. Wait for this tenant's rows instead.
+        var indexed = 0;
+        var deadline = DateTime.UtcNow.AddMinutes(2);
+        while (true)
         {
+            using var scope = fixture.ScopeFor(tenant);
             var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
-            Assert.Equal(count, await db.SearchEntries.CountAsync(e => e.EntityType == SearchEntityType.Unit));
-            Assert.Single(await db.SearchEntries.Where(e => e.EntityType == SearchEntityType.Document).ToListAsync());
+            indexed = await db.SearchEntries.CountAsync(e => e.EntityType == SearchEntityType.Unit);
+            if (indexed >= count || DateTime.UtcNow > deadline)
+            {
+                Assert.Equal(count, indexed);
+                Assert.Single(await db.SearchEntries.Where(e => e.EntityType == SearchEntityType.Document).ToListAsync());
+                break;
+            }
+            await Task.Delay(250);
         }
 
         // Relevance on migrated-shaped serial data (feeds OD-13): exact, 8-character prefix and one-character typos over a sample.
