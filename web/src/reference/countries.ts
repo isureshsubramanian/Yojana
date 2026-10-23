@@ -4,3 +4,20 @@ export const COUNTRY_CODES = "AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA
 export function countryName(code: string): string {
   try { return new Intl.DisplayNames(undefined, { type: "region" }).of(code) ?? code; } catch { return code; }
 }
+
+export interface CountryOption { code: string; name: string; label: string }
+
+export function countryLabel(code: string): string {
+  return code ? `${countryName(code)} (${code})` : "";
+}
+
+export function filterCountryOptions(query: string): CountryOption[] {
+  const clean = normalise(query);
+  return COUNTRY_CODES.map((code) => ({ code, name: countryName(code), label: countryLabel(code) }))
+    .filter((option) => !clean || normalise(option.label).includes(clean) || option.code.toLowerCase().includes(clean))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function normalise(value: string): string {
+  return value.trim().toLocaleLowerCase().normalize("NFKD").replace(/\p{Diacritic}/gu, "");
+}

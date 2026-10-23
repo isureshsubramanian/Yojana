@@ -8,5 +8,15 @@
 .jurisdiction-result:last-child { border-bottom: 0; }
 .jurisdiction-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .jurisdiction-starter-tag { display: inline-flex; margin-left: 8px; padding: 2px 7px; border: 1px solid var(--rule); border-radius: 999px; color: var(--text-3); font-size: var(--fs-0); }
+.jurisdiction-scope { display: inline-flex; min-width: 0; align-items: baseline; gap: 5px; }
+.jurisdiction-scope > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.jurisdiction-scope-code { flex: none; color: var(--text-3); font-family: var(--font-mono); font-size: 12px; }
+.jurisdiction-member-picker { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface-2); }
+.jurisdiction-member-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.jurisdiction-member-chips:empty::after { content: "No members selected."; color: var(--text-3); font-size: 12px; }
+.jurisdiction-member-chips .chip { height: auto; min-height: 32px; white-space: normal; text-align: left; }
+.jurisdiction-add-subdivision { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+.jurisdiction-add-subdivision > .btn { margin-bottom: 24px; }
 @media (max-width: 900px) { .jurisdiction-sections, .jurisdiction-toolbar, .jurisdiction-form { grid-template-columns: 1fr; } .jurisdiction-form .span-2 { grid-column: auto; } }
+@media (max-width: 560px) { .jurisdiction-add-subdivision { grid-template-columns: 1fr; } .jurisdiction-add-subdivision > .btn { margin-bottom: 0; } }
 

@@ -1,4 +1,7 @@
 import type { JurisdictionRule, RegionGroup, RuleContext } from "./types";
+import { countryName } from "../reference/countries.ts";
+
+export interface RegionGroupDraft { code: string; name: string; members: string[] }
 
 export function parseRuleValue(valueType: string, raw: string, language = "en", currency = ""): unknown {
   const clean = raw.trim();
@@ -53,13 +56,30 @@ export function pageRules<T>(rows: readonly T[], page: number, pageSize: number)
   return rows.slice((safePage - 1) * pageSize, safePage * pageSize);
 }
 
-export function scopeDetails(rule: JurisdictionRule, groups: readonly RegionGroup[]): { short: string; full: string } {
+export function scopeDetails(rule: JurisdictionRule, groups: readonly RegionGroup[]): { name: string; code: string | null; short: string; full: string } {
   if (rule.regionGroupId) {
     const group = groups.find((entry) => entry.regionGroupId === rule.regionGroupId);
-    return { short: group?.code ?? rule.regionGroupName ?? "Region group", full: group?.name ?? rule.regionGroupName ?? "Region group" };
+    const name = group?.name ?? rule.regionGroupName ?? "Region group";
+    const code = group?.code ?? null;
+    return { name, code, short: code ? `${name} (${code})` : name, full: code ? `${name} (${code})` : name };
   }
-  const label = rule.subdivisionCode ?? rule.countryCode ?? "Any";
-  return { short: label, full: label };
+  const code = rule.subdivisionCode ?? rule.countryCode;
+  if (!code) return { name: "Any", code: null, short: "Any", full: "Any" };
+  const name = countryName(code.slice(0, 2));
+  return { name, code, short: `${name} (${code})`, full: `${name} (${code})` };
+}
+
+export function addRegionMember(members: readonly string[], member: string): string[] {
+  const code = member.trim().toUpperCase();
+  return code && !members.includes(code) ? [...members, code] : [...members];
+}
+
+export function removeRegionMember(members: readonly string[], member: string): string[] {
+  return members.filter((entry) => entry !== member);
+}
+
+export function buildRegionGroupRequest(commandId: string, draft: RegionGroupDraft) {
+  return { commandId, regionGroupId: null, code: draft.code, name: draft.name, members: [...draft.members], expectedVersion: null };
 }
 
 function structuredPart(key: string, value: unknown): string {
