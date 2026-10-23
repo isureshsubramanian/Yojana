@@ -81,7 +81,8 @@ public sealed record UnitDetail(
     IReadOnlyList<AsBuiltRow> AsBuilt,
     IReadOnlyList<BuildRecordRow> BuildRecords,
     Guid? ParentUnitId,
-    int EventCount);
+    int EventCount,
+    bool OwnerAndHolderDiffer = false);
 
 public sealed record SerialRangeRow(Guid RangeId, string Scheme, string? StartValue, string? EndValue, int Count, int CommissionedCount, string Status, bool Randomised, string? AllocatedToDocumentType, Guid? AllocatedToDocumentId, Guid? ItemId, DateTime ReservedAt, string ReservedBy, string? Note);
 

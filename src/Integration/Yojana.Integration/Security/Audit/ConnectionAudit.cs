@@ -55,6 +55,7 @@ public enum ConnectionAuditEventType
     ErpChangeCleanPeriodChanged,
     ErpChangeNotificationSettingsChanged,
     ErpChangeMailBatchQueued,
+    ExtensionChecked,
 }
 
 public sealed record ConnectionAuditEvent(

@@ -48,7 +48,7 @@ function SignInScreen() {
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Integration", to: "/integration" }, { label: "Connections", to: "/integration/connections" }, { label: name }, { label: "Sign-in" }]} />
     <PageHeader eyebrow={eyebrow} title="Sign-in" actions={actions}
       sub="The module signs in to the ERP as one dedicated API user. Its password is never typed here and never stored: the ERP's administrator signs that user in once, and the module keeps only the tokens the ERP hands back, encrypted." />
-    <ConnectionTabs connectionId={connectionId} active="sign-in" showSignIn />
+    {detail && <ConnectionTabs connectionId={connectionId} active="sign-in" features={detail.features} />}
     <div className="stack">
       <ErrorNote error={detailError ?? error} onReload={refresh} />{action.feedback}
       {!view && !error && <p role="status">Loading sign-in…</p>}

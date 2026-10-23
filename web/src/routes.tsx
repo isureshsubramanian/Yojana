@@ -68,6 +68,7 @@ export const router = createBrowserRouter([
           { path: "integration", lazy: () => import("./integration/ConnectionHealth") },
           { path: "integration/connections", lazy: () => import("./integration/Connections") },
           { path: "integration/connections/:connectionId/sign-in", lazy: () => import("./integration/ConnectionSignIn") },
+          { path: "integration/connections/:connectionId/extension", lazy: () => import("./integration/ConnectionExtension") },
           { path: "integration/connections/:connectionId/verification", lazy: () => import("./integration/ConnectionVerification") },
           { path: "integration/connections/:connectionId/sign-in/callback", lazy: () => import("./integration/ConnectionSignInCallback") },
           { path: "integration/erp-change", lazy: () => import("./integration/ErpChangeRunbook") },

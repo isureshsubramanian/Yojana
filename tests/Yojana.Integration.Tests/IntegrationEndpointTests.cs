@@ -25,6 +25,25 @@ namespace Yojana.Integration.Tests;
 public sealed class IntegrationEndpointTests
 {
     [Fact]
+    public void Extension_status_read_check_and_guide_use_the_connection_operations_policy()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddAuthorization();
+        builder.Services.AddScoped<ExtensionStatusService>();
+        var app = builder.Build();
+        app.MapExtensionStatusEndpoints();
+        var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>().ToList();
+
+        Assert.Equal(3, endpoints.Count);
+        Assert.All(endpoints, endpoint => Assert.Equal([YojanaPolicy.IntegrationOperations], endpoint.Metadata
+            .GetOrderedMetadata<IAuthorizeData>().Select(value => value.Policy).ToList()));
+        Assert.Contains(endpoints, endpoint => endpoint.RoutePattern.RawText?.EndsWith("/check",
+            StringComparison.Ordinal) == true && endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!
+            .HttpMethods.Contains("POST"));
+    }
+
+    [Fact]
     public async Task Cx04_sign_in_actions_use_the_shared_administrator_policy_and_validation_errors_are_bad_requests()
     {
         var builder = WebApplication.CreateBuilder();

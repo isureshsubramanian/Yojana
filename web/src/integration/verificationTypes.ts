@@ -46,6 +46,7 @@ export interface ConnectorVerificationView {
   edgeScenariosApplicable: number;
   facts: VerificationFact[];
   runs: AcceptanceRunSummary[];
+  features: { tenantSideExtension: boolean; interactiveSignIn: boolean };
 }
 
 export interface AcceptanceItem {

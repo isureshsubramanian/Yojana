@@ -1579,7 +1579,8 @@ public static class SerialisationEndpoints
             VerifyCustomerAssertionRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant,
             CancellationToken ct) => Invoke<CustomerAssertionDecision>(bus, tenant,
                 new VerifyCustomerAssertion(request.CommandId, assertionId, request.EvidenceRef,
-                    request.EvidenceDate, request.LegalEntityId, Actor(user), Roles(user)), ct));
+                    request.EvidenceDate, request.LegalEntityId, Actor(user), Roles(user),
+                    request.UnitAtCustomerSite), ct));
         reconciliations.MapPost("/assertions/{assertionId:guid}/reject", (Guid assertionId,
             RejectCustomerAssertionRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant,
             CancellationToken ct) => Invoke<CustomerAssertionDecision>(bus, tenant,

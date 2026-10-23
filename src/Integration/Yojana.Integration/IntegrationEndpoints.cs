@@ -32,6 +32,7 @@ public static class IntegrationEndpoints
         app.MapCx04WebhookEndpoints();
         app.MapCx04AuthorisationEndpoints();
         app.MapConnectionEndpoints();
+        app.MapExtensionStatusEndpoints();
         app.MapCoexistenceEndpoints();
         app.MapMigrationEndpoints();
         app.MapErpChangeEndpoints();

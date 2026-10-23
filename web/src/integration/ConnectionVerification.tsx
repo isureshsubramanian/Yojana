@@ -35,7 +35,7 @@ function VerificationScreen() {
     <PageHeader eyebrow={view ? `${view.connectionName} · connector ${view.connectorCode}` : "Connection"} title="Verification record"
       sub="Protocol facts and this tenant's evidence that the connector was accepted in a customer-controlled sandbox. No credentials, payloads or secrets are stored here."
       actions={view && <button className="btn primary" onClick={() => openStart(connectionId, refresh)}>Start acceptance run</button>} />
-    {view && <ConnectionTabs connectionId={connectionId} active="verification" showSignIn={view.connectorCode === "CX04"} />}
+    {view && <ConnectionTabs connectionId={connectionId} active="verification" features={view.features} />}
     <div className="stack erp-change-stack">
       <ErrorNote error={error} onReload={refresh} />
       {!view && !error && <p role="status">Loading verification record…</p>}

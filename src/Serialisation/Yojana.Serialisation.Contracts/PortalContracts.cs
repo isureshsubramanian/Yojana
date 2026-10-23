@@ -296,7 +296,8 @@ public sealed record CustomerListReconciliationRow(
     Guid? AssertionId,
     string? AssertionStatus,
     string? CustomerPoRef,
-    string? CustomerItemRef);
+    string? CustomerItemRef,
+    bool? UnitAtCustomerSiteDefault = null);
 
 public sealed record CustomerListReconciliationPage(
     Guid ReconciliationId,
@@ -311,7 +312,7 @@ public sealed record CustomerListReconciliationPage(
     string? NextCursor,
     bool Replayed = false);
 
-/// <summary>Verification evidence opens authoritative ownership through OpenOwnership from EvidenceDate.</summary>
+/// <summary>Verification evidence opens authoritative ownership and may move custody from EvidenceDate.</summary>
 public sealed record VerifyCustomerAssertion(
     Guid CommandId,
     Guid AssertionId,
@@ -319,14 +320,16 @@ public sealed record VerifyCustomerAssertion(
     DateTime EvidenceDate,
     Guid LegalEntityId,
     string ActorRef,
-    IReadOnlyList<string> ActorRoles);
+    IReadOnlyList<string> ActorRoles,
+    bool? UnitAtCustomerSite = null);
 
 /// <summary>HTTP request shape; actor and roles never travel from the browser.</summary>
 public sealed record VerifyCustomerAssertionRequest(
     Guid CommandId,
     string EvidenceRef,
     DateTime EvidenceDate,
-    Guid LegalEntityId);
+    Guid LegalEntityId,
+    bool? UnitAtCustomerSite = null);
 
 public sealed record RejectCustomerAssertion(
     Guid CommandId,
@@ -346,4 +349,6 @@ public sealed record CustomerAssertionDecision(
     DateTime DecidedAt,
     string DecidedBy,
     Guid? OwnershipEpisodeId,
-    bool Replayed);
+    bool Replayed,
+    Guid? CustodyEpisodeId = null,
+    bool? UnitAtCustomerSite = null);

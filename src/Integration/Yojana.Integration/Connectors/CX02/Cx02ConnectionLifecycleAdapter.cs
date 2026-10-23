@@ -9,6 +9,8 @@ public sealed class Cx02ConnectionLifecycleAdapter(
     Cx02Client client,
     Cx02WebhookMaintenance notifications) : IConnectionLifecycleAdapter
 {
+    public ConnectionFeatures Features { get; } = new(TenantSideExtension: true, InteractiveSignIn: false);
+
     public ConnectionRegistrationForm RegistrationForm => new(
         [
             new("service_uri", "Service address", "url"),

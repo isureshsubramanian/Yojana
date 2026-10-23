@@ -2512,6 +2512,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("command_id");
 
+                    b.Property<Guid?>("CustodyEpisodeId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("custody_episode_id");
+
                     b.Property<string>("CustomerItemRef")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
@@ -2590,6 +2594,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)")
                         .HasColumnName("status");
+
+                    b.Property<bool?>("UnitAtCustomerSite")
+                        .HasColumnType("bit")
+                        .HasColumnName("unit_at_customer_site");
 
                     b.Property<Guid?>("UnitId")
                         .HasColumnType("uniqueidentifier")

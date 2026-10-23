@@ -5,6 +5,7 @@ using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Identity;
+using Yojana.Serialisation.Portal;
 
 namespace Yojana.Serialisation.Queries;
 
@@ -123,7 +124,9 @@ public sealed class UnitQueries(SerialisationDbContext db, IIdentifierPolicySour
         var itemId = current?.ItemId ?? await db.ItemAssignments.AsNoTracking().Where(a => a.TenantId == tenantId && a.UnitId == unitId && a.ValidTo == null).Select(a => a.ItemId).FirstOrDefaultAsync(cancellationToken);
         return new UnitDetail(unit.UnitId, unit.LifecycleStatus, unit.Origin, unit.SerialisationPoint, unit.RetentionClass, unit.HistoryDepth, unit.LotId, unit.ExpiryDate, unit.DerivedFromUnitId, unit.MergedIntoUnitId,
             itemId, current?.ModelVersionId, current?.Disposition ?? UnitLifecycle.DispositionFor(unit.LifecycleStatus), current?.ConditionGrade, current?.LocationId, current?.LocationKind, current?.CustodyPartyRef, current?.OwnerPartyRef, current?.OpenOwnershipEpisodeId, current?.OpenCustodyEpisodeId,
-            current?.OverlayFlags ?? unit.OverlayFlags, current?.LastEventSeq ?? 0, current?.LastEventTime ?? unit.CreatedAt, identifiers, episodes, asBuilt, records, parent, eventCount);
+            current?.OverlayFlags ?? unit.OverlayFlags, current?.LastEventSeq ?? 0, current?.LastEventTime ?? unit.CreatedAt, identifiers, episodes, asBuilt, records, parent, eventCount,
+            CustomerAssertionCustodyRule.OwnerAndHolderDiffer(current?.OwnerPartyRef, current?.CustodyPartyRef,
+                current?.LocationKind));
     }
 
     /// <summary>History page in the ADR order (business time, recorded time, seq), newest first for the screen; live and archive together.</summary>

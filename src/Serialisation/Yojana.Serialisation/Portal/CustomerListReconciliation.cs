@@ -302,7 +302,15 @@ public sealed class CustomerListReconciliationService(
         var unitIds = rows.Where(row => row.UnitId != null).Select(row => row.UnitId!.Value).Distinct().ToList();
         var states = unitIds.Count == 0 ? [] : await db.Current.AsNoTracking()
             .Where(row => row.TenantId == tenant.TenantId && unitIds.Contains(row.UnitId))
-            .Select(row => new { row.UnitId, row.ItemId }).ToListAsync(cancellationToken);
+            .Select(row => new
+            {
+                row.UnitId,
+                row.ItemId,
+                row.OwnerPartyRef,
+                row.CustodyPartyRef,
+                row.LocationKind,
+            }).ToListAsync(cancellationToken);
+        var stateByUnit = states.ToDictionary(row => row.UnitId);
         var identifiers = unitIds.Count == 0 ? [] : await db.Identifiers.AsNoTracking()
             .Where(row => row.TenantId == tenant.TenantId && unitIds.Contains(row.UnitId) && row.ValidTo == null)
             .OrderBy(row => row.Type == IdentifierType.InternalSerial ? 0 : 1).ThenBy(row => row.Type)
@@ -318,8 +326,8 @@ public sealed class CustomerListReconciliationService(
         var assertionIds = rows.Where(row => row.AssertionId != null).Select(row => row.AssertionId!.Value).ToList();
         var assertions = assertionIds.Count == 0 ? [] : await db.CustomerAssertions.AsNoTracking()
             .Where(row => row.TenantId == tenant.TenantId && assertionIds.Contains(row.AssertionId))
-            .Select(row => new { row.AssertionId, row.Status }).ToListAsync(cancellationToken);
-        var statusByAssertion = assertions.ToDictionary(row => row.AssertionId, row => row.Status);
+            .Select(row => new { row.AssertionId, row.Status, row.UnitAtCustomerSite }).ToListAsync(cancellationToken);
+        var assertionById = assertions.ToDictionary(row => row.AssertionId);
         return rows.Select(row => new CustomerListReconciliationRow(row.Ordinal, row.RawIdentifier,
             row.MatchedIdentifierType ?? row.RequestedIdentifierType, row.NormalisedIdentifier, row.Outcome,
             JsonSerializer.Deserialize<List<string>>(row.ValidationReasonsJson) ?? [],
@@ -327,8 +335,15 @@ public sealed class CustomerListReconciliationService(
             row.UnitId is { } itemUnit ? itemsByUnit.GetValueOrDefault(itemUnit) ?? "ITEM NOT FOUND" : null,
             row.OtherOwnerPartyRef is { } owner ? PartyName(parties.GetValueOrDefault(owner)) : null,
             row.AssertionId,
-            row.AssertionId is { } assertion ? statusByAssertion.GetValueOrDefault(assertion) : null,
-            row.CustomerPoRef, row.CustomerItemRef)).ToList();
+            row.AssertionId is { } assertion && assertionById.TryGetValue(assertion, out var assertionRow)
+                ? assertionRow.Status : null,
+            row.CustomerPoRef, row.CustomerItemRef,
+            row.AssertionId is { } assertionId && assertionById.TryGetValue(assertionId, out var storedAssertion)
+                ? storedAssertion.UnitAtCustomerSite ?? (row.UnitId is { } assertionUnit
+                    && stateByUnit.TryGetValue(assertionUnit, out var state)
+                    && CustomerAssertionCustodyRule.DefaultFor(state.OwnerPartyRef, state.CustodyPartyRef,
+                        state.LocationKind))
+                : null)).ToList();
     }
 
     private static string ItemName(ItemLabel? label) => label is null ? "ITEM NOT FOUND"
@@ -377,6 +392,19 @@ public static class ReconcileCustomerListHandler
         service.ReconcileAsync(command, cancellationToken);
 }
 
+internal static class CustomerAssertionCustodyRule
+{
+    public static bool DefaultFor(Guid? previousOwnerPartyRef, Guid? custodyPartyRef, string? locationKind) =>
+        previousOwnerPartyRef is not null
+        && previousOwnerPartyRef == custodyPartyRef
+        && locationKind == LocationKind.CustomerSite;
+
+    public static bool OwnerAndHolderDiffer(Guid? ownerPartyRef, Guid? custodyPartyRef, string? locationKind) =>
+        ownerPartyRef is not null
+        && locationKind == LocationKind.CustomerSite
+        && ownerPartyRef != custodyPartyRef;
+}
+
 public static class CustomerAssertionDecisionHandler
 {
     private static readonly string[] ReviewerRoles =
@@ -409,17 +437,38 @@ public static class CustomerAssertionDecisionHandler
             throw new CommandRefusedException("customer_assertion_unmatched",
                 "An unmatched customer assertion cannot open ownership.");
 
+        var openEpisodes = await db.Episodes.Where(row => row.TenantId == tenant.TenantId
+            && row.UnitId == unitId && row.ValidTo == null
+            && (row.Kind == EpisodeKind.Ownership || row.Kind == EpisodeKind.Custody))
+            .ToListAsync(cancellationToken);
+        var previousOwner = openEpisodes.SingleOrDefault(row => row.Kind == EpisodeKind.Ownership);
+        var currentCustody = openEpisodes.SingleOrDefault(row => row.Kind == EpisodeKind.Custody);
+        var unitAtCustomerSite = command.UnitAtCustomerSite ?? CustomerAssertionCustodyRule.DefaultFor(
+            previousOwner?.PartyRef, currentCustody?.PartyRef, currentCustody?.LocationKind);
+
         var opened = await OpenOwnershipHandler.Handle(new OpenOwnership(command.CommandId, unitId,
             assertion.PartyRef, PartyType.Customer, EpisodeReason.Sale, command.EvidenceDate, command.ActorRef,
             command.LegalEntityId, Source: "partner_report", Confidence: Confidence.High,
             CustomerPoRef: assertion.CustomerPoRef, CustomerItemRef: assertion.CustomerItemRef,
-            ClosingReason: "verified_customer_assertion"), db, writer, episodes, tenant, cancellationToken);
+            ExternalOrderRef: command.EvidenceRef.Trim(), ClosingReason: "verified_customer_assertion"),
+            db, writer, episodes, tenant, cancellationToken);
+        ChangeCustodyResult? custody = null;
+        if (unitAtCustomerSite)
+        {
+            custody = await ChangeCustodyHandler.Handle(new ChangeCustody(command.CommandId, unitId,
+                LocationKind.CustomerSite, EpisodeReason.Sale, command.EvidenceDate, command.ActorRef,
+                command.LegalEntityId, PartyRef: assertion.PartyRef, PartyType: PartyType.Customer,
+                Source: "partner_report", Confidence: Confidence.High,
+                ExternalOrderRef: command.EvidenceRef.Trim()), db, writer, episodes, tenant, cancellationToken);
+        }
         assertion.Status = CustomerAssertionStatus.Verified;
         assertion.EvidenceRef = command.EvidenceRef.Trim();
         assertion.EvidenceDate = command.EvidenceDate;
         assertion.VerifiedAt = clock.UtcNow;
         assertion.VerifiedBy = command.ActorRef;
         assertion.OwnershipEpisodeId = opened.EpisodeId;
+        assertion.CustodyEpisodeId = custody?.EpisodeId;
+        assertion.UnitAtCustomerSite = unitAtCustomerSite;
         await db.SaveChangesAsync(cancellationToken);
         return Decision(assertion, false);
     }
@@ -463,6 +512,7 @@ public static class CustomerAssertionDecisionHandler
         var at = assertion.VerifiedAt ?? assertion.RejectedAt ?? assertion.AssertedAt;
         var actor = assertion.VerifiedBy ?? assertion.RejectedBy ?? assertion.AssertedBy;
         return new(assertion.AssertionId, assertion.Status, assertion.EvidenceRef, assertion.RejectionReason,
-            at, actor, assertion.OwnershipEpisodeId, replayed);
+            at, actor, assertion.OwnershipEpisodeId, replayed, assertion.CustodyEpisodeId,
+            assertion.UnitAtCustomerSite);
     }
 }

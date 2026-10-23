@@ -48,6 +48,22 @@ test("reconcile customer list preserves all five server totals", () => {
   assert.deepEqual(reconciliationKpis({ total: 20, owned: 11, ownedByAnotherParty: 4, notFound: 3, invalid: 2 } as never), [20, 11, 4, 3, 2]);
 });
 
+test("assertion review takes its custody checkbox default from the server", () => {
+  const screen = readFileSync(new URL("../src/p7/screens.tsx", import.meta.url), "utf8");
+  const api = readFileSync(new URL("../src/p7/api.ts", import.meta.url), "utf8");
+  assert.match(screen, /useState\(row\.unitAtCustomerSiteDefault \?\? false\)/);
+  assert.match(screen, /Unit is now at the customer's site/);
+  assert.match(screen, /verifyAssertion\(row\.assertionId, evidenceRef\.trim\(\),[^,]+, unitAtCustomerSite\)/);
+  assert.match(api, /unitAtCustomerSite/);
+});
+
+test("unit detail shows the computed owner and holder warning", () => {
+  const screen = readFileSync(new URL("../src/units/UnitDetail.tsx", import.meta.url), "utf8");
+  assert.match(screen, /detail\?\.ownerAndHolderDiffer/);
+  assert.match(screen, /Owner and holder differ\./);
+  assert.match(screen, /referenceNames\.party\(detail\.custodyPartyRef\)/);
+});
+
 test("portal public lookup renders only its closed safe field set", () => {
   assert.deepEqual(publicLookupFields, ["itemCode", "itemName", "condition", "manufactureMonth", "warrantyStatus"]);
   assert.equal(publicLookupFields.some((field) => /party|document|service|cost/i.test(field)), false);

@@ -144,7 +144,7 @@ public static class ResolveEntitlementRequirementsHandler
             try
             {
                 var command = new CreateEntitlement(row.RequirementId, row.UnitId, CoverageFamilyCode.Base, DateOnly.FromDateTime(episode.ValidFrom), obligor,
-                    clock.UtcNow, "entitlement-requirement", evidence, OwnerPartyRef: episode.PartyRef, OwnerPartyType: episode.PartyType,
+                    clock.UtcNow, "system:entitlement-requirement", evidence, OwnerPartyRef: episode.PartyRef, OwnerPartyType: episode.PartyType,
                     StartEvidenceRef: $"{document.Type}:{document.Id:N}", SourceDocument: document, CustomerPoRef: episode.CustomerPoRef);
                 var created = await CreateEntitlementHandler.CreateAsync(command, db, ledger, resolver, store, zones, refurbishedSettings, regions, jurisdictionRules, tenant, clock, items, null, [], false, null, null, null, cancellationToken);
                 if (created.StartDate is null) Except(row, EntitlementMissingInput.NoStartEvidence, "The policy start chain does not accept the ownership evidence.");
@@ -181,7 +181,7 @@ public static class ResolveEntitlementRequirementsHandler
                 live.ClosedReason = EntitlementClosedReason.NotTransferable;
                 live.ClosedEffective = DateOnly.FromDateTime(episode.ValidFrom);
                 live.ClosedAt = clock.UtcNow;
-                await ledger.AppendAsync(live, EntitlementEventType.Closed, EntitlementLedger.Key(row.RequirementId, live.UnitId, EntitlementEventType.Closed, episode.ValidFrom), episode.ValidFrom, "entitlement-requirement",
+                await ledger.AppendAsync(live, EntitlementEventType.Closed, EntitlementLedger.Key(row.RequirementId, live.UnitId, EntitlementEventType.Closed, episode.ValidFrom), episode.ValidFrom, "system:entitlement-requirement",
                     new { entitlement_id = live.EntitlementId, coverage_family = live.CoverageFamily, reason = EntitlementClosedReason.NotTransferable, effective = live.ClosedEffective }, null, cancellationToken);
                 row.Status = EntitlementRequirementStatus.Waived; row.WaivedBy = "policy"; row.WaiverReason = "The policy does not let cover follow a resale."; row.MissingInput = null; row.ResolvedAt = clock.UtcNow;
                 break;
@@ -200,7 +200,7 @@ public static class ResolveEntitlementRequirementsHandler
         EntitlementLedger.Transition(live, EntitlementEventType.OwnerTransferred);
         live.OwnerPartyRef = newOwner;
         live.OwnerPartyType = newOwnerType;
-        await ledger.AppendAsync(live, EntitlementEventType.OwnerTransferred, EntitlementLedger.Key(row.RequirementId, live.UnitId, EntitlementEventType.OwnerTransferred, at), at, "entitlement-requirement",
+        await ledger.AppendAsync(live, EntitlementEventType.OwnerTransferred, EntitlementLedger.Key(row.RequirementId, live.UnitId, EntitlementEventType.OwnerTransferred, at), at, "system:entitlement-requirement",
             new { entitlement_id = live.EntitlementId, coverage_family = live.CoverageFamily, owner_party_ref = newOwner, previous_owner_party_ref = previous, evidence_ref = evidenceRef }, null, cancellationToken);
         Satisfy(row, live.EntitlementId, clock.UtcNow);
     }

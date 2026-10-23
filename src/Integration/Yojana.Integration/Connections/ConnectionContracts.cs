@@ -62,7 +62,8 @@ public sealed record ConnectionDetail(ConnectionSummary Connection, DateTime Cre
     IReadOnlyList<CapabilityView> Capabilities, ConnectionSettingsView Settings,
     IReadOnlyList<CredentialState> Credentials, ConnectorOnboardingChecklist Checklist,
     string LifecycleStatus, int ReconciliationWindowDays, DateOnly ReconciliationToday,
-    Yojana.Integration.Connectors.ConnectionAuthorisationView? Authorisation = null);
+    Yojana.Integration.Connectors.ConnectionAuthorisationView? Authorisation = null,
+    Yojana.Integration.Connectors.ConnectionFeatures? Features = null);
 public sealed record ConnectionEventView(long Sequence, string Kind, DateTime OccurredAt, string ActorName, string Summary);
 public sealed record ConnectionEventPage(IReadOnlyList<ConnectionEventView> Items, string? NextCursor);
 public sealed record TenantConnectionStatus(Guid ConnectionId, string ConnectionName, string Status, bool IsLive,

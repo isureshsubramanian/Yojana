@@ -22,7 +22,7 @@ export interface UnitDetail {
   unitId: string; lifecycleStatus: string; origin: string; serialisationPoint: string; retentionClass: string; historyDepth: string; lotId: string | null; expiryDate: string | null;
   derivedFromUnitId: string | null; mergedIntoUnitId: string | null; itemId: string; modelVersionId: string | null; disposition: string; conditionGrade: string | null; locationId: string | null; locationKind: string | null;
   custodyPartyRef: string | null; ownerPartyRef: string | null; openOwnershipEpisodeId: string | null; openCustodyEpisodeId: string | null; overlayFlags: string; lastEventSeq: number; lastEventTime: string;
-  identifiers: IdentifierRow[]; episodes: EpisodeRow[]; asBuilt: AsBuiltRow[]; buildRecords: BuildRecordRow[]; parentUnitId: string | null; eventCount: number;
+  identifiers: IdentifierRow[]; episodes: EpisodeRow[]; asBuilt: AsBuiltRow[]; buildRecords: BuildRecordRow[]; parentUnitId: string | null; eventCount: number; ownerAndHolderDiffer: boolean;
 }
 
 export interface ScanField { key: string; value: string; description: string | null; errors: string[] }
