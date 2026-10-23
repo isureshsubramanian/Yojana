@@ -2,13 +2,15 @@ import { useId, useState, type KeyboardEvent } from "react";
 import { countryLabel, filterCountryOptions } from "./countries";
 import "./country-select.css";
 
-export function CountrySelect({ id, label, value, onChange, disabled = false, hint }: {
+export function CountrySelect({ id, label, value, onChange, disabled = false, hint, hideLabel = false }: {
   id: string;
   label: string;
   value: string;
   onChange: (code: string) => void;
   disabled?: boolean;
   hint?: string;
+  /** Keeps the label for screen readers only, for a picker that sits under a group heading. */
+  hideLabel?: boolean;
 }) {
   const listId = `${useId().replace(/:/g, "")}-countries`;
   const [query, setQuery] = useState("");
@@ -34,7 +36,7 @@ export function CountrySelect({ id, label, value, onChange, disabled = false, hi
   };
 
   return <div className="field country-select">
-    <label htmlFor={id}>{label}</label>
+    <label htmlFor={id} className={hideLabel ? "sr-only" : undefined}>{label}</label>
     <div className="country-select-combobox">
       <input id={id} className="input" role="combobox" autoComplete="off" aria-autocomplete="list"
         aria-expanded={open} aria-controls={listId}

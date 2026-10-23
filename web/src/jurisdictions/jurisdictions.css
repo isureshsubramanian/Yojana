@@ -3,6 +3,16 @@
 .jurisdiction-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .jurisdiction-form .wide { grid-column: 1 / -1; }
 .jurisdiction-form .span-2 { grid-column: span 2; }
+/* In this three-column form every control fills its column, numbers included, so each row lines up. */
+.jurisdiction-form .field > .input[type="number"] { width: 100%; }
+.jurisdiction-test { align-self: flex-start; justify-self: start; }
+/* Region groups stay one line each; the member list opens on demand so long groups do not stretch the page. */
+.jurisdiction-group { display: grid; gap: 2px; }
+.jurisdiction-group summary { cursor: pointer; width: fit-content; font-size: 12px; color: var(--accent); }
+.jurisdiction-group details[open] summary { margin-bottom: 4px; }
+.jurisdiction-add-group { border-top: 1px solid var(--rule); padding-top: 12px; }
+.jurisdiction-add-group > summary { cursor: pointer; width: fit-content; font-weight: 500; color: var(--accent); }
+.jurisdiction-add-group[open] > summary { margin-bottom: 12px; }
 .jurisdiction-value { min-height: 84px; resize: vertical; }
 .jurisdiction-result { padding: 10px 0; border-bottom: 1px solid var(--rule); }
 .jurisdiction-result:last-child { border-bottom: 0; }

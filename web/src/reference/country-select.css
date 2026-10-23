@@ -8,6 +8,6 @@
 .country-select-empty { display: block; padding: 10px; color: var(--text-3); font-size: 13px; }
 .subdivision-input { min-width: 0; margin: 0; padding: 0; border: 0; }
 .subdivision-input > legend { margin-bottom: 6px; padding: 0; color: var(--text-1); font-size: 13px; font-weight: 500; }
-.subdivision-input-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, .45fr); gap: 8px; align-items: end; }
+.subdivision-input-fields { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 8px; align-items: end; }
 .subdivision-input > .help, .subdivision-input > .form-error { display: block; margin-top: 6px; font-size: 12px; line-height: 1.4; }
 @media (max-width: 560px) { .subdivision-input-fields { grid-template-columns: 1fr; } }
