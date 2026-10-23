@@ -50,7 +50,7 @@ export function Component() {
     <ErrorNote error={error} />
     {saved && <div className="note ok" style={{ marginBottom: 16 }}><strong>Currency settings saved.</strong>&nbsp;New forms now use this working and accepted currency list.</div>}
     {!loading && !locked && <div className="note warn" style={{ marginBottom: 16 }}><strong>The working currency is chosen once and cannot be changed later.</strong>&nbsp;Every configured amount—including approval thresholds and policy values—is stored in it and is never converted.</div>}
-    <div className="cols-3-2">
+    <div className="currency-cols">
       <section className="card" aria-labelledby="working-currency"><div className="card-header"><h2 id="working-currency">Working currency</h2><span className="meta">{locked ? "locked" : "home currency · exactly one"}</span></div><div className="card-body stack">
         {locked ? <div className="field"><span className="label">Working currency</span><strong>{describe(catalogue, working)}</strong><span className="help">Set at tenant setup and locked: every stored amount is in {working}. Other currencies are added as accepted currencies.</span></div> : <>
         <div className="field"><label htmlFor="working-currency-search">Find a currency</label><input id="working-currency-search" className="input" type="search" value={workingSearch} onChange={(event) => setWorkingSearch(event.target.value)} placeholder="Code or currency name" /></div>
