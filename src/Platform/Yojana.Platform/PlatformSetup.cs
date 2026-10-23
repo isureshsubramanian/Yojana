@@ -222,6 +222,8 @@ public static class PlatformSetup
                 .RequireClaim(YojanaClaim.TenantId)
                 .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator, YojanaRole.IntegrationOperator,
                     YojanaRole.MigrationLead));
+            // The ERP change screens hide what these policies would refuse (web/src/integration/erpChangeModel.ts,
+            // erpChangeRights); change both together or the screens offer actions the server refuses.
             auth.AddPolicy(YojanaPolicy.ErpChangeRead, p => p.RequireAuthenticatedUser()
                 .RequireClaim(YojanaClaim.TenantId)
                 .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator, YojanaRole.IntegrationOperator,

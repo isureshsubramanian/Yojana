@@ -2,6 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { useSession } from "../session/session";
 import { integrationApi } from "./api";
+import { erpChangeApi } from "./erpChangeApi";
+import { erpChangeRights } from "./erpChangeModel";
 import { mayOperateIntegration } from "./model";
 import { mayReadMigration } from "./migrationModel";
 
@@ -13,6 +15,7 @@ const tabs = [
   ["/integration/daily-check", "Daily check"],
   ["/integration/history-loads", "History loads"],
   ["/integration/migration", "Migration"],
+  ["/integration/erp-change", "ERP change"],
 ] as const;
 
 export function IntegrationTabs({ attention, manual }: { attention?: number | undefined; manual?: number | undefined }) {
@@ -20,9 +23,11 @@ export function IntegrationTabs({ attention, manual }: { attention?: number | un
   const roles = useSession().roles;
   const operator = mayOperateIntegration(roles);
   const migrationReader = mayReadMigration(roles);
+  const erpChangeReader = erpChangeRights(roles).read;
+  const changing = useErpChangeInProgress(erpChangeReader);
   return <nav className="tabs integration-subnav" aria-label="Integration">
-    {tabs.filter(([to]) => (operator || to === "/integration" || (to === "/integration/migration" && migrationReader)) && (to !== "/integration/migration" || migrationReader)).map(([to, label]) => {
-      const active = pathname === to;
+    {tabs.filter(([to]) => to === "/integration/erp-change" ? erpChangeReader && changing : (operator || to === "/integration" || (to === "/integration/migration" && migrationReader)) && (to !== "/integration/migration" || migrationReader)).map(([to, label]) => {
+      const active = pathname === to || (to === "/integration/erp-change" && pathname.startsWith(to));
       const count = label === "Messages needing attention" ? attention : label === "ERP entries to make by hand" ? manual : undefined;
       return <Link key={to} to={to} aria-current={active ? "page" : undefined}>{label}{count !== undefined && <span className={`n${count > 0 ? " warn" : ""}`}>{count.toLocaleString()}</span>}</Link>;
     })}
@@ -47,4 +52,16 @@ export function useIntegrationTabCounts(): { attention?: number; manual?: number
     return () => controller.abort();
   }, [permitted]);
   return counts;
+}
+
+/** The ERP change tab shows only while a change is in progress (owner answer 1, P10 mockups), to everyone who may read it (OD-71). */
+function useErpChangeInProgress(permitted: boolean): boolean {
+  const [active, setActive] = useState(false);
+  useEffect(() => {
+    if (!permitted) return;
+    const controller = new AbortController();
+    erpChangeApi.active(controller.signal).then(() => setActive(true)).catch(() => setActive(false));
+    return () => controller.abort();
+  }, [permitted]);
+  return active;
 }
