@@ -41,7 +41,11 @@ test("thread controls are rendered only from server-provided permissions and his
     assert.match(api, new RegExp(`${operation}:`));
 });
 
-test("the ask box uses active person-or-role choices, the approved layout, and live similar answers", () => {
+test("the ask box opens in the right-side drawer from the list header with person-or-role choices and live similar answers", () => {
+  assert.match(panel, /openDrawer\(\{ eyebrow: `Ask a question on this/);
+  assert.match(panel, /<Icon name="plus" \/>Ask a question<\/button>/);
+  assert.match(panel, /aria-label=\{`Ask a question on this/);
+  assert.doesNotMatch(panel, /<AskBox[^>]*setError=/);
   assert.match(panel, /questionsApi\.addressees/);
   assert.match(panel, /<optgroup label="Roles">/);
   assert.match(panel, /<optgroup label="People">/);
@@ -49,8 +53,7 @@ test("the ask box uses active person-or-role choices, the approved layout, and l
   assert.match(panel, /reviewedEntries\.map/);
   assert.match(panel, /item\.needsReview \? "may be out of date"/);
   assert.match(panel, /Already answered: read these before you ask/);
-  assert.match(styles, /grid-template-columns: minmax\(0, 1fr\) 320px/);
-  assert.match(styles, /\.card \.question-askbox \.row \.field \+ \.field \{ margin-top: 0; \}/);
+  assert.match(styles, /\.rail \.question-askbox \{ display: grid; gap: 12px; \}/);
   assert.doesNotMatch(api, /actor|askedBy|requestedBy/i);
 });
 
