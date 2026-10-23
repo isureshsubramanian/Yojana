@@ -3,6 +3,7 @@ export { ApprovalInbox } from "./ApprovalInbox";
 export { ActionDialog } from "./ActionDialog";
 export { DataGrid, type GridColumn } from "./DataGrid";
 export { FindBar } from "./FindBar";
+export { FormActions } from "./FormActions";
 export { KpiStrip } from "./KpiStrip";
 export { Pager } from "./Pager";
 export { PresenceAdvisory, PresenceChips, useDocumentPresence } from "./Presence";

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError } from "../api/client";
+import { FormActions } from "../components";
 import { useSession } from "../session/session";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { companyApi, companyLine, type CompanyMailSettings } from "./companyApi";
@@ -35,10 +36,9 @@ export function Component() {
   const tooLong = settings !== null && settings.footerLine.trim().length > 120;
   return <main className="content" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Settings", to: "/settings" }, { label: "Company" }]} />
-    <PageHeader eyebrow="Settings · tenant administrator" title="Company" sub="How the company appears on every e-mail it sends, account mail and customer mail alike. Every change is recorded in Security events." actions={<button className="btn primary" type="button" disabled={busy || !settings || tooLong} onClick={() => void save()}>{busy ? "Saving…" : "Save"}</button>} />
+    <PageHeader eyebrow="Settings · tenant administrator" title="Company" sub="How the company appears on every e-mail it sends, account mail and customer mail alike. Every change is recorded in Security events." />
     {!permitted && <div className="note bad"><strong>Tenant administrator access is required.</strong></div>}
     {error && <div className="note bad" role="alert">{error}</div>}
-    {saved && <div className="note ok"><strong>Company settings saved.</strong> New e-mails use them from now on.</div>}
     {permitted && !settings && !error && <p className="muted">Loading company settings…</p>}
     {settings && <div className="stack top" style={{ maxWidth: 900 }}>
       <section className="card" aria-labelledby="company-name"><div className="card-header"><h2 id="company-name">Name and footer</h2></div><div className="card-body"><div className="form-grid">
@@ -55,6 +55,7 @@ export function Component() {
         <div className="card-footer"><button className="btn sm" type="button" onClick={() => void sendTest()}>Send a test message to me</button><span className="grow" />{test && <span className="muted" role="status">{test}</span>}</div>
       </section>
       <p className="hint">No logo and no pictures in e-mail: the header shows the company's initials, so every mail program displays it.</p>
+      <FormActions status={saved ? "Saved. New e-mails use these settings from now on." : null}><button className="btn primary" type="button" disabled={busy || !settings || tooLong} onClick={() => void save()}>{busy ? "Saving…" : "Save"}</button></FormActions>
     </div>}
   </main>;
 }

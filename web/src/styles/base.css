@@ -303,6 +303,8 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); ba
 .lineage-group + .lineage-group { margin-top: 8px; }
 .empty-cell { height: 64px !important; text-align: center !important; }
 .form-grid.one { grid-template-columns: 1fr; }
+.form-actions { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; margin-top: 16px; padding: 12px 0; background: var(--surface-0); border-top: 1px solid var(--rule); }
+.form-actions-status { font-size: 13px; color: var(--text-2); }
 .form-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 /* A value the screen shows but nobody can change here: plain text at control height, never an input box. */
 .field .fixed-value { display: flex; align-items: center; min-height: 38px; font-size: 14px; color: var(--text-1); }
