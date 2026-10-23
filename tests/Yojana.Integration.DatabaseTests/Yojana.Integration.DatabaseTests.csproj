@@ -15,7 +15,8 @@
     <ProjectReference Include="../../tools/Yojana.Bench/Yojana.Bench.csproj" />
     <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01RelayLiveInput.cs" Link="Connectors/CX01/Cx01RelayLiveInput.cs" />
     <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01RelayAcceptance.cs" Link="Connectors/CX01/Cx01RelayAcceptance.cs" />
-    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01EdgeScenarios.cs" Link="Connectors/CX01/Cx01EdgeScenarios.cs" />
+    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01ConnectorEdgeHarness.cs" Link="Connectors/CX01/Cx01ConnectorEdgeHarness.cs" />
+    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01LiveConnectorEdgeHarness.cs" Link="Connectors/CX01/Cx01LiveConnectorEdgeHarness.cs" />
     <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01DocumentScenarios.cs" Link="Connectors/CX01/Cx01DocumentScenarios.cs" />
     <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01Simulator.cs"
              Link="Connectors/CX01/Cx01Simulator.cs" />

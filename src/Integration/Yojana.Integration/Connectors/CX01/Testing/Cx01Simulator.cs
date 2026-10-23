@@ -37,6 +37,8 @@ internal sealed class Cx01Simulator : IAsyncDisposable
         }
     }
     public bool DropNextCreateReply { get; set; }
+    public Func<Task>? BeforeNextDocumentCreate { get; set; }
+    public bool FailNextDocumentCreateAfterHook { get; set; }
     public string? RejectNextDocumentCollection { get; set; }
     public string? FailNextDocumentCollection { get; set; }
     public Dictionary<string, int> DocumentCreateCounts { get; } = new(StringComparer.Ordinal);
@@ -99,6 +101,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public int RequestCount { get; private set; }
     public string? LastHandlerFailure { get; private set; }
     public int ServiceUnavailableResponses { get; set; }
+    public decimal OnHandQuantity { get; set; } = 2m;
     public bool FailMetadataRead { get; set; }
     public bool FailUnsubscribe { get; set; }
     public bool TrackingTablesAllowed { get; set; } = true;
@@ -302,7 +305,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 {
                     value = new[]
                     {
-                        new { ItemCode = "HW-EDGE-100", WarehouseCode = "WH-A", InStock = 2m },
+                        new { ItemCode = "HW-EDGE-100", WarehouseCode = "WH-A", InStock = OnHandQuantity },
                     },
                 });
                 return;
@@ -718,6 +721,18 @@ internal sealed class Cx01Simulator : IAsyncDisposable
         var entry = byKey ? int.Parse(path[(path.LastIndexOf('(') + 1)..^1], System.Globalization.CultureInfo.InvariantCulture) : 0;
         if (request.HttpMethod == "POST" && !byKey)
         {
+            if (BeforeNextDocumentCreate is { } beforeCreate)
+            {
+                BeforeNextDocumentCreate = null;
+                await beforeCreate();
+                if (FailNextDocumentCreateAfterHook)
+                {
+                    FailNextDocumentCreateAfterHook = false;
+                    response.StatusCode = (int)HttpStatusCode.ServiceUnavailable;
+                    await ErrorAsync(response, "-5002", "Fictional remote unavailable");
+                    return true;
+                }
+            }
             if (RejectNextDocumentCollection == collection || FailNextDocumentCollection == collection)
             {
                 var transient = FailNextDocumentCollection == collection;
