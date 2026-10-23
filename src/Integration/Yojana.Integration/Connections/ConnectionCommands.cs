@@ -100,7 +100,8 @@ public sealed class ConnectionCommands(IntegrationDbContext db, ITenantContext t
             db.ConnectionPollWatermarks.AddRange(declaration.PollEntities.Select(entity => new ConnectionPollWatermark
             {
                 TenantId = tenant.TenantId, ConnectionId = id, EntityType = entity.Key, CanonicalMessage = entity.Value,
-                IntervalSeconds = 120, OverlapSeconds = 300, NextPollAt = clock.UtcNow,
+                IntervalSeconds = adapter.PollIntervalSeconds, OverlapSeconds = adapter.PollOverlapSeconds,
+                NextPollAt = clock.UtcNow,
             }));
         if (!await db.ConnectionNotificationSources.AnyAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == id, ct))
             db.ConnectionNotificationSources.AddRange(declaration.NotificationSources.Select(source => new ConnectionNotificationSource
@@ -114,7 +115,7 @@ public sealed class ConnectionCommands(IntegrationDbContext db, ITenantContext t
                     TenantId = tenant.TenantId, ConnectionId = id, RuleNumber = rule, Enabled = true,
                     SettingsJson = "{}", UpdatedAt = clock.UtcNow,
                 });
-        connection.Status = ConnectionStatus.Active;
+        connection.Status = adapter.InitialConnectionStatus;
         await db.SaveChangesAsync(ct);
         // A relay is provisioned after registration. Do not hold the connection operation lock while
         // waiting for an agent that cannot yet have been registered by the administrator.

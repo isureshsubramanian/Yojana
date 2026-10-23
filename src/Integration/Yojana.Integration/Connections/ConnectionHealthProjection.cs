@@ -68,6 +68,7 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
             x.TenantId == tenant.TenantId && x.ConnectionId == connectionId, ct);
         var lifecycle = services.GetKeyedService<IConnectionLifecycleAdapter>(connection.ConnectorCode);
         var evidence = lifecycle is null ? null : await lifecycle.LatestProbeAsync(connectionId, ct);
+        var authorisation = lifecycle is null ? null : await lifecycle.AuthorisationAsync(connectionId, ct);
         var streamSupported = evidence?.NotificationsSupported != false;
         row.NotificationState = !streamSupported ? "not_supported_by_remote_release"
             : watchdog?.StreamState is "active" or "stopped" or "resumed_by_watchdog" ? watchdog.StreamState
@@ -162,6 +163,18 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
             polls.Count > 0, row.LastDailyCheckResult, row.LastDailyCheckAt, row.OpenDeadLetters,
             row.OpenManualTasks, row.OldestWaitingAt, maxAge, row.NotificationState, credentialDue,
             row.CallsCap is { } cap && row.CallsUsed * 100L >= cap * (long)row.CallAlertPercent, pollFailed, connection.CreatedAt), thresholds, now);
+        if (authorisation?.Status == "reconsent_required")
+        {
+            row.Status = "reconsent_required";
+            row.LastErrorCode = "reconsent_required";
+            row.LastErrorMessage = "Consent has expired or was withdrawn. Grant fresh consent to resume from the saved watermarks.";
+        }
+        else if (authorisation?.Status == "disabled")
+        {
+            row.Status = "disabled";
+            row.LastErrorCode = null;
+            row.LastErrorMessage = null;
+        }
         row.RelayConnected = false;
         var relayProfile = services.GetKeyedService<Yojana.Integration.Relays.IRelayConnectorProfile>(connection.ConnectorCode);
         if (connection.Status == ConnectionStatus.Active && relayProfile is not null)
@@ -184,7 +197,7 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
             }
             catch (InvalidOperationException) when (!connection.RegistrationCompleted) { }
         }
-        row.IsLive = connection.Status == ConnectionStatus.Active && row.Status != "down" && !smokeFailed
+        row.IsLive = connection.Status == ConnectionStatus.Active && row.Status is not ("down" or "reconsent_required" or "disabled") && !smokeFailed
             && row.LastDailyCheckResult == "clean" && row.LastDailyCheckAt > now.AddHours(-thresholds.HealthySweepHours);
         // Message types (canonical), rather than remote entity names, join counters to poll declarations.
         var types = await db.ConnectionCapabilities.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
