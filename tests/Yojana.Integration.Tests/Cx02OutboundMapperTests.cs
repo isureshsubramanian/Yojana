@@ -67,6 +67,19 @@ public sealed class Cx02OutboundMapperTests
     }
 
     [Fact]
+    public void Stock_adjustment_without_a_source_uses_the_item_journal_contract()
+    {
+        var command = new ChangeStockStatusOrLocation(Guid.NewGuid(), "document/stock", "FIC-STOCK-301",
+            new(Unit, "FIC-SERIAL-300"), null, "repair", "inspection");
+
+        var mapped = Cx02TrackedDocumentMapper.Stock(command, RemoteUnit, Settings);
+
+        Assert.Equal("itemJournal", mapped.DocumentType);
+        Assert.Equal("WH-R", mapped.Metadata["locationCode"]);
+        Assert.Equal("inspection", mapped.Metadata["reasonCode"]);
+    }
+
+    [Fact]
     public void Service_mapper_carries_the_unit_identity_in_action_metadata()
     {
         var command = new CreateServiceOrder(Guid.NewGuid(), "document/service", "FIC-SERVICE-300",

@@ -26,7 +26,8 @@ public sealed class Cx02Simulator : IAsyncDisposable
     private static readonly HashSet<string> CustomResources =
         ["trackedItemLedgerEntries", "itemEntryRelations", "reservationEntries", "trackingSpecifications",
             "serviceItems", "postedTransferShipments", "postedTransferShipmentLines", "postedTransferReceipts",
-            "postedTransferReceiptLines", "postedReturnReceipts", "postedReturnReceiptLines"];
+            "postedTransferReceiptLines", "postedReturnReceipts", "postedReturnReceiptLines",
+            "trackedDocumentRequests"];
     private static readonly HashSet<string> IncomingAttachmentParents =
         ["", "Journal", "Sales Order", "Sales Quote", "Sales Credit Memo", "Sales Invoice", "Purchase Invoice"];
 
@@ -461,7 +462,8 @@ public sealed class Cx02Simulator : IAsyncDisposable
             await PatchAsync(request, response, resource, key.Value);
             return;
         }
-        if (request.HttpMethod == "POST" && key is null && !ReadOnlyStandardResources.Contains(resource))
+        if (request.HttpMethod == "POST" && key is null && !route.Custom
+            && !ReadOnlyStandardResources.Contains(resource))
         {
             await CreateAsync(request, response, resource);
             return;
@@ -576,7 +578,8 @@ public sealed class Cx02Simulator : IAsyncDisposable
             response.Close();
             return true;
         }
-        if (!resourcePath.EndsWith("/Microsoft.NAV.postTrackedDocument", StringComparison.Ordinal)) return false;
+        if (!resourcePath.StartsWith("trackedDocumentRequests(", StringComparison.Ordinal)
+            || !resourcePath.EndsWith("/Microsoft.NAV.postTrackedDocument", StringComparison.Ordinal)) return false;
         if (TakeTokenExpiryBeforePost())
         {
             ExpireCurrentTokens();
@@ -591,8 +594,37 @@ public sealed class Cx02Simulator : IAsyncDisposable
                 "This bound action does not accept parameters.");
             return true;
         }
+        var values = string.IsNullOrWhiteSpace(body)
+            ? new Dictionary<string, JsonElement>()
+            : JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(body) ?? [];
+        var logicalReference = BodyText(values, "logicalReference") ?? "FICTIONAL-POST-1001";
+        var documentType = BodyText(values, "documentType") ?? "salesShipment";
+        var documentId = values.TryGetValue("documentId", out var requestedId) && requestedId.TryGetGuid(out var parsedId)
+            ? parsedId : ResourceKey(resourcePath) ?? Guid.CreateVersion7();
+        Dictionary<string, object?> requestEntity;
+        var alreadyCompleted = false;
+        lock (stateLock)
+        {
+            requestEntity = resources["trackedDocumentRequests"].FirstOrDefault(value =>
+                StringComparer.Ordinal.Equals(JsonValue(value.GetValueOrDefault("logicalReference")), logicalReference))
+                ?? NormaliseEntity(new Dictionary<string, object?> { ["id"] = documentId });
+            if (!resources["trackedDocumentRequests"].Contains(requestEntity))
+                resources["trackedDocumentRequests"].Add(requestEntity);
+            alreadyCompleted = JsonValue(requestEntity.GetValueOrDefault("status")) is "posted" or "created";
+            if (!alreadyCompleted)
+                SetTrackedRequest(requestEntity, logicalReference, "staged", null, null, null, null, null);
+        }
+        if (alreadyCompleted)
+        {
+            response.StatusCode = (int)HttpStatusCode.Created;
+            await JsonAsync(response, requestEntity);
+            return true;
+        }
         if (TakeClosedPeriodRejection())
         {
+            lock (stateLock)
+                SetTrackedRequest(requestEntity, logicalReference, "failed", null, null, null,
+                    clock.GetUtcNow(), "postingPeriodClosed");
             await ErrorAsync(response, HttpStatusCode.BadRequest, "Application_DialogException",
                 "The posting period is closed.");
             return true;
@@ -604,18 +636,14 @@ public sealed class Cx02Simulator : IAsyncDisposable
             if (FailNextDocumentCreateAfterHook)
             {
                 FailNextDocumentCreateAfterHook = false;
+                lock (stateLock)
+                    SetTrackedRequest(requestEntity, logicalReference, "failed", null, null, null,
+                        clock.GetUtcNow(), "remoteUnavailable");
                 await ErrorAsync(response, HttpStatusCode.ServiceUnavailable, "Internal_ServerBusy",
                     "The fictional create failed after entering its test gate.");
                 return true;
             }
         }
-        var values = string.IsNullOrWhiteSpace(body)
-            ? new Dictionary<string, JsonElement>()
-            : JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(body) ?? [];
-        var logicalReference = BodyText(values, "logicalReference") ?? "FICTIONAL-POST-1001";
-        var documentType = BodyText(values, "documentType") ?? "trackedDocument";
-        var documentId = values.TryGetValue("documentId", out var requestedId) && requestedId.TryGetGuid(out var parsedId)
-            ? parsedId : Guid.CreateVersion7();
         if (documentType == "serviceOrder")
         {
             lock (stateLock) resources["serviceItems"].Add(NormaliseEntity(new Dictionary<string, object?>
@@ -639,6 +667,10 @@ public sealed class Cx02Simulator : IAsyncDisposable
             }));
         }
         PostedDocumentCount++;
+        var status = documentType == "serviceOrder" ? "created" : "posted";
+        lock (stateLock)
+            SetTrackedRequest(requestEntity, logicalReference, status, documentType, documentId,
+                logicalReference, clock.GetUtcNow(), null);
         if (DropNextPostReply)
         {
             DropNextPostReply = false;
@@ -650,12 +682,23 @@ public sealed class Cx02Simulator : IAsyncDisposable
             return true;
         }
         response.StatusCode = (int)HttpStatusCode.Created;
-        await JsonAsync(response, new
-        {
-            id = documentId, documentNumber = logicalReference, status = "posted",
-            postedAt = clock.GetUtcNow(),
-        });
+        await JsonAsync(response, requestEntity);
         return true;
+    }
+
+    private void SetTrackedRequest(Dictionary<string, object?> request, string logicalReference, string status,
+        string? postedDocumentType, Guid? postedDocumentId, string? postedDocumentNumber,
+        DateTimeOffset? completedAt, string? failureCode)
+    {
+        request["logicalReference"] = logicalReference;
+        request["status"] = status;
+        request["postedDocumentType"] = postedDocumentType;
+        request["postedDocumentId"] = postedDocumentId;
+        request["postedDocumentNumber"] = postedDocumentNumber;
+        request["completedAt"] = completedAt;
+        request["failureCode"] = failureCode;
+        request["lastModifiedDateTime"] = clock.GetUtcNow().UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
+        request["@odata.etag"] = NextEtag(request.GetValueOrDefault("@odata.etag")?.ToString());
     }
 
     private async Task<bool> HandleAttachmentAsync(HttpListenerRequest request, HttpListenerResponse response,

@@ -24,10 +24,10 @@ page 50002 "Yojana Item Relations API"
             repeater(Entries)
             {
                 field(id; Rec.SystemId) { Caption = 'Id'; Editable = false; }
-                field(sourceType; SourceType) { Caption = 'Source Type'; Editable = false; }
-                field(sourceSubtype; SourceSubtype) { Caption = 'Source Subtype'; Editable = false; }
-                field(sourceId; SourceId) { Caption = 'Source Id'; Editable = false; }
+                field(sourceDocumentType; SourceDocumentType) { Caption = 'Source Document Type'; Editable = false; }
+                field(sourceDocumentNumber; Rec."Source ID") { Caption = 'Source Document Number'; Editable = false; }
                 field(sourceLineNumber; Rec."Source Ref. No.") { Caption = 'Source Line Number'; Editable = false; }
+                field(sourceDocumentId; SourceDocumentId) { Caption = 'Source Document Id'; Editable = false; }
                 field(itemLedgerEntryNumber; Rec."Item Entry No.") { Caption = 'Item Ledger Entry Number'; Editable = false; }
                 field(lastModifiedDateTime; Rec.SystemModifiedAt) { Caption = 'Last Modified Date Time'; Editable = false; }
             }
@@ -36,15 +36,12 @@ page 50002 "Yojana Item Relations API"
 
     trigger OnAfterGetRecord()
     begin
-        SourceType := Format(Rec."Source Type", 0, 9);
-        SourceSubtype := Format(Rec."Source Subtype", 0, 9);
-        Clear(SourceId);
-        if not Evaluate(SourceId, Rec."Source ID") then
-            SourceId := Rec.SystemId;
+        References.Resolve(Format(Rec."Source Type", 0, 9), Rec."Source ID",
+            SourceDocumentType, SourceDocumentId);
     end;
 
     var
-        SourceId: Guid;
-        SourceType: Text;
-        SourceSubtype: Text;
+        References: Codeunit "Yojana Source Document Ref";
+        SourceDocumentId: Guid;
+        SourceDocumentType: Text;
 }

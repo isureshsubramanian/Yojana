@@ -87,7 +87,8 @@ public sealed class Cx02AdapterDatabaseTests(IntegrationHostFixture fixture) : I
         }));
         simulator.Seed("itemEntryRelations", Cx02SimulatorEntity.From(new
         {
-            id = relationId, sourceType = "invoice", sourceId = invoiceId, sourceLineNumber = 10,
+            id = relationId, sourceDocumentType = "salesInvoice", sourceDocumentNumber = "INV-210",
+            sourceLineNumber = 10, sourceDocumentId = invoiceId,
             itemLedgerEntryNumber = 2101, lastModifiedDateTime = "2026-09-01T08:03:00Z",
         }));
         simulator.Seed("trackedItemLedgerEntries", Ledger(ledgerId, 2101, "Sales Invoice", "INV-210",

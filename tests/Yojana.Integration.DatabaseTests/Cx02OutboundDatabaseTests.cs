@@ -21,7 +21,7 @@ public sealed class Cx02OutboundDatabaseTests(IntegrationHostFixture fixture)
 
     public static TheoryData<string> DocumentKinds => new()
     {
-        "credit", "journal", "replacement", "stock", "service", "attachment",
+        "credit", "journal", "replacement", "stock", "adjustment", "service", "attachment",
     };
 
     [DocumentDatabaseTheory]
@@ -152,6 +152,9 @@ public sealed class Cx02OutboundDatabaseTests(IntegrationHostFixture fixture)
         "stock" => new ChangeStockStatusOrLocation(Guid.CreateVersion7(),
             "document/" + Guid.NewGuid().ToString("N"), reference,
             new(Cx02FixtureFacts.UnitId, "FIC-SERIAL-001"), "store", "repair", "inspection"),
+        "adjustment" => new ChangeStockStatusOrLocation(Guid.CreateVersion7(),
+            "document/" + Guid.NewGuid().ToString("N"), reference,
+            new(Cx02FixtureFacts.UnitId, "FIC-SERIAL-001"), null, "repair", "inspection"),
         "service" => new CreateServiceOrder(Guid.CreateVersion7(),
             "document/" + Guid.NewGuid().ToString("N"), reference, "FIC-CUSTOMER",
             new(Cx02FixtureFacts.UnitId, "FIC-SERIAL-001"), "covered", "Replace server power supply"),

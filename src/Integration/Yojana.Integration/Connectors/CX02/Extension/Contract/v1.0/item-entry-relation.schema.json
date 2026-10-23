@@ -4,13 +4,13 @@
   "title": "Item entry relation page",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "sourceType", "sourceId", "sourceLineNumber", "itemLedgerEntryNumber", "lastModifiedDateTime", "@odata.etag"],
+  "required": ["id", "sourceDocumentType", "sourceDocumentNumber", "sourceLineNumber", "itemLedgerEntryNumber", "lastModifiedDateTime", "@odata.etag"],
   "properties": {
     "id": { "type": "string", "format": "uuid" },
-    "sourceType": { "type": "string" },
-    "sourceSubtype": { "type": ["string", "null"] },
-    "sourceId": { "type": "string", "format": "uuid" },
+    "sourceDocumentType": { "type": "string", "enum": ["salesInvoice", "salesShipment", "salesCreditMemo", "purchaseReceipt", "transferShipment", "transferReceipt", "returnReceipt", "itemJournal", "other"] },
+    "sourceDocumentNumber": { "type": "string", "maxLength": 20 },
     "sourceLineNumber": { "type": "integer" },
+    "sourceDocumentId": { "type": ["string", "null"], "format": "uuid" },
     "itemLedgerEntryNumber": { "type": "integer" },
     "lastModifiedDateTime": { "type": "string", "format": "date-time" },
     "@odata.etag": { "type": "string" }

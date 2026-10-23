@@ -617,7 +617,7 @@
     {
       "id": "P-26",
       "fact": "Bound action parameters",
-      "valueUsed": "Whether a bound action on an API page accepts a JSON body of scalar parameters is not stated in the pages read",
+      "valueUsed": "Whether a bound action on an API page accepts scalar, JsonObject and JsonArray parameters is not stated in the pages read",
       "kind": "assumed",
       "sourceLabel": "no public protocol statement found",
       "dateRead": "2026-10-23",
@@ -1167,7 +1167,7 @@
     {
       "id": "T-12",
       "fact": "Consequence for P10-T03",
-      "valueUsed": "The extension must publish pages for: tracked ILE (ILE + serial/lot/package), item entry relations, transfer shipment and receipt headers and lines, return receipt headers and lines, sales shipment lines with tracking (or a navigation to tracked ILEs), reservation entries (write, for posting), tracking specifications, service items (W-25 risk noted), plus bound actions that post tracked documents. Standard salesShipments and purchaseReceipts stay usable for headers",
+      "valueUsed": "The extension publishes tracked ledger, relation, transfer, return, read-only reservation and tracking-specification pages, service items, a tracked-request status page and a bound action that stages tracking before creating native reservations. Standard salesShipments and purchaseReceipts stay usable for headers",
       "kind": "inferred",
       "sourceLabel": "publisher inventory-tracking documentation",
       "dateRead": "2026-10-23",
@@ -1427,7 +1427,7 @@
     {
       "id": "OUT-01",
       "fact": "Tracked posting action request and lookup key",
-      "valueUsed": "document id, logical reference, metadata and supported document kinds",
+      "valueUsed": "document id, logical reference, per-kind metadata, line-numbered tracking and all eight contract kinds; trackedDocumentRequests.logicalReference is the idempotency lookup",
       "kind": "assumed",
       "sourceLabel": "connector capability design; no public protocol statement found",
       "dateRead": "2026-10-23",
@@ -1452,6 +1452,116 @@
       "sourceLabel": "integration edge rule; exact remote error not found",
       "dateRead": "2026-10-23",
       "usedAt": "outbound rejection mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "EXT-01",
+      "fact": "Extension target versions",
+      "valueUsed": "application 26.0, platform 26.0 and runtime 15.0 compile and install in the customer's environment",
+      "kind": "assumed",
+      "sourceLabel": "extension manifest; customer acceptance gate",
+      "dateRead": "2026-10-23",
+      "usedAt": "extension compile and install acceptance",
+      "acceptanceItem": true
+    },
+    {
+      "id": "EXT-02",
+      "fact": "Preserved system identifier",
+      "valueUsed": "a caller-supplied SystemId survives insertion with the preserve-system-id overload",
+      "kind": "assumed",
+      "sourceLabel": "extension implementation; no licensed environment used",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracked request and native document correlation",
+      "acceptanceItem": true
+    },
+    {
+      "id": "EXT-03",
+      "fact": "Tracked request webhook eligibility",
+      "valueUsed": "the non-temporary tracked-request API page is webhook-capable with its single SystemId key",
+      "kind": "assumed",
+      "sourceLabel": "API key and webhook rules; customer acceptance gate",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracked request status observation",
+      "acceptanceItem": true
+    },
+    {
+      "id": "EXT-04",
+      "fact": "Native object shapes",
+      "valueUsed": "every native table, field and posting codeunit used by the extension has the assumed name and type",
+      "kind": "assumed",
+      "sourceLabel": "source implementation; symbols not downloaded under ADR-0003",
+      "dateRead": "2026-10-23",
+      "usedAt": "all extension pages and posting paths",
+      "acceptanceItem": true
+    },
+    {
+      "id": "EXT-05",
+      "fact": "Document reference mapping",
+      "valueUsed": "native source document type, number and line values match the contract enum and posted-header resolver",
+      "kind": "assumed",
+      "sourceLabel": "ADR-0004 correction; customer acceptance gate",
+      "dateRead": "2026-10-23",
+      "usedAt": "inbound document-to-ledger joins",
+      "acceptanceItem": true
+    },
+    {
+      "id": "EXT-06",
+      "fact": "Action member names",
+      "valueUsed": "the per-kind metadata and tracking member names are accepted by the bound action",
+      "kind": "assumed",
+      "sourceLabel": "ADR-0004 contract; customer acceptance gate",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracked document posting",
+      "acceptanceItem": true
+    },
+    {
+      "id": "EXT-07",
+      "fact": "Tracking staging order",
+      "valueUsed": "one tracking array member can be staged per native line before native reservations are created",
+      "kind": "assumed",
+      "sourceLabel": "extension implementation; customer acceptance gate",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracked document posting",
+      "acceptanceItem": true
+    },
+    {
+      "id": "EXT-08",
+      "fact": "Tracked quantity signs",
+      "valueUsed": "shipment quantities are negative and receipt quantities positive with unit tracking quantity one",
+      "kind": "assumed",
+      "sourceLabel": "ADR-0004 consequence; customer acceptance gate",
+      "dateRead": "2026-10-23",
+      "usedAt": "native reservation creation",
+      "acceptanceItem": true
+    },
+    {
+      "id": "EXT-09",
+      "fact": "Posted header cardinality",
+      "valueUsed": "each posting codeunit call yields exactly one discoverable posted header",
+      "kind": "assumed",
+      "sourceLabel": "ADR-0004 consequence; customer acceptance gate",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracked request result",
+      "acceptanceItem": true
+    },
+    {
+      "id": "EXT-10",
+      "fact": "Service-order creation result",
+      "valueUsed": "a service-order request creates one service item and order, with the service item as the created result",
+      "kind": "assumed",
+      "sourceLabel": "extension implementation; customer acceptance gate",
+      "dateRead": "2026-10-23",
+      "usedAt": "service-order posting action",
+      "acceptanceItem": true
+    },
+    {
+      "id": "EXT-11",
+      "fact": "Read-only action staging",
+      "valueUsed": "the bound action can stage the first tracked-request row from its caller-supplied entity key while the collection remains read-only",
+      "kind": "assumed",
+      "sourceLabel": "ADR-0004 action design; customer acceptance gate",
+      "dateRead": "2026-10-23",
+      "usedAt": "first tracked document posting request",
       "acceptanceItem": true
     }
   ]

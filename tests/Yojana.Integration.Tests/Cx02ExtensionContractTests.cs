@@ -11,11 +11,12 @@ public sealed class Cx02ExtensionContractTests
     private static readonly string[] ExpectedSchemas =
     [
         "item-entry-relation.schema.json", "post-tracked-document-request.schema.json",
-        "post-tracked-document-response.schema.json", "posted-return-receipt-line.schema.json",
+        "posted-return-receipt-line.schema.json",
         "posted-return-receipt.schema.json", "posted-transfer-receipt-line.schema.json",
         "posted-transfer-receipt.schema.json", "posted-transfer-shipment-line.schema.json",
         "posted-transfer-shipment.schema.json", "reservation-entry.schema.json", "service-item.schema.json",
-        "tracked-item-ledger-entry.schema.json", "tracking-specification.schema.json",
+        "tracked-document-request.schema.json", "tracked-item-ledger-entry.schema.json",
+        "tracking-specification.schema.json",
     ];
 
     [Fact]
@@ -72,20 +73,45 @@ public sealed class Cx02ExtensionContractTests
             documentType = "salesShipment",
             tracking = new[]
             {
-                new { lineId = Guid.CreateVersion7(), quantity = 1m, serialNumber = "SN-FICTIONAL-001",
+                new { sourceLineNumber = 10, itemNumber = "HW-SERVER-100", locationCode = "WH-A",
+                    quantity = 1m, serialNumber = "SN-FICTIONAL-001",
                     lotNumber = "", packageNumber = "" },
             },
+            documentId = Guid.CreateVersion7(),
+            logicalReference = "FIC-SHIP-100",
+            metadata = new { customerNumber = "FIC-CUSTOMER-100", shipToCode = "FIC-SHIP" },
         });
         using var requestSchema = Schema("post-tracked-document-request.schema.json");
         Assert.Empty(Validate(requestSchema.RootElement, requestValue, "$"));
         var documentId = Guid.CreateVersion7();
         using var actionReply = await client.PostAsync(simulator.CustomApiUri(
-            $"companies({Cx02Simulator.CompanyId})/reservationEntries({documentId})/Microsoft.NAV.postTrackedDocument"),
+            $"companies({Cx02Simulator.CompanyId})/trackedDocumentRequests({documentId})/Microsoft.NAV.postTrackedDocument"),
             new StringContent(requestValue.GetRawText(), Encoding.UTF8, "application/json"));
         actionReply.EnsureSuccessStatusCode();
         using var actionBody = JsonDocument.Parse(await actionReply.Content.ReadAsStringAsync());
-        using var responseSchema = Schema("post-tracked-document-response.schema.json");
+        using var responseSchema = Schema("tracked-document-request.schema.json");
         Assert.Empty(Validate(responseSchema.RootElement, actionBody.RootElement, "$"));
+    }
+
+    [Fact]
+    public void Action_contract_has_per_kind_metadata_and_document_number_join_limits()
+    {
+        using var request = Schema("post-tracked-document-request.schema.json");
+        Assert.Equal(8, request.RootElement.GetProperty("oneOf").GetArrayLength());
+        Assert.Contains("itemJournal", request.RootElement.GetProperty("properties").GetProperty("documentType")
+            .GetProperty("enum").EnumerateArray().Select(value => value.GetString()));
+        Assert.True(request.RootElement.GetProperty("properties").GetProperty("tracking").GetProperty("items")
+            .GetProperty("properties").TryGetProperty("sourceLineNumber", out _));
+
+        foreach (var file in new[] { "item-entry-relation.schema.json", "reservation-entry.schema.json",
+                     "tracking-specification.schema.json" })
+        {
+            using var schema = Schema(file);
+            var properties = schema.RootElement.GetProperty("properties");
+            Assert.Equal(20, properties.GetProperty("sourceDocumentNumber").GetProperty("maxLength").GetInt32());
+            Assert.True(properties.TryGetProperty("sourceDocumentId", out _));
+            Assert.False(properties.TryGetProperty("sourceId", out _));
+        }
     }
 
     private static List<string> Validate(JsonElement schema, JsonElement value, string path)

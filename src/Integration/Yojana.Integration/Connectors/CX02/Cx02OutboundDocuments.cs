@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using Yojana.Integration.Contracts;
 using Yojana.Integration.Gateway;
@@ -22,11 +21,9 @@ public sealed class Cx02OutboundDocuments(
                 "salesCreditMemos", "externalDocumentNumber", lookup.ErpReferenceText, cancellationToken),
             nameof(PostWarrantyExpense) => await FindByTextAsync(lookup.ConnectionId, configured, false,
                 "journals", "externalDocumentNumber", lookup.ErpReferenceText, cancellationToken),
-            nameof(CreateReplacementDelivery) or nameof(ChangeStockStatusOrLocation) =>
-                await FindByTextAsync(lookup.ConnectionId, configured, true, "trackedItemLedgerEntries",
-                    "documentNumber", lookup.ErpReferenceText, cancellationToken),
-            nameof(CreateServiceOrder) => await FindByTextAsync(lookup.ConnectionId, configured, true,
-                "serviceItems", "number", lookup.ErpReferenceText, cancellationToken),
+            nameof(CreateReplacementDelivery) or nameof(ChangeStockStatusOrLocation) or nameof(CreateServiceOrder) =>
+                await FindTrackedRequestAsync(lookup.ConnectionId, configured, lookup.ErpReferenceText,
+                    cancellationToken),
             nameof(AttachDocument) when lookup.Payload is not null =>
                 await FindAttachmentAsync(lookup, configured, cancellationToken),
             _ => null,
@@ -153,29 +150,19 @@ public sealed class Cx02OutboundDocuments(
     {
         if (lines.Count == 0) throw new Cx02OutboundRuleException("The tracked document has no lines.");
         var tracking = new List<Dictionary<string, object?>>(lines.Count);
-        Guid? actionId = null;
         for (var index = 0; index < lines.Count; index++)
         {
             var line = lines[index];
             if (string.IsNullOrWhiteSpace(line.SerialNumber)) continue;
-            var lineId = DeterministicId.Create(documentId, "line-" + index.ToString(CultureInfo.InvariantCulture));
-            var reservationId = DeterministicId.Create(documentId,
-                "reservation-" + index.ToString(CultureInfo.InvariantCulture));
-            actionId ??= reservationId;
-            await CreateEntityAsync(request.ConnectionId, configured, true, "reservationEntries", new()
-            {
-                ["id"] = reservationId, ["itemNumber"] = line.ItemNumber,
-                ["locationCode"] = line.LocationCode, ["quantity"] = line.Quantity,
-                ["sourceType"] = documentType, ["sourceId"] = documentId, ["sourceLineNumber"] = (index + 1) * 10,
-                ["serialNumber"] = line.SerialNumber, ["lotNumber"] = "", ["packageNumber"] = "",
-            }, cancellationToken);
             tracking.Add(new()
             {
-                ["lineId"] = lineId, ["quantity"] = line.Quantity, ["serialNumber"] = line.SerialNumber,
+                ["sourceLineNumber"] = (index + 1) * 10, ["itemNumber"] = line.ItemNumber,
+                ["locationCode"] = line.LocationCode, ["quantity"] = line.Quantity,
+                ["serialNumber"] = line.SerialNumber,
                 ["lotNumber"] = "", ["packageNumber"] = "",
             });
         }
-        if (actionId is null)
+        if (tracking.Count == 0)
             throw new Cx02OutboundRuleException("The extension posting action requires a tracked unit.");
         var body = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -185,13 +172,14 @@ public sealed class Cx02OutboundDocuments(
             ["tracking"] = tracking,
             ["metadata"] = metadata,
         };
-        var uri = EntityUri(configured, true, "reservationEntries", actionId.Value)
+        var uri = EntityUri(configured, true, "trackedDocumentRequests", documentId)
             + "/Microsoft.NAV.postTrackedDocument";
         using var result = await client.SendJsonAsync(request.ConnectionId, HttpMethod.Post, new(uri), body,
             idempotent: false, headers: null, cancellationToken);
-        var id = result is null ? documentId : Id(result.RootElement);
-        var marker = result is null ? null : Text(result.RootElement, "postedAt");
-        return OutboundCreateResult.Created(externalId ?? documentType + ":" + id, marker);
+        var id = result is null ? documentId : NullableId(result.RootElement, "postedDocumentId") ?? documentId;
+        var postedType = result is null ? documentType : Text(result.RootElement, "postedDocumentType") ?? documentType;
+        var marker = result is null ? null : Text(result.RootElement, "completedAt");
+        return OutboundCreateResult.Created(externalId ?? postedType + ":" + id, marker);
     }
 
     private async Task<OutboundCreateResult> AttachAsync(OutboundCreateRequest request,
@@ -254,6 +242,22 @@ public sealed class Cx02OutboundDocuments(
         return new(resource + ":" + Id(row), Etag(row));
     }
 
+    private async Task<OutboundDocument?> FindTrackedRequestAsync(Guid connectionId,
+        Cx02ConnectionSettings configured, string logicalReference, CancellationToken cancellationToken)
+    {
+        var filter = Uri.EscapeDataString("logicalReference eq '"
+            + logicalReference.Replace("'", "''", StringComparison.Ordinal) + "'");
+        var rows = await client.ReadCollectionAsync(connectionId,
+            new(CollectionUri(configured, true, "trackedDocumentRequests") + "?$filter=" + filter + "&$top=1"),
+            1, configured.PageCap, cancellationToken);
+        if (rows.Count == 0 || Text(rows[0], "status") is not ("posted" or "created")) return null;
+        var row = rows[0];
+        var id = NullableId(row, "postedDocumentId");
+        var type = Text(row, "postedDocumentType");
+        if (id is null || string.IsNullOrWhiteSpace(type)) return null;
+        return new(type + ":" + id.Value, Text(row, "completedAt") ?? Etag(row));
+    }
+
     private async Task<JsonElement> CreateEntityAsync(Guid connectionId, Cx02ConnectionSettings configured,
         bool custom, string resource, Dictionary<string, object?> body, CancellationToken cancellationToken)
     {
@@ -281,6 +285,9 @@ public sealed class Cx02OutboundDocuments(
 
     private static Guid Id(JsonElement value) => value.TryGetProperty("id", out var id) && id.TryGetGuid(out var found)
         ? found : throw new Cx02OutboundRuleException("The remote document omitted its identifier.");
+    private static Guid? NullableId(JsonElement value, string property) =>
+        value.TryGetProperty(property, out var id) && id.ValueKind == JsonValueKind.String && id.TryGetGuid(out var found)
+            ? found : null;
     private static string? Etag(JsonElement value) => Text(value, "@odata.etag")
         ?? Text(value, "lastModifiedDateTime");
     private static string? Text(JsonElement value, string property) =>

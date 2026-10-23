@@ -111,7 +111,15 @@ internal static class Cx02TrackedDocumentMapper
     {
         var from = MapLocation(command.FromLocationOrStatus, settings);
         var to = MapLocation(command.ToLocationOrStatus, settings);
-        if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to) || from == to)
+        if (string.IsNullOrWhiteSpace(to))
+            throw new Cx02OutboundRuleException("A stock change needs a mapped destination location.");
+        if (string.IsNullOrWhiteSpace(from))
+            return ("itemJournal", [new(new() { ["itemNumber"] = unit.ItemNumber, ["quantity"] = 1m },
+                unit.ItemNumber, unit.SerialNumber, 1m, to)], new()
+            {
+                ["locationCode"] = to, ["reasonCode"] = command.Reason,
+            });
+        if (from == to)
             throw new Cx02OutboundRuleException("A stock move needs distinct mapped source and destination locations.");
         return ("transferShipment", [new(new() { ["itemNumber"] = unit.ItemNumber, ["quantity"] = 1m },
             unit.ItemNumber, unit.SerialNumber, 1m, from)], new()
@@ -126,7 +134,8 @@ internal static class Cx02TrackedDocumentMapper
             unit.ItemNumber, unit.SerialNumber, 1m, unit.LocationCode)], new()
         {
             ["customerNumber"] = customer, ["coverageDecision"] = command.CoverageDecisionText,
-            ["description"] = command.ProblemDescription, ["itemNumber"] = unit.ItemNumber,
+            ["description"] = command.ProblemDescription,
+            ["itemNumber"] = unit.ItemNumber,
             ["serialNumber"] = unit.SerialNumber,
         });
 

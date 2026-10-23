@@ -149,6 +149,7 @@ public sealed class Cx02SimulatorTests
             "trackedItemLedgerEntries", "itemEntryRelations", "reservationEntries", "trackingSpecifications",
             "serviceItems", "postedTransferShipments", "postedTransferShipmentLines", "postedTransferReceipts",
             "postedTransferReceiptLines", "postedReturnReceipts", "postedReturnReceiptLines",
+            "trackedDocumentRequests",
         };
 
         foreach (var page in pages)
@@ -159,8 +160,11 @@ public sealed class Cx02SimulatorTests
 
         var documentId = Guid.CreateVersion7();
         using var action = await client.PostAsync(CompanyUri(simulator,
-            $"reservationEntries({documentId})/Microsoft.NAV.postTrackedDocument", custom: true),
-            JsonContent(new { documentType = "salesShipment", tracking = Array.Empty<object>() }));
+            $"trackedDocumentRequests({documentId})/Microsoft.NAV.postTrackedDocument", custom: true),
+            JsonContent(new { documentType = "salesShipment", documentId, logicalReference = "FIC-SHIP-200",
+                metadata = new { customerNumber = "FIC-CUSTOMER-200", shipToCode = "FIC-SHIP" },
+                tracking = new[] { new { sourceLineNumber = 10, itemNumber = "HW-SERVER-200",
+                    quantity = 1m, serialNumber = "FIC-SERIAL-200", lotNumber = "", packageNumber = "" } } }));
         Assert.Equal(HttpStatusCode.Created, action.StatusCode);
         using var result = JsonDocument.Parse(await action.Content.ReadAsStringAsync());
         Assert.Equal("posted", result.RootElement.GetProperty("status").GetString());
@@ -173,14 +177,72 @@ public sealed class Cx02SimulatorTests
         using var client = await AuthenticatedClientAsync(simulator);
 
         using var accepted = await client.PostAsync(CompanyUri(simulator,
-            $"reservationEntries({Guid.CreateVersion7()})/Microsoft.NAV.postTrackedDocument", custom: true),
+            $"trackedDocumentRequests({Guid.CreateVersion7()})/Microsoft.NAV.postTrackedDocument", custom: true),
             JsonContent(new { }));
         using var rejected = await client.PostAsync(CompanyUri(simulator,
-            $"reservationEntries({Guid.CreateVersion7()})/Microsoft.NAV.postTrackedDocument", custom: true),
+            $"trackedDocumentRequests({Guid.CreateVersion7()})/Microsoft.NAV.postTrackedDocument", custom: true),
             JsonContent(new { documentType = "salesShipment" }));
 
         Assert.Equal(HttpStatusCode.Created, accepted.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+    }
+
+    [Fact]
+    public async Task Tracked_request_exposes_staged_created_and_failed_states_with_codes()
+    {
+        await using var simulator = new Cx02Simulator();
+        using var client = await AuthenticatedClientAsync(simulator);
+        var documentId = Guid.CreateVersion7();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        simulator.BeforeNextDocumentCreate = async () =>
+        {
+            entered.SetResult();
+            await release.Task;
+        };
+        var post = client.PostAsync(CompanyUri(simulator,
+            $"trackedDocumentRequests({documentId})/Microsoft.NAV.postTrackedDocument", custom: true),
+            JsonContent(new { documentType = "serviceOrder", documentId, logicalReference = "FIC-SERVICE-STATE",
+                metadata = new { customerNumber = "FIC-CUSTOMER", itemNumber = "HW-SERVER-100",
+                    serialNumber = "FIC-SERIAL-STATE", description = "Replace storage controller" },
+                tracking = new[] { new { sourceLineNumber = 10, itemNumber = "HW-SERVER-100", quantity = 1m,
+                    serialNumber = "FIC-SERIAL-STATE", lotNumber = "", packageNumber = "" } } }));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        using (var stagedReply = await client.GetAsync(CompanyUri(simulator,
+                   $"trackedDocumentRequests({documentId})", custom: true)))
+        using (var staged = JsonDocument.Parse(await stagedReply.Content.ReadAsStringAsync()))
+            Assert.Equal("staged", staged.RootElement.GetProperty("status").GetString());
+        release.SetResult();
+        using (var completedReply = await post)
+        using (var completed = JsonDocument.Parse(await completedReply.Content.ReadAsStringAsync()))
+            Assert.Equal("created", completed.RootElement.GetProperty("status").GetString());
+
+        var failedId = Guid.CreateVersion7();
+        simulator.RejectNextPostAsClosedPeriod = true;
+        using var rejected = await client.PostAsync(CompanyUri(simulator,
+            $"trackedDocumentRequests({failedId})/Microsoft.NAV.postTrackedDocument", custom: true),
+            JsonContent(new { documentType = "itemJournal", documentId = failedId,
+                logicalReference = "FIC-FAILED-STATE", metadata = new { locationCode = "WH-A", reasonCode = "inspection" },
+                tracking = new[] { new { sourceLineNumber = 10, itemNumber = "HW-SERVER-100", quantity = 1m,
+                    serialNumber = "FIC-SERIAL-FAILED", lotNumber = "", packageNumber = "" } } }));
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        using var failedReply = await client.GetAsync(CompanyUri(simulator,
+            $"trackedDocumentRequests({failedId})", custom: true));
+        using var failed = JsonDocument.Parse(await failedReply.Content.ReadAsStringAsync());
+        Assert.Equal("failed", failed.RootElement.GetProperty("status").GetString());
+        Assert.Equal("postingPeriodClosed", failed.RootElement.GetProperty("failureCode").GetString());
+    }
+
+    [Fact]
+    public async Task Reservation_page_rejects_direct_creates()
+    {
+        await using var simulator = new Cx02Simulator();
+        using var client = await AuthenticatedClientAsync(simulator);
+
+        using var response = await client.PostAsync(CompanyUri(simulator, "reservationEntries", custom: true),
+            JsonContent(new { id = Guid.CreateVersion7(), itemNumber = "HW-SERVER-100" }));
+
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
     }
 
     [Theory]
@@ -350,19 +412,22 @@ public sealed class Cx02SimulatorTests
     }
 
     [Fact]
-    public async Task Dropped_reply_occurs_after_create_and_the_record_remains_queryable()
+    public async Task Dropped_action_reply_leaves_the_tracked_request_queryable_for_idempotent_retry()
     {
         await using var simulator = new Cx02Simulator();
         using var client = await AuthenticatedClientAsync(simulator);
-        simulator.DropNextCreateReply = true;
+        simulator.DropNextPostReply = true;
         var id = Guid.CreateVersion7();
 
         await Assert.ThrowsAnyAsync<HttpRequestException>(() => client.PostAsync(
-            CompanyUri(simulator, "reservationEntries", custom: true),
-            JsonContent(new { id, itemNumber = "HW-STORAGE-100" })));
-        using var read = await client.GetAsync(CompanyUri(simulator, $"reservationEntries({id})", custom: true));
+            CompanyUri(simulator, $"trackedDocumentRequests({id})/Microsoft.NAV.postTrackedDocument", custom: true),
+            JsonContent(new { documentType = "itemJournal", documentId = id,
+                logicalReference = "FIC-ADJUST-100", metadata = new { locationCode = "WH-A", reasonCode = "inspection" },
+                tracking = new[] { new { sourceLineNumber = 10, itemNumber = "HW-STORAGE-100",
+                    quantity = 1m, serialNumber = "FIC-SERIAL-100", lotNumber = "", packageNumber = "" } } })));
+        using var read = await client.GetAsync(CompanyUri(simulator, $"trackedDocumentRequests({id})", custom: true));
 
-        Assert.Equal(1, simulator.CreateCount);
+        Assert.Equal(1, simulator.PostedDocumentCount);
         Assert.Equal(HttpStatusCode.OK, read.StatusCode);
     }
 

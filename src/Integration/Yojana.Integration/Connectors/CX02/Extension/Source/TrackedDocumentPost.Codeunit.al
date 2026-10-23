@@ -4,13 +4,36 @@ codeunit 50013 "Yojana Tracked Document Post"
     var
         PostedDocumentId: Guid;
         PostedDocumentNumber: Code[20];
+        FailureCode: Text;
+        FailureMessage: Text;
     begin
-        CheckRequest(Request, DocumentType, DocumentId, LogicalReference, Tracking);
-        if FindPostedResult(Request, DocumentId) then begin
+        CheckRequest(DocumentType, DocumentId, LogicalReference, Tracking);
+        if FindPostedResult(Request, LogicalReference) then begin
             SetActionResponse(Request, ActionContext);
             exit;
         end;
+        StageRequest(Request, DocumentType, DocumentId, LogicalReference);
+        StageTracking(DocumentType, DocumentId, Metadata, Tracking);
+        Commit();
 
+        if not PostNative(DocumentType, DocumentId, LogicalReference, Metadata,
+            PostedDocumentId, PostedDocumentNumber) then begin
+            FailureCode := GetLastErrorCode();
+            FailureMessage := GetLastErrorText();
+            if FailureCode = '' then
+                FailureCode := 'postingFailed';
+            SaveFailure(Request, FailureCode);
+            Commit();
+            Error(FailureMessage);
+        end;
+
+        SavePostedResult(Request, DocumentType, PostedDocumentId, PostedDocumentNumber);
+        SetActionResponse(Request, ActionContext);
+    end;
+
+    [TryFunction]
+    local procedure PostNative(DocumentType: Text; DocumentId: Guid; LogicalReference: Text; Metadata: JsonObject; var PostedDocumentId: Guid; var PostedDocumentNumber: Code[20])
+    begin
         case DocumentType of
             'salesShipment':
                 PostSalesShipment(DocumentId, LogicalReference, Metadata, PostedDocumentId, PostedDocumentNumber);
@@ -24,42 +47,91 @@ codeunit 50013 "Yojana Tracked Document Post"
                 PostTransferReceipt(DocumentId, PostedDocumentId, PostedDocumentNumber);
             'returnReceipt':
                 PostReturnReceipt(DocumentId, LogicalReference, Metadata, PostedDocumentId, PostedDocumentNumber);
+            'itemJournal':
+                PostItemJournal(DocumentId, LogicalReference, Metadata, PostedDocumentId, PostedDocumentNumber);
             'serviceOrder':
                 CreateServiceOrder(DocumentId, LogicalReference, Metadata, PostedDocumentId, PostedDocumentNumber);
             else
                 Error(UnsupportedDocumentTypeErr, DocumentType);
         end;
-
-        SavePostedResult(Request, DocumentId, LogicalReference, PostedDocumentId, PostedDocumentNumber);
-        SetActionResponse(Request, ActionContext);
     end;
 
-    local procedure CheckRequest(Request: Record "Yojana Tracking Request"; DocumentType: Text; var DocumentId: Guid; var LogicalReference: Text; Tracking: JsonArray)
-    var
-        Requests: Record "Yojana Tracking Request";
+    local procedure CheckRequest(DocumentType: Text; DocumentId: Guid; LogicalReference: Text; Tracking: JsonArray)
     begin
         if IsNullGuid(DocumentId) then
-            DocumentId := Request."Source Id";
+            Error(DocumentIdRequiredErr);
         if LogicalReference = '' then
-            LogicalReference := Format(DocumentId, 0, 4);
-        if Request."Source Id" <> DocumentId then
-            Error(DocumentIdMismatchErr);
-        if Request."Source Type" <> DocumentType then
-            Error(DocumentTypeMismatchErr);
-        Requests.SetRange("Source Id", DocumentId);
-        Requests.SetRange("Source Type", DocumentType);
-        if Requests.IsEmpty() then
+            Error(LogicalReferenceRequiredErr);
+        if StrLen(LogicalReference) > 100 then
+            Error(LogicalReferenceTooLongErr);
+        if Tracking.Count() = 0 then
             Error(TrackingRequiredErr);
-        if Tracking.Count() <> Requests.Count() then
-            Error(TrackingCountMismatchErr);
     end;
 
-    local procedure FindPostedResult(var Request: Record "Yojana Tracking Request"; DocumentId: Guid): Boolean
+    local procedure FindPostedResult(var Request: Record "Yojana Tracking Request"; LogicalReference: Text): Boolean
     begin
         Request.Reset();
-        Request.SetRange("Source Id", DocumentId);
-        Request.SetFilter("Posted At", '<>%1', 0DT);
+        Request.SetRange("Is Request Header", true);
+        Request.SetRange("Logical Reference", LogicalReference);
+        Request.SetFilter(Status, '%1|%2', 'posted', 'created');
         exit(Request.FindFirst());
+    end;
+
+    local procedure StageRequest(var Request: Record "Yojana Tracking Request"; DocumentType: Text; DocumentId: Guid; LogicalReference: Text)
+    begin
+        Request.Reset();
+        Request.SetRange("Is Request Header", true);
+        Request.SetRange("Logical Reference", LogicalReference);
+        if Request.FindFirst() then begin
+            Request.Status := 'staged';
+            Clear(Request."Failure Code");
+            Request.Modify(true);
+            exit;
+        end;
+        Request.Init();
+        Request.SystemId := DocumentId;
+        Request."Is Request Header" := true;
+        Request."Source Type" := CopyStr(DocumentType, 1, MaxStrLen(Request."Source Type"));
+        Request."Source Id" := DocumentId;
+        Request."Logical Reference" := CopyStr(LogicalReference, 1, MaxStrLen(Request."Logical Reference"));
+        Request.Status := 'staged';
+        Request.Insert(true, true);
+    end;
+
+    local procedure StageTracking(DocumentType: Text; DocumentId: Guid; Metadata: JsonObject; Tracking: JsonArray)
+    var
+        Request: Record "Yojana Tracking Request";
+        TrackingObject: JsonObject;
+        TrackingToken: JsonToken;
+        Index: Integer;
+    begin
+        Request.SetRange("Source Id", DocumentId);
+        Request.SetRange("Is Request Header", false);
+        Request.DeleteAll(true);
+        Request.Reset();
+        for Index := 0 to Tracking.Count() - 1 do begin
+            Tracking.Get(Index, TrackingToken);
+            TrackingObject := TrackingToken.AsObject();
+            Request.Init();
+            Request."Source Type" := CopyStr(DocumentType, 1, MaxStrLen(Request."Source Type"));
+            Request."Source Id" := DocumentId;
+            Request."Source Line Number" := JsonInteger(TrackingObject, 'sourceLineNumber');
+            Request."Item Number" := CopyStr(JsonText(TrackingObject, 'itemNumber'), 1, MaxStrLen(Request."Item Number"));
+            Request.Quantity := JsonDecimal(TrackingObject, 'quantity');
+            Request."Quantity Base" := Request.Quantity;
+            Request."Location Code" := CopyStr(JsonText(TrackingObject, 'locationCode'), 1,
+                MaxStrLen(Request."Location Code"));
+            if Request."Location Code" = '' then
+                Request."Location Code" := CopyStr(MetadataText(Metadata, 'locationCode'), 1,
+                    MaxStrLen(Request."Location Code"));
+            if Request."Location Code" = '' then
+                Request."Location Code" := CopyStr(MetadataText(Metadata, 'fromLocationCode'), 1,
+                    MaxStrLen(Request."Location Code"));
+            Request."Serial Number" := CopyStr(JsonText(TrackingObject, 'serialNumber'), 1, MaxStrLen(Request."Serial Number"));
+            Request."Lot Number" := CopyStr(JsonText(TrackingObject, 'lotNumber'), 1, MaxStrLen(Request."Lot Number"));
+            Request."Package Number" := CopyStr(JsonText(TrackingObject, 'packageNumber'), 1, MaxStrLen(Request."Package Number"));
+            Request.Insert(true);
+        end;
     end;
 
     local procedure PostSalesShipment(DocumentId: Guid; LogicalReference: Text; Metadata: JsonObject; var PostedDocumentId: Guid; var PostedDocumentNumber: Code[20])
@@ -224,6 +296,7 @@ codeunit 50013 "Yojana Tracked Document Post"
         SalesLine: Record "Sales Line";
     begin
         Request.SetRange("Source Id", DocumentId);
+        Request.SetRange("Is Request Header", false);
         if not Request.FindSet() then
             Error(TrackingRequiredErr);
         repeat
@@ -251,6 +324,7 @@ codeunit 50013 "Yojana Tracked Document Post"
         PurchaseLine: Record "Purchase Line";
     begin
         Request.SetRange("Source Id", DocumentId);
+        Request.SetRange("Is Request Header", false);
         if not Request.FindSet() then
             Error(TrackingRequiredErr);
         repeat
@@ -272,6 +346,7 @@ codeunit 50013 "Yojana Tracked Document Post"
         Request: Record "Yojana Tracking Request";
     begin
         Request.SetRange("Source Id", DocumentId);
+        Request.SetRange("Is Request Header", false);
         if not Request.FindSet() then
             Error(TrackingRequiredErr);
         repeat
@@ -285,6 +360,7 @@ codeunit 50013 "Yojana Tracked Document Post"
         TransferLine: Record "Transfer Line";
     begin
         Request.SetRange("Source Id", DocumentId);
+        Request.SetRange("Is Request Header", false);
         if not Request.FindSet() then
             Error(TrackingRequiredErr);
         repeat
@@ -300,6 +376,42 @@ codeunit 50013 "Yojana Tracked Document Post"
             end;
             CreateTracking(Request, Database::"Transfer Line", 0, TransferHeader."No.", TransferLine."Line No.", Positive);
         until Request.Next() = 0;
+    end;
+
+    local procedure PostItemJournal(DocumentId: Guid; LogicalReference: Text; Metadata: JsonObject; var PostedDocumentId: Guid; var PostedDocumentNumber: Code[20])
+    var
+        Request: Record "Yojana Tracking Request";
+        ItemJournalLine: Record "Item Journal Line";
+        ItemLedgerEntry: Record "Item Ledger Entry";
+        PostLine: Codeunit "Item Jnl.-Post Line";
+    begin
+        Request.SetRange("Source Id", DocumentId);
+        Request.SetRange("Is Request Header", false);
+        if not Request.FindSet() then
+            Error(TrackingRequiredErr);
+        repeat
+            ItemJournalLine.Init();
+            ItemJournalLine."Journal Template Name" := 'ITEM';
+            ItemJournalLine."Journal Batch Name" := 'DEFAULT';
+            ItemJournalLine."Line No." := Request."Source Line Number";
+            ItemJournalLine."Posting Date" := Today();
+            ItemJournalLine."Document No." := CopyStr(LogicalReference, 1, MaxStrLen(ItemJournalLine."Document No."));
+            if Request.Quantity < 0 then
+                ItemJournalLine."Entry Type" := ItemJournalLine."Entry Type"::"Negative Adjmt."
+            else
+                ItemJournalLine."Entry Type" := ItemJournalLine."Entry Type"::"Positive Adjmt.";
+            ItemJournalLine.Validate("Item No.", Request."Item Number");
+            ItemJournalLine.Validate("Location Code", MetadataText(Metadata, 'locationCode'));
+            ItemJournalLine.Validate(Quantity, Abs(Request.Quantity));
+            CreateTracking(Request, Database::"Item Journal Line", ItemJournalLine."Entry Type".AsInteger(),
+                ItemJournalLine."Journal Batch Name", ItemJournalLine."Line No.", Request.Quantity > 0);
+            PostLine.RunWithCheck(ItemJournalLine);
+        until Request.Next() = 0;
+
+        ItemLedgerEntry.SetRange("Document No.", CopyStr(LogicalReference, 1, MaxStrLen(ItemLedgerEntry."Document No.")));
+        ItemLedgerEntry.FindLast();
+        PostedDocumentId := ItemLedgerEntry.SystemId;
+        PostedDocumentNumber := ItemLedgerEntry."Document No.";
     end;
 
     local procedure CreateTracking(Request: Record "Yojana Tracking Request"; SourceType: Integer; SourceSubtype: Integer; SourceId: Code[20]; SourceLineNumber: Integer; Positive: Boolean)
@@ -322,25 +434,32 @@ codeunit 50013 "Yojana Tracked Document Post"
         CreateReservEntry.CreateEntry(Request."Item Number", '', Request."Location Code", '', 0D, 0D, 0, Enum::"Reservation Status"::Surplus);
     end;
 
-    local procedure SavePostedResult(var Request: Record "Yojana Tracking Request"; DocumentId: Guid; LogicalReference: Text; PostedDocumentId: Guid; PostedDocumentNumber: Code[20])
+    local procedure SavePostedResult(var Request: Record "Yojana Tracking Request"; DocumentType: Text; PostedDocumentId: Guid; PostedDocumentNumber: Code[20])
     begin
-        Request.Reset();
-        Request.SetRange("Source Id", DocumentId);
-        Request.FindSet(true);
-        repeat
-            Request."Logical Reference" := CopyStr(LogicalReference, 1, MaxStrLen(Request."Logical Reference"));
-            Request."Posted Document Id" := PostedDocumentId;
-            Request."Posted Document Number" := PostedDocumentNumber;
-            Request."Posted At" := CurrentDateTime();
-            Request.Modify();
-        until Request.Next() = 0;
-        Request.FindFirst();
+        Request."Posted Document Type" := CopyStr(DocumentType, 1, MaxStrLen(Request."Posted Document Type"));
+        Request."Posted Document Id" := PostedDocumentId;
+        Request."Posted Document Number" := PostedDocumentNumber;
+        Request."Completed At" := CurrentDateTime();
+        if DocumentType = 'serviceOrder' then
+            Request.Status := 'created'
+        else
+            Request.Status := 'posted';
+        Clear(Request."Failure Code");
+        Request.Modify(true);
+    end;
+
+    local procedure SaveFailure(var Request: Record "Yojana Tracking Request"; FailureCode: Text)
+    begin
+        Request.Status := 'failed';
+        Request."Failure Code" := CopyStr(FailureCode, 1, MaxStrLen(Request."Failure Code"));
+        Request."Completed At" := CurrentDateTime();
+        Request.Modify(true);
     end;
 
     local procedure SetActionResponse(Request: Record "Yojana Tracking Request"; var ActionContext: WebServiceActionContext)
     begin
         ActionContext.SetObjectType(ObjectType::Page);
-        ActionContext.SetObjectId(Page::"Yojana Post Result API");
+        ActionContext.SetObjectId(Page::"Yojana Tracked Requests API");
         ActionContext.AddEntityKey(Request.FieldNo(SystemId), Request.SystemId);
         ActionContext.SetResultCode(WebServiceActionResultCode::Created);
     end;
@@ -354,10 +473,37 @@ codeunit 50013 "Yojana Tracked Document Post"
         exit('');
     end;
 
+    local procedure JsonText(Value: JsonObject; Name: Text): Text
     var
-        DocumentIdMismatchErr: Label 'documentId does not match the bound tracking request.';
-        DocumentTypeMismatchErr: Label 'documentType does not match the bound tracking request.';
+        Token: JsonToken;
+    begin
+        if Value.Get(Name, Token) and Token.IsValue() then
+            exit(Token.AsValue().AsText());
+        exit('');
+    end;
+
+    local procedure JsonInteger(Value: JsonObject; Name: Text): Integer
+    var
+        Token: JsonToken;
+    begin
+        if Value.Get(Name, Token) and Token.IsValue() then
+            exit(Token.AsValue().AsInteger());
+        exit(0);
+    end;
+
+    local procedure JsonDecimal(Value: JsonObject; Name: Text): Decimal
+    var
+        Token: JsonToken;
+    begin
+        if Value.Get(Name, Token) and Token.IsValue() then
+            exit(Token.AsValue().AsDecimal());
+        exit(0);
+    end;
+
+    var
+        DocumentIdRequiredErr: Label 'documentId is required.';
+        LogicalReferenceRequiredErr: Label 'logicalReference is required.';
+        LogicalReferenceTooLongErr: Label 'logicalReference cannot exceed 100 characters.';
         TrackingRequiredErr: Label 'At least one tracking assignment is required.';
-        TrackingCountMismatchErr: Label 'tracking must match the staged tracking assignments.';
         UnsupportedDocumentTypeErr: Label 'The document type %1 is not supported.', Comment = '%1 is the documentType value.';
 }

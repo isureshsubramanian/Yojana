@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.invalid/cx02/extension/v1.0/tracked-document-request.schema.json",
+  "title": "Tracked document request page and action response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "logicalReference", "status", "postedDocumentType", "postedDocumentId", "postedDocumentNumber", "completedAt", "failureCode", "lastModifiedDateTime", "@odata.etag"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "logicalReference": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["staged", "posted", "created", "failed"] },
+    "postedDocumentType": { "type": ["string", "null"] },
+    "postedDocumentId": { "type": ["string", "null"], "format": "uuid" },
+    "postedDocumentNumber": { "type": ["string", "null"] },
+    "completedAt": { "type": ["string", "null"], "format": "date-time" },
+    "failureCode": { "type": ["string", "null"] },
+    "lastModifiedDateTime": { "type": "string", "format": "date-time" },
+    "@odata.etag": { "type": "string" }
+  }
+}

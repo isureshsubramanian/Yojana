@@ -19,7 +19,7 @@ public sealed partial class Cx02ExtensionSourceShapeTests
             ["service-item.schema.json"] = ("serviceItem", "serviceItems"),
             ["tracked-item-ledger-entry.schema.json"] = ("trackedItemLedgerEntry", "trackedItemLedgerEntries"),
             ["tracking-specification.schema.json"] = ("trackingSpecification", "trackingSpecifications"),
-            ["post-tracked-document-response.schema.json"] = ("postTrackedDocumentResponse", "postTrackedDocumentResponses"),
+            ["tracked-document-request.schema.json"] = ("trackedDocumentRequest", "trackedDocumentRequests"),
         };
 
     private static readonly IReadOnlyDictionary<string, string> ExpectedTablePermissions =
@@ -28,7 +28,7 @@ public sealed partial class Cx02ExtensionSourceShapeTests
             ["Yojana Tracking Request"] = "RIM",
             ["Item Ledger Entry"] = "R",
             ["Item Entry Relation"] = "R",
-            ["Reservation Entry"] = "RIM",
+            ["Reservation Entry"] = "R",
             ["Tracking Specification"] = "R",
             ["Service Item"] = "RI",
             ["Transfer Shipment Header"] = "R",
@@ -40,6 +40,7 @@ public sealed partial class Cx02ExtensionSourceShapeTests
             ["Sales Header"] = "RIM",
             ["Sales Line"] = "RI",
             ["Sales Shipment Header"] = "R",
+            ["Sales Invoice Header"] = "R",
             ["Sales Cr.Memo Header"] = "R",
             ["Purchase Header"] = "RIM",
             ["Purchase Line"] = "RI",
@@ -47,6 +48,7 @@ public sealed partial class Cx02ExtensionSourceShapeTests
             ["Transfer Header"] = "RIM",
             ["Transfer Line"] = "RI",
             ["Service Header"] = "RIM",
+            ["Item Journal Line"] = "RIM",
         };
 
     [Fact]
@@ -79,18 +81,16 @@ public sealed partial class Cx02ExtensionSourceShapeTests
     }
 
     [Fact]
-    public void Contract_pages_use_single_guid_keys_and_only_the_reservation_boundary_is_writable()
+    public void Contract_pages_use_single_guid_keys_and_are_read_only()
     {
         var pages = ReadPages().ToDictionary(page => page.EntitySetName, StringComparer.Ordinal);
-        foreach (var entitySet in SchemaPages.Values.Select(api => api.EntitySet)
-                     .Where(name => name != "postTrackedDocumentResponses"))
+        foreach (var entitySet in SchemaPages.Values.Select(api => api.EntitySet))
         {
             var page = pages[entitySet];
             Assert.Contains("id", page.Fields);
             Assert.Equal("SystemId", page.ODataKeyFields);
             Assert.Equal("true", Property(page.Source, "ChangeTrackingAllowed"));
-            Assert.Equal(entitySet == "reservationEntries" ? "true" : "false",
-                Property(page.Source, "InsertAllowed"));
+            Assert.Equal("false", Property(page.Source, "InsertAllowed"));
             Assert.Equal("false", Property(page.Source, "ModifyAllowed"));
             Assert.Equal("false", Property(page.Source, "DeleteAllowed"));
         }
@@ -99,7 +99,7 @@ public sealed partial class Cx02ExtensionSourceShapeTests
     [Fact]
     public void Posting_action_parameters_and_created_response_match_the_contract()
     {
-        var source = File.ReadAllText(Path.Combine(SourceDirectory(), "ReservationEntries.Page.al"));
+        var source = File.ReadAllText(Path.Combine(SourceDirectory(), "TrackedDocumentRequests.Page.al"));
         var match = ActionProcedure().Match(source);
         Assert.True(match.Success, "postTrackedDocument must be a service-enabled bound action");
         var parameters = match.Groups["parameters"].Value.Split(';', StringSplitOptions.RemoveEmptyEntries)
@@ -113,15 +113,16 @@ public sealed partial class Cx02ExtensionSourceShapeTests
             $"request [{string.Join(", ", requestParameters.OrderBy(name => name, StringComparer.Ordinal))}], action [{string.Join(", ", parameters.OrderBy(name => name, StringComparer.Ordinal))}]");
         Assert.Contains("actionContext", parameters);
 
-        var response = ReadPages().Single(page => page.EntitySetName == "postTrackedDocumentResponses");
+        var response = ReadPages().Single(page => page.EntitySetName == "trackedDocumentRequests");
         using var responseSchema = JsonDocument.Parse(File.ReadAllText(Path.Combine(ContractDirectory(),
-            "post-tracked-document-response.schema.json")));
+            "tracked-document-request.schema.json")));
         var responseParameters = responseSchema.RootElement.GetProperty("properties").EnumerateObject()
-            .Select(property => property.Name).ToHashSet(StringComparer.Ordinal);
+            .Select(property => property.Name).Where(name => name != "@odata.etag")
+            .ToHashSet(StringComparer.Ordinal);
         Assert.True(responseParameters.SetEquals(response.Fields));
         var posting = File.ReadAllText(Path.Combine(SourceDirectory(), "TrackedDocumentPost.Codeunit.al"));
         Assert.Contains("WebServiceActionResultCode::Created", posting, StringComparison.Ordinal);
-        Assert.Contains("Page::\"Yojana Post Result API\"", posting, StringComparison.Ordinal);
+        Assert.Contains("Page::\"Yojana Tracked Requests API\"", posting, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -168,7 +169,7 @@ public sealed partial class Cx02ExtensionSourceShapeTests
         foreach (var executable in new[]
         {
             "Yojana Tracked Document Post", "Create Reserv. Entry", "Sales-Post", "Purch.-Post",
-            "TransferOrder-Post Shipment", "TransferOrder-Post Receipt",
+            "TransferOrder-Post Shipment", "TransferOrder-Post Receipt", "Item Jnl.-Post Line",
         })
             Assert.Matches($"codeunit \\\"{Regex.Escape(executable)}\\\" = X", source);
         Assert.DoesNotContain("SUPER", source, StringComparison.OrdinalIgnoreCase);

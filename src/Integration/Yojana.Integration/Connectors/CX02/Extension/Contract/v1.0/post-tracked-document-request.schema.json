@@ -4,26 +4,76 @@
   "title": "Post tracked document action request",
   "type": "object",
   "additionalProperties": false,
-  "required": ["documentType", "tracking"],
+  "required": ["documentType", "documentId", "logicalReference", "metadata", "tracking"],
   "properties": {
-    "documentType": { "type": "string", "enum": ["salesShipment", "salesCreditMemo", "purchaseReceipt", "transferShipment", "transferReceipt", "returnReceipt", "serviceOrder"] },
+    "documentType": { "type": "string", "enum": ["salesShipment", "salesCreditMemo", "purchaseReceipt", "transferShipment", "transferReceipt", "returnReceipt", "itemJournal", "serviceOrder"] },
     "documentId": { "type": "string", "format": "uuid" },
     "logicalReference": { "type": "string", "minLength": 1 },
-    "metadata": { "type": "object", "additionalProperties": true },
+    "metadata": { "type": "object" },
     "tracking": {
       "type": "array",
       "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["lineId", "quantity", "serialNumber", "lotNumber", "packageNumber"],
+        "required": ["sourceLineNumber", "itemNumber", "quantity", "serialNumber", "lotNumber", "packageNumber"],
         "properties": {
-          "lineId": { "type": "string", "format": "uuid" },
+          "sourceLineNumber": { "type": "integer" },
+          "itemNumber": { "type": "string" },
+          "locationCode": { "type": ["string", "null"] },
           "quantity": { "type": "number" },
           "serialNumber": { "type": "string" },
           "lotNumber": { "type": "string" },
           "packageNumber": { "type": "string" }
         }
+      }
+    }
+  },
+  "oneOf": [
+    { "required": ["metadata"], "properties": { "documentType": { "const": "salesShipment" }, "metadata": { "$ref": "#/$defs/salesShipmentMetadata" } } },
+    { "required": ["metadata"], "properties": { "documentType": { "const": "salesCreditMemo" }, "metadata": { "$ref": "#/$defs/emptyMetadata" } } },
+    { "required": ["metadata"], "properties": { "documentType": { "const": "purchaseReceipt" }, "metadata": { "$ref": "#/$defs/purchaseReceiptMetadata" } } },
+    { "required": ["metadata"], "properties": { "documentType": { "const": "transferShipment" }, "metadata": { "$ref": "#/$defs/transferMetadata" } } },
+    { "required": ["metadata"], "properties": { "documentType": { "const": "transferReceipt" }, "metadata": { "$ref": "#/$defs/emptyMetadata" } } },
+    { "required": ["metadata"], "properties": { "documentType": { "const": "returnReceipt" }, "metadata": { "$ref": "#/$defs/returnReceiptMetadata" } } },
+    { "required": ["metadata"], "properties": { "documentType": { "const": "itemJournal" }, "metadata": { "$ref": "#/$defs/itemJournalMetadata" } } },
+    { "required": ["metadata"], "properties": { "documentType": { "const": "serviceOrder" }, "metadata": { "$ref": "#/$defs/serviceOrderMetadata" } } }
+  ],
+  "$defs": {
+    "emptyMetadata": { "type": "object", "additionalProperties": false, "maxProperties": 0 },
+    "salesShipmentMetadata": {
+      "type": "object", "additionalProperties": false, "required": ["customerNumber", "shipToCode"],
+      "properties": {
+        "customerNumber": { "type": "string" }, "shipToCode": { "type": "string" },
+        "reasonCode": { "type": "string" }, "originalInvoiceReference": { "type": "string" }
+      }
+    },
+    "purchaseReceiptMetadata": {
+      "type": "object", "additionalProperties": false, "required": ["vendorNumber"],
+      "properties": { "vendorNumber": { "type": "string" } }
+    },
+    "transferMetadata": {
+      "type": "object", "additionalProperties": false, "required": ["fromLocationCode", "toLocationCode"],
+      "properties": {
+        "fromLocationCode": { "type": "string" }, "toLocationCode": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    },
+    "returnReceiptMetadata": {
+      "type": "object", "additionalProperties": false, "required": ["customerNumber"],
+      "properties": { "customerNumber": { "type": "string" } }
+    },
+    "itemJournalMetadata": {
+      "type": "object", "additionalProperties": false, "required": ["locationCode", "reasonCode"],
+      "properties": { "locationCode": { "type": "string" }, "reasonCode": { "type": "string" } }
+    },
+    "serviceOrderMetadata": {
+      "type": "object", "additionalProperties": false,
+      "required": ["customerNumber", "itemNumber", "serialNumber", "description"],
+      "properties": {
+        "customerNumber": { "type": "string" }, "itemNumber": { "type": "string" },
+        "serialNumber": { "type": "string" }, "description": { "type": "string" },
+        "coverageDecision": { "type": "string" }
       }
     }
   }

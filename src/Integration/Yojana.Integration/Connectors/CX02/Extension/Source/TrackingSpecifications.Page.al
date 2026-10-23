@@ -28,10 +28,10 @@ page 50004 "Yojana Tracking Specs API"
                 field(locationCode; Rec."Location Code") { Caption = 'Location Code'; Editable = false; }
                 field(quantity; Rec.Quantity) { Caption = 'Quantity'; Editable = false; }
                 field(quantityBase; Rec."Quantity (Base)") { Caption = 'Quantity Base'; Editable = false; }
-                field(sourceType; SourceType) { Caption = 'Source Type'; Editable = false; }
-                field(sourceSubtype; SourceSubtype) { Caption = 'Source Subtype'; Editable = false; }
-                field(sourceId; SourceId) { Caption = 'Source Id'; Editable = false; }
+                field(sourceDocumentType; SourceDocumentType) { Caption = 'Source Document Type'; Editable = false; }
+                field(sourceDocumentNumber; Rec."Source ID") { Caption = 'Source Document Number'; Editable = false; }
                 field(sourceLineNumber; Rec."Source Ref. No.") { Caption = 'Source Line Number'; Editable = false; }
+                field(sourceDocumentId; SourceDocumentId) { Caption = 'Source Document Id'; Editable = false; }
                 field(serialNumber; Rec."Serial No.") { Caption = 'Serial Number'; Editable = false; }
                 field(lotNumber; Rec."Lot No.") { Caption = 'Lot Number'; Editable = false; }
                 field(packageNumber; Rec."Package No.") { Caption = 'Package Number'; Editable = false; }
@@ -42,15 +42,12 @@ page 50004 "Yojana Tracking Specs API"
 
     trigger OnAfterGetRecord()
     begin
-        SourceType := Format(Rec."Source Type", 0, 9);
-        SourceSubtype := Format(Rec."Source Subtype", 0, 9);
-        Clear(SourceId);
-        if not Evaluate(SourceId, Rec."Source ID") then
-            SourceId := Rec.SystemId;
+        References.Resolve(Format(Rec."Source Type", 0, 9), Rec."Source ID",
+            SourceDocumentType, SourceDocumentId);
     end;
 
     var
-        SourceId: Guid;
-        SourceType: Text;
-        SourceSubtype: Text;
+        References: Codeunit "Yojana Source Document Ref";
+        SourceDocumentId: Guid;
+        SourceDocumentType: Text;
 }

@@ -1,6 +1,6 @@
 # CX02 simulator protocol ledger
 
-Source of truth: `docs/plan/research/P10-T02-cx02-protocol-facts.md`, read 2026-10-23. Source labels below are the stable fact IDs and source labels in that file; this ledger intentionally does not independently reinterpret or re-research them. ASSUMED rows correspond to configurable `Cx02SimulatorOptions` properties.
+Source of truth: `docs/plan/research/P10-T02-cx02-protocol-facts.md`, read 2026-10-23, plus the accepted ADR-0004 contract correction. Source labels below are stable fact IDs; this ledger intentionally does not independently re-research them. Protocol-behaviour assumptions are configurable through `Cx02SimulatorOptions`; extension-shape assumptions remain customer-sandbox acceptance items.
 
 | Fact | Simulator value | Confidence | Research section / source |
 |---|---|---|---|
@@ -30,10 +30,21 @@ Source of truth: `docs/plan/research/P10-T02-cx02-protocol-facts.md`, read 2026-
 | P-22 | OData error envelope is on by default and switchable | ASSUMED | §3 / S12, OData standard |
 | P-23 | Standard credit-memo `post` action returns 204 | documented | §3 / S23 |
 | P-25 | Custom tracked posting action returns 201 and a created record | inferred | §3 / S23, S8 |
-| P-26 | Custom action accepts scalar JSON parameters by default | ASSUMED | §3 / no source located |
-| OUT-01 | The action accepts `documentId`, `logicalReference`, metadata, `salesCreditMemo` and `serviceOrder`; the logical reference becomes the posted lookup key | ASSUMED | MOD-16 outbound declaration; no protocol source located; customer acceptance gate |
+| P-26 | Custom action accepts scalar, object and array JSON parameters by default | ASSUMED | §3 / no source located |
+| OUT-01 | The action accepts `documentId`, `logicalReference`, per-kind metadata, line-numbered tracking and all eight contract kinds; `trackedDocumentRequests.logicalReference` is the idempotency lookup | ASSUMED | ADR-0004 correction; no public protocol source located; customer acceptance gate |
 | OUT-02 | Standard journals, journal lines and the journal post action use the wire shapes exercised by the simulator | ASSUMED | MOD-16 says journal native; P10-T02 did not record these standard resource fields |
 | OUT-03 | A closed posting period returns a 400 `Application_DialogException` whose message says the period is closed | ASSUMED | ADR-0002 edge rule; exact remote error not recorded |
+| EXT-01 | Application 26.0, platform 26.0 and runtime 15.0 compile and install in the customer's environment | ASSUMED | Extension manifest; customer acceptance gate |
+| EXT-02 | A caller-supplied `SystemId` survives insertion with the preserve-system-id overload | ASSUMED | Extension implementation; no licensed environment used |
+| EXT-03 | The non-temporary tracked-request API page is webhook-capable with its single `SystemId` key | ASSUMED | P-06/W-20 inference; customer acceptance gate |
+| EXT-04 | Every native table, field and posting codeunit used by the extension has the assumed name and type | ASSUMED | Source implementation; symbols not downloaded under ADR-0003 |
+| EXT-05 | Native source document type + number + line values match the contract enum and posted-header resolver | ASSUMED | ADR-0004 correction; customer acceptance gate |
+| EXT-06 | The per-kind metadata and tracking member names are accepted by the bound action | ASSUMED | ADR-0004 contract; customer acceptance gate |
+| EXT-07 | One tracking array member can be staged per native line before native reservations are created | ASSUMED | Extension implementation; customer acceptance gate |
+| EXT-08 | Shipment quantities are negative and receipt quantities positive with unit tracking quantity one | ASSUMED | ADR-0004 consequence; customer acceptance gate |
+| EXT-09 | Each posting codeunit call yields exactly one discoverable posted header | ASSUMED | ADR-0004 consequence; customer acceptance gate |
+| EXT-10 | A service-order request creates one service item and order, with the service item as the `created` result | ASSUMED | Extension implementation; customer acceptance gate |
+| EXT-11 | The bound action can stage the first tracked-request row from its caller-supplied entity key while the collection remains read-only | ASSUMED | ADR-0004 action design; customer acceptance gate |
 | R-01 | 6,000 requests in a 300-second sliding window | documented | §4 / S2 |
 | R-02 | Window is per principal, including an application principal | documented | §4 / S2 |
 | R-03 | Five processing, queued wait default eight minutes then 503 | documented | §4 / S2 |

@@ -91,9 +91,29 @@ table 50000 "Yojana Tracking Request"
             Caption = 'Posted Document Number';
             DataClassification = CustomerContent;
         }
-        field(23; "Posted At"; DateTime)
+        field(23; "Completed At"; DateTime)
         {
-            Caption = 'Posted At';
+            Caption = 'Completed At';
+            DataClassification = SystemMetadata;
+        }
+        field(24; "Is Request Header"; Boolean)
+        {
+            Caption = 'Is Request Header';
+            DataClassification = SystemMetadata;
+        }
+        field(25; Status; Text[20])
+        {
+            Caption = 'Status';
+            DataClassification = SystemMetadata;
+        }
+        field(26; "Posted Document Type"; Text[30])
+        {
+            Caption = 'Posted Document Type';
+            DataClassification = SystemMetadata;
+        }
+        field(27; "Failure Code"; Text[50])
+        {
+            Caption = 'Failure Code';
             DataClassification = SystemMetadata;
         }
     }
@@ -107,7 +127,7 @@ table 50000 "Yojana Tracking Request"
         key(Source; "Source Id", "Source Line Number")
         {
         }
-        key(LogicalReference; "Logical Reference")
+        key(LogicalReference; "Is Request Header", "Logical Reference")
         {
         }
     }

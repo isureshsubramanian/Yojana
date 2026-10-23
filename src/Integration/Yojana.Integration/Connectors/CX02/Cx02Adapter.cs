@@ -235,6 +235,15 @@ public sealed class Cx02Adapter(
         };
         if (lineEntity is null || raw.TryGetProperty("lines", out _)) return raw;
         var headerId = Text(raw, "id");
+        var documentNumber = Text(raw, "number") ?? "";
+        var documentType = entity.Resource switch
+        {
+            "salesInvoices" => "salesInvoice",
+            "postedTransferShipments" => "transferShipment",
+            "postedTransferReceipts" => "transferReceipt",
+            "postedReturnReceipts" => "returnReceipt",
+            _ => "",
+        };
         var linesDefinition = Cx02Protocol.Entities.Values.Single(value => value.Resource == lineEntity);
         var allLines = await ReadAllAsync(connectionId, configured, linesDefinition, cancellationToken);
         var lines = allLines.Where(line => Text(line, "documentId") == headerId).Select(line => line.Clone()).ToList();
@@ -248,7 +257,8 @@ public sealed class Cx02Adapter(
             var node = JsonNode.Parse(line.GetRawText())!.AsObject();
             var lineNumber = Int(line, "lineNumber");
             if (lineNumber == 0) lineNumber = Int(line, "sequence");
-            var entryNumbers = relations.Where(relation => Text(relation, "sourceId") == headerId
+            var entryNumbers = relations.Where(relation => Text(relation, "sourceDocumentType") == documentType
+                    && Text(relation, "sourceDocumentNumber") == documentNumber
                     && Int(relation, "sourceLineNumber") == lineNumber)
                 .Select(relation => Int(relation, "itemLedgerEntryNumber")).ToHashSet();
             var linked = ledger.Where(entry => entry.TryGetProperty("entryNumber", out var entryNumber)
