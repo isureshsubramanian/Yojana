@@ -50,7 +50,7 @@ function noun(value: number, singular: string, plural = `${singular}s`): string 
 
 export const settingsRegistry: SettingsRegistryEntry[] = [
   { group: "Organisation", name: "Company", description: "Footer line, sender name and reply-to on every e-mail", path: "/settings/company", icon: "home", roles: administrator,
-    currentValue: signal => companyApi.mail(signal).then(value => `${value.senderName} · ${value.replyTo || "No reply-to address"}`), route: () => import("./Company") },
+    currentValue: signal => companyApi.mail(signal).then(value => [value.senderName?.trim() || "No sender name", value.replyTo || "No reply-to address"].join(" · ")), route: () => import("./Company") },
   { group: "Organisation", name: "Users", description: "Staff memberships, invitations and tenant roles", path: "/settings/users", icon: "users", roles: administrator,
     summaryKey: "users", summaryValue: line => ({ text: `${noun(count(line, "staff"), "staff", "staff")} · ${noun(count(line, "roles"), "role")} · ${noun(count(line, "invitationsOpen"), "invitation")} open` }), route: () => import("./Users") },
   { group: "Organisation", name: "Sign-in policy", description: "Password recovery, invitations and second-step rules", path: "/settings/sign-in-policy", icon: "key", roles: administrator,
