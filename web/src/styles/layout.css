@@ -2,7 +2,7 @@
    navigation (64 px), fluid full width for the widest serial tables, 40 px rows, flat ruled cards, and the right rail
    as a drawer: hidden until a row is clicked, then that row's context above the screen's context; × or Escape closes.
    Loaded after base.css; every colour is still a token from theme-*.css. */
-:root { --nav-w: 64px; --row-h: 40px; --row-h-dense: 34px; --card-pad: 16px; --gap: 16px; --drawer-w: 380px; }
+:root { --nav-w: 64px; --row-h: 40px; --row-h-dense: 34px; --card-pad: 16px; --gap: 16px; --drawer-w: max(380px, 30vw); }
 
 /* Frame: two columns, the drawer floats */
 .frame, .frame.no-rail { grid-template-columns: var(--nav-w) minmax(0, 1fr); grid-template-areas: "top top" "nav main"; }
