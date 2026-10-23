@@ -1,7 +1,7 @@
 export interface CursorPage<T> { items: T[]; nextCursor: string | null }
 export interface ConnectionKpis { connections: number; live: number; paused: number; receivedToday: number; receivedLast30Days: number; waitingToSend: number; openDeadLetters: number; openManualTasks: number; connectionsNeedingAttention: number; relayConnected: number }
 export interface Health { status: string; isLive: boolean; notificationState: string; checkedUpTo: string | null; lastInboundAt: string | null; receivedToday: number; receivedLast30Days: number; waitingToSend: number; oldestWaitingAt: string | null; openDeadLetters: number; openManualTasks: number; lastDailyCheckResult: string | null; lastDailyCheckAt: string | null; dailyCheckDifferences: number; callsUsed: number; callsCap: number | null; lastErrorMessage: string | null; updatedAt: string; relayConnected: boolean }
-export interface Connection { connectionId: string; connectionName: string; connectorCode: string; connectorName: string; status: string; isLive: boolean; outboundMode: string; readOnly: boolean; health: Health }
+export interface Connection { connectionId: string; connectionName: string; connectorCode: string; connectorName: string; status: string; isLive: boolean; outboundMode: string; readOnly: boolean; acceptancePassed: boolean; health: Health }
 export interface ConnectionPage extends CursorPage<Connection> { kpis: ConnectionKpis }
 export interface TenantStatus { connectionId: string; connectionName: string; status: string; isLive: boolean; checkedUpTo: string | null; waitingToSend: number; messagesNeedingAttention: number; openManualTasks: number; updatedAt: string }
 export interface TenantStatusPage extends CursorPage<TenantStatus> { kpis: ConnectionKpis }

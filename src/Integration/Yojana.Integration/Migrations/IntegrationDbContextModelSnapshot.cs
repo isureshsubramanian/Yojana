@@ -1293,6 +1293,210 @@ namespace Yojana.Integration.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ConnectorAcceptanceImport", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ConnectorAcceptanceImportId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connector_acceptance_import_id");
+
+                    b.Property<Guid>("ConnectorAcceptanceRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connector_acceptance_run_id");
+
+                    b.Property<string>("ConnectorCode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .HasColumnName("connector_code");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("content_hash")
+                        .IsFixedLength();
+
+                    b.Property<DateTime>("ImportedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("imported_at");
+
+                    b.Property<string>("ImportedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("imported_by");
+
+                    b.Property<int>("ScenarioCount")
+                        .HasColumnType("int")
+                        .HasColumnName("scenario_count");
+
+                    b.HasKey("TenantId", "ConnectorAcceptanceImportId")
+                        .HasName("pk_connector_acceptance_import");
+
+                    b.HasIndex("TenantId", "ContentHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_connector_acceptance_import_tenant_id_content_hash");
+
+                    b.HasIndex("TenantId", "ConnectorAcceptanceRunId", "ImportedAt", "ConnectorAcceptanceImportId")
+                        .HasDatabaseName("ix_connector_acceptance_import_tenant_id_connector_acceptance_run_id_imported_at_connector_acceptance_import_id");
+
+                    b.ToTable("connector_acceptance_import", "integration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ConnectorAcceptanceItem", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ConnectorAcceptanceItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connector_acceptance_item_id");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(140)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(140)")
+                        .HasColumnName("code");
+
+                    b.Property<Guid>("ConnectorAcceptanceRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connector_acceptance_run_id");
+
+                    b.Property<string>("Evidence")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)")
+                        .HasColumnName("evidence");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(24)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("label");
+
+                    b.Property<DateTime?>("MarkedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("marked_at");
+
+                    b.Property<string>("MarkedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("marked_by");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(24)")
+                        .HasColumnName("result");
+
+                    b.HasKey("TenantId", "ConnectorAcceptanceItemId")
+                        .HasName("pk_connector_acceptance_item");
+
+                    b.HasIndex("TenantId", "ConnectorAcceptanceRunId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("ux_connector_acceptance_item_tenant_id_connector_acceptance_run_id_code");
+
+                    b.HasIndex("TenantId", "ConnectorAcceptanceRunId", "Kind", "Result", "ConnectorAcceptanceItemId")
+                        .HasDatabaseName("ix_connector_acceptance_item_tenant_id_connector_acceptance_run_id_kind_result_connector_acceptance_item_id");
+
+                    b.ToTable("connector_acceptance_item", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_connector_acceptance_item_kind", "kind IN ('fact','edge_scenario','outbound_command')");
+
+                            t.HasCheckConstraint("ck_connector_acceptance_item_result", "result IN ('pending','passed','failed','not_applicable')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ConnectorAcceptanceRun", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ConnectorAcceptanceRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connector_acceptance_run_id");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("completed_at");
+
+                    b.Property<string>("CompletedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("completed_by");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<string>("ConnectorCode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .HasColumnName("connector_code");
+
+                    b.Property<string>("SandboxLabel")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("sandbox_label");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("StartedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("started_by");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .HasColumnName("status");
+
+                    b.HasKey("TenantId", "ConnectorAcceptanceRunId")
+                        .HasName("pk_connector_acceptance_run");
+
+                    b.HasIndex("TenantId", "ConnectionId", "Status")
+                        .IsUnique()
+                        .HasDatabaseName("ux_connector_acceptance_run_tenant_id_connection_id_status")
+                        .HasFilter("[status] = 'open'");
+
+                    b.HasIndex("TenantId", "ConnectionId", "StartedAt", "ConnectorAcceptanceRunId")
+                        .HasDatabaseName("ix_connector_acceptance_run_tenant_id_connection_id_started_at_connector_acceptance_run_id");
+
+                    b.ToTable("connector_acceptance_run", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_connector_acceptance_run_status", "status IN ('open','passed','failed')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.ConnectorCatalogueEntry", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -8893,6 +9097,26 @@ namespace Yojana.Integration.Migrations
                         {
                             t.HasCheckConstraint("ck_relay_status", "status IN ('active','revoked')");
                         });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ConnectorAcceptanceImport", b =>
+                {
+                    b.HasOne("Yojana.Integration.Data.Entities.ConnectorAcceptanceRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ConnectorAcceptanceRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_connector_acceptance_import_tenant_id_connector_acceptance_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ConnectorAcceptanceItem", b =>
+                {
+                    b.HasOne("Yojana.Integration.Data.Entities.ConnectorAcceptanceRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ConnectorAcceptanceRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_connector_acceptance_item_tenant_id_connector_acceptance_run_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.Data.Entities.DeadLetterEvent", b =>

@@ -1,0 +1,1448 @@
+{
+  "connectorCode": "CX04",
+  "liveVerification": {
+    "verified": false
+  },
+  "facts": [
+    {
+      "id": "F01",
+      "fact": "Supported OAuth 2.0 / OIDC flows",
+      "valueUsed": "Authorization Code (OAuth 2.0, OIDC); Implicit (OAuth 2.0, OIDC); Resource Owner Password Credentials (OAuth 2.0); Hybrid (OIDC)",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F02",
+      "fact": "Client-credentials grant",
+      "valueUsed": "Not listed in the flow list A1, the registration page M1 or the scopes page A6; no release note found adding it",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F03",
+      "fact": "Where the client is registered",
+      "valueUsed": "Connected Applications form SM303010, in each customer instance (no cthe identity providerl portal)",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F04",
+      "fact": "client_id format",
+      "valueUsed": "Generated string plus tenant, e.g. …@MyTenant",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F05",
+      "fact": "Token endpoint",
+      "valueUsed": "POST the documented service address form-urlencoded; discover via /identity/.well-known/openid-configuration",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F06",
+      "fact": "Authorize endpoint",
+      "valueUsed": "GET the documented service address",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F07",
+      "fact": "ROPC token request",
+      "valueUsed": "grant_type=password, client_id, client_secret (or JWT client_assertion), username, password, scope",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F08",
+      "fact": "Scopes",
+      "valueUsed": "api (REST, SOAP, OData); offline_access (refresh token); api:concurrent_access (several sessions tracked by cookies); openid, email, profile, phone",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F09",
+      "fact": "Token response fields",
+      "valueUsed": "access_token, token_type \"Bearer\", expires_in, scope, refresh_token (only with offline_access)",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F10",
+      "fact": "Access-token lifetime",
+      "valueUsed": "Given per response in expires_in; the documented example is 3600 s. No statement that it is fixed or configurable",
+      "kind": "inferred",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F11",
+      "fact": "Refresh rotation",
+      "valueUsed": "Each refresh returns a new refresh token; client should \"discard the previous refresh token and use the new one\"",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F12",
+      "fact": "Refresh-chain lifetime",
+      "valueUsed": "Default: chain expires 30 days after initial authentication; changeable on SM303010",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F13",
+      "fact": "Refresh modes",
+      "valueUsed": "Absolute / Sliding / No refresh tokens; sliding default 90 days, range 1–365 days (since 2023 R2)",
+      "kind": "inferred",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F14",
+      "fact": "OAuth and sessions",
+      "valueUsed": "With api and without api:concurrent_access, sessions are tracked by token: \"each granted access uses a single session\"; refresh reuses it",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F15",
+      "fact": "PKCE",
+      "valueUsed": "code_challenge_method=S256 supported",
+      "kind": "inferred",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F16",
+      "fact": "Three licence constraints",
+      "valueUsed": "\"Maximum Number of API Sessions\", \"Maximum Number of Concurrent API Requests\", \"Maximum Number of API Requests per Minute\", on SM604000, License and Constraints tab",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F17",
+      "fact": "Per-tier requests per minute",
+      "valueUsed": "Essentials 50, Select 100, Prime 150, Enterprise 300",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F18",
+      "fact": "Per-tier API concurrency (max queue size)",
+      "valueUsed": "5 / 10 / 20 / 40",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F19",
+      "fact": "Per-tier parallelism (processed at once)",
+      "valueUsed": "1 / 2 / 3 / 8",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F20",
+      "fact": "Per-tier Web API connections (constraint maximum)",
+      "valueUsed": "5 / 10 / 20 / Scalable",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F21",
+      "fact": "Web API connections included (named-user licensing)",
+      "valueUsed": "5 / 5 / 10 / 10",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F22",
+      "fact": "Caveat on the per-minute figures",
+      "valueUsed": "Figures are at the highest consumption tier and \"may require Reserved Resources\" and processing nodes; real throughput can be lower",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F23",
+      "fact": "Raising limits",
+      "valueUsed": "SaaS reserved resources and processing nodes raise the constraint maximums",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F24",
+      "fact": "Throttling start",
+      "valueUsed": "Delays begin once requests in the past minute reach 50 % of the per-minute limit",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F25",
+      "fact": "Delay formula",
+      "valueUsed": "delay = seconds left in the minute window / requests still allowed (worked example: limit 50, 25 used, 20 s left → 0.8 s)",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F26",
+      "fact": "Over-concurrency behaviour",
+      "valueUsed": "Requests beyond the concurrency limit wait in an internal queue; sign-out requests bypass it",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F27",
+      "fact": "Decline rules",
+      "valueUsed": "Declined if more than 20 already queued, or queued more than 10 minutes; declined requests are not counted as processed",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F28",
+      "fact": "Queue visibility",
+      "valueUsed": "A queued application receives no indication while it waits",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F29",
+      "fact": "Status code on decline",
+      "valueUsed": "429 \"license limit exceeded\" is listed on login, create, update, action and file calls",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F30",
+      "fact": "Decline response body / Retry-After header",
+      "valueUsed": "Not documented",
+      "kind": "assumed",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F31",
+      "fact": "Queue limit 20 vs table max queue 5/10/20/40",
+      "valueUsed": "The help page's fixed \"more than 20\" and the guide's per-tier \"max queue size\" disagree",
+      "kind": "inferred",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F32",
+      "fact": "Trial / unlicensed instance",
+      "valueUsed": "Trial licence allows two API sessions and imposes no other API limits",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F33",
+      "fact": "Monitoring",
+      "valueUsed": "SM604000 Statistics tab (delayed, declined); SM201530 System Monitor, API Monitoring tab",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F34",
+      "fact": "Lines per transaction",
+      "valueUsed": "1,000 / 2,000 / 2,500 / 50,000 per tier, firm",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F35",
+      "fact": "Serial numbers per document",
+      "valueUsed": "2,000 / 4,000 / 7,500 / 50,000 per tier, firm (\"will not be processed or allowed\")",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F36",
+      "fact": "Import records per day (import scenarios or API)",
+      "valueUsed": "2,500 / 5,000 / 25,000 / Scalable",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F37",
+      "fact": "Large detail sets",
+      "valueUsed": "Split very large documents across requests, e.g. 500 lines each",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F38",
+      "fact": "Older-edition numbers",
+      "valueUsed": "Older guides (2021, Oct 2023) used different editions and numbers (e.g. 50 / 150 / 250); a customer on a pre-April-2024 product may hold those",
+      "kind": "inferred",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F39",
+      "fact": "Base URL",
+      "valueUsed": "the documented service address name>/<Endpoint version>/; instance name in path if not at web root",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F40",
+      "fact": "Endpoint discovery",
+      "valueUsed": "GET /entity → version{the source applicationBuildVersion, databaseVersion}, endpoints{name, version, href}, features[]; features and custom endpoints only when authenticated",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F41",
+      "fact": "Default versions in 2026 R2 help",
+      "valueUsed": "26.200.001, 25.200.001, 24.200.001, 23.200.001, 22.200.001, 20.200.001 compared on one page",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F42",
+      "fact": "Contract versions",
+      "valueUsed": "2026 R2 supports Contract Versions 4 and 5; v2–3 unsupported from 2023 R2",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F43",
+      "fact": "Default/26.200.001 vs 25.200.001",
+      "valueUsed": "26.200.001 is Contract Version 5; 25.200.001 is Contract Version 4",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F44",
+      "fact": "Contract 5 differences",
+      "valueUsed": "Nested $select/$expand in parentheses (OData 4.01); any()/all(); drop-downs as internal ID + description; custom fields via $select not $custom",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F45",
+      "fact": "Endpoint lifecycle",
+      "valueUsed": "Obsolete system endpoints \"may be removed in some version\"; no period stated. MANUFACTURING/20.200.001 was removed in 2025 R1",
+      "kind": "inferred",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F46",
+      "fact": "Version pinning",
+      "valueUsed": "Using one system endpoint across future versions is the stated pattern",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F47",
+      "fact": "Field value wrapper",
+      "valueUsed": "Fields are {\"value\": …} objects; records carry id (GUID), rowNumber, _links",
+      "kind": "inferred",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F48",
+      "fact": "PUT semantics",
+      "valueUsed": "PUT \"either creates a new record or updates an existing one\"; record found by key fields, id, or $filter",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F49",
+      "fact": "Create-only / update-only",
+      "valueUsed": "If-None-Match: * → 412 if the record exists; If-Match: * → 412 if it does not",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F50",
+      "fact": "Missing key field on update",
+      "valueUsed": "Omitting a key (e.g. Type on PurchaseReceipt) can create a new document instead of updating",
+      "kind": "inferred",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F51",
+      "fact": "Precedence when key fields and id both sent",
+      "valueUsed": "Not documented",
+      "kind": "assumed",
+      "sourceLabel": "no public protocol statement found",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F52",
+      "fact": "Detail-line delete",
+      "valueUsed": "\"delete\": true on the detail entity, identified by id or key fields; add, update and delete may be mixed in one PUT",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F53",
+      "fact": "$expand",
+      "valueUsed": "Every detail and related entity wanted in the response must be listed, e.g. $expand=Details,Details/Allocations (Contract 4 syntax)",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F54",
+      "fact": "Success codes",
+      "valueUsed": "PUT 200 with the record (only specified or requested fields); GET 200",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F55",
+      "fact": "Error codes",
+      "valueUsed": "400 invalid data; 401 not signed in; 403 no rights to the form; 404 unknown action; 412 precondition; 422 validation; 429 licence limit; 500 server",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F56",
+      "fact": "422 body",
+      "valueUsed": "The entity echoed with an error property inside each failing field",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F57",
+      "fact": "500 body",
+      "valueUsed": "{\"message\": \"An error has occurred.\", \"exceptionMessage\", \"exceptionType\", \"stackTrace\"?, \"innerException\"?}; types seen include PXException, OutcomeEntityHasErrorsException, PXActionDisabledException",
+      "kind": "inferred",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F58",
+      "fact": "Batched list read failure",
+      "valueUsed": "When a multi-record read cannot run in one DB request, an error names the entities/fields to drop from $expand",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F59",
+      "fact": "Branch context header",
+      "valueUsed": "PX-CbApiBranch",
+      "kind": "inferred",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F60",
+      "fact": "Purchase receipt with allocations, one call",
+      "valueUsed": "PUT /entity/Default/25.200.001/PurchaseReceipt?$expand=Details,Details/Allocations; header Type \"Receipt\", VendorID; detail InventoryID, ReceiptQty; allocation Location, Qty",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F61",
+      "fact": "Transfer receipt",
+      "valueUsed": "Same entity, Type \"Transfer Receipt\", Warehouse; detail TransferOrderType, TransferOrderNbr, TransferOrderLineNbr, TransferShipmentNbr, ReceiptQty; allocations Location, Qty",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F62",
+      "fact": "Shipment with allocations",
+      "valueUsed": "PUT /entity/Default/25.200.001/Shipment; detail OrderType, OrderNbr, OrderLineNbr, Allocations; allocation InventoryID, LocationID, Qty, UOM; package contents carry LotSerialNbr, Quantity",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F63",
+      "fact": "Return for credit (RC) allocations",
+      "valueUsed": "PUT /entity/Default/25.200.001/SalesOrder?$expand=Details,Details/Allocations, OrderType \"RC\"; allocations keyed by LineNbr, SplitLineNbr, OrderNbr, OrderType, with LotSerialNbr",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F64",
+      "fact": "Serial field name on allocation",
+      "valueUsed": "LotSerialNbr",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F65",
+      "fact": "Quantity in official examples",
+      "valueUsed": "Set on both the line (ReceiptQty) and each allocation (Qty), allocations summing to the line (11 = 5 + 6; 1 = 0.5 + 0.5)",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F66",
+      "fact": "Allocation-quantity pitfall",
+      "valueUsed": "When allocations carry serials or locations, quantity should go \"only\" on the allocation; sending both doubled receipt quantities in one reported case; removing the line quantity then raised \"Ext. Cost must not be negative\" (unresolved)",
+      "kind": "inferred",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F67",
+      "fact": "Allocation Qty for a serial-tracked item",
+      "valueUsed": "1 per allocation",
+      "kind": "assumed",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F68",
+      "fact": "RMA type (RM) allocations",
+      "valueUsed": "Not shown in any public example; RC is",
+      "kind": "assumed",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F69",
+      "fact": "Allocations auto-created when none sent",
+      "valueUsed": "A shipment kit-component split returned an auto-generated allocation with blank location (\"Location cannot be empty\")",
+      "kind": "inferred",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F70",
+      "fact": "Allocation entity names",
+      "valueUsed": "ShipmentDetailAllocation, SalesOrderDetailAllocation, TransferOrderDetailAllocation, InventoryReceiptDetailAllocation, InventoryIssueDetailAllocation; Subitem removed in 26.200.001",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F71",
+      "fact": "TransferOrderDetailAllocation.ExpirationDate",
+      "valueUsed": "Added in 24.200.001",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F72",
+      "fact": "Attach a file",
+      "valueUsed": "PUT to the record's _links/files:put template with {filename} filled; body binary; Content-Type: application/octet-stream",
+      "kind": "documented",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F73",
+      "fact": "files:put URL shape",
+      "valueUsed": "/entity/Default/<ver>/files/<graph class>/<view>/<record id>/<filename>, e.g. files/PX.Objects.IN.InventoryItemMaint/Item/<guid>/file.dat",
+      "kind": "documented",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F74",
+      "fact": "Detail-line attachments",
+      "valueUsed": "Supported for detail records \"at any nesting level\" via their own files:put link",
+      "kind": "documented",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F75",
+      "fact": "File comment",
+      "valueUsed": "Optional PX-CbFileComment header, max 500 chars",
+      "kind": "documented",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F76",
+      "fact": "File response",
+      "valueUsed": "204 with Location of the stored file; 401/403/429/500",
+      "kind": "documented",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F77",
+      "fact": "Size limit for attachments",
+      "valueUsed": "Not documented on the REST page",
+      "kind": "assumed",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F78",
+      "fact": "Invoke an action",
+      "valueUsed": "POST <base>/<Entity>/<Action> with body {\"entity\": {...}, \"parameters\": {...}}, e.g. Shipment/ConfirmShipment",
+      "kind": "documented",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F79",
+      "fact": "Action responses",
+      "valueUsed": "202 + Location (in progress) or 204 (done, or nothing to run); 404 unknown action",
+      "kind": "documented",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F80",
+      "fact": "Polling the Location",
+      "valueUsed": "GET Location → 204 when complete",
+      "kind": "documented",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F81",
+      "fact": "GET Location while still running",
+      "valueUsed": "Not documented",
+      "kind": "assumed",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F82",
+      "fact": "Session lock during an action",
+      "valueUsed": "While a long-running operation runs, only status-check requests in that session succeed",
+      "kind": "documented",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F83",
+      "fact": "Release on purchase receipts / confirm on shipments as action names",
+      "valueUsed": "ConfirmShipment documented; the receipt release action name (e.g. ReleasePurchaseReceipt) not read",
+      "kind": "assumed",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F84",
+      "fact": "Disabled action error",
+      "valueUsed": "PXActionDisabledException wrapped in a 500",
+      "kind": "inferred",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F85",
+      "fact": "Cookie login",
+      "valueUsed": "POST /entity/auth/login JSON name, password, tenant, branch (locale reserved) → 204 with cookies; 400, 429, 500",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F86",
+      "fact": "Cookie login future",
+      "valueUsed": "Username/password sign-in \"is going to be discontinued in a future version\"; OAuth 2.0 / OIDC recommended",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F87",
+      "fact": "2FA",
+      "valueUsed": "API sign-in bypasses two-factor; a separate API-only user type is recommended",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F88",
+      "fact": "Logout",
+      "valueUsed": "POST /entity/auth/logout; send Cookie (and Authorization for OAuth with api:concurrent_access)",
+      "kind": "inferred",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F89",
+      "fact": "Not signing out",
+      "valueUsed": "Session stays open, later sign-ins may fail; sessions count against the licence",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F90",
+      "fact": "Session reaping",
+      "valueUsed": "Closed after a 10-minute timeout, but only when the session limit has been reached; no way to force-close all API sessions",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F91",
+      "fact": "Licence wording",
+      "valueUsed": "\"External applications which fail to log out will continue to take up a Web API user connection\"",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F92",
+      "fact": "API users and UI",
+      "valueUsed": "Users designated as API users may not use the UI",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F93",
+      "fact": "Idle-session timeout when below the limit",
+      "valueUsed": "Not documented",
+      "kind": "assumed",
+      "sourceLabel": "no public protocol statement found",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F94",
+      "fact": "OAuth session with plain api scope",
+      "valueUsed": "One session per grant, ends with the access token",
+      "kind": "inferred",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F95",
+      "fact": "Configuration",
+      "valueUsed": "Push Notifications form SM302000: a data query (generic inquiry or built-in query definition) + a destination",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F96",
+      "fact": "Destination types",
+      "valueUsed": "Webhook (HTTP address), message queue, SignalR hub, commerce push, custom",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F97",
+      "fact": "Tracked fields",
+      "valueUsed": "Optional list; untracked-but-unchanged attributes come back null in rows",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F98",
+      "fact": "Body fields",
+      "valueUsed": "Inserted[], Deleted[], Query, CompanyId, Id, TimeStamp (long), AdditionalInfo",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F99",
+      "fact": "Inserted / Deleted meaning",
+      "valueUsed": "New rows in the query result / rows gone after the transaction; an update is a pair",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F100",
+      "fact": "Query, CompanyId",
+      "valueUsed": "GI name (or built-in class name); tenant name",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F101",
+      "fact": "Id, TimeStamp",
+      "valueUsed": "Id identifies the triggering transaction, used to \"omit duplicated notifications\"; TimeStamp \"can be used to determine the order\"",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F102",
+      "fact": "Ordering of delivery",
+      "valueUsed": "Delivery order is not stated; only that TimeStamp lets the receiver order",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F103",
+      "fact": "Attempts",
+      "valueUsed": "\"At most five attempts\" in total for webhook, message queue and commerce destinations",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F104",
+      "fact": "Retry interval",
+      "valueUsed": "Not stated",
+      "kind": "assumed",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F105",
+      "fact": "What triggers a retry",
+      "valueUsed": "An error returned by the receiver",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F106",
+      "fact": "Duplicates",
+      "valueUsed": "Replying with an error after processing causes a resend; do not error once received",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F107",
+      "fact": "At-least-once",
+      "valueUsed": "Not stated in those words; follows from F101, F105, F106",
+      "kind": "inferred",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F108",
+      "fact": "Failed list and purge",
+      "valueUsed": "Failed notifications listed on SM502000, resendable (Send / Send All) for two days, then removed from the database",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F109",
+      "fact": "Truncated notifications",
+      "valueUsed": "Rows flagged Truncated cannot be resent",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F110",
+      "fact": "Pre-send failures",
+      "valueUsed": "Not on SM502000; logged in PushNotificationsErrors only if api:push-notifications:enable-dead-message-log is true in web.config (not settable by a SaaS customer: inferred)",
+      "kind": "inferred",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F111",
+      "fact": "SignalR",
+      "valueUsed": "\"Not reliable\"; no resend",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F112",
+      "fact": "Query rules",
+      "valueUsed": "Avoid aggregation and grouping (no guarantee of correctness); avoid joining several detail tables (may hang); no Results Grid formulas; no selector description fields",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F113",
+      "fact": "Large row sets",
+      "valueUsed": "Very large Inserted/Deleted arrays reported to fail delivery",
+      "kind": "inferred",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F114",
+      "fact": "Webhook authentication",
+      "valueUsed": "Header options on the destination not read",
+      "kind": "assumed",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F115",
+      "fact": "Timeout the sender waits for a reply",
+      "valueUsed": "Not documented",
+      "kind": "assumed",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F116",
+      "fact": "Same value in Inserted and Deleted",
+      "valueUsed": "Possible with multilingual fields",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F117",
+      "fact": "Modified-since filter",
+      "valueUsed": "$filter=LastModifiedDateTime gt datetimeoffset'2024-08-18T23%3A59%3A59.999%2B04%3A00' (colon and plus URL-encoded)",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F118",
+      "fact": "Paging",
+      "valueUsed": "$top (count), $skip (offset); no defaults or maximums stated",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F119",
+      "fact": "Stable ordering for $skip paging",
+      "valueUsed": "No $orderby documented on that page",
+      "kind": "assumed",
+      "sourceLabel": "no public protocol statement found",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F120",
+      "fact": "PurchaseReceipt.LastModifiedDateTime",
+      "valueUsed": "Added in Default 23.200.001",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F121",
+      "fact": "SalesOrder last-modified field",
+      "valueUsed": "LastModified (header) and SalesOrderDetail.LastModifiedDate up to 25.200.001; renamed LastModifiedDateTime in 26.200.001",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F122",
+      "fact": "Shipment, TransferOrder last-modified field on 24.200.001",
+      "valueUsed": "Not read (the comparison page is 294 k characters; only its first 100 k was read)",
+      "kind": "assumed",
+      "sourceLabel": "no public protocol statement found",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F123",
+      "fact": "Purge window the poll must cover",
+      "valueUsed": "Two days (F108)",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F124",
+      "fact": "OData over GIs",
+      "valueUsed": "/t/<tenant>/api/odata/gi alternative read surface",
+      "kind": "inferred",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F125",
+      "fact": "Lot/Serial Classes form",
+      "valueUsed": "IN207000; tracking Not Tracked / Track Lot Numbers / Track Serial Numbers",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F126",
+      "fact": "Assignment method",
+      "valueUsed": "When Received (number on receipt) or When Used (number on issue; a returned item can be issued again with the same number)",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F127",
+      "fact": "Auto-Generate Next Number",
+      "valueUsed": "Generates numbers for items with an auto-increment segment; otherwise manual",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F128",
+      "fact": "Expiration and issue method",
+      "valueUsed": "Track Expiration Date; issue FIFO / LIFO / Sequential / Expiration / User-Enterable",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F129",
+      "fact": "Consequence for our serial capture",
+      "valueUsed": "With When Used, a receipt carries no serials; serials first appear on shipment/issue",
+      "kind": "inferred",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F130",
+      "fact": "Changing an item's class",
+      "valueUsed": "Only at zero on-hand",
+      "kind": "inferred",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F131",
+      "fact": "Manufacturing endpoint",
+      "valueUsed": "Separate MANUFACTURING/<version> endpoint; OpenAPI from Web Service Endpoints SM207060; MANUFACTURING/20.200.001 removed 2025 R1",
+      "kind": "inferred",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F132",
+      "fact": "Generate lot/serial on a Move over REST",
+      "valueUsed": "POST …/MoveEntry/Generate → PXActionDisabledException: The Generate button is disabled. (24.200.002, May 2026, no answer)",
+      "kind": "inferred",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F133",
+      "fact": "Production completions entity and fields we read",
+      "valueUsed": "ProductionOrder / MoveEntry on MANUFACTURING endpoint; exact field list not read",
+      "kind": "assumed",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F134",
+      "fact": "Customer sandbox",
+      "valueUsed": "A copy of production for testing, training, development; SaaS customers \"may purchase a sandbox at any time\"",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F135",
+      "fact": "Free customer sandbox",
+      "valueUsed": "\"a free 90-day Sandbox before they upgrade to their next major version\"",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F136",
+      "fact": "Sandbox storage",
+      "valueUsed": "Must match production storage",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F137",
+      "fact": "Non-production copies (licensed customer)",
+      "valueUsed": "EULA §2.4: \"a reasonable number of copies\" for development, testing, archival, training on non-production servers",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F138",
+      "fact": "No-fee / evaluation licence",
+      "valueUsed": "EULA §2.3 \"Temporary Limited License\": use \"solely for the purpose(s) agreed upon\"; only on authorised computers; terminable on 10 days' notice; \"As Is\"; covers evaluation, NFR partner programs, education and any no-fee use",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F139",
+      "fact": "EULA restrictions",
+      "valueUsed": "No reverse engineering, decompiling or disassembly; no commercial hosting; no penetration or vulnerability testing",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F140",
+      "fact": "Local install",
+      "valueUsed": "Installer from builds.the source application.com runs unlicensed in trial mode; 2 API sessions (F32); trial tenants have Test status",
+      "kind": "inferred",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F141",
+      "fact": "Partner licences",
+      "valueUsed": "Partners get \"a free license to use the system internally\" and free test and demo licences",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    },
+    {
+      "id": "F142",
+      "fact": "ISV hosted instance",
+      "valueUsed": "ADN SaaS instances for ISVs at USD 5,160 per year, for test and demo",
+      "kind": "inferred",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F143",
+      "fact": "ISV certification",
+      "valueUsed": "Requires active ADN membership and solution registration (2019 guideline); now via Partner Portal",
+      "kind": "inferred",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": true
+    },
+    {
+      "id": "F144",
+      "fact": "Public developer-licence agreement",
+      "valueUsed": "None found; ADN and ISV terms sit behind the Partner Portal",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "connector adapter and simulator behaviour",
+      "acceptanceItem": false
+    }
+  ]
+}

@@ -8,6 +8,7 @@ import { closeDrawer, openDrawer } from "../shell/drawerStore";
 import { ErrorNote, Section } from "../units/common";
 import { date, PagedGrid, RoleAccess, useAction, useConnectionDetail, useCursorPage } from "./AdminCommon";
 import { signInApi } from "./erpChangeApi";
+import { ConnectionTabs } from "./ConnectionTabs";
 import {
   daysUntil, expiryRuleLabel, historyBy, historyEvent, historyResult, parseReminderDays, signInNote, signInStatusLabel,
 } from "./erpChangeModel";
@@ -47,6 +48,7 @@ function SignInScreen() {
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Integration", to: "/integration" }, { label: "Connections", to: "/integration/connections" }, { label: name }, { label: "Sign-in" }]} />
     <PageHeader eyebrow={eyebrow} title="Sign-in" actions={actions}
       sub="The module signs in to the ERP as one dedicated API user. Its password is never typed here and never stored: the ERP's administrator signs that user in once, and the module keeps only the tokens the ERP hands back, encrypted." />
+    <ConnectionTabs connectionId={connectionId} active="sign-in" showSignIn />
     <div className="stack">
       <ErrorNote error={detailError ?? error} onReload={refresh} />{action.feedback}
       {!view && !error && <p role="status">Loading sign-in…</p>}

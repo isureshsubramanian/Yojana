@@ -28,53 +28,67 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
     public async Task RunAsync(ConnectorEdgeScenario scenario, IConnectorEdgeHarness harness,
         CancellationToken cancellationToken)
     {
+        var resultStartedAt = DateTime.UtcNow;
         var manifest = new ConnectorEdgeHarnessManifest(harness.ConnectorCode, harness.Capabilities);
         if (manifest.NotApplicable(scenario) is { } reason)
             throw new InvalidOperationException(
                 $"The discovery-time capability skip was not applied for {scenario.Id}: {reason}");
 
-        await using (harness)
+        try
         {
-            await harness.StartAsync(cancellationToken);
-            switch (scenario.Id)
+            await using (harness)
             {
-                case ConnectorEdgeScenarioIds.DuplicateNotification:
-                    await DuplicateNotificationAsync(harness, cancellationToken);
-                    break;
-                case ConnectorEdgeScenarioIds.OutOfOrder:
-                    await OutOfOrderAsync(harness, cancellationToken);
-                    break;
-                case ConnectorEdgeScenarioIds.RemoteOutage:
-                    await RemoteOutageAsync(harness, cancellationToken);
-                    break;
-                case ConnectorEdgeScenarioIds.CancellationAfterShipment:
-                    await CancellationAfterShipmentAsync(harness, cancellationToken);
-                    break;
-                case ConnectorEdgeScenarioIds.DuplicateSerial:
-                    await DuplicateSerialAsync(harness, cancellationToken);
-                    break;
-                case ConnectorEdgeScenarioIds.ClosedPeriod:
-                    await ClosedPeriodAsync(harness, cancellationToken);
-                    break;
-                case ConnectorEdgeScenarioIds.OverlappingConnections:
-                    await OverlappingConnectionsAsync(harness, cancellationToken);
-                    break;
-                case ConnectorEdgeScenarioIds.RemoteOwnerEdit:
-                    await RemoteOwnerEditAsync(harness, cancellationToken);
-                    break;
-                case ConnectorEdgeScenarioIds.DroppedCreateReply:
-                    await DroppedCreateReplyAsync(harness, cancellationToken);
-                    break;
-                case ConnectorEdgeScenarioIds.CompanionLocationCheck:
-                    await CompanionLocationCheckAsync(harness, cancellationToken);
-                    break;
-                case ConnectorEdgeScenarioIds.StopDuringFailure:
-                    await StopDuringFailureAsync(harness, cancellationToken);
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(scenario));
+                await harness.StartAsync(cancellationToken);
+                switch (scenario.Id)
+                {
+                    case ConnectorEdgeScenarioIds.DuplicateNotification:
+                        await DuplicateNotificationAsync(harness, cancellationToken);
+                        break;
+                    case ConnectorEdgeScenarioIds.OutOfOrder:
+                        await OutOfOrderAsync(harness, cancellationToken);
+                        break;
+                    case ConnectorEdgeScenarioIds.RemoteOutage:
+                        await RemoteOutageAsync(harness, cancellationToken);
+                        break;
+                    case ConnectorEdgeScenarioIds.CancellationAfterShipment:
+                        await CancellationAfterShipmentAsync(harness, cancellationToken);
+                        break;
+                    case ConnectorEdgeScenarioIds.DuplicateSerial:
+                        await DuplicateSerialAsync(harness, cancellationToken);
+                        break;
+                    case ConnectorEdgeScenarioIds.ClosedPeriod:
+                        await ClosedPeriodAsync(harness, cancellationToken);
+                        break;
+                    case ConnectorEdgeScenarioIds.OverlappingConnections:
+                        await OverlappingConnectionsAsync(harness, cancellationToken);
+                        break;
+                    case ConnectorEdgeScenarioIds.RemoteOwnerEdit:
+                        await RemoteOwnerEditAsync(harness, cancellationToken);
+                        break;
+                    case ConnectorEdgeScenarioIds.DroppedCreateReply:
+                        await DroppedCreateReplyAsync(harness, cancellationToken);
+                        break;
+                    case ConnectorEdgeScenarioIds.CompanionLocationCheck:
+                        await CompanionLocationCheckAsync(harness, cancellationToken);
+                        break;
+                    case ConnectorEdgeScenarioIds.StopDuringFailure:
+                        await StopDuringFailureAsync(harness, cancellationToken);
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(scenario));
+                }
+                await harness.StopAsync(cancellationToken);
             }
-            await harness.StopAsync(cancellationToken);
+            if (harness.IsLive)
+                ConnectorEdgeResultWriter.Record(harness.ConnectorCode, scenario.Id, "passed", null,
+                    resultStartedAt, DateTime.UtcNow);
+        }
+        catch
+        {
+            if (harness.IsLive)
+                ConnectorEdgeResultWriter.Record(harness.ConnectorCode, scenario.Id, "failed", null,
+                    resultStartedAt, DateTime.UtcNow);
+            throw;
         }
     }
 

@@ -380,7 +380,8 @@ public sealed class ErpChangeRunService(
     {
         var checklist = await cutover.ViewAsync(run.ErpChangeRunId, cancellationToken);
         var open = checklist.Items.Count(row => row.State != ErpChangeChecklistState.Passed
-            && !row.Code.StartsWith("first_outbound:", StringComparison.Ordinal));
+            && !row.Code.StartsWith("first_outbound:", StringComparison.Ordinal)
+            && !row.Code.StartsWith("info:", StringComparison.Ordinal));
         return (checklist.CanAdvance, new()
         {
             ["items"] = checklist.Items.Count,

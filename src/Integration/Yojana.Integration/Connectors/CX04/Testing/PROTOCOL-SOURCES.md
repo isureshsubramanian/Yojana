@@ -92,6 +92,7 @@ This ledger records only facts encoded by the simulator. It was transcribed from
 | F110 | Pre-send loss is not put in the failed list | documented / inferred | §6 | [M3] |
 | F112 | Aggregate push queries are rejected at setup | documented | §6 | [M4] |
 | F114 | Push authentication is a configurable static shared-secret header | ASSUMED | §6 | none |
+| F115 | Large push payload behaviour is checked per customer environment | ASSUMED | §6 | none |
 | F117 | Modified-since filter uses datetimeoffset comparison | documented | §7 | [A9] |
 | F118 | List paging uses `$top` and `$skip` | documented | §7 | [A9] |
 | F119 | Paging defaults to entity-key order; seeded order is configurable | ASSUMED | §7 | none |

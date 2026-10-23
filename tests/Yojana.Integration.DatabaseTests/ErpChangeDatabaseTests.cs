@@ -15,6 +15,7 @@ using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.ErpChange;
 using Yojana.Integration.Gateway;
+using Yojana.Integration.Verification;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
@@ -380,6 +381,11 @@ public sealed class ErpChangeDatabaseTests(IntegrationHostFixture fixture)
         fixture.Clock.UtcNow = At;
         var tenant = await fixture.NewTenantAsync("ecsim");
         using var scope = fixture.ScopeFor(tenant);
+        var acceptanceSettings = scope.ServiceProvider.GetRequiredService<AcceptanceGateSettings>();
+        var acceptanceDefaults = await acceptanceSettings.GetAsync(default);
+        await acceptanceSettings.SetAsync(new(acceptanceDefaults.Connectors.Select(row =>
+                row.ConnectorCode == targetRequest.ConnectorCode ? row with { Required = false } : row).ToList(),
+            acceptanceDefaults.SettingsVersion), default);
         await scope.ServiceProvider.GetRequiredService<ConnectorCatalogue>().SeedGenericEntriesAsync(default);
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
         await db.ConnectorCatalogue.ExecuteUpdateAsync(update => update.SetProperty(row => row.Enabled, true));

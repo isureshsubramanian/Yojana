@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Yojana.Integration.ErpChange;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Integration.Verification;
 
 namespace Yojana.Integration.Tests;
 
@@ -90,6 +91,37 @@ public sealed class ErpChangeTests
                      typeof(ResolveMasterDataExceptionRequest), typeof(MarkMasterDataNotNeededRequest),
                      typeof(ResolveStockDifferenceRequest), typeof(SignOffStockResidualRequest),
                  })
+            Assert.DoesNotContain(type.GetProperties(), property =>
+                property.Name.Contains("Actor", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Verification_reads_and_actions_use_the_integration_operations_roles()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddAuthorization();
+        builder.Services.AddScoped<ConnectorAcceptanceService>();
+        builder.Services.AddScoped<AcceptanceGateSettings>();
+        var app = builder.Build();
+        app.MapConnectorVerificationEndpoints();
+        var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>().ToList();
+        Assert.Equal(8, endpoints.Count);
+        Assert.All(endpoints.Where(endpoint => endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!
+                .HttpMethods.Contains("GET")), endpoint => Assert.Contains(
+                endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+                policy => policy.Policy == YojanaPolicy.IntegrationOperations));
+        Assert.All(endpoints.Where(endpoint => endpoint.RoutePattern.RawText!.Contains("/verification/", StringComparison.Ordinal)
+                && !endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Contains("GET")),
+            endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+                policy => policy.Policy == YojanaPolicy.IntegrationOperations));
+        var settingsWrite = endpoints.Single(endpoint => endpoint.RoutePattern.RawText ==
+            "/api/integration/acceptance/settings" && endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!
+                .HttpMethods.Contains("PUT"));
+        Assert.Contains(settingsWrite.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+            policy => policy.Policy == YojanaPolicy.TenantAdministrator);
+        foreach (var type in new[] { typeof(StartAcceptanceRunRequest), typeof(MarkAcceptanceItemRequest),
+                     typeof(ImportEdgeResultsRequest), typeof(UpdateAcceptanceGateSettings) })
             Assert.DoesNotContain(type.GetProperties(), property =>
                 property.Name.Contains("Actor", StringComparison.OrdinalIgnoreCase));
     }

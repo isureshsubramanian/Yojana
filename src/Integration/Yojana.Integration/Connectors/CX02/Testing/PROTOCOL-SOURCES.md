@@ -90,3 +90,13 @@ Source of truth: `docs/plan/research/P10-T02-cx02-protocol-facts.md`, read 2026-
 | D-06 | Upload defaults to separate content and can switch to inline | ASSUMED | §7 / no source located |
 | S-02 | Service item number and serial are separate fields | documented | §8 / S26 |
 | S-06 | Service items require a custom page | documented | §8 / S21 |
+
+## ASSUMED acceptance facts not encoded by the simulator
+
+These remain in the facts manifest and customer checklist even though the simulator does not need a fixed value.
+
+| Fact | Acceptance question | Confidence | Research section / source |
+|---|---|---|---|
+| A-15 | Which identity-provider conditional-access restrictions apply to the application principal? | ASSUMED | §2 / acceptance checklist |
+| L-06 | What licence governs the offline symbol package before any offline compile is introduced? | ASSUMED | §10 / acceptance checklist |
+| S-05 | Which service-item number series is configured, and is the required feature enabled? | ASSUMED | §8 / acceptance checklist |

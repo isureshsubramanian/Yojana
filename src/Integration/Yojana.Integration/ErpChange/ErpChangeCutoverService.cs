@@ -4,12 +4,15 @@ using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.Connections;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
+using Yojana.Integration.Gateway;
 using Yojana.Integration.Outbox;
 using Yojana.Integration.Reconciliation;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Integration.Verification;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.ErpChange;
 
@@ -21,15 +24,10 @@ public sealed class ErpChangeCutoverService(
     IOutboundCommandParkingSink parking,
     ReconciliationService reconciliation,
     ConnectionCommands connections,
-    IUserDirectory people)
+    IUserDirectory people,
+    ConnectorAcceptanceService acceptance,
+    AcceptanceGateSettings acceptanceSettings)
 {
-    private static readonly string[] OutboundTypes =
-    [
-        "CreateCreditMemo", "PostWarrantyExpense", "CreateReplacementDelivery",
-        "ChangeStockStatusOrLocation", "CreateServiceOrder", "AttachDocument",
-        "PushNativeWarrantyObject",
-    ];
-
     public async Task<CutoverChecklistView> BeginAsync(Guid runId, BeginCutoverRequest request,
         string actor, CancellationToken cancellationToken)
     {
@@ -58,6 +56,18 @@ public sealed class ErpChangeCutoverService(
             "Run reconciliation after enabling the target.", null, null, cancellationToken);
         await UpsertAsync(runId, "first_outbound_confirmed", ErpChangeChecklistState.Waiting,
             "Confirm the first target documents.", null, null, cancellationToken);
+        var targetConnector = await db.Connections.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && row.ConnectionId == run.TargetConnectionId).Select(row => row.ConnectorCode)
+            .SingleAsync(cancellationToken);
+        if (targetConnector is "CX02" or "CX04")
+        {
+            var accepted = await acceptance.PassedAsync(run.TargetConnectionId, cancellationToken);
+            await UpsertAsync(runId, "info:acceptance_passed",
+                accepted ? ErpChangeChecklistState.Passed : ErpChangeChecklistState.Waiting,
+                accepted ? "This tenant has passed a customer-sandbox acceptance run for the target connection."
+                    : "This tenant has not passed a customer-sandbox acceptance run for the target connection.",
+                accepted ? actor : null, accepted ? "acceptance_run=passed" : null, cancellationToken);
+        }
         foreach (var commandType in await RequiredOutboundTypesAsync(run.TargetConnectionId, cancellationToken))
             await UpsertAsync(runId, ValidationCode(commandType), ErpChangeChecklistState.Waiting,
                 $"Validate {commandType} on the target test company or record manual confirmation.",
@@ -91,6 +101,21 @@ public sealed class ErpChangeCutoverService(
         CancellationToken cancellationToken)
     {
         var run = await CutoverRunAsync(runId, cancellationToken);
+        var targetConnector = await db.Connections.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && row.ConnectionId == run.TargetConnectionId).Select(row => row.ConnectorCode)
+            .SingleAsync(cancellationToken);
+        if (targetConnector is "CX02" or "CX04")
+        {
+            var accepted = await acceptance.PassedAsync(run.TargetConnectionId, cancellationToken);
+            if (accepted)
+                await UpsertAsync(runId, "info:acceptance_passed", ErpChangeChecklistState.Passed,
+                    "This tenant has passed a customer-sandbox acceptance run for the target connection.",
+                    actor, "acceptance_run=passed", cancellationToken);
+            if (!accepted && await acceptanceSettings.RequiredAsync(targetConnector, cancellationToken))
+                throw new CommandRefusedException("acceptance_required_before_go_live",
+                    "The target connection must pass its customer-sandbox acceptance run before go-live.",
+                    "Open the target connection's Verification record and complete a passing acceptance run.");
+        }
         var required = await RequiredOutboundTypesAsync(run.TargetConnectionId, cancellationToken);
         var passed = await db.ErpChangeChecklistItems.CountAsync(row => row.TenantId == tenant.TenantId
             && row.ErpChangeRunId == runId && row.State == ErpChangeChecklistState.Passed
@@ -279,7 +304,8 @@ public sealed class ErpChangeCutoverService(
         var items = rows.Select(row => new CutoverChecklistItemView(row.Code, row.State, row.Detail,
             row.Evidence, row.CompletedBy is null ? null
                 : names.GetValueOrDefault(row.CompletedBy) ?? "Former or system user", row.CompletedAt)).ToList();
-        var required = items.Where(row => !row.Code.StartsWith("first_outbound:", StringComparison.Ordinal)).ToList();
+        var required = items.Where(row => !row.Code.StartsWith("first_outbound:", StringComparison.Ordinal)
+            && !row.Code.StartsWith("info:", StringComparison.Ordinal)).ToList();
         return new(runId, run.CutoverAt, items,
             required.Count > 0 && required.All(row => row.State == ErpChangeChecklistState.Passed));
     }
@@ -303,7 +329,8 @@ public sealed class ErpChangeCutoverService(
     private async Task<IReadOnlyList<string>> RequiredOutboundTypesAsync(Guid connectionId,
         CancellationToken cancellationToken) => await db.ConnectionCapabilities.AsNoTracking()
         .Where(row => row.TenantId == tenant.TenantId && row.ConnectionId == connectionId
-            && OutboundTypes.Contains(row.CanonicalMessage) && row.SupportLevel != CapabilitySupport.Unsupported)
+            && OutboundCapabilityTypes.All.Contains(row.CanonicalMessage)
+            && row.SupportLevel != CapabilitySupport.Unsupported)
         .Select(row => row.CanonicalMessage).Distinct().OrderBy(row => row).ToListAsync(cancellationToken);
 
     private async Task<int> WaitingCommandsAsync(Guid connectionId, CancellationToken cancellationToken) =>

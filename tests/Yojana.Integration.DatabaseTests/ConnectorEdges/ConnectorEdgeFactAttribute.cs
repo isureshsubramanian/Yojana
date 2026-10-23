@@ -21,6 +21,9 @@ public sealed class ConnectorEdgeFactAttribute : FactAttribute
         Skip = manifest.NotApplicable(scenario);
         if (Skip is null && live && !LiveEnvironmentPresent(manifest.ConnectorCode))
             Skip = $"The {manifest.ConnectorCode} live sandbox environment is not configured.";
+        if (live && Skip is not null && ConnectorEdgeResultWriter.Requested)
+            ConnectorEdgeResultWriter.Record(manifest.ConnectorCode, scenario.Id, "skipped", Skip,
+                DateTime.UtcNow, DateTime.UtcNow);
     }
 
     private static bool LiveEnvironmentPresent(string connectorCode) => connectorCode switch

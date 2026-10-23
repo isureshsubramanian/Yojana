@@ -20,6 +20,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Integration.Verification;
 
 namespace Yojana.Integration.DatabaseTests;
 
@@ -122,6 +123,11 @@ public sealed class ErpChangeRehearsalTests(
         var divergences = new List<string>();
         var exceptions = new List<string>();
         using var scope = fixture.ScopeFor(tenant);
+        var acceptanceSettings = scope.ServiceProvider.GetRequiredService<AcceptanceGateSettings>();
+        var acceptanceDefaults = await acceptanceSettings.GetAsync(default);
+        await acceptanceSettings.SetAsync(new(acceptanceDefaults.Connectors.Select(row =>
+                row.ConnectorCode == targetRequest.ConnectorCode ? row with { Required = false } : row).ToList(),
+            acceptanceDefaults.SettingsVersion), default);
         await EnableConnectorsAsync(scope);
         var sourceRequest = sourceSimulator.RegistrationRequest() with
         {
