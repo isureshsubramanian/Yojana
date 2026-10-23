@@ -1,0 +1,1458 @@
+{
+  "connectorCode": "CX02",
+  "liveVerification": {
+    "verified": false
+  },
+  "facts": [
+    {
+      "id": "M-01",
+      "fact": "the source application offer policies",
+      "valueUsed": "Section 1400 applies \"only to the source application offers\". 1400.5: offers \"must meet all of the requirements in the technical validation checklist\". No security attestation is listed",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "release evidence and onboarding guidance",
+      "acceptanceItem": false
+    },
+    {
+      "id": "M-02",
+      "fact": "SOC 2 in the certification policies",
+      "valueUsed": "The string \"SOC\" does not occur in the whole policy document (text-searched). The only certification demand (ISO 27001 and 27701, HITRUST or NIST CSF) is in section 6000, which covers healthcare offers, not the source application",
+      "kind": "inferred",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "release evidence and onboarding guidance",
+      "acceptanceItem": false
+    },
+    {
+      "id": "M-03",
+      "fact": "Publisher Attestation",
+      "valueUsed": "1140.6 \"Apps and agents must complete Publisher Attestation\". 1140 covers the publisher 365, Teams and Copilot apps, not the source application offers",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "release evidence and onboarding guidance",
+      "acceptanceItem": false
+    },
+    {
+      "id": "M-04",
+      "fact": "Technical validation checklist contents",
+      "valueUsed": "the extension editor, app.json mandatory properties, signed .app, extension-provided permission sets (\"must not be required to have SUPER\"), upgrade code, registered affixes and ID range, DataClassification, translation files, application property, unique AppId. Validation compiles the app and runs the publisher marketplaceCop against baselines; \"breaking changes\" cause rejection",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "release evidence and onboarding guidance",
+      "acceptanceItem": false
+    },
+    {
+      "id": "M-05",
+      "fact": "Checklist and security certification",
+      "valueUsed": "The checklist names no SOC 2, ISO or penetration-test requirement",
+      "kind": "inferred",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "release evidence and onboarding guidance",
+      "acceptanceItem": false
+    },
+    {
+      "id": "M-06",
+      "fact": "Test environment for validation",
+      "valueUsed": "The publish, sync, install, uninstall and reinstall test \"must be done in a the source application environment\"",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "release evidence and onboarding guidance",
+      "acceptanceItem": false
+    },
+    {
+      "id": "M-07",
+      "fact": "Listing types for add-on apps",
+      "valueUsed": "1400.3: add-ons may be \"Free\", \"Free or Trial\" or \"Contact me\". Connect apps must be \"Contact Me\"",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "release evidence and onboarding guidance",
+      "acceptanceItem": false
+    },
+    {
+      "id": "M-08",
+      "fact": "Marketplace fee",
+      "valueUsed": "\"no cost to publish offers\". \"3% standard store service fee\" on transact offers (page ms.date 2025-05-09). This replaces ADR-0002's \"2021 figure, verify\". The fee page is general to Marketplace, not specific to the source application",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "release evidence and onboarding guidance",
+      "acceptanceItem": false
+    },
+    {
+      "id": "M-09",
+      "fact": "the source application transactable model",
+      "valueUsed": "Per-user, monthly or annual plans. Seen only in a search snippet of the transact-capabilities page, not fetched",
+      "kind": "inferred",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "release evidence and onboarding guidance",
+      "acceptanceItem": true
+    },
+    {
+      "id": "B-01",
+      "fact": "Business events GA status",
+      "valueUsed": "Page title \"Business events on the source application (preview)\". Banner: \"available as part of a preview release\". Page updated 2026-05-19",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "business-event capture and simulator replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "B-02",
+      "fact": "Business events retry policy",
+      "valueUsed": "Not documented. The page describes subscription, notification and limits but says nothing about retries",
+      "kind": "assumed",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "business-event capture and simulator replies",
+      "acceptanceItem": true
+    },
+    {
+      "id": "B-03",
+      "fact": "Some retry exists",
+      "valueUsed": "Community forum report of an activity-log message \"Could not send notification from attempt x\" (search snippet only)",
+      "kind": "inferred",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "business-event capture and simulator replies",
+      "acceptanceItem": true
+    },
+    {
+      "id": "B-04",
+      "fact": "Delivery semantics",
+      "valueUsed": "Sent \"only after the current transaction is committed\". A rolled-back transaction \"is never sent\"",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "business-event capture and simulator replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "B-05",
+      "fact": "Catalogue endpoint",
+      "valueUsed": "GET api/the publisher/runtime/v1.0/externalbusinesseventdefinitions returns category, name, displayName, description, payload (a JSON string of {Index,Name,Type}), appId, appName, appVersion, appPublisher",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "business-event capture and simulator replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "B-06",
+      "fact": "Subscribe endpoint",
+      "valueUsed": "POST api/the publisher/runtime/v1.0/externaleventsubscriptions with body companyName, companyId, eventName, appId, notificationUrl, clientState (optional). Response: \"Empty w/ status code 201 Created\"",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "business-event capture and simulator replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "B-07",
+      "fact": "Notification body",
+      "valueUsed": "POST notificationUrl with initiatingUserAADObjectId, timestamp (UTC), companyName, companyId, eventName, payload{…}, appId, clientState",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "business-event capture and simulator replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "B-08",
+      "fact": "Subscriber permission",
+      "valueUsed": "Needs the Ext. Events – Subscr permission set and READ on ExternalBusinessEventDefinition",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "business-event capture and simulator replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "B-09",
+      "fact": "Custom business events",
+      "valueUsed": "AL ExternalBusinessEvent(name, displayName, description, category) on an empty procedure. Optional RequiredPermissions",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "business-event capture and simulator replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "B-10",
+      "fact": "Built-in catalogue includes",
+      "valueUsed": "\"Sales shipment posted\", \"Sales credit memo posted\", \"Purchase receipt posted\" (v22.2+)",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "business-event capture and simulator replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "B-11",
+      "fact": "Business-event handshake and expiry",
+      "valueUsed": "No validation handshake and no expiry are documented for externaleventsubscriptions",
+      "kind": "assumed",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "business-event capture and simulator replies",
+      "acceptanceItem": true
+    },
+    {
+      "id": "B-12",
+      "fact": "An S2S app can create business-event subscriptions",
+      "valueUsed": "Not stated",
+      "kind": "assumed",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "business-event capture and simulator replies",
+      "acceptanceItem": true
+    },
+    {
+      "id": "A-01",
+      "fact": "Flow",
+      "valueUsed": "OAuth 2.0 client credentials. Delegated flows can be blocked by MFA, which \"prevents unattended integrations\"",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A-02",
+      "fact": "Token endpoint",
+      "valueUsed": "POST the documented service address form-encoded grant_type=client_credentials&client_id&client_secret&scope",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A-03",
+      "fact": "Scope",
+      "valueUsed": "the documented service address",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A-04",
+      "fact": "the identity provider application permissions",
+      "valueUsed": "API.ReadWrite.All (\"Access to APIs and webservices\"). Automation.ReadWrite.All is only for /api/the publisher/automation. S3's setup steps grant both",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A-05",
+      "fact": "the source application side",
+      "valueUsed": "the publisher the identity provider Applications page: Client ID, Description, State = Enabled, permission sets, optional Grant Consent",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A-06",
+      "fact": "SUPER forbidden",
+      "valueUsed": "\"Applications can't be assigned the SUPER permission set\"",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A-07",
+      "fact": "Suggested starting sets",
+      "valueUsed": "D365 AUTOMATION and EXTEN. MGT. - ADMIN \"provide access to most typical objects\"",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A-08",
+      "fact": "Our extension's permission set",
+      "valueUsed": "Must be shipped by the extension (a checklist rule for marketplace apps; good practice for a per-tenant extension). Assigned to the the identity provider app alongside D365 AUTOMATION",
+      "kind": "inferred",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A-09",
+      "fact": "Token success body",
+      "valueUsed": "{\"token_type\":\"Bearer\",\"expires_in\":3599,\"access_token\":\"…\"}. No refresh token with this flow",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A-10",
+      "fact": "Token error body",
+      "valueUsed": "HTTP 400 {\"error\",\"error_description\",\"error_codes\":…,\"timestamp\",\"trace_id\",\"correlation_id\"}",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A-11",
+      "fact": "Token lifetime",
+      "valueUsed": "the identity provider's \"random value ranging between 60-90 minutes\" is stated for registered APIs. The page says it \"doesn't apply to tokens issued for the publisher-owned APIs\". So for the source application, trust expires_in only",
+      "kind": "inferred",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": true
+    },
+    {
+      "id": "A-12",
+      "fact": "Credential options",
+      "valueUsed": "Shared secret, certificate (client_assertion), or federated credential",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A-13",
+      "fact": "Feature availability",
+      "valueUsed": "S2S on online for API v2.0 and custom APIs since version 18.3",
+      "kind": "documented",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A-14",
+      "fact": "Expired or invalid token on the API",
+      "valueUsed": "Error code family Authentication_*, for example Authentication_InvalidCredentials. The HTTP status (401 expected) is not stated",
+      "kind": "assumed",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": true
+    },
+    {
+      "id": "A-15",
+      "fact": "Customer licence for the app identity",
+      "valueUsed": "S3 points to the licensing guide for \"external user and non-interactive user access\". Not read",
+      "kind": "assumed",
+      "sourceLabel": "publisher authentication documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "authentication session",
+      "acceptanceItem": true
+    },
+    {
+      "id": "P-01",
+      "fact": "Standard base URL",
+      "valueUsed": "the documented service address name>/api/v2.0, or with the tenant segment …/v2.0/<user domain name>/<environment name>/api/v2.0",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-02",
+      "fact": "Tenant segment as a GUID",
+      "valueUsed": "S6 shows only a domain name. A tenant GUID in the same position is common practice",
+      "kind": "assumed",
+      "sourceLabel": "no public protocol statement found",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "P-03",
+      "fact": "Company scope",
+      "valueUsed": "…/companies(<company id>)/<entitySet>. GET …/companies lists companies",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-04",
+      "fact": "Custom API URL",
+      "valueUsed": "…/v2.0/<environmentName>/api/<APIPublisher>/<APIGroup>/<APIVersion>/companies(<id>)/<EntitySetName>",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-05",
+      "fact": "Custom API page properties",
+      "valueUsed": "PageType = API, APIPublisher, APIGroup, APIVersion, EntityName, EntitySetName, EntityCaption, EntitySetCaption, ODataKeyFields = SystemId, DelayedInsert = true, Extensible = false",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-06",
+      "fact": "Key guidance",
+      "valueUsed": "\"always specify a single field of type GUID\" in ODataKeyFields. A composite key also disables webhooks (W-20)",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-07",
+      "fact": "Enums",
+      "valueUsed": "Use Enums, not Options. Options become Edm.String; Enums become typed members in $metadata",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-08",
+      "fact": "API query objects",
+      "valueUsed": "Join tables, read-only, and not webhook-capable",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-09",
+      "fact": "ETag in responses",
+      "valueUsed": "Each entity carries \"@odata.etag\":\"W/\\\"…\\\"\"",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-10",
+      "fact": "If-Match on PATCH",
+      "valueUsed": "Header marked \"Required\". A non-matching eTag means the record \"won't be updated\". The S2S sample uses If-Match: *",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-11",
+      "fact": "ETag mismatch error",
+      "valueUsed": "OData code Request_EntityChanged, \"Another user has already changed the record.\" (ODataConflictException)",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-12",
+      "fact": "ETag mismatch HTTP status",
+      "valueUsed": "Not stated. 409 (from the exception name) or 412 (the OData standard)",
+      "kind": "assumed",
+      "sourceLabel": "no public protocol statement found",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "P-13",
+      "fact": "Missing or invalid concurrency token",
+      "valueUsed": "BadRequest_InvalidToken, \"Could not validate the client concurrency token…\"",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-14",
+      "fact": "PATCH success",
+      "valueUsed": "200 OK with the updated entity",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-15",
+      "fact": "Modified-since filter",
+      "valueUsed": "$filter=lastModifiedDateTime gt 2019-08-18T20:05:51.603Z",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-16",
+      "fact": "Paging",
+      "valueUsed": "Online maximum 20,000 entities per page, which \"can't be changed\". Per-request override with Prefer: odata.maxpagesize=N (N ≤ 20,000)",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-17",
+      "fact": "Next page link",
+      "valueUsed": "Multi-page results \"must be fetched using the continuation tokens\". The @odata.nextLink property name and its opacity come from the OData standard",
+      "kind": "assumed",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "P-18",
+      "fact": "Over-page-size error",
+      "valueUsed": "Over the max page size returns 413 - Request Entity Too Large",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-19",
+      "fact": "$batch",
+      "valueUsed": "Up to 100 operations per request",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-20",
+      "fact": "$expand, deep insert",
+      "valueUsed": "Both supported, and deep insert also inside $batch",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-21",
+      "fact": "Error code families",
+      "valueUsed": "BadRequest_*, Authentication_*, Authorization_*, Internal_*, Application_*, with examples such as BadRequest_NotFound, Internal_RecordNotFound, Internal_EntityWithSameKeyExists, Application_DialogException, Application_FieldValidationException",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-22",
+      "fact": "Error JSON envelope",
+      "valueUsed": "{\"error\":{\"code\":\"<code>\",\"message\":\"<text>\"}}. S12 lists codes and messages but not the literal envelope. This is the OData JSON error format",
+      "kind": "assumed",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "P-23",
+      "fact": "Bound actions on standard API",
+      "valueUsed": "POST …/salesCreditMemos({id})/the publisher.NAV.post. \"The response has no content; the response code is 204.\" Also cancel, cancelAndSend, postAndSend, send",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-24",
+      "fact": "Declaring a bound action",
+      "valueUsed": "ServiceEnabled procedure X(var actionContext: WebServiceActionContext), with SetObjectType, SetObjectId, AddEntityKey and SetResultCode(WebServiceActionResultCode::Created). \"cannot be added by extending an existing page\"",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-25",
+      "fact": "Bound action on a custom API page",
+      "valueUsed": "POST /api/<pub>/<grp>/<ver>/companies(<id>)/<entitySet>(<id>)/the publisher.NAV.<action>. 204, or 201 when SetResultCode(Created) is used",
+      "kind": "inferred",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "P-26",
+      "fact": "Bound action parameters",
+      "valueUsed": "Whether a bound action on an API page accepts a JSON body of scalar parameters is not stated in the pages read",
+      "kind": "assumed",
+      "sourceLabel": "no public protocol statement found",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "P-27",
+      "fact": "Outbound HTTP from the extension",
+      "valueUsed": "Blocked by default. The admin must set Allow HttpClient Requests per extension",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "P-28",
+      "fact": "API catalogue in-product",
+      "valueUsed": "The API Overview page lists published API pages, queries and codeunits. …/entityDefinitions gives captions",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "API request and response mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "R-01",
+      "fact": "Speed per user",
+      "valueUsed": "6,000 OData requests in a 5-minute sliding window. Over it returns 429 - Too Many Requests",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "throttle profile and busy replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "R-02",
+      "fact": "Applies to service principals",
+      "valueUsed": "\"Are limits applied differently for application users (service principals)? No.\"",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "throttle profile and busy replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "R-03",
+      "fact": "Concurrent requests per user",
+      "valueUsed": "5 processed at once. Extras wait in a queue. After 8 minutes of waiting the reply is 503 - Service Temporarily Unavailable",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "throttle profile and busy replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "R-04",
+      "fact": "Max connections per user",
+      "valueUsed": "100 (processed plus queued). Over it returns 429",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "throttle profile and busy replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "R-05",
+      "fact": "Max queue per user",
+      "valueUsed": "95. Over it returns 429",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "throttle profile and busy replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "R-06",
+      "fact": "Legacy per-environment speed",
+      "valueUsed": "Sandbox 300 per minute, production 600 per minute. Replaced by per-user limits rolled out \"starting in late December 2023\"",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "throttle profile and busy replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "R-07",
+      "fact": "Operation timeout",
+      "valueUsed": "Operational-limits page: 8 min gives 408 - Request Timeout and the session is cancelled. Rate-limits page: 10 min gives 504 - Gateway Timeout. The two pages disagree; the simulator implements both as separate faults",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "throttle profile and busy replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "R-08",
+      "fact": "Max body size",
+      "valueUsed": "350 MB",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "throttle profile and busy replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "R-09",
+      "fact": "Scale-out guidance",
+      "valueUsed": "Spread the workload \"in a round-robin fashion\" across users or service principals",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "throttle profile and busy replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "R-10",
+      "fact": "Client behaviour on 429",
+      "valueUsed": "\"retry logic while providing a cool off period\", for example exponential back-off with randomization",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "throttle profile and busy replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "R-11",
+      "fact": "Retry-After header on 429",
+      "valueUsed": "Not mentioned in any the source application page read. Third-party sources assert it; no the publisher source for the source application does",
+      "kind": "assumed",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "throttle profile and busy replies",
+      "acceptanceItem": true
+    },
+    {
+      "id": "R-12",
+      "fact": "429 error code",
+      "valueUsed": "Application_TooManyRequests appears only in a 2019 blog",
+      "kind": "assumed",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "throttle profile and busy replies",
+      "acceptanceItem": true
+    },
+    {
+      "id": "R-13",
+      "fact": "Daily or monthly entitlement quotas",
+      "valueUsed": "None yet: \"haven't set definite entitlement quotas, but will do so in the future\"",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "throttle profile and busy replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "R-14",
+      "fact": "Max webhook subscriptions",
+      "valueUsed": "200 (per environment table)",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "throttle profile and busy replies",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-01",
+      "fact": "Create (standard)",
+      "valueUsed": "POST …/api/v2.0/subscriptions with {\"notificationUrl\",\"resource\":\"/api/v2.0/companies(<id>)/<entitySet>\",\"clientState\"}",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-02",
+      "fact": "Create (custom API)",
+      "valueUsed": "Both the subscription URL and resource must carry the custom segments: api/<pub>/<grp>/<ver>/subscriptions",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-03",
+      "fact": "Validation handshake",
+      "valueUsed": "the source application calls notificationUrl \"passing a validationToken parameter on the query string\". The subscriber returns the token \"in the response body\" with 200",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-04",
+      "fact": "Handshake HTTP method, content type, timeout",
+      "valueUsed": "Not stated",
+      "kind": "assumed",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": true
+    },
+    {
+      "id": "W-05",
+      "fact": "Handshake on renewal",
+      "valueUsed": "\"Handshake is mandatory\" on create and renew",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-06",
+      "fact": "Expiry",
+      "valueUsed": "\"Subscriptions expire after three days, if not renewed\". Expiry is in expirationDateTime",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-07",
+      "fact": "Renewal",
+      "valueUsed": "PATCH …/subscriptions({id}). The update page lists If-Match as required (search result for the subscriptions update page)",
+      "kind": "inferred",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": true
+    },
+    {
+      "id": "W-08",
+      "fact": "Subscription properties",
+      "valueUsed": "subscriptionId, notificationUrl, resource, timestamp, userId, lastModifiedDateTime, clientState, expirationDateTime, systemCreatedAt/By, systemModifiedAt/By",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-09",
+      "fact": "clientState",
+      "valueUsed": "Optional on POST and PATCH. Delivered in every notification. Usable as \"a shared secret\". No HMAC signature exists",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-10",
+      "fact": "clientState max length",
+      "valueUsed": "The sample value is optionalValueOf2048, suggesting 2,048 characters",
+      "kind": "inferred",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": true
+    },
+    {
+      "id": "W-11",
+      "fact": "Notification body",
+      "valueUsed": "{\"value\":{subscriptionId, clientState, expirationDateTime, resource, changeType, lastModifiedDateTime}}. One POST \"can contain multiple notifications from different subscriptions\"",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-12",
+      "fact": "changeType",
+      "valueUsed": "created, updated, deleted, collection. For created, updated and deleted, resource is the entity URL with its id",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-13",
+      "fact": "Coalescing",
+      "valueUsed": "Waits \"30 seconds after the first change to an entity\". Over 1,000 records changed in the window gives a single collection notification whose resource carries a $filter. Otherwise one notification per change",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-14",
+      "fact": "Collection filter field name",
+      "valueUsed": "The sample uses $filter=lastDateTimeModified gt … (sic), not lastModifiedDateTime. Follow the resource URL verbatim; never rebuild it",
+      "kind": "assumed",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": true
+    },
+    {
+      "id": "W-15",
+      "fact": "Retry",
+      "valueUsed": "\"several retries are attempted over the next 36 hours\" when the reply is 408, 429 or 5xx",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-16",
+      "fact": "Other failure codes",
+      "valueUsed": "\"If subscriber responds with any other code than listed, no retries are attempted and the subscription is deleted\"",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-17",
+      "fact": "Retry schedule (intervals, count)",
+      "valueUsed": "Not stated",
+      "kind": "assumed",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": true
+    },
+    {
+      "id": "W-18",
+      "fact": "Accepted success codes",
+      "valueUsed": "Not stated (200 expected; 202 and 204 unknown)",
+      "kind": "assumed",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": true
+    },
+    {
+      "id": "W-19",
+      "fact": "Document APIs",
+      "valueUsed": "A line change notifies the header subscription (salesInvoiceLine → salesInvoice)",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-20",
+      "fact": "Custom APIs eligible",
+      "valueUsed": "\"Custom APIs are also webhook-enabled\" and listed in webhookSupportedResources, except: temporary source table, composite key, system table (> 2000000000), API query, Job Queue Entry",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-21",
+      "fact": "Supported-resource discovery",
+      "valueUsed": "GET …/api/the publisher/runtime/beta/companies({id})/webhookSupportedResources?$filter=resource eq 'v2.0*'",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-22",
+      "fact": "Standard webhook list",
+      "valueUsed": "Includes items, customers, salesInvoices, salesOrders, salesCreditMemos, purchaseInvoices, generalLedgerEntries. Excludes itemLedgerEntries, salesShipments, purchaseReceipts",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-23",
+      "fact": "Delegated admin changes",
+      "valueUsed": "Not notified until a licensed user changes the entity. That notification then carries both changes",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-24",
+      "fact": "Users who can't schedule job queues",
+      "valueUsed": "Their changes \"aren't notified until\" a user who can makes another change \"to the same table\"",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-25",
+      "fact": "Changes made by our own S2S app",
+      "valueUsed": "Whether an the identity provider application counts as a \"licensed user\" for W-23 and W-24 is not stated. A posting done by our bound action might not raise a notification on its own",
+      "kind": "assumed",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": true
+    },
+    {
+      "id": "W-26",
+      "fact": "No BOM",
+      "valueUsed": "Since version 19 notifications carry no byte-order mark",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "W-27",
+      "fact": "Unsubscribe",
+      "valueUsed": "DELETE …/subscriptions({id})",
+      "kind": "documented",
+      "sourceLabel": "publisher change-notification documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "change-notification capture and simulator delivery",
+      "acceptanceItem": false
+    },
+    {
+      "id": "T-01",
+      "fact": "itemLedgerEntries",
+      "valueUsed": "GET only. Fields: id, entryNumber, itemNumber, postingDate, entryType, sourceNumber, sourceType, documentNumber, documentType, description, quantity, salesAmountActual, costAmountActual, lastModifiedDateTime. No serial, lot or package",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracking pages and document mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "T-02",
+      "fact": "Posted sales shipments",
+      "valueUsed": "Exist in standard v2.0: salesShipments and salesShipmentLines, GET only. Lines have lineObjectNumber, quantity, shipmentDate…, no tracking",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracking pages and document mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "T-03",
+      "fact": "Posted purchase receipts",
+      "valueUsed": "Exist: purchaseReceipts and purchaseReceiptLines, GET only, no tracking",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracking pages and document mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "T-04",
+      "fact": "Absent from the v2.0 resource list",
+      "valueUsed": "Transfer shipments and receipts, return receipts and return shipments, reservation entries, tracking specifications, item entry relations, serial or lot information, service items, item journals (the 87-resource TOC list was checked)",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracking pages and document mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "T-05",
+      "fact": "Where tracking lives",
+      "valueUsed": "Serial and lot numbers \"are applied on the item ledger entries\". Package numbers since 2021 release wave 1",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracking pages and document mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "T-06",
+      "fact": "Document-to-entry link",
+      "valueUsed": "Item Entry Relation (T6507) \"Relates shipped or received lines to item ledger entries\". Value Entry Relation (T6508) covers invoiced lines",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracking pages and document mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "T-07",
+      "fact": "Active tracking",
+      "valueUsed": "Reservation Entry (T337) works with Tracking Specification (T336), which sums active and posted tracking quantities",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracking pages and document mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "T-08",
+      "fact": "One ILE per tracking number",
+      "valueUsed": "Codeunit 22 splits posting so that \"each unique item tracking number\" gets its own item ledger entry",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracking pages and document mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "T-09",
+      "fact": "ILE field names",
+      "valueUsed": "Serial No., Lot No., Package No. on table 32 (product knowledge; the table reference was not fetched)",
+      "kind": "inferred",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracking pages and document mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "T-10",
+      "fact": "Reservation entries are transient",
+      "valueUsed": "Tracking reservation entries are replaced by item ledger entries and Tracking Specification on posting, so a webhook on them yields deleted events (from the S25 \"active versus historic\" design)",
+      "kind": "inferred",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracking pages and document mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "T-11",
+      "fact": "Webhooks on tracking pages",
+      "valueUsed": "Possible only on API pages with a single-GUID key over non-temporary tables (W-20). ILE, Item Entry Relation, Reservation Entry and Tracking Specification are normal tables with SystemId",
+      "kind": "inferred",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracking pages and document mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "T-12",
+      "fact": "Consequence for P10-T03",
+      "valueUsed": "The extension must publish pages for: tracked ILE (ILE + serial/lot/package), item entry relations, transfer shipment and receipt headers and lines, return receipt headers and lines, sales shipment lines with tracking (or a navigation to tracked ILEs), reservation entries (write, for posting), tracking specifications, service items (W-25 risk noted), plus bound actions that post tracked documents. Standard salesShipments and purchaseReceipts stay usable for headers",
+      "kind": "inferred",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "tracking pages and document mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "D-01",
+      "fact": "attachments",
+      "valueUsed": "Backed by Incoming Document (table 130). GET, POST, PATCH, DELETE. Properties id, parentId, fileName, byteSize, attachmentContent (stream), lastModifiedDateTime, parentType",
+      "kind": "documented",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "attachment mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "D-02",
+      "fact": "attachments.parentType values",
+      "valueUsed": "\" \", \"Journal\", \"Sales Order\", \"Sales Quote\", \"Sales Credit Memo\", \"Sales Invoice\", \"Purchase Invoice\". Its navigation table also lists purchaseOrder, purchaseCreditMemo and generalLedgerEntry",
+      "kind": "documented",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "attachment mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "D-03",
+      "fact": "documentAttachments",
+      "valueUsed": "Navigates from item, customer, vendor, employee, project, salesInvoice, salesOrder, salesQuote, salesCreditMemo, purchaseInvoice, purchaseOrder, purchaseCreditMemo. Extra fields lineNumber, documentFlowSales, documentFlowPurchase",
+      "kind": "documented",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "attachment mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "D-04",
+      "fact": "documentAttachments.parentType text",
+      "valueUsed": "The page copies the same 7-value list as D-02, which contradicts its own navigation list. The real enum values for item and customer are unknown",
+      "kind": "assumed",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "attachment mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "D-05",
+      "fact": "Upload size",
+      "valueUsed": "350 MB maximum file size and a 65 s upload timeout (data-handling limits, client uploads). That these apply to API stream uploads is not stated",
+      "kind": "inferred",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "attachment mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "D-06",
+      "fact": "Content upload method",
+      "valueUsed": "Whether content goes in through PATCH …/attachmentContent as a stream, as a separate call from the metadata POST, is not on the resource pages read",
+      "kind": "assumed",
+      "sourceLabel": "publisher attachment documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "attachment mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "S-01",
+      "fact": "Premium only",
+      "valueUsed": "\"Service Management features are available only if you have the Premium experience\"",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "service-record mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "S-02",
+      "fact": "Separate identity",
+      "valueUsed": "Creating a service item: \"A number is assigned to the service item\". The serial is copied \"to the Serial No. field on the service item card\", so the No. and the serial are different fields",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "service-record mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "S-03",
+      "fact": "Automatic creation",
+      "valueUsed": "Posting a shipment (sales order or invoice) creates service items when the item's service item group has Create Service Item set",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "service-record mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "S-04",
+      "fact": "BOM handling",
+      "valueUsed": "An exploded BOM gives service items plus service item components. An unexploded BOM gives a single service item",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "service-record mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "S-05",
+      "fact": "Number series name",
+      "valueUsed": "A \"Service Item Nos.\" series on Service Management Setup (product knowledge; not confirmed on a page read)",
+      "kind": "assumed",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "service-record mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "S-06",
+      "fact": "API exposure",
+      "valueUsed": "No service item resource in standard v2.0 (T-04), so the extension needs a page if we read service items",
+      "kind": "documented",
+      "sourceLabel": "publisher inventory-tracking documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "service-record mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "E-01",
+      "fact": "Free allowance",
+      "valueUsed": "\"Premium and Essential subscription types give each the source application customer one production environment and three sandbox environments free of extra charge\"",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "9. sandboxes (relevant to the customer acceptance gate)",
+      "acceptanceItem": false
+    },
+    {
+      "id": "E-02",
+      "fact": "More environments",
+      "valueUsed": "Each additional production environment brings 3 more sandboxes and 4 GB of tenant-wide database capacity. Bought through the customer's CSP",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "9. sandboxes (relevant to the customer acceptance gate)",
+      "acceptanceItem": false
+    },
+    {
+      "id": "E-03",
+      "fact": "Performance",
+      "valueUsed": "Sandboxes run \"in a different performance tier\", so they are not reliable for performance testing",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "9. sandboxes (relevant to the customer acceptance gate)",
+      "acceptanceItem": false
+    },
+    {
+      "id": "E-04",
+      "fact": "Extension publishing in a sandbox",
+      "valueUsed": "Apps published from VS Code are removed when the sandbox is upgraded (the data stays). Apps uploaded through Extension Management persist",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "9. sandboxes (relevant to the customer acceptance gate)",
+      "acceptanceItem": false
+    },
+    {
+      "id": "E-05",
+      "fact": "Throttle in sandbox",
+      "valueUsed": "The per-user 6,000 limit applies to all environments. The legacy per-minute figure was lower for sandboxes (R-06)",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "9. sandboxes (relevant to the customer acceptance gate)",
+      "acceptanceItem": false
+    },
+    {
+      "id": "E-06",
+      "fact": "Sandbox copy of production",
+      "valueUsed": "A sandbox can be created with production data",
+      "kind": "documented",
+      "sourceLabel": "publisher API documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "9. sandboxes (relevant to the customer acceptance gate)",
+      "acceptanceItem": false
+    },
+    {
+      "id": "L-01",
+      "fact": "Analyzers ship inside the AL extension",
+      "valueUsed": "the publisher marketplaceCop.dll, CodeCop.dll, UICop.dll, PerTenantExtensionCop.dll, alc.exe in extension/bin",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "build and acceptance guidance",
+      "acceptanceItem": false
+    },
+    {
+      "id": "L-02",
+      "fact": "AL extension grant",
+      "valueUsed": "Any number of copies, to \"develop and test your applications\", solely with the source application",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "build and acceptance guidance",
+      "acceptanceItem": false
+    },
+    {
+      "id": "L-03",
+      "fact": "AL extension and a the source application licence",
+      "valueUsed": "No such requirement stated",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "build and acceptance guidance",
+      "acceptanceItem": false
+    },
+    {
+      "id": "L-04",
+      "fact": "Container image terms",
+      "valueUsed": "\"You may not use it if you do not have a license\" for the underlying software. Test and development only",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "build and acceptance guidance",
+      "acceptanceItem": false
+    },
+    {
+      "id": "L-05",
+      "fact": "BcContainerHelper",
+      "valueUsed": "MIT License, Copyright (c) the publisher Corporation",
+      "kind": "documented",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "build and acceptance guidance",
+      "acceptanceItem": false
+    },
+    {
+      "id": "L-06",
+      "fact": "Symbol packages for offline alc compile",
+      "valueUsed": "Licence of the the publisher symbol .app packages (base and system application) not read",
+      "kind": "assumed",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "build and acceptance guidance",
+      "acceptanceItem": true
+    },
+    {
+      "id": "L-07",
+      "fact": "Signed .app",
+      "valueUsed": "Required only for marketplace submission (M-04). Not needed for a per-tenant extension under OD-21 and OD-22",
+      "kind": "inferred",
+      "sourceLabel": "publisher API limits documentation",
+      "dateRead": "2026-10-23",
+      "usedAt": "build and acceptance guidance",
+      "acceptanceItem": false
+    },
+    {
+      "id": "OUT-01",
+      "fact": "Tracked posting action request and lookup key",
+      "valueUsed": "document id, logical reference, metadata and supported document kinds",
+      "kind": "assumed",
+      "sourceLabel": "connector capability design; no public protocol statement found",
+      "dateRead": "2026-10-23",
+      "usedAt": "outbound document adapter",
+      "acceptanceItem": true
+    },
+    {
+      "id": "OUT-02",
+      "fact": "Journal resource wire shape",
+      "valueUsed": "the standard journal, journal-line and post-action shape exercised by the simulator",
+      "kind": "assumed",
+      "sourceLabel": "connector capability design; no public protocol statement found",
+      "dateRead": "2026-10-23",
+      "usedAt": "outbound journal adapter",
+      "acceptanceItem": true
+    },
+    {
+      "id": "OUT-03",
+      "fact": "Closed-period rejection",
+      "valueUsed": "HTTP 400 with an application-dialog error code",
+      "kind": "assumed",
+      "sourceLabel": "integration edge rule; exact remote error not found",
+      "dateRead": "2026-10-23",
+      "usedAt": "outbound rejection mapping",
+      "acceptanceItem": true
+    }
+  ]
+}

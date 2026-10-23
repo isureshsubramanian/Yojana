@@ -26,7 +26,7 @@ public sealed record ConnectionKpis(int Connections, int Live, int Paused, long 
 public sealed record ConnectionPage(IReadOnlyList<ConnectionSummary> Items, string? NextCursor, ConnectionKpis Kpis);
 public sealed record ConnectionSummary(Guid ConnectionId, string ConnectionName, string ConnectorCode,
     string ConnectorName, string Status, bool IsLive, string OutboundMode, bool ReadOnly,
-    ConnectionHealthView Health);
+    ConnectionHealthView Health, bool AcceptancePassed);
 public sealed record ConnectionHealthView(string Status, bool IsLive, DateTime? LastInboundAt,
     DateTime? CheckedUpTo, string NotificationState, long ReceivedToday, long ReceivedLast30Days,
     int WaitingToSend, DateTime? OldestWaitingAt, double? OldestWaitingAgeSeconds, int MaxOutboxAgeSeconds,

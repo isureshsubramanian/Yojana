@@ -117,9 +117,62 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<ErpChangeDailyCheck> ErpChangeDailyChecks => Set<ErpChangeDailyCheck>();
     public DbSet<ErpChangeChecklistItem> ErpChangeChecklistItems => Set<ErpChangeChecklistItem>();
     public DbSet<ErpChangeNotice> ErpChangeNotices => Set<ErpChangeNotice>();
+    public DbSet<ConnectorAcceptanceRun> ConnectorAcceptanceRuns => Set<ConnectorAcceptanceRun>();
+    public DbSet<ConnectorAcceptanceItem> ConnectorAcceptanceItems => Set<ConnectorAcceptanceItem>();
+    public DbSet<ConnectorAcceptanceImport> ConnectorAcceptanceImports => Set<ConnectorAcceptanceImport>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<ConnectorAcceptanceRun>(b =>
+        {
+            b.ToTable("connector_acceptance_run", table => table.HasCheckConstraint(
+                "ck_connector_acceptance_run_status", "status IN ('open','passed','failed')"));
+            b.HasKey(x => new { x.TenantId, x.ConnectorAcceptanceRunId });
+            b.Property(x => x.ConnectorCode).HasMaxLength(16).IsUnicode(false);
+            b.Property(x => x.SandboxLabel).HasMaxLength(160);
+            b.Property(x => x.Status).HasMaxLength(16).IsUnicode(false);
+            b.Property(x => x.StartedBy).HasMaxLength(320);
+            b.Property(x => x.CompletedBy).HasMaxLength(320);
+            b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.Status }).IsUnique()
+                .HasFilter("[status] = 'open'");
+            b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.StartedAt, x.ConnectorAcceptanceRunId });
+        });
+        modelBuilder.Entity<ConnectorAcceptanceItem>(b =>
+        {
+            b.ToTable("connector_acceptance_item", table =>
+            {
+                table.HasCheckConstraint("ck_connector_acceptance_item_kind",
+                    "kind IN ('fact','edge_scenario','outbound_command')");
+                table.HasCheckConstraint("ck_connector_acceptance_item_result",
+                    "result IN ('pending','passed','failed','not_applicable')");
+            });
+            b.HasKey(x => new { x.TenantId, x.ConnectorAcceptanceItemId });
+            b.Property(x => x.Code).HasMaxLength(140).IsUnicode(false);
+            b.Property(x => x.Kind).HasMaxLength(24).IsUnicode(false);
+            b.Property(x => x.Label).HasMaxLength(1000);
+            b.Property(x => x.Result).HasMaxLength(24).IsUnicode(false);
+            b.Property(x => x.Note).HasMaxLength(2000);
+            b.Property(x => x.Evidence).HasMaxLength(4000);
+            b.Property(x => x.MarkedBy).HasMaxLength(320);
+            b.HasIndex(x => new { x.TenantId, x.ConnectorAcceptanceRunId, x.Code }).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.ConnectorAcceptanceRunId, x.Kind, x.Result,
+                x.ConnectorAcceptanceItemId });
+            b.HasOne<ConnectorAcceptanceRun>().WithMany().HasForeignKey(x =>
+                new { x.TenantId, x.ConnectorAcceptanceRunId }).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<ConnectorAcceptanceImport>(b =>
+        {
+            b.ToTable("connector_acceptance_import");
+            b.HasKey(x => new { x.TenantId, x.ConnectorAcceptanceImportId });
+            b.Property(x => x.ContentHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.Property(x => x.ConnectorCode).HasMaxLength(16).IsUnicode(false);
+            b.Property(x => x.ImportedBy).HasMaxLength(320);
+            b.HasIndex(x => new { x.TenantId, x.ContentHash }).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.ConnectorAcceptanceRunId, x.ImportedAt,
+                x.ConnectorAcceptanceImportId });
+            b.HasOne<ConnectorAcceptanceRun>().WithMany().HasForeignKey(x =>
+                new { x.TenantId, x.ConnectorAcceptanceRunId }).OnDelete(DeleteBehavior.Restrict);
+        });
         modelBuilder.Entity<ErpChangeRun>(b =>
         {
             b.ToTable("erp_change_run", table => table.HasCheckConstraint("ck_erp_change_run_status",

@@ -54,6 +54,10 @@
 .integration-settings-list { display: grid; gap: 8px; }
 .integration-settings-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
 .integration-refresh { justify-self: start; }
+.verification-run, .verification-items > button { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; align-items: center; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface-1); color: var(--text-1); text-align: left; }
+.verification-run:hover, .verification-items > button:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.verification-run > .muted { grid-column: 1 / -1; }
+.verification-items { display: grid; gap: 8px; max-height: 480px; overflow: auto; }
 .integration-subnav + .stack > .card { min-width: 0; }
 .integration-subnav + .stack progress { display: block; width: 100%; accent-color: var(--accent); height: 5px; }
 @media (max-width: 720px) { .integration-form-grid { grid-template-columns: 1fr; } .integration-subnav + .stack .card-header { flex-wrap: wrap; gap: 12px; } }

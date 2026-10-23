@@ -52,6 +52,7 @@ public interface IConnectorEdgeHost
 public interface IConnectorEdgeHarness : IAsyncDisposable
 {
     string ConnectorCode { get; }
+    bool IsLive => false;
     IReadOnlyDictionary<string, string> Capabilities { get; }
     string OutboundValidationRejectionText => "period is closed";
     bool NotificationAcceptancesAreHarnessSupplied => false;

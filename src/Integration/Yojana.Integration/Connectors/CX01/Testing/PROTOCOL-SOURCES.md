@@ -13,6 +13,16 @@ protocol facts:
 - module `returned` → `sns_Returned`
 - module `loaned` → `sns_Loaned`
 
+Stable fact ids: `NW-01` (In Repair), `NW-02` (Returned), `NW-03` (Loaned).
+
+## Other ASSUMED acceptance facts from the verified appendix
+
+- `OPEN-01`: full-line return serial behaviour.
+- `OPEN-02`: different-location return serial behaviour.
+- `OPEN-03`: approval behaviour for a non-superuser originator.
+- `OPEN-04`: attachment size limit.
+- `OPEN-05`: change notifications on a hosted tenant.
+
 A connection may omit any one of these values. The adapter then sends `sns_Active` and records a health note instead
 of failing the outbound command.
 

@@ -41,40 +41,45 @@ public sealed class Cx04LiveConnectorEdgeHarness
 
 public sealed class Cx04LiveConnectorEdgeScenarioTests
 {
-    private static Task LiveOnly() => throw new InvalidOperationException(
-        "The CX04 customer sandbox harness requires an explicitly provisioned acceptance fixture.");
+    private static Task LiveOnly(string scenarioId)
+    {
+        ConnectorEdgeResultWriter.Record(Cx04Capabilities.ConnectorCode, scenarioId, "failed", null,
+            DateTime.UtcNow, DateTime.UtcNow);
+        throw new InvalidOperationException(
+            "The CX04 customer sandbox harness requires an explicitly provisioned acceptance fixture.");
+    }
 
     [ConnectorEdgeFact(typeof(Cx04LiveConnectorEdgeHarness), ConnectorEdgeScenarioIds.DuplicateNotification, live: true)]
     [Trait("Category", "Cx04Live")]
-    public Task Duplicate_notification() => LiveOnly();
+    public Task Duplicate_notification() => LiveOnly(ConnectorEdgeScenarioIds.DuplicateNotification);
     [ConnectorEdgeFact(typeof(Cx04LiveConnectorEdgeHarness), ConnectorEdgeScenarioIds.OutOfOrder, live: true)]
     [Trait("Category", "Cx04Live")]
-    public Task Out_of_order() => LiveOnly();
+    public Task Out_of_order() => LiveOnly(ConnectorEdgeScenarioIds.OutOfOrder);
     [ConnectorEdgeFact(typeof(Cx04LiveConnectorEdgeHarness), ConnectorEdgeScenarioIds.RemoteOutage, live: true)]
     [Trait("Category", "Cx04Live")]
-    public Task Remote_outage() => LiveOnly();
+    public Task Remote_outage() => LiveOnly(ConnectorEdgeScenarioIds.RemoteOutage);
     [ConnectorEdgeFact(typeof(Cx04LiveConnectorEdgeHarness), ConnectorEdgeScenarioIds.CancellationAfterShipment, live: true)]
     [Trait("Category", "Cx04Live")]
-    public Task Cancellation_after_shipment() => LiveOnly();
+    public Task Cancellation_after_shipment() => LiveOnly(ConnectorEdgeScenarioIds.CancellationAfterShipment);
     [ConnectorEdgeFact(typeof(Cx04LiveConnectorEdgeHarness), ConnectorEdgeScenarioIds.DuplicateSerial, live: true)]
     [Trait("Category", "Cx04Live")]
-    public Task Duplicate_serial() => LiveOnly();
+    public Task Duplicate_serial() => LiveOnly(ConnectorEdgeScenarioIds.DuplicateSerial);
     [ConnectorEdgeFact(typeof(Cx04LiveConnectorEdgeHarness), ConnectorEdgeScenarioIds.ClosedPeriod, live: true)]
     [Trait("Category", "Cx04Live")]
-    public Task Closed_period() => LiveOnly();
+    public Task Closed_period() => LiveOnly(ConnectorEdgeScenarioIds.ClosedPeriod);
     [ConnectorEdgeFact(typeof(Cx04LiveConnectorEdgeHarness), ConnectorEdgeScenarioIds.OverlappingConnections, live: true)]
     [Trait("Category", "Cx04Live")]
-    public Task Overlapping_connections() => LiveOnly();
+    public Task Overlapping_connections() => LiveOnly(ConnectorEdgeScenarioIds.OverlappingConnections);
     [ConnectorEdgeFact(typeof(Cx04LiveConnectorEdgeHarness), ConnectorEdgeScenarioIds.RemoteOwnerEdit, live: true)]
     [Trait("Category", "Cx04Live")]
-    public Task Remote_owner_edit() => LiveOnly();
+    public Task Remote_owner_edit() => LiveOnly(ConnectorEdgeScenarioIds.RemoteOwnerEdit);
     [ConnectorEdgeFact(typeof(Cx04LiveConnectorEdgeHarness), ConnectorEdgeScenarioIds.DroppedCreateReply, live: true)]
     [Trait("Category", "Cx04Live")]
-    public Task Dropped_create_reply() => LiveOnly();
+    public Task Dropped_create_reply() => LiveOnly(ConnectorEdgeScenarioIds.DroppedCreateReply);
     [ConnectorEdgeFact(typeof(Cx04LiveConnectorEdgeHarness), ConnectorEdgeScenarioIds.CompanionLocationCheck, live: true)]
     [Trait("Category", "Cx04Live")]
-    public Task Companion_location_check() => LiveOnly();
+    public Task Companion_location_check() => LiveOnly(ConnectorEdgeScenarioIds.CompanionLocationCheck);
     [ConnectorEdgeFact(typeof(Cx04LiveConnectorEdgeHarness), ConnectorEdgeScenarioIds.StopDuringFailure, live: true)]
     [Trait("Category", "Cx04Live")]
-    public Task Stop_during_failure() => LiveOnly();
+    public Task Stop_during_failure() => LiveOnly(ConnectorEdgeScenarioIds.StopDuringFailure);
 }

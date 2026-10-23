@@ -29,6 +29,7 @@ public sealed class Cx02LiveConnectorEdgeHarness : IConnectorEdgeHarness
     }
 
     public string ConnectorCode => Cx02Capabilities.ConnectorCode;
+    public bool IsLive => true;
     public IReadOnlyDictionary<string, string> Capabilities => Manifest.Capabilities;
 
     public Task StartAsync(CancellationToken cancellationToken) => throw FixtureRequired();

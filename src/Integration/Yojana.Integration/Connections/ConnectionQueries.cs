@@ -50,6 +50,10 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
         var gateway = await db.ConnectionGatewaySettings.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
             && ids.Contains(x.ConnectionId)).ToDictionaryAsync(x => x.ConnectionId, ct);
         var codes = rows.Select(x => x.ConnectorCode).Distinct().ToList();
+        var accepted = await db.ConnectorAcceptanceRuns.AsNoTracking()
+            .Where(x => x.TenantId == tenant.TenantId && ids.Contains(x.ConnectionId)
+                && x.Status == ConnectorAcceptanceRunStatus.Passed)
+            .Select(x => x.ConnectionId).Distinct().ToListAsync(ct);
         var catalogue = await db.ConnectorCatalogue.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
             && codes.Contains(x.ConnectorCode)).ToDictionaryAsync(x => x.ConnectorCode, x => x.DisplayName, ct);
         var views = rows.Take(take).Select(connection =>
@@ -58,7 +62,8 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
             var configured = gateway.GetValueOrDefault(connection.ConnectionId);
             return new ConnectionSummary(connection.ConnectionId, connection.DisplayLabel, connection.ConnectorCode,
                 catalogue.GetValueOrDefault(connection.ConnectorCode) ?? connection.ConnectorCode,
-                state.Status, state.IsLive, configured?.OutboundMode ?? "none", configured?.ReadOnly ?? true, View(state));
+                state.Status, state.IsLive, configured?.OutboundMode ?? "none", configured?.ReadOnly ?? true,
+                View(state), accepted.Contains(connection.ConnectionId));
         }).ToList();
         return new(views, rows.Count > take ? views[^1].ConnectionId.ToString("D") : null, await KpisAsync(ct));
     }
@@ -100,8 +105,12 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
             foreach (var purpose in adapter.CredentialPurposes.Where(purpose => !secrets.Any(secret => secret.Purpose == purpose)))
                 secrets.Add(new(purpose, false, null, null, null, null));
         }
+        var acceptancePassed = await db.ConnectorAcceptanceRuns.AsNoTracking().AnyAsync(x =>
+            x.TenantId == tenant.TenantId && x.ConnectionId == id
+            && x.Status == ConnectorAcceptanceRunStatus.Passed, ct);
         return new(new(id, connection.DisplayLabel, connection.ConnectorCode, name, health.Status, health.IsLive,
-                gateway.OutboundMode, gateway.ReadOnly, View(health)), connection.CreatedAt, connection.ArchivedAt,
+                gateway.OutboundMode, gateway.ReadOnly, View(health), acceptancePassed), connection.CreatedAt,
+            connection.ArchivedAt,
             capabilities, new(gateway.OutboundMode, gateway.ReadOnly, gateway.NativeWarrantyObjectMode,
                 (await warrantyContracts.GetAsync(ct)).MaintainedIn,
                 gateway.OrderingWaitMinutes, await healthSettings.GetAsync(id, ct),

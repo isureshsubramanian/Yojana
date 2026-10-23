@@ -200,7 +200,7 @@ internal sealed class AdvancingDatabaseThrottleDelay(MutableTestClock clock) : I
     }
 }
 
-[CollectionDefinition("integration host")]
+[CollectionDefinition("integration host", DisableParallelization = true)]
 public sealed class IntegrationHostCollection : ICollectionFixture<IntegrationHostFixture>;
 
 public sealed class DatabaseFactAttribute : FactAttribute

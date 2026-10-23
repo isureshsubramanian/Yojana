@@ -36,6 +36,17 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "erp_change_master_exception", "erp_change_stock_difference", "erp_change_stock_signoff",
             "erp_change_divergence", "erp_change_daily_check", "erp_change_checklist_item",
             "erp_change_notice");
+        AssertSuperset(tables, "connector_acceptance_run", "connector_acceptance_item",
+            "connector_acceptance_import");
+        foreach (var table in new[] { "connector_acceptance_run", "connector_acceptance_item",
+                     "connector_acceptance_import" })
+        {
+            var acceptanceColumns = await db.Database.SqlQuery<string>($"""
+                SELECT COLUMN_NAME AS [Value] FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = {table} ORDER BY ORDINAL_POSITION
+                """).ToListAsync();
+            Assert.Equal("tenant_id", acceptanceColumns[0]);
+        }
         var migrationTables = await db.Database.SqlQueryRaw<string>("SELECT TABLE_NAME AS Value FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'migration'").ToListAsync();
         AssertSuperset(migrationTables, "migration_source", "migration_batch", "migration_batch_table",
             "migration_profile_run", "migration_profile_result",

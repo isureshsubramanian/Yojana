@@ -278,7 +278,7 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
     }
 }
 
-[CollectionDefinition("serialisation host")]
+[CollectionDefinition("serialisation host", DisableParallelization = true)]
 public sealed class SerialisationHostCollection : ICollectionFixture<SerialisationHostFixture>;
 
 /// <summary>Marks a fact that needs the database; skipped when YOJANA_TEST_SQL is not set.</summary>

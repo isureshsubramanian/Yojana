@@ -1,0 +1,428 @@
+{
+  "connectorCode": "CX01",
+  "liveVerification": {
+    "verified": false
+  },
+  "facts": [
+    {
+      "id": "A.1-01",
+      "fact": "Serials on a document with non-zero open quantity",
+      "valueUsed": "returned on the document read",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "document capture",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.1-02",
+      "fact": "Serials after a same-location based return nets the transaction to zero",
+      "valueUsed": "absent from the original delivery read",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "serial-gap fallback",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.1-03",
+      "fact": "Serials after invoicing closes a line",
+      "valueUsed": "remain on the delivery read",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "serial-gap fallback",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.1-04",
+      "fact": "Serials after delivery cancellation",
+      "valueUsed": "remain on the original delivery read",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "cancellation mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.1-05",
+      "fact": "Selecting only document lines",
+      "valueUsed": "hides serial arrays; capture reads are not narrowed",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "document capture",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.1-06",
+      "fact": "Creation-event capture",
+      "valueUsed": "captures the document before a later return can consume its serial transaction",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "webhook capture",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.1-07",
+      "fact": "Optional document-to-serial view",
+      "valueUsed": "off by default and created only by the customer administrator",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "serial-gap fallback",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.1-08",
+      "fact": "Governed serial-link query",
+      "valueUsed": "used only when its tracking tables are allowlisted",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "serial-gap fallback",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.1-09",
+      "fact": "Denied governed query",
+      "valueUsed": "records the denial and raises an attribution task",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "serial-gap fallback",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.1-10",
+      "fact": "Serial detail without a document link",
+      "valueUsed": "not used as a serial-gap fallback",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "serial-gap fallback",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.2-01",
+      "fact": "Tracking-table query access",
+      "valueUsed": "customer administrator must allow the required tables",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "onboarding checklist",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.3-01",
+      "fact": "Change-notification availability",
+      "valueUsed": "probed per connection; polling can stand alone",
+      "kind": "inferred",
+      "sourceLabel": "owner installation evidence and adapter review",
+      "dateRead": "2026-10-21",
+      "usedAt": "onboarding probe",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.3-02",
+      "fact": "Change-notification retry profile",
+      "valueUsed": "3 retries at 2 seconds, 10-second timeout",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "webhook simulator",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.3-03",
+      "fact": "Change-notification subscription limit",
+      "valueUsed": "16 per company",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "onboarding profile",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.3-04",
+      "fact": "Change-notification message lifetime",
+      "valueUsed": "24 hours",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "watchdog",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.3-05",
+      "fact": "Handshake",
+      "valueUsed": "GET challenge answered exactly and repeated handshakes accepted",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "webhook endpoint",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.3-06",
+      "fact": "Notification body",
+      "valueUsed": "JSON array of event envelopes, with separate transactions allowed in one batch",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "webhook endpoint",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.3-07",
+      "fact": "Notification signature",
+      "valueUsed": "base64 HMAC of the raw body",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "webhook endpoint",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.3-08",
+      "fact": "Successful notification reply",
+      "valueUsed": "HTTP 202",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "webhook endpoint",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.3-09",
+      "fact": "Cancellation notification",
+      "valueUsed": "creation of a cancellation document, not a cancelled event",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "cancellation mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.3-10",
+      "fact": "Delivery log",
+      "valueUsed": "30-day retention and one event identity shared with notifications",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "watchdog and deduplication",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.3-11",
+      "fact": "Notification replay",
+      "valueUsed": "not used by the watchdog; polling covers outages beyond message lifetime",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "watchdog",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.3-12",
+      "fact": "Notification setup folder validation",
+      "valueUsed": "stale company paths must be repaired before enabling",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "onboarding checklist",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.4-01",
+      "fact": "Session cookies",
+      "valueUsed": "session plus route cookie with a 30-minute idle timeout",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "session pool",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.4-02",
+      "fact": "Session API version",
+      "valueUsed": "version 2 only; cookie paths are version-scoped",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "session pool",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.4-03",
+      "fact": "Remote errors",
+      "valueUsed": "HTTP status plus error code and message are retained",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "error mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.4-04",
+      "fact": "Own-write recognition",
+      "valueUsed": "outbound acknowledgement key and change marker",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "inbound deduplication",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.5-01",
+      "fact": "Posted documents and approval procedures",
+      "valueUsed": "direct posts bypass approval",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "outbound review policy",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.5-02",
+      "fact": "Active approval template",
+      "valueUsed": "draft-for-review is the default",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "outbound review policy",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.5-03",
+      "fact": "Direct posting",
+      "valueUsed": "requires a recorded customer acceptance",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "outbound review policy",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.6-01",
+      "fact": "Attachment types",
+      "valueUsed": "pdf, doc, docx, jpg, jpeg, png, txt, xls and ppt",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "attachment mapping",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.6-02",
+      "fact": "New user-defined field visibility",
+      "valueUsed": "remote service restart before first write",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "onboarding checklist",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.6-03",
+      "fact": "Integration session identity",
+      "valueUsed": "one dedicated licensed integration user and one session",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "onboarding checklist",
+      "acceptanceItem": false
+    },
+    {
+      "id": "A.6-04",
+      "fact": "Back-pressure reply from our webhook",
+      "valueUsed": "never 429 or 5xx; acknowledge then process",
+      "kind": "documented",
+      "sourceLabel": "owner installation verification",
+      "dateRead": "2026-10-21",
+      "usedAt": "webhook endpoint",
+      "acceptanceItem": false
+    },
+    {
+      "id": "OPEN-01",
+      "fact": "Full-line return serial behaviour",
+      "valueUsed": "not yet checked",
+      "kind": "assumed",
+      "sourceLabel": "owner installation evidence and adapter review",
+      "dateRead": "2026-10-21",
+      "usedAt": "serial-gap fallback",
+      "acceptanceItem": true
+    },
+    {
+      "id": "OPEN-02",
+      "fact": "Different-location return serial behaviour",
+      "valueUsed": "not yet checked",
+      "kind": "assumed",
+      "sourceLabel": "owner installation evidence and adapter review",
+      "dateRead": "2026-10-21",
+      "usedAt": "serial-gap fallback",
+      "acceptanceItem": true
+    },
+    {
+      "id": "OPEN-03",
+      "fact": "Approval behaviour for a non-superuser originator",
+      "valueUsed": "not yet checked",
+      "kind": "assumed",
+      "sourceLabel": "owner installation evidence and adapter review",
+      "dateRead": "2026-10-21",
+      "usedAt": "outbound review policy",
+      "acceptanceItem": true
+    },
+    {
+      "id": "OPEN-04",
+      "fact": "Attachment size limit",
+      "valueUsed": "measured per installation",
+      "kind": "assumed",
+      "sourceLabel": "owner installation evidence and adapter review",
+      "dateRead": "2026-10-21",
+      "usedAt": "attachment mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "OPEN-05",
+      "fact": "Change notifications on a hosted tenant",
+      "valueUsed": "not yet checked; polling remains available",
+      "kind": "assumed",
+      "sourceLabel": "owner installation evidence and adapter review",
+      "dateRead": "2026-10-21",
+      "usedAt": "onboarding probe",
+      "acceptanceItem": true
+    },
+    {
+      "id": "NW-01",
+      "fact": "Remote code for an in-repair card status",
+      "valueUsed": "per-connection option",
+      "kind": "assumed",
+      "sourceLabel": "owner installation evidence and adapter review",
+      "dateRead": "2026-10-21",
+      "usedAt": "native warranty status mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "NW-02",
+      "fact": "Remote code for a returned card status",
+      "valueUsed": "per-connection option",
+      "kind": "assumed",
+      "sourceLabel": "owner installation evidence and adapter review",
+      "dateRead": "2026-10-21",
+      "usedAt": "native warranty status mapping",
+      "acceptanceItem": true
+    },
+    {
+      "id": "NW-03",
+      "fact": "Remote code for a loaned card status",
+      "valueUsed": "per-connection option",
+      "kind": "assumed",
+      "sourceLabel": "owner installation evidence and adapter review",
+      "dateRead": "2026-10-21",
+      "usedAt": "native warranty status mapping",
+      "acceptanceItem": true
+    }
+  ]
+}

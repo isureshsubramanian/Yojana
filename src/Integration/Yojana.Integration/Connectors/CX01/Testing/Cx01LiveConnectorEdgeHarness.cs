@@ -50,6 +50,7 @@ public sealed class Cx01LiveConnectorEdgeHarness : IConnectorEdgeHarness
     }
 
     public string ConnectorCode => Cx01Capabilities.ConnectorCode;
+    public bool IsLive => true;
     public IReadOnlyDictionary<string, string> Capabilities => Manifest.Capabilities;
 
     public Task StartAsync(CancellationToken cancellationToken)

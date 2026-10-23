@@ -22,6 +22,9 @@ public sealed class WebHostStartupTests(SerialisationHostFixture fixture, ITestO
     public async Task Development_host_builds_the_real_endpoint_graph_and_serves_health()
     {
         var tenants = await SeedActiveTenantsAsync(1000);
+        var databaseWarmup = await WarmDatabaseAsync();
+        testOutput.WriteLine("SQL connection warm-up completed in {0:F1} ms before the startup clock.",
+            databaseWarmup.TotalMilliseconds);
         var port = FreePort();
         var output = new List<string>();
         var start = new ProcessStartInfo("dotnet", $"\"{typeof(WebHost).Assembly.Location}\"")
@@ -95,6 +98,16 @@ public sealed class WebHostStartupTests(SerialisationHostFixture fixture, ITestO
 
             await RemoveTenantsAndJobsAsync(tenants);
         }
+    }
+
+    private async Task<TimeSpan> WarmDatabaseAsync()
+    {
+        using var scope = fixture.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var started = Stopwatch.StartNew();
+        await db.Database.OpenConnectionAsync();
+        await db.Database.CloseConnectionAsync();
+        return started.Elapsed;
     }
 
     private async Task<List<TenantId>> SeedActiveTenantsAsync(int count)
