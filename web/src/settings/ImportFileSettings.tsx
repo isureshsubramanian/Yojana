@@ -6,6 +6,8 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote } from "../units/common";
 import { importFileSettingsApi, type ImportFileStorageSettings } from "./importFileSettingsApi";
 
+const AGE_UNITS: [ImportFileStorageSettings["archiveAgeUnit"], string][] = [["days", "Days"], ["months", "Months"], ["years", "Years"]];
+
 export function Component() {
   const permitted = useSession().roles.includes("tenant_administrator");
   const [settings, setSettings] = useState<ImportFileStorageSettings | null>(null);
@@ -36,7 +38,7 @@ export function Component() {
       </div></div></section>
       <section className="card" aria-labelledby="archive-import-storage"><div className="card-header"><h2 id="archive-import-storage">Archive</h2></div><div className="card-body stack">
         <label className="field"><span className="lbl">Archive to</span><select className="select" value={settings.archiveStore} onChange={(event) => setSettings({ ...settings, archiveStore: event.target.value })}>{settings.archiveStores.map((store) => <option value={store.name} key={store.name}>{store.name} · {store.kind === "folder" ? "Folder" : "Database"}</option>)}</select><span className="help">Files already archived stay where they are when you change this.</span></label>
-        <div className="form-grid"><label className="field"><span className="lbl">Archive after</span><input className="input" type="number" min="0" max="36500" value={settings.archiveAge} onChange={(event) => setSettings({ ...settings, archiveAge: Number(event.target.value) })} /></label><label className="field"><span className="lbl">Unit</span><select className="select" value={settings.archiveAgeUnit} onChange={(event) => setSettings({ ...settings, archiveAgeUnit: event.target.value as ImportFileStorageSettings["archiveAgeUnit"] })}><option value="days">Days</option><option value="months">Months</option><option value="years">Years</option></select></label></div>
+        <div className="field"><label className="lbl" htmlFor="archive-age">Archive after</label><span className="input-unit"><input id="archive-age" className="input num" type="number" min="0" max="36500" value={settings.archiveAge} onChange={(event) => setSettings({ ...settings, archiveAge: Number(event.target.value) })} /><span className="segmented" role="radiogroup" aria-label="Archive age unit">{AGE_UNITS.map(([unit, label]) => <button type="button" key={unit} role="radio" aria-checked={settings.archiveAgeUnit === unit} aria-pressed={settings.archiveAgeUnit === unit} onClick={() => setSettings({ ...settings, archiveAgeUnit: unit })}>{label}</button>)}</span></span></div>
         {settings.archiveAge === 0 && <div className="note warn"><strong>Automatic archiving is off.</strong>&nbsp;Active storage will continue to grow until an age is set.</div>}
       </div></section>
     </div>}
