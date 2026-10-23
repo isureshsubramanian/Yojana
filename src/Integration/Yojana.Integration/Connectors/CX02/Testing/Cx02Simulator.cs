@@ -18,10 +18,10 @@ public sealed class Cx02Simulator : IAsyncDisposable
     public static readonly Guid CompanyId = Guid.Parse("11111111-2222-3333-4444-555555555555");
 
     private static readonly HashSet<string> StandardResources =
-        ["items", "customers", "salesInvoices", "salesCreditMemos", "salesShipments", "salesShipmentLines",
+        ["items", "customers", "salesInvoices", "salesInvoiceLines", "salesCreditMemos", "salesShipments", "salesShipmentLines",
             "purchaseReceipts", "purchaseReceiptLines", "itemLedgerEntries"];
     private static readonly HashSet<string> ReadOnlyStandardResources =
-        ["salesShipments", "salesShipmentLines", "purchaseReceipts", "purchaseReceiptLines", "itemLedgerEntries"];
+        ["salesInvoiceLines", "salesShipments", "salesShipmentLines", "purchaseReceipts", "purchaseReceiptLines", "itemLedgerEntries"];
     private static readonly HashSet<string> CustomResources =
         ["trackedItemLedgerEntries", "itemEntryRelations", "reservationEntries", "trackingSpecifications",
             "serviceItems", "postedTransferShipments", "postedTransferShipmentLines", "postedTransferReceipts",
@@ -47,7 +47,7 @@ public sealed class Cx02Simulator : IAsyncDisposable
     private int queuedRequests;
     private int throttleStormRemaining;
     private HttpStatusCode? timeoutFault;
-    private bool expireTokens;
+    private int minimumAcceptedTokenSequence;
     private bool lapseSubscriptions;
 
     public Cx02Simulator(TimeProvider? clock = null, Cx02SimulatorOptions? options = null)
@@ -116,7 +116,7 @@ public sealed class Cx02Simulator : IAsyncDisposable
     public void StartThrottleStorm(int requestCount) =>
         Interlocked.Exchange(ref throttleStormRemaining, requestCount);
 
-    public void ExpireCurrentTokens() => expireTokens = true;
+    public void ExpireCurrentTokens() => minimumAcceptedTokenSequence = Volatile.Read(ref tokenSequence) + 1;
     public void LapseSubscriptions() => lapseSubscriptions = true;
     public void TimeoutNextRequestWith408() => timeoutFault = HttpStatusCode.RequestTimeout;
     public void TimeoutNextRequestWith504() => timeoutFault = HttpStatusCode.GatewayTimeout;
@@ -296,7 +296,7 @@ public sealed class Cx02Simulator : IAsyncDisposable
         }
         var value = "cx02-token-" + Interlocked.Increment(ref tokenSequence).ToString(CultureInfo.InvariantCulture);
         lock (stateLock)
-            tokens[value] = new(form["client_id"], clock.GetUtcNow().AddSeconds(Options.TokenExpiresInSeconds));
+            tokens[value] = new(form["client_id"], clock.GetUtcNow().AddSeconds(Options.TokenExpiresInSeconds), tokenSequence);
         await JsonAsync(response, new { token_type = "Bearer", expires_in = Options.TokenExpiresInSeconds, access_token = value });
     }
 
@@ -306,7 +306,9 @@ public sealed class Cx02Simulator : IAsyncDisposable
         if (header is null || !header.StartsWith("Bearer ", StringComparison.Ordinal)) return null;
         lock (stateLock)
         {
-            if (!tokens.TryGetValue(header[7..], out var token) || expireTokens || token.ExpiresAt <= clock.GetUtcNow())
+            if (!tokens.TryGetValue(header[7..], out var token)
+                || token.Sequence < Volatile.Read(ref minimumAcceptedTokenSequence)
+                || token.ExpiresAt <= clock.GetUtcNow())
                 return null;
             return token;
         }
@@ -653,6 +655,7 @@ public sealed class Cx02Simulator : IAsyncDisposable
                 ExpiresAt = clock.GetUtcNow().Add(Options.SubscriptionLifetime), Etag = NextEtag(existing.Etag),
             };
             lock (stateLock) subscriptions[subscriptionId] = existing;
+            lapseSubscriptions = false;
             await JsonAsync(response, SubscriptionBody(existing));
             return;
         }
@@ -688,6 +691,12 @@ public sealed class Cx02Simulator : IAsyncDisposable
             return;
         }
         var body = await ReadJsonObjectAsync(request);
+        if (!body.TryGetValue("appId", out var appId) || !Guid.TryParse(appId?.ToString(), out _))
+        {
+            await ErrorAsync(response, HttpStatusCode.BadRequest, "Application_FieldValidationException",
+                "A business-event application identifier is required.");
+            return;
+        }
         var destination = new Uri(body["notificationUrl"]!.ToString()!, UriKind.Absolute);
         if (Options.BusinessEventRequiresHandshake && !await HandshakeAsync(destination, cancellationToken: stop.Token))
         {
@@ -973,6 +982,7 @@ public sealed class Cx02Simulator : IAsyncDisposable
         resources["items"] = [NormaliseEntity(new Dictionary<string, object?> { ["number"] = "HW-SERVER-100", ["displayName"] = "Fictional rack server", ["lastModifiedDateTime"] = now })];
         resources["customers"] = [NormaliseEntity(new Dictionary<string, object?> { ["number"] = "C-100", ["displayName"] = "Fictional Systems Ltd", ["lastModifiedDateTime"] = now })];
         resources["salesInvoices"] = [NormaliseEntity(new Dictionary<string, object?> { ["number"] = "INV-100", ["lastModifiedDateTime"] = now })];
+        resources["salesInvoiceLines"] = [];
         resources["salesCreditMemos"] = [NormaliseEntity(new Dictionary<string, object?> { ["number"] = "CRM-100", ["lastModifiedDateTime"] = now })];
         resources["salesShipments"] = [NormaliseEntity(new Dictionary<string, object?> { ["number"] = "SHIP-100", ["lastModifiedDateTime"] = now })];
         resources["salesShipmentLines"] = [NormaliseEntity(new Dictionary<string, object?> { ["lineObjectNumber"] = "HW-SERVER-100", ["quantity"] = 1m, ["shipmentDate"] = "2026-09-01", ["lastModifiedDateTime"] = now })];
@@ -1011,7 +1021,7 @@ public sealed class Cx02Simulator : IAsyncDisposable
     }
 
     private readonly record struct ApiRoute(string? Tenant, string Environment, bool Custom, string Remainder);
-    private sealed record TokenState(string Principal, DateTimeOffset ExpiresAt);
+    private sealed record TokenState(string Principal, DateTimeOffset ExpiresAt, int Sequence);
     private sealed record SubscriptionState(Guid Id, Uri NotificationUrl, string Resource, string? ClientState,
         DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, string Etag);
     private sealed record BusinessSubscriptionState(Guid Id, string EventName, Uri NotificationUrl,

@@ -19,7 +19,7 @@ public sealed class OnboardingChecklistTests(IntegrationHostFixture fixture)
     {
         var tenant = await fixture.NewTenantAsync("onbprof");
         var cx01 = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
-        var generic = await fixture.AddConnectionAsync(tenant, Guid.NewGuid(), "CX02");
+        var cx02 = await fixture.AddConnectionAsync(tenant, Guid.NewGuid(), "CX02");
         using var scope = fixture.ScopeFor(tenant);
         await scope.ServiceProvider.GetRequiredService<ConnectorCatalogue>()
             .SeedGenericEntriesAsync(CancellationToken.None);
@@ -38,11 +38,11 @@ public sealed class OnboardingChecklistTests(IntegrationHostFixture fixture)
             Assert.Single(specific.Items, x => x.Code == OnboardingItemCode.AddOnWarrantyItems).Status);
         Assert.False(specific.RequiredItemsConfirmed);
 
-        var fallback = await generator.GenerateAsync(generic, CancellationToken.None);
-        Assert.Equal(GenericConnectorOnboardingProfile.Instance.CustomerCostDisclosure,
-            fallback.CustomerCostDisclosure);
-        Assert.Equal(GenericConnectorOnboardingProfile.Instance.IntegrationUser.Label,
-            Assert.Single(fallback.Items, x => x.Code == OnboardingItemCode.IntegrationUser).Label);
+        var second = await generator.GenerateAsync(cx02, CancellationToken.None);
+        Assert.Contains("licensed tenant", second.CustomerCostDisclosure, StringComparison.Ordinal);
+        var secondUser = Assert.Single(second.Items, x => x.Code == OnboardingItemCode.IntegrationUser);
+        Assert.Contains("application identity", secondUser.Label, StringComparison.Ordinal);
+        Assert.Contains("never assign the full-access role", secondUser.Detail, StringComparison.Ordinal);
     }
 
     [DatabaseFact]
