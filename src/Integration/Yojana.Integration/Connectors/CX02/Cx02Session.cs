@@ -82,6 +82,14 @@ public sealed class Cx02RemoteException(HttpStatusCode statusCode, string operat
     public bool IsNotFound => StatusCode == HttpStatusCode.NotFound;
     public bool IsAuthenticationFailure => StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
         || RemoteCode?.StartsWith("Authentication_", StringComparison.Ordinal) == true;
+    public bool IsBusinessRejection => StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict
+            or HttpStatusCode.UnprocessableEntity
+        && (RemoteCode?.StartsWith("Application_", StringComparison.Ordinal) == true
+            || RemoteCode?.StartsWith("BadRequest_", StringComparison.Ordinal) == true);
+
+    public string BusinessMessage() => string.IsNullOrWhiteSpace(RemoteMessage)
+        ? "The remote system rejected the document."
+        : RemoteMessage;
 }
 
 public sealed class Cx02Client(
@@ -115,6 +123,33 @@ public sealed class Cx02Client(
             return null;
         var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
         return bytes.Length == 0 ? null : JsonDocument.Parse(bytes);
+    }
+
+    public async Task<JsonDocument?> SendBytesAsync(Guid connectionId, HttpMethod method, Uri uri, byte[] body,
+        string contentType, bool idempotent, IReadOnlyDictionary<string, string>? headers,
+        CancellationToken cancellationToken)
+    {
+        var configured = await settings.GetAsync(connectionId, cancellationToken);
+        var key = new ConnectionWorkerKey(tenant.TenantId, connectionId);
+        await EnsureTokenAsync(key, configured, cancellationToken);
+        var response = await SendBytesOnceAsync(key, method, uri, body, contentType, idempotent, headers,
+            cancellationToken);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        {
+            response.Dispose();
+            tokens.For(key).Invalidate();
+            await EnsureTokenAsync(key, configured, cancellationToken);
+            response = await SendBytesOnceAsync(key, method, uri, body, contentType, idempotent, headers,
+                cancellationToken);
+        }
+        using (response)
+        {
+            await EnsureSuccessAsync(response, "content upload", cancellationToken);
+            if (response.StatusCode == HttpStatusCode.NoContent || response.Content.Headers.ContentLength == 0)
+                return null;
+            var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            return bytes.Length == 0 ? null : JsonDocument.Parse(bytes);
+        }
     }
 
     public async Task<IReadOnlyList<JsonElement>> ReadCollectionAsync(Guid connectionId, Uri first,
@@ -199,6 +234,21 @@ public sealed class Cx02Client(
         if (body is not null)
             request.Content = new StringContent(JsonSerializer.Serialize(body, Cx02Protocol.Json),
                 Encoding.UTF8, "application/json");
+        return await transport.SendAsync(key, request, cancellationToken);
+    }
+
+    private async Task<HttpResponseMessage> SendBytesOnceAsync(ConnectionWorkerKey key, HttpMethod method, Uri uri,
+        byte[] body, string contentType, bool idempotent, IReadOnlyDictionary<string, string>? headers,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(method, uri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.For(key).AccessToken);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Options.Set(ConnectionRateLimitedHandler.IdempotentRequest, idempotent);
+        if (headers is not null)
+            foreach (var header in headers) request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        request.Content = new ByteArrayContent(body);
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
         return await transport.SendAsync(key, request, cancellationToken);
     }
 

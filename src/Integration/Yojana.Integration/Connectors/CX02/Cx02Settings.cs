@@ -17,7 +17,8 @@ public sealed record Cx02ConnectionSettings(
     int PageCap = 20_000,
     int RefreshTokenEarlySeconds = 300,
     int RenewSubscriptionsBeforeHours = 12,
-    bool BusinessEventHintsEnabled = true)
+    bool BusinessEventHintsEnabled = true,
+    Cx02OutboundSettings? Outbound = null)
 {
     public Cx02ConnectionSettings Validate()
     {
@@ -37,7 +38,28 @@ public sealed record Cx02ConnectionSettings(
             throw new InvalidOperationException("CX02 page sizes must be between 1 and 20000, with the poll size within the cap.");
         if (RefreshTokenEarlySeconds is < 30 or > 1_800 || RenewSubscriptionsBeforeHours is < 1 or > 48)
             throw new InvalidOperationException("CX02 refresh and renewal horizons are invalid.");
+        (Outbound ?? new()).Validate();
         return this;
+    }
+}
+
+public sealed record Cx02OutboundSettings(
+    long AttachmentSizeLimit = 350L * 1024 * 1024,
+    IReadOnlyDictionary<string, string>? AccountMap = null,
+    IReadOnlyDictionary<string, string>? LocationMap = null,
+    IReadOnlyList<string>? AllowedAttachmentExtensions = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlySet<string> AttachmentExtensions { get; init; } = new HashSet<string>(
+        AllowedAttachmentExtensions ?? ["pdf", "png", "jpg", "jpeg", "txt", "docx", "xlsx"],
+        StringComparer.OrdinalIgnoreCase);
+
+    public void Validate()
+    {
+        if (AttachmentSizeLimit is < 1 or > 350L * 1024 * 1024)
+            throw new InvalidOperationException("The CX02 attachment size cap must be between 1 byte and 350 MB.");
+        if (AttachmentExtensions.Count == 0 || AttachmentExtensions.Any(value => string.IsNullOrWhiteSpace(value)))
+            throw new InvalidOperationException("CX02 attachment extensions must contain non-empty values.");
     }
 }
 

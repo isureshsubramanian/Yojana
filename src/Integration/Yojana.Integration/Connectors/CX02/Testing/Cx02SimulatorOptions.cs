@@ -93,4 +93,7 @@ public sealed record Cx02SimulatorOptions
     // ASSUMED D-06: the resource documentation does not state the content upload pattern.
     public Cx02AttachmentUploadPattern AttachmentUploadPattern { get; init; } =
         Cx02AttachmentUploadPattern.SeparateContent;
+
+    // D-05 is inferred for API stream uploads from the documented overall request-body limit.
+    public long AttachmentSizeLimit { get; init; } = 350L * 1024 * 1024;
 }

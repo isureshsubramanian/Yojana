@@ -31,6 +31,9 @@ Source of truth: `docs/plan/research/P10-T02-cx02-protocol-facts.md`, read 2026-
 | P-23 | Standard credit-memo `post` action returns 204 | documented | §3 / S23 |
 | P-25 | Custom tracked posting action returns 201 and a created record | inferred | §3 / S23, S8 |
 | P-26 | Custom action accepts scalar JSON parameters by default | ASSUMED | §3 / no source located |
+| OUT-01 | The action accepts `documentId`, `logicalReference`, metadata, `salesCreditMemo` and `serviceOrder`; the logical reference becomes the posted lookup key | ASSUMED | MOD-16 outbound declaration; no protocol source located; customer acceptance gate |
+| OUT-02 | Standard journals, journal lines and the journal post action use the wire shapes exercised by the simulator | ASSUMED | MOD-16 says journal native; P10-T02 did not record these standard resource fields |
+| OUT-03 | A closed posting period returns a 400 `Application_DialogException` whose message says the period is closed | ASSUMED | ADR-0002 edge rule; exact remote error not recorded |
 | R-01 | 6,000 requests in a 300-second sliding window | documented | §4 / S2 |
 | R-02 | Window is per principal, including an application principal | documented | §4 / S2 |
 | R-03 | Five processing, queued wait default eight minutes then 503 | documented | §4 / S2 |
@@ -83,6 +86,7 @@ Source of truth: `docs/plan/research/P10-T02-cx02-protocol-facts.md`, read 2026-
 | D-02 | Incoming attachment parent values are validated | documented | §7 / S10 |
 | D-03 | Document attachments accept the documented navigation parents | documented | §7 / S11 |
 | D-04 | Document-attachment parent strings are configurable | ASSUMED | §7 / S11 contradiction |
+| D-05 | Attachment uploads default to the inferred 350 MB request-body limit | inferred | §7 / S2 |
 | D-06 | Upload defaults to separate content and can switch to inline | ASSUMED | §7 / no source located |
 | S-02 | Service item number and serial are separate fields | documented | §8 / S26 |
 | S-06 | Service items require a custom page | documented | §8 / S21 |

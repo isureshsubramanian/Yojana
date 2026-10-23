@@ -8,21 +8,30 @@ using Yojana.Integration.Gateway;
 using Yojana.Integration.Inbox;
 using Yojana.Integration.Notifications;
 using Yojana.Integration.Reconciliation;
+using Yojana.Integration.Outbox;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 
 namespace Yojana.Integration.Connectors.CX02;
 
-/// <summary>Read-only CX02 anti-corruption boundary. Outbound document posting is installed separately.</summary>
+/// <summary>CX02 anti-corruption boundary. Outbound posting delegates to its document coordinator.</summary>
 public sealed class Cx02Adapter(
     ITenantContext tenant,
     IClock clock,
     IntegrationDbContext db,
     GatewayReferenceStore references,
     Cx02Settings settings,
-    Cx02Client client) : IConnectorAdapter
+    Cx02Client client,
+    Cx02OutboundDocuments documents) : IConnectorAdapter, IOutboundConnector
 {
     public string ConnectorCode => Cx02Capabilities.ConnectorCode;
+    public OutboundConnectorCapabilities Capabilities { get; } = new(false, OwnsConnectionLane: true);
+
+    public Task<OutboundDocument?> FindByReferenceAsync(OutboundLookup lookup,
+        CancellationToken cancellationToken) => documents.FindAsync(lookup, cancellationToken);
+
+    public Task<OutboundCreateResult> CreateAsync(OutboundCreateRequest request,
+        CancellationToken cancellationToken) => documents.CreateAsync(request, cancellationToken);
 
     public string? StartingWatermark(DateTime sourceLocalTime) =>
         new Cx02Watermark(new DateTimeOffset(DateTime.SpecifyKind(sourceLocalTime, DateTimeKind.Utc)), "").ToString();

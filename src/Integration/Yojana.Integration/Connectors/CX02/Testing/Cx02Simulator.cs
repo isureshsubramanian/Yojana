@@ -18,7 +18,8 @@ public sealed class Cx02Simulator : IAsyncDisposable
     public static readonly Guid CompanyId = Guid.Parse("11111111-2222-3333-4444-555555555555");
 
     private static readonly HashSet<string> StandardResources =
-        ["items", "customers", "salesInvoices", "salesInvoiceLines", "salesCreditMemos", "salesShipments", "salesShipmentLines",
+        ["items", "customers", "salesInvoices", "salesInvoiceLines", "salesCreditMemos", "salesCreditMemoLines",
+            "journals", "journalLines", "attachments", "documentAttachments", "salesShipments", "salesShipmentLines",
             "purchaseReceipts", "purchaseReceiptLines", "itemLedgerEntries"];
     private static readonly HashSet<string> ReadOnlyStandardResources =
         ["salesInvoiceLines", "salesShipments", "salesShipmentLines", "purchaseReceipts", "purchaseReceiptLines", "itemLedgerEntries"];
@@ -49,6 +50,9 @@ public sealed class Cx02Simulator : IAsyncDisposable
     private HttpStatusCode? timeoutFault;
     private int minimumAcceptedTokenSequence;
     private bool lapseSubscriptions;
+    private int serviceUnavailableResponses;
+    private bool rejectNextPostAsClosedPeriod;
+    private bool expireTokenBeforeNextPost;
 
     public Cx02Simulator(TimeProvider? clock = null, Cx02SimulatorOptions? options = null)
     {
@@ -70,12 +74,32 @@ public sealed class Cx02Simulator : IAsyncDisposable
     public List<Cx02DeliveredNotification> DeliveredNotifications { get; } = [];
     public string? LastHandlerFailure { get; private set; }
     public int CreateCount { get; private set; }
+    public int PostedDocumentCount { get; private set; }
+    public int AttachmentUploadCount { get; private set; }
     public bool DropNextCreateReply { get; set; }
+    public bool DropNextPostReply { get; set; }
     public bool DuplicateNextNotification { get; set; }
     public bool ReverseNextNotificationBatch { get; set; }
     public bool SuppressNextNotificationAsUnlicensedActor { get; set; }
     public int ActiveSubscriptionCount { get { lock (stateLock) return subscriptions.Count; } }
     public int ActiveBusinessSubscriptionCount { get { lock (stateLock) return businessSubscriptions.Count; } }
+    public int ServiceUnavailableResponses
+    {
+        get => Volatile.Read(ref serviceUnavailableResponses);
+        set => Interlocked.Exchange(ref serviceUnavailableResponses, value);
+    }
+    public bool RejectNextPostAsClosedPeriod
+    {
+        get => Volatile.Read(ref rejectNextPostAsClosedPeriod);
+        set => Volatile.Write(ref rejectNextPostAsClosedPeriod, value);
+    }
+    public bool ExpireTokenBeforeNextPost
+    {
+        get => Volatile.Read(ref expireTokenBeforeNextPost);
+        set => Volatile.Write(ref expireTokenBeforeNextPost, value);
+    }
+    public Func<Task>? BeforeNextDocumentCreate { get; set; }
+    public bool FailNextDocumentCreateAfterHook { get; set; }
 
     public Uri TokenUri(string tenant = DefaultTenant) => new(BaseUri,
         $"{Uri.EscapeDataString(tenant)}/oauth2/v2.0/token");
@@ -251,6 +275,12 @@ public sealed class Cx02Simulator : IAsyncDisposable
             await using var lease = await EnterThrottleAsync(token.Principal, response, stop.Token);
             if (lease is null) return;
             await RequestGate.WaitAsync(stop.Token);
+            if (TakeServiceUnavailable())
+            {
+                await ErrorAsync(response, HttpStatusCode.ServiceUnavailable, "Internal_ServerBusy",
+                    "The fictional remote service is unavailable.");
+                return;
+            }
             if (TakeTimeoutFault() is { } timeout)
             {
                 await ErrorAsync(response, timeout, "Internal_Timeout", "The operation timed out.");
@@ -454,6 +484,9 @@ public sealed class Cx02Simulator : IAsyncDisposable
         if (modifiedAfter is not null)
             values = values.Where(value => DateTimeOffset.TryParse(value.GetValueOrDefault("lastModifiedDateTime")?.ToString(),
                 CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var modified) && modified > modifiedAfter).ToList();
+        if (EqualityFilter(request.Url) is { } equality)
+            values = values.Where(value => StringComparer.Ordinal.Equals(
+                JsonValue(value.GetValueOrDefault(equality.Field)), equality.Value)).ToList();
         var skip = int.TryParse(Query(request.Url, "$skiptoken"), NumberStyles.None, CultureInfo.InvariantCulture,
             out var parsed) ? parsed : 0;
         var top = int.TryParse(Query(request.Url, "$top"), NumberStyles.None, CultureInfo.InvariantCulture,
@@ -529,13 +562,28 @@ public sealed class Cx02Simulator : IAsyncDisposable
         if (request.HttpMethod != "POST" || !resourcePath.Contains("/Microsoft.NAV.", StringComparison.Ordinal))
             return false;
         if (resourcePath.EndsWith("/Microsoft.NAV.post", StringComparison.Ordinal)
-            && resourcePath.StartsWith("salesCreditMemos(", StringComparison.Ordinal))
+            && (resourcePath.StartsWith("salesCreditMemos(", StringComparison.Ordinal)
+                || resourcePath.StartsWith("journals(", StringComparison.Ordinal)))
         {
+            if (TakeClosedPeriodRejection())
+            {
+                await ErrorAsync(response, HttpStatusCode.BadRequest, "Application_DialogException",
+                    "The posting period is closed.");
+                return true;
+            }
+            PostedDocumentCount++;
             response.StatusCode = (int)HttpStatusCode.NoContent;
             response.Close();
             return true;
         }
         if (!resourcePath.EndsWith("/Microsoft.NAV.postTrackedDocument", StringComparison.Ordinal)) return false;
+        if (TakeTokenExpiryBeforePost())
+        {
+            ExpireCurrentTokens();
+            await ErrorAsync(response, Options.ExpiredTokenStatus, "Authentication_InvalidCredentials",
+                "The access token expired before posting.");
+            return true;
+        }
         var body = await ReadBodyAsync(request);
         if (!Options.BoundActionAcceptsParameters && !string.IsNullOrWhiteSpace(body) && body != "{}")
         {
@@ -543,10 +591,68 @@ public sealed class Cx02Simulator : IAsyncDisposable
                 "This bound action does not accept parameters.");
             return true;
         }
+        if (TakeClosedPeriodRejection())
+        {
+            await ErrorAsync(response, HttpStatusCode.BadRequest, "Application_DialogException",
+                "The posting period is closed.");
+            return true;
+        }
+        if (BeforeNextDocumentCreate is { } hook)
+        {
+            BeforeNextDocumentCreate = null;
+            await hook();
+            if (FailNextDocumentCreateAfterHook)
+            {
+                FailNextDocumentCreateAfterHook = false;
+                await ErrorAsync(response, HttpStatusCode.ServiceUnavailable, "Internal_ServerBusy",
+                    "The fictional create failed after entering its test gate.");
+                return true;
+            }
+        }
+        var values = string.IsNullOrWhiteSpace(body)
+            ? new Dictionary<string, JsonElement>()
+            : JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(body) ?? [];
+        var logicalReference = BodyText(values, "logicalReference") ?? "FICTIONAL-POST-1001";
+        var documentType = BodyText(values, "documentType") ?? "trackedDocument";
+        var documentId = values.TryGetValue("documentId", out var requestedId) && requestedId.TryGetGuid(out var parsedId)
+            ? parsedId : Guid.CreateVersion7();
+        if (documentType == "serviceOrder")
+        {
+            lock (stateLock) resources["serviceItems"].Add(NormaliseEntity(new Dictionary<string, object?>
+            {
+                ["id"] = documentId, ["number"] = logicalReference,
+                ["serialNumber"] = MetadataText(values, "serialNumber") ?? FirstTrackingValue(values, "serialNumber"),
+                ["itemNumber"] = MetadataText(values, "itemNumber"), ["status"] = "Open",
+            }));
+        }
+        else
+        {
+            lock (stateLock) resources["trackedItemLedgerEntries"].Add(NormaliseEntity(new Dictionary<string, object?>
+            {
+                ["id"] = documentId, ["entryNumber"] = 9000 + PostedDocumentCount,
+                ["itemNumber"] = FirstTrackingValue(values, "itemNumber"),
+                ["postingDate"] = clock.GetUtcNow().UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                ["entryType"] = documentType, ["documentNumber"] = logicalReference,
+                ["documentType"] = documentType, ["quantity"] = -1m,
+                ["serialNumber"] = FirstTrackingValue(values, "serialNumber"),
+                ["lotNumber"] = "", ["packageNumber"] = "",
+            }));
+        }
+        PostedDocumentCount++;
+        if (DropNextPostReply)
+        {
+            DropNextPostReply = false;
+            response.StatusCode = (int)HttpStatusCode.Created;
+            response.ContentType = "application/json";
+            response.ContentLength64 = 128;
+            await response.OutputStream.WriteAsync("{"u8.ToArray());
+            response.Abort();
+            return true;
+        }
         response.StatusCode = (int)HttpStatusCode.Created;
         await JsonAsync(response, new
         {
-            id = Guid.CreateVersion7(), documentNumber = "FICTIONAL-POST-1001", status = "posted",
+            id = documentId, documentNumber = logicalReference, status = "posted",
             postedAt = clock.GetUtcNow(),
         });
         return true;
@@ -560,7 +666,14 @@ public sealed class Cx02Simulator : IAsyncDisposable
         if (request.HttpMethod == "PATCH" && resourcePath.EndsWith("/attachmentContent", StringComparison.Ordinal)
             && Options.AttachmentUploadPattern == Cx02AttachmentUploadPattern.SeparateContent)
         {
-            _ = await ReadBytesAsync(request);
+            var bytes = await ReadBytesAsync(request);
+            if (bytes.LongLength > Options.AttachmentSizeLimit)
+            {
+                await ErrorAsync(response, HttpStatusCode.RequestEntityTooLarge, "BadRequest_RequestTooLarge",
+                    "The attachment exceeds the configured size limit.");
+                return true;
+            }
+            AttachmentUploadCount++;
             response.StatusCode = (int)HttpStatusCode.NoContent;
             response.Close();
             return true;
@@ -593,6 +706,8 @@ public sealed class Cx02Simulator : IAsyncDisposable
         }
         body["id"] = Guid.CreateVersion7();
         body["lastModifiedDateTime"] = clock.GetUtcNow();
+        body["@odata.etag"] = "W/\"1\"";
+        lock (stateLock) resources[resource].Add(NormaliseEntity(body));
         response.StatusCode = (int)HttpStatusCode.Created;
         await JsonAsync(response, body);
         return true;
@@ -888,6 +1003,42 @@ public sealed class Cx02Simulator : IAsyncDisposable
             DateTimeStyles.AssumeUniversal, out var value) ? value : null;
     }
 
+    private static (string Field, string Value)? EqualityFilter(Uri? uri)
+    {
+        var filter = Query(uri, "$filter");
+        if (filter is null || filter.StartsWith("lastModifiedDateTime gt ", StringComparison.Ordinal)) return null;
+        var match = Regex.Match(filter, "^(?<field>[A-Za-z0-9_@.]+) eq '(?<value>(?:''|[^'])*)'$",
+            RegexOptions.CultureInvariant);
+        return match.Success
+            ? (match.Groups["field"].Value, match.Groups["value"].Value.Replace("''", "'", StringComparison.Ordinal))
+            : null;
+    }
+
+    private static string? JsonValue(object? value) => value switch
+    {
+        null => null,
+        JsonElement element when element.ValueKind == JsonValueKind.String => element.GetString(),
+        JsonElement element => element.ToString(),
+        _ => value.ToString(),
+    };
+
+    private static string FirstTrackingValue(Dictionary<string, JsonElement> body, string field)
+    {
+        if (!body.TryGetValue("tracking", out var tracking) || tracking.ValueKind != JsonValueKind.Array
+            || tracking.GetArrayLength() == 0) return "";
+        var row = tracking[0];
+        return row.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? "" : "";
+    }
+
+    private static string? MetadataText(Dictionary<string, JsonElement> body, string field) =>
+        body.TryGetValue("metadata", out var metadata) && metadata.ValueKind == JsonValueKind.Object
+            && metadata.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString() : null;
+
+    private static string? BodyText(Dictionary<string, JsonElement> body, string field) =>
+        body.TryGetValue(field, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
     private static string? Query(Uri? uri, string name)
     {
         if (uri is null) return null;
@@ -984,6 +1135,11 @@ public sealed class Cx02Simulator : IAsyncDisposable
         resources["salesInvoices"] = [NormaliseEntity(new Dictionary<string, object?> { ["number"] = "INV-100", ["lastModifiedDateTime"] = now })];
         resources["salesInvoiceLines"] = [];
         resources["salesCreditMemos"] = [NormaliseEntity(new Dictionary<string, object?> { ["number"] = "CRM-100", ["lastModifiedDateTime"] = now })];
+        resources["salesCreditMemoLines"] = [];
+        resources["journals"] = [];
+        resources["journalLines"] = [];
+        resources["attachments"] = [];
+        resources["documentAttachments"] = [];
         resources["salesShipments"] = [NormaliseEntity(new Dictionary<string, object?> { ["number"] = "SHIP-100", ["lastModifiedDateTime"] = now })];
         resources["salesShipmentLines"] = [NormaliseEntity(new Dictionary<string, object?> { ["lineObjectNumber"] = "HW-SERVER-100", ["quantity"] = 1m, ["shipmentDate"] = "2026-09-01", ["lastModifiedDateTime"] = now })];
         resources["purchaseReceipts"] = [NormaliseEntity(new Dictionary<string, object?> { ["number"] = "REC-100", ["lastModifiedDateTime"] = now })];
@@ -1002,6 +1158,20 @@ public sealed class Cx02Simulator : IAsyncDisposable
             if (Interlocked.CompareExchange(ref throttleStormRemaining, current - 1, current) == current) return true;
         }
     }
+
+    private bool TakeServiceUnavailable()
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref serviceUnavailableResponses);
+            if (current <= 0) return false;
+            if (Interlocked.CompareExchange(ref serviceUnavailableResponses, current - 1, current) == current)
+                return true;
+        }
+    }
+
+    private bool TakeClosedPeriodRejection() => Interlocked.Exchange(ref rejectNextPostAsClosedPeriod, false);
+    private bool TakeTokenExpiryBeforePost() => Interlocked.Exchange(ref expireTokenBeforeNextPost, false);
 
     private HttpStatusCode? TakeTimeoutFault()
     {

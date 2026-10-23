@@ -156,9 +156,17 @@ public static class IntegrationModule
         builder.Services.AddScoped<Cx02Transport>();
         builder.Services.AddScoped<ICx02Transport>(services => services.GetRequiredService<Cx02Transport>());
         builder.Services.AddScoped<Cx02Client>();
+        builder.Services.AddScoped<OutboundAttachmentContentStore>();
+        builder.Services.AddScoped<ICx02AttachmentContent, Cx02AttachmentContent>();
+        builder.Services.AddScoped<ICx02OutboundFacts, Cx02OutboundFacts>();
+        builder.Services.AddScoped<Cx02OutboundDocuments>();
         builder.Services.AddScoped<Cx02Adapter>();
         builder.Services.AddKeyedScoped<IConnectorAdapter>(Cx02Capabilities.ConnectorCode, (services, _) =>
             services.GetRequiredService<Cx02Adapter>());
+        builder.Services.AddKeyedScoped<IOutboundConnector>(Cx02Capabilities.ConnectorCode, (services, _) =>
+            services.GetRequiredService<Cx02Adapter>());
+        builder.Services.AddKeyedScoped<IOutboundCompletenessCheck, Cx02OutboundCompleteness>(
+            Cx02Capabilities.ConnectorCode);
         builder.Services.AddScoped<Cx02NotificationTracker>();
         builder.Services.AddScoped<Cx02WebhookMaintenance>();
         builder.Services.AddSingleton(RecurringTenantJob.For<Cx02WebhookMaintenanceJob>(

@@ -59,6 +59,8 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.AddIntegrationModule();
         builder.Services.Replace(ServiceDescriptor.Scoped<Yojana.Integration.Connectors.CX01.ICx01OutboundFacts>(sp => new Yojana.Integration.Connectors.CX01.Testing.Cx01FixtureFacts(sp.GetRequiredService<IntegrationDbContext>(), sp.GetRequiredService<ITenantContext>())));
         builder.Services.Replace(ServiceDescriptor.Singleton<Yojana.Integration.Connectors.CX01.ICx01AttachmentContent>(new Yojana.Integration.Connectors.CX01.Testing.Cx01FixtureContent()));
+        builder.Services.Replace(ServiceDescriptor.Scoped<Yojana.Integration.Connectors.CX02.ICx02OutboundFacts>(sp => new Yojana.Integration.Connectors.CX02.Testing.Cx02FixtureFacts(sp.GetRequiredService<IntegrationDbContext>(), sp.GetRequiredService<ITenantContext>())));
+        builder.Services.Replace(ServiceDescriptor.Singleton<Yojana.Integration.Connectors.CX02.ICx02AttachmentContent>(new Yojana.Integration.Connectors.CX02.Testing.Cx02FixtureContent()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IIntegrationTransport>(Transport));
         builder.Services.AddSingleton(Connector);
         builder.Services.AddKeyedSingleton<IOutboundConnector>(FakeConnectorCode, (services, _) =>

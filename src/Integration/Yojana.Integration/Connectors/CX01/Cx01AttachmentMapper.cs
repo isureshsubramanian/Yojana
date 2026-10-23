@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Configuration;
+using Yojana.Integration.Outbox;
 
 namespace Yojana.Integration.Connectors.CX01;
 
@@ -14,9 +15,11 @@ public interface ICx01AttachmentContent
     Task<Cx01AttachmentContent?> ReadAsync(string contentRef, long maximumBytes, CancellationToken ct);
 }
 
-internal sealed class Cx01LocalAttachmentContent(IConfiguration configuration, Yojana.Serialisation.Contracts.IRenderedOutboundDocumentPort? documents = null) : ICx01AttachmentContent
+internal sealed class Cx01LocalAttachmentContent(IConfiguration configuration,
+    Yojana.Serialisation.Contracts.IRenderedOutboundDocumentPort? documents = null) : ICx01AttachmentContent
 {
     private readonly Dictionary<string, Cx01AttachmentContent> attemptContent = new(StringComparer.Ordinal);
+    private readonly OutboundAttachmentContentStore store = new(configuration, documents);
     public void BeginAttempt() => attemptContent.Clear();
 
     public async Task<Cx01AttachmentContent?> ReadAsync(string contentRef, long maximumBytes, CancellationToken ct)
@@ -33,32 +36,15 @@ internal sealed class Cx01LocalAttachmentContent(IConfiguration configuration, Y
 
     private async Task<Cx01AttachmentContent?> ReadCoreAsync(string contentRef, long maximumBytes, CancellationToken ct)
     {
-        if (Yojana.Serialisation.Contracts.OutboundDocumentContentReference.TryDocumentId(contentRef, out var id))
+        try
         {
-            if (documents is null) return null;
-            var rendered = await documents.ReadAsync(id, ct);
-            if (rendered is not null && rendered.Bytes.LongLength > maximumBytes)
-                throw new Cx01DocumentRuleException("The attachment exceeds the connection's size cap.");
-            return rendered is null ? null : new(rendered.Bytes, rendered.ContentType);
+            var content = await store.ReadAsync(contentRef, maximumBytes, Cx01AttachmentMapper.ContentType, ct);
+            return content is null ? null : new(content.Bytes, content.ContentType);
         }
-        var root = configuration["Integration:AttachmentRoot"];
-        if (string.IsNullOrWhiteSpace(root)) return null;
-        root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
-        var path = Path.GetFullPath(Path.Combine(root, contentRef));
-        if (!path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal) || !File.Exists(path)) return null;
-        // A resolved link could leave the configured root; the local store deliberately accepts regular files only.
-        for (var entry = new FileInfo(path) as FileSystemInfo; entry is not null; entry = entry is FileInfo file ? file.Directory : ((DirectoryInfo)entry).Parent)
-            {
-            if (entry.LinkTarget is not null) return null;
-            if (entry.FullName == root) break;
+        catch (OutboundAttachmentTooLargeException exception)
+        {
+            throw new Cx01DocumentRuleException(exception.Message);
         }
-        var contentType = Cx01AttachmentMapper.ContentType(Path.GetExtension(path));
-        if (contentType is null) return null;
-        await using var stream = File.OpenRead(path);
-        if (stream.Length > maximumBytes) throw new Cx01DocumentRuleException("The attachment exceeds the connection's size cap.");
-        var bytes = new byte[checked((int)stream.Length)];
-        await stream.ReadExactlyAsync(bytes, ct);
-        return new(bytes, contentType);
     }
 }
 

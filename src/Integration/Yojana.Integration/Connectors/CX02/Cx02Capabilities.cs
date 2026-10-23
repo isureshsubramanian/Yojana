@@ -32,6 +32,7 @@ public static class Cx02Capabilities
             ["ChangeStockStatusOrLocation"] = CapabilitySupport.TenantCode,
             ["CreateServiceOrder"] = CapabilitySupport.TenantCode,
             ["AttachDocument"] = CapabilitySupport.Native,
+            ["PushNativeWarrantyObject"] = CapabilitySupport.Unsupported,
         };
 
     public static Cx02CapabilityDeclaration Declaration { get; } = new(
