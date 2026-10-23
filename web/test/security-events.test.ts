@@ -2,21 +2,24 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { securityEventsApi, securityEventQuery } from "../src/settings/securityEventsApi.ts";
-import { browserName, securityEventLabel, securityEventTone, shiftDay } from "../src/settings/securityEventsModel.ts";
+import { browserName, securityEventLabel, securityEventTone, shiftDay, summaryKpis } from "../src/settings/securityEventsModel.ts";
 
 const source = (path: string) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
 const page = source("settings/SecurityEvents.tsx");
+const model = source("settings/securityEventsModel.ts");
 const routes = source("routes.tsx");
 const registry = source("settings/registry.ts");
 const layout = source("settings/SettingsLayout.tsx");
 
 test("security events keeps the approved KPI, filters, paged event log and drawer", () => {
   for (const label of ["Sign-ins today", "Failed sign-ins today", "Lockouts today", "Password resets, 7 days", "Sign-in method changes, 7 days"])
-    assert.match(page, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(model, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   for (const token of ["<DataGrid", "nextCursor", "PAGE_SIZE = 25", "Any event", "User name or e-mail", "Last 7 days", "Custom…", "openDrawer", "row.userName", "row.actorName"])
     assert.ok(page.includes(token), token);
   assert.doesNotMatch(page, /Export|CSV|Excel/);
-  assert.match(page, /Aggregate not supplied by the event log/);
+  assert.doesNotMatch(page, /Aggregate not supplied by the event log/);
+  assert.match(page, /securityEventsApi\.summary\(/);
+  assert.match(page, /summaryKpis\(summary\)/);
 });
 
 test("security event labels, tones, device summaries and date ranges are stable", () => {
@@ -63,4 +66,23 @@ test("approved sign-in tabs remain and duplicate back buttons are removed", () =
   }
   assert.doesNotMatch(source("settings/Company.tsx"), /Back to settings/);
   assert.doesNotMatch(source("settings/SignInPolicy.tsx"), /Back to settings/);
+});
+
+test("security event cards show the summary counts, an ellipsis while loading and a plain failure note", async () => {
+  const cards = summaryKpis({ signIns: 1204, failedSignIns: 3, lockouts: 0, passwordResets: 2, methodChanges: 5 });
+  assert.deepEqual(cards.map(card => card.label), ["Sign-ins today", "Failed sign-ins today", "Lockouts today", "Password resets, 7 days", "Sign-in method changes, 7 days"]);
+  assert.deepEqual(cards.map(card => card.value), [(1204).toLocaleString(), "3", "0", "2", "5"]);
+  assert.ok(summaryKpis(null).every(card => card.value === "…" && !card.detail));
+  assert.ok(summaryKpis("failed").every(card => card.value === "—" && card.detail === "Couldn't load"));
+
+  const calls: string[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    calls.push(String(input));
+    return new Response(JSON.stringify({ signIns: 1, failedSignIns: 0, lockouts: 0, passwordResets: 0, methodChanges: 0 }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    assert.equal((await securityEventsApi.summary("2026-09-01T00:00:00.000Z", "2026-08-26T00:00:00.000Z")).signIns, 1);
+    assert.equal(calls[0], "/api/security/events/summary?todayFrom=2026-09-01T00%3A00%3A00.000Z&weekFrom=2026-08-26T00%3A00%3A00.000Z");
+  } finally { globalThis.fetch = original; }
 });

@@ -60,3 +60,32 @@ public sealed record SecurityEventView(
     string Reason);
 
 public sealed record SecurityEventPage(IReadOnlyList<SecurityEventView> Items, string? NextCursor);
+
+/// <summary>Counts behind the Security events page cards (ADR-0007); numbers only, no personal data.</summary>
+public sealed record SecurityEventSummary(
+    long SignIns,
+    long FailedSignIns,
+    long Lockouts,
+    long PasswordResets,
+    long MethodChanges);
+
+/// <summary>The one definition of which event kinds each summary card counts (ADR-0007 §3).</summary>
+public static class SecurityEventSummaryKinds
+{
+    /// <summary>Counted from the start of the tenant's day.</summary>
+    public static readonly IReadOnlySet<string> SignIns = Set(SecurityEventKind.SignInSucceeded);
+    public static readonly IReadOnlySet<string> FailedSignIns = Set(SecurityEventKind.SignInFailed);
+    public static readonly IReadOnlySet<string> Lockouts = Set(SecurityEventKind.LockedOut);
+
+    /// <summary>Counted over the last seven days. A reset request is not a reset, so it is left out.</summary>
+    public static readonly IReadOnlySet<string> PasswordResets =
+        Set(SecurityEventKind.PasswordResetCompleted, SecurityEventKind.AdminPasswordReset);
+    public static readonly IReadOnlySet<string> MethodChanges = Set(SecurityEventKind.SecondStepEnrolled,
+        SecurityEventKind.SecondStepRemoved, SecurityEventKind.PasskeyAdded, SecurityEventKind.PasskeyRemoved,
+        SecurityEventKind.RecoveryCodesRegenerated);
+
+    public static readonly IReadOnlySet<string> Today = Set([.. SignIns, .. FailedSignIns, .. Lockouts]);
+    public static readonly IReadOnlySet<string> Week = Set([.. PasswordResets, .. MethodChanges]);
+
+    private static HashSet<string> Set(params string[] kinds) => new(kinds, StringComparer.Ordinal);
+}

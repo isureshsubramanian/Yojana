@@ -369,6 +369,87 @@ public sealed class SignInSecurityTests(PlatformHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Security_event_summary_counts_each_card_over_its_window_in_tenant_scope()
+    {
+        fixture.Clock.UtcNow = Start;
+        var (tenant, user, password) = await AddAdministratorAsync("event-sum");
+        var otherTenant = await AddTenantAsync("event-sum-other");
+        var (_, outsiderUser, _) = await AddAdministratorAsync("event-sum-out");
+        var outsider = outsiderUser.Id;
+        var todayFrom = Start.AddHours(-2);
+        var weekFrom = todayFrom.AddDays(-6);
+
+        async Task WriteAsync(DateTime at, string kind, Guid? userId, TenantId? tenantId, string reason)
+        {
+            fixture.Clock.UtcNow = at;
+            using var scope = fixture.Services.CreateScope();
+            scope.ServiceProvider.GetRequiredService<SecurityEventWriter>()
+                .Add(kind, userId, tenantId, null, new(null, null), reason);
+            await scope.ServiceProvider.GetRequiredService<PlatformDbContext>().SaveChangesAsync();
+        }
+
+        await WriteAsync(todayFrom, SecurityEventKind.SignInSucceeded, user.Id, tenant, "today_boundary");
+        await WriteAsync(todayFrom.AddMilliseconds(-1), SecurityEventKind.SignInSucceeded, user.Id, tenant, "yesterday");
+        await WriteAsync(Start, SecurityEventKind.SignInFailed, user.Id, null, "member_tenantless");
+        await WriteAsync(Start, SecurityEventKind.SignInFailed, outsider, null, "non_member_tenantless");
+        await WriteAsync(Start, SecurityEventKind.LockedOut, null, otherTenant, "other_tenant");
+        await WriteAsync(Start, SecurityEventKind.LockedOut, user.Id, tenant, "lockout");
+        await WriteAsync(weekFrom, SecurityEventKind.PasswordResetCompleted, user.Id, tenant, "week_boundary");
+        await WriteAsync(weekFrom.AddMilliseconds(-1), SecurityEventKind.AdminPasswordReset, user.Id, tenant, "before_week");
+        await WriteAsync(Start, SecurityEventKind.AdminPasswordReset, user.Id, tenant, "admin_reset");
+        await WriteAsync(Start, SecurityEventKind.PasswordResetRequested, user.Id, tenant, "request_only");
+        foreach (var kind in SecurityEventSummaryKinds.MethodChanges)
+            await WriteAsync(weekFrom.AddDays(1), kind, user.Id, tenant, "method");
+        await WriteAsync(Start, SecurityEventKind.RecoveryCodeUsed, user.Id, tenant, "not_a_change");
+        fixture.Clock.UtcNow = Start;
+
+        using (var readScope = ScopeFor(tenant))
+        {
+            var queries = readScope.ServiceProvider.GetRequiredService<SecurityEventQueries>();
+            Assert.Equal(new SecurityEventSummary(1, 1, 1, 2, 5),
+                await queries.SummaryAsync(todayFrom, weekFrom, CancellationToken.None));
+            await Assert.ThrowsAsync<ArgumentException>(() =>
+                queries.SummaryAsync(null, weekFrom, CancellationToken.None));
+            await Assert.ThrowsAsync<ArgumentException>(() =>
+                queries.SummaryAsync(weekFrom, todayFrom, CancellationToken.None));
+            await Assert.ThrowsAsync<ArgumentException>(() =>
+                queries.SummaryAsync(todayFrom, Start.AddDays(-9), CancellationToken.None));
+        }
+
+        string Query(DateTime today, DateTime week) =>
+            $"/api/security/events/summary?todayFrom={today:O}&weekFrom={week:O}";
+        using var administrator = fixture.Client();
+        (await administrator.PostAsJsonAsync("/api/auth/sign-in", new { email = user.Email, password }))
+            .EnsureSuccessStatusCode();
+        using (var refused = await administrator.GetAsync(Query(weekFrom, todayFrom)))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+            Assert.Equal("security_event_summary_invalid", (await refused.Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("title").GetString());
+        }
+
+        var staff = new AppUser
+        {
+            Id = Guid.CreateVersion7(), Email = $"event-sum-staff-{Guid.NewGuid():N}@example.invalid",
+            DisplayName = "Fictional service desk user", PasswordHash = PasswordHasher.Hash(password),
+            CreatedAt = fixture.Clock.UtcNow,
+        };
+        staff.Memberships.Add(new UserTenantMembership
+        {
+            UserId = staff.Id, TenantId = tenant, Roles = [YojanaRole.ServiceDesk],
+        });
+        using (var scope = fixture.Services.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<PlatformDbContext>().Users.Add(staff);
+            await scope.ServiceProvider.GetRequiredService<PlatformDbContext>().SaveChangesAsync();
+        }
+        using var desk = fixture.Client();
+        (await desk.PostAsJsonAsync("/api/auth/sign-in", new { email = staff.Email, password }))
+            .EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.Forbidden, (await desk.GetAsync(Query(todayFrom, weekFrom))).StatusCode);
+    }
+
+    [DatabaseFact]
     public async Task Retention_purge_deletes_in_configured_batches()
     {
         fixture.Clock.UtcNow = Start;

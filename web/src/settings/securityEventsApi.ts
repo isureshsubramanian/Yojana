@@ -12,6 +12,14 @@ export interface SecurityEventRow {
 
 export interface SecurityEventPage { items: SecurityEventRow[]; nextCursor: string | null }
 
+export interface SecurityEventSummary {
+  signIns: number;
+  failedSignIns: number;
+  lockouts: number;
+  passwordResets: number;
+  methodChanges: number;
+}
+
 export interface SecurityEventFilter {
   kind?: string;
   userId?: string;
@@ -32,4 +40,7 @@ export function securityEventQuery(filter: SecurityEventFilter): string {
 export const securityEventsApi = {
   page: (filter: SecurityEventFilter, signal?: AbortSignal) =>
     api<SecurityEventPage>(`/api/security/events?${securityEventQuery(filter)}`, { signal }),
+  // Windows are tenant-day instants from tenantTime.dayBounds, so "today" matches the list's Today filter (ADR-0007).
+  summary: (todayFrom: string, weekFrom: string, signal?: AbortSignal) =>
+    api<SecurityEventSummary>(`/api/security/events/summary?${new URLSearchParams({ todayFrom, weekFrom })}`, { signal }),
 };

@@ -1,4 +1,5 @@
-import type { Tone } from "../components";
+import type { SecurityEventSummary } from "./securityEventsApi";
+import type { Kpi, Tone } from "../components";
 
 export const securityEventKinds = [
   "sign_in_succeeded", "sign_in_failed", "locked_out", "signed_out", "security_stamp_rotated",
@@ -81,4 +82,17 @@ export function shiftDay(day: string, offset: number): string {
   const value = new Date(`${day}T00:00:00Z`);
   value.setUTCDate(value.getUTCDate() + offset);
   return value.toISOString().slice(0, 10);
+}
+
+const SUMMARY_CARDS: { label: string; key: keyof SecurityEventSummary }[] = [
+  { label: "Sign-ins today", key: "signIns" },
+  { label: "Failed sign-ins today", key: "failedSignIns" },
+  { label: "Lockouts today", key: "lockouts" },
+  { label: "Password resets, 7 days", key: "passwordResets" },
+  { label: "Sign-in method changes, 7 days", key: "methodChanges" },
+];
+
+export function summaryKpis(summary: SecurityEventSummary | "failed" | null): Kpi[] {
+  return SUMMARY_CARDS.map(card => summary === "failed" ? { label: card.label, value: "—", detail: "Couldn't load" }
+    : { label: card.label, value: summary === null ? "…" : summary[card.key].toLocaleString() });
 }

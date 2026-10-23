@@ -6,8 +6,8 @@ import { useSession } from "../session/session";
 import { openDrawer } from "../shell/drawerStore";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section } from "../units/common";
-import { securityEventsApi, type SecurityEventRow } from "./securityEventsApi";
-import { browserName, securityEventKinds, securityEventLabel, securityEventTone, shiftDay, securityEventReason } from "./securityEventsModel";
+import { securityEventsApi, type SecurityEventRow, type SecurityEventSummary } from "./securityEventsApi";
+import { browserName, securityEventKinds, securityEventLabel, securityEventTone, shiftDay, securityEventReason, summaryKpis } from "./securityEventsModel";
 import { userManagementApi, type TenantUserRow } from "./userManagementApi";
 
 const PAGE_SIZE = 25;
@@ -32,6 +32,7 @@ export function Component() {
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
+  const [summary, setSummary] = useState<SecurityEventSummary | "failed" | null>(null);
 
   const bounds = useMemo(() => {
     const fromDay = period === "today" ? today : period === "7_days" ? shiftDay(today, -6) : period === "30_days" ? shiftDay(today, -29) : customFrom;
@@ -60,6 +61,17 @@ export function Component() {
     void load(1, undefined, controller.signal);
     return () => controller.abort();
   }, [load, permitted]);
+
+  // The cards describe today and the last 7 days, not the filtered list, so they load once when the page opens.
+  useEffect(() => {
+    if (!permitted) return;
+    const controller = new AbortController();
+    const todayFrom = tenantTime.dayBounds(today, today).from;
+    const weekFrom = tenantTime.dayBounds(shiftDay(today, -6), today).from;
+    void securityEventsApi.summary(todayFrom, weekFrom, controller.signal).then(setSummary)
+      .catch(reason => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setSummary("failed"); });
+    return () => controller.abort();
+  }, [permitted, tenantTime, today]);
 
   useEffect(() => {
     if (!permitted || userText.trim().length < 2 || userId) { setUsers([]); return; }
@@ -109,13 +121,7 @@ export function Component() {
     <nav className="tabs subnav" aria-label="Sign-in settings"><Link to="/settings/users">Users</Link><Link to="/settings/sign-in-policy">Sign-in policy</Link><Link to="/settings/security-events" aria-current="page">Security events</Link></nav>
     {!permitted && <div className="note bad"><strong>Tenant administrator access is required.</strong></div>}
     {permitted && <div className="stack">
-      <KpiStrip label="Security event figures" kpis={[
-        { label: "Sign-ins today", value: "—", detail: "Aggregate not supplied by the event log" },
-        { label: "Failed sign-ins today", value: "—", detail: "Aggregate not supplied by the event log" },
-        { label: "Lockouts today", value: "—", detail: "Aggregate not supplied by the event log" },
-        { label: "Password resets, 7 days", value: "—", detail: "Aggregate not supplied by the event log" },
-        { label: "Sign-in method changes, 7 days", value: "—", detail: "Aggregate not supplied by the event log" },
-      ]} />
+      <KpiStrip label="Security event figures" kpis={summaryKpis(summary)} />
       <ErrorNote error={error} onReload={() => void load(page, cursors[page - 1])} />
       <section className="card" aria-labelledby="security-events-list">
         <div className="card-header"><h2 id="security-events-list">Events <span className="meta">{periodLabel} · page {page.toLocaleString()}</span></h2></div>

@@ -26,6 +26,8 @@ public static class SecurityEndpoints
 
         endpoints.MapGet("/api/security/events", SecurityEventsAsync)
             .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
+        endpoints.MapGet("/api/security/events/summary", SecurityEventSummaryAsync)
+            .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         return endpoints;
     }
 
@@ -119,6 +121,20 @@ public static class SecurityEndpoints
         catch (ArgumentException exception)
         {
             return Results.Problem(title: "security_event_query_invalid", detail: exception.Message,
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+    }
+
+    private static async Task<IResult> SecurityEventSummaryAsync(DateTime? todayFrom, DateTime? weekFrom,
+        SecurityEventQueries queries, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Results.Ok(await queries.SummaryAsync(todayFrom, weekFrom, cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.Problem(title: "security_event_summary_invalid", detail: exception.Message,
                 statusCode: StatusCodes.Status400BadRequest);
         }
     }
