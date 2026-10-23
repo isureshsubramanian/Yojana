@@ -29,7 +29,7 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "parallel_run_plan", "parallel_run_confirmation", "parallel_run_handover", "go_live_record",
             "native_warranty_push_state");
         AssertSuperset(tables, "connection_health", "cx01_survey", "connection_notification_receipt",
-            "connection_notification_watchdog", "outbound_document_receipt");
+            "connection_notification_watchdog", "outbound_document_receipt", "cx04_authorisation_state");
         AssertSuperset(tables, "reconciliation_run", "reconciliation_entity_day",
             "reconciliation_location", "backfill_cursor");
         var migrationTables = await db.Database.SqlQueryRaw<string>("SELECT TABLE_NAME AS Value FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'migration'").ToListAsync();
