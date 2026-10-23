@@ -220,6 +220,8 @@ public sealed class BulkIngestion(SerialisationDbContext db, ITenantContext tena
             await bus.PublishAsync(new SearchReindexRequested([], documents), new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
         }
 
+        // Bulk ingestion publishes no published events (Unit.DispositionChanged included): a migration would flood the outbox;
+        // pushed native-warranty mode reads the current disposition through its backfill snapshot instead.
         // Direct bulk ingestion bypasses UnitEventWriter, so it completes the same narrow append-observer contract.
         // FlushTrackedAsync does not repeat it: those facts already crossed UnitEventWriter's logical append boundary.
         var written = events.Where(e => insertedIds.Contains(e.Row.EventId)).Select(e => e.Row).ToList();

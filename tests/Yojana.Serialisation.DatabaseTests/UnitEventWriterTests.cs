@@ -115,6 +115,39 @@ public sealed class UnitEventWriterTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Disposition_publication_reports_each_real_change_and_omits_unchanged_values()
+    {
+        var tenant = await fixture.NewTenantAsync("disp");
+        var unit = TimeOrderedId.New();
+        var at = new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var writer = scope.ServiceProvider.GetRequiredService<IUnitEventWriter>();
+            await writer.AppendAsync(
+            [
+                Draft(unit, at, UnitEventType.Commissioned, Commission(Guid.NewGuid())),
+                Draft(unit, at.AddMinutes(1), UnitEventType.CustodyChanged,
+                    new CurrentStateDelta { Disposition = UnitDisposition.Returned }),
+                Draft(unit, at.AddMinutes(2), UnitEventType.AttributeChanged,
+                    new CurrentStateDelta { Disposition = UnitDisposition.Returned }),
+                Draft(unit, at.AddMinutes(3), UnitEventType.CustodyChanged,
+                    new CurrentStateDelta { Disposition = UnitDisposition.Available }),
+            ], CancellationToken.None);
+            await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().SaveChangesAsync();
+        }
+
+        var changes = await PublishedEventSink.WaitForAsync<UnitDispositionChanged>(
+            message => message.Header.UnitId == unit, 2, TimeSpan.FromSeconds(20));
+        Assert.Equal(2, changes.Count);
+        Assert.Equal(
+            [(UnitDisposition.InProgress, UnitDisposition.Returned),
+             (UnitDisposition.Returned, UnitDisposition.Available)],
+            changes.OrderBy(message => message.Header.Seq)
+                .Select(message => (message.PreviousDisposition, message.Disposition)));
+        Assert.All(changes, message => Assert.Equal(UnitEventType.CustodyChanged, message.Cause));
+    }
+
+    [DatabaseFact]
     public async Task Batched_idempotency_reads_match_exact_key_and_business_time_pairs()
     {
         var tenant = await fixture.NewTenantAsync("ip");

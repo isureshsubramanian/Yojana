@@ -15,7 +15,7 @@ namespace Yojana.Integration.Connectors.CX01;
 
 /// <summary>CX01-only translation and optimistic conflict check for the installed-base update.</summary>
 public sealed class Cx01NativeWarrantyWriter(IntegrationDbContext db, ITenantContext tenant, IClock clock,
-    Cx01Client client)
+    Cx01Client client, Cx01Settings settings, Cx01WarrantyStatusHealth statusHealth)
 {
     private const string Collection = "CustomerEquipmentCards";
     private const string StatusField = "StatusOfSerialNumber";
@@ -27,7 +27,7 @@ public sealed class Cx01NativeWarrantyWriter(IntegrationDbContext db, ITenantCon
         var state = await StateAsync(lookup.ConnectionId, command.Unit.UnitId, cancellationToken);
         using var observed = await ReadAsync(lookup.ConnectionId, state.RemoteRecordKey, cancellationToken);
         var remote = Values(observed.RootElement);
-        var desired = Desired(command);
+        var desired = await DesiredAsync(lookup.ConnectionId, command, cancellationToken);
         if (!Equal(remote, desired, command.IncludesWarrantyContractFields)) return null;
         await RecordAsync(state, desired, observed.RootElement, cancellationToken);
         return new(state.RemoteRecordKey, Cx01Mapper.ChangeMarker(observed.RootElement, state.RemoteRecordKey));
@@ -40,7 +40,7 @@ public sealed class Cx01NativeWarrantyWriter(IntegrationDbContext db, ITenantCon
         var state = await StateAsync(request.ConnectionId, command.Unit.UnitId, cancellationToken);
         using var observed = await ReadAsync(request.ConnectionId, state.RemoteRecordKey, cancellationToken);
         var remote = Values(observed.RootElement);
-        var desired = Desired(command);
+        var desired = await DesiredAsync(request.ConnectionId, command, cancellationToken);
         if (Equal(remote, desired, command.IncludesWarrantyContractFields))
         {
             await RecordAsync(state, desired, observed.RootElement, cancellationToken);
@@ -203,16 +203,43 @@ public sealed class Cx01NativeWarrantyWriter(IntegrationDbContext db, ITenantCon
             ?? throw new Cx01UnmappableException("The native warranty command payload is invalid.");
     }
 
-    private static NativeWarrantyRemoteValues Desired(PushNativeWarrantyObject command) => new(
-        command.ModuleStatus switch
+    private async Task<NativeWarrantyRemoteValues> DesiredAsync(Guid connectionId,
+        PushNativeWarrantyObject command, CancellationToken cancellationToken)
+    {
+        var cardStatus = command.CardStatus ?? LegacyStatus(command.ModuleStatus);
+        var configured = await settings.GetAsync(connectionId, cancellationToken);
+        var remoteStatus = cardStatus switch
         {
-            LifecycleStatus.Void or LifecycleStatus.ScrappedPreRelease or LifecycleStatus.Scrapped
-                or LifecycleStatus.Decommissioned or LifecycleStatus.Merged => "sns_Terminated",
-            LifecycleStatus.PendingIdentifier or LifecycleStatus.PreRelease or LifecycleStatus.Released
-                or LifecycleStatus.Dormant => "sns_Active",
+            NativeWarrantyCardStatus.Active => "sns_Active",
+            NativeWarrantyCardStatus.Terminated => "sns_Terminated",
+            NativeWarrantyCardStatus.InRepair => (configured.NativeWarrantyStatuses ?? new()).InRepair,
+            NativeWarrantyCardStatus.Returned => (configured.NativeWarrantyStatuses ?? new()).Returned,
+            NativeWarrantyCardStatus.Loaned => (configured.NativeWarrantyStatuses ?? new()).Loaned,
             _ => throw new Cx01UnmappableException(
-                $"Module lifecycle status '{command.ModuleStatus}' has no verified CX01 installed-base status mapping."),
-        }, command.WarrantyEndDate);
+                $"Module card status '{cardStatus}' has no CX01 installed-base status mapping."),
+        };
+        if (remoteStatus is null)
+        {
+            await statusHealth.RecordFallbackAsync(connectionId, cardStatus, cancellationToken);
+            remoteStatus = "sns_Active";
+        }
+        else if (cardStatus is NativeWarrantyCardStatus.InRepair or NativeWarrantyCardStatus.Returned
+                 or NativeWarrantyCardStatus.Loaned)
+        {
+            await statusHealth.RecordConfiguredAsync(connectionId, cardStatus, cancellationToken);
+        }
+        return new(remoteStatus, command.WarrantyEndDate);
+    }
+
+    private static string LegacyStatus(string moduleStatus) => moduleStatus switch
+    {
+        LifecycleStatus.Void or LifecycleStatus.ScrappedPreRelease or LifecycleStatus.Scrapped
+            or LifecycleStatus.Decommissioned or LifecycleStatus.Merged => NativeWarrantyCardStatus.Terminated,
+        LifecycleStatus.PendingIdentifier or LifecycleStatus.PreRelease or LifecycleStatus.Released
+            or LifecycleStatus.Dormant => NativeWarrantyCardStatus.Active,
+        _ => throw new Cx01UnmappableException(
+            $"Module lifecycle status '{moduleStatus}' has no CX01 installed-base status mapping."),
+    };
 
     private static NativeWarrantyRemoteValues Values(JsonElement row) =>
         new(Scalar(row, StatusField) ?? "", Date(Scalar(row, WarrantyEndField)));

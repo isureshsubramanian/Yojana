@@ -22,6 +22,30 @@ public interface INativeWarrantyBackfillProcessor
 
 public sealed record NativeWarrantyRemoteValues(string Status, DateOnly? WarrantyEndDate);
 
+public static class NativeWarrantyCardStatusDerivation
+{
+    private static readonly HashSet<string> TerminalLifecycleStatuses =
+    [
+        LifecycleStatus.Void, LifecycleStatus.ScrappedPreRelease, LifecycleStatus.Scrapped,
+        LifecycleStatus.Decommissioned, LifecycleStatus.Merged,
+    ];
+
+    public static string Derive(NativeWarrantyPushSource source)
+    {
+        // Business precedence is defined once here: Terminated > InRepair > Returned > Loaned > Active.
+        // All connectors receive only this neutral result and remain free to translate it to their own codes.
+        if (TerminalLifecycleStatuses.Contains(source.LifecycleStatus))
+            return NativeWarrantyCardStatus.Terminated;
+        if (source.LocationKind == LocationKind.InRepair)
+            return NativeWarrantyCardStatus.InRepair;
+        if (source.Disposition == UnitDisposition.Returned)
+            return NativeWarrantyCardStatus.Returned;
+        if (source.CustodyReason == EpisodeReason.Loan)
+            return NativeWarrantyCardStatus.Loaned;
+        return NativeWarrantyCardStatus.Active;
+    }
+}
+
 /// <summary>
 /// Coalesces module changes into the normal outbound queue and drives the persisted mapped-unit backfill. It knows
 /// only the canonical command and the installed-base mapping contract; connector field names stay in the adapter.
@@ -38,9 +62,18 @@ public sealed class NativeWarrantyPushService(
     public const string DroppedFrozenOutcome = "dropped_frozen";
 
     public async Task<int> QueueUnitAsync(Guid unitId, Guid triggerId, CancellationToken cancellationToken)
+        => await QueueUnitAsync(unitId, triggerId, statusChangeOnly: false, cancellationToken);
+
+    public async Task<int> QueueStatusChangeAsync(Guid unitId, Guid triggerId,
+        CancellationToken cancellationToken)
+        => await QueueUnitAsync(unitId, triggerId, statusChangeOnly: true, cancellationToken);
+
+    private async Task<int> QueueUnitAsync(Guid unitId, Guid triggerId, bool statusChangeOnly,
+        CancellationToken cancellationToken)
     {
         var source = await sources.ReadAsync(unitId, cancellationToken);
         if (source is null) return 0;
+        var cardStatus = NativeWarrantyCardStatusDerivation.Derive(source);
         var maintenance = await contractMaintenance.GetAsync(cancellationToken);
         var connections = await (from connection in db.Connections.AsNoTracking()
                                  join gateway in db.ConnectionGatewaySettings.AsNoTracking()
@@ -62,14 +95,18 @@ public sealed class NativeWarrantyPushService(
                                      && map.ValidTo == null
                                  select new { connection.ConnectionId, connection.ConnectorCode,
                                      RemoteRecordKey = map.ExternalId }).Distinct().ToListAsync(cancellationToken);
+        var queued = 0;
         foreach (var connection in connections)
-            await QueueConnectionAsync(connection.ConnectionId, connection.ConnectorCode,
-                connection.RemoteRecordKey, unitId, source, maintenance.MaintainedIn, triggerId, cancellationToken);
-        return connections.Count;
+            if (await QueueConnectionAsync(connection.ConnectionId, connection.ConnectorCode,
+                    connection.RemoteRecordKey, unitId, source, cardStatus, maintenance.MaintainedIn, triggerId,
+                    statusChangeOnly, cancellationToken))
+                queued++;
+        return queued;
     }
 
-    private async Task QueueConnectionAsync(Guid connectionId, string connectorCode, string remoteRecordKey,
-        Guid unitId, NativeWarrantyPushSource source, string maintainedIn, Guid triggerId,
+    private async Task<bool> QueueConnectionAsync(Guid connectionId, string connectorCode, string remoteRecordKey,
+        Guid unitId, NativeWarrantyPushSource source, string cardStatus, string maintainedIn, Guid triggerId,
+        bool statusChangeOnly,
         CancellationToken cancellationToken)
     {
         await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId,
@@ -78,17 +115,20 @@ public sealed class NativeWarrantyPushService(
             row.TenantId == tenant.TenantId && row.ConnectionId == connectionId
             && row.NativeWarrantyObjectMode == NativeWarrantyObjectModes.Pushed && !row.ReadOnly
             && row.OutboundMode != "none", cancellationToken);
-        if (!enabled) return;
+        if (!enabled) return false;
         var now = clock.UtcNow;
         var includeContract = maintainedIn == WarrantyContractsMaintainedIn.Module;
         var state = await db.NativeWarrantyPushStates.SingleOrDefaultAsync(row => row.TenantId == tenant.TenantId
             && row.ConnectionId == connectionId && row.UnitId == unitId, cancellationToken);
+        if (statusChangeOnly && state is not null
+            && StringComparer.Ordinal.Equals(state.DesiredModuleStatus, cardStatus))
+            return false;
         if (state is null)
         {
             state = new NativeWarrantyPushState
             {
                 TenantId = tenant.TenantId, ConnectionId = connectionId, UnitId = unitId,
-                RemoteRecordKey = remoteRecordKey, DesiredModuleStatus = source.LifecycleStatus,
+                RemoteRecordKey = remoteRecordKey, DesiredModuleStatus = cardStatus,
                 DesiredWarrantyEndDate = includeContract ? source.WarrantyEndDate : null,
                 IncludesWarrantyContractFields = includeContract, UpdatedAt = now,
             };
@@ -97,7 +137,7 @@ public sealed class NativeWarrantyPushService(
         else
         {
             state.RemoteRecordKey = remoteRecordKey;
-            state.DesiredModuleStatus = source.LifecycleStatus;
+            state.DesiredModuleStatus = cardStatus;
             state.DesiredWarrantyEndDate = includeContract ? source.WarrantyEndDate : null;
             state.IncludesWarrantyContractFields = includeContract;
             state.UpdatedAt = now;
@@ -110,7 +150,7 @@ public sealed class NativeWarrantyPushService(
             nameof(PushNativeWarrantyObject) + ":" + connectionId.ToString("N") + ":" + unitId.ToString("N"));
         var command = new PushNativeWarrantyObject(idempotency, $"unit/{unitId:N}",
             $"YOJ-WARRANTY-{triggerId:N}", new(unitId, source.Serial ?? ""), source.LifecycleStatus,
-            includeContract ? source.WarrantyEndDate : null, includeContract);
+            includeContract ? source.WarrantyEndDate : null, includeContract, cardStatus);
         var payload = JsonSerializer.Serialize(command, IntegrationContracts.Json);
         if (queued is not null && queued.Status is OutboundCommandStatus.Pending or OutboundCommandStatus.Retry)
         {
@@ -143,6 +183,7 @@ public sealed class NativeWarrantyPushService(
             state.OutboundCommandId = queued.OutboundCommandId;
         }
         await db.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     public async Task StartOrResumeBackfillAsync(Guid connectionId, string actor,
@@ -304,5 +345,13 @@ public static class NativeWarrantyPushHandler
 
     public static Task<int> Handle(UnitLifecycleChanged message, NativeWarrantyPushService pushes,
         CancellationToken cancellationToken) =>
-        pushes.QueueUnitAsync(message.Header.UnitId, message.Header.EventId, cancellationToken);
+        pushes.QueueStatusChangeAsync(message.Header.UnitId, message.Header.EventId, cancellationToken);
+
+    public static Task<int> Handle(CustodyChanged message, NativeWarrantyPushService pushes,
+        CancellationToken cancellationToken) =>
+        pushes.QueueStatusChangeAsync(message.Header.UnitId, message.Header.EventId, cancellationToken);
+
+    public static Task<int> Handle(UnitDispositionChanged message, NativeWarrantyPushService pushes,
+        CancellationToken cancellationToken) =>
+        pushes.QueueStatusChangeAsync(message.Header.UnitId, message.Header.EventId, cancellationToken);
 }

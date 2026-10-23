@@ -151,6 +151,13 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
             "daily_check_failed" => "The daily check failed. Review its report before activation.",
             _ => null,
         };
+        if (row.LastErrorCode is null
+            && services.GetKeyedService<IConnectionHealthNoteSource>(connection.ConnectorCode) is { } noteSource
+            && await noteSource.ReadAsync(connectionId, ct) is { } note)
+        {
+            row.LastErrorCode = note.Code;
+            row.LastErrorMessage = note.Message;
+        }
         var credentialDue = row.CredentialReplaceBy <= now.AddDays(thresholds.CredentialWarnDays);
         row.Status = ConnectionHealthRules.Derive(new(connection.Status, smokeFailed, row.CheckedUpTo,
             polls.Count > 0, row.LastDailyCheckResult, row.LastDailyCheckAt, row.OpenDeadLetters,

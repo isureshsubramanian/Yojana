@@ -54,6 +54,10 @@ public sealed class PublishedEventTests(SerialisationHostFixture fixture)
         Assert.Equal(LocationKind.Warehouse, custody.FromLocationKind);
         Assert.Equal(UnitEventType.CustodyChanged, custody.TriggerEventType);
         Assert.Equal(LocationKind.Warehouse, commissioned.LocationKind);
+        var disposition = Assert.Single(await PublishedEventSink.WaitForAsync<UnitDispositionChanged>(
+            e => e.Header.UnitId == unit && e.Cause == UnitEventType.CustodyChanged, 1, timeout));
+        Assert.Equal((UnitDisposition.Active, UnitDisposition.InTransit, UnitEventType.CustodyChanged),
+            (disposition.PreviousDisposition, disposition.Disposition, disposition.Cause));
         var closed = Assert.Single(await PublishedEventSink.WaitForAsync<OwnershipClosed>(e => e.Header.UnitId == unit, 1, timeout));
         Assert.Equal("settled", closed.Reason);
     }
@@ -61,7 +65,7 @@ public sealed class PublishedEventTests(SerialisationHostFixture fixture)
     [Fact]
     public void Every_published_event_has_an_embedded_schema_whose_required_fields_match_the_record()
     {
-        foreach (var (schema, version, type) in new[] { (UnitCommissioned.Schema, UnitCommissioned.Version, typeof(UnitCommissioned)), (UnitReleased.Schema, UnitReleased.Version, typeof(UnitReleased)), (UnitIdentifierCorrected.Schema, UnitIdentifierCorrected.Version, typeof(UnitIdentifierCorrected)), (OwnershipOpened.Schema, OwnershipOpened.Version, typeof(OwnershipOpened)), (OwnershipClosed.Schema, OwnershipClosed.Version, typeof(OwnershipClosed)), (CustodyChanged.Schema, CustodyChanged.Version, typeof(CustodyChanged)), (UnitGraded.Schema, UnitGraded.Version, typeof(UnitGraded)), (UnitPartInstalled.Schema, UnitPartInstalled.Version, typeof(UnitPartInstalled)), (CoverageDecisionChanged.Schema, CoverageDecisionChanged.Version, typeof(CoverageDecisionChanged)) })
+        foreach (var (schema, version, type) in new[] { (UnitCommissioned.Schema, UnitCommissioned.Version, typeof(UnitCommissioned)), (UnitReleased.Schema, UnitReleased.Version, typeof(UnitReleased)), (UnitDispositionChanged.Schema, UnitDispositionChanged.Version, typeof(UnitDispositionChanged)), (UnitIdentifierCorrected.Schema, UnitIdentifierCorrected.Version, typeof(UnitIdentifierCorrected)), (OwnershipOpened.Schema, OwnershipOpened.Version, typeof(OwnershipOpened)), (OwnershipClosed.Schema, OwnershipClosed.Version, typeof(OwnershipClosed)), (CustodyChanged.Schema, CustodyChanged.Version, typeof(CustodyChanged)), (UnitGraded.Schema, UnitGraded.Version, typeof(UnitGraded)), (UnitPartInstalled.Schema, UnitPartInstalled.Version, typeof(UnitPartInstalled)), (CoverageDecisionChanged.Schema, CoverageDecisionChanged.Version, typeof(CoverageDecisionChanged)) })
         {
             using var doc = System.Text.Json.JsonDocument.Parse(PublishedEventSchemas.Read(schema, version));
             var properties = doc.RootElement.GetProperty("properties").EnumerateObject().Select(p => p.Name).ToHashSet();

@@ -9,7 +9,8 @@ public interface IOutboundUnitSourcePort
 }
 
 /// <summary>Current module-owned values that may be projected to a remote installed-base record.</summary>
-public sealed record NativeWarrantyPushSource(string LifecycleStatus, string? Serial, DateOnly? WarrantyEndDate);
+public sealed record NativeWarrantyPushSource(string LifecycleStatus, string Disposition,
+    string? LocationKind, string? CustodyReason, string? Serial, DateOnly? WarrantyEndDate);
 
 /// <summary>
 /// Narrow read boundary used by Integration. It exposes no Serialisation entities and leaves remote field mapping to

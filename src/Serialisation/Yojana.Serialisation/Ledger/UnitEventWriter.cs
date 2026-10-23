@@ -136,14 +136,15 @@ public sealed class UnitEventWriter(SerialisationDbContext db, ITenantContext te
         var draftOf = fresh.ToDictionary(d => (d.IdempotencyKey, d.EventTime));
         var projected = written.Where(e => draftOf[(e.IdempotencyKey, e.EventTime)].ProjectCurrentState).ToList();
         await projector.PreloadAsync(tenantId, projected.Select(e => e.UnitId).Distinct().ToList(), cancellationToken);
+        var dispositionChanges = new List<UnitDispositionTransition>();
         foreach (var group in projected.GroupBy(e => e.UnitId))
         {
             var deltas = group.OrderBy(e => e.Seq).Select(e => (e, draftOf[(e.IdempotencyKey, e.EventTime)].Delta)).ToList();
-            await projector.ApplyAsync(tenantId, group.Key, deltas, cancellationToken);
+            dispositionChanges.AddRange(await projector.ApplyAsync(tenantId, group.Key, deltas, cancellationToken));
         }
 
         // Published events (P1-T16) leave through the outbox when this unit of work commits.
-        await publisher.PublishAsync(written, cancellationToken);
+        await publisher.PublishAsync(written, dispositionChanges, cancellationToken);
         foreach (var observer in observers)
         {
             await observer.AppendedAsync(written, cancellationToken);

@@ -105,6 +105,9 @@ public static class IntegrationModule
             ConnectionPollingJob.JobName, ConnectionPollingJob.Cron));
         builder.Services.AddSingleton<Cx01SessionRegistry>();
         builder.Services.AddScoped<Cx01Settings>();
+        builder.Services.AddScoped<Cx01WarrantyStatusHealth>();
+        builder.Services.AddKeyedScoped<IConnectionHealthNoteSource, Cx01WarrantyStatusHealth>(
+            Cx01Capabilities.ConnectorCode);
         builder.Services.AddScoped<Cx01Transport>();
         builder.Services.AddScoped<ICx01Transport, RelayCx01Transport>();
         builder.Services.AddKeyedScoped<IRelayConnectorProfile, Cx01RelayProfile>(Cx01Capabilities.ConnectorCode);

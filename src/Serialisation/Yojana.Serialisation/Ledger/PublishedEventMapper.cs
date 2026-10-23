@@ -3,6 +3,7 @@ using Wolverine;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Projections;
 using Yojana.Serialisation.Replacements;
 using Yojana.Serialisation.Search;
 
@@ -16,7 +17,8 @@ namespace Yojana.Serialisation.Ledger;
 /// </summary>
 public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant, LedgerPublication publication)
 {
-    public async Task PublishAsync(IReadOnlyList<UnitEvent> written, CancellationToken cancellationToken)
+    public async Task PublishAsync(IReadOnlyList<UnitEvent> written,
+        IReadOnlyList<UnitDispositionTransition> dispositionChanges, CancellationToken cancellationToken)
     {
         // Coupled to EntitlementBulkOperation and PreviewLateSerialization dry runs: each applies a command in a scope
         // of its own, whose bus is not the transactional outbox, and rolls the transaction back; publishing there would
@@ -48,11 +50,29 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
             }
         }
 
+        await PublishDispositionChangesAsync(dispositionChanges, searchRequests, cancellationToken);
+
         // One append can contain thousands of unit facts. Coalescing them here prevents the search safety net from
         // multiplying the transactional outbox and delaying delivery of the public facts it accompanies.
         if (SearchProjectionRequestMapper.Combine(searchRequests) is { } searchRequest)
         {
             await bus.PublishAsync(searchRequest, new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
+        }
+    }
+
+    private async Task PublishDispositionChangesAsync(IReadOnlyList<UnitDispositionTransition> changes,
+        List<SearchProjectionRequested> searchRequests, CancellationToken cancellationToken)
+    {
+        if (publication.Suppressed) return;
+        foreach (var change in changes)
+        {
+            var message = new UnitDispositionChanged(
+                Header(change.Event, UnitDispositionChanged.Schema, UnitDispositionChanged.Version),
+                change.Disposition, change.PreviousDisposition, change.Event.EventType);
+            await bus.PublishAsync(message,
+                new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
+            if (SearchProjectionRequestMapper.Map(message) is { } projection)
+                searchRequests.Add(projection);
         }
     }
 
