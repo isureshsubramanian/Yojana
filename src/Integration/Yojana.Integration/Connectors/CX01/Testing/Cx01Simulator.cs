@@ -116,6 +116,10 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public int EquipmentCardPageCap { get; set; } = 20;
     public Action<Dictionary<string, object?>>? EditEquipmentCardBeforeNextPatch { get; set; }
     public HttpStatusCode? RejectNextEquipmentCardPatchWith { get; set; }
+    public HashSet<string> AcceptedEquipmentCardStatuses { get; } = new(StringComparer.Ordinal)
+    {
+        "sns_Active", "sns_Terminated", "sns_InRepair", "sns_Returned", "sns_Loaned",
+    };
     public void SimulateLaterUserEdit() => returnUpdateTime = "090200";
     public void SimulateLaterDeliveryEdit(string updateTime) => deliveryUpdateTime = updateTime;
     public int PageSize { get; set; } = 1;
@@ -166,9 +170,11 @@ internal sealed class Cx01Simulator : IAsyncDisposable
 
     public string OwnSubscriptionId(Guid tenantId, Guid connectionId) => Cx01Protocol.WebhookId(tenantId, connectionId);
 
-    public Yojana.Integration.Connections.RegisterConnection RegistrationRequest(Guid? requestId = null) =>
+    public Yojana.Integration.Connections.RegisterConnection RegistrationRequest(Guid? requestId = null,
+        Cx01NativeWarrantyStatusCodes? nativeWarrantyStatuses = null) =>
         new(requestId ?? Guid.CreateVersion7(), Cx01Capabilities.ConnectorCode, "Fictional main connection", Guid.CreateVersion7(),
-            JsonSerializer.SerializeToElement(new Cx01ConnectionSettings(BaseUri, "FICTIONAL_DEMO", "test"),
+            JsonSerializer.SerializeToElement(new Cx01ConnectionSettings(BaseUri, "FICTIONAL_DEMO", "test",
+                    NativeWarrantyStatuses: nativeWarrantyStatuses),
                 Yojana.Integration.Contracts.IntegrationContracts.Json),
             [new(Cx01Client.CredentialPurpose, JsonSerializer.Serialize(new Cx01Credential("fictional-user", "not-logged"),
                 Yojana.Integration.Contracts.IntegrationContracts.Json))]);
@@ -567,6 +573,15 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                         return;
                     }
                     using var body = JsonDocument.Parse(await new StreamReader(request.InputStream).ReadToEndAsync());
+                    if (body.RootElement.TryGetProperty("StatusOfSerialNumber", out var requestedStatus)
+                        && requestedStatus.GetString() is { } status
+                        && !AcceptedEquipmentCardStatuses.Contains(status))
+                    {
+                        response.StatusCode = (int)HttpStatusCode.BadRequest;
+                        await ErrorAsync(response, "-5002",
+                            "Fictional installed-base status code was rejected");
+                        return;
+                    }
                     LastPatchBody?.Dispose();
                     LastPatchBody = JsonDocument.Parse(body.RootElement.GetRawText());
                     foreach (var property in body.RootElement.EnumerateObject())

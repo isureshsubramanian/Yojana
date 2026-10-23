@@ -27,6 +27,7 @@
           "additionalProperties": true
         },
         "module_status": { "type": "string" },
+        "card_status": { "type": ["string", "null"] },
         "warranty_end_date": { "type": ["string", "null"] },
         "includes_warranty_contract_fields": { "type": "boolean" }
       },

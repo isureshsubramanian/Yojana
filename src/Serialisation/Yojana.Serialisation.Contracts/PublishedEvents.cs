@@ -34,6 +34,14 @@ public sealed record UnitLifecycleChanged(PublishedEventHeader Header, string Li
     public const string Version = "1.0";
 }
 
+/// <summary>The unit's projected disposition changed, independently of the workflow that caused the transition.</summary>
+public sealed record UnitDispositionChanged(PublishedEventHeader Header, string Disposition,
+    string PreviousDisposition, string Cause) : IPublishedUnitEvent
+{
+    public const string Schema = "Unit.DispositionChanged";
+    public const string Version = "1.0";
+}
+
 public sealed record UnitIdentifierCorrected(PublishedEventHeader Header, string IdentifierType, string Reason, string BeforeValue, string AfterValue, Guid SupersededIdentifierId, Guid NewIdentifierId, string? ApproverRef) : IPublishedUnitEvent
 {
     public const string Schema = "Unit.IdentifierCorrected";

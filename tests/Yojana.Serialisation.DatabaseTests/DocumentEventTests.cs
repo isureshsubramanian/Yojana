@@ -199,6 +199,12 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
         Assert.Equal(LocationKind.Quarantine, two.LocationKind);
         Assert.Equal(UnitDisposition.Returned, two.Disposition);
         Assert.Equal(new DateOnly(2026, 10, 15), (await db.Episodes.SingleAsync(e => e.UnitId == u2 && e.Reason == "loan")).DueBack);
+        var returnedDisposition = Assert.Single(await PublishedEventSink.WaitForAsync<UnitDispositionChanged>(
+            message => message.Header.UnitId == u2 && message.Header.Document?.Id == returned.Document.Id,
+            1, TimeSpan.FromSeconds(20)));
+        Assert.Equal((UnitDisposition.Active, UnitDisposition.Returned, UnitEventType.CustodyChanged),
+            (returnedDisposition.PreviousDisposition, returnedDisposition.Disposition,
+                returnedDisposition.Cause));
         var three = await db.Units.SingleAsync(u => u.UnitId == u3);
         Assert.Equal(LifecycleStatus.Scrapped, three.LifecycleStatus);
         Assert.Equal(UnitDisposition.Destroyed, (await db.Current.SingleAsync(c => c.UnitId == three.UnitId)).Disposition);

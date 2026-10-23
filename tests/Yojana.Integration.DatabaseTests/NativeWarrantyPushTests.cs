@@ -86,6 +86,11 @@ public sealed class NativeWarrantyPushTests(IntegrationHostFixture fixture)
         Assert.Equal(NativeWarrantyPushService.DroppedFrozenOutcome,
             (await db.OutboundCommands.SingleAsync(row => row.OutboundCommandId == queued.OutboundCommandId)).Outcome);
         Assert.Equal(0, await pushes.QueueUnitAsync(unit, Guid.CreateVersion7(), default));
+        var frozenHeader = new PublishedEventHeader(CustodyChanged.Schema, CustodyChanged.Version,
+            Guid.CreateVersion7(), unit, fixture.Clock.UtcNow, fixture.Clock.UtcNow, 5, Guid.NewGuid(), Actor, null);
+        Assert.Equal(0, await NativeWarrantyPushHandler.Handle(new CustodyChanged(frozenHeader, Guid.NewGuid(),
+            LocationKind.InRepair, Guid.NewGuid(), null, null, LocationKind.Warehouse, Guid.NewGuid(),
+            EpisodeReason.Return, UnitEventType.CustodyChanged), pushes, default));
         var freezeAudit = (await db.ConnectionEvents.Where(row => row.ConnectionId == connection
                 && row.EventType == "CoexistenceSettingsChanged").ToListAsync())[^1];
         using var audit = JsonDocument.Parse(freezeAudit.DetailsJson);
@@ -135,6 +140,14 @@ public sealed class NativeWarrantyPushTests(IntegrationHostFixture fixture)
             Assert.Equal(BackfillStatus.Completed, cursor.Status);
             Assert.Equal(2, cursor.ProcessedMessages);
             Assert.Equal(2, await db.NativeWarrantyPushStates.CountAsync(row => row.ConnectionId == connection));
+            var statuses = (await db.OutboundCommands.Where(row => row.ConnectionId == connection
+                    && row.CommandType == nameof(PushNativeWarrantyObject)).Select(row => row.Payload).ToListAsync())
+                .Select(payload => JsonSerializer.Deserialize<PushNativeWarrantyObject>(payload,
+                    IntegrationContracts.Json)!.CardStatus).ToHashSet(StringComparer.Ordinal);
+            Assert.Equal(new HashSet<string?>
+            {
+                NativeWarrantyCardStatus.Active, NativeWarrantyCardStatus.Terminated,
+            }, statuses);
         }
 
         var other = await NewTenantAsync("nw-other");
@@ -210,12 +223,127 @@ public sealed class NativeWarrantyPushTests(IntegrationHostFixture fixture)
         Assert.Equal(nameof(PushNativeWarrantyObject), task.CommandType);
     }
 
-    private async Task<(TenantId Tenant, Guid Connection)> RegisteredAsync(Cx01Simulator simulator)
+    [DatabaseFact]
+    public async Task Custody_disposition_and_lifecycle_events_coalesce_status_changes_with_precedence_and_clear_to_active()
+    {
+        await using var simulator = new Cx01Simulator();
+        AddCard(simulator, 931);
+        var (tenant, connection) = await RegisteredAsync(simulator);
+        var unit = Guid.CreateVersion7();
+        await AddUnitAndMapAsync(tenant, connection, unit, "931", LifecycleStatus.Released);
+        using var scope = fixture.ScopeFor(tenant);
+        await scope.ServiceProvider.GetRequiredService<CoexistenceSettings>().UpdateAsync(connection,
+            new(NativeWarrantyObjectModes.Pushed, null, null), Actor, default);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var serialisation = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var pushes = scope.ServiceProvider.GetRequiredService<NativeWarrantyPushService>();
+
+        async Task<int> Move(string lifecycle, string disposition, string location, string reason, int sequence)
+        {
+            var stored = await serialisation.Units.SingleAsync(row => row.UnitId == unit);
+            stored.LifecycleStatus = lifecycle;
+            var current = await serialisation.Current.SingleAsync(row => row.UnitId == unit);
+            current.LifecycleStatus = lifecycle;
+            current.Disposition = disposition;
+            current.LocationKind = location;
+            var episode = await serialisation.Episodes.SingleAsync(row => row.EpisodeId == current.OpenCustodyEpisodeId);
+            episode.LocationKind = location;
+            episode.Reason = reason;
+            await serialisation.SaveChangesAsync();
+            var eventId = Guid.CreateVersion7();
+            var header = new PublishedEventHeader(CustodyChanged.Schema, CustodyChanged.Version,
+                eventId, unit, fixture.Clock.UtcNow, fixture.Clock.UtcNow, sequence, Guid.NewGuid(), Actor, null);
+            if (sequence == 3)
+                return await NativeWarrantyPushHandler.Handle(new UnitDispositionChanged(
+                    header with { Schema = UnitDispositionChanged.Schema, Version = UnitDispositionChanged.Version },
+                    disposition, UnitDisposition.InProgress, UnitEventType.CustodyChanged), pushes, default);
+            if (sequence == 6)
+                return await NativeWarrantyPushHandler.Handle(new UnitLifecycleChanged(
+                    header with { Schema = UnitLifecycleChanged.Schema, Version = UnitLifecycleChanged.Version },
+                    lifecycle, UnitEventType.Voided), pushes, default);
+            return await NativeWarrantyPushHandler.Handle(new CustodyChanged(header, episode.EpisodeId, location,
+                current.LocationId, current.CustodyPartyRef, null, null, null, reason,
+                UnitEventType.CustodyChanged), pushes, default);
+        }
+
+        Assert.Equal(1, await Move(LifecycleStatus.Released, UnitDisposition.InProgress,
+            LocationKind.InRepair, EpisodeReason.Return, 1));
+        Assert.Equal(NativeWarrantyCardStatus.InRepair, await QueuedStatusAsync(db, connection));
+        Assert.Equal(1, (await scope.ServiceProvider.GetRequiredService<OutboundRelay>()
+            .RelayConnectionAsync(connection, default)).Completed);
+        Assert.Equal("sns_InRepair", Card(simulator, 931)["StatusOfSerialNumber"]);
+        Assert.Equal(0, await Move(LifecycleStatus.Released, UnitDisposition.InProgress,
+            LocationKind.InRepair, EpisodeReason.Return, 2));
+        Assert.Equal(1, await Move(LifecycleStatus.Released, UnitDisposition.Returned,
+            LocationKind.Quarantine, EpisodeReason.Loan, 3));
+        Assert.Equal(NativeWarrantyCardStatus.Returned, await QueuedStatusAsync(db, connection));
+        Assert.Equal(1, await Move(LifecycleStatus.Released, UnitDisposition.Active,
+            LocationKind.CustomerSite, EpisodeReason.Loan, 4));
+        Assert.Equal(NativeWarrantyCardStatus.Loaned, await QueuedStatusAsync(db, connection));
+        Assert.Equal(1, await Move(LifecycleStatus.Released, UnitDisposition.Available,
+            LocationKind.Warehouse, EpisodeReason.Receipt, 5));
+        Assert.Equal(NativeWarrantyCardStatus.Active, await QueuedStatusAsync(db, connection));
+        Assert.Equal(1, await Move(LifecycleStatus.Void, UnitDisposition.InProgress,
+            LocationKind.InRepair, EpisodeReason.Loan, 6));
+        Assert.Equal(NativeWarrantyCardStatus.Terminated, await QueuedStatusAsync(db, connection));
+        Assert.Equal(2, await db.OutboundCommands.CountAsync(row => row.ConnectionId == connection
+            && row.CommandType == nameof(PushNativeWarrantyObject)));
+    }
+
+    [DatabaseFact]
+    public async Task Missing_status_code_uses_active_and_records_health_note_while_rejected_configured_code_reaches_dlq()
+    {
+        await using var fallbackSimulator = new Cx01Simulator();
+        AddCard(fallbackSimulator, 941);
+        var fallbackCodes = new Cx01NativeWarrantyStatusCodes(InRepair: null);
+        var (tenant, connection) = await RegisteredAsync(fallbackSimulator, fallbackCodes);
+        var unit = Guid.CreateVersion7();
+        await AddUnitAndMapAsync(tenant, connection, unit, "941", LifecycleStatus.Released,
+            UnitDisposition.InProgress, LocationKind.InRepair, EpisodeReason.Return);
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            await scope.ServiceProvider.GetRequiredService<CoexistenceSettings>().UpdateAsync(connection,
+                new(NativeWarrantyObjectModes.Pushed, null, null), Actor, default);
+            await scope.ServiceProvider.GetRequiredService<NativeWarrantyPushService>()
+                .QueueUnitAsync(unit, Guid.CreateVersion7(), default);
+            Assert.Equal(1, (await scope.ServiceProvider.GetRequiredService<OutboundRelay>()
+                .RelayConnectionAsync(connection, default)).Completed);
+            Assert.Equal("sns_Active", Card(fallbackSimulator, 941)["StatusOfSerialNumber"]);
+            var note = await scope.ServiceProvider.GetRequiredService<Cx01WarrantyStatusHealth>()
+                .ReadAsync(connection, default);
+            Assert.Equal(Cx01WarrantyStatusHealth.NoteCode, note?.Code);
+            Assert.Contains(NativeWarrantyCardStatus.InRepair, note?.Message, StringComparison.Ordinal);
+            var health = await scope.ServiceProvider.GetRequiredService<ConnectionHealthProjection>()
+                .RefreshAsync(connection, default);
+            Assert.Equal(Cx01WarrantyStatusHealth.NoteCode, health.LastErrorCode);
+        }
+
+        await using var rejectedSimulator = new Cx01Simulator();
+        AddCard(rejectedSimulator, 942);
+        var rejectedCodes = new Cx01NativeWarrantyStatusCodes(InRepair: "sns_FictionalRejected");
+        var (rejectedTenant, rejectedConnection) = await RegisteredAsync(rejectedSimulator, rejectedCodes);
+        var rejectedUnit = Guid.CreateVersion7();
+        await AddUnitAndMapAsync(rejectedTenant, rejectedConnection, rejectedUnit, "942",
+            LifecycleStatus.Released, UnitDisposition.InProgress, LocationKind.InRepair, EpisodeReason.Return);
+        using var rejectedScope = fixture.ScopeFor(rejectedTenant);
+        await rejectedScope.ServiceProvider.GetRequiredService<CoexistenceSettings>().UpdateAsync(rejectedConnection,
+            new(NativeWarrantyObjectModes.Pushed, null, null), Actor, default);
+        await rejectedScope.ServiceProvider.GetRequiredService<NativeWarrantyPushService>()
+            .QueueUnitAsync(rejectedUnit, Guid.CreateVersion7(), default);
+        Assert.Equal(1, (await rejectedScope.ServiceProvider.GetRequiredService<OutboundRelay>()
+            .RelayConnectionAsync(rejectedConnection, default)).Parked);
+        var letter = await rejectedScope.ServiceProvider.GetRequiredService<IntegrationDbContext>()
+            .DeadLetterItems.SingleAsync(row => row.ConnectionId == rejectedConnection);
+        Assert.Equal(OutboundConnectorOutcome.Rejected, letter.ReasonCode);
+    }
+
+    private async Task<(TenantId Tenant, Guid Connection)> RegisteredAsync(Cx01Simulator simulator,
+        Cx01NativeWarrantyStatusCodes? nativeWarrantyStatuses = null)
     {
         var tenant = await NewTenantAsync("nw");
         using var scope = fixture.ScopeFor(tenant);
         var result = await scope.ServiceProvider.GetRequiredService<ConnectionCommands>()
-            .RegisterAsync(simulator.RegistrationRequest(), Actor, default);
+            .RegisterAsync(simulator.RegistrationRequest(nativeWarrantyStatuses: nativeWarrantyStatuses), Actor, default);
         await scope.ServiceProvider.GetRequiredService<IntegrationDbContext>().ConnectionGatewaySettings
             .Where(row => row.ConnectionId == result.ConnectionId)
             .ExecuteUpdateAsync(update => update.SetProperty(row => row.ReadOnly, false));
@@ -234,7 +362,8 @@ public sealed class NativeWarrantyPushTests(IntegrationHostFixture fixture)
     }
 
     private async Task AddUnitAndMapAsync(TenantId tenant, Guid connection, Guid unit, string remoteKey,
-        string status)
+        string status, string disposition = UnitDisposition.Active,
+        string locationKind = LocationKind.Warehouse, string custodyReason = EpisodeReason.Receipt)
     {
         using var scope = fixture.ScopeFor(tenant);
         var serialisation = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
@@ -244,6 +373,22 @@ public sealed class NativeWarrantyPushTests(IntegrationHostFixture fixture)
             TenantId = tenant, UnitId = unit, LifecycleStatus = status, Origin = UnitOrigin.Purchased,
             SerialisationPoint = SerialisationPoint.Receipt, RetentionClass = "standard_10y",
             CreatedAt = fixture.Clock.UtcNow, CreatedEventId = eventId, CreatedEventTime = fixture.Clock.UtcNow,
+        });
+        var episodeId = Guid.CreateVersion7();
+        var locationId = Guid.NewGuid();
+        serialisation.Episodes.Add(new CustodyEpisode
+        {
+            TenantId = tenant, EpisodeId = episodeId, UnitId = unit, Kind = EpisodeKind.Custody,
+            LocationId = locationId, LocationKind = locationKind, Reason = custodyReason,
+            Source = EpisodeSource.Receipt, Confidence = Confidence.High, ValidFrom = fixture.Clock.UtcNow,
+            OpeningEventId = eventId,
+        });
+        serialisation.Current.Add(new UnitCurrent
+        {
+            TenantId = tenant, UnitId = unit, ItemId = Guid.NewGuid(), LifecycleStatus = status,
+            Disposition = disposition, LocationId = locationId, LocationKind = locationKind,
+            CustodyKind = EpisodeKind.Custody, OpenCustodyEpisodeId = episodeId,
+            LastEventTime = fixture.Clock.UtcNow,
         });
         serialisation.Identifiers.Add(new UnitIdentifier
         {
@@ -290,4 +435,14 @@ public sealed class NativeWarrantyPushTests(IntegrationHostFixture fixture)
 
     private static Dictionary<string, object?> Card(Cx01Simulator simulator, long number) =>
         simulator.EquipmentCards.Single(card => Convert.ToInt64(card["EquipmentCardNum"]) == number);
+
+    private static async Task<string?> QueuedStatusAsync(IntegrationDbContext db, Guid connection)
+    {
+        db.ChangeTracker.Clear();
+        var commandId = await db.NativeWarrantyPushStates.Where(row => row.ConnectionId == connection)
+            .Select(row => row.OutboundCommandId).SingleAsync();
+        var payload = await db.OutboundCommands.Where(row => row.OutboundCommandId == commandId)
+            .Select(row => row.Payload).SingleAsync();
+        return JsonSerializer.Deserialize<PushNativeWarrantyObject>(payload, IntegrationContracts.Json)?.CardStatus;
+    }
 }

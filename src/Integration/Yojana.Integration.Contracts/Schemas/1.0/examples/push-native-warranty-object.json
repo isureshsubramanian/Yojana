@@ -25,6 +25,7 @@
       "identifier_value": "FIC-SERVER-1001"
     },
     "module_status": "released",
+    "card_status": "active",
     "warranty_end_date": "2029-08-31",
     "includes_warranty_contract_fields": true
   }

@@ -7,6 +7,8 @@ using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation.Projections;
 
+public sealed record UnitDispositionTransition(UnitEvent Event, string PreviousDisposition, string Disposition);
+
 // TIGHT COUPLING (declared, ADR-0001 "Integration boundaries and coupling", coupling 2)
 // WHAT:  UnitEventWriter.Append(...) invokes UnitCurrentStateProjector.Apply(...) in the same
 //        transaction and the same ordering (events for one unit are applied in seq order); the
@@ -44,8 +46,10 @@ public sealed class UnitCurrentStateProjector(SerialisationDbContext db)
         }
     }
 
-    public async Task ApplyAsync(TenantId tenant, Guid unitId, IReadOnlyList<(UnitEvent Event, CurrentStateDelta? Delta)> events, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<UnitDispositionTransition>> ApplyAsync(TenantId tenant, Guid unitId,
+        IReadOnlyList<(UnitEvent Event, CurrentStateDelta? Delta)> events, CancellationToken cancellationToken)
     {
+        var dispositionChanges = new List<UnitDispositionTransition>();
         // FindAsync answers from the unit of work when the row is tracked (a preload, or an earlier apply) and queries otherwise.
         var current = await db.Current.FindAsync([tenant, unitId], cancellationToken);
         foreach (var (@event, delta) in events)
@@ -93,10 +97,15 @@ public sealed class UnitCurrentStateProjector(SerialisationDbContext db)
                 throw new ProjectionStateException($"Unit {unitId}: event {@event.EventType} changes current state but the unit has no row; the first event must carry Create.");
             }
 
+            var previousDisposition = current.Disposition;
             Fold(current, delta);
+            if (delta.Create is null && !StringComparer.Ordinal.Equals(previousDisposition, current.Disposition))
+                dispositionChanges.Add(new(@event, previousDisposition, current.Disposition));
             current.LastEventSeq = @event.Seq;
             current.LastEventTime = @event.EventTime;
         }
+
+        return dispositionChanges;
     }
 
     /// <summary>The pure fold: applies one delta to a row. Shared with the healer so both compute the same state.</summary>

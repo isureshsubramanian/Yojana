@@ -48,15 +48,29 @@ public sealed class NativeWarrantyPushSourcePort(SerialisationDbContext db, ITen
 {
     public async Task<NativeWarrantyPushSource?> ReadAsync(Guid unitId, CancellationToken cancellationToken)
     {
-        var status = await db.Units.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
-                && row.UnitId == unitId).Select(row => row.LifecycleStatus)
-            .SingleOrDefaultAsync(cancellationToken);
-        if (status is null) return null;
+        var state = await (from unit in db.Units.AsNoTracking()
+                           join current in db.Current.AsNoTracking()
+                               on new { unit.TenantId, unit.UnitId } equals new { current.TenantId, current.UnitId }
+                           where unit.TenantId == tenant.TenantId && unit.UnitId == unitId
+                           select new
+                           {
+                               unit.LifecycleStatus,
+                               current.Disposition,
+                               current.LocationKind,
+                               current.OpenCustodyEpisodeId,
+                           }).SingleOrDefaultAsync(cancellationToken);
+        if (state is null) return null;
+        var custodyReason = state.OpenCustodyEpisodeId is { } episodeId
+            ? await db.Episodes.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                    && row.EpisodeId == episodeId && row.ValidTo == null)
+                .Select(row => row.Reason).SingleOrDefaultAsync(cancellationToken)
+            : null;
         var serials = await units.PrimarySerialsAsync([unitId], cancellationToken);
         var warrantyEnd = await db.Entitlements.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
                 && row.UnitId == unitId && row.Direction == EntitlementDirection.Outbound
                 && row.Status != EntitlementStatus.Closed && row.EndDate != null)
             .MaxAsync(row => row.EndDate, cancellationToken);
-        return new(status, serials.GetValueOrDefault(unitId), warrantyEnd);
+        return new(state.LifecycleStatus, state.Disposition, state.LocationKind, custodyReason,
+            serials.GetValueOrDefault(unitId), warrantyEnd);
     }
 }

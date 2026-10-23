@@ -91,6 +91,16 @@ public sealed class OutboundEventMappingTests
     }
 
     [Fact]
+    public void Disposition_change_has_a_catalogued_versioned_schema()
+    {
+        using var schema = JsonDocument.Parse(PublishedEventSchemas.Read(
+            UnitDispositionChanged.Schema, UnitDispositionChanged.Version));
+        Assert.Equal(UnitDispositionChanged.Schema, schema.RootElement.GetProperty("title").GetString());
+        Assert.Contains("previous_disposition", schema.RootElement.GetProperty("required")
+            .EnumerateArray().Select(value => value.GetString()));
+    }
+
+    [Fact]
     public void Ledger_publication_preserves_known_money_and_customer_facts()
     {
         var customer = Guid.NewGuid();

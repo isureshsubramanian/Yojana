@@ -26,7 +26,8 @@ public sealed record Cx01ConnectionSettings(
     string Transport = "direct", string RelayCredentials = "site", string? RelayWebhookUrl = null,
     int RelayOfflineAfterSeconds = 120, int RelayRequestTimeoutSeconds = 90, int RelayQueueCapacity = 128,
     IReadOnlyDictionary<string, Cx01ApprovalHandling>? ApprovalHandling = null,
-    Cx01DocumentSettings? Documents = null, Cx01DocumentAcceptance? DocumentsAcceptance = null)
+    Cx01DocumentSettings? Documents = null, Cx01DocumentAcceptance? DocumentsAcceptance = null,
+    Cx01NativeWarrantyStatusCodes? NativeWarrantyStatuses = null)
 {
     public Cx01ConnectionSettings Validate()
     {
@@ -34,6 +35,7 @@ public sealed record Cx01ConnectionSettings(
         Cx01ReferenceRules.Validate(this);
         Cx01ApprovalPolicy.Validate(ApprovalHandling);
         Documents?.Validate();
+        NativeWarrantyStatuses?.Validate();
         if (RelayWebhookUrl is not null) Yojana.Relay.Contracts.RelayWebhookUrl.Validate(RelayWebhookUrl);
         if (Transport is not ("direct" or "site_relay") || RelayCredentials is not ("site" or "cloud")
             || RelayQueueCapacity is < 1 or > 1024 || RelayOfflineAfterSeconds is < 30 or > 3600 || RelayRequestTimeoutSeconds is < 1 or > 300)
@@ -68,6 +70,23 @@ public sealed record Cx01ConnectionSettings(
         "CardCode" => ["CardCode"],
         _ => [entity.KeyField],
     };
+}
+
+/// <summary>
+/// Per-connection translation for remote status values that are not yet verified. A null value deliberately opts out
+/// of that status and makes the writer use Active while exposing a connection-health note.
+/// </summary>
+public sealed record Cx01NativeWarrantyStatusCodes(
+    string? InRepair = "sns_InRepair",
+    string? Returned = "sns_Returned",
+    string? Loaned = "sns_Loaned")
+{
+    public Cx01NativeWarrantyStatusCodes Validate()
+    {
+        if (new[] { InRepair, Returned, Loaned }.Any(value => value is not null && string.IsNullOrWhiteSpace(value)))
+            throw new InvalidOperationException("Configured CX01 native-warranty status codes must not be empty.");
+        return this;
+    }
 }
 
 public sealed record Cx01WebhookEventSetting(string BusinessObject, string TransactionType,
