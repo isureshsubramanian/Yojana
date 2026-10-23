@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -36,6 +37,7 @@ public static class IntegrationNotificationEndpoints
     public const string TenantHeader = "X-Yojana-Tenant-Id";
     public const string TimestampHeader = "X-Yojana-Webhook-Timestamp";
     public const string SignatureHeader = "X-Yojana-Webhook-Signature";
+    public const string AcknowledgementTimingMetric = "notification-ack";
     public const string SigningCredentialPurpose = "webhook_signing";
     public const int MaximumBatchSize = 1_024;
 
@@ -52,6 +54,7 @@ public static class IntegrationNotificationEndpoints
         HmacSha256WebhookSignatureVerifier verifier, IMessageBus bus, IClock clock,
         CancellationToken cancellationToken)
     {
+        var acknowledgementStarted = Stopwatch.GetTimestamp();
         if (!TenantId.TryParse(request.Headers[TenantHeader].FirstOrDefault(), out var tenantId))
             return Results.BadRequest(new { error = "tenant_header_required" });
         tenantSetter.Set(tenantId);
@@ -116,6 +119,8 @@ public static class IntegrationNotificationEndpoints
         if (pending.Count > 0)
             await bus.PublishAsync(new AcceptInboundNotificationBatch(pending),
             new DeliveryOptions { TenantId = tenantId.ToString() });
+        request.HttpContext.Response.Headers["Server-Timing"] = FormattableString.Invariant(
+            $"{AcknowledgementTimingMetric};dur={Stopwatch.GetElapsedTime(acknowledgementStarted).TotalMilliseconds:F3}");
         return Results.Accepted(value: new WebhookNotificationResponse(pending.Count, acceptances.Count - pending.Count, 0));
     }
 

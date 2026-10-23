@@ -291,7 +291,10 @@ public static class PlatformSetup
         builder.Services.AddSingleton<RecurringTenantJobProvisioner>();
         builder.Services.AddSingleton(RecurringTenantJob.For<SmokeHeartbeatJob>(SmokeHeartbeatJob.JobName, SmokeHeartbeatJob.Cron));
         builder.Services.AddSingleton(RecurringTenantJob.For<PresenceCleanupJob>(PresenceCleanupJob.JobName, PresenceCleanupJob.Cron));
-        builder.Services.AddHostedService<RecurringJobsRegistrar>();
+        // A host that never fires jobs must not reconcile them either: it would write every tenant's schedules into the
+        // shared clustered store and hold the reconciliation lock for the hosts that do (P10-T17).
+        if (options.StartScheduler)
+            builder.Services.AddHostedService<RecurringJobsRegistrar>();
 
         ((IHostBuilder)new HostBuilderAdapter(builder)).UseWolverine(opts =>
         {
