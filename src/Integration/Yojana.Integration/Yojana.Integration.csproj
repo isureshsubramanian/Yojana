@@ -20,5 +20,9 @@
     <Compile Remove="Connectors/CX02/Testing/**/*.cs" />
     <Compile Remove="Connectors/CX04/Testing/**/*.cs" />
     <None Remove="Connectors/CX01/Testing/Fixtures/**/*" />
+    <Compile Remove="Connectors/CX02/Extension/Source/**/*" />
+    <Content Remove="Connectors/CX02/Extension/Source/**/*" />
+    <EmbeddedResource Remove="Connectors/CX02/Extension/Source/**/*" />
+    <None Remove="Connectors/CX02/Extension/Source/**/*" />
   </ItemGroup>
 </Project>

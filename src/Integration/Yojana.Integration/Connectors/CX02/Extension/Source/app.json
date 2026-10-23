@@ -1,0 +1,26 @@
+{
+  "id": "3f946a82-95bc-4c95-9e55-a8d81510dc02",
+  "name": "Yojana CX02 Integration",
+  "publisher": "Yojana",
+  "version": "1.0.0.0",
+  "brief": "Versioned tenant integration pages for Yojana.",
+  "description": "Publishes the frozen v1.0 tracking and posting contract used by Yojana.",
+  "platform": "26.0.0.0",
+  "application": "26.0.0.0",
+  "runtime": "15.0",
+  "target": "Cloud",
+  "idRanges": [
+    {
+      "from": 50000,
+      "to": 99999
+    }
+  ],
+  "resourceExposurePolicy": {
+    "allowDebugging": false,
+    "allowDownloadingSource": false,
+    "includeSourceInSymbolFile": false
+  },
+  "features": [
+    "NoImplicitWith"
+  ]
+}

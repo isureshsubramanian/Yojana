@@ -26,5 +26,8 @@
     <Content Include="../../src/Integration/Yojana.Integration/Connectors/CX02/Extension/Contract/v1.0/**/*"
              Link="Connectors/CX02/Contract/v1.0/%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../src/Integration/Yojana.Integration/Connectors/CX02/Extension/Source/**/*"
+             Link="Connectors/CX02/Source/%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
