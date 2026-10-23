@@ -67,8 +67,8 @@ export function EntitlementPanel({ unitId, onSummary }: { unitId: string; onSumm
   </div>;
 }
 
-export function openAttachEntitlement(unitId: string, detail: UnitEntitlementDetail | null, onDone: () => void) { openDrawer({ eyebrow: "Command · AttachExtendedWarranty", title: "Attach extended or add-on" }, <AttachForm unitId={unitId} detail={detail} onDone={onDone} />); }
-export function openAmendEntitlement(detail: UnitEntitlementDetail | null, onDone: () => void) { openDrawer({ eyebrow: "Command · AmendEntitlement", title: "Amend entitlement" }, <AmendForm detail={detail} onDone={onDone} />); }
+export function openAttachEntitlement(unitId: string, detail: UnitEntitlementDetail | null, onDone: () => void) { openDrawer({ eyebrow: "Entitlement · attach extended warranty", title: "Attach extended or add-on" }, <AttachForm unitId={unitId} detail={detail} onDone={onDone} />); }
+export function openAmendEntitlement(detail: UnitEntitlementDetail | null, onDone: () => void) { openDrawer({ eyebrow: "Entitlement · amend", title: "Amend entitlement" }, <AmendForm detail={detail} onDone={onDone} />); }
 
 function AttachForm({ unitId, detail, onDone }: { unitId: string; detail: UnitEntitlementDetail | null; onDone: () => void }) {
   const [families, setFamilies] = useState<CoverageFamily[]>([]); const [currency, setCurrency] = useState<TenantCurrency>({ currency: null });

@@ -125,8 +125,8 @@ export function Component() {
     ));
   };
 
-  const correct = () => detail && openDrawer({ eyebrow: "Command · CorrectIdentifier", title }, <CorrectForm unitId={unitId} types={openIdentifiers.map((i) => i.type)} onDone={reload} />);
-  const flag = () => detail && openDrawer({ eyebrow: "Command · SetUnitFlag", title }, <FlagForm unitId={unitId} flags={flags} onDone={reload} />);
+  const correct = () => detail && openDrawer({ eyebrow: "Unit · correct an identifier", title }, <CorrectForm unitId={unitId} types={openIdentifiers.map((i) => i.type)} onDone={reload} />);
+  const flag = () => detail && openDrawer({ eyebrow: "Unit · set or clear a flag", title }, <FlagForm unitId={unitId} flags={flags} onDone={reload} />);
 
   useEffect(() => { if (window.location.hash === "#correct" && detail) correct(); }, [detail]); // eslint-disable-line react-hooks/exhaustive-deps
 

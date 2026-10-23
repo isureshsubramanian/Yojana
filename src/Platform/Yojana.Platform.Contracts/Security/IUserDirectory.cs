@@ -14,10 +14,15 @@ public interface IUserDirectory
     /// </summary>
     public const int MaxReferences = 500;
 
+    /// <summary>The prefix of an automatic actor reference (a job or rule, never a person).</summary>
+    public const string AutomaticActorPrefix = "system:";
+
     /// <summary>
     /// Resolves each reference — a user id ("D" format) or an e-mail address, matched case-insensitively — to the user's
     /// display name. Only users who are members of the current tenant resolve, deactivated ones included (they still
-    /// appear in history). A reference that does not resolve is absent from the result; callers show it as given.
+    /// appear in history). An automatic actor — a reference starting with "system:", stamped by a job or rule rather
+    /// than a person — resolves to a readable label such as "Certificates (automatic)". A reference that does not
+    /// resolve is absent from the result; callers show it as given.
     /// </summary>
     Task<IReadOnlyDictionary<string, string>> DisplayNamesAsync(IReadOnlyCollection<string> references, CancellationToken cancellationToken);
 }

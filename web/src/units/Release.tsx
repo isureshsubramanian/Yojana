@@ -112,7 +112,7 @@ export function Component() {
         <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Units", to: "/units" }, { label: "Release units" }]} />
         <div className="page-header">
           <div>
-            <div className="eyebrow">Bulk command · ReleaseUnit · preview, then execute</div>
+            <div className="eyebrow">Bulk change · release units · preview, then execute</div>
             <h1>Release units</h1>
             <p className="sub">{resolved ? <>Selection set {shortId(resolved.selectionId)} · {resolved.resolved} units{resolved.unknown.length ? ` · ${resolved.unknown.length} unknown` : ""}{resolved.rejected.length ? ` · ${resolved.rejected.length} rejected` : ""} · one transaction, one source document, one approval</> : "Address the units, set the source document, preview every outcome, then execute as one transaction."}</p>
           </div>

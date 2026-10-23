@@ -19,11 +19,18 @@ public sealed class UserDirectory(PlatformDbContext db, ITenantContext tenant) :
         }
 
         var given = references.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct().ToList();
+        var names = new Dictionary<string, string>();
+        foreach (var reference in given.Where(IsAutomaticActor))
+        {
+            names[reference] = AutomaticActorLabel(reference);
+        }
+
+        given = given.Where(r => !IsAutomaticActor(r)).ToList();
         var ids = given.Select(r => Guid.TryParseExact(r.Trim(), "D", out var id) ? id : (Guid?)null).OfType<Guid>().Distinct().ToList();
         var emails = given.Where(r => r.Contains('@')).Select(r => r.Trim().ToLowerInvariant()).Distinct().ToList();
         if (ids.Count == 0 && emails.Count == 0)
         {
-            return new Dictionary<string, string>();
+            return names;
         }
 
         var tenantId = tenant.TenantId;
@@ -32,7 +39,6 @@ public sealed class UserDirectory(PlatformDbContext db, ITenantContext tenant) :
             .Select(m => new { m.User!.Id, m.User.Email, m.User.DisplayName })
             .ToListAsync(cancellationToken);
 
-        var names = new Dictionary<string, string>();
         foreach (var reference in given)
         {
             var trimmed = reference.Trim();
@@ -46,6 +52,25 @@ public sealed class UserDirectory(PlatformDbContext db, ITenantContext tenant) :
         }
 
         return names;
+    }
+
+    private static bool IsAutomaticActor(string reference) =>
+        reference.Trim().StartsWith(IUserDirectory.AutomaticActorPrefix, StringComparison.OrdinalIgnoreCase)
+        && reference.Trim().Length > IUserDirectory.AutomaticActorPrefix.Length;
+
+    /// <summary>"system:replacement-overdue" reads "Replacement overdue (automatic)".</summary>
+    private static string AutomaticActorLabel(string reference)
+    {
+        var words = reference.Trim()[IUserDirectory.AutomaticActorPrefix.Length..]
+            .Split(['-', '_', '.', ':', ' '], StringSplitOptions.RemoveEmptyEntries)
+            .Select(word => word.ToLowerInvariant()).ToList();
+        if (words.Count == 0)
+        {
+            return "Automatic";
+        }
+
+        words[0] = char.ToUpperInvariant(words[0][0]) + words[0][1..];
+        return $"{string.Join(' ', words)} (automatic)";
     }
 
     public Task<bool> ActiveStaffMemberExistsAsync(Guid userId, CancellationToken cancellationToken) =>

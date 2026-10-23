@@ -187,7 +187,7 @@ export function Component() {
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Entitlements", to: "/entitlements/gaps" }, { label: "Bulk operation" }]} />
-      <div className="page-header"><div><div className="eyebrow">Bulk command · {operation} · preview, then execute</div><h1>{OPERATIONS.find(([id]) => id === operation)?.[1] ?? "Bulk entitlement operation"}</h1><p className="sub">{selectionId ? `Selection ${shortId(selectionId)} · ${resolvedCount} units` : "Address a selection set"} · one transaction, one source document, one approval</p></div><div className="actions"><Link className="btn ghost" to="/entitlements/gaps">Discard</Link>{request ? <>
+      <div className="page-header"><div><div className="eyebrow">Bulk change · preview, then execute</div><h1>{OPERATIONS.find(([id]) => id === operation)?.[1] ?? "Bulk entitlement operation"}</h1><p className="sub">{selectionId ? `Selection ${shortId(selectionId)} · ${resolvedCount} units` : "Address a selection set"} · one transaction, one source document, one approval</p></div><div className="actions"><Link className="btn ghost" to="/entitlements/gaps">Discard</Link>{request ? <>
         <button className="btn" type="button" disabled={!pending || !decisionNote.trim() || busy} aria-busy={busy} onClick={reject}>Reject</button>
         <button className="btn primary" type="button" disabled={!pending || !preview || preview.block > 0 || busy} aria-busy={busy} onClick={approve}>Approve and execute · {preview?.change ?? 0}<Shortcut keys="mod+enter" /></button>
       </> : <>
