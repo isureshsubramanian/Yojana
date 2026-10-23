@@ -65,8 +65,8 @@
 .claim-risk-number { display: inline-flex; gap: 8px; align-items: center; }
 .claim-risk-number > .input { width: 96px; }
 .claim-risk-number > span { color: var(--text-3); font-size: 12px; }
-.claim-risk-reviewer-switch { align-self: end; min-height: 38px; padding-bottom: 2px; }
-.claim-risk-reviewer-switch .help { display: block; margin-top: 2px; font-size: 12px; color: var(--text-3); }
+/* Second-reviewer rows line up with the rule rows above: name and help on the left (indented past the rule checkboxes), control on the right. */
+.claim-risk-row-label { padding-left: 26px; }
 @media (max-width: 960px) { .claims-age { grid-template-columns: 1fr; } .claims-age > div + div { border-left: 0; border-top: 1px solid var(--border); } .claims-remedy { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .claim-risk-rule-row { grid-template-columns: 1fr; gap: 10px; } .claim-risk-options { grid-template-columns: 1fr; } }
 .cause-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
