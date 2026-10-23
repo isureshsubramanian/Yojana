@@ -98,7 +98,7 @@ export function Component() {
         </section>
       </div>
     </main>
-    <Rail label="Workbench choice settings"><Section title="Configuration"><Kv rows={[["Version", view?.current.version ?? "—"], ["Updated by", person(updatedBy)], ["Updated at", fmtDateTime(view?.current.updatedAt)], ["History", view?.history.length ?? "—"]]} /></Section>{view && <Section title="Unclassified alert"><ThresholdEditor value={view.current.unclassifiedAlertPercent} choices={choices} onSave={saveConfiguration} /></Section>}<Section title="Analytics boundary"><p className="muted">The settings endpoint supplies configuration and audit history. It does not supply per-choice use, re-filing destinations or no-command counts, so those values are deliberately not inferred by this screen.</p></Section></Rail>
+    <Rail label="Workbench choice settings">{view && <Section title="Unclassified alert"><ThresholdEditor value={view.current.unclassifiedAlertPercent} choices={choices} onSave={saveConfiguration} /></Section>}<Section title="Last change">{view && view.current.version === 0 ? <p className="muted">Product defaults; nobody has changed these choices yet.</p> : <Kv rows={[["Version", view?.current.version ?? "—"], ["Changed by", person(updatedBy)], ["Changed at", fmtDateTime(view?.current.updatedAt)], ["Earlier versions", view?.history.length ?? "—"]]} />}</Section></Rail>
   </>;
 }
 
@@ -119,6 +119,6 @@ function ChoiceEditor({ choice, initiatorRoles, onSave }: { choice: WorkbenchCho
 function ThresholdEditor({ value, choices, onSave }: { value: number; choices: WorkbenchChoice[]; onSave: (choices: WorkbenchChoice[], threshold?: number) => Promise<WorkbenchChoiceConfiguration> }) {
   const [threshold, setThreshold] = useState(String(value)); const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
   const save = async () => { setBusy(true); setError(null); try { await onSave(choices, Number(threshold)); } catch (reason) { setError(reason); } finally { setBusy(false); } };
-  return <div className="field"><label htmlFor="choice-threshold">Alert above · percent</label><input id="choice-threshold" className="input" type="number" min="0" max="100" step="0.1" value={threshold} onChange={(event) => setThreshold(event.target.value)} /><span className="help">Unclassified requests are kept separate from the seven correction root causes.</span><ErrorNote error={error} /><button type="button" className="btn block" disabled={busy || Number(threshold) < 0 || Number(threshold) > 100} onClick={() => void save()}>Save alert threshold</button></div>;
+  return <div className="field"><label htmlFor="choice-threshold">Alert above · percent</label><input id="choice-threshold" className="input" type="number" min="0" max="100" step="0.1" value={threshold} onChange={(event) => setThreshold(event.target.value)} /><span className="help">Warn when more than this share of correction requests are filed as "None of these".</span><ErrorNote error={error} /><button type="button" className="btn sm" style={{ alignSelf: "flex-start" }} disabled={busy || Number(threshold) < 0 || Number(threshold) > 100} onClick={() => void save()}>Save threshold</button></div>;
 }
 function words(value: string): string[] { return value.split(",").map((word) => word.trim()).filter(Boolean); }
