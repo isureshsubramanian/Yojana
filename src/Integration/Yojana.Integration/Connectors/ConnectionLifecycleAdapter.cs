@@ -8,6 +8,9 @@ public interface IConnectionLifecycleAdapter
 {
     ConnectionRegistrationForm? RegistrationForm => null;
     string DefaultOutboundMode => "none";
+    string InitialConnectionStatus => Data.Entities.ConnectionStatus.Active;
+    int PollIntervalSeconds => 120;
+    int PollOverlapSeconds => 300;
     void ValidateSettings(JsonElement value);
     IReadOnlyList<string> CredentialPurposes { get; }
     IReadOnlyList<string> RequiredCredentialPurposes(JsonElement value) => CredentialPurposes;
@@ -15,6 +18,8 @@ public interface IConnectionLifecycleAdapter
     Task<ConnectionProbe> SmokeReadAsync(Guid connectionId, CancellationToken ct);
     Task<JsonElement> ReadSettingsAsync(Guid connectionId, CancellationToken ct);
     Task<ConnectionProbe?> LatestProbeAsync(Guid connectionId, CancellationToken ct);
+    Task<ConnectionAuthorisationView?> AuthorisationAsync(Guid connectionId, CancellationToken ct) =>
+        Task.FromResult<ConnectionAuthorisationView?>(null);
     Task UnsubscribeAsync(Guid connectionId, CancellationToken ct);
 
     /// <summary>
@@ -25,6 +30,10 @@ public interface IConnectionLifecycleAdapter
     Task SuspendNotificationsAsync(Guid connectionId, CancellationToken ct) => Task.CompletedTask;
     Task ResumeNotificationsAsync(Guid connectionId, CancellationToken ct) => Task.CompletedTask;
 }
+
+public sealed record ConnectionAuthorisationView(string Status, DateTime? RefreshChainExpiresAt,
+    string RefreshExpiryMode, int RefreshLifetimeDays, bool Reminder14DaysSent, bool Reminder3DaysSent,
+    bool CanDisable, bool RequiresFreshConsent);
 
 public sealed record ConnectionDeclaration(IReadOnlyDictionary<string, string> Capabilities,
     ConnectorThrottleDeclaration Throttle, IReadOnlyDictionary<string, string> PollEntities,

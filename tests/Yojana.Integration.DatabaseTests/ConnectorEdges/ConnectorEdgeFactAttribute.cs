@@ -20,16 +20,19 @@ public sealed class ConnectorEdgeFactAttribute : FactAttribute
         var scenario = ConnectorEdgeScenarios.Get(scenarioId);
         Skip = manifest.NotApplicable(scenario);
         if (Skip is null && live && !LiveEnvironmentPresent(manifest.ConnectorCode))
-            Skip = manifest.ConnectorCode == "CX02"
-                ? "YOJANA_CX02_URL, YOJANA_CX02_CLIENT_ID, YOJANA_CX02_CLIENT_SECRET and YOJANA_CX02_EDGE_SCENARIOS are required."
-                : "YOJANA_CX01_URL, YOJANA_CX01_USER, YOJANA_CX01_PASSWORD and YOJANA_CX01_EDGE_SCENARIO are required.";
+            Skip = $"The {manifest.ConnectorCode} live sandbox environment is not configured.";
     }
 
-    private static bool LiveEnvironmentPresent(string connectorCode) => connectorCode == "CX02"
-        ? Required("YOJANA_CX02_URL") && Required("YOJANA_CX02_CLIENT_ID")
-            && Required("YOJANA_CX02_CLIENT_SECRET") && Required("YOJANA_CX02_EDGE_SCENARIOS")
-        : Required("YOJANA_CX01_URL") && Required("YOJANA_CX01_USER")
-            && Required("YOJANA_CX01_PASSWORD") && Required("YOJANA_CX01_EDGE_SCENARIO");
+    private static bool LiveEnvironmentPresent(string connectorCode) => connectorCode switch
+    {
+        "CX01" => Required("YOJANA_CX01_URL") && Required("YOJANA_CX01_USER")
+            && Required("YOJANA_CX01_PASSWORD") && Required("YOJANA_CX01_EDGE_SCENARIO"),
+        "CX02" => Required("YOJANA_CX02_URL") && Required("YOJANA_CX02_CLIENT_ID")
+            && Required("YOJANA_CX02_CLIENT_SECRET") && Required("YOJANA_CX02_EDGE_SCENARIOS"),
+        "CX04" => Required("YOJANA_CX04_URL") && Required("YOJANA_CX04_CLIENT_ID")
+            && Required("YOJANA_CX04_REFRESH_TOKEN") && Required("YOJANA_CX04_EDGE_SCENARIO"),
+        _ => false,
+    };
 
     private static bool Required(string name) =>
         !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name));

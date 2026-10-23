@@ -107,7 +107,8 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
                 gateway.OrderingWaitMinutes, await healthSettings.GetAsync(id, ct),
                 (await throttles.GetAsync(new(tenant.TenantId, id), ct))?.Profile, connectorSettings, rules), secrets,
             await checklist.GenerateAsync(id, ct), connection.Status,
-            await reconciliationSettings.WindowDaysAsync(id, ct), await reconciliationDay.TodayAsync(id, ct));
+            await reconciliationSettings.WindowDaysAsync(id, ct), await reconciliationDay.TodayAsync(id, ct),
+            adapter is null ? null : await adapter.AuthorisationAsync(id, ct));
     }
 
     public async Task<ConnectionHealthDetail> HealthAsync(Guid id, CancellationToken ct)
@@ -152,11 +153,13 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
             .GroupBy(x => x.TenantId).Select(group => new
             {
                 RelayConnected = group.Count(x => x.RelayConnected),
-                Live = group.Count(x => x.IsLive), Paused = group.Count(x => x.Status == "paused"),
+                Live = group.Count(x => x.IsLive), Paused = group.Count(x => x.Status == "paused"
+                    || x.Status == "reconsent_required" || x.Status == "disabled"),
                 Today = group.Sum(x => x.ReceivedToday), Month = group.Sum(x => x.ReceivedLast30Days),
                 Waiting = group.Sum(x => x.OutboxDepth), Oldest = group.Min(x => x.OldestWaitingAt),
                 DeadLetters = group.Sum(x => x.OpenDeadLetters), Tasks = group.Sum(x => x.OpenManualTasks),
-                Attention = group.Count(x => x.Status == "down" || x.Status == "degraded"),
+                Attention = group.Count(x => x.Status == "down" || x.Status == "degraded"
+                    || x.Status == "reconsent_required"),
             }).SingleOrDefaultAsync(ct);
         return new(count, summary?.Live ?? 0, summary?.Paused ?? 0, summary?.Today ?? 0, summary?.Month ?? 0,
             summary?.Waiting ?? 0, summary?.Oldest, summary?.DeadLetters ?? 0, summary?.Tasks ?? 0, summary?.Attention ?? 0, summary?.RelayConnected ?? 0);
@@ -177,6 +180,11 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
         "CredentialRotated" => "Connection credential replaced",
         "OnboardingItemConfirmed" => "Onboarding checklist item confirmed",
         "WarrantyContractMaintenanceChanged" => "Warranty contract maintenance changed",
+        "ConsentGranted" => "Connection consent granted",
+        "ConsentDisabled" => "Connection disabled and tokens deleted",
+        "ConsentRequired" => "Fresh connection consent required",
+        "ConsentExpiry14Days" => "Connection consent expires within 14 days",
+        "ConsentExpiry3Days" => "Connection consent expires within 3 days",
         _ => "Connection activity recorded",
     };
 

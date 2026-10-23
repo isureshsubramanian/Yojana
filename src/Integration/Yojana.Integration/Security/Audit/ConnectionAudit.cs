@@ -43,6 +43,11 @@ public enum ConnectionAuditEventType
     ParallelRunHandoverConfirmed,
     GoLiveRecordIssued,
     ReconciliationExplained,
+    ConsentGranted,
+    ConsentDisabled,
+    ConsentRequired,
+    ConsentExpiry14Days,
+    ConsentExpiry3Days,
 }
 
 public sealed record ConnectionAuditEvent(
