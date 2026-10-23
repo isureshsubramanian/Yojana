@@ -243,7 +243,10 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
             InboundTranslationStatus.Completed, ct);
         using var scope = fixture.ScopeFor(connection.TenantId);
         var service = scope.ServiceProvider.GetRequiredService<ReconciliationService>();
-        await harness.SetRemoteOnHandAsync(connection, 3, ct);
+        var unit = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Current.AsNoTracking()
+            .FirstAsync(ct);
+        var (itemId, locationId) = (unit.ItemId, unit.LocationId!.Value);
+        await harness.SetRemoteOnHandAsync(connection, itemId, locationId, 3, ct);
         for (var run = 0; run < 2; run++)
         {
             var detail = (await service.DetailAsync(await service.RunLocationChecksAsync(
@@ -253,7 +256,7 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
             Assert.Equal(2, difference.ModuleUnitCount);
             Assert.Equal(3, difference.SourceOnHand);
         }
-        await harness.SetRemoteOnHandAsync(connection, 2, ct);
+        await harness.SetRemoteOnHandAsync(connection, itemId, locationId, 2, ct);
         var clean = (await service.DetailAsync(await service.RunLocationChecksAsync(
             connection.ConnectionId, Actor, ct), ct))!;
         Assert.Equal(ReconciliationResultStatus.Clean, Assert.Single(clean.LocationChecks).Status);

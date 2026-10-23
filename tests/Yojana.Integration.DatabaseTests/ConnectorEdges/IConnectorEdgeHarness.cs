@@ -81,7 +81,8 @@ public interface IConnectorEdgeHarness : IAsyncDisposable
     void EditRemoteOwner();
     void ScriptDroppedCreateReply();
     ConnectorEdgeFailureGate BlockNextCreateWithFailure();
-    Task SetRemoteOnHandAsync(ConnectorEdgeConnection connection, decimal quantity,
+    // The module item and location ids come from the runner: harnesses live in src/Integration and must not read Serialisation data.
+    Task SetRemoteOnHandAsync(ConnectorEdgeConnection connection, Guid moduleItemId, Guid moduleLocationId, decimal quantity,
         CancellationToken cancellationToken);
     Task<ConnectorEdgeRemoteState> ReadRemoteAsync(ConnectorEdgeConnection connection,
         CancellationToken cancellationToken);

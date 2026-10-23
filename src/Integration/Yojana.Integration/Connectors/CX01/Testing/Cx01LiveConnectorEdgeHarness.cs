@@ -236,7 +236,7 @@ public sealed class Cx01LiveConnectorEdgeHarness : IConnectorEdgeHarness
             () => Control("outbound/release-create-failure"));
     }
 
-    public async Task SetRemoteOnHandAsync(ConnectorEdgeConnection connection, decimal quantity,
+    public async Task SetRemoteOnHandAsync(ConnectorEdgeConnection connection, Guid moduleItemId, Guid moduleLocationId, decimal quantity,
         CancellationToken cancellationToken)
     {
         using (var client = ControllerClient())
@@ -244,12 +244,10 @@ public sealed class Cx01LiveConnectorEdgeHarness : IConnectorEdgeHarness
                    cancellationToken))
             response.EnsureSuccessStatusCode();
         using var scope = Scope(connection);
-        var current = await scope.ServiceProvider.GetRequiredService<Yojana.Serialisation.Data.SerialisationDbContext>()
-            .Current.AsNoTracking().FirstAsync(cancellationToken);
         var db = scope.ServiceProvider.GetRequiredService<Yojana.Integration.Data.IntegrationDbContext>();
         var item = await db.ExternalIdMaps.SingleAsync(row => row.ConnectionId == connection.ConnectionId
             && row.EntityType == "item" && row.ExternalId == Fixture.ItemKey, cancellationToken);
-        item.ModuleId = current.ItemId;
+        item.ModuleId = moduleItemId;
         var location = await db.ExternalIdMaps.SingleOrDefaultAsync(row => row.ConnectionId == connection.ConnectionId
             && row.EntityType == "location" && row.ExternalId == Fixture.WarehouseKey, cancellationToken);
         if (location is null)
@@ -259,7 +257,7 @@ public sealed class Cx01LiveConnectorEdgeHarness : IConnectorEdgeHarness
             {
                 TenantId = connection.TenantId, ExternalIdMapId = Guid.CreateVersion7(now),
                 ConnectionId = connection.ConnectionId, EntityType = "location",
-                ExternalId = Fixture.WarehouseKey, ModuleId = current.LocationId!.Value,
+                ExternalId = Fixture.WarehouseKey, ModuleId = moduleLocationId,
                 NaturalKeyHash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
                     "LOCATION\n" + Fixture.WarehouseKey.ToUpperInvariant()))).ToLowerInvariant(),
                 ValidFrom = now, MappedAt = now, MappedBy = "system:live-connector-edge-harness",
@@ -267,7 +265,7 @@ public sealed class Cx01LiveConnectorEdgeHarness : IConnectorEdgeHarness
             };
             db.ExternalIdMaps.Add(location);
         }
-        else location.ModuleId = current.LocationId!.Value;
+        else location.ModuleId = moduleLocationId;
         await db.SaveChangesAsync(cancellationToken);
     }
 

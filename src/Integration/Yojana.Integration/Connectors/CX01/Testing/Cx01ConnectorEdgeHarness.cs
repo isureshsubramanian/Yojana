@@ -11,7 +11,6 @@ using Yojana.Integration.Inbox;
 using Yojana.Integration.Notifications;
 using Yojana.Integration.Security.Cryptography;
 using Yojana.Platform.Contracts.Tenancy;
-using Yojana.Serialisation.Data;
 
 namespace Yojana.Integration.Connectors.CX01.Testing;
 
@@ -242,14 +241,11 @@ public sealed class Cx01ConnectorEdgeHarness : IConnectorEdgeHarness
         return gate;
     }
 
-    public async Task SetRemoteOnHandAsync(ConnectorEdgeConnection connection, decimal quantity,
+    public async Task SetRemoteOnHandAsync(ConnectorEdgeConnection connection, Guid moduleItemId, Guid moduleLocationId, decimal quantity,
         CancellationToken cancellationToken)
     {
         Simulator.OnHandQuantity = quantity;
         using var scope = Scope(connection);
-        var current = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstAsync(
-            scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Current.AsNoTracking(),
-            cancellationToken);
         var db = scope.ServiceProvider.GetRequiredService<Yojana.Integration.Data.IntegrationDbContext>();
         var item = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
             db.ExternalIdMaps.Where(row => row.ConnectionId == connection.ConnectionId
@@ -257,7 +253,7 @@ public sealed class Cx01ConnectorEdgeHarness : IConnectorEdgeHarness
         var location = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleOrDefaultAsync(
             db.ExternalIdMaps.Where(row => row.ConnectionId == connection.ConnectionId
                 && row.EntityType == "location" && row.ExternalId == "WH-A"), cancellationToken);
-        item.ModuleId = current.ItemId;
+        item.ModuleId = moduleItemId;
         if (location is null)
         {
             var now = host!.UtcNow;
@@ -268,7 +264,7 @@ public sealed class Cx01ConnectorEdgeHarness : IConnectorEdgeHarness
                 ConnectionId = connection.ConnectionId,
                 EntityType = "location",
                 ExternalId = "WH-A",
-                ModuleId = current.LocationId!.Value,
+                ModuleId = moduleLocationId,
                 NaturalKeyHash = Convert.ToHexString(SHA256.HashData(
                     System.Text.Encoding.UTF8.GetBytes("LOCATION\nWH-A"))).ToLowerInvariant(),
                 ValidFrom = now,
@@ -278,7 +274,7 @@ public sealed class Cx01ConnectorEdgeHarness : IConnectorEdgeHarness
             };
             db.ExternalIdMaps.Add(location);
         }
-        else location.ModuleId = current.LocationId!.Value;
+        else location.ModuleId = moduleLocationId;
         await db.SaveChangesAsync(cancellationToken);
     }
 
