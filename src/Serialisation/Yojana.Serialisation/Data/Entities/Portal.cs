@@ -39,6 +39,8 @@ public sealed class CustomerAssertion : ITenantScoped
     public string? VerifiedBy { get; set; }
     public DateTime? EvidenceDate { get; set; }
     public Guid? OwnershipEpisodeId { get; set; }
+    public Guid? CustodyEpisodeId { get; set; }
+    public bool? UnitAtCustomerSite { get; set; }
     public string? RejectionReason { get; set; }
     public DateTime? RejectedAt { get; set; }
     public string? RejectedBy { get; set; }

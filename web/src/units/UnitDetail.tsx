@@ -150,6 +150,7 @@ export function Component() {
           </div>
         </div>
         <ErrorNote error={error} />
+        {detail?.ownerAndHolderDiffer && <div className="note warn" role="status"><strong>Owner and holder differ.</strong>&nbsp;This unit is held at the customer site recorded for {detail.custodyPartyRef ? referenceNames.party(detail.custodyPartyRef) : "another party"}, while {detail.ownerPartyRef ? referenceNames.party(detail.ownerPartyRef) : "another party"} owns it.</div>}
 
         {detail && (
           <div className="card statebar" aria-label="Current state" style={{ marginBottom: "var(--gap)" }}>

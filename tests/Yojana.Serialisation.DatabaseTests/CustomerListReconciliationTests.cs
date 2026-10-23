@@ -87,7 +87,7 @@ public sealed class CustomerListReconciliationTests(SerialisationHostFixture fix
     }
 
     [DatabaseFact]
-    public async Task Verification_opens_ownership_from_delivery_evidence_and_rejection_retains_its_reason()
+    public async Task Default_verification_moves_custody_with_ownership_and_replay_returns_the_same_decision()
     {
         var tenant = await fixture.NewTenantAsync("recdecide");
         var priorOwner = Guid.NewGuid();
@@ -99,6 +99,8 @@ public sealed class CustomerListReconciliationTests(SerialisationHostFixture fix
         var rejectedUnit = await UnitAsync(tenant, item, rejectedSerial);
         await OwnAsync(tenant, verifiedUnit, priorOwner, At.AddDays(1));
         await OwnAsync(tenant, rejectedUnit, priorOwner, At.AddDays(1));
+        await HoldAsync(tenant, verifiedUnit, LocationKind.CustomerSite, priorOwner, PartyType.Customer,
+            At.AddDays(2));
         RegisterNames(item, "SYS-DEC", "Fictional Decision Unit", claimant, "Fictional Claimant");
         fixture.Services.GetRequiredService<InMemoryPartyNamePort>().Register(new(priorOwner, "PRIOR-01",
             "Fictional Prior Owner", PartyType.Customer));
@@ -108,6 +110,7 @@ public sealed class CustomerListReconciliationTests(SerialisationHostFixture fix
             [new(verifiedSerial), new(rejectedSerial)]), At.AddDays(2), "ignored", Take: 20));
         var verifiedAssertion = reconciliation.Items.Single(row => row.Input == verifiedSerial).AssertionId!.Value;
         var rejectedAssertion = reconciliation.Items.Single(row => row.Input == rejectedSerial).AssertionId!.Value;
+        Assert.True(reconciliation.Items.Single(row => row.Input == verifiedSerial).UnitAtCustomerSiteDefault);
 
         using (var beforeScope = fixture.ScopeFor(tenant))
         {
@@ -118,11 +121,18 @@ public sealed class CustomerListReconciliationTests(SerialisationHostFixture fix
         }
 
         var evidenceDate = At.AddDays(5);
-        var verified = await InvokeAsync<CustomerAssertionDecision>(tenant, new VerifyCustomerAssertion(
-            Guid.NewGuid(), verifiedAssertion, "delivery:DN-4401", evidenceDate, Entity, "ignored",
-            [YojanaRole.SerialAdministrator]));
+        var verify = new VerifyCustomerAssertion(Guid.NewGuid(), verifiedAssertion, "delivery:DN-4401",
+            evidenceDate, Entity, "ignored", [YojanaRole.SerialAdministrator]);
+        var verified = await InvokeAsync<CustomerAssertionDecision>(tenant, verify);
         Assert.Equal(CustomerAssertionStatus.Verified, verified.Status);
         Assert.NotNull(verified.OwnershipEpisodeId);
+        Assert.NotNull(verified.CustodyEpisodeId);
+        Assert.True(verified.UnitAtCustomerSite);
+        var replay = await InvokeAsync<CustomerAssertionDecision>(tenant, verify with { UnitAtCustomerSite = false });
+        Assert.True(replay.Replayed);
+        Assert.Equal(verified.OwnershipEpisodeId, replay.OwnershipEpisodeId);
+        Assert.Equal(verified.CustodyEpisodeId, replay.CustodyEpisodeId);
+        Assert.True(replay.UnitAtCustomerSite);
         var rejected = await InvokeAsync<CustomerAssertionDecision>(tenant, new RejectCustomerAssertion(
             Guid.NewGuid(), rejectedAssertion, "delivery evidence names a different serial", "ignored",
             [YojanaRole.OrderDeskSupervisor]));
@@ -138,6 +148,26 @@ public sealed class CustomerListReconciliationTests(SerialisationHostFixture fix
         Assert.Equal(evidenceDate, prior.ValidTo);
         Assert.Equal(evidenceDate, current.ValidFrom);
         Assert.Equal("partner_report", current.Source);
+        Assert.Equal("delivery:DN-4401", current.ExternalOrderRef);
+        var priorCustody = await db.Episodes.SingleAsync(row => row.UnitId == verifiedUnit
+            && row.Kind == EpisodeKind.Custody && row.PartyRef == priorOwner);
+        var currentCustody = await db.Episodes.SingleAsync(row => row.UnitId == verifiedUnit
+            && row.Kind == EpisodeKind.Custody && row.PartyRef == claimant);
+        Assert.Equal(evidenceDate, priorCustody.ValidTo);
+        Assert.Equal(evidenceDate, currentCustody.ValidFrom);
+        Assert.Equal((LocationKind.CustomerSite, EpisodeReason.Sale, "partner_report", "delivery:DN-4401"),
+            (currentCustody.LocationKind, currentCustody.Reason, currentCustody.Source,
+                currentCustody.ExternalOrderRef));
+        var custodyEvent = await db.Events.SingleAsync(row => row.UnitId == verifiedUnit
+            && row.EventTime == evidenceDate && row.EventType == UnitEventType.CustodyChanged);
+        Assert.Contains(priorOwner.ToString(), custodyEvent.Attributes, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(claimant.ToString(), custodyEvent.Attributes, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, await db.Events.CountAsync(row => row.UnitId == verifiedUnit
+            && row.EventTime == evidenceDate
+            && (row.EventType == UnitEventType.OwnershipTransferred
+                || row.EventType == UnitEventType.CustodyChanged)));
+        Assert.Single(await db.Episodes.Where(row => row.UnitId == verifiedUnit
+            && row.Kind == EpisodeKind.Custody && row.ValidTo == null).ToListAsync());
         var retained = await db.CustomerAssertions.SingleAsync(row => row.AssertionId == rejectedAssertion);
         Assert.Equal(CustomerAssertionStatus.Rejected, retained.Status);
         Assert.Equal("delivery evidence names a different serial", retained.RejectionReason);
@@ -149,6 +179,87 @@ public sealed class CustomerListReconciliationTests(SerialisationHostFixture fix
         Assert.Equal(PortalQueryOutcome.NotFound,
             (await portalAfter.LookupAsync(new(tenant, claimant), rejectedSerial, null,
                 CancellationToken.None)).Outcome);
+    }
+
+    [DatabaseFact]
+    public async Task Explicit_false_leaves_customer_site_custody_and_a_third_party_location_defaults_false()
+    {
+        var tenant = await fixture.NewTenantAsync("reccustodyoff");
+        var priorOwner = Guid.NewGuid();
+        var claimant = Guid.NewGuid();
+        var carrier = Guid.NewGuid();
+        var item = Guid.NewGuid();
+        var heldSerial = Serial("HELD");
+        var remoteSerial = Serial("REMOTE");
+        var heldUnit = await UnitAsync(tenant, item, heldSerial);
+        var remoteUnit = await UnitAsync(tenant, item, remoteSerial);
+        await OwnAsync(tenant, heldUnit, priorOwner, At.AddDays(1));
+        await OwnAsync(tenant, remoteUnit, priorOwner, At.AddDays(1));
+        await HoldAsync(tenant, heldUnit, LocationKind.CustomerSite, priorOwner, PartyType.Customer,
+            At.AddDays(2));
+        await HoldAsync(tenant, remoteUnit, LocationKind.At3pl, carrier, PartyType.ThreePl,
+            At.AddDays(2));
+        RegisterNames(item, "SYS-HOLD", "Fictional Storage Controller", claimant, "Fictional New Owner");
+
+        var reconciliation = await InvokeAsync<CustomerListReconciliationPage>(tenant,
+            new ReconcileCustomerList(Guid.NewGuid(), claimant, new CustomerListSource(Pasted:
+                [new(heldSerial), new(remoteSerial)]), At.AddDays(3), "ignored", Take: 20));
+        var held = reconciliation.Items.Single(row => row.Input == heldSerial);
+        var remote = reconciliation.Items.Single(row => row.Input == remoteSerial);
+        Assert.True(held.UnitAtCustomerSiteDefault);
+        Assert.False(remote.UnitAtCustomerSiteDefault);
+
+        var heldDecision = await InvokeAsync<CustomerAssertionDecision>(tenant, new VerifyCustomerAssertion(
+            Guid.NewGuid(), held.AssertionId!.Value, "customer-statement:HOLD-01", At.AddDays(5), Entity,
+            "ignored", [YojanaRole.SerialAdministrator], UnitAtCustomerSite: false));
+        var remoteDecision = await InvokeAsync<CustomerAssertionDecision>(tenant, new VerifyCustomerAssertion(
+            Guid.NewGuid(), remote.AssertionId!.Value, "customer-statement:REMOTE-01", At.AddDays(5), Entity,
+            "ignored", [YojanaRole.SerialAdministrator]));
+        Assert.False(heldDecision.UnitAtCustomerSite);
+        Assert.Null(heldDecision.CustodyEpisodeId);
+        Assert.False(remoteDecision.UnitAtCustomerSite);
+        Assert.Null(remoteDecision.CustodyEpisodeId);
+
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var heldCustody = await db.Episodes.SingleAsync(row => row.UnitId == heldUnit
+            && row.Kind == EpisodeKind.Custody && row.ValidTo == null);
+        var remoteCustody = await db.Episodes.SingleAsync(row => row.UnitId == remoteUnit
+            && row.Kind == EpisodeKind.Custody && row.ValidTo == null);
+        Assert.Equal((LocationKind.CustomerSite, priorOwner),
+            (heldCustody.LocationKind, heldCustody.PartyRef));
+        Assert.Equal((LocationKind.At3pl, carrier), (remoteCustody.LocationKind, remoteCustody.PartyRef));
+        var details = scope.ServiceProvider.GetRequiredService<Yojana.Serialisation.Queries.UnitQueries>();
+        Assert.True((await details.DetailAsync(heldUnit, CancellationToken.None))!.OwnerAndHolderDiffer);
+        Assert.False((await details.DetailAsync(remoteUnit, CancellationToken.None))!.OwnerAndHolderDiffer);
+    }
+
+    [DatabaseFact]
+    public async Task Assertion_decisions_are_tenant_isolated()
+    {
+        var owningTenant = await fixture.NewTenantAsync("recisolationa");
+        var otherTenant = await fixture.NewTenantAsync("recisolationb");
+        var claimant = Guid.NewGuid();
+        var unit = await UnitAsync(owningTenant, Guid.NewGuid(), Serial("PRIVATE"));
+        await OwnAsync(owningTenant, unit, Guid.NewGuid(), At.AddDays(1));
+        var serial = await SerialForAsync(owningTenant, unit);
+        var reconciliation = await InvokeAsync<CustomerListReconciliationPage>(owningTenant,
+            new ReconcileCustomerList(Guid.NewGuid(), claimant, new CustomerListSource(Pasted:
+                [new(serial)]), At.AddDays(2), "ignored"));
+        var assertionId = Assert.Single(reconciliation.Items).AssertionId!.Value;
+
+        var refusal = await Assert.ThrowsAsync<CommandRefusedException>(() =>
+            InvokeAsync<CustomerAssertionDecision>(otherTenant, new VerifyCustomerAssertion(Guid.NewGuid(),
+                assertionId, "customer-statement:PRIVATE-01", At.AddDays(5), Entity, "ignored",
+                [YojanaRole.SerialAdministrator])));
+        Assert.Equal("customer_assertion_unknown", refusal.Rule);
+
+        using var scope = fixture.ScopeFor(owningTenant);
+        var stored = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>()
+            .CustomerAssertions.SingleAsync(row => row.AssertionId == assertionId);
+        Assert.Equal(CustomerAssertionStatus.PendingVerification, stored.Status);
+        Assert.Null(stored.OwnershipEpisodeId);
+        Assert.Null(stored.CustodyEpisodeId);
     }
 
     [DatabaseFact]
@@ -197,6 +308,20 @@ public sealed class CustomerListReconciliationTests(SerialisationHostFixture fix
     private Task<OpenOwnershipResult> OwnAsync(TenantId tenant, Guid unitId, Guid partyRef, DateTime at) =>
         InvokeAsync<OpenOwnershipResult>(tenant, new OpenOwnership(Guid.NewGuid(), unitId, partyRef,
             PartyType.Customer, EpisodeReason.Sale, at, "test:sales", Entity));
+
+    private Task<ChangeCustodyResult> HoldAsync(TenantId tenant, Guid unitId, string locationKind,
+        Guid partyRef, string partyType, DateTime at) =>
+        InvokeAsync<ChangeCustodyResult>(tenant, new ChangeCustody(Guid.NewGuid(), unitId, locationKind,
+            EpisodeReason.Sale, at, "test:delivery", Entity, PartyRef: partyRef, PartyType: partyType));
+
+    private async Task<string> SerialForAsync(TenantId tenant, Guid unitId)
+    {
+        using var scope = fixture.ScopeFor(tenant);
+        return await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Identifiers
+            .Where(row => row.UnitId == unitId && row.Type == IdentifierType.InternalSerial
+                && row.ValidTo == null)
+            .Select(row => row.NormalisedValue).SingleAsync();
+    }
 
     private async Task<T> InvokeAsync<T>(TenantId tenant, object command) where T : class
     {

@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router";
 import { COUNTRY_CODES, countryName } from "../reference/countries";
 import { DataGrid, KpiStrip, ScanInput, Shortcut, StatusBadge, TimelineRail, useModEnter, type GridColumn, type PageResult } from "../components";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
+import { openDrawer } from "../shell/drawerStore";
 import { ErrorNote } from "../units/common";
 import { useSession } from "../session/session";
 import type { TimelineEntry } from "../components/types";
@@ -61,11 +62,38 @@ export function ReconcileScreen() {
   const setReconciliationPage = (next: ReconciliationPage, targetPage: number) => { setResult(next); setPageNumber(targetPage); if (next.nextCursor) setCursors((current) => { const updated = current.slice(0, targetPage); updated[targetPage] = next.nextCursor!; return updated; }); };
   const reconcile = async () => { if (!party || !job) return; setBusy(true); try { setCursors([undefined]); setReconciliationPage(await p7Api.reconcile(party.id, job), 1); } catch (reason) { setError(reason); } finally { setBusy(false); } };
   const page = async (targetPage: number) => { if (!result) return; setBusy(true); try { setReconciliationPage(await p7Api.reconciliation(result.reconciliationId, cursors[targetPage - 1]), targetPage); } catch (reason) { setError(reason); } finally { setBusy(false); } };
+  const review = (row: ReconciliationPage["items"][number]) => openDrawer({ eyebrow: "Customer ownership assertion", title: row.unit ?? row.input, mono: true }, <AssertionReview row={row} onDone={() => void page(pageNumber)} />);
   useModEnter(reconcile, busy || !party || !job);
   const k = reconciliationKpis(result); const columns: GridColumn<ReconciliationPage["items"][number]>[] = [
-    { key: "input", label: "Customer value", width: 22, render: (row) => row.input, mono: true }, { key: "outcome", label: "Result", width: 17, render: (row) => <Badge value={row.outcome} /> }, { key: "unit", label: "Matched unit", width: 18, render: (row) => row.unit ?? "—", mono: true }, { key: "item", label: "Item", width: 18, render: (row) => row.item ?? "—" }, { key: "owner", label: "Ownership", width: 15, render: (row) => row.otherOwner ?? (row.outcome === "owned" ? result?.customer : "—") }, { key: "assertion", label: "Assertion", width: 10, render: (row) => row.assertionStatus ? <Badge value={row.assertionStatus} /> : "Not created" },
+    { key: "input", label: "Customer value", width: 20, render: (row) => row.input, mono: true }, { key: "outcome", label: "Result", width: 15, render: (row) => <Badge value={row.outcome} /> }, { key: "unit", label: "Matched unit", width: 17, render: (row) => row.unit ?? "—", mono: true }, { key: "item", label: "Item", width: 18, render: (row) => row.item ?? "—" }, { key: "owner", label: "Ownership", width: 14, render: (row) => row.otherOwner ?? (row.outcome === "owned" ? result?.customer : "—") }, { key: "assertion", label: "Assertion", width: 16, render: (row) => row.assertionId && row.assertionStatus === "pending_verification" ? <button type="button" className="btn sm" onClick={() => review(row)}>Review…</button> : row.assertionStatus ? <Badge value={row.assertionStatus} /> : "Not created" },
   ];
   return <main className="content" id="main" tabIndex={-1}><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Reconcile" }]} /><PageHeader eyebrow="Data · Customer assertions" title="Reconcile a customer list" sub="Match the customer's file without granting portal access until delivery evidence is verified." actions={result && <ExportButtons path={`/api/customer-reconciliations/${result.reconciliationId}/export`} />} /><ErrorNote error={error} /><Card title="Source" meta="import job"><div className="card-body form-grid"><label className="field"><FieldLabel>Customer organisation</FieldLabel><input className="input" value={party ? `${party.name ?? party.code}` : partyQuery} onChange={(event) => { setParty(null); setPartyQuery(event.target.value); }} placeholder="Search by customer name or code" />{!party && parties.length > 0 && <div className="reference-results">{parties.map((option) => <button type="button" key={option.id} onClick={() => { setParty(option); setPartyQuery(option.name ?? option.code ?? "Customer"); setParties([]); }}>{option.name ?? option.code}<span>{option.code}</span></button>)}</div>}</label><label className="field"><FieldLabel>Customer list</FieldLabel><select className="select" value={job} onChange={(event) => setJob(event.target.value)}><option value="">Choose an import job</option>{jobs.map((item) => <option value={item.jobId} key={item.jobId}>{item.fileName} · {human(item.status)}</option>)}</select><span className="help">The job keeps raw values and validation reasons.</span></label></div><div className="card-footer"><span className="muted">Assertions begin as pending verification.</span><button type="button" className="btn primary" disabled={!party || !job || busy} onClick={() => void reconcile()}>Reconcile list<Shortcut keys="mod+enter" /></button></div></Card>{result ? <div className="stack top"><KpiStrip kpis={[{ label: "Supplied", value: String(k[0]) }, { label: "Owned", value: String(k[1]) }, { label: "Another party", value: String(k[2]) }, { label: "Not found", value: String(k[3]) }, { label: "Invalid", value: String(k[4]) }]} /><div className="note"><strong>Portal visibility:</strong>&nbsp;verify evidence → open ownership from its date → close the reseller period → the unit becomes visible to this customer.</div><Card title={`Results for ${result.customer}`} meta={human(result.sourceKind)}><DataGrid columns={columns} page={pageOf(result.items, pageNumber, !!result.nextCursor)} rowId={(row) => String(row.ordinal)} onPage={(next) => void page(next)} loading={busy} /></Card></div> : <div className="card top"><EmptyState title="No list reconciled yet">Choose the customer by name and one of its import jobs.</EmptyState></div>}</main>;
+}
+
+function AssertionReview({ row, onDone }: { row: ReconciliationPage["items"][number]; onDone: () => void }) {
+  const [evidenceRef, setEvidenceRef] = useState("");
+  const [evidenceDate, setEvidenceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [unitAtCustomerSite, setUnitAtCustomerSite] = useState(row.unitAtCustomerSiteDefault ?? false);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const verify = async () => {
+    if (!row.assertionId || !evidenceRef.trim() || !evidenceDate) return;
+    setBusy(true); setError(null);
+    try {
+      await p7Api.verifyAssertion(row.assertionId, evidenceRef.trim(), new Date(`${evidenceDate}T12:00:00Z`).toISOString(), unitAtCustomerSite);
+      setDone("Ownership assertion verified."); onDone();
+    } catch (value) { setError(value); } finally { setBusy(false); }
+  };
+  const reject = async () => {
+    if (!row.assertionId || !reason.trim()) return;
+    setBusy(true); setError(null);
+    try { await p7Api.rejectAssertion(row.assertionId, reason.trim()); setDone("Ownership assertion rejected."); onDone(); }
+    catch (value) { setError(value); } finally { setBusy(false); }
+  };
+  if (done) return <div className="note ok" role="status">{done}</div>;
+  return <div className="stack"><ErrorNote error={error} /><label className="field"><FieldLabel>Evidence reference</FieldLabel><input className="input" value={evidenceRef} onChange={(event) => setEvidenceRef(event.target.value)} placeholder="Delivery note or customer evidence" /></label><label className="field"><FieldLabel>Evidence date</FieldLabel><input className="input" type="date" value={evidenceDate} onChange={(event) => setEvidenceDate(event.target.value)} /></label><label className="p7-switch"><input type="checkbox" checked={unitAtCustomerSite} onChange={(event) => setUnitAtCustomerSite(event.target.checked)} /><span><strong>Unit is now at the customer's site</strong><span className="sub">The server suggested this from the current owner and custody record. Clear it when custody has not changed.</span></span></label><button type="button" className="btn primary block" disabled={busy || !evidenceRef.trim() || !evidenceDate} onClick={() => void verify()}>{busy ? "Recording…" : "Verify assertion"}</button><h3>Or reject</h3><label className="field"><FieldLabel>Reason</FieldLabel><textarea className="textarea" value={reason} onChange={(event) => setReason(event.target.value)} /></label><button type="button" className="btn block" disabled={busy || !reason.trim()} onClick={() => void reject()}>Reject assertion</button></div>;
 }
 
 export function PortalLookupScreen({ publicOnly = false }: { publicOnly?: boolean }) {
