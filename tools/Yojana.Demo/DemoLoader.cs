@@ -100,6 +100,10 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
         await StepAsync("load import, reconciliation and portal stories", CreatePhaseSevenScenariosAsync, cancellationToken);
         await StepAsync("load integration attention and hand-entry stories", CreatePhaseEightScreenScenariosAsync,
             cancellationToken);
+        await StepAsync("load second-connection, ERP-change and verification stories",
+            CreatePhaseTenScenariosAsync, cancellationToken);
+        await StepAsync("load questions, knowledge and training stories",
+            CreatePhaseThirteenScenariosAsync, cancellationToken);
         await StepAsync("publish customer e-mail templates", CreateCustomerMailTemplatesAsync, cancellationToken);
         await PrintSummaryAsync(cancellationToken);
     }
@@ -987,7 +991,6 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             Claim("router-settled", Units("NR-220")[0], isp, "INR", null, ClaimLineKind.Parts, 24000m, "WAN module", ClaimAction.Settle),
             Claim("printer-settled", Units("PF-400")[1], studio, "GBP", null, ClaimLineKind.Labour, 90m, "Extrusion calibration", ClaimAction.Settle),
             Claim("server-approved", Units("RS-1100")[3], hpc, "EUR", null, ClaimLineKind.Parts, 510m, "Cooling fan module", ClaimAction.Adjudicate),
-            Claim("desktop-approved", Units("DW-300")[1], bank, "INR", null, ClaimLineKind.Labour, 7200m, "Intermittent boot diagnosis", ClaimAction.Adjudicate),
             Claim("evidence-thermal", Units("RS-1100")[4], hpc, "EUR", null, ClaimLineKind.Labour, 155m, "Thermal shutdown investigation", ClaimAction.Evidence),
             Claim("evidence-router", Units("NR-220")[1], isp, "GBP", null, ClaimLineKind.Parts, 210m, "Carrier trace required", ClaimAction.Evidence),
             Claim("evidence-printer", Units("PF-400")[2], studio, "INR", null, ClaimLineKind.Labour, 8700m, "Print sample review", ClaimAction.Evidence),
@@ -996,6 +999,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             Claim("submitted-server", Units("RS-1100")[5], hpc, "EUR", null, ClaimLineKind.Parts, 330m, "Power-cycle fault", ClaimAction.Submit),
             Claim("submitted-laptop", Units("LB-14")[3], bank, "GBP", null, ClaimLineKind.Labour, 95m, "Keyboard inspection", ClaimAction.Submit),
             Claim("submitted-desktop", Units("DW-300")[2], bank, "INR", null, ClaimLineKind.Parts, 8200m, "Display adapter", ClaimAction.Submit),
+            Claim("desktop-approved", Units("DW-300")[2], bank, "INR", null, ClaimLineKind.Labour, 7200m, "Intermittent boot diagnosis", ClaimAction.HoldForRiskReview),
             Claim("no-fault-found", Units("DW-300")[3], bank, "EUR", null, ClaimLineKind.Labour, 80m, "Intermittent noise", ClaimAction.NoFaultDeny),
             Claim("server-replacement", Units("RS-1100")[31], bank, "USD", null, ClaimLineKind.Parts, 890m, "Management controller replacement", ClaimAction.Adjudicate, remedy: ClaimRemedy.Replacement),
             Claim("recall-campaign", Units("RS-1100")[0], hpc, "EUR", null, ClaimLineKind.Parts, 360m,
@@ -1018,9 +1022,14 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             var submitted = await InvokeAsync<SubmitClaimResult>(submit, cancellationToken);
             if (!submitted.Replayed) claimsCreated++;
 
-            if (plan.Action == ClaimAction.Submit) continue;
+            if (plan.Action == ClaimAction.Submit)
+            {
+                await ReviewOpenClaimRiskFlagsAsync(submitted.ClaimId, eventTime.AddHours(1), cancellationToken);
+                continue;
+            }
             if (plan.Action == ClaimAction.Evidence)
             {
+                await ReviewOpenClaimRiskFlagsAsync(submitted.ClaimId, eventTime.AddHours(1), cancellationToken);
                 await InvokeAsync<ClaimChangeResult>(new RequestClaimEvidence(DemoIds.FromName("evidence:" + plan.Key), submitted.ClaimId,
                     "Please provide diagnostic logs and a clear label photograph.", eventTime.AddHours(1), actor), cancellationToken);
                 continue;
@@ -1035,8 +1044,22 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             var note = denial == ClaimManualDenialReason.UnauthorisedPartsDamage
                 ? "Inspection found a third-party DIMM fitted in slot A2; the unauthorised part damaged the memory channel."
                 : denial == ClaimManualDenialReason.NoFaultFound ? "Bench diagnostics completed twice without reproducing the reported fault." : null;
-            var adjudicated = await InvokeAsync<AdjudicateClaimResult>(new AdjudicateClaim(DemoIds.FromName("adjudicate:" + plan.Key), submitted.ClaimId,
-                eventTime.AddHours(2), actor, new ClaimReviewer(actor, [YojanaRole.ServiceManager]), denial, note), cancellationToken);
+            var adjudicate = new AdjudicateClaim(DemoIds.FromName("adjudicate:" + plan.Key), submitted.ClaimId,
+                eventTime.AddHours(2), actor, new ClaimReviewer(actor, [YojanaRole.ServiceManager]), denial, note);
+            var adjudicated = await InvokeAsync<AdjudicateClaimResult>(adjudicate, cancellationToken);
+            if (adjudicated.Refusal == "claim_risk_review_pending")
+            {
+                if (plan.Action == ClaimAction.HoldForRiskReview) continue;
+                await ReviewOpenClaimRiskFlagsAsync(submitted.ClaimId, adjudicate.EventTime, cancellationToken);
+                adjudicated = await InvokeAsync<AdjudicateClaimResult>(adjudicate, cancellationToken);
+            }
+            else if (plan.Action == ClaimAction.HoldForRiskReview)
+            {
+                throw new InvalidOperationException($"Claim demo '{plan.Key}' must remain held for second review, but no risk rule held it.");
+            }
+            if (adjudicated.Refusal is not null)
+                throw new InvalidOperationException($"Claim demo '{plan.Key}' could not progress after second review: {adjudicated.Refusal}.");
+            await ReviewOpenClaimRiskFlagsAsync(submitted.ClaimId, adjudicate.EventTime, cancellationToken);
             recoveryIds.AddRange(adjudicated.RecoveryClaimIds.Select(id => (id, adjudicated.Lines.Single(line => line.ApprovedAmount > 0).ApprovedAmount)));
             if (plan.Action is ClaimAction.Settle or ClaimAction.Close)
                 await InvokeAsync<ClaimChangeResult>(new SettleClaim(DemoIds.FromName("settle:" + plan.Key), submitted.ClaimId, eventTime.AddDays(1), actor), cancellationToken);
@@ -1052,6 +1075,44 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             var answer = await InvokeAsync<RecoveryClaimChangeResult>(new ApproveRecoveryClaim(DemoIds.FromName("vendor-answer:" + recovery.Id),
                 recovery.Id, amount, DemoDates.At(today, 9 + index), actor, VendorReference: $"VA-2026-{714 + index}", VendorNote: note), cancellationToken);
             if (!answer.Replayed) recoveriesApproved++;
+        }
+    }
+
+    private async Task ReviewOpenClaimRiskFlagsAsync(Guid claimId, DateTime reviewedAt,
+        CancellationToken cancellationToken)
+    {
+        List<(Guid FlagId, string RuleCode)> flags;
+        using (var scope = TenantScope())
+        {
+            var rows = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().ClaimRiskFlags.AsNoTracking()
+                .Where(row => row.ClaimId == claimId && row.Status == ClaimRiskFlagStatus.Open)
+                .OrderBy(row => row.RuleCode)
+                .Select(row => new { row.FlagId, row.RuleCode })
+                .ToListAsync(cancellationToken);
+            flags = rows.Select(row => (row.FlagId, row.RuleCode)).ToList();
+        }
+        if (flags.Count == 0) return;
+
+        ClaimReviewer reviewer;
+        using (var scope = TenantScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var email = $"{YojanaRole.ServiceManager}@{DevelopmentSeeder.EmailDomain}";
+            var user = await db.Users.AsNoTracking().Include(value => value.Memberships)
+                .SingleAsync(value => value.Email == email, cancellationToken);
+            reviewer = new(user.Id.ToString(), user.Memberships.Single(value => value.TenantId == tenant).Roles);
+        }
+
+        foreach (var (flagId, ruleCode) in flags)
+        {
+            var decision = ruleCode is ClaimRiskRuleCode.RepeatFault or ClaimRiskRuleCode.ClaimantRate
+                ? ClaimRiskFlagStatus.Confirmed
+                : ClaimRiskFlagStatus.Cleared;
+            var reason = decision == ClaimRiskFlagStatus.Confirmed
+                ? "The service history supports the deterministic risk indicator; a separate manager approved progression."
+                : "The source documents and unit history were checked by a separate manager.";
+            await InvokeAsync<ClaimRiskFlagDecisionResult>(new DecideClaimRiskFlag(claimId, flagId, decision,
+                reason, reviewedAt, reviewer.UserRef, reviewer.Roles), cancellationToken);
         }
     }
 
@@ -1551,9 +1612,17 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             [new ClaimEvidenceInput(ClaimEvidenceKind.Attachment, "DEMO-P5-" + key.ToUpperInvariant(), "Demo evidence")],
             ClaimRemedy.Replacement, "P5-CHOICE-" + key.ToUpperInvariant(), submittedAt, actor), cancellationToken);
         if (!submitted.Replayed) p5ClaimsCreated++;
-        var adjudicated = await InvokeAsync<AdjudicateClaimResult>(new AdjudicateClaim(
+        var adjudicate = new AdjudicateClaim(
             DemoIds.FromName("p5:claim-adjudicate:" + key), submitted.ClaimId, submittedAt.AddHours(1), actor,
-            new ClaimReviewer(actor, [YojanaRole.ServiceManager])), cancellationToken);
+            new ClaimReviewer(actor, [YojanaRole.ServiceManager]));
+        var adjudicated = await InvokeAsync<AdjudicateClaimResult>(adjudicate, cancellationToken);
+        if (adjudicated.Refusal == "claim_risk_review_pending")
+        {
+            await ReviewOpenClaimRiskFlagsAsync(submitted.ClaimId, adjudicate.EventTime, cancellationToken);
+            adjudicated = await InvokeAsync<AdjudicateClaimResult>(adjudicate, cancellationToken);
+        }
+        if (adjudicated.Refusal is not null)
+            throw new InvalidOperationException($"P5 claim '{key}' could not progress after second review: {adjudicated.Refusal}.");
         var entitlementId = adjudicated.Lines.Single().EntitlementId
             ?? throw new InvalidOperationException($"P5 claim '{key}' did not resolve to an entitlement.");
         return new(submitted.ClaimId, entitlementId);
@@ -1770,14 +1839,25 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             var createdAt = DemoDates.At(today.AddDays(-story.DaysAgo), story.Hour, story.Minute);
             var raw = JsonSerializer.Serialize(new { documentNumber = story.DocumentNumber, documentKey = 80000 + story.Hour * 100 + story.Minute, itemCode = story.ExternalId, customerCode = "C-10211", quantity = story.RecordType == "DeliveryPosted" ? 4 : 1, warehouse = "DC-01" });
             var attempted = JsonSerializer.Serialize(new { entityType = story.EntityType, externalId = story.ExternalId, suggestedModuleId = story.ModuleId, suggestedModuleName = story.ModuleName, documentNumber = story.DocumentNumber });
-            if (!await db.InboundMessages.AnyAsync(row => row.InboundMessageId == sourceId, cancellationToken))
-                db.InboundMessages.Add(new InboundMessage
+            var inbound = await db.InboundMessages.SingleOrDefaultAsync(row =>
+                row.InboundMessageId == sourceId, cancellationToken);
+            if (inbound is null)
+            {
+                inbound = new InboundMessage
                 {
                     TenantId = tenant, InboundMessageId = sourceId, MessageId = DemoIds.FromName("integration:message:" + story.Key), ConnectionId = connectionId,
                     ConnectorCode = "CX01", ErpEntity = story.RecordType, ErpExternalId = story.DocumentNumber, ErpChangeMarker = "1", MarkerKind = "sequence",
                     ContractVersion = "1.0", MessageType = story.RecordType, RawPayload = raw, CanonicalMessage = attempted,
-                    OccurredAt = createdAt.AddMinutes(-1), ObservedAt = createdAt, AcceptedAt = createdAt, IsLatest = true, TranslationStatus = InboundTranslationStatus.Pending,
-                });
+                    OccurredAt = createdAt.AddMinutes(-1), ObservedAt = createdAt, AcceptedAt = createdAt,
+                    TranslationStatus = InboundTranslationStatus.Failed,
+                };
+                db.InboundMessages.Add(inbound);
+            }
+            // These rows are deliberately incomplete translation attempts for the attention screen, not canonical
+            // stock facts. Keeping them historical and failed preserves that screen without letting an ERP-change
+            // comparison mistake their diagnostic JSON for a latest stock payload.
+            inbound.IsLatest = false;
+            inbound.TranslationStatus = InboundTranslationStatus.Failed;
             if (!await db.DeadLetterItems.AnyAsync(row => row.DeadLetterItemId == itemId, cancellationToken))
             {
                 db.DeadLetterItems.Add(new DeadLetterItem
@@ -1890,9 +1970,18 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
         var labelTemplateCount = await db.LabelTemplates.CountAsync(cancellationToken);
         var printJobCount = await db.PrintJobs.CountAsync(cancellationToken);
         var rejectedPrintJobCount = await db.PrintJobs.CountAsync(row => row.Status == LabelPrintStatus.Rejected, cancellationToken);
+        var heldClaims = await (from flag in db.ClaimRiskFlags.AsNoTracking()
+                                join claim in db.Claims.AsNoTracking()
+                                    on new { flag.TenantId, flag.ClaimId } equals new { claim.TenantId, claim.ClaimId }
+                                where flag.Status == ClaimRiskFlagStatus.Open
+                                select claim.ClaimNumber).Distinct().OrderBy(value => value)
+            .ToListAsync(cancellationToken);
+        if (heldClaims.Count != 1)
+            throw new InvalidOperationException($"The demo must contain exactly one claim held for second review; found {heldClaims.Count}.");
         Console.WriteLine($"Units {unitCount}; assembled finished goods {assembled}; entitlements {entitlementCount}; claims {claimCount}; recovery claims {recoveryCount}; campaigns {campaignCount}.");
         Console.WriteLine($"RMAs {rmaCounts.Values.Sum()} ({string.Join(", ", RmaStage.All.Select(stage => $"{stage} {rmaCounts.GetValueOrDefault(stage)}"))}); replacements {replacementCount}; awaiting return {awaitingCount}; overdue {overdueCount}; customers on hold {heldCustomers}; refurbishment work orders {refurbishmentCount}.");
         Console.WriteLine($"Certificates {certificateCount}; certificate triggers {certificateTriggerCount} ({refusedCertificateTriggerCount} refused); label templates {labelTemplateCount}; print jobs {printJobCount} ({rejectedPrintJobCount} rejected).");
+        Console.WriteLine($"Claim {heldClaims.Single()} is deliberately held for independent risk review.");
         Console.WriteLine($"This run added {claimsCreated + p5ClaimsCreated} claim(s) and approved {recoveriesApproved} vendor answer(s); stable command ids make re-runs no-ops.");
     }
 
@@ -2200,5 +2289,5 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
     private sealed record ClaimPlan(string Key, DemoUnit? Unit, DemoCatalogue.CatalogueParty Customer, string Currency, string Country,
         IReadOnlyList<ClaimLineInput> Lines, ClaimAction Action, string Remedy = ClaimRemedy.Repair, string? UnknownIdentifier = null,
         Guid? ItemId = null, string? ProofRef = null, DateOnly? ProofDate = null, Guid? CampaignId = null, DateOnly? ClaimDate = null);
-    private enum ClaimAction { Submit, Evidence, Adjudicate, ManualDeny, NoFaultDeny, Settle, Close }
+    private enum ClaimAction { Submit, Evidence, Adjudicate, HoldForRiskReview, ManualDeny, NoFaultDeny, Settle, Close }
 }
