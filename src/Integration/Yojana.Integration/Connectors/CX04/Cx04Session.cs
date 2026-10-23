@@ -71,7 +71,8 @@ public sealed class Cx04RemoteException(HttpStatusCode statusCode, string operat
 
 public sealed class Cx04Client(ITenantContext tenant, IClock clock, IntegrationDbContext db,
     Cx04Settings settings, IConnectionCredentialStore credentials, ConnectionCredentialProtector protector,
-    Cx04TokenRegistry tokens, ICx04Transport transport, IConnectionAuditSink audit)
+    Cx04TokenRegistry tokens, ICx04Transport transport, IConnectionAuditSink audit,
+    Cx04SignInNotifications notifications)
 {
     public const string TokenPurpose = "cx04_oauth_tokens";
     public const string PkcePurpose = "cx04_pkce_verifier";
@@ -131,6 +132,7 @@ public sealed class Cx04Client(ITenantContext tenant, IClock clock, IntegrationD
         using var request = new HttpRequestMessage(HttpMethod.Post, Cx04Protocol.Logout(configured));
         request.Headers.Authorization = new("Bearer", secret.AccessToken);
         using var response = await transport.SendAsync(new(tenant.TenantId, connectionId), request, ct);
+        await RecordCallAsync(connectionId, ct);
         if (!response.IsSuccessStatusCode)
             throw new Cx04RemoteException(response.StatusCode, "sign-out");
     }
@@ -158,10 +160,13 @@ public sealed class Cx04Client(ITenantContext tenant, IClock clock, IntegrationD
     {
         var token = await AccessTokenAsync(connectionId, forceRefresh: false, ct);
         var response = await transport.SendAsync(new(tenant.TenantId, connectionId), request(token), ct);
+        await RecordCallAsync(connectionId, ct);
         if (response.StatusCode != HttpStatusCode.Unauthorized) return response;
         response.Dispose();
         token = await AccessTokenAsync(connectionId, forceRefresh: true, ct);
-        return await transport.SendAsync(new(tenant.TenantId, connectionId), request(token), ct);
+        var retried = await transport.SendAsync(new(tenant.TenantId, connectionId), request(token), ct);
+        await RecordCallAsync(connectionId, ct);
+        return retried;
     }
 
     private async Task<string> AccessTokenAsync(Guid connectionId, bool forceRefresh, CancellationToken ct)
@@ -212,10 +217,11 @@ public sealed class Cx04Client(ITenantContext tenant, IClock clock, IntegrationD
             // one-time refresh token was lost after a crash. EfConnectionCredentialStore documents the other side.
             await SaveTokenAsync(connectionId, replacement, expiry, ct);
             state.RefreshChainExpiresAt = expiry;
-            state.Reminder14DaysSent = false;
-            state.Reminder3DaysSent = false;
             state.UpdatedAt = clock.UtcNow;
             await db.SaveChangesAsync(ct);
+            await audit.AppendAsync(new(tenant.TenantId, Guid.CreateVersion7(clock.UtcNow), connectionId,
+                ConnectionAuditEventType.ConsentRenewed, "system:cx04-authorisation", clock.UtcNow,
+                JsonSerializer.Serialize(new { refresh_chain_expires_at = expiry }, IntegrationContracts.Json)), ct);
             return replacement.AccessToken;
         }
         finally { gate.Release(); }
@@ -229,6 +235,7 @@ public sealed class Cx04Client(ITenantContext tenant, IClock clock, IntegrationD
             Content = new FormUrlEncodedContent(form),
         };
         using var response = await transport.SendAsync(new(tenant.TenantId, connectionId), request, ct);
+        await RecordCallAsync(connectionId, ct);
         if (!response.IsSuccessStatusCode)
         {
             string? code = null;
@@ -288,7 +295,16 @@ public sealed class Cx04Client(ITenantContext tenant, IClock clock, IntegrationD
         await audit.AppendAsync(new(tenant.TenantId, Guid.CreateVersion7(clock.UtcNow), connectionId,
             ConnectionAuditEventType.ConsentRequired, "system:cx04-authorisation", clock.UtcNow,
             JsonSerializer.Serialize(new { reason }, IntegrationContracts.Json)), ct);
+        var noticeReason = reason == "invalid_grant" ? "refused_by_erp" : "expired";
+        var detail = noticeReason == "refused_by_erp" ? "the source application refused the refresh grant"
+            : $"the sign-in expired at {state.RefreshChainExpiresAt:yyyy-MM-dd HH:mm} UTC";
+        await notifications.NotifyPauseAsync(state, noticeReason, detail, ct);
     }
+
+    private Task<int> RecordCallAsync(Guid connectionId, CancellationToken ct) =>
+        db.Cx04AuthorisationStates.Where(value => value.TenantId == tenant.TenantId
+                && value.ConnectionId == connectionId)
+            .ExecuteUpdateAsync(update => update.SetProperty(value => value.LastCallAt, clock.UtcNow), ct);
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage response, string operation, CancellationToken ct)
     {

@@ -85,23 +85,40 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
         await using var web = await NotificationEndpointTests.WebProcess.StartAsync();
         Assert.Equal(HttpStatusCode.Accepted,
             await harness.SendDeliveryNotificationAsync(connection, web.BaseAddress, false, ct));
-        await WaitAsync(connection, ExternalId(await harness.DeliveryAsync(connection, ct)),
-            InboundTranslationStatus.Held, ct);
+        var deliveries = await harness.DeliveryShapeAsync(connection, ct);
+        var heldDeliveries = harness.SplitDeliveryShapeAcrossOpening ? deliveries.Take(1) : deliveries;
+        foreach (var delivery in heldDeliveries)
+            if (harness.NotificationAcceptancesAreHarnessSupplied)
+                await AcceptAsync(connection, delivery, InboundTranslationStatus.Held, ct);
+            else
+                await WaitAsync(connection, ExternalId(delivery), InboundTranslationStatus.Held, ct);
         Assert.Equal(HttpStatusCode.Accepted,
             await harness.SendDeliveryNotificationAsync(connection, web.BaseAddress, false, ct));
         await AcceptAsync(connection, await harness.OpeningReceiptAsync(connection, ct),
             InboundTranslationStatus.Completed, ct);
-        var deliveryId = ExternalId(await harness.DeliveryAsync(connection, ct));
-        await WaitAsync(connection, deliveryId, InboundTranslationStatus.Completed, ct);
+        if (harness.SplitDeliveryShapeAcrossOpening)
+        {
+            foreach (var delivery in heldDeliveries)
+                await WaitAsync(connection, ExternalId(delivery), InboundTranslationStatus.Completed, ct);
+            foreach (var delivery in deliveries.Skip(1))
+                await AcceptAsync(connection, delivery, InboundTranslationStatus.Completed, ct);
+        }
+        foreach (var delivery in deliveries)
+            await WaitAsync(connection, ExternalId(delivery), InboundTranslationStatus.Completed, ct);
         Assert.Equal(HttpStatusCode.Accepted,
             await harness.SendDeliveryNotificationAsync(connection, web.BaseAddress, false, ct));
         using var scope = fixture.ScopeFor(connection.TenantId);
         var integration = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
-        Assert.Equal(1, await integration.InboundMessages.CountAsync(x => x.ConnectionId == connection.ConnectionId
-            && x.ErpExternalId == deliveryId, ct));
-        Assert.Equal(1, await integration.IdempotencyIndex.CountAsync(x => x.ConnectionId == connection.ConnectionId
-            && x.ErpExternalId == deliveryId, ct));
+        foreach (var delivery in deliveries)
+        {
+            var deliveryId = ExternalId(delivery);
+            Assert.Equal(1, await integration.InboundMessages.CountAsync(x =>
+                x.ConnectionId == connection.ConnectionId && x.ErpExternalId == deliveryId, ct));
+            Assert.Equal(1, await integration.IdempotencyIndex.CountAsync(x =>
+                x.ConnectionId == connection.ConnectionId && x.ErpExternalId == deliveryId, ct));
+        }
         var serials = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        await WaitForSerialEventsAsync(connection, UnitEventType.Shipped, 2, ct);
         Assert.Equal(2, await serials.Units.CountAsync(ct));
         Assert.Equal(2, await serials.Events.CountAsync(x => x.EventType == UnitEventType.Shipped, ct));
         Assert.Equal(2, await serials.Episodes.CountAsync(x => x.Kind == EpisodeKind.Ownership, ct));
@@ -111,13 +128,19 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
     {
         var connection = await ConnectionAsync(harness, false, ct);
         await AcceptAsync(connection, await harness.ItemAsync(connection, ct), InboundTranslationStatus.Completed, ct);
-        var delivery = await harness.DeliveryAsync(connection, ct);
-        var held = await AcceptAsync(connection, delivery, InboundTranslationStatus.Held, ct);
+        var deliveries = await harness.DeliveryShapeAsync(connection, ct);
+        var heldDeliveries = harness.SplitDeliveryShapeAcrossOpening ? deliveries.Take(1).ToList() : deliveries;
+        var held = new List<Guid>(heldDeliveries.Count);
+        foreach (var delivery in heldDeliveries)
+            held.Add(await AcceptAsync(connection, delivery, InboundTranslationStatus.Held, ct));
         using (var check = fixture.ScopeFor(connection.TenantId))
         {
             var db = check.ServiceProvider.GetRequiredService<IntegrationDbContext>();
-            var hold = await db.ResequenceItems.SingleAsync(x => x.InboundMessageId == held, ct);
-            Assert.Equal(TimeSpan.FromMinutes(15), hold.HoldUntil - hold.HeldAt);
+            foreach (var inboundMessageId in held)
+            {
+                var hold = await db.ResequenceItems.SingleAsync(x => x.InboundMessageId == inboundMessageId, ct);
+                Assert.Equal(TimeSpan.FromMinutes(15), hold.HoldUntil - hold.HeldAt);
+            }
             Assert.Equal(0, await check.ServiceProvider.GetRequiredService<SerialisationDbContext>()
                 .Units.CountAsync(ct));
             Assert.Equal(0, await check.ServiceProvider.GetRequiredService<BoundedWaitResequencer>()
@@ -125,7 +148,10 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
         }
         await AcceptAsync(connection, await harness.OpeningReceiptAsync(connection, ct),
             InboundTranslationStatus.Completed, ct);
-        await WaitAsync(connection, delivery.Envelope.ErpExternalId, InboundTranslationStatus.Completed, ct);
+        foreach (var delivery in heldDeliveries)
+            await WaitAsync(connection, delivery.Envelope.ErpExternalId, InboundTranslationStatus.Completed, ct);
+        foreach (var delivery in deliveries.Skip(heldDeliveries.Count))
+            await AcceptAsync(connection, delivery, InboundTranslationStatus.Completed, ct);
         using (var check = fixture.ScopeFor(connection.TenantId))
         {
             var db = check.ServiceProvider.GetRequiredService<SerialisationDbContext>();
@@ -136,7 +162,7 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
                 < events.FindIndex(x => x.EventType == UnitEventType.Shipped));
         }
 
-        var late = LateDelivery(delivery);
+        var late = LateDelivery(deliveries[0]);
         var lateId = await AcceptAsync(connection, late, InboundTranslationStatus.Held, ct);
         fixture.Clock.UtcNow += TimeSpan.FromMinutes(16);
         using (var release = fixture.ScopeFor(connection.TenantId))
@@ -305,7 +331,9 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
         Assert.True(attempts > 3);
         Assert.True(sawDegraded);
         Assert.True(sawDown);
-        Assert.Equal(1, (await relay.RelayConnectionAsync(connection.ConnectionId, ct)).Parked);
+        var rejected = await relay.RelayConnectionAsync(connection.ConnectionId, ct);
+        Assert.True(rejected.Parked == 1,
+            $"Expected one parked command; completed={rejected.Completed}, retrying={rejected.Retrying}, parked={rejected.Parked}.");
         var letter = await db.DeadLetterItems.SingleAsync(x => x.SourceId == commandId, ct);
         Assert.Equal("max_outbox_age", letter.ReasonCode);
         harness.RestoreRemote();
@@ -327,24 +355,35 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
         await using var web = await NotificationEndpointTests.WebProcess.StartAsync();
         Assert.Equal(HttpStatusCode.Accepted,
             await harness.SendDeliveryNotificationAsync(connection, web.BaseAddress, false, ct));
-        await WaitAsync(connection, ExternalId(await harness.DeliveryAsync(connection, ct)),
-            InboundTranslationStatus.Completed, ct);
+        foreach (var delivery in await harness.DeliveryShapeAsync(connection, ct))
+            if (harness.NotificationAcceptancesAreHarnessSupplied)
+                await AcceptAsync(connection, delivery, InboundTranslationStatus.Completed, ct);
+            else
+                await WaitAsync(connection, ExternalId(delivery), InboundTranslationStatus.Completed, ct);
+        await WaitForSerialEventsAsync(connection, UnitEventType.Shipped, 2, ct);
         using (var before = fixture.ScopeFor(connection.TenantId))
         {
             var db = before.ServiceProvider.GetRequiredService<SerialisationDbContext>();
             Assert.Equal(2, await db.Events.CountAsync(x => x.EventType == UnitEventType.Shipped, ct));
-            Assert.All(await db.Current.ToListAsync(ct), x => Assert.Equal(LocationKind.InTransit, x.LocationKind));
+            Assert.All(await db.Current.ToListAsync(ct), x =>
+                Assert.Equal(harness.DeliveryLocationKind, x.LocationKind));
         }
         await harness.CancelShipmentAsync(connection, ct);
         Assert.Equal(HttpStatusCode.Accepted,
             await harness.SendDeliveryNotificationAsync(connection, web.BaseAddress, true, ct));
-        var cancellation = await harness.CancellationAsync(connection, ct);
-        await WaitAsync(connection, cancellation.Envelope.ErpExternalId, InboundTranslationStatus.Completed, ct);
+        var cancellations = await harness.CancellationShapeAsync(connection, ct);
+        foreach (var cancellation in cancellations)
+            if (harness.NotificationAcceptancesAreHarnessSupplied)
+                await AcceptAsync(connection, cancellation, InboundTranslationStatus.Completed, ct);
+            else
+                await WaitAsync(connection, cancellation.Envelope.ErpExternalId, InboundTranslationStatus.Completed, ct);
         using var scope = fixture.ScopeFor(connection.TenantId);
         var inbox = scope.ServiceProvider.GetRequiredService<InboundMessageStore>();
-        Assert.Equal(InboundAcceptanceResult.AlreadyProcessed,
-            (await inbox.Accept(cancellation, ct)).Outcome);
+        foreach (var cancellation in cancellations)
+            Assert.Equal(InboundAcceptanceResult.AlreadyProcessed,
+                (await inbox.Accept(cancellation, ct)).Outcome);
         var serials = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        await WaitForSerialEventsAsync(connection, UnitEventType.ShipmentReversed, 2, ct);
         var reversals = await serials.Events.Where(x => x.EventType == UnitEventType.ShipmentReversed)
             .ToListAsync(ct);
         Assert.Equal(2, reversals.Count);
@@ -363,11 +402,14 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
         harness.ScriptClosedPeriodRejection();
         using var scope = fixture.ScopeFor(connection.TenantId);
         var relay = scope.ServiceProvider.GetRequiredService<OutboundRelay>();
-        Assert.Equal(1, (await relay.RelayConnectionAsync(connection.ConnectionId, ct)).Parked);
+        var rejected = await relay.RelayConnectionAsync(connection.ConnectionId, ct);
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
-        var row = await db.OutboundCommands.SingleAsync(x => x.OutboundCommandId == rowId, ct);
+        var observed = await db.OutboundCommands.SingleAsync(x => x.OutboundCommandId == rowId, ct);
+        Assert.True(rejected.Parked == 1,
+            $"Expected one parked command; completed={rejected.Completed}, retrying={rejected.Retrying}, parked={rejected.Parked}, failure={observed.LastFailure}.");
+        var row = observed;
         Assert.Equal(OutboundConnectorOutcome.Rejected, row.Outcome);
-        Assert.Contains("period is closed", row.LastFailure);
+        Assert.Contains(harness.OutboundValidationRejectionText, row.LastFailure);
         var task = await db.ManualOutboundTasks.SingleAsync(x => x.OutboundCommandId == rowId, ct);
         Assert.Contains("FIC-CUSTOMER", task.Draft);
         var before = await harness.ReadRemoteAsync(connection, ct);
@@ -387,8 +429,9 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
         await AcceptAsync(connection, await harness.ItemAsync(connection, ct), InboundTranslationStatus.Completed, ct);
         await AcceptAsync(connection, await harness.OpeningReceiptAsync(connection, ct),
             InboundTranslationStatus.Completed, ct);
-        await AcceptAsync(connection, await harness.DeliveryAsync(connection, ct),
-            InboundTranslationStatus.Completed, ct);
+        foreach (var delivery in await harness.DeliveryShapeAsync(connection, ct))
+            await AcceptAsync(connection, delivery, InboundTranslationStatus.Completed, ct);
+        await WaitForSerialEventsAsync(connection, UnitEventType.OwnershipOpened, 2, ct);
         using var scope = fixture.ScopeFor(connection.TenantId);
         var serials = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         Assert.All(await serials.Current.AsNoTracking().ToListAsync(ct), unit => Assert.NotNull(unit.OwnerPartyRef));
@@ -407,10 +450,12 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
         var drift = scope.ServiceProvider.GetRequiredService<CoexistenceDriftService>();
         Assert.Equal(0, (await drift.ScanAsync(connection.ConnectionId, ct)).ConflictsRaised);
         harness.EditRemoteOwner();
-        Assert.Equal(1, (await drift.ScanAsync(connection.ConnectionId, ct)).ConflictsRaised);
+        Assert.Equal(harness.RemoteOwnerConflictCount,
+            (await drift.ScanAsync(connection.ConnectionId, ct)).ConflictsRaised);
         Assert.Equal(0, (await drift.ScanAsync(connection.ConnectionId, ct)).ConflictsRaised);
-        Assert.Single((await scope.ServiceProvider.GetRequiredService<CoexistenceConflicts>()
-            .ListAsync(connection.ConnectionId, "open", null, 50, ct)).Items);
+        Assert.Equal(harness.RemoteOwnerConflictCount,
+            (await scope.ServiceProvider.GetRequiredService<CoexistenceConflicts>()
+                .ListAsync(connection.ConnectionId, "open", null, 50, ct)).Items.Count);
         Assert.Equal(before, await OwnedStateAsync());
         Assert.Equal(count, await serials.Events.CountAsync(x => x.EventType == UnitEventType.OwnershipOpened
             || x.EventType == UnitEventType.OwnershipClosed || x.EventType == UnitEventType.CustodyChanged
@@ -463,6 +508,10 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
         fixture.Clock.UtcNow = row.NextAttemptAt!.Value.AddSeconds(1);
         var relay = check.ServiceProvider.GetRequiredService<OutboundRelay>();
         Assert.Equal(0, (await relay.RelayConnectionAsync(connection.ConnectionId, ct)).Completed);
+        var stopped = await db.Connections.AsNoTracking().SingleAsync(x =>
+            x.ConnectionId == connection.ConnectionId, ct);
+        Assert.True(stopped.Status == ConnectionStatus.Paused && stopped.RegistrationCompleted,
+            $"Expected a resumable connection; status={stopped.Status}, registered={stopped.RegistrationCompleted}.");
         await check.ServiceProvider.GetRequiredService<SyncControl>().ResumeAsync(
             connection.ConnectionId, new("Maintenance complete"), Actor, ct);
         Assert.Equal(1, (await relay.RelayConnectionAsync(connection.ConnectionId, ct)).Completed);
@@ -492,13 +541,34 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
         {
             using var scope = fixture.ScopeFor(connection.TenantId);
             var row = await scope.ServiceProvider.GetRequiredService<IntegrationDbContext>()
-                .InboundMessages.AsNoTracking().SingleOrDefaultAsync(x =>
-                    x.ConnectionId == connection.ConnectionId && x.ErpExternalId == externalId, ct);
+                .InboundMessages.AsNoTracking().Where(x =>
+                    x.ConnectionId == connection.ConnectionId && x.ErpExternalId == externalId)
+                .OrderByDescending(x => x.AcceptedAt).FirstOrDefaultAsync(ct);
             if (row?.TranslationStatus == expected) return row.InboundMessageId;
             last = row?.TranslationStatus + ": " + row?.LastTranslationError;
             await Task.Delay(20, ct);
         }
         throw new TimeoutException($"{externalId} expected {expected}; {last}");
+    }
+
+    private async Task WaitForSerialEventsAsync(ConnectorEdgeConnection connection, string eventType,
+        int expected, CancellationToken ct)
+    {
+        var last = 0;
+        for (var attempt = 0; attempt < 300; attempt++)
+        {
+            using var scope = fixture.ScopeFor(connection.TenantId);
+            last = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>()
+                .Events.CountAsync(x => x.EventType == eventType, ct);
+            if (last == expected) return;
+            await Task.Delay(20, ct);
+        }
+        using var diagnostic = fixture.ScopeFor(connection.TenantId);
+        var details = await diagnostic.ServiceProvider.GetRequiredService<IntegrationDbContext>()
+            .ExceptionTasks.AsNoTracking().Where(x => x.ConnectionId == connection.ConnectionId)
+            .Select(x => x.Kind + ": " + x.Detail).ToListAsync(ct);
+        throw new TimeoutException($"Expected {expected} '{eventType}' serialisation events, observed {last}. "
+            + string.Join(" | ", details));
     }
 
     private async Task<Guid> StageReplacementAsync(ConnectorEdgeConnection connection,

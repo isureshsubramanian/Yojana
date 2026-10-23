@@ -12,8 +12,15 @@ public sealed class Cx04AuthorisationState : ITenantScoped
     public DateTime? RefreshChainExpiresAt { get; set; }
     public string RefreshExpiryMode { get; set; } = Cx04RefreshExpiryModes.Sliding;
     public int RefreshLifetimeDays { get; set; } = 90;
-    public bool Reminder14DaysSent { get; set; }
-    public bool Reminder3DaysSent { get; set; }
+    public string ReminderDaysSentJson { get; set; } = "[]";
+    public string? SignedInBy { get; set; }
+    public DateTime? SignedInAt { get; set; }
+    public string? DisabledBy { get; set; }
+    public DateTime? DisabledAt { get; set; }
+    public string? DisabledReason { get; set; }
+    public string? PauseReason { get; set; }
+    public DateTime? PauseNotifiedAt { get; set; }
+    public DateTime? LastCallAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
 

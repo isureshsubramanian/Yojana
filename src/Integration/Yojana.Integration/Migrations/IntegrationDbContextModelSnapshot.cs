@@ -33,6 +33,33 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("connection_id");
 
+                    b.Property<DateTime?>("DisabledAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("disabled_at");
+
+                    b.Property<string>("DisabledBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("disabled_by");
+
+                    b.Property<string>("DisabledReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("disabled_reason");
+
+                    b.Property<DateTime?>("LastCallAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_call_at");
+
+                    b.Property<DateTime?>("PauseNotifiedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("pause_notified_at");
+
+                    b.Property<string>("PauseReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("pause_reason");
+
                     b.Property<DateTime?>("PendingStateExpiresAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("pending_state_expires_at");
@@ -56,13 +83,20 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("int")
                         .HasColumnName("refresh_lifetime_days");
 
-                    b.Property<bool>("Reminder14DaysSent")
-                        .HasColumnType("bit")
-                        .HasColumnName("reminder14_days_sent");
+                    b.Property<string>("ReminderDaysSentJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("reminder_days_sent_json");
 
-                    b.Property<bool>("Reminder3DaysSent")
-                        .HasColumnType("bit")
-                        .HasColumnName("reminder3_days_sent");
+                    b.Property<DateTime?>("SignedInAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("signed_in_at");
+
+                    b.Property<string>("SignedInBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("signed_in_by");
 
                     b.Property<string>("Status")
                         .IsRequired()

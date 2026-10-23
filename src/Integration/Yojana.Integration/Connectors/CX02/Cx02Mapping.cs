@@ -131,9 +131,12 @@ public static class Cx02Mapper
                 new("receipt", documentNumber, DateOnly.FromDateTime(occurred.Date), documentNumber),
                 Text(raw, "sourceNumber") ?? "", lines), completeness);
         if (normalised.Contains("salesshipment", StringComparison.Ordinal))
+        {
+            var deliveryLine = line with { Quantity = Math.Abs(line.Quantity) };
             return (nameof(DeliveryPosted), new DeliveryPosted(
                 new("delivery", documentNumber, DateOnly.FromDateTime(occurred.Date), documentNumber),
-                Text(raw, "sourceNumber") ?? "", Text(raw, "shipToCode") ?? "", lines), completeness);
+                Text(raw, "sourceNumber") ?? "", Text(raw, "shipToCode") ?? "", [deliveryLine]), completeness);
+        }
         if (normalised.Contains("returnreceipt", StringComparison.Ordinal))
             return (nameof(ReturnReceived), new ReturnReceived(
                 new("return_receipt", documentNumber, DateOnly.FromDateTime(occurred.Date), documentNumber),

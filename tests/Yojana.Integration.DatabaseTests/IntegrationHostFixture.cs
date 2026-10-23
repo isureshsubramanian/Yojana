@@ -61,6 +61,8 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         builder.Services.Replace(ServiceDescriptor.Singleton<Yojana.Integration.Connectors.CX01.ICx01AttachmentContent>(new Yojana.Integration.Connectors.CX01.Testing.Cx01FixtureContent()));
         builder.Services.Replace(ServiceDescriptor.Scoped<Yojana.Integration.Connectors.CX02.ICx02OutboundFacts>(sp => new Yojana.Integration.Connectors.CX02.Testing.Cx02FixtureFacts(sp.GetRequiredService<IntegrationDbContext>(), sp.GetRequiredService<ITenantContext>())));
         builder.Services.Replace(ServiceDescriptor.Singleton<Yojana.Integration.Connectors.CX02.ICx02AttachmentContent>(new Yojana.Integration.Connectors.CX02.Testing.Cx02FixtureContent()));
+        builder.Services.Replace(ServiceDescriptor.Singleton<Yojana.Integration.Connectors.CX04.ICx04OutboundFacts>(
+            new Yojana.Integration.Connectors.CX04.Testing.Cx04FixtureFacts()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IIntegrationTransport>(Transport));
         builder.Services.AddSingleton(Connector);
         builder.Services.AddKeyedSingleton<IOutboundConnector>(FakeConnectorCode, (services, _) =>
@@ -161,7 +163,12 @@ internal sealed class AdvancingDatabaseThrottleDelay(MutableTestClock clock) : I
     public Task WaitAsync(TimeSpan delay, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        clock.UtcNow += delay;
+        var advanced = clock.UtcNow + delay;
+        // Retry jitter has sub-millisecond precision, while the Integration schema deliberately stores datetime2(3).
+        // Keep the shared fixture clock on that boundary so a connector outage cannot contaminate later assertions.
+        var remainder = advanced.Ticks % TimeSpan.TicksPerMillisecond;
+        clock.UtcNow = new DateTime(remainder == 0 ? advanced.Ticks
+            : advanced.Ticks + TimeSpan.TicksPerMillisecond - remainder, DateTimeKind.Utc);
         return Task.CompletedTask;
     }
 }

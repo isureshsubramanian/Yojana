@@ -19,7 +19,9 @@ namespace Yojana.Integration.Connectors.CX02.Testing;
 public sealed class Cx02ConnectorEdgeHarness : IConnectorEdgeHarness
 {
     private static readonly Guid DeliveryId = Guid.Parse("20000000-0000-4000-8000-000000000001");
+    private static readonly Guid SecondDeliveryId = Guid.Parse("20000000-0000-4000-8000-000000000007");
     private static readonly Guid CancellationId = Guid.Parse("20000000-0000-4000-8000-000000000002");
+    private static readonly Guid SecondCancellationId = Guid.Parse("20000000-0000-4000-8000-000000000008");
     private const string ClientState = "fictional-cx02-edge-client-state";
     private Cx02Simulator? simulator;
     private IConnectorEdgeHost? host;
@@ -28,21 +30,14 @@ public sealed class Cx02ConnectorEdgeHarness : IConnectorEdgeHarness
     private decimal onHand = 2m;
 
     public static ConnectorEdgeHarnessManifest Manifest { get; } = new(
-        Cx02Capabilities.ConnectorCode, Cx02Capabilities.Declaration.Messages,
-        new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [ConnectorEdgeScenarioIds.DuplicateNotification] =
-                "CX02 notifications identify one tracking-ledger row; the generic scenario requires one hint to identify a grouped two-serial delivery.",
-            [ConnectorEdgeScenarioIds.OutOfOrder] =
-                "CX02 tracking-ledger rows retain their signed quantity; the generic scenario assumes a positive grouped delivery quantity.",
-            [ConnectorEdgeScenarioIds.CancellationAfterShipment] =
-                "CX02 cancellation is supported, but this scenario depends on the generic grouped-delivery fixture that CX02 does not expose.",
-            [ConnectorEdgeScenarioIds.RemoteOwnerEdit] =
-                "CX02 owner drift is readable, but this scenario depends on the generic grouped-delivery fixture to establish local ownership.",
-        });
+        Cx02Capabilities.ConnectorCode, Cx02Capabilities.Declaration.Messages);
 
     public string ConnectorCode => Cx02Capabilities.ConnectorCode;
     public IReadOnlyDictionary<string, string> Capabilities => Manifest.Capabilities;
+    public bool NotificationAcceptancesAreHarnessSupplied => true;
+    public bool SplitDeliveryShapeAcrossOpening => true;
+    public string DeliveryLocationKind => Yojana.Serialisation.Contracts.LocationKind.CustomerSite;
+    public int RemoteOwnerConflictCount => 2;
     private Cx02Simulator Simulator => simulator
         ?? throw new InvalidOperationException("Start the connector edge harness before using it.");
 
@@ -127,13 +122,19 @@ public sealed class Cx02ConnectorEdgeHarness : IConnectorEdgeHarness
 
     public async Task<InboundAcceptance> DeliveryAsync(ConnectorEdgeConnection connection,
         CancellationToken cancellationToken)
+        => (await DeliveryShapeAsync(connection, cancellationToken))[0];
+
+    public async Task<IReadOnlyList<InboundAcceptance>> DeliveryShapeAsync(ConnectorEdgeConnection connection,
+        CancellationToken cancellationToken)
     {
         using var scope = Scope(connection);
-        var result = await scope.ServiceProvider.GetRequiredService<Cx02Adapter>().CaptureHintAsync(
-            connection.ConnectionId,
-            $"/api/{Cx02Simulator.Publisher}/{Cx02Simulator.Group}/{Cx02Simulator.Version}/companies({Cx02Simulator.CompanyId})/trackedItemLedgerEntries({DeliveryId})",
-            "updated", cancellationToken);
-        return AssertOne(result, "The fictional edge delivery was not found.");
+        var adapter = scope.ServiceProvider.GetRequiredService<Cx02Adapter>();
+        var result = new List<InboundAcceptance>(2);
+        foreach (var id in new[] { DeliveryId, SecondDeliveryId })
+            result.Add(AssertOne(await adapter.CaptureHintAsync(connection.ConnectionId,
+                $"/api/{Cx02Simulator.Publisher}/{Cx02Simulator.Group}/{Cx02Simulator.Version}/companies({Cx02Simulator.CompanyId})/trackedItemLedgerEntries({id})",
+                "updated", cancellationToken), "The fictional edge delivery row was not found."));
+        return result;
     }
 
     public async Task<InboundAcceptance> DuplicateSerialReceiptAsync(ConnectorEdgeConnection connection,
@@ -163,18 +164,20 @@ public sealed class Cx02ConnectorEdgeHarness : IConnectorEdgeHarness
     public async Task<HttpStatusCode> SendDeliveryNotificationAsync(ConnectorEdgeConnection connection,
         Uri receiverBaseUri, bool cancellation, CancellationToken cancellationToken)
     {
-        var id = cancellation ? CancellationId : DeliveryId;
-        var resource = cancellation
-            ? $"/api/v2.0/companies({Cx02Simulator.CompanyId})/salesCreditMemos({id})"
-            : $"/api/{Cx02Simulator.Publisher}/{Cx02Simulator.Group}/{Cx02Simulator.Version}/companies({Cx02Simulator.CompanyId})/trackedItemLedgerEntries({id})";
+        var missing = cancellation
+            ? Guid.Parse("20000000-0000-4000-8000-000000000010")
+            : Guid.Parse("20000000-0000-4000-8000-000000000009");
+        string[] resources = cancellation
+            ? [$"/api/v2.0/companies({Cx02Simulator.CompanyId})/salesCreditMemos({missing})"]
+            : [$"/api/{Cx02Simulator.Publisher}/{Cx02Simulator.Group}/{Cx02Simulator.Version}/companies({Cx02Simulator.CompanyId})/trackedItemLedgerEntries({missing})"];
         var body = new
         {
-            value = new[]
+            value = resources.Select((resource, index) => new
             {
-                new { subscriptionId = Guid.Parse("20000000-0000-4000-8000-000000000003"),
-                    clientState = ClientState, changeType = "updated", resource,
-                    lastModifiedDateTime = "2026-09-01T08:05:00Z" },
-            },
+                subscriptionId = Guid.Parse("20000000-0000-4000-8000-000000000003"),
+                clientState = ClientState, changeType = "updated", resource,
+                lastModifiedDateTime = $"2026-09-01T08:05:0{index}Z",
+            }).ToArray(),
         };
         using var request = new HttpRequestMessage(HttpMethod.Post,
             $"/api/integration/connections/{connection.ConnectionId}/notifications/cx02")
@@ -192,23 +195,27 @@ public sealed class Cx02ConnectorEdgeHarness : IConnectorEdgeHarness
     {
         cancellationToken.ThrowIfCancellationRequested();
         shipmentCancelled = true;
-        Simulator.Seed("salesCreditMemos", Cx02SimulatorEntity.From(new
-        {
-            id = CancellationId, number = "FIC-CANCEL", cancelledInvoiceNumber = "FIC-DELIVERY",
-            postingDate = "2026-09-02", lastModifiedDateTime = "2026-09-02T08:00:00Z",
-        }));
+        Simulator.Seed("salesCreditMemos",
+            CancellationRow(CancellationId, "FIC-CANCEL-A", "FIC-DELIVERY-A", "2026-09-02T08:00:00Z"),
+            CancellationRow(SecondCancellationId, "FIC-CANCEL-B", "FIC-DELIVERY-B", "2026-09-02T08:00:01Z"));
         return Task.CompletedTask;
     }
 
     public async Task<InboundAcceptance> CancellationAsync(ConnectorEdgeConnection connection,
         CancellationToken cancellationToken)
+        => (await CancellationShapeAsync(connection, cancellationToken))[0];
+
+    public async Task<IReadOnlyList<InboundAcceptance>> CancellationShapeAsync(ConnectorEdgeConnection connection,
+        CancellationToken cancellationToken)
     {
         using var scope = Scope(connection);
-        var result = await scope.ServiceProvider.GetRequiredService<Cx02Adapter>().CaptureHintAsync(
-            connection.ConnectionId,
-            $"/api/v2.0/companies({Cx02Simulator.CompanyId})/salesCreditMemos({CancellationId})", "updated",
-            cancellationToken);
-        return AssertOne(result, "The fictional cancellation was not found.");
+        var adapter = scope.ServiceProvider.GetRequiredService<Cx02Adapter>();
+        var result = new List<InboundAcceptance>(2);
+        foreach (var id in new[] { CancellationId, SecondCancellationId })
+            result.Add(AssertOne(await adapter.CaptureHintAsync(connection.ConnectionId,
+                $"/api/v2.0/companies({Cx02Simulator.CompanyId})/salesCreditMemos({id})", "updated",
+                cancellationToken), "The fictional cancellation row was not found."));
+        return result;
     }
 
     public void ScriptRemoteUnavailable() => Simulator.ServiceUnavailableResponses = 10_000;
@@ -294,14 +301,26 @@ public sealed class Cx02ConnectorEdgeHarness : IConnectorEdgeHarness
         (host ?? throw new InvalidOperationException("Create a connection before using the harness."))
         .ScopeFor(connection.TenantId);
 
-    private void SeedDelivery() => Simulator.Seed("trackedItemLedgerEntries", Cx02SimulatorEntity.From(new
-    {
-        id = DeliveryId, entryNumber = 6001, itemNumber = "HW-SERVER-100", postingDate = "2026-09-01",
-        entryType = "Sale", sourceNumber = "FIC-CUSTOMER", shipToCode = "FIC-SHIP-TO",
-        documentNumber = "FIC-DELIVERY", documentType = "Sales Shipment", quantity = -2m,
-        serials = new[] { "FIC-SERIAL-001", "FIC-SERIAL-002" }, locationCode = "WH-A",
-        lastModifiedDateTime = "2026-09-01T08:05:00Z",
-    }));
+    private void SeedDelivery() => Simulator.Seed("trackedItemLedgerEntries",
+        DeliveryRow(DeliveryId, 6001, "FIC-DELIVERY-A", "FIC-SERIAL-001", "2026-09-01T08:05:00Z"),
+        DeliveryRow(SecondDeliveryId, 6002, "FIC-DELIVERY-B", "FIC-SERIAL-002", "2026-09-01T08:05:01Z"));
+
+    private static Cx02SimulatorEntity DeliveryRow(Guid id, int entry, string document, string serial,
+        string modified) =>
+        Cx02SimulatorEntity.From(new
+        {
+            id, entryNumber = entry, itemNumber = "HW-SERVER-100", postingDate = "2026-09-02",
+            entryType = "Sale", sourceNumber = "FIC-CUSTOMER", shipToCode = "FIC-SHIP-TO",
+            documentNumber = document, documentType = "Sales Shipment", quantity = -1m,
+            serialNumber = serial, locationCode = "WH-A", lastModifiedDateTime = modified,
+        });
+
+    private static Cx02SimulatorEntity CancellationRow(Guid id, string number, string document,
+        string modified) => Cx02SimulatorEntity.From(new
+        {
+            id, number, cancelledDocumentNumber = document, cancelledDocumentType = "delivery",
+            postingDate = "2026-09-03", lastModifiedDateTime = modified,
+        });
 
     private void SeedServiceItems(string owner) => Simulator.Seed("serviceItems",
         Cx02SimulatorEntity.From(new { id = Guid.Parse("20000000-0000-4000-8000-000000000005"),

@@ -118,6 +118,9 @@ public sealed record Cx04Faults
     public bool ForbidNextRequest { get; set; }
     public bool HoldProcessedRequests { get; set; }
     public bool RejectNextRefreshAsInvalidGrant { get; set; }
+    public bool RejectNextWriteAsValidationError { get; set; }
+    public bool FailNextWriteAfterHook { get; set; }
+    public int ServiceUnavailableResponses { get; set; }
     public int TooManyRequestsStormRemaining { get; set; }
     public int ExpireAccessTokenAfterRequests { get; set; } = int.MaxValue;
 }

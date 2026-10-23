@@ -158,6 +158,11 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.Status).HasMaxLength(32);
             b.Property(x => x.PendingStateHash).HasMaxLength(32);
             b.Property(x => x.RefreshExpiryMode).HasMaxLength(16);
+            b.Property(x => x.ReminderDaysSentJson).HasColumnType("nvarchar(max)").HasDefaultValue("[]");
+            b.Property(x => x.SignedInBy).HasMaxLength(320);
+            b.Property(x => x.DisabledBy).HasMaxLength(320);
+            b.Property(x => x.DisabledReason).HasMaxLength(200);
+            b.Property(x => x.PauseReason).HasMaxLength(32);
             b.HasIndex(x => new { x.TenantId, x.Status, x.RefreshChainExpiresAt, x.ConnectionId });
         });
         modelBuilder.Entity<Cx01SurveyRecord>(b =>

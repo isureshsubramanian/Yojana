@@ -185,6 +185,8 @@ public static class IntegrationModule
         builder.Services.AddScoped<ICx04Transport>(services => services.GetRequiredService<Cx04Transport>());
         builder.Services.AddScoped<Cx04Client>();
         builder.Services.AddScoped<Cx04Authorisation>();
+        builder.Services.AddScoped<Cx04ReminderSettings>();
+        builder.Services.AddScoped<Cx04SignInNotifications>();
         builder.Services.AddScoped<Cx04ConsentExpiryReminders>();
         builder.Services.AddSingleton(RecurringTenantJob.For<Cx04ConsentExpiryJob>(
             Cx04ConsentExpiryJob.JobName, Cx04ConsentExpiryJob.Cron));
