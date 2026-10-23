@@ -260,6 +260,11 @@ public static class IntegrationModule
         builder.Services.AddScoped<ErpChangeRunService>();
         builder.Services.AddScoped<ErpChangeMasterDataService>();
         builder.Services.AddScoped<ErpChangeStockService>();
+        builder.Services.AddScoped<ErpChangeCleanPeriodSettings>();
+        builder.Services.AddScoped<ErpChangeDualRunService>();
+        builder.Services.AddScoped<IErpChangeDivergenceSink>(services =>
+            services.GetRequiredService<ErpChangeDualRunService>());
+        builder.Services.AddScoped<ErpChangeCutoverService>();
         builder.Services.AddScoped<IReconciliationBackfillScheduler>(sp =>
             sp.GetRequiredService<BackfillService>());
         builder.Services.AddSingleton(RecurringTenantJob.For<BackfillJob>(

@@ -17,7 +17,9 @@ public sealed class ErpChangeRunService(
     IClock clock,
     ConnectionCommands connections,
     IMigrationReconciliationPort units,
-    IUserDirectory people)
+    IUserDirectory people,
+    ErpChangeDualRunService dualRun,
+    ErpChangeCutoverService cutover)
 {
     public async Task<ErpChangeRunbookView> StartAsync(StartErpChangeRequest request, string actor,
         CancellationToken cancellationToken)
@@ -132,7 +134,10 @@ public sealed class ErpChangeRunService(
             await differences.CountAsync(row => row.Status == ErpChangeDifferenceStatus.Resolved, cancellationToken),
             await db.ErpChangeMasterDataExceptions.CountAsync(row => row.TenantId == tenant.TenantId
                 && row.ErpChangeRunId == runId && row.Status == ErpChangeExceptionStatus.Open,
-                cancellationToken));
+                cancellationToken),
+            await dualRun.SummaryAsync(runId, cancellationToken),
+            (await cutover.ViewAsync(runId, cancellationToken)).Items,
+            await cutover.ArchiveStateAsync(runId, cancellationToken));
     }
 
     public async Task<ErpChangeStepCheckView> CheckAsync(Guid runId, string actor,
@@ -144,8 +149,10 @@ public sealed class ErpChangeRunService(
             ErpChangeStep.Register => await CheckRegisterAsync(run, cancellationToken),
             ErpChangeStep.MasterData => await CheckMasterDataAsync(run, cancellationToken),
             ErpChangeStep.Stock => await CheckStockAsync(run, cancellationToken),
-            _ => throw new ErpChangeRuleException("erp_change_step_not_implemented",
-                "This task implements exit checks through step 3."),
+            ErpChangeStep.DualRun => await CheckDualRunAsync(run, cancellationToken),
+            ErpChangeStep.Cutover => await CheckCutoverAsync(run, cancellationToken),
+            ErpChangeStep.Archive => await CheckArchiveAsync(run, cancellationToken),
+            _ => throw new ErpChangeRuleException("erp_change_step_invalid", "The ERP change step is invalid."),
         };
         var row = new ErpChangeStepCheck
         {
@@ -169,8 +176,6 @@ public sealed class ErpChangeRunService(
         CancellationToken cancellationToken)
     {
         var run = await ActiveRunAsync(runId, cancellationToken);
-        if (run.CurrentStep >= ErpChangeStep.DualRun)
-            throw new ErpChangeRuleException("erp_change_step_not_implemented", "Steps 4 to 6 are implemented by the next task.");
         var check = await db.ErpChangeStepChecks.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
                 && row.ErpChangeRunId == runId && row.Step == run.CurrentStep)
             .OrderByDescending(row => row.CheckedAt).ThenByDescending(row => row.ErpChangeStepCheckId)
@@ -182,12 +187,22 @@ public sealed class ErpChangeRunService(
             ErpChangeStep.Register => (await CheckRegisterAsync(run, cancellationToken)).Passed,
             ErpChangeStep.MasterData => (await CheckMasterDataAsync(run, cancellationToken)).Passed,
             ErpChangeStep.Stock => (await CheckStockAsync(run, cancellationToken)).Passed,
+            ErpChangeStep.DualRun => (await CheckDualRunAsync(run, cancellationToken)).Passed,
+            ErpChangeStep.Cutover => (await CheckCutoverAsync(run, cancellationToken)).Passed,
+            ErpChangeStep.Archive => (await CheckArchiveAsync(run, cancellationToken)).Passed,
             _ => false,
         };
         if (!stillPassed)
             throw new ErpChangeRuleException("erp_change_exit_changed", "The exit criterion changed after it was checked; check the step again.");
         var from = run.CurrentStep;
-        run.CurrentStep++;
+        if (from == ErpChangeStep.Archive)
+        {
+            run.Status = ErpChangeRunStatus.Completed;
+            run.ClosedBy = actor;
+            run.ClosedAt = clock.UtcNow;
+            run.CloseReason = "completed";
+        }
+        else run.CurrentStep++;
         db.ErpChangeTransitions.Add(new()
         {
             TenantId = tenant.TenantId,
@@ -195,12 +210,79 @@ public sealed class ErpChangeRunService(
             ErpChangeRunId = runId,
             FromStep = from,
             ToStep = run.CurrentStep,
-            Kind = "advanced",
+            Kind = from == ErpChangeStep.Archive ? "completed" : "advanced",
             ActorRef = actor,
             OccurredAt = clock.UtcNow,
         });
         await db.SaveChangesAsync(cancellationToken);
         return await DetailAsync(runId, cancellationToken);
+    }
+
+    public async Task<ErpChangeRunbookView> StartReverseAsync(Guid runId,
+        StartReverseErpChangeRequest request, string actor, CancellationToken cancellationToken)
+    {
+        var run = await ActiveRunAsync(runId, cancellationToken);
+        if (run.CurrentStep < ErpChangeStep.Cutover || run.CutoverAt is null)
+            throw new ErpChangeRuleException("erp_change_reverse_before_cutover",
+                "A reverse ERP change is available only after outbound cutover.");
+        var previousSource = await db.Connections.SingleOrDefaultAsync(row => row.TenantId == tenant.TenantId
+            && row.ConnectionId == run.SourceConnectionId, cancellationToken)
+            ?? throw new ErpChangeRuleException("erp_change_source_not_found", "The former source connection was not found.");
+        if (previousSource.Status == ConnectionStatus.Archived)
+            throw new ErpChangeRuleException("erp_change_reverse_source_archived",
+                "The former source is archived; register a new connection before starting an ERP change back.");
+        if (previousSource.Status != ConnectionStatus.Active)
+            throw new ErpChangeRuleException("erp_change_reverse_source_inactive",
+                "The former source must be active before starting an ERP change back.");
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        run.Status = ErpChangeRunStatus.Completed;
+        run.ClosedBy = actor;
+        run.ClosedAt = clock.UtcNow;
+        run.CloseReason = "reverse_erp_change_started";
+        db.ErpChangeTransitions.Add(new()
+        {
+            TenantId = tenant.TenantId,
+            ErpChangeTransitionId = TimeOrderedId.New(clock.UtcNow),
+            ErpChangeRunId = runId,
+            FromStep = run.CurrentStep,
+            ToStep = run.CurrentStep,
+            Kind = "reversed",
+            ActorRef = actor,
+            OccurredAt = clock.UtcNow,
+            Reason = "A fresh ERP change was started with the connections swapped.",
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        var targetSettings = await db.ConnectionGatewaySettings.SingleAsync(row => row.TenantId == tenant.TenantId
+            && row.ConnectionId == previousSource.ConnectionId, cancellationToken);
+        targetSettings.ReadOnly = true;
+        targetSettings.OutboundMode = "none";
+        var reverse = new ErpChangeRun
+        {
+            TenantId = tenant.TenantId,
+            ErpChangeRunId = TimeOrderedId.New(clock.UtcNow),
+            SourceConnectionId = run.TargetConnectionId,
+            TargetConnectionId = run.SourceConnectionId,
+            CurrentStep = ErpChangeStep.Register,
+            Status = ErpChangeRunStatus.Active,
+            StartedBy = actor,
+            StartedAt = clock.UtcNow,
+        };
+        db.ErpChangeRuns.Add(reverse);
+        db.ErpChangeTransitions.Add(new()
+        {
+            TenantId = tenant.TenantId,
+            ErpChangeTransitionId = TimeOrderedId.New(clock.UtcNow),
+            ErpChangeRunId = reverse.ErpChangeRunId,
+            FromStep = 0,
+            ToStep = ErpChangeStep.Register,
+            Kind = "started",
+            ActorRef = actor,
+            OccurredAt = clock.UtcNow,
+            Reason = "reverse_erp_change",
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await DetailAsync(reverse.ErpChangeRunId, cancellationToken);
     }
 
     public async Task<ErpChangeRunbookView> CancelAsync(Guid runId, CancelErpChangeRequest request,
@@ -256,6 +338,52 @@ public sealed class ErpChangeRunService(
         return (target.Status == ConnectionStatus.Active && healthy && safe, counts,
             healthy && safe ? "The new connection is healthy, read-only and has no outbound enabled."
                 : "The new connection must be active and healthy, read-only, and have outbound mode none.");
+    }
+
+    private async Task<(bool Passed, Dictionary<string, int> Counts, string Detail)> CheckDualRunAsync(
+        ErpChangeRun run, CancellationToken cancellationToken)
+    {
+        var summary = await dualRun.SummaryAsync(run.ErpChangeRunId, cancellationToken);
+        var passed = run.DualRunStartedAt is not null && summary.ElapsedDays >= ErpChangeDualRunService.MinimumDays
+            && summary.ConsecutiveCleanDays >= summary.CleanDaysRequired && summary.AgedOpenDivergences == 0;
+        return (passed, new()
+        {
+            ["elapsed_days"] = summary.ElapsedDays,
+            ["minimum_days"] = ErpChangeDualRunService.MinimumDays,
+            ["clean_days"] = summary.ConsecutiveCleanDays,
+            ["clean_days_required"] = summary.CleanDaysRequired,
+            ["open_divergences"] = summary.OpenDivergences,
+            ["aged_open_divergences"] = summary.AgedOpenDivergences,
+        }, passed ? "The 30-day minimum and the tenant's consecutive clean-day period have both passed."
+            : "The dual run needs at least 30 elapsed days, the tenant's clean days in a row, and no overdue open divergence.");
+    }
+
+    private async Task<(bool Passed, Dictionary<string, int> Counts, string Detail)> CheckCutoverAsync(
+        ErpChangeRun run, CancellationToken cancellationToken)
+    {
+        var checklist = await cutover.ViewAsync(run.ErpChangeRunId, cancellationToken);
+        var open = checklist.Items.Count(row => row.State != ErpChangeChecklistState.Passed
+            && !row.Code.StartsWith("first_outbound:", StringComparison.Ordinal));
+        return (checklist.CanAdvance, new()
+        {
+            ["items"] = checklist.Items.Count,
+            ["open_items"] = open,
+        }, checklist.CanAdvance ? "The outbound cutover checklist is complete."
+            : "Complete every system check or recorded confirmation in the outbound cutover checklist.");
+    }
+
+    private async Task<(bool Passed, Dictionary<string, int> Counts, string Detail)> CheckArchiveAsync(
+        ErpChangeRun run, CancellationToken cancellationToken)
+    {
+        var state = await cutover.ArchiveStateAsync(run.ErpChangeRunId, cancellationToken);
+        var passed = state.SourceArchived && state.ActiveConnections == 1;
+        return (passed, new()
+        {
+            ["active_connections"] = state.ActiveConnections,
+            ["retained_mappings"] = state.RetainedMappings,
+            ["retained_inbound_messages"] = state.RetainedInboundMessages,
+        }, passed ? "The former source is archived as readable history and the target is active."
+            : "Archive the former source and leave the target as the one active connection in this change.");
     }
 
     private async Task<(bool Passed, Dictionary<string, int> Counts, string Detail)> CheckMasterDataAsync(

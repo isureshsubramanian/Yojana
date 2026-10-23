@@ -11,6 +11,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
 using Yojana.Integration.Ordering;
+using Yojana.Integration.ErpChange;
 using SerialDocumentRef = Yojana.Serialisation.Contracts.DocumentRef;
 
 namespace Yojana.Integration.Gateway;
@@ -45,7 +46,8 @@ public sealed class TranslateInboundMessageHandler
 
 public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenant, IClock clock,
     GatewayReferenceStore references, ConnectionCapabilityReader capabilities, BoundedWaitResequencer resequencer,
-    IMessageBus bus, InboundTranslationRecoveryOptions recoveryOptions)
+    IMessageBus bus, InboundTranslationRecoveryOptions recoveryOptions,
+    IErpChangeDivergenceSink erpChangeDivergences)
 {
     public async Task<GatewayTranslationResult> TranslateAsync(Guid inboundMessageId, CancellationToken cancellationToken)
     {
@@ -164,7 +166,12 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
         original.Remove("document_ref");
         incoming.Remove("document_ref");
         if (incumbent.MessageType != row.MessageType || !JsonNode.DeepEquals(original, incoming))
+        {
             await RaiseAsync(row, "cross_connection_document_conflict", "The mapped business document differs from the incumbent connection; review before cutover.", cancellationToken);
+            await erpChangeDivergences.ObserveDocumentAsync(row.ConnectionId, id.Value,
+                $"{row.ErpEntity}:{row.ErpExternalId}", original.ToJsonString(), incoming.ToJsonString(),
+                incumbent.SourceInboundMessageId, row.InboundMessageId, cancellationToken);
+        }
         return true;
     }
 

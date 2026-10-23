@@ -85,6 +85,7 @@ namespace Yojana.Integration.Migrations
 
                     b.Property<string>("ReminderDaysSentJson")
                         .IsRequired()
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("nvarchar(max)")
                         .HasDefaultValue("[]")
                         .HasColumnName("reminder_days_sent_json");
@@ -1513,6 +1514,244 @@ namespace Yojana.Integration.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ErpChangeChecklistItem", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ErpChangeChecklistItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("erp_change_checklist_item_id");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("completed_at");
+
+                    b.Property<string>("CompletedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("completed_by");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("detail");
+
+                    b.Property<Guid>("ErpChangeRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("erp_change_run_id");
+
+                    b.Property<string>("Evidence")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("evidence");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("state");
+
+                    b.HasKey("TenantId", "ErpChangeChecklistItemId")
+                        .HasName("pk_erp_change_checklist_item");
+
+                    b.HasIndex("TenantId", "ErpChangeRunId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("ux_erp_change_checklist_item_tenant_id_erp_change_run_id_code");
+
+                    b.ToTable("erp_change_checklist_item", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_erp_change_checklist_item_state", "state IN ('waiting','passed','failed')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ErpChangeDailyCheck", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ErpChangeDailyCheckId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("erp_change_daily_check_id");
+
+                    b.Property<int>("AgedOpenDivergences")
+                        .HasColumnType("int")
+                        .HasColumnName("aged_open_divergences");
+
+                    b.Property<DateOnly>("BusinessDate")
+                        .HasColumnType("date")
+                        .HasColumnName("business_date");
+
+                    b.Property<DateTime>("CheckedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("checked_at");
+
+                    b.Property<string>("CheckedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("checked_by");
+
+                    b.Property<bool>("Clean")
+                        .HasColumnType("bit")
+                        .HasColumnName("clean");
+
+                    b.Property<Guid>("ErpChangeRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("erp_change_run_id");
+
+                    b.Property<int>("NewDivergences")
+                        .HasColumnType("int")
+                        .HasColumnName("new_divergences");
+
+                    b.Property<Guid?>("SourceReconciliationRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_reconciliation_run_id");
+
+                    b.Property<Guid?>("TargetReconciliationRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("target_reconciliation_run_id");
+
+                    b.HasKey("TenantId", "ErpChangeDailyCheckId")
+                        .HasName("pk_erp_change_daily_check");
+
+                    b.HasIndex("TenantId", "ErpChangeRunId", "BusinessDate")
+                        .IsUnique()
+                        .HasDatabaseName("ux_erp_change_daily_check_tenant_id_erp_change_run_id_business_date");
+
+                    b.ToTable("erp_change_daily_check", "integration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ErpChangeDivergence", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ErpChangeDivergenceId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("erp_change_divergence_id");
+
+                    b.Property<Guid>("ErpChangeRunId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("erp_change_run_id");
+
+                    b.Property<DateTime>("FirstSeenAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("first_seen_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<string>("Resolution")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("resolution");
+
+                    b.Property<Guid?>("ResolutionCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("resolution_command_id");
+
+                    b.Property<string>("ResolutionNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("resolution_note");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<string>("ResolvedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("resolved_by");
+
+                    b.Property<DateTime>("ReviewDueAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("review_due_at");
+
+                    b.Property<Guid?>("SourceInboundMessageId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_inbound_message_id");
+
+                    b.Property<string>("SourceValue")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("source_value");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid?>("StockDifferenceId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("stock_difference_id");
+
+                    b.Property<Guid?>("SubjectId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("subject_id");
+
+                    b.Property<string>("SubjectRef")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("subject_ref");
+
+                    b.Property<string>("SubjectType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("subject_type");
+
+                    b.Property<Guid?>("TargetInboundMessageId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("target_inbound_message_id");
+
+                    b.Property<string>("TargetValue")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("target_value");
+
+                    b.HasKey("TenantId", "ErpChangeDivergenceId")
+                        .HasName("pk_erp_change_divergence");
+
+                    b.HasIndex("TenantId", "ErpChangeRunId", "Kind", "SubjectType", "SubjectRef")
+                        .IsUnique()
+                        .HasDatabaseName("ux_erp_change_divergence_tenant_id_erp_change_run_id_kind_subject_type_subject_ref");
+
+                    b.HasIndex("TenantId", "ErpChangeRunId", "Status", "Kind", "FirstSeenAt", "ErpChangeDivergenceId")
+                        .HasDatabaseName("ix_erp_change_divergence_tenant_id_erp_change_run_id_status_kind_first_seen_at_erp_change_divergence_id");
+
+                    b.ToTable("erp_change_divergence", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_erp_change_divergence_status", "status IN ('open','resolved')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.ErpChangeMasterDataException", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -1632,6 +1871,10 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("erp_change_run_id");
 
+                    b.Property<DateTime?>("ArchivedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("archived_at");
+
                     b.Property<string>("CloseReason")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)")
@@ -1650,6 +1893,14 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("int")
                         .HasColumnName("current_step");
 
+                    b.Property<DateTime?>("CutoverAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("cutover_at");
+
+                    b.Property<DateTime?>("DualRunStartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("dual_run_started_at");
+
                     b.Property<DateTime?>("MasterDataRemappedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("master_data_remapped_at");
@@ -1657,6 +1908,12 @@ namespace Yojana.Integration.Migrations
                     b.Property<Guid>("SourceConnectionId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("source_connection_id");
+
+                    b.Property<string>("SourceOutboundMode")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("source_outbound_mode");
 
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("datetime2(3)")
@@ -1682,6 +1939,12 @@ namespace Yojana.Integration.Migrations
                     b.Property<Guid>("TargetConnectionId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("target_connection_id");
+
+                    b.Property<string>("TargetOutboundMode")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("target_outbound_mode");
 
                     b.Property<int>("UnitsCompared")
                         .HasColumnType("int")
@@ -8565,6 +8828,36 @@ namespace Yojana.Integration.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_dead_letter_event_tenant_id_dead_letter_item_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ErpChangeChecklistItem", b =>
+                {
+                    b.HasOne("Yojana.Integration.Data.Entities.ErpChangeRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ErpChangeRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_erp_change_checklist_item_tenant_id_erp_change_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ErpChangeDailyCheck", b =>
+                {
+                    b.HasOne("Yojana.Integration.Data.Entities.ErpChangeRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ErpChangeRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_erp_change_daily_check_tenant_id_erp_change_run_id");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.ErpChangeDivergence", b =>
+                {
+                    b.HasOne("Yojana.Integration.Data.Entities.ErpChangeRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ErpChangeRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_erp_change_divergence_tenant_id_erp_change_run_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.Data.Entities.ErpChangeMasterDataException", b =>

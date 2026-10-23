@@ -134,10 +134,14 @@ public sealed class IntegrationDocumentQueryPort(IntegrationDbContext db, ITenan
     private Task<CanonicalDocument?> RowAsync(Guid id, CancellationToken cancellationToken) =>
         db.CanonicalDocuments.AsNoTracking().SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId && x.DocumentId == id, cancellationToken);
 
+    // TIGHT COUPLING (archived document audit): ConnectionCommands closes, but never deletes, every mapping when a
+    // connection is archived. Document refs in immutable unit events still cite that connection, so this reader must
+    // fall back to its latest closed mapping. Separating either side would make historical documents unresolvable.
     private async Task<Guid> RefAsync(Guid connection, string type, string external, CancellationToken cancellationToken) =>
         await db.ExternalIdMaps.AsNoTracking().Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connection
-            && x.EntityType == type && x.ExternalId == external && x.ValidTo == null)
-            .Select(x => x.ModuleId).SingleAsync(cancellationToken);
+                && x.EntityType == type && x.ExternalId == external)
+            .OrderBy(x => x.ValidTo == null ? 0 : 1).ThenByDescending(x => x.ValidTo).ThenByDescending(x => x.ValidFrom)
+            .Select(x => x.ModuleId).FirstAsync(cancellationToken);
 
     private async Task<(Guid ModuleId, ItemReferenceAttributes Attributes)> ItemAsync(Guid connection,
         string external, CancellationToken cancellationToken)

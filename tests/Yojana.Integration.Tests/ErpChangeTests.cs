@@ -33,12 +33,15 @@ public sealed class ErpChangeTests
         builder.Services.AddScoped<ErpChangeRunService>();
         builder.Services.AddScoped<ErpChangeMasterDataService>();
         builder.Services.AddScoped<ErpChangeStockService>();
+        builder.Services.AddScoped<ErpChangeDualRunService>();
+        builder.Services.AddScoped<ErpChangeCutoverService>();
+        builder.Services.AddScoped<ErpChangeCleanPeriodSettings>();
         var app = builder.Build();
         app.MapErpChangeEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
 
-        Assert.Equal(15, endpoints.Count);
+        Assert.Equal(36, endpoints.Count);
         Assert.All(endpoints.Where(endpoint => endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods
                 .Contains("GET")), endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
                 policy => policy.Policy == YojanaPolicy.ErpChangeRead));
@@ -50,6 +53,10 @@ public sealed class ErpChangeTests
                 && endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Contains("POST")),
             endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
                 policy => policy.Policy == YojanaPolicy.ErpChangeMasterData));
+        Assert.All(endpoints.Where(endpoint => endpoint.RoutePattern.RawText!.Contains("/document-divergences/")
+                && endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Contains("POST")),
+            endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+                policy => policy.Policy == YojanaPolicy.IntegrationOperator));
         foreach (var route in new[]
                  {
                      "/api/integration/erp-change/runs",
@@ -68,6 +75,10 @@ public sealed class ErpChangeTests
         foreach (var type in new[]
                  {
                      typeof(StartErpChangeRequest), typeof(CancelErpChangeRequest),
+                     typeof(StartReverseErpChangeRequest), typeof(UpdateErpChangeCleanPeriodRequest),
+                     typeof(BeginCutoverRequest), typeof(RecordOutboundValidationRequest),
+                     typeof(ConfirmFirstOutboundRequest), typeof(ConvertParkedOutboundRequest),
+                     typeof(ExplainDivergenceRequest), typeof(RaiseDivergenceCorrectionRequest),
                      typeof(ResolveMasterDataExceptionRequest), typeof(MarkMasterDataNotNeededRequest),
                      typeof(ResolveStockDifferenceRequest), typeof(SignOffStockResidualRequest),
                  })

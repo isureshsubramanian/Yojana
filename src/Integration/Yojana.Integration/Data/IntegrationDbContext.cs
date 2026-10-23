@@ -113,6 +113,9 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<ErpChangeMasterDataException> ErpChangeMasterDataExceptions => Set<ErpChangeMasterDataException>();
     public DbSet<ErpChangeStockDifference> ErpChangeStockDifferences => Set<ErpChangeStockDifference>();
     public DbSet<ErpChangeStockSignoff> ErpChangeStockSignoffs => Set<ErpChangeStockSignoff>();
+    public DbSet<ErpChangeDivergence> ErpChangeDivergences => Set<ErpChangeDivergence>();
+    public DbSet<ErpChangeDailyCheck> ErpChangeDailyChecks => Set<ErpChangeDailyCheck>();
+    public DbSet<ErpChangeChecklistItem> ErpChangeChecklistItems => Set<ErpChangeChecklistItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -125,6 +128,8 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.StartedBy).HasMaxLength(320);
             b.Property(x => x.ClosedBy).HasMaxLength(320);
             b.Property(x => x.CloseReason).HasMaxLength(2000);
+            b.Property(x => x.SourceOutboundMode).HasMaxLength(40).IsUnicode(false);
+            b.Property(x => x.TargetOutboundMode).HasMaxLength(40).IsUnicode(false);
             b.HasIndex(x => new { x.TenantId, x.Status }).IsUnique()
                 .HasFilter("[status] = 'active'");
             b.HasIndex(x => new { x.TenantId, x.StartedAt, x.ErpChangeRunId });
@@ -210,6 +215,51 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.Note).HasMaxLength(2000);
             b.Property(x => x.SignedOffBy).HasMaxLength(320);
             b.HasIndex(x => new { x.TenantId, x.ErpChangeRunId }).IsUnique();
+            b.HasOne<ErpChangeRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.ErpChangeRunId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<ErpChangeDivergence>(b =>
+        {
+            b.ToTable("erp_change_divergence", table =>
+                table.HasCheckConstraint("ck_erp_change_divergence_status", "status IN ('open','resolved')"));
+            b.HasKey(x => new { x.TenantId, x.ErpChangeDivergenceId });
+            b.Property(x => x.Kind).HasMaxLength(20).IsUnicode(false);
+            b.Property(x => x.SubjectType).HasMaxLength(40).IsUnicode(false);
+            b.Property(x => x.SubjectRef).HasMaxLength(320);
+            b.Property(x => x.SourceValue).HasColumnType("nvarchar(max)");
+            b.Property(x => x.TargetValue).HasColumnType("nvarchar(max)");
+            b.Property(x => x.Status).HasMaxLength(20).IsUnicode(false);
+            b.Property(x => x.Resolution).HasMaxLength(40).IsUnicode(false);
+            b.Property(x => x.ResolutionNote).HasMaxLength(2000);
+            b.Property(x => x.ResolvedBy).HasMaxLength(320);
+            b.HasIndex(x => new { x.TenantId, x.ErpChangeRunId, x.Status, x.Kind,
+                x.FirstSeenAt, x.ErpChangeDivergenceId });
+            b.HasIndex(x => new { x.TenantId, x.ErpChangeRunId, x.Kind, x.SubjectType,
+                x.SubjectRef }).IsUnique();
+            b.HasOne<ErpChangeRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.ErpChangeRunId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<ErpChangeDailyCheck>(b =>
+        {
+            b.ToTable("erp_change_daily_check");
+            b.HasKey(x => new { x.TenantId, x.ErpChangeDailyCheckId });
+            b.Property(x => x.CheckedBy).HasMaxLength(320);
+            b.HasIndex(x => new { x.TenantId, x.ErpChangeRunId, x.BusinessDate }).IsUnique();
+            b.HasOne<ErpChangeRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.ErpChangeRunId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<ErpChangeChecklistItem>(b =>
+        {
+            b.ToTable("erp_change_checklist_item", table =>
+                table.HasCheckConstraint("ck_erp_change_checklist_item_state",
+                    "state IN ('waiting','passed','failed')"));
+            b.HasKey(x => new { x.TenantId, x.ErpChangeChecklistItemId });
+            b.Property(x => x.Code).HasMaxLength(100).IsUnicode(false);
+            b.Property(x => x.State).HasMaxLength(20).IsUnicode(false);
+            b.Property(x => x.Detail).HasMaxLength(2000);
+            b.Property(x => x.Evidence).HasMaxLength(2000);
+            b.Property(x => x.CompletedBy).HasMaxLength(320);
+            b.HasIndex(x => new { x.TenantId, x.ErpChangeRunId, x.Code }).IsUnique();
             b.HasOne<ErpChangeRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.ErpChangeRunId })
                 .OnDelete(DeleteBehavior.Restrict);
         });

@@ -18,6 +18,11 @@ public sealed class ErpChangeRun : ITenantScoped
     public DateTime? MasterDataRemappedAt { get; set; }
     public int UnitsCompared { get; set; }
     public DateTime? StockComparedAt { get; set; }
+    public DateTime? DualRunStartedAt { get; set; }
+    public string? SourceOutboundMode { get; set; }
+    public string? TargetOutboundMode { get; set; }
+    public DateTime? CutoverAt { get; set; }
+    public DateTime? ArchivedAt { get; set; }
 }
 
 public sealed class ErpChangeStepCheck : ITenantScoped
@@ -107,6 +112,59 @@ public sealed class ErpChangeStockSignoff : ITenantScoped
     public DateTime SignedOffAt { get; set; }
 }
 
+public sealed class ErpChangeDivergence : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ErpChangeDivergenceId { get; set; }
+    public Guid ErpChangeRunId { get; set; }
+    public required string Kind { get; set; }
+    public required string SubjectType { get; set; }
+    public Guid? SubjectId { get; set; }
+    public required string SubjectRef { get; set; }
+    public required string SourceValue { get; set; }
+    public required string TargetValue { get; set; }
+    public Guid? SourceInboundMessageId { get; set; }
+    public Guid? TargetInboundMessageId { get; set; }
+    public Guid? StockDifferenceId { get; set; }
+    public DateTime FirstSeenAt { get; set; }
+    public DateTime LastSeenAt { get; set; }
+    public DateTime ReviewDueAt { get; set; }
+    public required string Status { get; set; }
+    public string? Resolution { get; set; }
+    public string? ResolutionNote { get; set; }
+    public Guid? ResolutionCommandId { get; set; }
+    public string? ResolvedBy { get; set; }
+    public DateTime? ResolvedAt { get; set; }
+}
+
+public sealed class ErpChangeDailyCheck : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ErpChangeDailyCheckId { get; set; }
+    public Guid ErpChangeRunId { get; set; }
+    public DateOnly BusinessDate { get; set; }
+    public Guid? SourceReconciliationRunId { get; set; }
+    public Guid? TargetReconciliationRunId { get; set; }
+    public int NewDivergences { get; set; }
+    public int AgedOpenDivergences { get; set; }
+    public bool Clean { get; set; }
+    public required string CheckedBy { get; set; }
+    public DateTime CheckedAt { get; set; }
+}
+
+public sealed class ErpChangeChecklistItem : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ErpChangeChecklistItemId { get; set; }
+    public Guid ErpChangeRunId { get; set; }
+    public required string Code { get; set; }
+    public required string State { get; set; }
+    public required string Detail { get; set; }
+    public string? Evidence { get; set; }
+    public string? CompletedBy { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
 public static class ErpChangeRunStatus
 {
     public const string Active = "active";
@@ -125,4 +183,23 @@ public static class ErpChangeDifferenceStatus
 {
     public const string Open = "open";
     public const string Resolved = "resolved";
+}
+
+public static class ErpChangeDivergenceStatus
+{
+    public const string Open = "open";
+    public const string Resolved = "resolved";
+}
+
+public static class ErpChangeDivergenceKind
+{
+    public const string Stock = "stock";
+    public const string Document = "document";
+}
+
+public static class ErpChangeChecklistState
+{
+    public const string Waiting = "waiting";
+    public const string Passed = "passed";
+    public const string Failed = "failed";
 }

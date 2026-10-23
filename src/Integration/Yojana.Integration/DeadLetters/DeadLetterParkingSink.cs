@@ -97,7 +97,8 @@ public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContex
 
     private static bool NeedsManualTask(string reasonCode) =>
         reasonCode is OutboundCompleteness.MissingSourceField or OutboundConnectorOutcome.Unsupported or OutboundConnectorOutcome.Rejected
-            or "rejected_in_remote_review" or "withdrawn_in_remote_review" or "external_mapping_conflict";
+            or "rejected_in_remote_review" or "withdrawn_in_remote_review" or "external_mapping_conflict"
+            or "cutover_manual";
 
     private async Task AddManualTaskAsync(OutboundCommandRow command, Guid letterId, string failure, CancellationToken ct) =>
         db.ManualOutboundTasks.Add(new ManualOutboundTask

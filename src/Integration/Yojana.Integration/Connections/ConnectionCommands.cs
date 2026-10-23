@@ -234,6 +234,8 @@ public sealed class ConnectionCommands(IntegrationDbContext db, ITenantContext t
                 .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, "cancelled")
                     .SetProperty(x => x.CompletedAt, now).SetProperty(x => x.LastChangedBy, actor), ct);
             await db.ExternalIdMaps.Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == id && x.ValidTo == null)
+                // TIGHT COUPLING (archived document audit): IntegrationDocumentQueryPort deliberately falls back to
+                // these closed mappings for immutable unit-event document refs. Deleting them breaks historical reads.
                 .ExecuteUpdateAsync(update => update.SetProperty(x => x.ValidTo, now), ct);
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);

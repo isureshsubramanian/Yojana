@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Integration.Data.Entities;
 
 namespace Yojana.Integration.ErpChange;
 
@@ -24,6 +25,18 @@ public static class ErpChangeEndpoints
             bool? liveCover, string? status, string? query, string? cursor, int? take,
             ErpChangeStockService service, CancellationToken ct) => Invoke(() => service.ListAsync(runId,
                 new(reason, liveCover, status, query, cursor, take ?? 25), ct)));
+        reads.MapGet("/runs/{runId:guid}/dual-run/divergences", (Guid runId, string? kind,
+            string? status, string? query, string? cursor, int? take, ErpChangeDualRunService service,
+            CancellationToken ct) => Invoke(() => service.ListAsync(runId,
+                new(kind, status, query, cursor, take ?? 25), ct)));
+        reads.MapGet("/runs/{runId:guid}/cutover", (Guid runId, ErpChangeCutoverService service,
+            CancellationToken ct) => Invoke(() => service.ViewAsync(runId, ct)));
+        reads.MapGet("/runs/{runId:guid}/cutover/pending-actions.csv", async (Guid runId,
+            ErpChangeCutoverService service, CancellationToken ct) => Results.File(
+                await service.PendingActionsCsvAsync(runId, ct), "text/csv; charset=utf-8",
+                $"erp-change-{runId:N}-pending-actions.csv"));
+        reads.MapGet("/settings/clean-period", (ErpChangeCleanPeriodSettings settings,
+            CancellationToken ct) => Invoke(() => settings.GetAsync(ct)));
 
         var control = app.MapGroup("/api/integration/erp-change")
             .RequireAuthorization(YojanaPolicy.ErpChangeControl);
@@ -39,6 +52,49 @@ public static class ErpChangeEndpoints
         control.MapPost("/runs/{runId:guid}/cancel", (Guid runId, CancelErpChangeRequest request,
             ClaimsPrincipal user, ErpChangeRunService service, CancellationToken ct) => Invoke(() =>
                 service.CancelAsync(runId, request, Actor(user), ct)));
+        control.MapPost("/runs/{runId:guid}/reverse", (Guid runId, StartReverseErpChangeRequest request,
+            ClaimsPrincipal user, ErpChangeRunService service, CancellationToken ct) => Invoke(() =>
+                service.StartReverseAsync(runId, request, Actor(user), ct)));
+        control.MapPost("/runs/{runId:guid}/dual-run/start", (Guid runId, ClaimsPrincipal user,
+            ErpChangeDualRunService service, CancellationToken ct) => Invoke(() =>
+                service.StartAsync(runId, Actor(user), ct)));
+        control.MapPost("/runs/{runId:guid}/dual-run/check", (Guid runId, ClaimsPrincipal user,
+            ErpChangeDualRunService service, CancellationToken ct) => Invoke(() =>
+                service.RunDailyAsync(runId, Actor(user), ct)));
+        control.MapPut("/runs/{runId:guid}/settings/clean-period", async (Guid runId,
+            UpdateErpChangeCleanPeriodRequest request, ClaimsPrincipal user,
+            ErpChangeRunService runs, ErpChangeCleanPeriodSettings settings, CancellationToken ct) =>
+        {
+            var run = await runs.DetailAsync(runId, ct);
+            return await Invoke(() => settings.SetAsync(run.Target.ConnectionId, request, Actor(user), ct));
+        });
+        control.MapPost("/runs/{runId:guid}/cutover/start", (Guid runId, BeginCutoverRequest request,
+            ClaimsPrincipal user, ErpChangeCutoverService service, CancellationToken ct) => Invoke(() =>
+                service.BeginAsync(runId, request, Actor(user), ct)));
+        control.MapPost("/runs/{runId:guid}/cutover/validations", (Guid runId,
+            RecordOutboundValidationRequest request, ClaimsPrincipal user,
+            ErpChangeCutoverService service, CancellationToken ct) => Invoke(() =>
+                service.RecordValidationAsync(runId, request, Actor(user), ct)));
+        control.MapPost("/runs/{runId:guid}/cutover/enable-target", (Guid runId,
+            ClaimsPrincipal user, ErpChangeCutoverService service, CancellationToken ct) => Invoke(() =>
+                service.EnableTargetAsync(runId, Actor(user), ct)));
+        control.MapPost("/runs/{runId:guid}/cutover/drain", (Guid runId,
+            ClaimsPrincipal user, ErpChangeCutoverService service, CancellationToken ct) => Invoke(() =>
+                service.DrainAsync(runId, Actor(user), ct)));
+        control.MapPost("/runs/{runId:guid}/cutover/parked-to-manual", (Guid runId,
+            ConvertParkedOutboundRequest request, ClaimsPrincipal user,
+            ErpChangeCutoverService service, CancellationToken ct) => Invoke(() =>
+                service.ConvertParkedAsync(runId, request, Actor(user), ct)));
+        control.MapPost("/runs/{runId:guid}/cutover/confirm-first-outbound", (Guid runId,
+            ConfirmFirstOutboundRequest request, ClaimsPrincipal user,
+            ErpChangeCutoverService service, CancellationToken ct) => Invoke(() =>
+                service.ConfirmFirstOutboundAsync(runId, request, Actor(user), ct)));
+        control.MapPost("/runs/{runId:guid}/cutover/reconcile", (Guid runId,
+            ClaimsPrincipal user, ErpChangeCutoverService service, CancellationToken ct) => Invoke(() =>
+                service.ReconcileAsync(runId, Actor(user), ct)));
+        control.MapPost("/runs/{runId:guid}/archive", (Guid runId, ClaimsPrincipal user,
+            ErpChangeCutoverService service, CancellationToken ct) => Invoke(() =>
+                service.ArchiveAsync(runId, Actor(user), ct)));
         control.MapPost("/runs/{runId:guid}/master-data/remap", (Guid runId, ClaimsPrincipal user,
             ErpChangeMasterDataService service, CancellationToken ct) => Invoke(() =>
                 service.RemapAsync(runId, Actor(user), ct)));
@@ -58,6 +114,17 @@ public static class ErpChangeEndpoints
                 ErpChangeMasterDataService service, CancellationToken ct) => Invoke(() =>
                 service.MarkNotNeededAsync(runId, exceptionId, request, Actor(user), ct)));
 
+        var divergence = app.MapGroup("/api/integration/erp-change")
+            .RequireAuthorization(YojanaPolicy.IntegrationOperator);
+        divergence.MapPost("/runs/{runId:guid}/dual-run/document-divergences/{divergenceId:guid}/accept-source",
+            (Guid runId, Guid divergenceId, ClaimsPrincipal user, ErpChangeDualRunService service,
+                CancellationToken ct) => Invoke(() => service.AcceptSourceAsync(runId, divergenceId,
+                ErpChangeDivergenceKind.Document, Actor(user), ct)));
+        divergence.MapPost("/runs/{runId:guid}/dual-run/document-divergences/{divergenceId:guid}/explain",
+            (Guid runId, Guid divergenceId, ExplainDivergenceRequest request, ClaimsPrincipal user,
+                ErpChangeDualRunService service, CancellationToken ct) => Invoke(() => service.ExplainAsync(
+                runId, divergenceId, ErpChangeDivergenceKind.Document, request, Actor(user), ct)));
+
         var stock = app.MapGroup("/api/integration/erp-change")
             .RequireAuthorization(YojanaPolicy.InventoryController);
         stock.MapPost("/runs/{runId:guid}/stock/reconcile", (Guid runId, ClaimsPrincipal user,
@@ -70,6 +137,18 @@ public static class ErpChangeEndpoints
         stock.MapPost("/runs/{runId:guid}/stock/sign-off", (Guid runId,
             SignOffStockResidualRequest request, ClaimsPrincipal user, ErpChangeStockService service,
             CancellationToken ct) => Invoke(() => service.SignOffAsync(runId, request, Actor(user), ct)));
+        stock.MapPost("/runs/{runId:guid}/dual-run/stock-divergences/{divergenceId:guid}/accept-source",
+            (Guid runId, Guid divergenceId, ClaimsPrincipal user, ErpChangeDualRunService service,
+                CancellationToken ct) => Invoke(() => service.AcceptSourceAsync(runId, divergenceId,
+                ErpChangeDivergenceKind.Stock, Actor(user), ct)));
+        stock.MapPost("/runs/{runId:guid}/dual-run/stock-divergences/{divergenceId:guid}/explain",
+            (Guid runId, Guid divergenceId, ExplainDivergenceRequest request, ClaimsPrincipal user,
+                ErpChangeDualRunService service, CancellationToken ct) => Invoke(() => service.ExplainAsync(
+                runId, divergenceId, ErpChangeDivergenceKind.Stock, request, Actor(user), ct)));
+        stock.MapPost("/runs/{runId:guid}/dual-run/stock-divergences/{divergenceId:guid}/raise-correction",
+            (Guid runId, Guid divergenceId, RaiseDivergenceCorrectionRequest request, ClaimsPrincipal user,
+                ErpChangeDualRunService service, CancellationToken ct) => Invoke(() => service.RaiseCorrectionAsync(
+                runId, divergenceId, request, Actor(user), ct)));
         return app;
     }
 
@@ -87,6 +166,12 @@ public static class ErpChangeEndpoints
                     ? StatusCodes.Status403Forbidden : StatusCodes.Status422UnprocessableEntity;
             return Results.Problem(title: exception.Rule, detail: exception.Message, statusCode: status,
                 extensions: new Dictionary<string, object?> { ["rule"] = exception.Rule });
+        }
+        catch (Yojana.Platform.Contracts.Tenancy.TenantSettingVersionConflictException exception)
+        {
+            return Results.Problem(title: "tenant_setting_version_conflict", detail: exception.Message,
+                statusCode: StatusCodes.Status409Conflict,
+                extensions: new Dictionary<string, object?> { ["rule"] = "tenant_setting_version_conflict" });
         }
     }
 }

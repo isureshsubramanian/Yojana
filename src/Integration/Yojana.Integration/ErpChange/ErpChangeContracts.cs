@@ -4,6 +4,12 @@ namespace Yojana.Integration.ErpChange;
 
 public sealed record StartErpChangeRequest(Guid SourceConnectionId, RegisterConnection NewConnection);
 public sealed record CancelErpChangeRequest(string Reason);
+public sealed record StartReverseErpChangeRequest;
+public sealed record UpdateErpChangeCleanPeriodRequest(int Days, string ExpectedVersion);
+public sealed record ErpChangeCleanPeriodView(int Days, string SettingsVersion);
+public sealed record StartDualRunResult(Guid RunId, DateTime StartedAt, int MinimumDays,
+    int CleanDaysRequired, bool SourceReadOnly, string SourceOutboundMode,
+    bool TargetReadOnly, string TargetOutboundMode);
 
 public sealed record ErpChangeConnectionView(Guid ConnectionId, string Name, string ConnectorCode,
     string Status, string Health, bool ReadOnly, string OutboundMode);
@@ -17,7 +23,43 @@ public sealed record ErpChangeRunbookView(Guid RunId, string Status, int Current
     IReadOnlyList<ErpChangeStepCheckView> Checks,
     IReadOnlyList<ErpChangeTransitionView> Transitions,
     int UnitsCompared, int OpenDifferences, int CoveredOpenDifferences, int ResolvedDifferences,
-    int OpenMasterDataExceptions);
+    int OpenMasterDataExceptions, DualRunSummaryView? DualRun = null,
+    IReadOnlyList<CutoverChecklistItemView>? CutoverChecklist = null,
+    ArchiveStateView? Archive = null);
+
+public sealed record DualRunSummaryView(DateTime? StartedAt, int MinimumDays, int ElapsedDays,
+    int CleanDaysRequired, int ConsecutiveCleanDays, int OpenDivergences, int AgedOpenDivergences,
+    DateOnly? LastCheckedOn);
+public sealed record DivergenceListRequest(string? Kind, string? Status, string? Query,
+    string? Cursor, int Take = 25);
+public sealed record ErpChangeDivergenceRow(Guid DivergenceId, string Kind, string SubjectType,
+    Guid? SubjectId, string SubjectRef, string SourceValue, string TargetValue, DateTime FirstSeenAt,
+    DateTime LastSeenAt, DateTime ReviewDueAt, string Status, string? Resolution,
+    string? ResolutionNote, Guid? ResolutionCommandId, string? ResolvedBy, DateTime? ResolvedAt);
+public sealed record ErpChangeDivergencePage(IReadOnlyList<ErpChangeDivergenceRow> Items,
+    string? NextCursor, int Open, int AgedOpen, int Resolved);
+public sealed record ReportErpChangeDivergence(string Kind, string SubjectType, Guid? SubjectId,
+    string SubjectRef, string SourceValue, string TargetValue, Guid? SourceInboundMessageId = null,
+    Guid? TargetInboundMessageId = null, Guid? StockDifferenceId = null, int AgeLimitDays = 1);
+public sealed record ExplainDivergenceRequest(string Note);
+public sealed record RaiseDivergenceCorrectionRequest(ResolveStockDifferenceRequest Correction);
+public sealed record ErpChangeDailyCheckView(DateOnly BusinessDate, int NewDivergences,
+    int AgedOpenDivergences, bool Clean, int ConsecutiveCleanDays, DateTime CheckedAt, string CheckedBy);
+
+public sealed record BeginCutoverRequest(string TargetOutboundMode);
+public sealed record RecordOutboundValidationRequest(string CommandType, string Method,
+    string Evidence, bool Passed = true);
+public sealed record ConfirmFirstOutboundRequest(string CommandType, string ExternalDocumentRef,
+    string Evidence);
+public sealed record ConvertParkedOutboundRequest(Guid OutboundCommandId, string Reason);
+public sealed record CutoverChecklistItemView(string Code, string State, string Detail,
+    string? Evidence, string? CompletedBy, DateTime? CompletedAt);
+public sealed record CutoverChecklistView(Guid RunId, DateTime? CutoverAt,
+    IReadOnlyList<CutoverChecklistItemView> Items, bool CanAdvance);
+public sealed record ArchiveStateView(bool SourceArchived, DateTime? ArchivedAt,
+    int ActiveConnections, int RetainedMappings, int RetainedInboundMessages);
+public sealed record ArchiveErpChangeResult(Guid RunId, bool Archived,
+    ArchiveStateView State, string? FailureCode = null);
 
 public sealed record RemapMasterDataResult(Guid RunId, IReadOnlyList<Guid> BackfillIds,
     int ItemsMapped, int PartiesMapped, int ExceptionsOpen, int ExceptionsCreated);
@@ -65,6 +107,21 @@ public static class ErpChangeStep
     public const int MasterData = 2;
     public const int Stock = 3;
     public const int DualRun = 4;
+    public const int Cutover = 5;
+    public const int Archive = 6;
+}
+
+public static class ErpChangeDivergenceResolution
+{
+    public const string AcceptedSource = "accepted_source";
+    public const string Explained = "explained";
+    public const string CorrectionRaised = "correction_raised";
+}
+
+public static class ErpChangeValidationMethod
+{
+    public const string TestCompany = "test_company";
+    public const string Manual = "manual";
 }
 
 public static class MasterDataProblem

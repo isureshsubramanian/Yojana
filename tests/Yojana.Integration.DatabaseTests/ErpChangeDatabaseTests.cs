@@ -54,7 +54,7 @@ public sealed class ErpChangeDatabaseTests(IntegrationHostFixture fixture)
     }
 
     [DatabaseFact]
-    public async Task Cx01_to_cx02_simulators_complete_steps_one_to_three()
+    public async Task Cx01_to_cx02_simulators_complete_steps_one_to_six()
     {
         await using var source = new Cx01Simulator();
         await using var target = new Cx02Simulator();
@@ -74,7 +74,7 @@ public sealed class ErpChangeDatabaseTests(IntegrationHostFixture fixture)
     }
 
     [DatabaseFact]
-    public async Task Cx01_to_cx04_simulators_complete_steps_one_to_three()
+    public async Task Cx01_to_cx04_simulators_complete_steps_one_to_six()
     {
         await using var source = new Cx01Simulator();
         await using var target = new Cx04Simulator();
@@ -296,11 +296,21 @@ public sealed class ErpChangeDatabaseTests(IntegrationHostFixture fixture)
         Assert.Equal("erp_change_covered_differences_open", blocked.Rule);
         var missingDifference = await integration.ErpChangeStockDifferences.SingleAsync(row => row.UnitId == missing);
         var identifierCommand = Guid.NewGuid();
-        await service.ResolveAsync(run.ErpChangeRunId, missingDifference.ErpChangeStockDifferenceId,
-            new(StockResolutionCommand.CorrectIdentifier, identifierCommand,
+        run.CurrentStep = ErpChangeStep.DualRun;
+        run.DualRunStartedAt = fixture.Clock.UtcNow;
+        await integration.SaveChangesAsync();
+        var dual = scope.ServiceProvider.GetRequiredService<ErpChangeDualRunService>();
+        var divergence = await dual.ReportAsync(run.ErpChangeRunId,
+            new(ErpChangeDivergenceKind.Stock, "unit", missing, "MISS-001", "present", "missing",
+                StockDifferenceId: missingDifference.ErpChangeStockDifferenceId), default);
+        var corrected = await dual.RaiseCorrectionAsync(run.ErpChangeRunId, divergence.DivergenceId,
+            new(new(StockResolutionCommand.CorrectIdentifier, identifierCommand,
                 IdentifierType: IdentifierType.InternalSerial, NewIdentifier: "MISS-001-CORRECTED",
-                Note: "The opening position used the corrected chassis label."),
+                Note: "The opening position used the corrected chassis label.")),
             "fictional-inventory-controller", default);
+        Assert.Equal(ErpChangeDivergenceResolution.CorrectionRaised, corrected.Resolution);
+        run.CurrentStep = ErpChangeStep.Stock;
+        await integration.SaveChangesAsync();
         var movedDifference = await integration.ErpChangeStockDifferences.SingleAsync(row => row.UnitId == moved);
         var custodyCommand = Guid.NewGuid();
         await service.ResolveAsync(run.ErpChangeRunId, movedDifference.ErpChangeStockDifferenceId,
@@ -340,6 +350,7 @@ public sealed class ErpChangeDatabaseTests(IntegrationHostFixture fixture)
     private async Task CompleteEmptySimulatorRunAsync(Cx01Simulator source, Guid legalEntity,
         RegisterConnection targetRequest, Func<TenantId, Guid, Task>? activateTarget = null)
     {
+        fixture.Clock.UtcNow = At;
         var tenant = await fixture.NewTenantAsync("ecsim");
         using var scope = fixture.ScopeFor(tenant);
         await scope.ServiceProvider.GetRequiredService<ConnectorCatalogue>().SeedGenericEntriesAsync(default);
@@ -374,6 +385,82 @@ public sealed class ErpChangeDatabaseTests(IntegrationHostFixture fixture)
         Assert.True((await runs.CheckAsync(run.RunId, Actor, default)).Passed);
         Assert.Equal(ErpChangeStep.DualRun,
             (await runs.AdvanceAsync(run.RunId, Actor, default)).CurrentStep);
+
+        var documentId = Guid.NewGuid();
+        var inboundId = Guid.CreateVersion7();
+        var receipt = new GoodsReceiptPosted(
+            new("receipt", "GR-ARCHIVE", DateOnly.FromDateTime(At), "GR-ARCHIVE"),
+            "SUP-ARCHIVE", []);
+        var eventCount = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Events.CountAsync();
+        var cleanSettings = scope.ServiceProvider.GetRequiredService<ErpChangeCleanPeriodSettings>();
+        var clean = await cleanSettings.GetAsync(default);
+        await cleanSettings.SetAsync(run.Target.ConnectionId, new(1, clean.SettingsVersion), Actor, default);
+        var dual = scope.ServiceProvider.GetRequiredService<ErpChangeDualRunService>();
+        await dual.StartAsync(run.RunId, Actor, default);
+        fixture.Clock.UtcNow = At.AddDays(30);
+        Assert.True((await dual.RunDailyAsync(run.RunId, Actor, default)).Clean);
+        Assert.True((await runs.CheckAsync(run.RunId, Actor, default)).Passed);
+        Assert.Equal(ErpChangeStep.Cutover,
+            (await runs.AdvanceAsync(run.RunId, Actor, default)).CurrentStep);
+
+        var cutover = scope.ServiceProvider.GetRequiredService<ErpChangeCutoverService>();
+        await cutover.BeginAsync(run.RunId, new("reference_only"), Actor, default);
+        var validationTypes = (await cutover.ViewAsync(run.RunId, default)).Items
+            .Where(row => row.Code.StartsWith("validate:", StringComparison.Ordinal))
+            .Select(row => row.Code["validate:".Length..]).ToList();
+        foreach (var type in validationTypes)
+            await cutover.RecordValidationAsync(run.RunId,
+                new(type, ErpChangeValidationMethod.TestCompany,
+                    "The connector simulator accepted the target validation scenario."), Actor, default);
+        await cutover.EnableTargetAsync(run.RunId, Actor, default);
+        await cutover.DrainAsync(run.RunId, Actor, default);
+        await cutover.ConfirmFirstOutboundAsync(run.RunId,
+            new("CreateCreditMemo", "CM-SIM-1", "Confirmed in the target simulator."), Actor, default);
+        await cutover.ReconcileAsync(run.RunId, Actor, default);
+        var cutoverCheck = await runs.CheckAsync(run.RunId, Actor, default);
+        Assert.True(cutoverCheck.Passed, cutoverCheck.Detail + " "
+            + string.Join("; ", (await cutover.ViewAsync(run.RunId, default)).Items
+                .Where(row => row.State != ErpChangeChecklistState.Passed)
+                .Select(row => $"{row.Code}={row.State}:{row.Detail}")));
+        Assert.Equal(ErpChangeStep.Archive,
+            (await runs.AdvanceAsync(run.RunId, Actor, default)).CurrentStep);
+        AddMap(db, tenant, sourceConnection.ConnectionId, "document", "GR-ARCHIVE", documentId);
+        AddMap(db, tenant, sourceConnection.ConnectionId, "party", "SUP-ARCHIVE", Guid.NewGuid());
+        db.CanonicalDocuments.Add(new CanonicalDocument
+        {
+            TenantId = tenant, DocumentId = documentId, ConnectionId = sourceConnection.ConnectionId,
+            ErpEntity = "receipt", ErpExternalId = "GR-ARCHIVE", MessageType = nameof(GoodsReceiptPosted),
+            Payload = JsonSerializer.Serialize(receipt, IntegrationContracts.Json), OccurredAt = At,
+            UpdatedAt = At, SourceInboundMessageId = inboundId,
+        });
+        db.InboundMessages.Add(new InboundMessage
+        {
+            TenantId = tenant, InboundMessageId = inboundId, MessageId = Guid.CreateVersion7(),
+            ConnectionId = sourceConnection.ConnectionId, ConnectorCode = "CX01", ErpEntity = "receipt",
+            ErpExternalId = "GR-ARCHIVE", ErpChangeMarker = "1", MarkerKind = "version",
+            ContractVersion = "1.0", MessageType = nameof(GoodsReceiptPosted), RawPayload = "{}",
+            CanonicalMessage = JsonSerializer.Serialize(new { payload = receipt }, IntegrationContracts.Json),
+            OccurredAt = At, ObservedAt = At, AcceptedAt = At, IsLatest = true,
+            TranslationStatus = InboundTranslationStatus.Completed,
+        });
+        await db.SaveChangesAsync();
+        var archived = await cutover.ArchiveAsync(run.RunId, Actor, default);
+        Assert.True(archived.Archived);
+        Assert.True((await runs.CheckAsync(run.RunId, Actor, default)).Passed);
+        Assert.Equal(ErpChangeRunStatus.Completed,
+            (await runs.AdvanceAsync(run.RunId, Actor, default)).Status);
+        db.ChangeTracker.Clear();
+        var oldMap = await db.ExternalIdMaps.SingleAsync(row => row.ConnectionId == sourceConnection.ConnectionId
+            && row.EntityType == "document" && row.ExternalId == "GR-ARCHIVE");
+        Assert.Equal(At.AddDays(30), oldMap.ValidTo);
+        Assert.True(await db.InboundMessages.AnyAsync(row => row.InboundMessageId == inboundId));
+        Assert.False(await db.ConnectionCredentials.AnyAsync(row => row.ConnectionId == sourceConnection.ConnectionId
+            && row.RetiredAt == null));
+        var resolved = await scope.ServiceProvider.GetRequiredService<IPurchasingDocumentQueryPort>()
+            .GetReceiptAsync(new Yojana.Serialisation.Contracts.DocumentRef("receipt", documentId), default);
+        Assert.NotNull(resolved);
+        Assert.Equal(eventCount,
+            await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>().Events.CountAsync());
     }
 
     private static UnitCurrent Current(TenantId tenant, Guid unit, Guid item, Guid? owner = null) => new()
