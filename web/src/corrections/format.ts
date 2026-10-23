@@ -4,12 +4,12 @@ import type { CorrectionKpiRow, IdentifierAssignmentInput, WorkbenchChoice } fro
 export const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const ROOT_CAUSES: Record<string, { label: string; sub: string }> = {
-  "1": { label: "Document serials differ from units", sub: "CorrectDocumentSerials" },
+  "1": { label: "Document serials differ from units", sub: "Correct document serials" },
   "2": { label: "Replacement or exchange", sub: "business event, not an error" },
   "3": { label: "Refurbishment re-serialisation", sub: "business event, not an error" },
-  "4": { label: "Typo or crossed pair", sub: "CorrectIdentifier · SwapIdentifiers" },
-  "5": { label: "Wrong item or wrong order", sub: "CorrectItem · CorrectSourceDocument" },
-  "6": { label: "Allocation change before birth", sub: "ReassignAllocation · VoidUnit · AssignIdentifiers" },
+  "4": { label: "Typo or crossed pair", sub: "Correct an identifier · Swap identifiers" },
+  "5": { label: "Wrong item or wrong order", sub: "Correct the item · Correct the source document" },
+  "6": { label: "Allocation change before birth", sub: "Reassign an allocation · Void a unit · Assign identifiers" },
   "7": { label: "Warranty", sub: "entitlement commands" },
   unclassified: { label: "Unclassified requests", sub: '"None of these" · not a correction until re-filed' },
 };

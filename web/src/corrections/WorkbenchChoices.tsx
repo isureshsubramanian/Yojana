@@ -13,19 +13,19 @@ import { ROOT_CAUSES, slugChoice } from "./format";
 import type { CorrectionKpiReport, WorkbenchChoice, WorkbenchChoiceConfiguration, WorkbenchChoiceSettingsView } from "./types";
 
 const COMMANDS: Record<string, { label: string; root: number; reason: string; commitRoles: string[] }> = {
-  correct_document_serials: { label: "CorrectDocumentSerials", root: 1, reason: "shipped_wrong_units", commitRoles: ["shipping_supervisor"] },
-  correct_identifier: { label: "CorrectIdentifier", root: 4, reason: "typo", commitRoles: ["serial_administrator"] },
-  swap_identifiers: { label: "SwapIdentifiers", root: 4, reason: "cross_recorded_at_build", commitRoles: ["serial_administrator"] },
-  correct_item: { label: "CorrectItem", root: 5, reason: "wrong_item_at_build", commitRoles: ["inventory_controller", "service_supervisor"] },
-  correct_source_document: { label: "CorrectSourceDocument", root: 5, reason: "released_under_wrong_order", commitRoles: ["order_desk_supervisor"] },
-  reassign_allocation: { label: "ReassignAllocation", root: 6, reason: "allocation_error", commitRoles: ["production_supervisor"] },
-  void_unit: { label: "VoidUnit", root: 6, reason: "work_order_quantity_reduced", commitRoles: ["production_supervisor"] },
-  merge_units: { label: "MergeUnits", root: 4, reason: "duplicate_record", commitRoles: ["serial_administrator"] },
-  correct_as_built: { label: "CorrectAsBuilt", root: 5, reason: "component_not_captured", commitRoles: ["production_supervisor", "quality"] },
-  assign_identifiers: { label: "AssignIdentifiers", root: 6, reason: "vendor_list", commitRoles: ["production_supervisor"] },
-  late_serialization: { label: "LateSerialization", root: 6, reason: "coding_error_at_item_setup", commitRoles: ["item_master_owner"] },
-  correct_replacement_link: { label: "CorrectReplacementLink", root: 2, reason: "wrong_unit_recorded", commitRoles: ["service_manager"] },
-  "entitlement.amend": { label: "AmendEntitlement", root: 7, reason: "correction", commitRoles: ["service_manager"] },
+  correct_document_serials: { label: "Correct document serials", root: 1, reason: "shipped_wrong_units", commitRoles: ["shipping_supervisor"] },
+  correct_identifier: { label: "Correct an identifier", root: 4, reason: "typo", commitRoles: ["serial_administrator"] },
+  swap_identifiers: { label: "Swap identifiers", root: 4, reason: "cross_recorded_at_build", commitRoles: ["serial_administrator"] },
+  correct_item: { label: "Correct the item", root: 5, reason: "wrong_item_at_build", commitRoles: ["inventory_controller", "service_supervisor"] },
+  correct_source_document: { label: "Correct the source document", root: 5, reason: "released_under_wrong_order", commitRoles: ["order_desk_supervisor"] },
+  reassign_allocation: { label: "Reassign an allocation", root: 6, reason: "allocation_error", commitRoles: ["production_supervisor"] },
+  void_unit: { label: "Void a unit", root: 6, reason: "work_order_quantity_reduced", commitRoles: ["production_supervisor"] },
+  merge_units: { label: "Merge units", root: 4, reason: "duplicate_record", commitRoles: ["serial_administrator"] },
+  correct_as_built: { label: "Correct as-built parts", root: 5, reason: "component_not_captured", commitRoles: ["production_supervisor", "quality"] },
+  assign_identifiers: { label: "Assign identifiers", root: 6, reason: "vendor_list", commitRoles: ["production_supervisor"] },
+  late_serialization: { label: "Serialise an item late", root: 6, reason: "coding_error_at_item_setup", commitRoles: ["item_master_owner"] },
+  correct_replacement_link: { label: "Correct a replacement link", root: 2, reason: "wrong_unit_recorded", commitRoles: ["service_manager"] },
+  "entitlement.amend": { label: "Amend an entitlement", root: 7, reason: "correction", commitRoles: ["service_manager"] },
 };
 
 function iso(date: Date): string { return date.toISOString().slice(0, 10); }
