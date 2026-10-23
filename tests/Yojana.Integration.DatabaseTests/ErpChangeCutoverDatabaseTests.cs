@@ -266,6 +266,37 @@ public sealed class ErpChangeCutoverDatabaseTests(IntegrationHostFixture fixture
         }
     }
 
+    [DatabaseFact]
+    public async Task Reverse_replaces_an_archived_former_source_with_a_new_connection_of_the_same_connector()
+    {
+        fixture.Clock.UtcNow = Start;
+        await using var simulator = new Yojana.Integration.Connectors.CX01.Testing.Cx01Simulator();
+        var tenant = await fixture.NewTenantAsync("ecnew");
+        var entity = Guid.NewGuid();
+        using var scope = fixture.ScopeFor(tenant);
+        await scope.ServiceProvider.GetRequiredService<Yojana.Integration.Gateway.ConnectorCatalogue>()
+            .SeedGenericEntriesAsync(default);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        await db.ConnectorCatalogue.ExecuteUpdateAsync(update => update.SetProperty(row => row.Enabled, true));
+        var former = await fixture.AddConnectionAsync(tenant, entity);
+        var current = await fixture.AddConnectionAsync(tenant, entity, "CX02");
+        var original = Run(tenant, former, current, ErpChangeStep.Archive);
+        original.CutoverAt = Start;
+        db.ErpChangeRuns.Add(original);
+        (await db.Connections.SingleAsync(row => row.ConnectionId == former)).Status = ConnectionStatus.Archived;
+        await db.SaveChangesAsync();
+
+        var replacement = simulator.RegistrationRequest() with { LegalEntityId = entity };
+        var reverse = await scope.ServiceProvider.GetRequiredService<ErpChangeRunService>()
+            .StartReverseAsync(original.ErpChangeRunId, new(replacement), Operator, default);
+
+        Assert.Equal(current, reverse.Source.ConnectionId);
+        Assert.NotEqual(former, reverse.Target.ConnectionId);
+        Assert.Equal("CX01", reverse.Target.ConnectorCode);
+        Assert.Equal(ConnectionStatus.Archived,
+            (await db.Connections.SingleAsync(row => row.ConnectionId == former)).Status);
+    }
+
     private static ErpChangeRun Run(TenantId tenant, Guid source, Guid target, int step) => new()
     {
         TenantId = tenant, ErpChangeRunId = Guid.CreateVersion7(), SourceConnectionId = source,
