@@ -40,6 +40,7 @@ function DifferenceList({ run, mayResolve, onResolved }: { run: ErpChangeRunbook
   const fetch = useCallback((cursor?: string, signal?: AbortSignal) => erpChangeApi.stock(run.runId, { reason, status: resolved ? "resolved" : "open", liveCover: coveredOnly || undefined, query: query.trim() }, cursor, signal), [run.runId, reason, resolved, coveredOnly, query]);
   const source = useCursorPage<StockDifferenceRow, StockDifferencePage>(fetch);
   const page = source.result;
+  const reasonCount = (value: string) => page?.reasonCounts.find(count => count.reason === value);
   const columns = useMemo<GridColumn<StockDifferenceRow>[]>(() => [
     { key: "unit", label: "Unit", width: 20, render: row => <span className="primary"><span className="serial t mono">{row.identifier}</span><span className="sub">{row.itemName ?? "Unknown item"} · {row.hasLiveEntitlement ? `cover to ${parallelDate(row.warrantyEnd, true)}` : "no cover"}</span></span> },
     { key: "reason", label: "Reason", width: 16, render: row => <StatusBadge tone={stockReasonTone(row)}>{stockReasonLabel(row.reason)}</StatusBadge> },
@@ -50,7 +51,7 @@ function DifferenceList({ run, mayResolve, onResolved }: { run: ErpChangeRunbook
   ], [resolved]);
   return <>
     <ol className="erp-stages" aria-label="Reason">
-      {stockReasonFilters.map(([value, label]) => <li key={value || "all"}><button type="button" aria-pressed={!resolved && reason === value} onClick={() => { setResolved(false); setReason(value); }}><div className="l">{label}</div>{value === "" && page && !resolved && !reason ? <><div className={`n${page.coveredOpen ? " bad-text" : ""}`}>{page.open.toLocaleString()}</div><div className="s">{page.coveredOpen.toLocaleString()} with live cover</div></> : <div className="s">{value ? "filter" : "every reason"}</div>}</button></li>)}
+      {stockReasonFilters.map(([value, label]) => { const count = value ? reasonCount(value) : undefined; return <li key={value || "all"}><button type="button" aria-pressed={!resolved && reason === value} onClick={() => { setResolved(false); setReason(value); }}><div className="l">{label}</div>{page && <div className={`n${(value ? count?.coveredOpen : page.coveredOpen) ? " bad-text" : ""}`}>{(value ? count?.open ?? 0 : page.open).toLocaleString()}</div>}<div className="s">{value ? `${(count?.resolved ?? 0).toLocaleString()} resolved · ${(count?.coveredOpen ?? 0).toLocaleString()} with live cover` : `${page?.coveredOpen.toLocaleString() ?? "—"} with live cover`}</div></button></li>; })}
       <li><button type="button" aria-pressed={resolved} onClick={() => { setResolved(true); setReason(""); }}><div className="l">Resolved</div>{page && <div className="n">{page.resolved.toLocaleString()}</div>}<div className="s">by command · audited</div></button></li>
     </ol>
     <section className="card" aria-labelledby="erp-stock"><div className="card-header"><h2 id="erp-stock">Differences <span className="meta">{page ? `${page.compared.toLocaleString()} compared` : ""}</span></h2></div>

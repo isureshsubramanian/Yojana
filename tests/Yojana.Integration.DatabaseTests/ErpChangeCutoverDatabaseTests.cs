@@ -115,8 +115,10 @@ public sealed class ErpChangeCutoverDatabaseTests(IntegrationHostFixture fixture
             new(ErpChangeDivergenceKind.Document, "delivery", first.SubjectId, "DN-1001",
                 "2 units", "1 unit"), default);
         Assert.Equal(1, await db.ErpChangeDivergences.CountAsync());
-        await dual.AcceptSourceAsync(run.ErpChangeRunId, first.DivergenceId,
-            ErpChangeDivergenceKind.Document, Operator, default);
+        var acceptSourceCommandId = Guid.CreateVersion7();
+        var accepted = await dual.AcceptSourceAsync(run.ErpChangeRunId, first.DivergenceId,
+            ErpChangeDivergenceKind.Document, new(acceptSourceCommandId), Operator, default);
+        Assert.Equal(acceptSourceCommandId, accepted.ResolutionCommandId);
 
         fixture.Clock.UtcNow = Start.AddDays(27);
         Assert.True((await dual.RunDailyAsync(run.ErpChangeRunId, Operator, default)).Clean);

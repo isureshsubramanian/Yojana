@@ -1,10 +1,10 @@
 import { api } from "../api/client.ts";
 import type {
   ConnectionAuthorisationView, ConsentResult, ConsentStart, CutoverChecklistView, DisableResult, ErpChangeCleanPeriodView,
-  ErpChangeDailyCheckView, ErpChangeDivergencePage, ErpChangeDivergenceRow, ErpChangeRunbookView, MasterDataExceptionPage,
+  ErpChangeDailyCheckView, ErpChangeDivergencePage, ErpChangeDivergenceRow, ErpChangeRunbookView, ErpChangeRunHistoryPage, MasterDataExceptionPage,
   MasterDataExceptionRow, ReconcileStockResult, ReminderSettingsView, ResolveStockDifferenceRequest, StockDifferencePage,
   StockDifferenceRow, StockResidualSignoffView,
-  ErpChangeMyWorkView, ErpChangeNotificationSettingsView,
+  ErpChangeMyWorkView, ErpChangeNotificationSettingsView, ParkedOutboundPage, UnitHistoryChangeKind, UnitHistoryChangePage,
 } from "./erpChangeTypes";
 
 const root = "/api/integration/erp-change";
@@ -22,7 +22,10 @@ export interface StockFilter { reason?: string | undefined; liveCover?: boolean 
 
 export const erpChangeApi = {
   active: (signal?: AbortSignal) => api<ErpChangeRunbookView>(`${root}/runs/active`, { signal }),
+  history: (cursor?: string, signal?: AbortSignal) => api<ErpChangeRunHistoryPage>(`${root}/runs${query({ cursor, take: 12 })}`, { signal }),
   detail: (runId: string, signal?: AbortSignal) => api<ErpChangeRunbookView>(run(runId), { signal }),
+  unitHistoryChanges: (runId: string, kind: UnitHistoryChangeKind, cursor?: string, signal?: AbortSignal) =>
+    api<UnitHistoryChangePage>(`${run(runId)}/unit-history-changes${query({ kind, cursor, take: 12 })}`, { signal }),
   start: (sourceConnectionId: string, newConnection: unknown) =>
     api<ErpChangeRunbookView>(`${root}/runs`, { method: "POST", body: { sourceConnectionId, newConnection } }),
   check: (runId: string) => api<ErpChangeRunbookView>(`${run(runId)}/check`, { method: "POST" }),
@@ -52,7 +55,7 @@ export const erpChangeApi = {
   startDualRun: (runId: string) => api<unknown>(`${run(runId)}/dual-run/start`, { method: "POST" }),
   dailyCheck: (runId: string) => api<ErpChangeDailyCheckView>(`${run(runId)}/dual-run/check`, { method: "POST" }),
   acceptSource: (runId: string, kind: string, divergenceId: string) =>
-    api<ErpChangeDivergenceRow>(`${run(runId)}/dual-run/${kind}-divergences/${divergenceId}/accept-source`, { method: "POST" }),
+    api<ErpChangeDivergenceRow>(`${run(runId)}/dual-run/${kind}-divergences/${divergenceId}/accept-source`, { method: "POST", body: { commandId: crypto.randomUUID() } }),
   explain: (runId: string, kind: string, divergenceId: string, note: string) =>
     api<ErpChangeDivergenceRow>(`${run(runId)}/dual-run/${kind}-divergences/${divergenceId}/explain`, { method: "POST", body: { note } }),
   cleanPeriod: (signal?: AbortSignal) => api<ErpChangeCleanPeriodView>(`${root}/settings/clean-period`, { signal }),
@@ -69,11 +72,15 @@ export const erpChangeApi = {
   }),
 
   cutover: (runId: string, signal?: AbortSignal) => api<CutoverChecklistView>(`${run(runId)}/cutover`, { signal }),
+  parked: (runId: string, cursor?: string, signal?: AbortSignal) =>
+    api<ParkedOutboundPage>(`${run(runId)}/cutover/parked${query({ cursor, take: 12 })}`, { signal }),
   beginCutover: (runId: string, targetOutboundMode: "reference_only" | "documents") =>
     api<CutoverChecklistView>(`${run(runId)}/cutover/start`, { method: "POST", body: { targetOutboundMode } }),
   recordValidation: (runId: string, commandType: string, method: "test_company" | "manual", evidence: string) =>
     api<CutoverChecklistView>(`${run(runId)}/cutover/validations`, { method: "POST", body: { commandType, method, evidence, passed: true } }),
   drain: (runId: string) => api<CutoverChecklistView>(`${run(runId)}/cutover/drain`, { method: "POST" }),
+  convertParked: (runId: string, outboundCommandId: string, reason: string) =>
+    api<CutoverChecklistView>(`${run(runId)}/cutover/parked-to-manual`, { method: "POST", body: { outboundCommandId, reason } }),
   enableTarget: (runId: string) => api<CutoverChecklistView>(`${run(runId)}/cutover/enable-target`, { method: "POST" }),
   confirmFirstOutbound: (runId: string, commandType: string, externalDocumentRef: string, evidence: string) =>
     api<CutoverChecklistView>(`${run(runId)}/cutover/confirm-first-outbound`, { method: "POST", body: { commandType, externalDocumentRef, evidence } }),

@@ -16,7 +16,7 @@ import {
   notificationRecipientRoles,
   type ErpChangeRights,
 } from "./erpChangeModel";
-import type { CutoverChecklistItemView, CutoverChecklistView, ErpChangeCleanPeriodView, ErpChangeDivergencePage, ErpChangeDivergenceRow, ErpChangeNotificationSettingsView, ErpChangeRunbookView } from "./erpChangeTypes";
+import type { CutoverChecklistItemView, CutoverChecklistView, ErpChangeCleanPeriodView, ErpChangeDivergencePage, ErpChangeDivergenceRow, ErpChangeNotificationSettingsView, ErpChangeRunbookView, ErpChangeRunHistoryPage, ErpChangeRunHistoryRow, ParkedOutboundPage, ParkedOutboundRow, UnitHistoryChangeKind, UnitHistoryChangePage, UnitHistoryChangeRow } from "./erpChangeTypes";
 import { parallelDate } from "./parallelRunModel";
 
 export function Component() { return <ErpChangeAccess><RunbookScreen /></ErpChangeAccess>; }
@@ -24,18 +24,23 @@ export function Component() { return <ErpChangeAccess><RunbookScreen /></ErpChan
 function RunbookScreen() {
   const rights = useErpChangeRights();
   const { run, setRun, missing, error, loading, refresh } = useActiveRun();
+  const [openedRun, setOpenedRun] = useState<ErpChangeRunbookView | null>(null);
   const { hash } = useLocation();
-  useEffect(() => { if (run && hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start" }); }, [run, hash]);
-  const replace = useCallback((next: ErpChangeRunbookView) => setRun(next), [setRun]);
+  const shownRun = openedRun ?? run;
+  const shownRights = openedRun ? { ...rights, control: false, masterData: false, documentDivergences: false, stock: false } : rights;
+  useEffect(() => { if (shownRun && hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start" }); }, [shownRun, hash]);
+  const replace = useCallback((next: ErpChangeRunbookView) => { setOpenedRun(null); setRun(next); }, [setRun]);
 
-  const eyebrow = run ? `from "${run.source.name}" (connector ${run.source.connectorCode}) to "${run.target.name}" (connector ${run.target.connectorCode}) · started ${parallelDate(run.startedAt, true)} by ${run.startedBy}` : "Integration";
-  const actions = run && rights.control ? <RunActions run={run} onChanged={replace} /> : undefined;
-  return <><ErpChangePage title="ERP change" eyebrow={eyebrow} run={run} actions={actions}
+  const eyebrow = shownRun ? `from "${shownRun.source.name}" (connector ${shownRun.source.connectorCode}) to "${shownRun.target.name}" (connector ${shownRun.target.connectorCode}) · started ${parallelDate(shownRun.startedAt, true)} by ${shownRun.startedBy}` : "Integration";
+  const actions = shownRun && shownRights.control ? <RunActions run={shownRun} onChanged={replace} /> : undefined;
+  return <><ErpChangePage title="ERP change" eyebrow={eyebrow} run={shownRun} actions={actions}
     sub="Move the tenant to a new ERP in six steps. Unit history never moves: the module keeps it. The new ERP is read for an opening position only.">
     <ErrorNote error={error} onReload={() => void refresh()} />
-    {loading && !run && !missing && <p role="status">Loading ERP change…</p>}
-    {missing && <><NoActiveChange control={rights.control} />{rights.control && <StartErpChange onStarted={replace} />}</>}
-    {run && <RunbookBody run={run} rights={rights} onChanged={replace} refresh={() => void refresh()} />}
+    {loading && !shownRun && !missing && <p role="status">Loading ERP change…</p>}
+    {missing && !openedRun && <><NoActiveChange control={rights.control} />{rights.control && <StartErpChange onStarted={replace} />}</>}
+    {openedRun && (!run || openedRun.runId !== run.runId) && <button type="button" className="btn" onClick={() => setOpenedRun(null)}>{run ? "Return to the change in progress" : "Close past change"}</button>}
+    {shownRun && <RunbookBody run={shownRun} rights={shownRights} onChanged={replace} refresh={() => void refresh()} />}
+    <PastChangesCard onOpen={setOpenedRun} />
   </ErpChangePage><Rail label="ERP change"><Section title="Unit history"><p className="muted">Every correction made during an ERP change is an ordinary unit command with the reason "ERP change reconciliation". Nothing is edited directly, and the unit event log is never rewritten.</p></Section></Rail></>;
 }
 
@@ -60,6 +65,8 @@ function RunbookBody({ run, rights, onChanged, refresh }: { run: ErpChangeRunboo
     {run.status !== "active" && <div className={`note ${run.status === "cancelled" ? "warn" : "ok"}`} role="status"><strong>{run.status === "cancelled" ? "Rolled back" : "Completed"}</strong> {run.closedAt ? parallelDate(run.closedAt, true) : ""}{run.closedBy ? ` by ${run.closedBy}` : ""}{run.closeReason ? ` · ${run.closeReason}` : ""}</div>}
     <ol className="erp-stages" aria-label="Steps">{steps.map(step => <li key={step.step}><Link to={target(step.step)} aria-current={step.current ? "true" : undefined}><div className="l">{step.label}</div><div className={`n${step.tone === "bad" ? " bad-text" : step.tone === "ok" ? " ok-text" : ""}`}>{step.value}</div><div className="s">{step.detail}</div></Link></li>)}</ol>
     <KpiStrip label="ERP change figures" kpis={runbookKpis(run)} />
+    {run.currentStep >= 5 && <p className="muted"><button type="button" className="btn sm" onClick={() => openUnitHistoryChanges(run, "deliberate")}>{run.deliberateUnitHistoriesChanged.toLocaleString()} units changed by signed-off resolutions</button></p>}
+    {run.currentStep >= 5 && run.unitHistoriesChanged > 0 && <div className="note warn" role="alert"><strong>Unit history changed by the ERP change: {run.unitHistoriesChanged.toLocaleString()}.</strong> The expected figure is zero. <button type="button" className="btn sm" onClick={() => openUnitHistoryChanges(run, "unexpected")}>Review affected units</button></div>}
     {rights.control && <NotificationSettings />}
     <div className="erp-change-columns">
       <section className="card" aria-labelledby="erp-exit"><div className="card-header"><h2 id="erp-exit">Exit criteria</h2><span className="right"><span className="muted">a step opens only when the one before passes</span></span></div><div className="card-body">
@@ -78,6 +85,45 @@ function RunbookBody({ run, rights, onChanged, refresh }: { run: ErpChangeRunboo
     <DivergencesCard run={run} rights={rights} refresh={refresh} />
     <CutoverCard run={run} rights={rights} refresh={refresh} />
   </>;
+}
+
+function PastChangesCard({ onOpen }: { onOpen: (run: ErpChangeRunbookView) => void }) {
+  const fetch = useCallback((cursor?: string, signal?: AbortSignal) => erpChangeApi.history(cursor, signal), []);
+  const source = useCursorPage<ErpChangeRunHistoryRow, ErpChangeRunHistoryPage>(fetch);
+  const action = useAction();
+  const columns = useMemo<GridColumn<ErpChangeRunHistoryRow>[]>(() => [
+    { key: "change", label: "Change", width: 28, render: row => <span className="primary"><span className="t">{row.sourceName} → {row.targetName}</span><span className="sub">Started by {row.startedBy}</span></span> },
+    { key: "started", label: "Started", width: 16, render: row => date(row.startedAt) },
+    { key: "finished", label: "Finished", width: 16, render: row => date(row.finishedAt) },
+    { key: "outcome", label: "Outcome", width: 16, render: row => <StatusBadge tone={row.outcome === "completed" ? "ok" : row.outcome === "cancelled" ? "warn" : "neutral"}>{({ completed: "Completed", cancelled: "Cancelled", reversed: "Reversed", in_progress: "In progress" } as Record<string, string>)[row.outcome] ?? row.outcome}</StatusBadge> },
+    { key: "step", label: "Current / last step", width: 24, render: row => `${row.currentStep} · ${row.currentStepName}` },
+  ], []);
+  return <section className="card" aria-labelledby="erp-past"><div className="card-header"><h2 id="erp-past">Past changes</h2><span className="meta">newest first · select a row to open it read-only</span></div>
+    <PagedGrid source={source} columns={columns} rowId={row => row.runId} select={row => void action.run(async () => onOpen(await erpChangeApi.detail(row.runId)), "Past change opened read-only.")} empty="No ERP changes have been recorded." />
+    <div className="card-body">{action.feedback}</div>
+  </section>;
+}
+
+function openUnitHistoryChanges(run: ErpChangeRunbookView, kind: UnitHistoryChangeKind) {
+  openDrawer({ eyebrow: "ERP change audit", title: "Unit history changed" }, <UnitHistoryChangesDrawer run={run} initialKind={kind} />);
+}
+
+function UnitHistoryChangesDrawer({ run, initialKind }: { run: ErpChangeRunbookView; initialKind: UnitHistoryChangeKind }) {
+  const [kind, setKind] = useState<UnitHistoryChangeKind>(initialKind);
+  const fetch = useCallback((cursor?: string, signal?: AbortSignal) => erpChangeApi.unitHistoryChanges(run.runId, kind, cursor, signal), [run.runId, kind]);
+  const source = useCursorPage<UnitHistoryChangeRow, UnitHistoryChangePage>(fetch);
+  const columns = useMemo<GridColumn<UnitHistoryChangeRow>[]>(() => [
+    { key: "unit", label: "Unit", width: 46, render: row => <Link className="serial mono" to={`/units/${row.unitId}`}>{row.identifier}</Link> },
+    { key: "events", label: "Events added", width: 22, render: row => row.eventsAdded.toLocaleString() },
+    { key: "recorded", label: "Last recorded", width: 32, render: row => date(row.lastRecordedAt) },
+  ], []);
+  return <div className="erp-drawer-form"><div className="toolbar" aria-label="History change kind">
+    <button type="button" className={`btn sm${kind === "unexpected" ? " primary" : ""}`} aria-pressed={kind === "unexpected"} onClick={() => setKind("unexpected")}>Unexpected ({(source.result?.unexpectedTotal ?? run.unitHistoriesChanged).toLocaleString()})</button>
+    <button type="button" className={`btn sm${kind === "deliberate" ? " primary" : ""}`} aria-pressed={kind === "deliberate"} onClick={() => setKind("deliberate")}>Signed-off resolutions ({(source.result?.deliberateTotal ?? run.deliberateUnitHistoriesChanged).toLocaleString()})</button>
+  </div>
+    <p className={`note ${kind === "unexpected" ? "warn" : ""}`}>{kind === "unexpected" ? "These units gained event-log rows from comparison-only target documents or non-resolution ERP-change commands. The expected figure is zero." : "These units changed through signed-off stock or dual-run resolution commands."}</p>
+    <PagedGrid source={source} columns={columns} rowId={row => row.unitId} empty={kind === "unexpected" ? "No unexpected unit-history changes were found." : "No signed-off resolution changed unit history."} />
+  </div>;
 }
 
 function NotificationSettings() {
@@ -216,15 +262,43 @@ function CutoverCard({ run, rights, refresh }: { run: ErpChangeRunbookView; righ
 
 function CutoverRow({ index, item, runId, control, busy, apply }: { index: number; item: CutoverChecklistItemView; runId: string; control: boolean; busy: boolean; apply: (work: () => Promise<CutoverChecklistView>, message: string) => void }) {
   const [title, sub] = checklistLabel(item); const command = validationCommand(item.code); const waiting = item.state !== "passed";
-  let act: ReactNode = null;
+  let act: ReactNode = item.code === "drain_outbox" ? <><button type="button" className="btn sm" onClick={() => openParkedOutbound(runId, control, view => apply(async () => view, "Parked message converted to a manual task."))}>Parked messages</button>{control && waiting && <button type="button" className="btn sm" disabled={busy} onClick={() => apply(() => erpChangeApi.drain(runId), "Queue drained to the new ERP where possible.")}>Drain now</button>}</> : null;
   if (control && waiting) {
-    if (item.code === "drain_outbox") act = <button type="button" className="btn sm" disabled={busy} onClick={() => apply(() => erpChangeApi.drain(runId), "Queue drained to the new ERP where possible.")}>Drain now</button>;
-    else if (item.code === "enable_target") act = <button type="button" className="btn sm primary" disabled={busy} onClick={() => apply(() => erpChangeApi.enableTarget(runId), "New ERP switched to read-write.")}>Switch to read-write</button>;
+    if (item.code === "enable_target") act = <button type="button" className="btn sm primary" disabled={busy} onClick={() => apply(() => erpChangeApi.enableTarget(runId), "New ERP switched to read-write.")}>Switch to read-write</button>;
     else if (item.code === "reconcile_after_cutover") act = <button type="button" className="btn sm" disabled={busy} onClick={() => apply(() => erpChangeApi.reconcileAfterCutover(runId), "Reconciliation run.")}>Run reconciliation</button>;
     else if (command) act = <button type="button" className="btn sm" onClick={() => openEvidence(`Check ${commandName(command)}`, "Evidence (test company run or manual check)", true, (evidence, method) => erpChangeApi.recordValidation(runId, command, method, evidence), view => apply(async () => view, "Check recorded."))}>Record check…</button>;
     else if (item.code === "first_outbound_confirmed") act = <button type="button" className="btn sm" onClick={() => openFirstOutbound(runId, view => apply(async () => view, "First document confirmed."))}>Confirm a document…</button>;
   }
   return <li><span className="v">{index}</span><span><span className="t">{title}</span><span className="s">{item.detail || sub}</span>{item.completedBy && <span className="s">{item.completedBy}{item.completedAt ? ` · ${date(item.completedAt)}` : ""}{item.evidence ? ` · ${item.evidence}` : ""}</span>}{act && <span className="erp-item-actions">{act}</span>}</span><StatusBadge tone={checklistTone(item.state)}>{checklistState(item.state)}</StatusBadge></li>;
+}
+
+function openParkedOutbound(runId: string, mayConvert: boolean, onChanged: (view: CutoverChecklistView) => void) {
+  openDrawer({ eyebrow: "Cutover checklist", title: "Parked messages" }, <ParkedOutboundDrawer runId={runId} mayConvert={mayConvert} onChanged={onChanged} />);
+}
+
+function ParkedOutboundDrawer({ runId, mayConvert, onChanged }: { runId: string; mayConvert: boolean; onChanged: (view: CutoverChecklistView) => void }) {
+  const fetch = useCallback((cursor?: string, signal?: AbortSignal) => erpChangeApi.parked(runId, cursor, signal), [runId]);
+  const source = useCursorPage<ParkedOutboundRow, ParkedOutboundPage>(fetch);
+  const [selected, setSelected] = useState<ParkedOutboundRow | null>(null); const [reason, setReason] = useState(""); const action = useAction();
+  const columns = useMemo<GridColumn<ParkedOutboundRow>[]>(() => [
+    { key: "document", label: "Document", width: 27, render: row => <span className="primary"><span className="t">{row.documentReference}</span><span className="sub">{commandName(row.documentKind)}</span></span> },
+    { key: "units", label: "Units", width: 10, render: row => row.unitCount.toLocaleString() },
+    { key: "reason", label: "Parked reason", width: 31, render: row => row.parkedReason },
+    { key: "parked", label: "Parked", width: 16, render: row => date(row.parkedAt) },
+    { key: "task", label: "Manual task", width: 16, render: row => row.ownedByManualTask ? <StatusBadge tone="ok">Owned</StatusBadge> : mayConvert ? <button type="button" className="btn sm" onClick={() => { setSelected(row); setReason(""); }}>Convert</button> : <StatusBadge tone="warn">Not owned</StatusBadge> },
+  ], [mayConvert]);
+  const convert = () => {
+    if (!selected) return;
+    void action.run(async () => {
+      onChanged(await erpChangeApi.convertParked(runId, selected.outboundCommandId, reason.trim()));
+      setSelected(null); setReason(""); source.refresh();
+    }, "Manual task created.");
+  };
+  return <div className="erp-drawer-form"><p className="hint">Every parked outbound message must either complete on the new ERP or have a manual task with a recorded reason.</p>
+    <PagedGrid source={source} columns={columns} rowId={row => row.outboundCommandId} empty="No parked outbound messages." />
+    {selected && <form onSubmit={event => { event.preventDefault(); convert(); }} className="stack"><h3>Convert {selected.documentReference}</h3><label className="field"><span className="lbl">Reason (required)</span><textarea className="input" required maxLength={2000} value={reason} onChange={event => setReason(event.target.value)} /></label><button className="btn primary" disabled={action.busy || !reason.trim()}>Convert to manual task</button></form>}
+    {action.feedback}
+  </div>;
 }
 
 function openEvidence(title: string, prompt: string, withMethod: boolean, save: (evidence: string, method: "test_company" | "manual") => Promise<CutoverChecklistView>, onSaved: (view: CutoverChecklistView) => void) {

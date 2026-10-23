@@ -2176,6 +2176,10 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("cutover_at");
 
+                    b.Property<int>("DeliberateUnitHistoriesChanged")
+                        .HasColumnType("int")
+                        .HasColumnName("deliberate_unit_histories_changed");
+
                     b.Property<DateTime?>("DualRunStartedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("dual_run_started_at");
@@ -2224,6 +2228,14 @@ namespace Yojana.Integration.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(40)")
                         .HasColumnName("target_outbound_mode");
+
+                    b.Property<int>("UnitHistoriesChanged")
+                        .HasColumnType("int")
+                        .HasColumnName("unit_histories_changed");
+
+                    b.Property<DateTime?>("UnitHistoryCheckedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("unit_history_checked_at");
 
                     b.Property<int>("UnitsCompared")
                         .HasColumnType("int")

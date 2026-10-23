@@ -7,6 +7,8 @@ export interface ErpChangeTransitionView { fromStep: number; toStep: number; kin
 export interface DualRunSummaryView { startedAt: string | null; minimumDays: number; elapsedDays: number; cleanDaysRequired: number; consecutiveCleanDays: number; openDivergences: number; agedOpenDivergences: number; lastCheckedOn: string | null }
 export interface CutoverChecklistItemView { code: string; state: "waiting" | "passed" | "failed" | string; detail: string; evidence: string | null; completedBy: string | null; completedAt: string | null }
 export interface CutoverChecklistView { runId: string; cutoverAt: string | null; items: CutoverChecklistItemView[]; canAdvance: boolean }
+export interface ParkedOutboundRow { outboundCommandId: string; documentKind: string; documentReference: string; unitCount: number; parkedReason: string; parkedAt: string; ownedByManualTask: boolean }
+export interface ParkedOutboundPage { items: ParkedOutboundRow[]; nextCursor: string | null }
 export interface ArchiveStateView { sourceArchived: boolean; archivedAt: string | null; activeConnections: number; retainedMappings: number; retainedInboundMessages: number }
 export interface ErpChangeRunbookView {
   runId: string; status: "active" | "cancelled" | "completed" | string; currentStep: number;
@@ -15,7 +17,13 @@ export interface ErpChangeRunbookView {
   checks: ErpChangeStepCheckView[]; transitions: ErpChangeTransitionView[];
   unitsCompared: number; openDifferences: number; coveredOpenDifferences: number; resolvedDifferences: number; openMasterDataExceptions: number;
   dualRun: DualRunSummaryView | null; cutoverChecklist: CutoverChecklistItemView[] | null; archive: ArchiveStateView | null;
+  unitHistoriesChanged: number; deliberateUnitHistoriesChanged: number; unitHistoryCheckedAt: string | null;
 }
+export interface ErpChangeRunHistoryRow { runId: string; sourceName: string; targetName: string; startedAt: string; finishedAt: string | null; outcome: "completed" | "cancelled" | "reversed" | "in_progress" | string; startedBy: string; currentStep: number; currentStepName: string }
+export interface ErpChangeRunHistoryPage { items: ErpChangeRunHistoryRow[]; nextCursor: string | null }
+export type UnitHistoryChangeKind = "unexpected" | "deliberate";
+export interface UnitHistoryChangeRow { unitId: string; identifier: string; kind: UnitHistoryChangeKind; eventsAdded: number; lastRecordedAt: string }
+export interface UnitHistoryChangePage { items: UnitHistoryChangeRow[]; nextCursor: string | null; kind: UnitHistoryChangeKind; total: number; unexpectedTotal: number; deliberateTotal: number; checkedAt: string | null }
 
 export interface ErpChangeDivergenceRow {
   divergenceId: string; kind: "stock" | "document" | string; subjectType: string; subjectId: string | null; subjectRef: string;
@@ -51,7 +59,8 @@ export interface StockDifferenceRow {
   hasLiveEntitlement: boolean; warrantyEnd: string | null; suggestedResolution: string; status: "open" | "resolved" | string;
   resolutionCommand: string | null; resolutionCommandId: string | null; resolvedBy: string | null; resolvedAt: string | null; comparedAt: string;
 }
-export interface StockDifferencePage { items: StockDifferenceRow[]; nextCursor: string | null; compared: number; open: number; coveredOpen: number; resolved: number }
+export interface StockReasonCount { reason: string; open: number; resolved: number; coveredOpen: number }
+export interface StockDifferencePage { items: StockDifferenceRow[]; nextCursor: string | null; compared: number; open: number; coveredOpen: number; resolved: number; reasonCounts: StockReasonCount[] }
 export interface ReconcileStockResult { runId: string; unitsCompared: number; differences: number; coveredOpen: number; resolvedByNormalisation: number; comparedAt: string }
 export interface StockResidualSignoffView { signoffId: string; residualCount: number; note: string; signedOffBy: string; signedOffAt: string }
 export type StockResolutionCommand = "correct_identifier" | "merge_units" | "change_custody";

@@ -23,6 +23,9 @@ public sealed class ErpChangeRun : ITenantScoped
     public string? TargetOutboundMode { get; set; }
     public DateTime? CutoverAt { get; set; }
     public DateTime? ArchivedAt { get; set; }
+    public int DeliberateUnitHistoriesChanged { get; set; }
+    public int UnitHistoriesChanged { get; set; }
+    public DateTime? UnitHistoryCheckedAt { get; set; }
 }
 
 public sealed class ErpChangeStepCheck : ITenantScoped

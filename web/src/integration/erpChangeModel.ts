@@ -76,6 +76,7 @@ export function runbookKpis(run: ErpChangeRunbookView): Kpi[] {
     { label: "Differences open", value: n(run.openDifferences), detail: `${n(run.coveredOpenDifferences)} on units with live cover block step 3` },
     { label: "Resolved by command", value: n(run.resolvedDifferences), detail: "every one an ordinary unit event" },
     { label: "Master data exceptions", value: n(run.openMasterDataExceptions), detail: "open · no automatic merge" },
+    { label: "Unit history changed by the ERP change", value: n(run.unitHistoriesChanged), detail: run.unitHistoryCheckedAt ? "unexpected · expected 0" : "not checked yet" },
   ];
 }
 

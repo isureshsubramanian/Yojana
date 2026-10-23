@@ -169,13 +169,20 @@ public sealed class ErpChangeStockService(
         var page = pageRows.Select(row => View(row, actorNames)).ToList();
         var all = db.ErpChangeStockDifferences.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
             && row.ErpChangeRunId == runId && row.IsCurrent);
+        var reasonCounts = await all.GroupBy(row => row.ReasonClass).Select(group => new ReasonCountProjection
+        {
+            Reason = group.Key,
+            Open = group.Count(row => row.Status == ErpChangeDifferenceStatus.Open),
+            Resolved = group.Count(row => row.Status == ErpChangeDifferenceStatus.Resolved),
+            CoveredOpen = group.Count(row => row.Status == ErpChangeDifferenceStatus.Open
+                && row.HasLiveEntitlement),
+        }).OrderBy(row => row.Reason).ToListAsync(cancellationToken);
         return new(page, more && page.Count != 0 ? Encode(new(page[^1].ComparedAt,
                 page[^1].DifferenceId)) : null,
             (await RunAsync(runId, cancellationToken)).UnitsCompared,
-            await all.CountAsync(row => row.Status == ErpChangeDifferenceStatus.Open, cancellationToken),
-            await all.CountAsync(row => row.Status == ErpChangeDifferenceStatus.Open
-                && row.HasLiveEntitlement, cancellationToken),
-            await all.CountAsync(row => row.Status == ErpChangeDifferenceStatus.Resolved, cancellationToken));
+            reasonCounts.Sum(row => row.Open), reasonCounts.Sum(row => row.CoveredOpen),
+            reasonCounts.Sum(row => row.Resolved), reasonCounts.Select(row => new StockReasonCount(
+                row.Reason, row.Open, row.Resolved, row.CoveredOpen)).ToList());
     }
 
     public async Task<StockDifferenceRow> ResolveAsync(Guid runId, Guid differenceId,
@@ -202,7 +209,7 @@ public sealed class ErpChangeStockService(
                 case StockResolutionCommand.CorrectIdentifier:
                     if (string.IsNullOrWhiteSpace(request.NewIdentifier))
                         throw new ErpChangeRuleException("erp_change_identifier_required", "The corrected identifier is required.");
-                    await serialisation.CorrectIdentifierAsync(new(request.CommandId, unitId,
+                    await serialisation.CorrectIdentifierAsync(new(runId, request.CommandId, unitId,
                         request.IdentifierType ?? unit.IdentifierType, request.NewIdentifier, clock.UtcNow,
                         actor, unit.LegalEntityId, request.Note), cancellationToken);
                     break;
@@ -212,13 +219,13 @@ public sealed class ErpChangeStockService(
                     if (survivor != unitId && absorbed != unitId)
                         throw new ErpChangeRuleException("erp_change_merge_difference_unit_required",
                             "The merge must include the unit represented by this stock difference.");
-                    await serialisation.MergeUnitsAsync(new(request.CommandId, survivor, absorbed, clock.UtcNow,
+                    await serialisation.MergeUnitsAsync(new(runId, request.CommandId, survivor, absorbed, clock.UtcNow,
                         actor, unit.LegalEntityId, request.Note), cancellationToken);
                     break;
                 case StockResolutionCommand.ChangeCustody:
                     if (string.IsNullOrWhiteSpace(request.LocationKind))
                         throw new ErpChangeRuleException("erp_change_location_required", "The custody location kind is required.");
-                    await serialisation.ChangeCustodyAsync(new(request.CommandId, unitId, request.LocationKind,
+                    await serialisation.ChangeCustodyAsync(new(runId, request.CommandId, unitId, request.LocationKind,
                         clock.UtcNow, actor, unit.LegalEntityId, request.LocationId, request.Note), cancellationToken);
                     break;
             }
@@ -484,5 +491,13 @@ public sealed class ErpChangeStockService(
     {
         public Guid ItemId { get; init; }
         public string? Name { get; init; }
+    }
+
+    private sealed class ReasonCountProjection
+    {
+        public required string Reason { get; init; }
+        public int Open { get; init; }
+        public int Resolved { get; init; }
+        public int CoveredOpen { get; init; }
     }
 }

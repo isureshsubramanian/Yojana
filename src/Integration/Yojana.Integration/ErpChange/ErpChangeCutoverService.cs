@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.Connections;
+using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Gateway;
@@ -310,6 +312,45 @@ public sealed class ErpChangeCutoverService(
             required.Count > 0 && required.All(row => row.State == ErpChangeChecklistState.Passed));
     }
 
+    public async Task<ParkedOutboundPage> ParkedAsync(Guid runId, string? cursor, int requestedTake,
+        CancellationToken cancellationToken)
+    {
+        var run = await RunAsync(runId, cancellationToken);
+        var take = Math.Clamp(requestedTake, 1, 100);
+        var query = from command in db.OutboundCommands.AsNoTracking()
+                    from letter in db.DeadLetterItems.AsNoTracking().Where(row =>
+                        row.TenantId == command.TenantId
+                        && row.SourceKind == DeadLetterSourceKind.OutboundCommand
+                        && row.SourceId == command.OutboundCommandId).DefaultIfEmpty()
+                    where command.TenantId == tenant.TenantId
+                        && command.ConnectionId == run.TargetConnectionId
+                        && command.Status == OutboundCommandStatus.Parked
+                    select new ParkedProjection
+                    {
+                        OutboundCommandId = command.OutboundCommandId,
+                        DocumentKind = command.CommandType,
+                        DocumentReference = command.ErpReferenceText,
+                        Payload = command.Payload,
+                        ParkedReason = letter != null ? letter.Failure
+                            : command.LastFailure ?? "The outbound command is parked.",
+                        ParkedAt = letter != null ? letter.UpdatedAt
+                            : command.CompletedAt ?? command.LastAttemptAt ?? command.CreatedAt,
+                        OwnedByManualTask = db.ManualOutboundTasks.Any(task =>
+                            task.TenantId == command.TenantId
+                            && task.OutboundCommandId == command.OutboundCommandId),
+                    };
+        if (DecodeParkedCursor(cursor) is { } key)
+            query = query.Where(row => row.ParkedAt < key.ParkedAt
+                || (row.ParkedAt == key.ParkedAt && row.OutboundCommandId.CompareTo(key.Id) < 0));
+        var rows = await query.OrderByDescending(row => row.ParkedAt)
+            .ThenByDescending(row => row.OutboundCommandId).Take(take + 1).ToListAsync(cancellationToken);
+        var page = rows.Take(take).Select(row => new ParkedOutboundRow(row.OutboundCommandId,
+            row.DocumentKind, row.DocumentReference, UnitCount(row.DocumentKind, row.Payload),
+            row.ParkedReason, row.ParkedAt, row.OwnedByManualTask)).ToList();
+        return new(page, rows.Count > take && page.Count != 0
+            ? EncodeParkedCursor(new(page[^1].ParkedAt, page[^1].OutboundCommandId)) : null);
+    }
+
     public async Task<ArchiveStateView> ArchiveStateAsync(Guid runId, CancellationToken cancellationToken)
     {
         var run = await RunAsync(runId, cancellationToken);
@@ -407,6 +448,49 @@ public sealed class ErpChangeCutoverService(
     private static string FirstOutboundCode(string commandType) => $"first_outbound:{commandType}";
     private static string Csv(string value) => '"' + value.Replace("\"", "\"\"") + '"';
 
+    private static int UnitCount(string commandType, string payload)
+    {
+        try
+        {
+            return commandType switch
+            {
+                nameof(CreateReplacementDelivery) or nameof(ChangeStockStatusOrLocation)
+                    or nameof(CreateServiceOrder) => 1,
+                nameof(CreateCreditMemo) => CreditMemoUnitCount(JsonSerializer.Deserialize<CreateCreditMemo>(
+                    payload, IntegrationContracts.Json)),
+                _ => 0,
+            };
+        }
+        catch (JsonException) { return 0; }
+    }
+
+    private static int CreditMemoUnitCount(CreateCreditMemo? command)
+    {
+        if (command is null) return 0;
+        var unitIds = command.Lines.Where(line => line.UnitId is not null)
+            .Select(line => line.UnitId!.Value).Distinct().Count();
+        var serials = command.Lines.Where(line => line.UnitId is null)
+            .SelectMany(line => line.Serials ?? []).Select(serial => serial.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).Count();
+        return unitIds + serials;
+    }
+
+    private static string EncodeParkedCursor(ParkedCursor cursor) => Convert.ToBase64String(
+        Encoding.UTF8.GetBytes($"{cursor.ParkedAt.Ticks}|{cursor.Id:D}"));
+
+    private static ParkedCursor? DecodeParkedCursor(string? cursor)
+    {
+        if (string.IsNullOrWhiteSpace(cursor)) return null;
+        try
+        {
+            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(cursor)).Split('|');
+            return parts.Length == 2 && long.TryParse(parts[0], out var ticks)
+                && Guid.TryParse(parts[1], out var id)
+                ? new(new DateTime(ticks, DateTimeKind.Utc), id) : null;
+        }
+        catch (FormatException) { return null; }
+    }
+
     private sealed class PendingProjection
     {
         public required string Kind { get; init; }
@@ -421,4 +505,17 @@ public sealed class ErpChangeCutoverService(
         public required string Status { get; init; }
         public DateTime? ArchivedAt { get; init; }
     }
+
+    private sealed class ParkedProjection
+    {
+        public Guid OutboundCommandId { get; init; }
+        public required string DocumentKind { get; init; }
+        public required string DocumentReference { get; init; }
+        public required string Payload { get; init; }
+        public required string ParkedReason { get; init; }
+        public DateTime ParkedAt { get; init; }
+        public bool OwnedByManualTask { get; init; }
+    }
+
+    private sealed record ParkedCursor(DateTime ParkedAt, Guid Id);
 }

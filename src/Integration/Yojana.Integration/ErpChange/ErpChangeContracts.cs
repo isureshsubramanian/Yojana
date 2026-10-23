@@ -38,7 +38,21 @@ public sealed record ErpChangeRunbookView(Guid RunId, string Status, int Current
     int UnitsCompared, int OpenDifferences, int CoveredOpenDifferences, int ResolvedDifferences,
     int OpenMasterDataExceptions, DualRunSummaryView? DualRun = null,
     IReadOnlyList<CutoverChecklistItemView>? CutoverChecklist = null,
-    ArchiveStateView? Archive = null);
+    ArchiveStateView? Archive = null, int UnitHistoriesChanged = 0,
+    int DeliberateUnitHistoriesChanged = 0,
+    DateTime? UnitHistoryCheckedAt = null);
+
+public sealed record ErpChangeRunListRequest(string? Cursor, int Take = 25);
+public sealed record ErpChangeRunHistoryRow(Guid RunId, string SourceName, string TargetName,
+    DateTime StartedAt, DateTime? FinishedAt, string Outcome, string StartedBy,
+    int CurrentStep, string CurrentStepName);
+public sealed record ErpChangeRunHistoryPage(IReadOnlyList<ErpChangeRunHistoryRow> Items,
+    string? NextCursor);
+public sealed record UnitHistoryChangeRow(Guid UnitId, string Identifier, string Kind, int EventsAdded,
+    DateTime LastRecordedAt);
+public sealed record UnitHistoryChangePage(IReadOnlyList<UnitHistoryChangeRow> Items,
+    string? NextCursor, string Kind, int Total, int UnexpectedTotal, int DeliberateTotal,
+    DateTime? CheckedAt);
 
 public sealed record DualRunSummaryView(DateTime? StartedAt, int MinimumDays, int ElapsedDays,
     int CleanDaysRequired, int ConsecutiveCleanDays, int OpenDivergences, int AgedOpenDivergences,
@@ -55,6 +69,7 @@ public sealed record ReportErpChangeDivergence(string Kind, string SubjectType, 
     string SubjectRef, string SourceValue, string TargetValue, Guid? SourceInboundMessageId = null,
     Guid? TargetInboundMessageId = null, Guid? StockDifferenceId = null, int AgeLimitDays = 1);
 public sealed record ExplainDivergenceRequest(string Note);
+public sealed record AcceptDivergenceSourceRequest(Guid CommandId);
 public sealed record RaiseDivergenceCorrectionRequest(ResolveStockDifferenceRequest Correction);
 public sealed record ErpChangeDailyCheckView(DateOnly BusinessDate, int NewDivergences,
     int AgedOpenDivergences, bool Clean, int ConsecutiveCleanDays, DateTime CheckedAt, string CheckedBy);
@@ -65,6 +80,10 @@ public sealed record RecordOutboundValidationRequest(string CommandType, string 
 public sealed record ConfirmFirstOutboundRequest(string CommandType, string ExternalDocumentRef,
     string Evidence);
 public sealed record ConvertParkedOutboundRequest(Guid OutboundCommandId, string Reason);
+public sealed record ParkedOutboundRow(Guid OutboundCommandId, string DocumentKind,
+    string DocumentReference, int UnitCount, string ParkedReason, DateTime ParkedAt,
+    bool OwnedByManualTask);
+public sealed record ParkedOutboundPage(IReadOnlyList<ParkedOutboundRow> Items, string? NextCursor);
 public sealed record CutoverChecklistItemView(string Code, string State, string Detail,
     string? Evidence, string? CompletedBy, DateTime? CompletedAt);
 public sealed record CutoverChecklistView(Guid RunId, DateTime? CutoverAt,
@@ -99,7 +118,9 @@ public sealed record StockDifferenceRow(Guid DifferenceId, Guid? UnitId, Guid? I
     string? ResolutionCommand, Guid? ResolutionCommandId, string? ResolvedBy, DateTime? ResolvedAt,
     DateTime ComparedAt);
 public sealed record StockDifferencePage(IReadOnlyList<StockDifferenceRow> Items, string? NextCursor,
-    int Compared, int Open, int CoveredOpen, int Resolved);
+    int Compared, int Open, int CoveredOpen, int Resolved,
+    IReadOnlyList<StockReasonCount> ReasonCounts);
+public sealed record StockReasonCount(string Reason, int Open, int Resolved, int CoveredOpen);
 
 public sealed record ResolveStockDifferenceRequest(string Command, Guid CommandId,
     string? IdentifierType = null, string? NewIdentifier = null, Guid? SurvivorUnitId = null,

@@ -293,7 +293,7 @@ public sealed class ErpChangeRehearsalTests(
             new(ErpChangeDivergenceKind.Document, "shipment", Guid.CreateVersion7(), "SHIP-DUAL-1",
                 "source-confirmed", "target-pending"), default);
         var resolved = await dual.AcceptSourceAsync(runId, divergence.DivergenceId,
-            ErpChangeDivergenceKind.Document, Operator, default);
+            ErpChangeDivergenceKind.Document, new(Guid.CreateVersion7()), Operator, default);
         divergences.Add($"{resolved.SubjectRef}: source won during dual run; resolution {resolved.Resolution}.");
         for (var day = 24; day <= 30; day++)
         {
@@ -335,6 +335,7 @@ public sealed class ErpChangeRehearsalTests(
         fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddMinutes(1);
         steps.Add(Step(6, "Archive former source", started, check));
         var detail = await runs.DetailAsync(runId, default);
+        Assert.Equal(0, detail.UnitHistoriesChanged);
         if (detail.Source.ConnectorCode != "CX01")
             Assert.Equal(ErpChangeRunStatus.Completed,
                 (await runs.AdvanceAsync(runId, Operator, default)).Status);

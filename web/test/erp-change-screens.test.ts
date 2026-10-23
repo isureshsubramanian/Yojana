@@ -31,7 +31,8 @@ const run: ErpChangeRunbookView = {
     { step: 2, passed: true, counts: { open_exceptions: 0 }, detail: "37 exceptions, all decided", checkedAt: "2026-09-06T16:05:00Z", checkedBy: "Priya Raman" },
   ],
   transitions: [], unitsCompared: 8412, openDifferences: 212, coveredOpenDifferences: 41, resolvedDifferences: 1186, openMasterDataExceptions: 0,
-  dualRun: null, cutoverChecklist: null, archive: null,
+  dualRun: null, cutoverChecklist: null, archive: null, unitHistoriesChanged: 0,
+  deliberateUnitHistoriesChanged: 2, unitHistoryCheckedAt: "2026-09-03T09:40:00Z",
 };
 
 test("ERP change screens sit under Integration with their tab bar and the sign-in pages", () => {
@@ -86,7 +87,21 @@ test("runbook steps, exit criteria and figures follow the approved runbook", () 
   assert.equal(steps[3]!.detail, "30 days minimum");
   assert.deepEqual(exitCriteriaStates(run).map(item => item.state), ["passed", "passed", "open", "not_started", "not_started", "not_started"]);
   assert.match(exitCriteriaStates(run)[0]!.detail, /checked by Priya Raman/);
-  assert.deepEqual(runbookKpis(run).map(kpi => kpi.value), ["8,412", "212", "1,186", "0"]);
+  assert.deepEqual(runbookKpis(run).map(kpi => kpi.value), ["8,412", "212", "1,186", "0", "0"]);
+});
+
+test("run history, parked messages and changed unit history use paged server reads", () => {
+  for (const path of ["/runs${query", "/unit-history-changes", "/cutover/parked${query", "/cutover/parked-to-manual"])
+    assert.ok(api.includes(path), path);
+  assert.match(runbook, /Past changes/);
+  assert.match(runbook, /select a row to open it read-only/);
+  assert.match(runbook, /Parked messages/);
+  assert.match(runbook, /Convert to manual task/);
+  assert.match(runbook, /Review affected units/);
+  assert.match(runbook, /units changed by signed-off resolutions/);
+  assert.match(runbook, /History change kind/);
+  assert.match(api, /query\(\{ kind, cursor, take: 12 \}\)/);
+  assert.match(runbook, /rights\.control/);
 });
 
 test("roll back is a pause before cutover and only a new change back after it, never a one-click undo", () => {
@@ -122,6 +137,8 @@ test("stock differences label reasons and suggestions, and resolve only through 
   assert.equal(stockReasonTone(row), "warn");
   assert.equal(stockReasonTone({ ...row, reason: "serial_differs_by_normalisation" }), "info");
   assert.equal(suggestionLabel("none_same_after_normalising"), "None · same unit after normalising");
+  assert.match(stock, /reasonCounts\.find/);
+  assert.match(stock, /count\?\.open/);
   for (const command of ["change_custody", "correct_identifier", "merge_units"]) assert.match(stock, new RegExp(`"${command}"`));
   assert.match(stock, /commandId: crypto\.randomUUID\(\)/);
 });

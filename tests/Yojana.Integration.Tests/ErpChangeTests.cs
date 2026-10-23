@@ -44,7 +44,7 @@ public sealed class ErpChangeTests
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
 
-        Assert.Equal(39, endpoints.Count);
+        Assert.Equal(42, endpoints.Count);
         Assert.All(endpoints.Where(endpoint => endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods
                 .Contains("GET")), endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
                 policy => policy.Policy == YojanaPolicy.ErpChangeRead));
@@ -67,7 +67,8 @@ public sealed class ErpChangeTests
                      "/api/integration/erp-change/runs/{runId:guid}/advance",
                      "/api/integration/erp-change/runs/{runId:guid}/cancel",
                  })
-            Assert.Contains(endpoints.Single(endpoint => endpoint.RoutePattern.RawText == route)
+            Assert.Contains(endpoints.Single(endpoint => endpoint.RoutePattern.RawText == route
+                    && endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Contains("POST"))
                     .Metadata.GetOrderedMetadata<IAuthorizeData>(),
                 policy => policy.Policy == YojanaPolicy.ErpChangeControl);
         var notificationsWrite = endpoints.Single(endpoint => endpoint.RoutePattern.RawText ==

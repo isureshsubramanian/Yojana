@@ -8,6 +8,7 @@ using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.ErpChange;
 
@@ -177,11 +178,14 @@ public sealed class ErpChangeDualRunService(
     }
 
     public async Task<ErpChangeDivergenceRow> AcceptSourceAsync(Guid runId, Guid divergenceId,
-        string expectedKind, string actor, CancellationToken cancellationToken)
+        string expectedKind, AcceptDivergenceSourceRequest request, string actor,
+        CancellationToken cancellationToken)
     {
+        if (request.CommandId == Guid.Empty)
+            throw new CommandRefusedException("erp_change_command_id_required", "A command id is required.");
         await RequireKindAsync(runId, divergenceId, expectedKind, cancellationToken);
         return await ResolveAsync(runId, divergenceId, ErpChangeDivergenceResolution.AcceptedSource,
-            null, null, actor, cancellationToken);
+            null, request.CommandId, actor, cancellationToken);
     }
 
     public async Task<ErpChangeDivergenceRow> ExplainAsync(Guid runId, Guid divergenceId,

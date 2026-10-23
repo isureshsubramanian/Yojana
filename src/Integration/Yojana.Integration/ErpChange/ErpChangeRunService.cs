@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.Connections;
@@ -138,13 +139,74 @@ public sealed class ErpChangeRunService(
                 cancellationToken),
             await dualRun.SummaryAsync(runId, cancellationToken),
             (await cutover.ViewAsync(runId, cancellationToken)).Items,
-            await cutover.ArchiveStateAsync(runId, cancellationToken));
+            await cutover.ArchiveStateAsync(runId, cancellationToken),
+            run.UnitHistoriesChanged, run.DeliberateUnitHistoriesChanged,
+            run.UnitHistoryCheckedAt);
+    }
+
+    public async Task<ErpChangeRunHistoryPage> ListAsync(ErpChangeRunListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var take = Math.Clamp(request.Take, 1, 100);
+        var query = db.ErpChangeRuns.AsNoTracking().Where(row => row.TenantId == tenant.TenantId);
+        if (DecodeRunCursor(request.Cursor) is { } cursor)
+            query = query.Where(row => row.StartedAt < cursor.StartedAt
+                || (row.StartedAt == cursor.StartedAt && row.ErpChangeRunId.CompareTo(cursor.RunId) < 0));
+        var runs = await query.OrderByDescending(row => row.StartedAt)
+            .ThenByDescending(row => row.ErpChangeRunId).Take(take + 1)
+            .Select(row => new RunHistoryProjection
+            {
+                RunId = row.ErpChangeRunId,
+                SourceConnectionId = row.SourceConnectionId,
+                TargetConnectionId = row.TargetConnectionId,
+                StartedAt = row.StartedAt,
+                FinishedAt = row.ClosedAt,
+                Status = row.Status,
+                CloseReason = row.CloseReason,
+                StartedBy = row.StartedBy,
+                CurrentStep = row.CurrentStep,
+            }).ToListAsync(cancellationToken);
+        var page = runs.Take(take).ToList();
+        var connectionIds = page.SelectMany(row => new[] { row.SourceConnectionId, row.TargetConnectionId })
+            .Distinct().ToList();
+        var connectionNames = await db.Connections.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && connectionIds.Contains(row.ConnectionId))
+            .ToDictionaryAsync(row => row.ConnectionId, row => row.DisplayLabel, cancellationToken);
+        var names = await NamesAsync(page.Select(row => row.StartedBy), cancellationToken);
+        var rows = page.Select(row => new ErpChangeRunHistoryRow(row.RunId,
+            connectionNames.GetValueOrDefault(row.SourceConnectionId) ?? "Former connection",
+            connectionNames.GetValueOrDefault(row.TargetConnectionId) ?? "Former connection",
+            row.StartedAt, row.FinishedAt, Outcome(row.Status, row.CloseReason),
+            Name(row.StartedBy, names), row.CurrentStep, StepName(row.CurrentStep))).ToList();
+        return new(rows, runs.Count > take && rows.Count != 0
+            ? EncodeRunCursor(new(rows[^1].StartedAt, rows[^1].RunId)) : null);
+    }
+
+    public async Task<UnitHistoryChangePage> UnitHistoryChangesAsync(Guid runId, string kind,
+        string? cursor, int take, CancellationToken cancellationToken)
+    {
+        var run = await RunAsync(runId, cancellationToken);
+        if (!MigrationUnitHistoryChangeKind.All.Contains(kind))
+            throw new ErpChangeRuleException("erp_change_history_kind_invalid",
+                "Choose deliberate or unexpected unit-history changes.");
+        var page = await units.AttributedUnitHistoryChangesAsync(
+            await AttributionAsync(run, cancellationToken), kind, DecodeUnitCursor(cursor),
+            Math.Clamp(take, 1, 100), cancellationToken);
+        var total = kind == MigrationUnitHistoryChangeKind.Deliberate
+            ? run.DeliberateUnitHistoriesChanged : run.UnitHistoriesChanged;
+        return new(page.Items.Select(row => new UnitHistoryChangeRow(row.UnitId, row.Identifier,
+                row.Kind, row.EventsAdded, row.LastRecordedAt)).ToList(),
+            page.NextUnitId is { } next ? EncodeUnitCursor(next) : null,
+            kind, total, run.UnitHistoriesChanged, run.DeliberateUnitHistoriesChanged,
+            run.UnitHistoryCheckedAt);
     }
 
     public async Task<ErpChangeStepCheckView> CheckAsync(Guid runId, string actor,
         CancellationToken cancellationToken)
     {
         var run = await ActiveRunAsync(runId, cancellationToken);
+        if (run.CurrentStep >= ErpChangeStep.Cutover)
+            await RefreshUnitHistoryChangedAsync(run, cancellationToken);
         var (passed, counts, detail) = run.CurrentStep switch
         {
             ErpChangeStep.Register => await CheckRegisterAsync(run, cancellationToken),
@@ -203,7 +265,12 @@ public sealed class ErpChangeRunService(
             run.ClosedAt = clock.UtcNow;
             run.CloseReason = "completed";
         }
-        else run.CurrentStep++;
+        else
+        {
+            run.CurrentStep++;
+            if (run.CurrentStep >= ErpChangeStep.Cutover)
+                await RefreshUnitHistoryChangedAsync(run, cancellationToken);
+        }
         db.ErpChangeTransitions.Add(new()
         {
             TenantId = tenant.TenantId,
@@ -386,6 +453,8 @@ public sealed class ErpChangeRunService(
         {
             ["items"] = checklist.Items.Count,
             ["open_items"] = open,
+            ["unexpected_unit_histories_changed"] = run.UnitHistoriesChanged,
+            ["deliberate_unit_histories_changed"] = run.DeliberateUnitHistoriesChanged,
         }, checklist.CanAdvance ? "The outbound cutover checklist is complete."
             : "Complete every system check or recorded confirmation in the outbound cutover checklist.");
     }
@@ -400,6 +469,8 @@ public sealed class ErpChangeRunService(
             ["active_connections"] = state.ActiveConnections,
             ["retained_mappings"] = state.RetainedMappings,
             ["retained_inbound_messages"] = state.RetainedInboundMessages,
+            ["unexpected_unit_histories_changed"] = run.UnitHistoriesChanged,
+            ["deliberate_unit_histories_changed"] = run.DeliberateUnitHistoriesChanged,
         }, passed ? "The former source is archived as readable history and the target is active."
             : "Archive the former source and leave the target as the one active connection in this change.");
     }
@@ -487,6 +558,94 @@ public sealed class ErpChangeRunService(
     private static string Name(string actor, IReadOnlyDictionary<string, string> names) =>
         names.GetValueOrDefault(actor) ?? "Former or system user";
 
+    private async Task RefreshUnitHistoryChangedAsync(ErpChangeRun run,
+        CancellationToken cancellationToken)
+    {
+        var checkedAt = clock.UtcNow;
+        var counts = await units.CountAttributedUnitHistoryChangesAsync(
+            await AttributionAsync(run, cancellationToken), cancellationToken);
+        run.UnitHistoriesChanged = counts.UnexpectedUnits;
+        run.DeliberateUnitHistoriesChanged = counts.DeliberateUnits;
+        run.UnitHistoryCheckedAt = checkedAt;
+    }
+
+    private async Task<MigrationUnitHistoryAttribution> AttributionAsync(ErpChangeRun run,
+        CancellationToken cancellationToken)
+    {
+        var stockCommands = await db.ErpChangeStockDifferences.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && row.ErpChangeRunId == run.ErpChangeRunId
+                && row.Status == ErpChangeDifferenceStatus.Resolved && row.ResolutionCommandId != null)
+            .Select(row => row.ResolutionCommandId!.Value).ToListAsync(cancellationToken);
+        var divergenceCommands = await db.ErpChangeDivergences.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && row.ErpChangeRunId == run.ErpChangeRunId
+                && row.Status == ErpChangeDivergenceStatus.Resolved && row.ResolutionCommandId != null
+                && (row.Resolution == ErpChangeDivergenceResolution.AcceptedSource
+                    || row.Resolution == ErpChangeDivergenceResolution.CorrectionRaised))
+            .Select(row => row.ResolutionCommandId!.Value).ToListAsync(cancellationToken);
+        var targetDocuments = await db.CanonicalDocuments.AsNoTracking()
+            .Where(document => document.TenantId == tenant.TenantId
+                && document.ConnectionId == run.TargetConnectionId
+                && db.InboundMessages.Any(message => message.TenantId == document.TenantId
+                    && message.InboundMessageId == document.SourceInboundMessageId
+                    && message.ConnectionId == run.TargetConnectionId
+                    && message.CaptureMode == Yojana.Integration.Backfills.BackfillCaptureModes.ComparisonOnly))
+            .Select(document => document.DocumentId).Distinct().ToListAsync(cancellationToken);
+        return new(run.ErpChangeRunId, stockCommands.Concat(divergenceCommands).Distinct().ToList(),
+            targetDocuments);
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> NamesAsync(IEnumerable<string> actors,
+        CancellationToken cancellationToken)
+    {
+        var references = actors.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct()
+            .Take(IUserDirectory.MaxReferences).ToList();
+        return references.Count == 0 ? new Dictionary<string, string>()
+            : await people.DisplayNamesAsync(references, cancellationToken);
+    }
+
+    private static string Outcome(string status, string? closeReason) => closeReason == "reverse_erp_change_started"
+        ? "reversed" : status == ErpChangeRunStatus.Active ? "in_progress" : status;
+
+    private static string StepName(int step) => step switch
+    {
+        ErpChangeStep.Register => "Register the new ERP",
+        ErpChangeStep.MasterData => "Re-map master data",
+        ErpChangeStep.Stock => "Reconcile stock by unit",
+        ErpChangeStep.DualRun => "Dual run",
+        ErpChangeStep.Cutover => "Cut over outbound",
+        ErpChangeStep.Archive => "Archive the old ERP",
+        _ => "Unknown step",
+    };
+
+    private static string EncodeRunCursor(RunCursor cursor) => Convert.ToBase64String(Encoding.UTF8.GetBytes(
+        $"{cursor.StartedAt.Ticks}|{cursor.RunId:D}"));
+
+    private static RunCursor? DecodeRunCursor(string? cursor)
+    {
+        if (string.IsNullOrWhiteSpace(cursor)) return null;
+        try
+        {
+            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(cursor)).Split('|');
+            return parts.Length == 2 && long.TryParse(parts[0], out var ticks)
+                && Guid.TryParse(parts[1], out var id)
+                ? new(new DateTime(ticks, DateTimeKind.Utc), id) : null;
+        }
+        catch (FormatException) { return null; }
+    }
+
+    private static string EncodeUnitCursor(Guid unitId) => Convert.ToBase64String(unitId.ToByteArray());
+
+    private static Guid? DecodeUnitCursor(string? cursor)
+    {
+        if (string.IsNullOrWhiteSpace(cursor)) return null;
+        try
+        {
+            var bytes = Convert.FromBase64String(cursor);
+            return bytes.Length == 16 ? new Guid(bytes) : null;
+        }
+        catch (FormatException) { return null; }
+    }
+
     private sealed class ConnectionProjection
     {
         public Guid ConnectionId { get; init; }
@@ -496,4 +655,19 @@ public sealed class ErpChangeRunService(
         public bool ReadOnly { get; init; }
         public required string OutboundMode { get; init; }
     }
+
+    private sealed class RunHistoryProjection
+    {
+        public Guid RunId { get; init; }
+        public Guid SourceConnectionId { get; init; }
+        public Guid TargetConnectionId { get; init; }
+        public DateTime StartedAt { get; init; }
+        public DateTime? FinishedAt { get; init; }
+        public required string Status { get; init; }
+        public string? CloseReason { get; init; }
+        public required string StartedBy { get; init; }
+        public int CurrentStep { get; init; }
+    }
+
+    private sealed record RunCursor(DateTime StartedAt, Guid RunId);
 }

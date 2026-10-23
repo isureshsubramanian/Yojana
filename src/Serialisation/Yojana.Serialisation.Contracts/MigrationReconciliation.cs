@@ -21,16 +21,38 @@ public sealed record MigrationMasterReferenceUsage(Guid ReferenceId, string Kind
 
 public sealed record MigrationUnitPage(IReadOnlyList<MigrationReconciliationUnit> Items, Guid? NextUnitId);
 
+public static class MigrationUnitHistoryChangeKind
+{
+    public const string Deliberate = "deliberate";
+    public const string Unexpected = "unexpected";
+    public static readonly IReadOnlyList<string> All = [Deliberate, Unexpected];
+}
+
+/// <summary>Integration-owned links that can attribute unit events to one ERP-change run.</summary>
+public sealed record MigrationUnitHistoryAttribution(
+    Guid ErpChangeRunId,
+    IReadOnlyList<Guid> DeliberateCommandIds,
+    IReadOnlyList<Guid> UnexpectedDocumentIds);
+
+public sealed record MigrationUnitHistoryChangeCounts(int DeliberateUnits, int UnexpectedUnits);
+
+/// <summary>One append-only unit history attributed to an ERP-change command or target document.</summary>
+public sealed record MigrationUnitHistoryChange(
+    Guid UnitId, string Identifier, string Kind, int EventsAdded, DateTime LastRecordedAt);
+
+public sealed record MigrationUnitHistoryChangePage(
+    IReadOnlyList<MigrationUnitHistoryChange> Items, Guid? NextUnitId);
+
 public sealed record MigrationCorrectIdentifier(
-    Guid CommandId, Guid UnitId, string IdentifierType, string NewRawValue,
+    Guid ErpChangeRunId, Guid CommandId, Guid UnitId, string IdentifierType, string NewRawValue,
     DateTime EventTime, string ActorRef, Guid LegalEntityId, string? Note = null);
 
 public sealed record MigrationMergeUnits(
-    Guid CommandId, Guid SurvivorUnitId, Guid AbsorbedUnitId,
+    Guid ErpChangeRunId, Guid CommandId, Guid SurvivorUnitId, Guid AbsorbedUnitId,
     DateTime EventTime, string ActorRef, Guid LegalEntityId, string? Note = null);
 
 public sealed record MigrationChangeCustody(
-    Guid CommandId, Guid UnitId, string LocationKind, DateTime EventTime,
+    Guid ErpChangeRunId, Guid CommandId, Guid UnitId, string LocationKind, DateTime EventTime,
     string ActorRef, Guid LegalEntityId, Guid? LocationId = null, string? Note = null);
 
 public sealed record MigrationResolutionResult(string Command, Guid CommandId, Guid UnitId);
@@ -45,6 +67,13 @@ public interface IMigrationReconciliationPort
         CancellationToken cancellationToken);
 
     Task<MigrationUnitPage> InStockUnitsAsync(Guid? afterUnitId, int take,
+        CancellationToken cancellationToken);
+
+    Task<MigrationUnitHistoryChangeCounts> CountAttributedUnitHistoryChangesAsync(
+        MigrationUnitHistoryAttribution attribution, CancellationToken cancellationToken);
+
+    Task<MigrationUnitHistoryChangePage> AttributedUnitHistoryChangesAsync(
+        MigrationUnitHistoryAttribution attribution, string kind, Guid? afterUnitId, int take,
         CancellationToken cancellationToken);
 
     Task<MigrationResolutionResult> CorrectIdentifierAsync(MigrationCorrectIdentifier request,
