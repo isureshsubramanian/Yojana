@@ -60,9 +60,11 @@ public static class IntegrationModule
         builder.Services.AddScoped<ConnectionQueries>();
         builder.Services.AddScoped<ConnectionHealthSettings>();
         builder.Services.AddScoped<ConnectionHealthProjection>();
+        builder.Services.AddScoped<ExtensionStatusService>();
         builder.Services.AddSingleton(RecurringTenantJob.For<ConnectionHealthJob>(ConnectionHealthJob.JobName, ConnectionHealthJob.Cron));
         builder.Services.AddKeyedScoped<IConnectionLifecycleAdapter, Cx01ConnectionLifecycleAdapter>(Cx01Capabilities.ConnectorCode);
         builder.Services.AddKeyedScoped<IConnectionLifecycleAdapter, Cx02ConnectionLifecycleAdapter>(Cx02Capabilities.ConnectorCode);
+        builder.Services.AddKeyedScoped<IConnectionExtensionAdapter, Cx02ExtensionStatusAdapter>(Cx02Capabilities.ConnectorCode);
         builder.Services.AddScoped<WarrantyContractMaintenanceSettings>();
         // Factory keeps the Serialisation implementation behind its Contracts port out of Wolverine's handler graph;
         // the two module DbContexts never participate in one inferred transaction.

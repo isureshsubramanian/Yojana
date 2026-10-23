@@ -27,5 +27,9 @@
     <Content Remove="Connectors/CX02/Extension/Source/**/*" />
     <EmbeddedResource Remove="Connectors/CX02/Extension/Source/**/*" />
     <None Remove="Connectors/CX02/Extension/Source/**/*" />
+    <EmbeddedResource Include="Connectors/CX02/Extension/Source/app.json"
+                      LogicalName="Yojana.Integration.CX02.Extension.app.json" />
+    <EmbeddedResource Include="Connectors/CX02/Extension/Source/README.md"
+                      LogicalName="Yojana.Integration.CX02.Extension.README.md" />
   </ItemGroup>
 </Project>

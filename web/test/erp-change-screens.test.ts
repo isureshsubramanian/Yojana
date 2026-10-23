@@ -41,7 +41,7 @@ test("ERP change screens sit under Integration with their tab bar and the sign-i
   assert.match(runbook, /id="dual"/); assert.match(runbook, /id="cutover"/);
   assert.match(integrationTabs, /"ERP change"/);
   assert.match(integrationTabs, /useErpChangeInProgress/);
-  assert.match(connections, /connectorCode === "CX04"[^\n]*sign-in/);
+  assert.match(connections, /features\.interactiveSignIn[^\n]*sign-in/);
 });
 
 test("each action calls its exact ERP change endpoint", () => {

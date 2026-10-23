@@ -7,6 +7,7 @@ namespace Yojana.Integration.Connectors;
 public interface IConnectionLifecycleAdapter
 {
     ConnectionRegistrationForm? RegistrationForm => null;
+    ConnectionFeatures Features => ConnectionFeatures.None;
     string DefaultOutboundMode => "none";
     string InitialConnectionStatus => Data.Entities.ConnectionStatus.Active;
     int PollIntervalSeconds => 120;
@@ -29,6 +30,11 @@ public interface IConnectionLifecycleAdapter
     /// </summary>
     Task SuspendNotificationsAsync(Guid connectionId, CancellationToken ct) => Task.CompletedTask;
     Task ResumeNotificationsAsync(Guid connectionId, CancellationToken ct) => Task.CompletedTask;
+}
+
+public sealed record ConnectionFeatures(bool TenantSideExtension, bool InteractiveSignIn)
+{
+    public static ConnectionFeatures None { get; } = new(false, false);
 }
 
 public sealed record ConnectionAuthorisationView(
