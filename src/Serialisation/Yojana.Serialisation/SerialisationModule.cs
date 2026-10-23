@@ -31,6 +31,8 @@ using Yojana.Serialisation.Imports;
 using Yojana.Serialisation.Reports;
 using Yojana.Serialisation.MigrationLoads;
 using Yojana.Platform.Contracts.Records;
+using Yojana.Platform.Contracts.Settings;
+using Yojana.Serialisation.Settings;
 
 namespace Yojana.Serialisation;
 
@@ -42,6 +44,10 @@ public static class SerialisationModule
     public static IHostApplicationBuilder AddSerialisationModule(this IHostApplicationBuilder builder)
     {
         builder.AddModuleDbContext<SerialisationDbContext>(Schema);
+        builder.Services.AddScoped<ISettingsSummaryContributor, LabelsSettingsSummaryContributor>();
+        builder.Services.AddScoped<ISettingsSummaryContributor, JurisdictionsSettingsSummaryContributor>();
+        builder.Services.AddScoped<ISettingsSummaryContributor, WorkbenchChoicesSettingsSummaryContributor>();
+        builder.Services.AddScoped<ISettingsSummaryContributor, ClaimsRiskSettingsSummaryContributor>();
         foreach (var recordKind in new[]
                  {
                      RecordKind.Unit, RecordKind.Claim, RecordKind.Rma, RecordKind.RefurbishmentWorkOrder,

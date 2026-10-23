@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { groupHasWaiting, navigation, visibleNavigation } from "../src/shell/navigation.ts";
 import { numberingChanges } from "../src/settings/numberingModel.ts";
-import { filterSettings, loadCurrentValues } from "../src/settings/registryModel.ts";
+import { filterSettings, loadCurrentValues, loadSettingsValues } from "../src/settings/registryModel.ts";
 import type { NumberingSeriesSetting } from "../src/settings/numberingApi.ts";
 
 const source = (path: string) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
@@ -65,9 +65,9 @@ test("landing filtering matches names and descriptions and only existing reads s
   const examples = [{ name: "Company", description: "Sender and reply-to" }, { name: "Refurbishment policy", description: "Identity outcomes and cycle limits" }];
   assert.deepEqual(filterSettings(examples, "reply-to").map(entry => entry.name), ["Company"]);
   assert.deepEqual(filterSettings(examples, "cycle limits").map(entry => entry.name), ["Refurbishment policy"]);
-  const noNewRead = ["Users", "Labels", "Jurisdiction rules", "Workbench choices", "Knowledge screen changes"];
+  const noNewRead = ["Users", "Labels", "Jurisdiction rules", "Claims risk rules", "Workbench choices", "Knowledge screen changes"];
   for (const name of noNewRead) assert.doesNotMatch(registry, new RegExp(`name: "${name}"[^\\n]*currentValue`), name);
-  for (const name of ["Company", "Sign-in policy", "Time zone", "Currencies", "Document numbering", "Certificates", "Disclosure tiers", "Claims risk rules", "Supplier recovery", "Refurbishment policy", "Import files"])
+  for (const name of ["Company", "Sign-in policy", "Time zone", "Currencies", "Document numbering", "Certificates", "Disclosure tiers", "Supplier recovery", "Refurbishment policy", "Import files"])
     assert.match(registry, new RegExp(`name: "${name}"[^\\n]*[\\s\\S]{0,250}currentValue:`), name);
   const controller = new AbortController();
   const values = await loadCurrentValues([
@@ -76,7 +76,40 @@ test("landing filtering matches names and descriptions and only existing reads s
   ], controller.signal);
   assert.equal(values["/settings/company"], "Loaded");
   assert.equal(values["/settings/users"], "—");
-  assert.match(settingsLanding, /entry\.currentValue &&/);
+  assert.match(settingsLanding, /entry\.currentValue \|\| entry\.summaryKey/);
+});
+
+test("settings summary is read once, wording stays in the registry and missing lines use an em dash", async () => {
+  const entries = [
+    { path: "/settings/users", summaryKey: "users", summaryValue: (line: { counts: Record<string, number> }) => ({ text: `${line.counts.staff} staff · ${line.counts.roles} roles · ${line.counts.invitationsOpen} invitations open` }) },
+    { path: "/settings/jurisdictions", summaryKey: "jurisdictions", summaryValue: (line: { counts: Record<string, number>; attention: string | null }) => ({ text: `${line.counts.ruleSets} rule sets`, ...(line.attention ? { attention: "Awaits legal confirmation" } : {}) }) },
+    { path: "/settings/workbench-choices", summaryKey: "workbench_choices", summaryValue: (line: { counts: Record<string, number> }) => ({ text: `${line.counts.choices} choices · ${line.counts.twoApprovers} need two approvers` }) },
+    { path: "/settings/claim-risk", summaryKey: "claims_risk", summaryValue: (line: { counts: Record<string, number> }) => ({ text: `${line.counts.claimsHeld} claim held for second review` }) },
+    { path: "/settings/knowledge-screen-changes", summaryKey: "knowledge_screen_changes", summaryValue: (line: { counts: Record<string, number> }) => ({ text: `${line.counts.screensMarked} screens marked · ${line.counts.entriesToReview} entries to review` }) },
+    { path: "/settings/labels", summaryKey: "labels", summaryValue: () => ({ text: "unexpected" }) },
+  ];
+  let reads = 0;
+  const values = await loadSettingsValues(entries, async () => {
+    reads += 1;
+    return { lines: [
+      { key: "users", counts: { staff: 14, roles: 6, invitationsOpen: 2 }, attention: null },
+      { key: "jurisdictions", counts: { ruleSets: 4 }, attention: "awaiting_legal_confirmation" },
+      { key: "workbench_choices", counts: { choices: 18, twoApprovers: 4 }, attention: null },
+      { key: "claims_risk", counts: { claimsHeld: 1 }, attention: null },
+      { key: "knowledge_screen_changes", counts: { screensMarked: 3, entriesToReview: 2 }, attention: null },
+    ] };
+  }, new AbortController().signal);
+  assert.equal(reads, 1);
+  assert.equal(values["/settings/users"]?.text, "14 staff · 6 roles · 2 invitations open");
+  assert.equal(values["/settings/jurisdictions"]?.attention, "Awaits legal confirmation");
+  assert.equal(values["/settings/workbench-choices"]?.text, "18 choices · 4 need two approvers");
+  assert.equal(values["/settings/claim-risk"]?.text, "1 claim held for second review");
+  assert.equal(values["/settings/knowledge-screen-changes"]?.text, "3 screens marked · 2 entries to review");
+  assert.equal(values["/settings/labels"]?.text, "—");
+  for (const phrase of ["invitationsOpen\"), \"invitation\"", "awaiting_legal_confirmation", "held for second review", "need\"} two approvers", "entriesToReview\"), \"entry\", \"entries\")} to review"])
+    assert.ok(registry.includes(phrase), phrase);
+  assert.match(settingsLanding, /settingsSummaryApi\.get/);
+  assert.match(settingsLanding, /StatusBadge tone="warn"/);
 });
 
 test("settings side navigation filters, highlights the current page and becomes a selector below 960 px", () => {

@@ -116,6 +116,8 @@ public sealed class WorkbenchChoiceSettings(
 
     // Coupled to the factory registration in SerialisationModule: ITenantSettings owns PlatformDbContext. Keeping it
     // behind this boundary prevents Wolverine from seeing a second DbContext through workbench command handlers.
+    // WorkbenchChoicesSettingsSummaryContributor deliberately uses this same wrapper: reading a separate store would
+    // make the landing summary disagree with this settings page.
     public async Task<WorkbenchChoiceConfiguration> GetConfigurationAsync(CancellationToken cancellationToken) =>
         await settings.GetAsync(Key, cancellationToken) is { } text
             ? JsonSerializer.Deserialize<WorkbenchChoiceConfiguration>(text, LedgerJson.Options) ?? StandardWorkbenchChoices.Default

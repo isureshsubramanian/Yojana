@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
+import { StatusBadge } from "../components";
 import { useSession } from "../session/session";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { visibleSettings, type SettingsGroup } from "./registry";
-import { filterSettings, loadCurrentValues } from "./registryModel";
+import { filterSettings, loadSettingsValues, type SettingsValue } from "./registryModel";
+import { settingsSummaryApi } from "./settingsSummaryApi";
 
 const groups: SettingsGroup[] = ["Organisation", "Documents", "Service operations", "Data and knowledge"];
 
@@ -12,12 +14,12 @@ export function Component() {
   const session = useSession();
   const entries = useMemo(() => visibleSettings(session.roles), [session.roles]);
   const [query, setQuery] = useState("");
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, SettingsValue>>({});
   const shown = filterSettings(entries, query);
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadCurrentValues(entries, controller.signal).then(setValues).catch(error => { if (!controller.signal.aborted) console.error(error); });
+    void loadSettingsValues(entries, settingsSummaryApi.get, controller.signal).then(setValues).catch(error => { if (!controller.signal.aborted) console.error(error); });
     return () => controller.abort();
   }, [entries]);
 
@@ -30,10 +32,13 @@ export function Component() {
         const items = shown.filter(entry => entry.group === group);
         return items.length > 0 && <section className="settings-group" aria-labelledby={`settings-${group.replace(/\W+/g, "-").toLowerCase()}`} key={group}>
           <h2 id={`settings-${group.replace(/\W+/g, "-").toLowerCase()}`}>{group}</h2>
-          <div className="settings-grid">{items.map(entry => <Link className="setting-card" to={entry.path} key={entry.path}>
-            <span className="setting-icon"><Icon name={entry.icon} /></span><span className="name">{entry.name}</span><Icon name="chev" className="go" />
-            <span className="desc">{entry.description}</span>{entry.currentValue && <span className="value">{values[entry.path] ?? "—"}</span>}
-          </Link>)}</div>
+          <div className="settings-grid">{items.map(entry => {
+            const value = values[entry.path];
+            return <Link className="setting-card" to={entry.path} key={entry.path}>
+              <span className="setting-icon"><Icon name={entry.icon} /></span><span className="name">{entry.name}</span><Icon name="chev" className="go" />
+              <span className="desc">{entry.description}</span>{(entry.currentValue || entry.summaryKey) && <span className="value">{value?.text ?? "—"}{value?.attention && <> · <StatusBadge tone="warn">{value.attention}</StatusBadge></>}</span>}
+            </Link>;
+          })}</div>
         </section>;
       })}
       {shown.length === 0 && <p className="settings-empty">No setting matches. Try a shorter word, for example “mail” or “claim”.</p>}

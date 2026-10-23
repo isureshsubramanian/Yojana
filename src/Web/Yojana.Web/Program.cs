@@ -25,6 +25,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Ports;
 using Yojana.Serialisation.TimeZones;
 using Yojana.Web;
+using Yojana.Web.Settings;
 
 // The web client (web/, MOD-02) is built by esbuild into web/dist and copied into this host's output as
 // wwwroot by Yojana.Web.csproj. The web root is therefore the copy beside the binaries in every environment
@@ -119,6 +120,7 @@ app.MapPresenceEndpoints();
 app.MapSerialisationEndpoints();
 app.MapIntegrationEndpoints();
 app.MapKnowledgeEndpoints();
+app.MapSettingsSummaryEndpoints();
 
 app.MapGet("/health", async (PlatformDbContext db, CancellationToken ct) =>
 {

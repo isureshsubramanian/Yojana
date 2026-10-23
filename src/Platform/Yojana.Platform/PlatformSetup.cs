@@ -16,6 +16,7 @@ using Wolverine.EntityFrameworkCore;
 using Wolverine.ErrorHandling;
 using Wolverine.SqlServer;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Platform.Contracts.Settings;
 using Yojana.Platform.Contracts.Files;
 using Yojana.Platform.Contracts.Shell;
 using Yojana.Platform.Contracts.Tenancy;
@@ -31,6 +32,7 @@ using Yojana.Platform.Scheduling;
 using Yojana.Platform.Scheduling.Smoke;
 using Yojana.Platform.Security;
 using Yojana.Platform.Shell;
+using Yojana.Platform.Settings;
 using Yojana.Platform.Tenancy;
 using Yojana.Platform.Time;
 using Yojana.Platform.Files;
@@ -179,6 +181,7 @@ public static class PlatformSetup
         builder.Services.AddScoped<IUserDirectory>(sp => sp.GetRequiredService<UserDirectory>());
         builder.Services.AddScoped<ITenantTrainingDirectory>(sp => sp.GetRequiredService<UserDirectory>());
         builder.Services.AddScoped<ITenantStaffDirectory>(sp => sp.GetRequiredService<UserDirectory>());
+        builder.Services.AddScoped<ISettingsSummaryContributor, UsersSettingsSummaryContributor>();
         // Shell contributions: modules add their own IOverviewContributor and IConnectionHealthSource registrations.
         builder.Services.AddScoped<IOverviewContributor, PlatformOverviewContributor>();
         builder.Services.AddSingleton<IConnectionHealthSource, NoConnectionsHealthSource>();

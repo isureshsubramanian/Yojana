@@ -13,6 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Data.SqlClient;
 using Yojana.Integration;
 using Yojana.Knowledge;
+using Yojana.Web.Settings;
 using Yojana.Knowledge.Questions;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Security;
@@ -44,6 +45,9 @@ public sealed class KnowledgeHostFixture : IAsyncLifetime
         builder.Configuration[$"{ImportFileStorageOptions.SectionName}:ArchiveStores:0:Name"] = "folder-archive";
         builder.Configuration[$"{ImportFileStorageOptions.SectionName}:ArchiveStores:0:Kind"] = "folder";
         builder.Configuration[$"{ImportFileStorageOptions.SectionName}:ArchiveStores:0:Path"] = Path.Combine(Path.GetTempPath(), "yojana-knowledge-imports-archive");
+        builder.Configuration[$"{ImportFileStorageOptions.SectionName}:ArchiveStores:1:Name"] = "database-archive";
+        builder.Configuration[$"{ImportFileStorageOptions.SectionName}:ArchiveStores:1:Kind"] = "database";
+        builder.Configuration[$"{ImportFileStorageOptions.SectionName}:ArchiveStores:1:ConnectionString"] = WithDatabase("_files_archive");
         builder.Configuration["Platform:MigrateOnStartup"] = "true";
         builder.Configuration["Platform:AutoBuildMessageStorage"] = "true";
         builder.Configuration["Platform:StartScheduler"] = "false";
@@ -64,6 +68,7 @@ public sealed class KnowledgeHostFixture : IAsyncLifetime
         app.UseApiProblemDetails();
         app.UseYojanaPlatform();
         app.MapKnowledgeEndpoints();
+        app.MapSettingsSummaryEndpoints();
         app.MapGet("/test/sign-in/{tenantId:guid}", async (Guid tenantId, Guid userId, bool? portal,
             PlatformDbContext platform, HttpContext http) =>
         {

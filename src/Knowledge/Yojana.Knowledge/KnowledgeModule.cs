@@ -8,6 +8,8 @@ using Yojana.Knowledge.Reports;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Scheduling;
+using Yojana.Platform.Contracts.Settings;
+using Yojana.Knowledge.Settings;
 
 namespace Yojana.Knowledge;
 
@@ -19,6 +21,7 @@ public static class KnowledgeModule
     public static IHostApplicationBuilder AddKnowledgeModule(this IHostApplicationBuilder builder)
     {
         builder.AddModuleDbContext<KnowledgeDbContext>(Schema);
+        builder.Services.AddScoped<ISettingsSummaryContributor, KnowledgeScreenChangesSettingsSummaryContributor>();
         builder.Services.AddScoped<RecordReferenceLookup>();
         builder.Services.AddScoped<IQuestionTextSearch, SqlServerFullTextQuestionSearch>();
         // These factories keep ITenantSettings and the serialisation label ports behind narrow services. Wolverine

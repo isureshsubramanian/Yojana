@@ -276,6 +276,8 @@ public sealed class CorrectionApprovalSettings(ITenantSettings settings)
 
     // Coupled to the factory registration in SerialisationModule: ITenantSettings owns PlatformDbContext, which must stay
     // outside Wolverine correction-handler dependency graphs or host startup sees two DbContext types and refuses them.
+    // WorkbenchChoicesSettingsSummaryContributor deliberately uses this same wrapper: reading a separate store would
+    // make its two-person-approval count disagree with the correction settings enforced at commit time.
     public async Task<CorrectionApprovalPolicy> GetAsync(CancellationToken cancellationToken) =>
         await settings.GetAsync(Key, cancellationToken) is { } text
             ? JsonSerializer.Deserialize<CorrectionApprovalPolicy>(text, LedgerJson.Options) ?? CorrectionApprovalRules.DefaultPolicy
