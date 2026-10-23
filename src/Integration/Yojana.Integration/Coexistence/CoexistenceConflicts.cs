@@ -12,7 +12,7 @@ namespace Yojana.Integration.Coexistence;
 
 /// <summary>The conflict review queue: list, read and decide. Every decision is a person's, with a note.</summary>
 public sealed class CoexistenceConflicts(IntegrationDbContext db, ITenantContext tenant, IClock clock,
-    IConnectionAuditSink audit)
+    IConnectionAuditSink audit, NativeWarrantyPushService nativeWarranty)
 {
     public async Task<CoexistenceConflictPage> ListAsync(Guid? connectionId, string? status, string? cursor, int take,
         CancellationToken ct)
@@ -83,7 +83,11 @@ public sealed class CoexistenceConflicts(IntegrationDbContext db, ITenantContext
         conflict.DecisionNote = note;
         conflict.DecidedBy = actor;
         conflict.DecidedAt = now;
-        if (request.Decision == CoexistenceConflictDecision.KeepModule)
+        if (conflict.Kind == CoexistenceConflictKind.PushedWarrantyFieldChangedRemotely)
+        {
+            await nativeWarranty.ApplyConflictDecisionAsync(conflict, request.Decision, now, ct);
+        }
+        else if (request.Decision == CoexistenceConflictDecision.KeepModule)
         {
             var task = new ManualOutboundTask
             {
@@ -159,6 +163,8 @@ public sealed class CoexistenceConflicts(IntegrationDbContext db, ITenantContext
     // the drift scan keeps for the field, not a fresh read of the module.
     private static (string Role, string? Module) Decider(CoexistenceConflict x) => x.Kind switch
     {
+        CoexistenceConflictKind.PushedWarrantyFieldChangedRemotely => ("Service manager",
+            "Current status and cover kept in the module"),
         CoexistenceConflictKind.ContractChangedInIncumbent => ("Service manager", "Cover kept in the module"),
         CoexistenceConflictKind.MigrationOwnerDiffers => ("Service desk",
             x.BaselineValue is null ? null : $"Owner {x.BaselineValue}"),

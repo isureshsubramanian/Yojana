@@ -22,6 +22,20 @@ public sealed class OutboundCompletenessTests
         Assert.Equal(typed, payload);
     }
 
+    [Fact]
+    public async Task Native_warranty_payload_crosses_the_existing_completeness_boundary()
+    {
+        using var services = new ServiceCollection().AddKeyedSingleton<IOutboundCompletenessCheck>("FX01", new RequiresSource()).BuildServiceProvider();
+        var check = new OutboundCompleteness(services);
+        var command = new PushNativeWarrantyObject(Guid.NewGuid(), "unit/test", "warranty-test",
+            new(Guid.NewGuid(), "FIC-SERVER-100"), "released", new DateOnly(2028, 9, 1), true);
+
+        var missing = await check.MissingPayloadAsync("FX01", Guid.NewGuid(), "reference_only",
+            nameof(PushNativeWarrantyObject), JsonSerializer.Serialize(command, IntegrationContracts.Json), default);
+
+        Assert.Equal(["reference_only.customer_ref"], missing);
+    }
+
     private sealed class RequiresSource : IOutboundCompletenessCheck
     {
         public Task<IReadOnlyList<string>> MissingAsync(Guid connectionId, string outboundMode, IOutboundCommand command, CancellationToken ct) =>

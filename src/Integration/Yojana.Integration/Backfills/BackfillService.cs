@@ -12,6 +12,7 @@ using Yojana.Integration.Security.Workers;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Integration.Coexistence;
 
 namespace Yojana.Integration.Backfills;
 
@@ -22,7 +23,8 @@ public sealed class BackfillService(
     IConnectorAdapterResolver adapters,
     InboundMessageStore inbox,
     ConnectionThrottleProfiles profiles,
-    IConnectionThrottleWorkerRegistry workers) : IReconciliationBackfillScheduler
+    IConnectionThrottleWorkerRegistry workers,
+    INativeWarrantyBackfillProcessor nativeWarranty) : IReconciliationBackfillScheduler
 {
     public Task<Guid> StartAsync(StartBackfillRequest request, string actorRef,
         CancellationToken cancellationToken) => StartInternalAsync(request, RequiredActor(actorRef), null,
@@ -76,6 +78,11 @@ public sealed class BackfillService(
         CancellationToken cancellationToken)
     {
         var job = await JobAsync(backfillId, cancellationToken);
+        if (job.Entity == NativeWarrantyPushService.BackfillEntity)
+        {
+            await nativeWarranty.ProcessAsync(job, maximumPages, cancellationToken);
+            return;
+        }
         IConnectorReconciliationSource source;
         await using (await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, job.ConnectionId, cancellationToken))
         {

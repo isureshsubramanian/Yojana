@@ -42,3 +42,21 @@ public sealed class OutboundUnitSourcePort(SerialisationDbContext db, ITenantCon
         return new(serials.GetValueOrDefault(unitId), location, customer, shipTo);
     }
 }
+
+public sealed class NativeWarrantyPushSourcePort(SerialisationDbContext db, ITenantContext tenant,
+    ICertificateUnitReadPort units) : INativeWarrantyPushSourcePort
+{
+    public async Task<NativeWarrantyPushSource?> ReadAsync(Guid unitId, CancellationToken cancellationToken)
+    {
+        var status = await db.Units.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && row.UnitId == unitId).Select(row => row.LifecycleStatus)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (status is null) return null;
+        var serials = await units.PrimarySerialsAsync([unitId], cancellationToken);
+        var warrantyEnd = await db.Entitlements.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && row.UnitId == unitId && row.Direction == EntitlementDirection.Outbound
+                && row.Status != EntitlementStatus.Closed && row.EndDate != null)
+            .MaxAsync(row => row.EndDate, cancellationToken);
+        return new(status, serials.GetValueOrDefault(unitId), warrantyEnd);
+    }
+}

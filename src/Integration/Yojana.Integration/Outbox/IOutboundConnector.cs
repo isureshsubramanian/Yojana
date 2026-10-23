@@ -41,6 +41,10 @@ public sealed record OutboundCreateResult(
     /// </summary>
     public static OutboundCreateResult AwaitingReview(string pendingRemoteKey, string reason) =>
         new(OutboundConnectorOutcome.AwaitingReview, Reason: reason, PendingRemoteKey: pendingRemoteKey);
+
+    public static OutboundCreateResult Conflict(Guid conflictId, string reason) =>
+        new(OutboundConnectorOutcome.CoexistenceConflict, Reason: reason,
+            PendingRemoteKey: conflictId.ToString("N"));
 }
 
 public static class OutboundConnectorOutcome
@@ -53,6 +57,7 @@ public static class OutboundConnectorOutcome
     public const string Manual = "manual";
     public const string AwaitingReview = "awaiting_review";
     public const string PostedAfterReview = "posted_after_review";
+    public const string CoexistenceConflict = "coexistence_conflict";
 }
 
 public sealed record OutboundReviewLookup(

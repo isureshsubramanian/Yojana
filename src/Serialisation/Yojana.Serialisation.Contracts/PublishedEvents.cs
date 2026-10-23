@@ -27,6 +27,13 @@ public sealed record UnitReleased(PublishedEventHeader Header, Guid ItemId, Guid
     public const string Version = "1.0";
 }
 
+/// <summary>The unit's lifecycle value changed, independently of the workflow that caused the transition.</summary>
+public sealed record UnitLifecycleChanged(PublishedEventHeader Header, string LifecycleStatus, string Cause) : IPublishedUnitEvent
+{
+    public const string Schema = "Unit.LifecycleChanged";
+    public const string Version = "1.0";
+}
+
 public sealed record UnitIdentifierCorrected(PublishedEventHeader Header, string IdentifierType, string Reason, string BeforeValue, string AfterValue, Guid SupersededIdentifierId, Guid NewIdentifierId, string? ApproverRef) : IPublishedUnitEvent
 {
     public const string Schema = "Unit.IdentifierCorrected";

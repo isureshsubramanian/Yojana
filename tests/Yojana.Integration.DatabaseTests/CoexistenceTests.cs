@@ -222,7 +222,7 @@ public sealed class CoexistenceTests(IntegrationHostFixture fixture)
     }
 
     [DatabaseFact]
-    public async Task Settings_refuse_pushed_mode_and_bad_fields_and_record_changes()
+    public async Task Settings_accept_supported_pushed_mode_refuse_bad_fields_and_record_changes()
     {
         await using var simulator = new Cx01Simulator();
         var (tenant, id) = await RegisteredAsync(simulator);
@@ -230,11 +230,12 @@ public sealed class CoexistenceTests(IntegrationHostFixture fixture)
         var settings = scope.ServiceProvider.GetRequiredService<CoexistenceSettings>();
         var view = await settings.ViewAsync(id, default);
         Assert.Equal(NativeWarrantyObjectModes.Frozen, view.NativeWarrantyObjectMode);
-        Assert.False(view.PushedModeAvailable);
+        Assert.True(view.PushedModeAvailable);
         Assert.True(view.DriftScanSupported);
         Assert.Contains("CustomerCode", view.WatchedFields);
-        Assert.Equal("pushed_mode_unavailable", (await Assert.ThrowsAsync<CoexistenceRuleException>(() =>
-            settings.UpdateAsync(id, new(NativeWarrantyObjectModes.Pushed, null, null), Actor, default))).Rule);
+        var pushed = await settings.UpdateAsync(id,
+            new(NativeWarrantyObjectModes.Pushed, null, null), Actor, default);
+        Assert.Equal(NativeWarrantyObjectModes.Pushed, pushed.NativeWarrantyObjectMode);
         Assert.Equal("coexistence_fields_invalid", (await Assert.ThrowsAsync<CoexistenceRuleException>(() =>
             settings.UpdateAsync(id, new(NativeWarrantyObjectModes.Frozen, ["CustomerCode eq 'x'"], null), Actor, default))).Rule);
         Assert.Equal("coexistence_fields_invalid", (await Assert.ThrowsAsync<CoexistenceRuleException>(() =>
@@ -244,7 +245,9 @@ public sealed class CoexistenceTests(IntegrationHostFixture fixture)
         Assert.Equal(["CustomerCode", "U_SiteRef"], updated.WatchedFields);
         Assert.Equal(["DeliveryCode"], updated.ExplainingFields);
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
-        Assert.Contains(await db.ConnectionEvents.ToListAsync(), x => x.EventType == "CoexistenceSettingsChanged");
+        Assert.Equal(2, await db.ConnectionEvents.CountAsync(x => x.EventType == "CoexistenceSettingsChanged"));
+        Assert.Equal(BackfillStatus.Paused, (await db.BackfillCursors.SingleAsync(x =>
+            x.ConnectionId == id && x.Entity == NativeWarrantyPushService.BackfillEntity)).Status);
     }
 
     [DatabaseFact]

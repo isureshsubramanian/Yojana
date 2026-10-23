@@ -42,6 +42,10 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
             {
                 await bus.PublishAsync(coverageChanged, new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
             }
+            if (LifecycleChanged(@event) is { } lifecycleChanged)
+            {
+                await bus.PublishAsync(lifecycleChanged, new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
+            }
         }
 
         // One append can contain thousands of unit facts. Coalescing them here prevents the search safety net from
@@ -71,6 +75,24 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
         // Suspension, resume and changes hidden by another family's later end still change certificate terms. Publish
         // the common seam for every outbound entitlement fact; Cause retains the exact source event kind.
         return new EntitlementCoverageChanged(Header(e, EntitlementCoverageChanged.Schema, EntitlementCoverageChanged.Version), idsBefore, idsAfter, endBefore, endAfter, e.EventType);
+    }
+
+    /// <summary>
+    /// Publishes the lifecycle seam from the projection delta, so consumers do not need to know whether commissioning,
+    /// assembly, returns, corrections or refurbishment caused the transition.
+    /// </summary>
+    public static UnitLifecycleChanged? LifecycleChanged(UnitEvent e)
+    {
+        if (e.Attributes is null) return null;
+        using var doc = JsonDocument.Parse(e.Attributes);
+        if (!doc.RootElement.TryGetProperty("_state", out var state)
+            || state.ValueKind != JsonValueKind.Object) return null;
+        var status = Str(state, "lifecycle_status");
+        if (status is null && state.TryGetProperty("create", out var create)
+            && create.ValueKind == JsonValueKind.Object)
+            status = Str(create, "lifecycle_status");
+        return status is null ? null : new UnitLifecycleChanged(
+            Header(e, UnitLifecycleChanged.Schema, UnitLifecycleChanged.Version), status, e.EventType);
     }
 
     public static IPublishedUnitEvent? Map(UnitEvent e)

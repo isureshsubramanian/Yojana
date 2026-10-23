@@ -17,6 +17,7 @@ public sealed class ContractCompatibilityTests
         ["CreateCreditMemo"] = typeof(CreateCreditMemo), ["PostWarrantyExpense"] = typeof(PostWarrantyExpense),
         ["ChangeStockStatusOrLocation"] = typeof(ChangeStockStatusOrLocation), ["AttachDocument"] = typeof(AttachDocument),
         ["CreateServiceOrder"] = typeof(CreateServiceOrder),
+        ["PushNativeWarrantyObject"] = typeof(PushNativeWarrantyObject),
     };
 
     [Fact]
@@ -24,7 +25,7 @@ public sealed class ContractCompatibilityTests
     {
         var examples = IntegrationSchemaCatalog.Resources.Where(name => name.Contains(".examples.", StringComparison.Ordinal)
             && name.EndsWith(".json", StringComparison.Ordinal)).ToList();
-        Assert.Equal(17, examples.Count);
+        Assert.Equal(18, examples.Count);
         foreach (var resource in examples)
         {
             var slug = resource[(resource.LastIndexOf(".examples.", StringComparison.Ordinal) + 10)..^5];

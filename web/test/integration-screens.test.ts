@@ -124,6 +124,13 @@ test("getting-live and connection settings expose the warranty contract rules", 
   assert.match(adminApi, /connections\/\$\{id\}\/warranty-contracts|\$\{connection\(id\)\}\/warranty-contracts/);
 });
 
+test("connections enables pushed native warranty fields only when the connector declares support", () => {
+  assert.match(connections, /value="pushed" disabled=\{!value\.pushedModeAvailable\}/);
+  assert.match(connections, /Pushed sends the module’s current status/);
+  assert.match(connections, /adminApi\.saveCoexistence/);
+  assert.match(adminApi, /\$\{connection\(id\)\}\/coexistence/);
+});
+
 test("reconciliation details have independent server continuations and location filter", () => {
   assert.match(adminApi, /\/entity-days\$\{query\(\{ cursor, take: 12 \}\)\}/);
   assert.match(adminApi, /\/locations\$\{query\(\{ cursor, take: 12, differences \}\)\}/);

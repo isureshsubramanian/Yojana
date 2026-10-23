@@ -68,6 +68,28 @@ public sealed class OutboundEventCompatibilityTests
 
 public sealed class OutboundEventMappingTests
 {
+    [Theory]
+    [InlineData("{\"_state\":{\"lifecycle_status\":\"decommissioned\"}}", "decommissioned")]
+    [InlineData("{\"_state\":{\"create\":{\"lifecycle_status\":\"pre_release\"}}}", "pre_release")]
+    public void Lifecycle_changes_publish_one_workflow_neutral_fact(string attributes, string expected)
+    {
+        var unit = Guid.NewGuid();
+        var changed = Yojana.Serialisation.Ledger.PublishedEventMapper.LifecycleChanged(new()
+        {
+            EventType = "fictional.transition", EventId = Guid.NewGuid(), UnitId = unit,
+            ActorRef = "test", IdempotencyKey = "test", EventTime = new(2026, 9, 1),
+            RecordedTime = new(2026, 9, 1), Attributes = attributes,
+        });
+
+        Assert.NotNull(changed);
+        Assert.Equal(expected, changed.LifecycleStatus);
+        Assert.Equal("fictional.transition", changed.Cause);
+        Assert.Equal(unit, changed.Header.UnitId);
+        using var schema = JsonDocument.Parse(PublishedEventSchemas.Read(
+            UnitLifecycleChanged.Schema, UnitLifecycleChanged.Version));
+        Assert.Equal(UnitLifecycleChanged.Schema, schema.RootElement.GetProperty("title").GetString());
+    }
+
     [Fact]
     public void Ledger_publication_preserves_known_money_and_customer_facts()
     {

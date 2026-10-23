@@ -40,6 +40,7 @@ public sealed class OutboundCompleteness(IServiceProvider services)
             nameof(ChangeStockStatusOrLocation) => typeof(ChangeStockStatusOrLocation),
             nameof(AttachDocument) => typeof(AttachDocument),
             nameof(CreateServiceOrder) => typeof(CreateServiceOrder),
+            nameof(PushNativeWarrantyObject) => typeof(PushNativeWarrantyObject),
             _ => throw new JsonException("Unknown outbound command type."),
         };
         return (IOutboundCommand)(root.Deserialize(contract, IntegrationContracts.Json) ?? throw new JsonException("Missing command."));

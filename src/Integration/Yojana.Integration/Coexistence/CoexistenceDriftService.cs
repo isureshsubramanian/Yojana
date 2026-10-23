@@ -25,6 +25,7 @@ public sealed class CoexistenceDriftService(IntegrationDbContext db, ITenantCont
     public const string SourceObserved = "observed";
     public const string SourceDocument = "document";
     public const string SourceDecision = "decision";
+    public const string SourcePushed = "pushed";
 
     public async Task<int> ScanScheduledAsync(CancellationToken ct)
     {

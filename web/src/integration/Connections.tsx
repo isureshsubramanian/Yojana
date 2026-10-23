@@ -8,7 +8,7 @@ import { degradationLabel, human, recordLabel } from "./model";
 import { adminApi } from "./adminApi";
 import { date, Frame, Panel, PagedGrid, RoleAccess, State, useAction, useCursorPage } from "./AdminCommon";
 import { ConnectorSettings, SiteRelays, TransportPanel, WarrantyContractMaintenance } from "./ConnectionSettings";
-import type { ArchiveResult, ChecklistItem, Connection, ConnectionDetail, ConnectionPage, RegistrationConnector } from "./adminTypes";
+import type { ArchiveResult, ChecklistItem, CoexistenceSettings, Connection, ConnectionDetail, ConnectionPage, RegistrationConnector } from "./adminTypes";
 
 export function Component() { return <RoleAccess><ConnectionsScreen /></RoleAccess>; }
 function ConnectionsScreen() {
@@ -68,11 +68,24 @@ function ConnectionPanels({ id, admin, changed, relayRegistrationAllowed, onOneT
   <Panel title="Sign-in secrets"><p className="muted">Set / not set and dates only. Stored secrets cannot be viewed.</p>{detail.credentials.length ? detail.credentials.map(x => <div key={x.purpose}><h3>{human(x.purpose)}</h3><State value={x.isSet ? "set" : "not_set"} /><Kv rows={[["Created", date(x.createdAt)], ["Expires", date(x.expiresAt)], ["Replace by", date(x.replaceBy)], ["Retired", date(x.retiredAt)]]} /></div>) : <p>No stored credentials. Site credentials remain at the customer site.</p>}</Panel>
   <Panel title="Getting live"><div className="note">{detail.checklist.customerCostDisclosure}</div>{detail.checklist.items.map(item => <ChecklistRow key={item.code} id={id} item={item} admin={admin && !isArchived} refresh={refresh} />)}</Panel>
   <WarrantyContractMaintenance id={id} admin={admin} changed={refresh} />
+  <NativeWarrantyMode id={id} admin={admin && !isArchived} changed={refresh} />
   <Panel title="What this ERP can do"><div className="integration-settings-list">{detail.capabilities.map(x => <div key={x.canonicalMessage}><span>{recordLabel(x.canonicalMessage)}</span><State value={x.supportLevel} /></div>)}</div><h3>When the ERP cannot</h3>{detail.settings.degradationRules.length ? detail.settings.degradationRules.map(x => <p key={x.ruleNumber}>{degradationLabel(x.ruleNumber)} · {x.enabled ? "Enabled" : "Disabled"}</p>) : <p className="muted">No per-connection overrides recorded.</p>}{detail.settings.throttle && <Kv rows={Object.entries(detail.settings.throttle).map(([key, value]) => [human(key), String(value ?? "No cap")])} />}</Panel>
   {detail.connection.connectorCode === "CX01" && <ConnectorSettings id={id} admin={admin && !isArchived} />}
   {!relayRegistrationAllowed && <p className="help">Close connection registration before registering a site relay.</p>}
   <SiteRelays id={id} admin={admin && !isArchived} canRegister={active && relayRegistrationAllowed} onOneTimeChange={onOneTimeChange} />
   </>;
+}
+function NativeWarrantyMode({ id, admin, changed }: { id: string; admin: boolean; changed: () => void }) {
+  const [value, setValue] = useState<CoexistenceSettings | null>(null); const [error, setError] = useState<unknown>(null); const action = useAction();
+  useEffect(() => { const controller = new AbortController(); adminApi.coexistence(id, controller.signal).then(setValue).catch(reason => { if (!controller.signal.aborted) setError(reason); }); return () => controller.abort(); }, [id]);
+  if (!value) return <Panel title="ERP warranty fields"><ErrorNote error={error} /><p role="status">{error ? "Warranty field mode could not be loaded." : "Loading warranty field mode…"}</p></Panel>;
+  return <Panel title="ERP warranty fields"><p className="muted">Frozen leaves the remote installed-base record unchanged. Pushed sends the module’s current status and, when contracts are maintained here, its latest warranty end date.</p>
+    <form className="stack" onSubmit={event => { event.preventDefault(); void action.run(async () => { const saved = await adminApi.saveCoexistence(id, value, value.nativeWarrantyObjectMode); setValue(saved); changed(); }, "Warranty field mode saved."); }}>
+      <label className="field"><span className="lbl">Mode</span><select className="select" disabled={!admin || action.busy} value={value.nativeWarrantyObjectMode} onChange={event => setValue(current => current ? { ...current, nativeWarrantyObjectMode: event.target.value as CoexistenceSettings["nativeWarrantyObjectMode"] } : current)}><option value="frozen">Frozen</option><option value="pushed" disabled={!value.pushedModeAvailable}>Pushed</option></select></label>
+      {!value.pushedModeAvailable && <p className="help">This connector does not declare support for pushed warranty fields.</p>}
+      {admin && <button className="btn primary" disabled={action.busy}>Save warranty field mode</button>}
+    </form>{action.feedback}
+  </Panel>;
 }
 function ChecklistRow({ id, item, admin, refresh }: { id: string; item: ChecklistItem; admin: boolean; refresh: () => void }) {
   const [evidence, setEvidence] = useState(""); const action = useAction();

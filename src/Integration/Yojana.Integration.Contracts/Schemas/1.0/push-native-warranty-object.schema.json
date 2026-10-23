@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sw.integration/1.0/push-native-warranty-object",
+  "title": "PushNativeWarrantyObject",
+  "type": "object",
+  "required": ["envelope", "message_type", "payload"],
+  "properties": {
+    "envelope": { "$ref": "envelope.schema.json" },
+    "message_type": { "const": "PushNativeWarrantyObject" },
+    "payload": {
+      "type": "object",
+      "required": [
+        "idempotency_key", "module_document_ref", "erp_reference_text", "unit",
+        "module_status", "warranty_end_date", "includes_warranty_contract_fields"
+      ],
+      "properties": {
+        "idempotency_key": { "type": "string" },
+        "module_document_ref": { "type": "string" },
+        "erp_reference_text": { "type": "string" },
+        "unit": {
+          "type": "object",
+          "required": ["unit_id", "identifier_value"],
+          "properties": {
+            "unit_id": { "type": "string" },
+            "identifier_value": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "module_status": { "type": "string" },
+        "warranty_end_date": { "type": ["string", "null"] },
+        "includes_warranty_contract_fields": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
