@@ -97,7 +97,8 @@
 
 /* Flat cards and denser tables */
 .card { box-shadow: none; border-color: var(--border-strong); }
-.card-header { height: 48px; padding: 0 var(--card-pad); background: var(--surface-2); }
+/* At least one row high; a header whose filters wrap (narrow content beside the settings list) grows instead of spilling over the table. */
+.card-header { height: auto; min-height: 48px; padding: 6px var(--card-pad); background: var(--surface-2); }
 /* A child's square background paints over the card's rounded border, so the tinted header and any edge child
    take the inner radius (outer radius less the 1 px border); overflow: hidden on .card would also clip menus and
    popovers that open from inside a card. */
