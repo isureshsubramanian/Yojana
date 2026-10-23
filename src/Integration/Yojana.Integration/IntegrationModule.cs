@@ -58,8 +58,18 @@ public static class IntegrationModule
         builder.Services.AddScoped<ConnectionHealthProjection>();
         builder.Services.AddSingleton(RecurringTenantJob.For<ConnectionHealthJob>(ConnectionHealthJob.JobName, ConnectionHealthJob.Cron));
         builder.Services.AddKeyedScoped<IConnectionLifecycleAdapter, Cx01ConnectionLifecycleAdapter>(Cx01Capabilities.ConnectorCode);
-        builder.Services.AddScoped<CoexistenceSettings>();
         builder.Services.AddScoped<WarrantyContractMaintenanceSettings>();
+        // Factory keeps the Serialisation implementation behind its Contracts port out of Wolverine's handler graph;
+        // the two module DbContexts never participate in one inferred transaction.
+        builder.Services.AddScoped(sp => new NativeWarrantyPushService(
+            sp.GetRequiredService<IntegrationDbContext>(),
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>(),
+            sp.GetRequiredService<Yojana.Platform.Contracts.Time.IClock>(),
+            sp.GetRequiredService<Yojana.Serialisation.Contracts.INativeWarrantyPushSourcePort>(),
+            sp.GetRequiredService<WarrantyContractMaintenanceSettings>()));
+        builder.Services.AddScoped<INativeWarrantyBackfillProcessor>(sp =>
+            sp.GetRequiredService<NativeWarrantyPushService>());
+        builder.Services.AddScoped<CoexistenceSettings>();
         builder.Services.AddScoped<CoexistenceDriftService>();
         builder.Services.AddScoped<CoexistenceConflicts>();
         builder.Services.AddScoped<SyncControl>();
@@ -124,6 +134,7 @@ public static class IntegrationModule
         builder.Services.AddScoped<Cx01DocumentPoster>();
         builder.Services.AddScoped<Cx01DocumentsService>();
         builder.Services.AddScoped<Cx01OutboundDocuments>();
+        builder.Services.AddScoped<Cx01NativeWarrantyWriter>();
         builder.Services.AddScoped<IOutboundProgressStore, OutboundProgressStore>();
         builder.Services.AddScoped<ICx01OutboundFacts, Cx01OutboundFacts>();
         builder.Services.AddScoped<ICx01AttachmentContent, Cx01LocalAttachmentContent>();

@@ -9,11 +9,11 @@ namespace Yojana.Integration.Connectors.CX01.Testing;
 
 internal sealed class Cx01LiveFactAttribute : FactAttribute
 {
-    public Cx01LiveFactAttribute()
+    public Cx01LiveFactAttribute(params string[] additionalVariables)
     {
         if (Required("YOJANA_CX01_URL") && Required("YOJANA_CX01_USER")
-            && Required("YOJANA_CX01_PASSWORD")) return;
-        Skip = "YOJANA_CX01_URL, YOJANA_CX01_USER and YOJANA_CX01_PASSWORD are required.";
+            && Required("YOJANA_CX01_PASSWORD") && additionalVariables.All(Required)) return;
+        Skip = "The CX01 live connection variables and this test's additional variables are required.";
     }
 
     private static bool Required(string name) => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name));
@@ -21,6 +21,22 @@ internal sealed class Cx01LiveFactAttribute : FactAttribute
 
 public sealed class Cx01LiveTests
 {
+    [Cx01LiveFact("YOJANA_CX01_EQUIPMENT_CARD_KEY")]
+    [Trait("Category", "Cx01Live")]
+    public async Task Installed_base_status_update_path_accepts_an_unchanged_value()
+    {
+        using var session = await LiveClientAsync(CancellationToken.None);
+        var key = Environment.GetEnvironmentVariable("YOJANA_CX01_EQUIPMENT_CARD_KEY")!;
+        var path = Cx01Protocol.Root + "CustomerEquipmentCards(" + Cx01Protocol.KeyLiteral(key) + ")";
+        using var before = await session.Client.GetAsync(path, CancellationToken.None);
+        before.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await before.Content.ReadAsStringAsync());
+        var status = document.RootElement.GetProperty("StatusOfSerialNumber").GetString();
+        using var patch = await session.Client.PatchAsync(path, new StringContent(
+            JsonSerializer.Serialize(new { StatusOfSerialNumber = status }), Encoding.UTF8, "application/json"));
+        Assert.True(patch.IsSuccessStatusCode);
+    }
+
     [Cx01LiveFact]
     [Trait("Category", "Cx01Live")]
     public async Task Smoke_steps_1_4_5_and_6()

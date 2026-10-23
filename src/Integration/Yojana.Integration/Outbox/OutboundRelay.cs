@@ -163,6 +163,19 @@ public sealed class OutboundRelay(
                     await ParkAsync(command, created.Outcome, RequiredReason(created), created.Outcome, cancellationToken);
                     parked++;
                 }
+                else if (created?.Outcome == OutboundConnectorOutcome.CoexistenceConflict
+                    && !string.IsNullOrWhiteSpace(created.PendingRemoteKey))
+                {
+                    command.Status = OutboundCommandStatus.Parked;
+                    command.Outcome = OutboundConnectorOutcome.CoexistenceConflict;
+                    command.PendingRemoteKey = created.PendingRemoteKey;
+                    command.LastFailure = RequiredReason(created);
+                    command.NextAttemptAt = null;
+                    command.LockedUntil = null;
+                    command.CompletedAt = null;
+                    await db.SaveChangesAsync(cancellationToken);
+                    parked++;
+                }
                 else
                 {
                     await RetryAsync(command, created?.Reason ?? "The connector returned no document.", cancellationToken);

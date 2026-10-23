@@ -180,6 +180,14 @@ public sealed record AttachDocument(Guid IdempotencyKey, string ModuleDocumentRe
     string TargetRecordRef, string DisplayName, string? ContentRef, string? Url) : IOutboundCommand;
 public sealed record CreateServiceOrder(Guid IdempotencyKey, string ModuleDocumentRef, string ErpReferenceText,
     string CustomerRef, UnitReference Unit, string CoverageDecisionText, string ProblemDescription) : IOutboundCommand;
+/// <summary>
+/// Replaces the values on one already-mapped remote installed-base record. The command carries module vocabulary;
+/// each connector owns its remote field names and value translation. WarrantyEndDate is deliberately absent when
+/// the tenant still maintains warranty contracts in the remote system.
+/// </summary>
+public sealed record PushNativeWarrantyObject(Guid IdempotencyKey, string ModuleDocumentRef, string ErpReferenceText,
+    UnitReference Unit, string ModuleStatus, DateOnly? WarrantyEndDate,
+    bool IncludesWarrantyContractFields) : IOutboundCommand;
 
 public sealed record OutboundCommandReply(Guid IdempotencyKey, string? ErpExternalId, ChangeMarker? ErpChangeMarker,
     OpenEnum Outcome, string? Reason = null);

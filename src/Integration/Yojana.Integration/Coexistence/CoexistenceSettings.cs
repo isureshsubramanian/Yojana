@@ -7,6 +7,7 @@ using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Security.Audit;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Integration.Connections;
 
 namespace Yojana.Integration.Coexistence;
 
@@ -16,7 +17,7 @@ namespace Yojana.Integration.Coexistence;
 /// </summary>
 public sealed class CoexistenceSettings(IntegrationDbContext db, ITenantContext tenant, ITenantSettings settings,
     IServiceProvider services, IClock clock, IConnectionAuditSink audit,
-    WarrantyContractMaintenanceSettings contractMaintenance)
+    WarrantyContractMaintenanceSettings contractMaintenance, NativeWarrantyPushService nativeWarranty)
 {
     private static readonly JsonSerializerOptions Json = new(IntegrationContracts.Json) { DictionaryKeyPolicy = null };
 
@@ -54,9 +55,13 @@ public sealed class CoexistenceSettings(IntegrationDbContext db, ITenantContext 
         var open = await db.CoexistenceConflicts.CountAsync(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == connectionId && x.Status != CoexistenceConflictStatus.Closed, ct);
         var maintenance = await contractMaintenance.GetAsync(ct);
+        var pushedAvailable = await db.ConnectionCapabilities.AsNoTracking().AnyAsync(x =>
+            x.TenantId == tenant.TenantId && x.ConnectionId == connectionId
+            && x.CanonicalMessage == nameof(PushNativeWarrantyObject)
+            && x.SupportLevel == CapabilitySupport.Native, ct);
         return new(connectionId, connection.DisplayLabel, SyncState(connection.Status),
             gateway?.NativeWarrantyObjectMode ?? NativeWarrantyObjectModes.Frozen, maintenance.MaintainedIn,
-            maintenance.MaintainedIn == WarrantyContractsMaintainedIn.Module, PushedModeAvailable: false,
+            maintenance.MaintainedIn == WarrantyContractsMaintainedIn.Module, pushedAvailable,
             reader is not null, reader?.RecordType, configured.DriftScanEnabled,
             reader is null ? configured.WatchedFields ?? [] : Watched(configured, reader, maintenance.MaintainedIn),
             reader is null ? configured.ExplainingFields ?? [] : Explaining(configured, reader, maintenance.MaintainedIn),
@@ -71,26 +76,37 @@ public sealed class CoexistenceSettings(IntegrationDbContext db, ITenantContext 
         CoexistenceGuard.Actor(actor);
         if (request.NativeWarrantyObjectMode is not (NativeWarrantyObjectModes.Frozen or NativeWarrantyObjectModes.Pushed))
             throw new CoexistenceRuleException("native_mode_invalid", "Choose frozen or pushed.");
-        // Pushing needs an outbound command for the remote warranty object, which contract 1.0 does not carry. A
-        // setting that silently did nothing would be worse than a clear refusal, so pushed is refused until it exists.
-        if (request.NativeWarrantyObjectMode == NativeWarrantyObjectModes.Pushed)
-            throw new CoexistenceRuleException("pushed_mode_unavailable",
-                "Pushing values to the remote warranty object is not available yet; keep it frozen for now.");
         var connection = await ConnectionAsync(connectionId, ct);
         if (connection.Status == ConnectionStatus.Archived)
             throw new CoexistenceRuleException("connection_archived", "An archived connection cannot be changed.");
+        var pushedAvailable = await db.ConnectionCapabilities.AsNoTracking().AnyAsync(x =>
+            x.TenantId == tenant.TenantId && x.ConnectionId == connectionId
+            && x.CanonicalMessage == nameof(PushNativeWarrantyObject)
+            && x.SupportLevel == CapabilitySupport.Native, ct);
+        if (request.NativeWarrantyObjectMode == NativeWarrantyObjectModes.Pushed && !pushedAvailable)
+            throw new CoexistenceRuleException("pushed_mode_unavailable",
+                "This connector does not support pushing values to its native warranty object.");
         var value = new CoexistenceConnectionSettings(request.WatchedFields, request.ExplainingFields,
             request.DriftScanEnabled, request.PageSize, request.MaxPagesPerRun).Validate();
+        await using var activity = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId,
+            connectionId, ct);
         var gateway = await db.ConnectionGatewaySettings.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == connectionId, ct)
             ?? throw new CoexistenceRuleException("connection_not_found", "The connection has no gateway settings.");
         var before = new { gateway.NativeWarrantyObjectMode, Settings = await GetAsync(connectionId, ct) };
+        var modeChanged = gateway.NativeWarrantyObjectMode != request.NativeWarrantyObjectMode;
         gateway.NativeWarrantyObjectMode = request.NativeWarrantyObjectMode;
         await db.SaveChangesAsync(ct);
+        var dropped = 0;
+        if (modeChanged && request.NativeWarrantyObjectMode == NativeWarrantyObjectModes.Pushed)
+            await nativeWarranty.StartOrResumeBackfillAsync(connectionId, actor, ct);
+        else if (modeChanged)
+            dropped = await nativeWarranty.FreezeAsync(connectionId, actor, ct);
         await settings.SetAsync(Key(connectionId), JsonSerializer.Serialize(value, Json), ct);
         await audit.AppendAsync(new(tenant.TenantId, Guid.CreateVersion7(clock.UtcNow), connectionId,
             ConnectionAuditEventType.CoexistenceSettingsChanged, actor, clock.UtcNow,
-            JsonSerializer.Serialize(new { Before = before, After = new { request.NativeWarrantyObjectMode, Settings = value } },
+            JsonSerializer.Serialize(new { Before = before,
+                After = new { request.NativeWarrantyObjectMode, Settings = value }, DroppedQueuedPushes = dropped },
                 Json)), ct);
         return await ViewAsync(connectionId, ct);
     }

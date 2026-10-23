@@ -48,6 +48,7 @@ public static class CoexistenceConflictKind
 {
     public const string FieldChangedInIncumbent = "field_changed_in_incumbent";
     public const string ContractChangedInIncumbent = "contract_changed_in_incumbent";
+    public const string PushedWarrantyFieldChangedRemotely = "pushed_warranty_field_changed_remotely";
     /// <summary>
     /// A delta load at cutover found the source naming another owner with no delivery behind it (P9-T10b, OD-61 c).
     /// Raised by Migration/Apply (ApplyService.Delta), never by the drift scan, so no scan closes it: a person
@@ -83,6 +84,27 @@ public sealed class CoexistenceScanState : ITenantScoped
     public DateTime? LastCompletedAt { get; set; }
     public long LastPassRecords { get; set; }
     public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// Coalescing state for the one-way native-warranty projection. Desired values are refreshed from the module before
+/// each enqueue; last-pushed values are the optimistic baseline used to detect a person's intervening remote edit.
+/// </summary>
+public sealed class NativeWarrantyPushState : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid ConnectionId { get; set; }
+    public Guid UnitId { get; set; }
+    public required string RemoteRecordKey { get; set; }
+    public required string DesiredModuleStatus { get; set; }
+    public DateOnly? DesiredWarrantyEndDate { get; set; }
+    public bool IncludesWarrantyContractFields { get; set; }
+    public string? LastPushedRemoteStatus { get; set; }
+    public DateOnly? LastPushedWarrantyEndDate { get; set; }
+    public Guid? OutboundCommandId { get; set; }
+    public bool AllowRemoteOverwriteOnce { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public DateTime? LastPushedAt { get; set; }
 }
 
 /// <summary>A parallel run of the module beside the incumbent remote system, started by a person.</summary>

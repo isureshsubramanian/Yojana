@@ -30,7 +30,8 @@ public sealed class Cx01Adapter(
     ICx01InboundRejectionSink inboundRejections,
     ICx01SurveyReader surveyReader,
     ICx01TrackingPermissionSink trackingPermissions,
-    Cx01OutboundDocuments? documents = null) : IConnectorAdapter, IOutboundConnector
+    Cx01OutboundDocuments? documents = null,
+    Cx01NativeWarrantyWriter? nativeWarranty = null) : IConnectorAdapter, IOutboundConnector
 {
     public string ConnectorCode => Cx01Capabilities.ConnectorCode;
     public OutboundConnectorCapabilities Capabilities { get; } = new(false, OwnsConnectionLane: true);
@@ -193,6 +194,8 @@ public sealed class Cx01Adapter(
     public async Task<OutboundDocument?> FindByReferenceAsync(OutboundLookup lookup,
         CancellationToken cancellationToken)
     {
+        if (lookup.CommandType == nameof(PushNativeWarrantyObject))
+            return await nativeWarranty!.FindAsync(lookup, cancellationToken);
         var configured = await settings.GetAsync(lookup.ConnectionId, cancellationToken);
         var mode = await OutboundModeAsync(lookup.ConnectionId, cancellationToken);
         if (mode == "documents" && !(lookup.CommandType == nameof(CreateServiceOrder) && configured.Documents?.ServiceOrderAction == "annotate"))
@@ -223,6 +226,8 @@ public sealed class Cx01Adapter(
     public async Task<OutboundCreateResult> CreateAsync(OutboundCreateRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.CommandType == nameof(PushNativeWarrantyObject))
+            return await nativeWarranty!.UpdateAsync(request, cancellationToken);
         var mode = await OutboundModeAsync(request.ConnectionId, cancellationToken);
         if (mode == "documents")
         {

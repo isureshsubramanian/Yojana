@@ -436,6 +436,7 @@ public static class SerialisationModule
         // immutable certificate rows and state-neutral certificate ledger events.
         builder.Services.TryAddScoped<ICertificateUnitReadPort, CertificateUnitReadPort>();
         builder.Services.TryAddScoped<IOutboundUnitSourcePort, OutboundUnitSourcePort>();
+        builder.Services.TryAddScoped<INativeWarrantyPushSourcePort, NativeWarrantyPushSourcePort>();
         builder.Services.TryAddScoped<IRenderedOutboundDocumentPort, RenderedOutboundDocumentPort>();
         builder.Services.TryAddScoped<ICertificateConditionReadPort, CertificateConditionReadPort>();
         builder.Services.TryAddScoped<ICertificateRefurbishmentReadPort, CertificateRefurbishmentReadPort>();

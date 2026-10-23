@@ -3,6 +3,7 @@ using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Integration.Contracts;
 
 namespace Yojana.Integration.Outbox;
 
@@ -24,7 +25,11 @@ internal sealed class OutboundProgressStore(IntegrationDbContext db, ITenantCont
 
     public async Task CompleteAsync(Guid connectionId, Guid outboundCommandId, OutboundDocument document, string outcome, CancellationToken ct)
     {
-        var command = await ApplyAsync(connectionId, outboundCommandId, document, true, ct)
+        var existing = await db.OutboundCommands.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && x.ConnectionId == connectionId && x.OutboundCommandId == outboundCommandId)
+            .Select(x => x.CommandType).SingleOrDefaultAsync(ct);
+        var command = await ApplyAsync(connectionId, outboundCommandId, document,
+                existing != nameof(PushNativeWarrantyObject), ct)
             ?? throw new InvalidOperationException("The outbound command was not found.");
         command.Status = OutboundCommandStatus.Done;
         command.ErpExternalId = document.ErpExternalId;

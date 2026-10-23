@@ -114,6 +114,8 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public List<Dictionary<string, object?>> EquipmentCards { get; } = [];
     /// <summary>The remote's own page cap, applied below any requested $top.</summary>
     public int EquipmentCardPageCap { get; set; } = 20;
+    public Action<Dictionary<string, object?>>? EditEquipmentCardBeforeNextPatch { get; set; }
+    public HttpStatusCode? RejectNextEquipmentCardPatchWith { get; set; }
     public void SimulateLaterUserEdit() => returnUpdateTime = "090200";
     public void SimulateLaterDeliveryEdit(string updateTime) => deliveryUpdateTime = updateTime;
     public int PageSize { get; set; } = 1;
@@ -534,6 +536,47 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                     : new Dictionary<string, object?> { ["value"] = page };
                 await JsonAsync(response, body);
                 return;
+            }
+            if (path.StartsWith(Cx01Protocol.Root + "CustomerEquipmentCards(", StringComparison.Ordinal)
+                && path.EndsWith(')'))
+            {
+                var raw = path[(Cx01Protocol.Root.Length + "CustomerEquipmentCards(".Length)..^1].Trim('\'');
+                var card = EquipmentCards.SingleOrDefault(row => string.Equals(
+                    Convert.ToString(row["EquipmentCardNum"], System.Globalization.CultureInfo.InvariantCulture),
+                    raw, StringComparison.Ordinal));
+                if (card is null) { await NotFoundAsync(response); return; }
+                if (request.HttpMethod == "GET")
+                {
+                    var snapshot = card.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+                    await JsonAsync(response, snapshot);
+                    if (EditEquipmentCardBeforeNextPatch is { } edit)
+                    {
+                        EditEquipmentCardBeforeNextPatch = null;
+                        edit(card);
+                    }
+                    return;
+                }
+                if (request.HttpMethod == "PATCH")
+                {
+                    PatchAttempts++;
+                    if (RejectNextEquipmentCardPatchWith is { } rejection)
+                    {
+                        RejectNextEquipmentCardPatchWith = null;
+                        response.StatusCode = (int)rejection;
+                        await ErrorAsync(response, "-5002", "Fictional installed-base update was rejected");
+                        return;
+                    }
+                    using var body = JsonDocument.Parse(await new StreamReader(request.InputStream).ReadToEndAsync());
+                    LastPatchBody?.Dispose();
+                    LastPatchBody = JsonDocument.Parse(body.RootElement.GetRawText());
+                    foreach (var property in body.RootElement.EnumerateObject())
+                        card[property.Name] = property.Value.ValueKind == JsonValueKind.Null
+                            ? null : property.Value.ValueKind == JsonValueKind.String
+                                ? property.Value.GetString() : property.Value.Clone();
+                    response.StatusCode = (int)HttpStatusCode.NoContent;
+                    response.Close();
+                    return;
+                }
             }
             if (new[]
                 {

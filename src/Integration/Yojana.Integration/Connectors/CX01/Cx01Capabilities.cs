@@ -36,6 +36,7 @@ public static class Cx01Capabilities
             ["ChangeStockStatusOrLocation"] = CapabilitySupport.Unsupported,
             ["AttachDocument"] = CapabilitySupport.Native,
             ["CreateServiceOrder"] = CapabilitySupport.Native,
+            ["PushNativeWarrantyObject"] = CapabilitySupport.Native,
         };
 
     public static Cx01CapabilityDeclaration For(string release, bool probedWebhooksAvailable, string outboundMode = "reference_only")

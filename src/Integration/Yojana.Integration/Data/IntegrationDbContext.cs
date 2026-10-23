@@ -48,6 +48,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<CoexistenceBaseline> CoexistenceBaselines => Set<CoexistenceBaseline>();
     public DbSet<CoexistenceConflict> CoexistenceConflicts => Set<CoexistenceConflict>();
     public DbSet<CoexistenceScanState> CoexistenceScanStates => Set<CoexistenceScanState>();
+    public DbSet<NativeWarrantyPushState> NativeWarrantyPushStates => Set<NativeWarrantyPushState>();
     public DbSet<ParallelRunPlan> ParallelRunPlans => Set<ParallelRunPlan>();
     public DbSet<ParallelRunConfirmation> ParallelRunConfirmations => Set<ParallelRunConfirmation>();
     public DbSet<ParallelRunHandover> ParallelRunHandovers => Set<ParallelRunHandover>();
@@ -385,6 +386,16 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.HasKey(x => new { x.TenantId, x.ConnectionId, x.RecordType });
             b.Property(x => x.RecordType).HasMaxLength(80);
             b.Property(x => x.Cursor).HasMaxLength(200);
+        });
+        modelBuilder.Entity<NativeWarrantyPushState>(b =>
+        {
+            b.ToTable("native_warranty_push_state");
+            b.HasKey(x => new { x.TenantId, x.ConnectionId, x.UnitId });
+            b.Property(x => x.RemoteRecordKey).HasMaxLength(200);
+            b.Property(x => x.DesiredModuleStatus).HasMaxLength(40);
+            b.Property(x => x.LastPushedRemoteStatus).HasMaxLength(80);
+            b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.UpdatedAt, x.UnitId });
+            b.HasIndex(x => new { x.TenantId, x.OutboundCommandId });
         });
         modelBuilder.Entity<ParallelRunPlan>(b =>
         {

@@ -1874,6 +1874,77 @@ namespace Yojana.Integration.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.NativeWarrantyPushState", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.Property<bool>("AllowRemoteOverwriteOnce")
+                        .HasColumnType("bit")
+                        .HasColumnName("allow_remote_overwrite_once");
+
+                    b.Property<string>("DesiredModuleStatus")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("desired_module_status");
+
+                    b.Property<DateOnly?>("DesiredWarrantyEndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("desired_warranty_end_date");
+
+                    b.Property<bool>("IncludesWarrantyContractFields")
+                        .HasColumnType("bit")
+                        .HasColumnName("includes_warranty_contract_fields");
+
+                    b.Property<DateTime?>("LastPushedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_pushed_at");
+
+                    b.Property<string>("LastPushedRemoteStatus")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("last_pushed_remote_status");
+
+                    b.Property<DateOnly?>("LastPushedWarrantyEndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("last_pushed_warranty_end_date");
+
+                    b.Property<Guid?>("OutboundCommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("outbound_command_id");
+
+                    b.Property<string>("RemoteRecordKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("remote_record_key");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("TenantId", "ConnectionId", "UnitId")
+                        .HasName("pk_native_warranty_push_state");
+
+                    b.HasIndex("TenantId", "OutboundCommandId")
+                        .HasDatabaseName("ix_native_warranty_push_state_tenant_id_outbound_command_id");
+
+                    b.HasIndex("TenantId", "ConnectionId", "UpdatedAt", "UnitId")
+                        .HasDatabaseName("ix_native_warranty_push_state_tenant_id_connection_id_updated_at_unit_id");
+
+                    b.ToTable("native_warranty_push_state", "integration");
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.OutboundCommandRow", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -6849,15 +6920,16 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_oitl_tenant_id_absent_since_batch_id_source_pk");
 
+                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "LogEntry")
+                        .HasDatabaseName("ix_stg_src_oitl_tenant_id_batch_id_source_system_log_entry");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "BatchId", "SourceSystem", "LogEntry"), new[] { "AbsentSinceBatchId", "StockEffect" });
+
                     b.HasIndex("TenantId", "BatchId", "SourceSystem", "AbsentSinceBatchId", "SourcePk")
                         .HasDatabaseName("ix_stg_src_oitl_tenant_id_batch_id_source_system_absent_since_batch_id_source_pk");
 
                     b.HasIndex("TenantId", "BatchId", "SourceSystem", "DocumentType", "LogEntry")
                         .HasDatabaseName("ix_stg_src_oitl_tenant_id_batch_id_source_system_document_type_log_entry");
-
-                    b.HasIndex("TenantId", "BatchId", "SourceSystem", "LogEntry")
-                        .HasDatabaseName("ix_stg_src_oitl_tenant_id_batch_id_source_system_log_entry")
-                        .HasAnnotation("SqlServer:Include", new[] { "AbsentSinceBatchId", "StockEffect" });
 
                     b.ToTable("stg_src_oitl", "migration");
                 });

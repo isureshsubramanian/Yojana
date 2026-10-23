@@ -8,6 +8,18 @@ public interface IOutboundUnitSourcePort
     Task<OutboundUnitSource> ReadAsync(Guid unitId, DocumentRef? document, CancellationToken cancellationToken, Guid? customerPartyRef = null, bool allowOwnershipFallback = true, DateTime? custodyAt = null);
 }
 
+/// <summary>Current module-owned values that may be projected to a remote installed-base record.</summary>
+public sealed record NativeWarrantyPushSource(string LifecycleStatus, string? Serial, DateOnly? WarrantyEndDate);
+
+/// <summary>
+/// Narrow read boundary used by Integration. It exposes no Serialisation entities and leaves remote field mapping to
+/// the connector.
+/// </summary>
+public interface INativeWarrantyPushSourcePort
+{
+    Task<NativeWarrantyPushSource?> ReadAsync(Guid unitId, CancellationToken cancellationToken);
+}
+
 public sealed record OutboundDocumentDescription(string FileName, string ContentType);
 
 public sealed record RenderedOutboundDocument(string FileName, string ContentType, byte[] Bytes);
