@@ -35,6 +35,31 @@ export function securityEventLabel(kind: string): string {
   return labels[kind] ?? kind.replace(/_/g, " ").replace(/^./, character => character.toUpperCase());
 }
 
+// Reason codes the server records with each event (SecurityEventWriter callers in Yojana.Platform/Security), as words.
+const reasons: Record<string, string> = {
+  password: "Password",
+  "password+authenticator": "Password and authenticator app",
+  "password+passkey": "Password and passkey",
+  "password+recovery_code": "Password and recovery code",
+  passkey: "Passkey",
+  passwordless: "Passkey only",
+  authenticator_added: "Authenticator app added",
+  authenticator_replaced: "Authenticator app replaced",
+  second_step_code_wrong: "Wrong second-step code",
+  credentials_rejected: "Wrong e-mail or password",
+  account_lockout: "Too many failed attempts",
+  address_limit: "Too many attempts from this address",
+  passkey_rejected: "Passkey not accepted",
+  passkey_not_allowed: "Passkeys are switched off",
+  changed_by_user: "Changed by the person",
+  user_requested: "Requested by the person",
+};
+
+export function securityEventReason(reason: string | null | undefined): string {
+  if (!reason) return "—";
+  return reasons[reason] ?? reason.replace(/[_+]/g, " ").replace(/^./, character => character.toUpperCase());
+}
+
 export function securityEventTone(kind: string): Tone {
   if (kind === "sign_in_succeeded" || kind === "user_reactivated" || kind === "second_step_enrolled" || kind === "passkey_added") return "ok";
   if (kind === "sign_in_failed" || kind === "locked_out" || kind === "user_deactivated") return "bad";

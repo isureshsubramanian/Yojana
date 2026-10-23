@@ -7,7 +7,7 @@ import { openDrawer } from "../shell/drawerStore";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { securityEventsApi, type SecurityEventRow } from "./securityEventsApi";
-import { browserName, securityEventKinds, securityEventLabel, securityEventTone, shiftDay } from "./securityEventsModel";
+import { browserName, securityEventKinds, securityEventLabel, securityEventTone, shiftDay, securityEventReason } from "./securityEventsModel";
 import { userManagementApi, type TenantUserRow } from "./userManagementApi";
 
 const PAGE_SIZE = 25;
@@ -83,17 +83,17 @@ export function Component() {
       <Section title="Event"><Kv rows={[
         ["When", tenantTime.dateTime(row.occurredAt)], ["User", row.userName ?? "Unknown user"],
         ["By", row.actorName ?? "—"], ["Address", row.clientAddress ?? "—"],
-        ["Device", row.userAgent ?? "—"], ["Detail", row.reason || "—"],
+        ["Device", row.userAgent ?? "—"], ["Detail", securityEventReason(row.reason)],
       ]} /></Section>);
   }, [tenantTime]);
 
   const columns = useMemo<GridColumn<EventGridRow>[]>(() => [
-    { key: "when", label: "When", width: 14, render: row => tenantTime.dateTime(row.occurredAt), muted: true },
-    { key: "event", label: "Event", width: 18, render: row => <StatusBadge tone={securityEventTone(row.kind)}>{securityEventLabel(row.kind)}</StatusBadge> },
+    { key: "when", label: "When", width: 19, render: row => tenantTime.dateTime(row.occurredAt), muted: true },
+    { key: "event", label: "Event", width: 15, render: row => <StatusBadge tone={securityEventTone(row.kind)}>{securityEventLabel(row.kind)}</StatusBadge> },
     { key: "user", label: "User", width: 17, render: row => row.userName ?? "Unknown user" },
     { key: "actor", label: "By", width: 15, render: row => row.actorName ?? "—" },
-    { key: "from", label: "From", width: 16, render: row => [row.clientAddress, browserName(row.userAgent)].filter(Boolean).join(" · ") },
-    { key: "detail", label: "Detail", width: 20, render: row => row.reason || "—" },
+    { key: "from", label: "From", width: 14, render: row => [row.clientAddress, browserName(row.userAgent)].filter(Boolean).join(" · ") },
+    { key: "detail", label: "Detail", width: 20, render: row => securityEventReason(row.reason) },
   ], [tenantTime]);
 
   const estimatedTotal = (page - 1) * PAGE_SIZE + rows.length + (next ? 1 : 0);

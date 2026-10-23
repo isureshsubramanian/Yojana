@@ -52,6 +52,8 @@ export function tenantTimeFormatter(zone: string): TenantTimeFormatter {
   };
 }
 
+// Hidden coupling: server timestamps arrive with a "Z" suffix because UtcDateTimeConverter (Yojana.Platform/Data) marks
+// every stored DateTime as UTC; new Date() would read a value without it as the browser's local time.
 function format(value: string | null | undefined, zone: string, includeTime: boolean, includeZone: boolean): string {
   if (!value) return "—";
   const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);

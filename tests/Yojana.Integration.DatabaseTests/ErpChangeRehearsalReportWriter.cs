@@ -96,7 +96,8 @@ internal static class ErpChangeRehearsalReportWriter
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null;
              directory = directory.Parent)
-            if (File.Exists(Path.Combine(directory.FullName, ".git"))
+            // .git is a file in a worktree and a folder in the main checkout.
+            if (Path.Exists(Path.Combine(directory.FullName, ".git"))
                 && Directory.Exists(Path.Combine(directory.FullName, "src")))
                 return directory.FullName;
         throw new InvalidOperationException("The worktree root could not be located from the test output directory.");

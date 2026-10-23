@@ -97,14 +97,14 @@ export function useItemFamilies(): { options: ItemFamilyOption[]; name: (code: s
 }
 
 /** An item family shown by name while retaining its stable code as the value. */
-export function ItemFamilyField({ id, label, value, onChange, optional, hint }: FieldProps<string>) {
+export function ItemFamilyField({ id, label, value, onChange, optional, hint, disabled, invalid }: FieldProps<string> & { disabled?: boolean | undefined; invalid?: boolean | undefined }) {
   const families = useItemFamilies();
   return <label className="field" htmlFor={id}><span className="lbl">{label}{optional && <span className="hint"> · optional</span>}</span>
-    <select id={id} className="select" value={value ?? ""} onChange={(event) => onChange(event.target.value || null)}>
-      <option value="">Choose an item family…</option>
+    <select id={id} className="select" value={value ?? ""} disabled={disabled} aria-invalid={invalid || undefined} aria-describedby={hint ? `${id}-help` : undefined} onChange={(event) => onChange(event.target.value || null)}>
+      <option value="">{optional ? "Any item class" : "Choose an item class…"}</option>
       {value && !families.options.some((option) => option.code === value) && <option value={value}>{families.name(value)}</option>}
       {families.options.map((option) => <option key={option.code} value={option.code}>{option.name}</option>)}
-    </select>{hint && <span className="help">{hint}</span>}
+    </select>{hint && <span className={invalid ? "help bad" : "help"} id={`${id}-help`}>{hint}</span>}
   </label>;
 }
 
