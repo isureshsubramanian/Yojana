@@ -12,6 +12,7 @@ using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
 using Yojana.Integration.Ordering;
 using Yojana.Integration.ErpChange;
+using Yojana.Integration.Backfills;
 using SerialDocumentRef = Yojana.Serialisation.Contracts.DocumentRef;
 
 namespace Yojana.Integration.Gateway;
@@ -86,6 +87,16 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
             return new(row.InboundMessageId, row.MessageType, false, 0, []);
         if (row.TranslationStatus == InboundTranslationStatus.Completed)
             return new(row.InboundMessageId, row.MessageType, false, 0, []);
+        if (row.CaptureMode == BackfillCaptureModes.ComparisonOnly)
+        {
+            // An ERP-change target is evidence for comparison, not a second source of operational history.
+            // Keep the accepted payload replayable while completing its durable translation hand-off without routing it.
+            row.TranslationStatus = InboundTranslationStatus.Completed;
+            row.TranslatedAt = now;
+            row.TranslationStartedAt = null;
+            await db.SaveChangesAsync(cancellationToken);
+            return new(row.InboundMessageId, row.MessageType, false, 0, []);
+        }
 
         var declaration = await capabilities.ReadAsync(row.ConnectionId, cancellationToken);
         var support = declaration.For(row.MessageType).SupportLevel;

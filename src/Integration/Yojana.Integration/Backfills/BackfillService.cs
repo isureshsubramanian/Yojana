@@ -16,6 +16,11 @@ using Yojana.Integration.Coexistence;
 
 namespace Yojana.Integration.Backfills;
 
+internal static class BackfillCaptureModes
+{
+    public const string ComparisonOnly = "comparison_only";
+}
+
 public sealed class BackfillService(
     IntegrationDbContext db,
     ITenantContext tenant,
@@ -75,6 +80,14 @@ public sealed class BackfillService(
     }
 
     public async Task ProcessAsync(Guid backfillId, int? maximumPages,
+        CancellationToken cancellationToken) =>
+        await ProcessAsync(backfillId, maximumPages, "backfill", cancellationToken);
+
+    public async Task ProcessForComparisonAsync(Guid backfillId, int? maximumPages,
+        CancellationToken cancellationToken) =>
+        await ProcessAsync(backfillId, maximumPages, BackfillCaptureModes.ComparisonOnly, cancellationToken);
+
+    private async Task ProcessAsync(Guid backfillId, int? maximumPages, string captureMode,
         CancellationToken cancellationToken)
     {
         var job = await JobAsync(backfillId, cancellationToken);
@@ -119,7 +132,7 @@ public sealed class BackfillService(
                             job.RangeEnd, job.Cursor, job.PageSize, cancellationToken);
 
                 foreach (var message in page.Messages)
-                    await inbox.Accept(AsBackfill(message), cancellationToken);
+                    await inbox.Accept(AsBackfill(message, captureMode), cancellationToken);
                 job.ProcessedMessages += page.Messages.Count;
                 job.ProcessedPages++;
                 pagesThisRun++;
@@ -312,8 +325,8 @@ public sealed class BackfillService(
             && row.BackfillCursorId == id, cancellationToken)
         ?? throw new BackfillRuleException("backfill_not_found", "The backfill was not found.");
 
-    private static InboundAcceptance AsBackfill(InboundAcceptance acceptance) => new(
-        acceptance.Envelope with { CaptureMode = OpenEnum.Known("backfill") }, acceptance.MessageType,
+    private static InboundAcceptance AsBackfill(InboundAcceptance acceptance, string captureMode) => new(
+        acceptance.Envelope with { CaptureMode = OpenEnum.Known(captureMode) }, acceptance.MessageType,
         acceptance.CanonicalMessage, acceptance.RawPayload);
 
     private BackfillView View(BackfillProjection row)

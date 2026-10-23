@@ -245,6 +245,33 @@ public sealed class ErpChangeDatabaseTests(IntegrationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task An_open_unmatched_target_record_blocks_the_master_data_exit_even_without_live_units()
+    {
+        fixture.Clock.UtcNow = At;
+        var tenant = await fixture.NewTenantAsync("ecopen");
+        var entity = Guid.NewGuid();
+        var source = await fixture.AddConnectionAsync(tenant, entity);
+        var target = await fixture.AddConnectionAsync(tenant, entity, "CX02");
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var run = Run(tenant, source, target, ErpChangeStep.MasterData);
+        db.ErpChangeRuns.Add(run);
+        AddReference(db, tenant, target, "item", "HW-UNMATCHED", Guid.NewGuid(),
+            "HW-UNMATCHED", "Unmatched fictional accessory");
+        await db.SaveChangesAsync();
+
+        await scope.ServiceProvider.GetRequiredService<ErpChangeMasterDataService>()
+            .RemapAsync(run.ErpChangeRunId, Actor, default);
+        var check = await scope.ServiceProvider.GetRequiredService<ErpChangeRunService>()
+            .CheckAsync(run.ErpChangeRunId, Actor, default);
+
+        Assert.False(check.Passed);
+        Assert.Equal(1, check.Counts["open_exceptions"]);
+        Assert.Equal(0, check.Counts["blocking_exceptions"]);
+        Assert.Equal(1, check.Counts["unmatched_or_ambiguous_exceptions"]);
+    }
+
+    [DatabaseFact]
     public async Task Stock_comparison_emits_every_reason_class_and_covered_units_block_signoff()
     {
         var tenant = await fixture.NewTenantAsync("ecstock");
@@ -369,12 +396,23 @@ public sealed class ErpChangeDatabaseTests(IntegrationHostFixture fixture)
         health.LastDailyCheckAt = fixture.Clock.UtcNow;
         health.LastDailyCheckResult = "clean";
         await db.SaveChangesAsync();
-        Assert.True((await runs.CheckAsync(run.RunId, Actor, default)).Passed);
+        var registerCheck = await runs.CheckAsync(run.RunId, Actor, default);
+        Assert.True(registerCheck.Passed, registerCheck.Detail + " "
+            + JsonSerializer.Serialize(registerCheck.Counts));
         Assert.Equal(ErpChangeStep.MasterData,
             (await runs.AdvanceAsync(run.RunId, Actor, default)).CurrentStep);
-        await scope.ServiceProvider.GetRequiredService<ErpChangeMasterDataService>()
-            .RemapAsync(run.RunId, Actor, default);
-        Assert.True((await runs.CheckAsync(run.RunId, Actor, default)).Passed);
+        var master = scope.ServiceProvider.GetRequiredService<ErpChangeMasterDataService>();
+        await master.RemapAsync(run.RunId, Actor, default);
+        var simulatorOnly = await db.ErpChangeMasterDataExceptions.Where(row =>
+                row.ErpChangeRunId == run.RunId && row.Status == ErpChangeExceptionStatus.Open)
+            .ToListAsync();
+        Assert.All(simulatorOnly, row => Assert.Equal(0, row.LiveUnitsAffected));
+        foreach (var exception in simulatorOnly)
+            await master.MarkNotNeededAsync(run.RunId, exception.ErpChangeMasterDataExceptionId,
+                new("The simulator-only record has no live unit."), Actor, default);
+        var masterCheck = await runs.CheckAsync(run.RunId, Actor, default);
+        Assert.True(masterCheck.Passed, masterCheck.Detail + " "
+            + JsonSerializer.Serialize(masterCheck.Counts));
         Assert.Equal(ErpChangeStep.Stock,
             (await runs.AdvanceAsync(run.RunId, Actor, default)).CurrentStep);
         var stock = scope.ServiceProvider.GetRequiredService<ErpChangeStockService>();

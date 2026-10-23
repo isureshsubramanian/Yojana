@@ -4,7 +4,7 @@ namespace Yojana.Integration.ErpChange;
 
 public sealed record StartErpChangeRequest(Guid SourceConnectionId, RegisterConnection NewConnection);
 public sealed record CancelErpChangeRequest(string Reason);
-public sealed record StartReverseErpChangeRequest;
+public sealed record StartReverseErpChangeRequest(RegisterConnection? NewConnection = null);
 public sealed record UpdateErpChangeCleanPeriodRequest(int Days, string ExpectedVersion);
 public sealed record ErpChangeCleanPeriodView(int Days, string SettingsVersion);
 public sealed record StartDualRunResult(Guid RunId, DateTime StartedAt, int MinimumDays,

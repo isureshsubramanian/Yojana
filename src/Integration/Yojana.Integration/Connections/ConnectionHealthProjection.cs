@@ -66,7 +66,10 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
             && x.ConnectionId == connectionId).ToListAsync(ct);
         var watchdog = await db.ConnectionNotificationWatchdogs.AsNoTracking().SingleOrDefaultAsync(x =>
             x.TenantId == tenant.TenantId && x.ConnectionId == connectionId, ct);
-        var lifecycle = services.GetKeyedService<IConnectionLifecycleAdapter>(connection.ConnectorCode);
+        // Archived connections are historical records. Their final projection must not re-enter an adapter whose
+        // settings, credentials and remote subscription have already been retired by the archive transaction.
+        var lifecycle = connection.Status == ConnectionStatus.Archived
+            ? null : services.GetKeyedService<IConnectionLifecycleAdapter>(connection.ConnectorCode);
         var evidence = lifecycle is null ? null : await lifecycle.LatestProbeAsync(connectionId, ct);
         var authorisation = lifecycle is null ? null : await lifecycle.AuthorisationAsync(connectionId, ct);
         var streamSupported = evidence?.NotificationsSupported != false;

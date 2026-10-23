@@ -228,12 +228,26 @@ public sealed class ErpChangeRunService(
         var previousSource = await db.Connections.SingleOrDefaultAsync(row => row.TenantId == tenant.TenantId
             && row.ConnectionId == run.SourceConnectionId, cancellationToken)
             ?? throw new ErpChangeRuleException("erp_change_source_not_found", "The former source connection was not found.");
+        Guid reverseTargetId;
         if (previousSource.Status == ConnectionStatus.Archived)
-            throw new ErpChangeRuleException("erp_change_reverse_source_archived",
-                "The former source is archived; register a new connection before starting an ERP change back.");
-        if (previousSource.Status != ConnectionStatus.Active)
+        {
+            if (request.NewConnection is null)
+                throw new ErpChangeRuleException("erp_change_reverse_source_archived",
+                    "The former source is archived; supply a new connection for the ERP change back.");
+            if (request.NewConnection.ConnectorCode != previousSource.ConnectorCode)
+                throw new ErpChangeRuleException("erp_change_reverse_connector_changed",
+                    "The replacement connection must use the former source connector.");
+            reverseTargetId = (await connections.RegisterAsync(request.NewConnection, actor,
+                cancellationToken)).ConnectionId;
+        }
+        else if (request.NewConnection is not null)
+            throw new ErpChangeRuleException("erp_change_reverse_connection_not_needed",
+                "The former source is active, so the reverse ERP change must reuse it.");
+        else if (previousSource.Status != ConnectionStatus.Active)
             throw new ErpChangeRuleException("erp_change_reverse_source_inactive",
                 "The former source must be active before starting an ERP change back.");
+        else
+            reverseTargetId = previousSource.ConnectionId;
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         run.Status = ErpChangeRunStatus.Completed;
         run.ClosedBy = actor;
@@ -253,7 +267,7 @@ public sealed class ErpChangeRunService(
         });
         await db.SaveChangesAsync(cancellationToken);
         var targetSettings = await db.ConnectionGatewaySettings.SingleAsync(row => row.TenantId == tenant.TenantId
-            && row.ConnectionId == previousSource.ConnectionId, cancellationToken);
+            && row.ConnectionId == reverseTargetId, cancellationToken);
         targetSettings.ReadOnly = true;
         targetSettings.OutboundMode = "none";
         var reverse = new ErpChangeRun
@@ -261,7 +275,7 @@ public sealed class ErpChangeRunService(
             TenantId = tenant.TenantId,
             ErpChangeRunId = TimeOrderedId.New(clock.UtcNow),
             SourceConnectionId = run.TargetConnectionId,
-            TargetConnectionId = run.SourceConnectionId,
+            TargetConnectionId = reverseTargetId,
             CurrentStep = ErpChangeStep.Register,
             Status = ErpChangeRunStatus.Active,
             StartedBy = actor,
@@ -403,6 +417,11 @@ public sealed class ErpChangeRunService(
         var blocking = await db.ErpChangeMasterDataExceptions.CountAsync(row => row.TenantId == tenant.TenantId
             && row.ErpChangeRunId == run.ErpChangeRunId && row.Status == ErpChangeExceptionStatus.Open
             && row.LiveUnitsAffected > 0, cancellationToken);
+        var unmatchedOrAmbiguous = await db.ErpChangeMasterDataExceptions.CountAsync(row =>
+            row.TenantId == tenant.TenantId && row.ErpChangeRunId == run.ErpChangeRunId
+            && row.Status == ErpChangeExceptionStatus.Open
+            && (row.Problem == MasterDataProblem.Unmatched || row.Problem == MasterDataProblem.Ambiguous),
+            cancellationToken);
         var counts = new Dictionary<string, int>
         {
             ["remap_completed"] = run.MasterDataRemappedAt is null ? 0 : 1,
@@ -410,11 +429,13 @@ public sealed class ErpChangeRunService(
             ["missing_mappings"] = missing,
             ["open_exceptions"] = open,
             ["blocking_exceptions"] = blocking,
+            ["unmatched_or_ambiguous_exceptions"] = unmatchedOrAmbiguous,
         };
-        var passed = run.MasterDataRemappedAt is not null && missing == 0 && blocking == 0;
+        var passed = run.MasterDataRemappedAt is not null && missing == 0
+            && blocking == 0 && unmatchedOrAmbiguous == 0;
         return (passed, counts, passed
-            ? "Every live item and party is mapped or has a completed manual decision."
-            : "Run the master-data remap, then resolve every live missing mapping or open exception.");
+            ? "Every live reference is mapped and every unmatched or ambiguous target record has a decision."
+            : "Run the master-data remap, then resolve every live missing mapping and every unmatched or ambiguous target record.");
     }
 
     private async Task<(bool Passed, Dictionary<string, int> Counts, string Detail)> CheckStockAsync(

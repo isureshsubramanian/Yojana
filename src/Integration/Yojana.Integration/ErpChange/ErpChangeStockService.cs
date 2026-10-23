@@ -132,7 +132,9 @@ public sealed class ErpChangeStockService(
         {
             var job = await backfills.StartAsync(new(connectionId, entity,
                 new DateOnly(2000, 1, 1), through, 250), actor, cancellationToken);
-            await backfills.ProcessAsync(job, null, cancellationToken);
+            // The target is an opening position only. Persist it for comparison and audit, but never route it
+            // through ordinary inbound translation: doing so would write UnitEvent history from the new ERP.
+            await backfills.ProcessForComparisonAsync(job, null, cancellationToken);
         }
     }
 
