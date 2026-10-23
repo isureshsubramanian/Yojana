@@ -6,6 +6,8 @@ using Yojana.Demo;
 using Yojana.Platform;
 using Yojana.Serialisation;
 using Yojana.Integration;
+using Yojana.Knowledge;
+using Yojana.Knowledge.Questions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Yojana.Serialisation.Ports;
 using Yojana.Serialisation.Contracts;
@@ -24,11 +26,16 @@ builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);
 PlatformSetup.IncludeHandlers(typeof(IntegrationModule).Assembly);
+PlatformSetup.IncludeHandlers(typeof(KnowledgeModule).Assembly);
 // The console host needs routing services for the platform authorization policy cache in Development.
 builder.Services.AddRouting();
 builder.AddYojanaPlatform();
 builder.AddIntegrationModule();
 builder.AddSerialisationModule();
+builder.AddKnowledgeModule();
+// The Codex SQL Express image has no full-text feature. The demo adapter keeps the production implementation when
+// available and crosses this existing search seam only for the same LIKE-based fallback used by database tests.
+builder.Services.Replace(ServiceDescriptor.Scoped<IQuestionTextSearch, DemoQuestionTextSearch>());
 // Demo loading deliberately supplies its in-memory source records through the same narrow ports the Integration
 // module implements in production. These replacements make that boundary explicit; module registration order must
 // not decide which source the loader reads, or receipts and item profiles silently disappear from repeatable demos.

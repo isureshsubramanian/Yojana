@@ -6,5 +6,20 @@
     <ProjectReference Include="../../src/Platform/Yojana.Platform/Yojana.Platform.csproj" />
     <ProjectReference Include="../../src/Serialisation/Yojana.Serialisation/Yojana.Serialisation.csproj" />
     <ProjectReference Include="../../src/Integration/Yojana.Integration/Yojana.Integration.csproj" />
+    <ProjectReference Include="../../src/Knowledge/Yojana.Knowledge/Yojana.Knowledge.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX02/Testing/Cx02Simulator.cs"
+             Link="Connectors/CX02/Cx02Simulator.cs" />
+    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX02/Testing/Cx02SimulatorModels.cs"
+             Link="Connectors/CX02/Cx02SimulatorModels.cs" />
+    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX02/Testing/Cx02SimulatorOptions.cs"
+             Link="Connectors/CX02/Cx02SimulatorOptions.cs" />
+    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX04/Testing/Cx04Simulator.cs"
+             Link="Connectors/CX04/Cx04Simulator.cs" />
+    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX04/Testing/Cx04SimulatorOptions.cs"
+             Link="Connectors/CX04/Cx04SimulatorOptions.cs" />
+    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX04/Testing/Cx04LicenceGovernor.cs"
+             Link="Connectors/CX04/Cx04LicenceGovernor.cs" />
   </ItemGroup>
 </Project>
