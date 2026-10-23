@@ -231,7 +231,7 @@ public sealed class KnowledgeReportQueries(KnowledgeDbContext db, KnowledgeRepor
             query = query.Where(question => db.Entries.Any(entry => entry.TenantId == tenant.TenantId
                 && entry.SourceQuestionId == question.QuestionId && !db.EntryTags.Any(tag =>
                     tag.TenantId == tenant.TenantId && tag.EntryId == entry.EntryId
-                    && tag.Version == entry.CurrentVersion)));
+                    && tag.Version == entry.CurrentVersion && tag.Kind != KnowledgeTagKind.Role)));
         else if (!string.IsNullOrWhiteSpace(filters.Topic))
         {
             var parts = filters.Topic.Split('|', 2);
@@ -288,6 +288,7 @@ public sealed class KnowledgeReportQueries(KnowledgeDbContext db, KnowledgeRepor
                 on new { entry.TenantId, entry.EntryId, Version = entry.CurrentVersion }
                 equals new { tag.TenantId, tag.EntryId, tag.Version }
             where question.TenantId == tenant.TenantId && ids.Contains(question.QuestionId)
+                && tag.Kind != KnowledgeTagKind.Role
             group tag by new { tag.Kind, tag.Value, tag.Label } into grouped
             select new { grouped.Key.Kind, grouped.Key.Value, grouped.Key.Label, Count = grouped.Count() })
             .OrderByDescending(x => x.Count).ThenBy(x => x.Label).Take(8).ToListAsync(cancellationToken);
@@ -298,10 +299,10 @@ public sealed class KnowledgeReportQueries(KnowledgeDbContext db, KnowledgeRepor
             && ids.Contains(question.QuestionId) && db.Entries.Any(entry => entry.TenantId == tenant.TenantId
                 && entry.SourceQuestionId == question.QuestionId && !db.EntryTags.Any(tag =>
                     tag.TenantId == tenant.TenantId && tag.EntryId == entry.EntryId
-                    && tag.Version == entry.CurrentVersion)), cancellationToken);
+                    && tag.Version == entry.CurrentVersion && tag.Kind != KnowledgeTagKind.Role)), cancellationToken);
         var result = tagged.Select(x => new KnowledgeReportRank($"{x.Kind}|{x.Value}", x.Label, x.Count)).ToList();
         if (noEntry > 0) result.Add(new KnowledgeReportRank(NoEntryTopic, "No entry yet", noEntry));
-        if (untagged > 0) result.Add(new KnowledgeReportRank(UntaggedEntryTopic, "Untagged entry", untagged));
+        if (untagged > 0) result.Add(new KnowledgeReportRank(UntaggedEntryTopic, "Entry without a topic", untagged));
         return result.OrderByDescending(x => x.Count).ThenBy(x => x.Label).Take(8).ToList();
     }
 
@@ -382,7 +383,12 @@ public sealed class KnowledgeReportQueries(KnowledgeDbContext db, KnowledgeRepor
         .ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
     private static string Seconds(DateTime from, DateTime to) => Convert.ToInt64((to - from).TotalSeconds)
         .ToString(CultureInfo.InvariantCulture);
-    private static string Label(string value) => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(value.Replace('_', ' '));
+    // Sentence case, as role names read everywhere else in the product ("Service desk").
+    private static string Label(string value)
+    {
+        var words = value.Replace('_', ' ');
+        return words.Length == 0 ? words : char.ToUpperInvariant(words[0]) + words[1..];
+    }
     private static string RecordKindLabel(string value) => value switch
     {
         RecordKind.Rma => "Return (RMA)", RecordKind.RefurbishmentWorkOrder => "Refurbishment work order",

@@ -72,6 +72,8 @@ public sealed class KnowledgeReportDatabaseTests(KnowledgeHostFixture fixture, I
             db.EntryVersions.AddRange(Version(sourceEntry), Version(taggedEntry));
             db.EntryTags.Add(new KnowledgeEntryTag { TenantId = people.Tenant, EntryId = taggedEntry.EntryId,
                 Version = 1, Kind = KnowledgeTagKind.Task, Value = "accidental-damage", Label = "Accidental damage" });
+            db.EntryTags.Add(new KnowledgeEntryTag { TenantId = people.Tenant, EntryId = taggedEntry.EntryId,
+                Version = 1, Kind = KnowledgeTagKind.Role, Value = YojanaRole.Technician, Label = "Technician" });
             db.SimilarEntries.Add(new QuestionSimilarEntry { TenantId = people.Tenant, QuestionId = one.QuestionId,
                 EntryId = sourceEntry.EntryId, Rank = 600, MatchedAt = one.AskedAt });
             db.Replies.Local.Single(x => x.QuestionId == one.QuestionId).Body = $"See /knowledge/{sourceEntry.EntryId:D}";
@@ -106,6 +108,9 @@ public sealed class KnowledgeReportDatabaseTests(KnowledgeHostFixture fixture, I
             Assert.Equal(1, report.PointedToAnEntry);
             Assert.Equal(3, Assert.Single(report.ByDirectedRole, x => x.Key == YojanaRole.ServiceSupervisor).Count);
             Assert.Equal(1, Assert.Single(report.ByTopic, x => x.Label == "Accidental damage").Count);
+            // Role tags are counted by "By directed role"; the topic card lists only other tag kinds.
+            Assert.DoesNotContain(report.ByTopic, x => x.Key.StartsWith(KnowledgeTagKind.Role + "|", StringComparison.Ordinal));
+            Assert.Contains(report.ByDirectedRole, x => x.Key == YojanaRole.ServiceSupervisor && x.Label == "Service supervisor");
             Assert.Equal(4, Assert.Single(report.ByTopic, x => x.Key == KnowledgeReportQueries.NoEntryTopic).Count);
             Assert.Equal(1, Assert.Single(report.AskedAgainDespiteEntry).AskedAgain);
             Assert.Equal(1, Assert.Single(report.UnansweredByAge, x => x.Key == "over_3_days").Count);

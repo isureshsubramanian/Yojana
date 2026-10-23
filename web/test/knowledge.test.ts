@@ -84,8 +84,11 @@ test("Knowledge reports follow the approved periods, filtering, metrics and priv
   assert.match(reports, /select\("directedRole"/);
   assert.match(reports, /select\("recordKind"/);
   assert.match(reports, /select\("topic"/);
-  assert.match(reports, /PERCENTILE_CONT/);
-  assert.match(reports, /tenant-local calendar dates/);
+  assert.doesNotMatch(reports, />[^<]*PERCENTILE_CONT/);
+  assert.match(reports, /company's calendar days/);
+  assert.match(reports, /aria-pressed=\{selected === item\.key\}/);
+  assert.match(reports, /Remove filter/);
+  assert.match(reports, /"person" : "people"/);
   assert.match(reports, /question text are blank/);
   assert.doesNotMatch(reports, /per-person question/i);
 });
