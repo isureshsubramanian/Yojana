@@ -14,7 +14,10 @@ public sealed class CorrectionRulesTests
         Assert.Equal(["component_not_captured", "wrong_component_recorded", "late_serialization", "bom_change_after_release"], CorrectAsBuiltReason.All);
         Assert.Equal(["coding_error_at_item_setup", "policy_change"], LateSerializationReason.All);
         Assert.Equal(["work_order_quantity_reduced", "work_order_cancelled", "duplicate_allocation"], VoidUnitReason.All);
-        Assert.Equal(["duplicate_record", "migration_duplicate", "vendor_serial_keyed_twice"], MergeUnitsReason.All);
+        Assert.Equal(["typo", "misread", "relabel", "regulatory", MigrationReconciliationReason.Value],
+            IdentifierCorrectionReason.All);
+        Assert.Equal(["duplicate_record", "migration_duplicate", "vendor_serial_keyed_twice",
+            MigrationReconciliationReason.Value], MergeUnitsReason.All);
         Assert.Equal(["vendor_list", "vendor_list_supplement", "late_capture"], AssignIdentifiersReason.All);
         Assert.Equal(["allocation_error", "work_order_changed", "work_order_cancelled"], ReassignAllocationReason.All);
         Assert.Equal(["shipped_wrong_units", "copied_serials_without_scan", "vendor_list_wrong", "returned_never_delivered"], CorrectDocumentSerialsReason.All);

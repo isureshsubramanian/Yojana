@@ -34,6 +34,8 @@ public sealed record ConnectorRangePage(
 /// </summary>
 public interface IConnectorReconciliationSource
 {
+    bool OwnsConnectionLane => false;
+
     Task<IReadOnlyList<ConnectorEntityDayDigest>> EntityDayDigestsAsync(Guid connectionId,
         DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken);
 

@@ -107,9 +107,112 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<MigrationValidationSignature> MigrationValidationSignatures => Set<MigrationValidationSignature>();
     public DbSet<MigrationSignoffRecord> MigrationSignoffRecords => Set<MigrationSignoffRecord>();
     public DbSet<MigrationSignoffLine> MigrationSignoffLines => Set<MigrationSignoffLine>();
+    public DbSet<ErpChangeRun> ErpChangeRuns => Set<ErpChangeRun>();
+    public DbSet<ErpChangeStepCheck> ErpChangeStepChecks => Set<ErpChangeStepCheck>();
+    public DbSet<ErpChangeTransition> ErpChangeTransitions => Set<ErpChangeTransition>();
+    public DbSet<ErpChangeMasterDataException> ErpChangeMasterDataExceptions => Set<ErpChangeMasterDataException>();
+    public DbSet<ErpChangeStockDifference> ErpChangeStockDifferences => Set<ErpChangeStockDifference>();
+    public DbSet<ErpChangeStockSignoff> ErpChangeStockSignoffs => Set<ErpChangeStockSignoff>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<ErpChangeRun>(b =>
+        {
+            b.ToTable("erp_change_run", table => table.HasCheckConstraint("ck_erp_change_run_status",
+                "status IN ('active','cancelled','completed')"));
+            b.HasKey(x => new { x.TenantId, x.ErpChangeRunId });
+            b.Property(x => x.Status).HasMaxLength(20).IsUnicode(false);
+            b.Property(x => x.StartedBy).HasMaxLength(320);
+            b.Property(x => x.ClosedBy).HasMaxLength(320);
+            b.Property(x => x.CloseReason).HasMaxLength(2000);
+            b.HasIndex(x => new { x.TenantId, x.Status }).IsUnique()
+                .HasFilter("[status] = 'active'");
+            b.HasIndex(x => new { x.TenantId, x.StartedAt, x.ErpChangeRunId });
+        });
+        modelBuilder.Entity<ErpChangeStepCheck>(b =>
+        {
+            b.ToTable("erp_change_step_check");
+            b.HasKey(x => new { x.TenantId, x.ErpChangeStepCheckId });
+            b.Property(x => x.CountsJson).HasColumnType("nvarchar(max)");
+            b.Property(x => x.Detail).HasMaxLength(2000);
+            b.Property(x => x.CheckedBy).HasMaxLength(320);
+            b.HasIndex(x => new { x.TenantId, x.ErpChangeRunId, x.Step, x.CheckedAt,
+                x.ErpChangeStepCheckId });
+            b.HasOne<ErpChangeRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.ErpChangeRunId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<ErpChangeTransition>(b =>
+        {
+            b.ToTable("erp_change_transition");
+            b.HasKey(x => new { x.TenantId, x.ErpChangeTransitionId });
+            b.Property(x => x.Kind).HasMaxLength(24).IsUnicode(false);
+            b.Property(x => x.ActorRef).HasMaxLength(320);
+            b.Property(x => x.Reason).HasMaxLength(2000);
+            b.HasIndex(x => new { x.TenantId, x.ErpChangeRunId, x.OccurredAt,
+                x.ErpChangeTransitionId });
+            b.HasOne<ErpChangeRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.ErpChangeRunId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<ErpChangeMasterDataException>(b =>
+        {
+            b.ToTable("erp_change_master_exception", table =>
+                table.HasCheckConstraint("ck_erp_change_master_exception_status",
+                    "status IN ('open','mapped','not_needed')"));
+            b.HasKey(x => new { x.TenantId, x.ErpChangeMasterDataExceptionId });
+            b.Property(x => x.EntityKind).HasMaxLength(20).IsUnicode(false);
+            b.Property(x => x.TargetExternalId).HasMaxLength(320);
+            b.Property(x => x.DisplayName).HasMaxLength(320);
+            b.Property(x => x.TaxId).HasMaxLength(160);
+            b.Property(x => x.Country).HasMaxLength(80);
+            b.Property(x => x.Problem).HasMaxLength(40).IsUnicode(false);
+            b.Property(x => x.CandidateModuleIdsJson).HasColumnType("nvarchar(max)");
+            b.Property(x => x.CandidateLabelsJson).HasColumnType("nvarchar(max)");
+            b.Property(x => x.Status).HasMaxLength(20).IsUnicode(false);
+            b.Property(x => x.ResolvedBy).HasMaxLength(320);
+            b.Property(x => x.ResolutionNote).HasMaxLength(2000);
+            b.HasIndex(x => new { x.TenantId, x.ErpChangeRunId, x.Status, x.LiveUnitsAffected,
+                x.ErpChangeMasterDataExceptionId });
+            b.HasIndex(x => new { x.TenantId, x.ErpChangeRunId, x.EntityKind,
+                x.TargetExternalId }).IsUnique();
+            b.HasOne<ErpChangeRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.ErpChangeRunId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<ErpChangeStockDifference>(b =>
+        {
+            b.ToTable("erp_change_stock_difference", table =>
+                table.HasCheckConstraint("ck_erp_change_stock_difference_status",
+                    "status IN ('open','resolved')"));
+            b.HasKey(x => new { x.TenantId, x.ErpChangeStockDifferenceId });
+            b.Property(x => x.Identifier).HasMaxLength(320);
+            b.Property(x => x.ItemName).HasMaxLength(320);
+            b.Property(x => x.ReasonClass).HasMaxLength(48).IsUnicode(false);
+            b.Property(x => x.ModuleLocation).HasMaxLength(320);
+            b.Property(x => x.SourceLocation).HasMaxLength(320);
+            b.Property(x => x.TargetLocation).HasMaxLength(320);
+            b.Property(x => x.ModuleStatus).HasMaxLength(80);
+            b.Property(x => x.SourceStatus).HasMaxLength(80);
+            b.Property(x => x.TargetStatus).HasMaxLength(80);
+            b.Property(x => x.SuggestedResolution).HasMaxLength(80).IsUnicode(false);
+            b.Property(x => x.Status).HasMaxLength(20).IsUnicode(false);
+            b.Property(x => x.ResolutionCommand).HasMaxLength(80);
+            b.Property(x => x.ResolvedBy).HasMaxLength(320);
+            b.HasIndex(x => new { x.TenantId, x.ErpChangeRunId, x.Status, x.HasLiveEntitlement,
+                x.ReasonClass, x.ErpChangeStockDifferenceId });
+            b.HasIndex(x => new { x.TenantId, x.ErpChangeRunId, x.UnitId, x.ReasonClass }).IsUnique()
+                .HasFilter("[is_current] = 1 AND [unit_id] IS NOT NULL");
+            b.HasOne<ErpChangeRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.ErpChangeRunId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<ErpChangeStockSignoff>(b =>
+        {
+            b.ToTable("erp_change_stock_signoff");
+            b.HasKey(x => new { x.TenantId, x.ErpChangeStockSignoffId });
+            b.Property(x => x.Note).HasMaxLength(2000);
+            b.Property(x => x.SignedOffBy).HasMaxLength(320);
+            b.HasIndex(x => new { x.TenantId, x.ErpChangeRunId }).IsUnique();
+            b.HasOne<ErpChangeRun>().WithMany().HasForeignKey(x => new { x.TenantId, x.ErpChangeRunId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
         modelBuilder.Entity<OutboundDocumentReceipt>(b =>
         {
             b.ToTable("outbound_document_receipt");
@@ -617,6 +720,10 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
         Yojana.Integration.Relays.RelayModel.Configure(modelBuilder);
         MigrationModel.Configure(modelBuilder);
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<ErpChangeStockDifference>()
+            .HasIndex(x => new { x.TenantId, x.ErpChangeRunId, x.Status, x.HasLiveEntitlement,
+                x.ReasonClass, x.ErpChangeStockDifferenceId })
+            .HasDatabaseName("ix_erp_change_stock_difference_run_queue");
     }
 
     public static DbContextOptions<IntegrationDbContext> DesignTimeOptions(string connectionString) =>

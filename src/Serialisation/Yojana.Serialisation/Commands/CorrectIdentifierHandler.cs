@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Yojana.Platform.Contracts.Identifiers;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Tenancy;
@@ -70,7 +71,14 @@ public static class CorrectIdentifierHandler
         // P1 behaviour is retained: shipment is the existing command's evidence that the identifier appeared externally.
         // Later correction commands pass the richer external-document fact to CorrectionApprovalRules directly.
         var external = await db.Events.AsNoTracking().AnyAsync(e => e.TenantId == tenantId && e.UnitId == unit.UnitId && e.EventType == UnitEventType.Shipped, cancellationToken);
-        var hasApprover = !string.IsNullOrWhiteSpace(command.ApproverRef) || command.Correction?.Approvers is { Count: > 0 };
+        var migrationController = command.Reason == MigrationReconciliationReason.Value;
+        if (migrationController && (command.CommittedBy is null
+                || command.CommittedBy.UserRef != command.ActorRef
+                || !command.CommittedBy.Roles.Contains(YojanaRole.InventoryController, StringComparer.Ordinal)))
+            throw new CommandRefusedException("approval_required",
+                "Migration reconciliation is committed by the inventory controller.");
+        var hasApprover = migrationController || !string.IsNullOrWhiteSpace(command.ApproverRef)
+            || command.Correction?.Approvers is { Count: > 0 };
         if (external && !hasApprover)
         {
             throw new CommandRefusedException("approval_required", "The unit has appeared on an external document; a second approver is required.", "route through the correction workbench with an approver");

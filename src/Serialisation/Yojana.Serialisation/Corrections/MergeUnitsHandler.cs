@@ -165,6 +165,13 @@ public static class MergeUnitsHandler
     private static async Task DemandApprovalAsync(MergeUnits command, CorrectionMetadata metadata, bool live, CorrectionApprovalSettings settings, CancellationToken cancellationToken)
     {
         var committer = command.CommittedBy ?? throw new CommandRefusedException("committer_required", "MergeUnits names who commits it and the roles they hold.");
+        if (command.Reason == MigrationReconciliationReason.Value)
+        {
+            if (committer.UserRef != command.ActorRef
+                || !committer.Roles.Contains(YojanaRole.InventoryController, StringComparer.Ordinal))
+                throw new CommandRefusedException("approval_required", "Migration reconciliation is committed by the inventory controller.");
+            return;
+        }
         var policy = await settings.GetAsync(cancellationToken);
         var rule = policy.Commands.FirstOrDefault(r => r.Command == CorrectionCommand.MergeUnits)
             ?? throw new CommandRefusedException("approval_policy_missing", "MergeUnits has no tenant approval rule.", "add it to the tenant correction approval policy");

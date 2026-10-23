@@ -110,9 +110,13 @@ public sealed class BackfillService(
                 var key = new ConnectionWorkerKey(tenant.TenantId, job.ConnectionId);
                 var profile = await profiles.GetAsync(key, cancellationToken);
                 ConnectorRangePage page;
-                await using (await workers.For(key).AcquireAsync(profile.Profile, cancellationToken))
+                if (source.OwnsConnectionLane)
                     page = await source.ReadRangePageAsync(job.ConnectionId, job.Entity, job.RangeStart,
                         job.RangeEnd, job.Cursor, job.PageSize, cancellationToken);
+                else
+                    await using (await workers.For(key).AcquireAsync(profile.Profile, cancellationToken))
+                        page = await source.ReadRangePageAsync(job.ConnectionId, job.Entity, job.RangeStart,
+                            job.RangeEnd, job.Cursor, job.PageSize, cancellationToken);
 
                 foreach (var message in page.Messages)
                     await inbox.Accept(AsBackfill(message), cancellationToken);

@@ -25,6 +25,7 @@ public sealed class Cx02Adapter(
     Cx02OutboundDocuments documents) : IConnectorAdapter, IOutboundConnector
 {
     public string ConnectorCode => Cx02Capabilities.ConnectorCode;
+    public bool OwnsConnectionLane => true;
     public OutboundConnectorCapabilities Capabilities { get; } = new(false, OwnsConnectionLane: true);
 
     public Task<OutboundDocument?> FindByReferenceAsync(OutboundLookup lookup,

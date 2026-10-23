@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Identifiers;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
@@ -96,6 +97,11 @@ public static class ChangeCustodyHandler
 {
     public static async Task<ChangeCustodyResult> Handle(ChangeCustody command, SerialisationDbContext db, IUnitEventWriter writer, EpisodeService episodes, ITenantContext tenant, CancellationToken cancellationToken)
     {
+        if (command.Reason == MigrationReconciliationReason.Value
+            && (command.CommittedBy is null || command.CommittedBy.UserRef != command.ActorRef
+                || !command.CommittedBy.Roles.Contains(YojanaRole.InventoryController, StringComparer.Ordinal)))
+            throw new CommandRefusedException("approval_required",
+                "Migration reconciliation is committed by the inventory controller.");
         var tenantId = tenant.TenantId;
         var unit = await db.Units.AsNoTracking().FirstOrDefaultAsync(u => u.TenantId == tenantId && u.UnitId == command.UnitId, cancellationToken)
             ?? throw new CommandRefusedException("unit_unknown", $"Unit {command.UnitId} does not exist.");

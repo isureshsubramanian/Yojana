@@ -222,6 +222,18 @@ public static class PlatformSetup
                 .RequireClaim(YojanaClaim.TenantId)
                 .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator, YojanaRole.IntegrationOperator,
                     YojanaRole.MigrationLead));
+            auth.AddPolicy(YojanaPolicy.ErpChangeRead, p => p.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId)
+                .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator, YojanaRole.IntegrationOperator,
+                    YojanaRole.ItemMasterOwner, YojanaRole.InventoryController));
+            auth.AddPolicy(YojanaPolicy.ErpChangeControl, p => p.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId)
+                .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator,
+                    YojanaRole.IntegrationOperator));
+            auth.AddPolicy(YojanaPolicy.ErpChangeMasterData, p => p.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId)
+                .RequireClaim(YojanaClaim.Role, YojanaRole.IntegrationOperator,
+                    YojanaRole.ItemMasterOwner));
             auth.AddPolicy(YojanaPolicy.LabelPrinter, p => p.RequireAuthenticatedUser()
                 .RequireClaim(YojanaClaim.TenantId)
                 .RequireClaim(YojanaClaim.Role,

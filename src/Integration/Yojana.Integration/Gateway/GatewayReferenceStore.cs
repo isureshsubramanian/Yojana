@@ -10,7 +10,9 @@ using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.Gateway;
 
-public sealed record ItemReferenceAttributes(bool IsWarrantyProduct, string? WarrantyTemplateRef);
+public sealed record ItemReferenceAttributes(bool IsWarrantyProduct, string? WarrantyTemplateRef,
+    string ManufacturerItemCode = "");
+public sealed record PartyReferenceAttributes(string? TaxId, string Country, string PartyKind);
 
 public sealed class GatewayReferenceStore(IntegrationDbContext db, ITenantContext tenant, IClock clock)
 {
@@ -61,7 +63,8 @@ public sealed class GatewayReferenceStore(IntegrationDbContext db, ITenantContex
         row.TrackingMode = item.TrackingMode.RawValue ?? item.TrackingMode.Value;
         row.Uom = item.Uom;
         row.AttributesJson = JsonSerializer.Serialize(
-            new ItemReferenceAttributes(item.IsWarrantyProduct, item.WarrantyTemplateRef), IntegrationContracts.Json);
+            new ItemReferenceAttributes(item.IsWarrantyProduct, item.WarrantyTemplateRef, item.ItemExternalId),
+            IntegrationContracts.Json);
         row.Deleted = item.Deleted;
         row.UpdatedAt = clock.UtcNow;
         return id;
@@ -87,6 +90,8 @@ public sealed class GatewayReferenceStore(IntegrationDbContext db, ITenantContex
         }
         row.Code = party.PartyExternalId;
         row.DisplayName = party.LegalName;
+        row.AttributesJson = JsonSerializer.Serialize(new PartyReferenceAttributes(party.TaxId,
+            party.Country, party.PartyKind.RawValue ?? party.PartyKind.Value), IntegrationContracts.Json);
         row.Deleted = party.Deleted;
         row.UpdatedAt = clock.UtcNow;
         return id;

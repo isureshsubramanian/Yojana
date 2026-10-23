@@ -82,6 +82,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<BulkIngestion>();
         builder.Services.AddScoped<MigrationCoverBulkWriter>();
         builder.Services.AddScoped<ISerialisedOnHandQuery, Ports.SerialisedOnHandQuery>();
+        builder.Services.AddScoped<IMigrationReconciliationPort, Ports.MigrationReconciliationPort>();
         var baseOrderBackfill = builder.Configuration.GetSection(LedgerBaseOrderBackfillOptions.SectionName)
             .Get<LedgerBaseOrderBackfillOptions>() ?? new LedgerBaseOrderBackfillOptions();
         builder.Services.AddSingleton(baseOrderBackfill);

@@ -40,6 +40,7 @@ using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Integration.LegacyMigration.Validation;
 using Yojana.Integration.Ports;
+using Yojana.Integration.ErpChange;
 using Yojana.Platform.Contracts.Records;
 
 namespace Yojana.Integration;
@@ -254,6 +255,9 @@ public static class IntegrationModule
         builder.Services.AddSingleton(RecurringTenantJob.For<ReconciliationJob>(
             ReconciliationJob.JobName, ReconciliationJob.Cron));
         builder.Services.AddScoped<BackfillService>();
+        builder.Services.AddScoped<ErpChangeRunService>();
+        builder.Services.AddScoped<ErpChangeMasterDataService>();
+        builder.Services.AddScoped<ErpChangeStockService>();
         builder.Services.AddScoped<IReconciliationBackfillScheduler>(sp =>
             sp.GetRequiredService<BackfillService>());
         builder.Services.AddSingleton(RecurringTenantJob.For<BackfillJob>(

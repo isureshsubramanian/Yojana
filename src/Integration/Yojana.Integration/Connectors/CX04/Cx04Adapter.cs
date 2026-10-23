@@ -35,6 +35,7 @@ public sealed class Cx04Adapter(ITenantContext tenant, IClock clock, Integration
     GatewayReferenceStore references, Cx04Settings settings, Cx04Client client) : IConnectorAdapter
 {
     public string ConnectorCode => Cx04Capabilities.ConnectorCode;
+    public bool OwnsConnectionLane => true;
     public string? StartingWatermark(DateTime sourceLocalTime) =>
         new Cx04Watermark(new(DateTime.SpecifyKind(sourceLocalTime, DateTimeKind.Utc)), "").ToString();
 

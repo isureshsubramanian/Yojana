@@ -83,6 +83,15 @@ public static class YojanaPolicy
     /// </summary>
     public const string ParallelRunRead = "parallel_run_read";
 
+    /// <summary>ERP-change runbooks are visible to the operational roles that take part in them.</summary>
+    public const string ErpChangeRead = "erp_change_read";
+
+    /// <summary>Tenant administrators and integration operators may start, advance and cancel an ERP change.</summary>
+    public const string ErpChangeControl = "erp_change_control";
+
+    /// <summary>Integration operators and item-master owners decide master-data exceptions.</summary>
+    public const string ErpChangeMasterData = "erp_change_master_data";
+
     /// <summary>Operational label printing across service, warehouse, shipping and production roles.</summary>
     public const string LabelPrinter = "label_printer";
 

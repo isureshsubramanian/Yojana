@@ -346,9 +346,11 @@ public static class CorrectionInitiatingRole
     public const string ProductionSupervisor = "production_supervisor";
     public const string ServiceTechnician = "service_technician";
     public const string SerialAdministrator = "serial_administrator";
+    public const string InventoryController = "inventory_controller";
     public const string System = "system";
 
-    public static readonly IReadOnlyList<string> All = [CustomerService, WarehouseLead, ProductionSupervisor, ServiceTechnician, SerialAdministrator, System];
+    public static readonly IReadOnlyList<string> All = [CustomerService, WarehouseLead, ProductionSupervisor,
+        ServiceTechnician, SerialAdministrator, InventoryController, System];
 }
 
 /// <summary>The seven root-cause categories in ADR-0001's correction-volume KPI.</summary>
@@ -386,7 +388,8 @@ public static class IdentifierCorrectionReason
     public const string Relabel = "relabel";
     public const string Regulatory = "regulatory";
 
-    public static readonly IReadOnlyList<string> All = [Typo, Misread, Relabel, Regulatory];
+    public static readonly IReadOnlyList<string> All =
+        [Typo, Misread, Relabel, Regulatory, MigrationReconciliationReason.Value];
 }
 
 public static class SwapIdentifiersReason
@@ -442,7 +445,8 @@ public static class MergeUnitsReason
     public const string DuplicateRecord = "duplicate_record";
     public const string MigrationDuplicate = "migration_duplicate";
     public const string VendorSerialKeyedTwice = "vendor_serial_keyed_twice";
-    public static readonly IReadOnlyList<string> All = [DuplicateRecord, MigrationDuplicate, VendorSerialKeyedTwice];
+    public static readonly IReadOnlyList<string> All =
+        [DuplicateRecord, MigrationDuplicate, VendorSerialKeyedTwice, MigrationReconciliationReason.Value];
 }
 
 public static class AssignIdentifiersReason

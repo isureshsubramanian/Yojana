@@ -73,7 +73,7 @@ public sealed record CorrectionMetadata(
 /// Identity rule 5: a new identifier row replaces the open one of that type; the old row closes with the reason and
 /// points at its successor; the unit's key and every event stay as they are; no stock moves.
 /// </summary>
-public sealed record CorrectIdentifier(Guid CommandId, Guid UnitId, string IdentifierType, string NewRawValue, string Reason, DateTime EventTime, string ActorRef, Guid LegalEntityId, string? ApproverRef = null, string? Note = null, Guid? IssuerPartyRef = null, string? Qualifier = null, CorrectionMetadata? Correction = null);
+public sealed record CorrectIdentifier(Guid CommandId, Guid UnitId, string IdentifierType, string NewRawValue, string Reason, DateTime EventTime, string ActorRef, Guid LegalEntityId, string? ApproverRef = null, string? Note = null, Guid? IssuerPartyRef = null, string? Qualifier = null, CorrectionMetadata? Correction = null, CorrectionCommitter? CommittedBy = null);
 
 /// <summary>Rehearses <see cref="CorrectIdentifier"/> through the real handler in a rolled-back transaction.</summary>
 public sealed record PreviewCorrectIdentifier(CorrectIdentifier Command);
@@ -485,7 +485,8 @@ public sealed record CloseOwnershipResult(Guid UnitId, Guid ClosedEpisodeId);
 public sealed record ChangeCustody(
     Guid CommandId, Guid UnitId, string LocationKind, string Reason, DateTime EventTime, string ActorRef, Guid LegalEntityId,
     Guid? LocationId = null, Guid? PartyRef = null, string? PartyType = null, string Source = "delivery", string Confidence = "high",
-    DateOnly? DueBack = null, DocumentRef? Document = null, string? ExternalOrderRef = null);
+    DateOnly? DueBack = null, DocumentRef? Document = null, string? ExternalOrderRef = null,
+    CorrectionCommitter? CommittedBy = null);
 
 public sealed record ChangeCustodyResult(Guid UnitId, Guid EpisodeId, Guid? ClosedEpisodeId, string FromLocationKind, string ToLocationKind);
 

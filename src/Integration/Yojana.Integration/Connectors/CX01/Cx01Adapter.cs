@@ -34,6 +34,7 @@ public sealed class Cx01Adapter(
     Cx01NativeWarrantyWriter? nativeWarranty = null) : IConnectorAdapter, IOutboundConnector
 {
     public string ConnectorCode => Cx01Capabilities.ConnectorCode;
+    public bool OwnsConnectionLane => true;
     public OutboundConnectorCapabilities Capabilities { get; } = new(false, OwnsConnectionLane: true);
 
     // HIDDEN COUPLING (OD-60) with SourceExtractor.SourceClockAsync: the time given here is the source server's local
