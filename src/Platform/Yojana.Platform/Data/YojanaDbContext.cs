@@ -39,8 +39,8 @@ public abstract class YojanaDbContext : DbContext
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         configurationBuilder.Properties<TenantId>().HaveConversion<TenantIdConverter>();
-        configurationBuilder.Properties<DateTime>().HaveColumnType("datetime2(3)");
-        configurationBuilder.Properties<DateTime?>().HaveColumnType("datetime2(3)");
+        configurationBuilder.Properties<DateTime>().HaveColumnType("datetime2(3)").HaveConversion<UtcDateTimeConverter>();
+        configurationBuilder.Properties<DateTime?>().HaveColumnType("datetime2(3)").HaveConversion<UtcDateTimeConverter>();
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
