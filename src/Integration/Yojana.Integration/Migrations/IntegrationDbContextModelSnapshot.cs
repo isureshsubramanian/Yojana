@@ -23,6 +23,73 @@ namespace Yojana.Integration.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("Yojana.Integration.Connectors.CX04.Cx04AuthorisationState", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<DateTime?>("PendingStateExpiresAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("pending_state_expires_at");
+
+                    b.Property<byte[]>("PendingStateHash")
+                        .HasMaxLength(32)
+                        .HasColumnType("varbinary(32)")
+                        .HasColumnName("pending_state_hash");
+
+                    b.Property<DateTime?>("RefreshChainExpiresAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("refresh_chain_expires_at");
+
+                    b.Property<string>("RefreshExpiryMode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("refresh_expiry_mode");
+
+                    b.Property<int>("RefreshLifetimeDays")
+                        .HasColumnType("int")
+                        .HasColumnName("refresh_lifetime_days");
+
+                    b.Property<bool>("Reminder14DaysSent")
+                        .HasColumnType("bit")
+                        .HasColumnName("reminder14_days_sent");
+
+                    b.Property<bool>("Reminder3DaysSent")
+                        .HasColumnType("bit")
+                        .HasColumnName("reminder3_days_sent");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("TenantId", "ConnectionId")
+                        .HasName("pk_cx04_authorisation_state");
+
+                    b.HasIndex("TenantId", "Status", "RefreshChainExpiresAt", "ConnectionId")
+                        .HasDatabaseName("ix_cx04_authorisation_state_tenant_id_status_refresh_chain_expires_at_connection_id");
+
+                    b.ToTable("cx04_authorisation_state", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_cx04_authorisation_status", "status IN ('reconsent_required','consent_pending','active','disabled')");
+
+                            t.HasCheckConstraint("ck_cx04_refresh_expiry_mode", "refresh_expiry_mode IN ('absolute','sliding')");
+
+                            t.HasCheckConstraint("ck_cx04_refresh_lifetime_days", "refresh_lifetime_days BETWEEN 1 AND 365");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.BackfillCursor", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -886,7 +953,7 @@ namespace Yojana.Integration.Migrations
 
                     b.ToTable("connection_health", "integration", t =>
                         {
-                            t.HasCheckConstraint("ck_connection_health_status", "status IN ('healthy','degraded','down','paused','archived')");
+                            t.HasCheckConstraint("ck_connection_health_status", "status IN ('healthy','degraded','down','paused','archived','reconsent_required','disabled')");
                         });
                 });
 
@@ -1103,7 +1170,7 @@ namespace Yojana.Integration.Migrations
                         {
                             t.HasCheckConstraint("ck_connection_poll_interval", "interval_seconds BETWEEN 1 AND 86400");
 
-                            t.HasCheckConstraint("ck_connection_poll_overlap", "overlap_seconds BETWEEN 0 AND 86400");
+                            t.HasCheckConstraint("ck_connection_poll_overlap", "overlap_seconds BETWEEN 0 AND 172800");
 
                             t.HasCheckConstraint("ck_connection_poll_revision", "revision >= 0");
                         });

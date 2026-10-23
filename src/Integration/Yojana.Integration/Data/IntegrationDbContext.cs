@@ -10,6 +10,7 @@ using Yojana.Integration.LegacyMigration.Canonicalisation;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Integration.LegacyMigration.Validation;
+using Yojana.Integration.Connectors.CX04;
 
 namespace Yojana.Integration.Data;
 
@@ -25,6 +26,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public override string Schema => SchemaName;
 
     public DbSet<ConnectionHealth> ConnectionHealth => Set<ConnectionHealth>();
+    public DbSet<Cx04AuthorisationState> Cx04AuthorisationStates => Set<Cx04AuthorisationState>();
     public DbSet<Connection> Connections => Set<Connection>();
     public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
     public DbSet<IdempotencyClaim> IdempotencyIndex => Set<IdempotencyClaim>();
@@ -131,7 +133,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
         modelBuilder.Entity<ConnectionHealth>(b =>
         {
             b.ToTable("connection_health", table => table.HasCheckConstraint("ck_connection_health_status",
-                "status IN ('healthy','degraded','down','paused','archived')"));
+                "status IN ('healthy','degraded','down','paused','archived','reconsent_required','disabled')"));
             b.HasKey(x => new { x.TenantId, x.ConnectionId });
             b.Property(x => x.Status).HasMaxLength(24);
             b.Property(x => x.NotificationState).HasMaxLength(40);
@@ -141,6 +143,22 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.RecordTypesJson).HasColumnType("nvarchar(max)");
             b.Property(x => x.CompletedInboundDaysJson).HasColumnType("nvarchar(max)");
             b.HasIndex(x => new { x.TenantId, x.Status, x.ConnectionId });
+        });
+        modelBuilder.Entity<Cx04AuthorisationState>(b =>
+        {
+            b.ToTable("cx04_authorisation_state", table =>
+            {
+                table.HasCheckConstraint("ck_cx04_authorisation_status",
+                    "status IN ('reconsent_required','consent_pending','active','disabled')");
+                table.HasCheckConstraint("ck_cx04_refresh_expiry_mode",
+                    "refresh_expiry_mode IN ('absolute','sliding')");
+                table.HasCheckConstraint("ck_cx04_refresh_lifetime_days", "refresh_lifetime_days BETWEEN 1 AND 365");
+            });
+            b.HasKey(x => new { x.TenantId, x.ConnectionId });
+            b.Property(x => x.Status).HasMaxLength(32);
+            b.Property(x => x.PendingStateHash).HasMaxLength(32);
+            b.Property(x => x.RefreshExpiryMode).HasMaxLength(16);
+            b.HasIndex(x => new { x.TenantId, x.Status, x.RefreshChainExpiresAt, x.ConnectionId });
         });
         modelBuilder.Entity<Cx01SurveyRecord>(b =>
         {
@@ -451,7 +469,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
         {
             b.ToTable("connection_poll_watermark", table =>
             {
-                table.HasCheckConstraint("ck_connection_poll_overlap", "overlap_seconds BETWEEN 0 AND 86400");
+                table.HasCheckConstraint("ck_connection_poll_overlap", "overlap_seconds BETWEEN 0 AND 172800");
                 table.HasCheckConstraint("ck_connection_poll_interval", "interval_seconds BETWEEN 1 AND 86400");
                 table.HasCheckConstraint("ck_connection_poll_revision", "revision >= 0");
             });

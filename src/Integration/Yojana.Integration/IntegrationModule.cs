@@ -26,6 +26,7 @@ using Yojana.Integration.Security.Webhooks;
 using Yojana.Integration.Security.Workers;
 using Yojana.Integration.Connectors.CX01;
 using Yojana.Integration.Connectors.CX02;
+using Yojana.Integration.Connectors.CX04;
 using Yojana.Integration.Reconciliation;
 using Yojana.Integration.Backfills;
 using Yojana.Integration.Connectors;
@@ -163,6 +164,29 @@ public static class IntegrationModule
         builder.Services.AddScoped<Cx02WebhookMaintenance>();
         builder.Services.AddSingleton(RecurringTenantJob.For<Cx02WebhookMaintenanceJob>(
             Cx02WebhookMaintenanceJob.JobName, Cx02WebhookMaintenanceJob.Cron));
+        // CX04 registrations are deliberately contiguous so the connector remains one replaceable adapter block.
+        builder.Services.AddKeyedScoped<IConnectionLifecycleAdapter, Cx04ConnectionLifecycleAdapter>(
+            Cx04Capabilities.ConnectorCode);
+        builder.Services.AddKeyedScoped<ICoexistenceDriftReader, Cx04CoexistenceDriftReader>(
+            Cx04Capabilities.ConnectorCode);
+        builder.Services.AddKeyedSingleton<IConnectorOnboardingProfile, Cx04OnboardingProfile>(
+            Cx04Capabilities.ConnectorCode);
+        builder.Services.AddSingleton<Cx04TokenRegistry>();
+        builder.Services.AddScoped<Cx04Settings>();
+        builder.Services.AddScoped<Cx04Transport>();
+        builder.Services.AddScoped<ICx04Transport>(services => services.GetRequiredService<Cx04Transport>());
+        builder.Services.AddScoped<Cx04Client>();
+        builder.Services.AddScoped<Cx04Authorisation>();
+        builder.Services.AddScoped<Cx04ConsentExpiryReminders>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<Cx04ConsentExpiryJob>(
+            Cx04ConsentExpiryJob.JobName, Cx04ConsentExpiryJob.Cron));
+        builder.Services.AddScoped<Cx04Adapter>();
+        builder.Services.AddKeyedScoped<IConnectorAdapter>(Cx04Capabilities.ConnectorCode, (services, _) =>
+            services.GetRequiredService<Cx04Adapter>());
+        builder.Services.AddScoped<ICx04OutboundFacts, Cx04OutboundFacts>();
+        builder.Services.AddScoped<Cx04OutboundDocuments>();
+        builder.Services.AddKeyedScoped<IOutboundConnector>(Cx04Capabilities.ConnectorCode, (services, _) =>
+            services.GetRequiredService<Cx04OutboundDocuments>());
         // The published-event chains already contain Serialisation handlers with their own EF transaction. Resolve the
         // staging service through a factory so Wolverine does not infer IntegrationDbContext as a second transaction
         // owner for that same public message. The stager owns and saves its narrow staging unit of work explicitly.

@@ -15,6 +15,7 @@
              Link="Connectors/CX02/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX04/Testing/**/*.cs"
              Link="Connectors/CX04/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Remove="../../src/Integration/Yojana.Integration/Connectors/CX04/Testing/Cx04ConnectorEdgeHarness.cs" />
     <Compile Remove="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01ConnectorEdgeHarness.cs" />
     <Compile Remove="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01LiveConnectorEdgeHarness.cs" />
     <Content Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Fixtures/**/*.json"

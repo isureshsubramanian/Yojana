@@ -57,6 +57,10 @@ public sealed class Cx04Simulator : IAsyncDisposable
     public int DelayedRequestCount => governor.DelayedRequests;
     public int DeclinedRequestCount => governor.DeclinedRequests;
     public int QueuedRequestCount => governor.QueuedRequests;
+    public int PasswordGrantRequestCount { get; private set; }
+    public int AuthorisationCodeGrantRequestCount { get; private set; }
+    public int RefreshGrantRequestCount { get; private set; }
+    public int LogoutRequestCount { get; private set; }
     public TimeSpan LastThrottleDelay => governor.LastThrottleDelay;
     public IReadOnlyList<Cx04StoredFile> Files { get { lock (stateLock) return files.ToArray(); } }
     public IReadOnlyList<Cx04ParkedNotification> ParkedNotifications
@@ -352,6 +356,7 @@ public sealed class Cx04Simulator : IAsyncDisposable
         switch (form["grant_type"])
         {
             case "password":
+                PasswordGrantRequestCount++;
                 if (string.IsNullOrWhiteSpace(form["username"]) || string.IsNullOrWhiteSpace(form["password"]))
                 {
                     await OAuthErrorAsync(response, "invalid_grant");
@@ -360,6 +365,7 @@ public sealed class Cx04Simulator : IAsyncDisposable
                 await IssueGrantAsync(response, form["scope"] ?? "api");
                 return;
             case "authorization_code":
+                AuthorisationCodeGrantRequestCount++;
                 AuthorisationCode? code;
                 lock (stateLock)
                 {
@@ -376,6 +382,7 @@ public sealed class Cx04Simulator : IAsyncDisposable
                 await IssueGrantAsync(response, code.Scope);
                 return;
             case "refresh_token":
+                RefreshGrantRequestCount++;
                 await RefreshAsync(response, form["refresh_token"] ?? "");
                 return;
             case "client_credentials":
@@ -410,6 +417,12 @@ public sealed class Cx04Simulator : IAsyncDisposable
 
     private async Task RefreshAsync(HttpListenerResponse response, string presented)
     {
+        if (Faults.RejectNextRefreshAsInvalidGrant)
+        {
+            Faults.RejectNextRefreshAsInvalidGrant = false;
+            await OAuthErrorAsync(response, "invalid_grant");
+            return;
+        }
         RefreshGrant? refresh;
         var now = options.TimeProvider.GetUtcNow();
         lock (stateLock)
@@ -479,6 +492,7 @@ public sealed class Cx04Simulator : IAsyncDisposable
 
     private void Logout(HttpListenerRequest request, HttpListenerResponse response)
     {
+        LogoutRequestCount++;
         var authentication = Authenticate(request, countRequest: false);
         if (authentication is not null)
         {

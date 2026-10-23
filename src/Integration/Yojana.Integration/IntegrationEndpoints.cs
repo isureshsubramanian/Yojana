@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Yojana.Integration.DeadLetters;
 using Yojana.Integration.Notifications;
 using Yojana.Integration.Connectors.CX02;
+using Yojana.Integration.Connectors.CX04;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Integration.Connectors.CX01;
 using Yojana.Integration.Reconciliation;
@@ -26,6 +27,8 @@ public static class IntegrationEndpoints
         app.MapIntegrationTransportEndpoints();
         app.MapIntegrationNotificationEndpoints();
         app.MapCx02WebhookEndpoints();
+        app.MapCx04WebhookEndpoints();
+        app.MapCx04AuthorisationEndpoints();
         app.MapConnectionEndpoints();
         app.MapCoexistenceEndpoints();
         app.MapMigrationEndpoints();
