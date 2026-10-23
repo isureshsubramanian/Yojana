@@ -7,7 +7,7 @@ import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { useSession } from "../session/session";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { passwordResetApi, type PasswordResetOptions } from "./passwordResetApi";
-import { roleLabel, STAFF_ROLES } from "./roles";
+import { ROLE_GROUPS, roleLabel, STAFF_ROLES } from "./roles";
 import { userManagementApi, type TenantUserDetail, type TenantUserRow, type TenantUserSummary } from "./userManagementApi";
 
 const PAGE_SIZE = 50;
@@ -139,7 +139,7 @@ function UserDrawer({ row, onChanged, onDeactivate, onTemporary, onSecondStepRes
   return <>
     {current.status === "locked" && <div className="note warn"><strong>Sign-in is temporarily locked.</strong>&nbsp;Locked until {when(current.lockedUntil)}.</div>}
     <Section title="Details"><Kv rows={[["E-mail", current.email], ["Second step", secondStepLine(current)], ["Also a member of", other.length ? other.join(", ") : "No other company visible to you"], ["Password changed", when(detail?.passwordChangedAt ?? null)]]} /><p className="muted">You can name only companies where you are also a tenant administrator.</p></Section>
-    <Section title="Roles"><div className="stack">{STAFF_ROLES.map((role) => <label className="checkrow" key={role}><input type="checkbox" checked={roles.includes(role)} onChange={(event) => setRoles((values) => event.target.checked ? [...values, role] : values.filter((value) => value !== role))} />{roleLabel(role)}</label>)}</div><button type="button" className="btn primary block" disabled={busy || roles.length === 0 || !detail || roles.slice().sort().join() === current.roles.slice().sort().join()} onClick={() => void saveRoles()}>Save roles</button></Section>
+    <Section title="Roles"><RoleChecks roles={roles} setRoles={setRoles} /><button type="button" className="btn primary block" disabled={busy || roles.length === 0 || !detail || roles.slice().sort().join() === current.roles.slice().sort().join()} onClick={() => void saveRoles()}>Save roles</button></Section>
     <Section title="Password"><div className="act"><button type="button" className="btn primary block" disabled={busy || reset?.canSendLink === false} onClick={() => void passwordReset("link")}>Send password reset link</button><button type="button" className="btn block" disabled={busy || !reset?.canSetTemporary} title={!reset?.canSetTemporary ? unavailable : undefined} onClick={() => void passwordReset("temporary")}>Set a temporary password</button></div><p className="hint">You can reset a user only when you administer every company they belong to. For anyone else, the reset link goes to their own e-mail and nothing else is offered.</p></Section>
     <Section title="Second step"><button type="button" className="btn block" disabled={busy || !(current.signInMethods.includes("app") || current.signInMethods.includes("passkey")) || !detail?.secondStepResetAllowed} title={!detail?.secondStepResetAllowed ? "You can reset the second step only when you administer every company this user belongs to; use your account page for yourself." : undefined} onClick={onSecondStepReset}>Reset second step…</button></Section>
     <Section title="Membership"><div className="act">{current.status === "deactivated" ? <button type="button" className="btn block" disabled={busy} onClick={() => current.userId && void run(() => userManagementApi.reactivate(current.userId!))}>Reactivate</button> : <button type="button" className="btn block" disabled={busy} onClick={onDeactivate}>Deactivate…</button>}</div></Section>
@@ -148,7 +148,11 @@ function UserDrawer({ row, onChanged, onDeactivate, onTemporary, onSecondStepRes
 }
 
 function RoleChecks({ roles, setRoles }: { roles: string[]; setRoles: (roles: string[]) => void }) {
-  return <div className="stack">{STAFF_ROLES.map((role) => <label className="checkrow" key={role}><input type="checkbox" checked={roles.includes(role)} onChange={(event) => setRoles(event.target.checked ? [...roles, role] : roles.filter((value) => value !== role))} />{roleLabel(role)}</label>)}</div>;
+  const toggle = (role: string, checked: boolean) => setRoles(checked ? [...roles, role] : roles.filter((value) => value !== role));
+  return <div className="role-groups">{ROLE_GROUPS.map((group) => <fieldset className="role-group" key={group.label}>
+    <legend>{group.label}</legend>
+    {group.roles.map((role) => <label className="checkrow" key={role}><input type="checkbox" checked={roles.includes(role)} onChange={(event) => toggle(role, event.target.checked)} />{roleLabel(role)}</label>)}
+  </fieldset>)}</div>;
 }
 
 function InviteDialog({ onCancel, onSaved }: { onCancel: () => void; onSaved: () => void }) {
@@ -157,7 +161,7 @@ function InviteDialog({ onCancel, onSaved }: { onCancel: () => void; onSaved: ()
   const save = async () => { setBusy(true); setError(null); try { await userManagementApi.invite(email, name, roles); onSaved(); } catch (reason) { setError(reason); } finally { setBusy(false); } };
   const inline = error instanceof ApiError && error.title === "already_member" ? "That address is already an active member of this company." : error instanceof ApiError && error.title === "already_invited" ? "An open invitation already exists. Select it in the list to resend it." : null;
   return <ActionDialog title="Invite user" onCancel={onCancel} wide actions={<button type="button" className="btn primary" disabled={busy || !email.trim() || !name.trim() || roles.length === 0} onClick={() => void save()}>{busy ? "Sending…" : "Send invitation"}</button>}>
-    <div className="form-grid"><div className="field"><label htmlFor="invite-email">E-mail</label><input id="invite-email" className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></div><div className="field"><label htmlFor="invite-name">Name</label><input id="invite-name" className="input" value={name} onChange={(event) => setName(event.target.value)} /></div><div className="field span"><span className="lbl">Roles</span><RoleChecks roles={roles} setRoles={setRoles} /></div></div>
+    <div className="form-grid"><div className="field"><label htmlFor="invite-email">E-mail</label><input id="invite-email" className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></div><div className="field"><label htmlFor="invite-name">Name</label><input id="invite-name" className="input" value={name} onChange={(event) => setName(event.target.value)} /></div><div className="field span"><span className="lbl">Roles <span className="meta">· {roles.length ? `${roles.length} selected` : "choose at least one"}</span></span><RoleChecks roles={roles} setRoles={setRoles} /></div></div>
     {inline ? <div className="form-error" role="alert">{inline}</div> : <ErrorNote error={error} />}
   </ActionDialog>;
 }

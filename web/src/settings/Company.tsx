@@ -42,7 +42,7 @@ export function Component() {
     {permitted && !settings && !error && <p className="muted">Loading company settings…</p>}
     {settings && <div className="stack top" style={{ maxWidth: 900 }}>
       <section className="card" aria-labelledby="company-name"><div className="card-header"><h2 id="company-name">Name and footer</h2></div><div className="card-body"><div className="form-grid">
-        <label className="field span"><span className="lbl">Company name</span><input className="input" value={settings.companyName} readOnly /><span className="help">Set when the company was created; the e-mail header shows it beside its initials.</span></label>
+        <div className="field span"><span className="lbl">Company name</span><span className="fixed-value">{settings.companyName}</span><span className="help">Set when the company was created; the e-mail header shows it beside its initials.</span></div>
         <label className="field span"><span className="lbl">Footer line</span><input className="input" maxLength={120} value={settings.footerLine} placeholder="Service operations · Bengaluru, India" onChange={(event) => setSettings({ ...settings, footerLine: event.target.value })} /><span className="help">Shown after the company name at the foot of every e-mail; up to 120 characters, plain text. Leave empty to show the name alone.</span></label>
       </div>
         <p className="hint" style={{ margin: "12px 0 0" }}>Every e-mail ends with: <strong>{companyLine(settings)}</strong></p>

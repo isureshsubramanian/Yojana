@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { passwordResetApi } from "../src/settings/passwordResetApi.ts";
-import { roleLabel, STAFF_ROLES } from "../src/settings/roles.ts";
+import { ROLE_GROUPS, roleLabel, STAFF_ROLES } from "../src/settings/roles.ts";
 
 const users = readFileSync(new URL("../src/settings/Users.tsx", import.meta.url), "utf8");
 const accept = readFileSync(new URL("../src/pages/AcceptInvitation.tsx", import.meta.url), "utf8");
@@ -63,4 +63,10 @@ test("accept-invitation reads the fragment and posts only the token body", () =>
   assert.doesNotMatch(accept, /location\.search.*token|\?token=/);
   assert.match(accept, /invitation_other_account/);
   assert.match(accept, /invalid, expired, already used or revoked/);
+});
+
+test("role pickers group every staff role exactly once", () => {
+  const grouped = ROLE_GROUPS.flatMap((group) => group.roles);
+  assert.equal(grouped.length, STAFF_ROLES.length);
+  assert.deepEqual([...grouped].sort(), [...STAFF_ROLES].sort());
 });
