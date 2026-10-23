@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.invalid/cx02/extension/v1.0/posted-return-receipt-line.schema.json",
+  "title": "Posted return receipt line page",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "documentId", "lineNumber", "itemNumber", "quantity", "lastModifiedDateTime", "@odata.etag"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "documentId": { "type": "string", "format": "uuid" },
+    "lineNumber": { "type": "integer" },
+    "itemNumber": { "type": "string" },
+    "description": { "type": ["string", "null"] },
+    "quantity": { "type": "number" },
+    "unitOfMeasureCode": { "type": ["string", "null"] },
+    "lastModifiedDateTime": { "type": "string", "format": "date-time" },
+    "@odata.etag": { "type": "string" }
+  }
+}

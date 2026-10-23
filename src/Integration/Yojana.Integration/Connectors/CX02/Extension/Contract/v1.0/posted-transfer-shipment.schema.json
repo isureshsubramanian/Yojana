@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.invalid/cx02/extension/v1.0/posted-transfer-shipment.schema.json",
+  "title": "Posted transfer shipment page",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "number", "postingDate", "transferFromCode", "transferToCode", "lastModifiedDateTime", "@odata.etag"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "number": { "type": "string" },
+    "postingDate": { "type": "string", "format": "date" },
+    "transferFromCode": { "type": "string" },
+    "transferToCode": { "type": "string" },
+    "externalDocumentNumber": { "type": ["string", "null"] },
+    "lastModifiedDateTime": { "type": "string", "format": "date-time" },
+    "@odata.etag": { "type": "string" }
+  }
+}

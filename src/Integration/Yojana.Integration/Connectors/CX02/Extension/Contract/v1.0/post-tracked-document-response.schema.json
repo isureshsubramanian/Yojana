@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.invalid/cx02/extension/v1.0/post-tracked-document-response.schema.json",
+  "title": "Post tracked document action response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "documentNumber", "status", "postedAt"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "documentNumber": { "type": "string" },
+    "status": { "const": "posted" },
+    "postedAt": { "type": "string", "format": "date-time" }
+  }
+}

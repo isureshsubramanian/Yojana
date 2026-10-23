@@ -11,8 +11,13 @@
     <ProjectReference Include="../../src/Integration/Yojana.Integration/Yojana.Integration.csproj" />
     <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/**/*.cs"
              Link="Connectors/CX01/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX02/Testing/**/*.cs"
+             Link="Connectors/CX02/%(RecursiveDir)%(Filename)%(Extension)" />
     <Content Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Fixtures/**/*.json"
              Link="Connectors/CX01/Fixtures/%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../src/Integration/Yojana.Integration/Connectors/CX02/Extension/Contract/v1.0/**/*"
+             Link="Connectors/CX02/Contract/v1.0/%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

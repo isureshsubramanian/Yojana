@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.invalid/cx02/extension/v1.0/post-tracked-document-request.schema.json",
+  "title": "Post tracked document action request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["documentType", "tracking"],
+  "properties": {
+    "documentType": { "type": "string", "enum": ["salesShipment", "purchaseReceipt", "transferShipment", "transferReceipt", "returnReceipt"] },
+    "tracking": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lineId", "quantity", "serialNumber", "lotNumber", "packageNumber"],
+        "properties": {
+          "lineId": { "type": "string", "format": "uuid" },
+          "quantity": { "type": "number" },
+          "serialNumber": { "type": "string" },
+          "lotNumber": { "type": "string" },
+          "packageNumber": { "type": "string" }
+        }
+      }
+    }
+  }
+}
