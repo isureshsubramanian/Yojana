@@ -1,0 +1,37 @@
+/* ERP change runbook, master data, stock and connection sign-in screens (P10-T10). Theme tokens only. */
+.erp-change-tabs { margin-bottom: var(--gap); }
+.erp-stages { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.erp-stages > li > a, .erp-stages > li > button { display: block; width: 100%; height: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text-1); text-align: left; text-decoration: none; font: inherit; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.erp-stages > li > a:hover, .erp-stages > li > button:hover { border-color: var(--accent); }
+.erp-stages [aria-current="true"], .erp-stages [aria-pressed="true"] { border-color: var(--accent); background: var(--surface-2); }
+.erp-stages .l { font-size: 12px; color: var(--text-2); }
+.erp-stages .n { margin-top: 4px; font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.erp-stages .s { margin-top: 2px; font-size: 12px; color: var(--text-3); line-height: 1.35; }
+.erp-checks, .erp-chain { margin: 0; padding: 0; list-style: none; }
+.erp-checks > li, .erp-chain > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.erp-chain > li { grid-template-columns: 24px minmax(0, 1fr) auto; }
+.erp-checks > li:last-child, .erp-chain > li:last-child { border-bottom: 0; }
+.erp-checks .s, .erp-chain .s { display: block; margin-top: 2px; color: var(--text-3); font-size: 12px; line-height: 1.4; }
+.erp-chain .v { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2); color: var(--text-2); font-size: 11px; font-weight: 700; }
+.erp-chain .erp-item-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.erp-state { display: grid; justify-items: end; gap: 6px; }
+.erp-change-columns { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--gap); align-items: start; }
+.erp-pair-hint { margin-top: 12px; }
+.erp-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; padding: 12px 16px; border-bottom: 1px solid var(--rule); }
+.erp-filters .grow { flex: 1 1 260px; }
+.erp-drawer-form { display: grid; gap: 12px; }
+.erp-options { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
+.erp-options > label { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-s); cursor: pointer; }
+.erp-options > label.on { border-color: var(--accent); background: var(--surface-2); }
+.erp-options .s { grid-column: 2; color: var(--text-3); font-size: 12px; }
+.erp-consequence { border-left: 3px solid var(--warning); }
+.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.btn.danger:hover { background: var(--danger-soft); }
+.erp-confirm { display: flex; gap: 8px; align-items: center; }
+@media (max-width: 1100px) {
+  .erp-stages { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .erp-change-columns { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .erp-stages { grid-template-columns: minmax(0, 1fr); }
+}
