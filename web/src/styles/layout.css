@@ -213,3 +213,5 @@
 /* Currencies: the working currency is one fact, so it takes a narrow column at its own height; the accepted list gets the width. */
 .currency-cols { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 3fr); gap: var(--gap); align-items: start; }
 @media (max-width: 960px) { .currency-cols { grid-template-columns: 1fr; } }
+/* Two small settings cards side by side under a full-width editor; each keeps its own height. */
+.policy-pair { align-items: start; }
