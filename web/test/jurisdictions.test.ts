@@ -105,3 +105,11 @@ function textOf(tree: any): string {
   if (Array.isArray(tree)) return tree.map(textOf).join("");
   return tree && typeof tree === "object" ? textOf(tree.props?.children) : "";
 }
+
+test("currency choices are ISO codes with names and keep an unlisted saved value", async () => {
+  const { currencyOptions } = await import("../src/reference/currencies.ts");
+  const options = currencyOptions("XTS");
+  assert.ok(options.some((option) => option.code === "EUR" && option.label.startsWith("EUR · ")));
+  assert.ok(options.some((option) => option.code === "XTS"));
+  assert.deepEqual(options.map((option) => option.code), [...options.map((option) => option.code)].sort());
+});
