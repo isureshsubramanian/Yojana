@@ -54,7 +54,7 @@ function CorrectReplacementLinkForm({ unitId, primary, onArguments }: CommandFor
   }, [unitId, actualUnitId, invalid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div className="workbench-command-form">
-    <div className="correction-form-head"><div><strong>CorrectReplacementLink</strong><span>Compare the unit recorded on the shipment with the physical unit the customer received.</span></div></div>
+    <div className="correction-form-head"><div><strong>Correct a replacement link</strong><span>Compare the unit recorded on the shipment with the physical unit the customer received.</span></div></div>
     <div className="pair" style={{ marginBottom: 12 }}>
       <div className="side"><div className="k">Recorded replacement</div><div className="serial">{primary ?? "Selected unit"}</div><div className="hint">Returns to its prior company stock location.</div></div>
       <div className="arrow">→</div>
@@ -152,7 +152,7 @@ function CorrectAsBuiltForm({ unitId, lineage, onArguments }: CommandFormProps) 
   };
 
   return <div className="workbench-command-form">
-    <div className="correction-form-head"><div><strong>CorrectAsBuilt</strong><span>Correct the effective-dated component tree; unchanged links stay untouched.</span></div><button type="button" className="btn sm" onClick={add}>Add component</button></div>
+    <div className="correction-form-head"><div><strong>Correct as-built parts</strong><span>Correct the effective-dated component tree; unchanged links stay untouched.</span></div><button type="button" className="btn sm" onClick={add}>Add component</button></div>
     <div className="field"><label htmlFor="wb-asbuilt-at">Physical change took effect</label><input id="wb-asbuilt-at" className="input" type="datetime-local" value={effectiveAt} max={datetimeInput()} onChange={(event) => setEffectiveAt(event.target.value)} /></div>
     <div className="correction-lines" data-serial-form="asbuilt">
       {rows.map((row, index) => <div className={`correction-line${row.change === "keep" ? " quiet" : ""}`} key={row.key}>
@@ -229,7 +229,7 @@ function LateSerializationForm({ lineage, initialDocument, corrects, onArguments
   const updateKit = (key: string, patch: Partial<KitUi>) => setKits((rows) => rows.map((row) => row.key === key ? { ...row, ...patch } : row));
 
   return <div className="workbench-command-form">
-    <div className="correction-form-head"><div><strong>LateSerialization</strong><span>Turn on serial tracking, commission existing stock, and capture units already fitted in kits.</span></div></div>
+    <div className="correction-form-head"><div><strong>Serialise an item late</strong><span>Turn on serial tracking, commission existing stock, and capture units already fitted in kits.</span></div></div>
     <div className="form-grid">
       <ItemField id="wb-late-item" label="Item changing to serial-tracked" value={itemId} onChange={setItemId} {...(itemId ? { hint: `Current selection: ${names.item(itemId)}` } : {})} />
       <div className="field"><label htmlFor="wb-late-at">Tracking took effect</label><input id="wb-late-at" className="input" type="datetime-local" value={effectiveAt} max={datetimeInput()} onChange={(event) => setEffectiveAt(event.target.value)} /></div>
@@ -322,7 +322,7 @@ function CorrectDocumentSerialsForm({ candidates, primary, initialDocument, reas
   };
 
   return <div className="workbench-command-form">
-    <div className="correction-form-head"><div><strong>CorrectDocumentSerials</strong><span>Reverse the recorded units and apply the same posted document to the physical units; stock quantity does not move.</span></div></div>
+    <div className="correction-form-head"><div><strong>Correct document serials</strong><span>Reverse the recorded units and apply the same posted document to the physical units; stock quantity does not move.</span></div></div>
     <DocumentField id="wb-document-serials-document" label="Posted document" types={["delivery", "transfer", "receipt"]} value={document} onChange={(value) => { setDocument(value); setRecordedSelection(null); setPhysicalSelection(null); }} />
     {reversalOnly && <div className="note info"><strong>Returned or never delivered.</strong>&nbsp;This reason reverses the recorded side only, so no physical replacement list is required.</div>}
     <div className="correction-serial-pair">
@@ -370,7 +370,7 @@ function CorrectSourceDocumentForm({ primary, candidates, lineage, initialDocume
   };
 
   return <div className="workbench-command-form">
-    <div className="correction-form-head"><div><strong>CorrectSourceDocument</strong><span>Re-point the ownership source, re-derive cover, and request corrected labels without editing history.</span></div></div>
+    <div className="correction-form-head"><div><strong>Correct the source document</strong><span>Re-point the ownership source, re-derive cover, and request corrected labels without editing history.</span></div></div>
     <div className="correction-source-fields">
       <DocumentField id="wb-source-previous" label="Source currently recorded" types={["sales_order", "delivery"]} value={previousDocument} onChange={setPreviousDocument} {...(previousDocument ? { hint: names.document(previousDocument) } : {})} />
       <DocumentField id="wb-source-corrected" label="Correct source document" types={["sales_order", "delivery"]} value={correctedDocument} onChange={setCorrectedDocument} {...(correctedDocument ? { hint: names.document(correctedDocument) } : {})} />

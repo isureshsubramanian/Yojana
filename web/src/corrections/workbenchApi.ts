@@ -105,7 +105,23 @@ export const DEDICATED_SCREENS: Record<string, { path: string; label: string }> 
   "entitlement.backfill": { path: "/entitlements/bulk?operation=entitlement.backfill", label: "Backfill entitlements" },
 };
 
-/** "swap_identifiers" → "SwapIdentifiers", the command's name as the ADR and the approver see it. */
+// Readable names for commands whose plain wording differs from their code; other codes read as words ("swap_identifiers" → "Swap identifiers").
+const COMMAND_NAMES: Record<string, string> = {
+  correct_identifier: "Correct an identifier",
+  correct_item: "Correct the item",
+  correct_source_document: "Correct the source document",
+  reassign_allocation: "Reassign an allocation",
+  void_unit: "Void a unit",
+  correct_as_built: "Correct as-built parts",
+  late_serialization: "Serialise an item late",
+  correct_replacement_link: "Correct a replacement link",
+  "entitlement.amend": "Amend an entitlement",
+};
+
+/** The command's name as a person reads it, never the internal code. */
 export function commandName(command: string): string {
-  return command.split(/[._]/).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join("");
+  const known = COMMAND_NAMES[command];
+  if (known) return known;
+  const words = command.replace(/[._]/g, " ").trim().toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }

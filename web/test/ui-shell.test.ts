@@ -48,7 +48,7 @@ test("group waiting state is a dot while numbers stay inside the flyout", () => 
 
 test("every settings page is registered once and registry entries generate the routes", () => {
   const expected = [
-    "/settings/company", "/settings/users", "/settings/sign-in-policy", "/settings/time-zone", "/settings/currencies",
+    "/settings/company", "/settings/users", "/settings/sign-in-policy", "/settings/security-events", "/settings/time-zone", "/settings/currencies",
     "/settings/numbering", "/settings/certificates", "/settings/labels", "/settings/disclosure", "/settings/jurisdictions",
     "/settings/claim-risk", "/settings/recovery", "/settings/refurbishment", "/settings/workbench-choices",
     "/settings/import-files", "/settings/knowledge-screen-changes",

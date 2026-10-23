@@ -75,7 +75,7 @@ export function Component() {
     <PageHeader eyebrow="Settings · tenant administrator" title="Users"
       sub="Staff memberships for this company. Customer-portal memberships are managed separately and are not listed here."
       actions={permitted && <button type="button" className="btn primary" onClick={() => setDialog({ kind: "invite" })}>Invite user…</button>} />
-    <nav className="tabs" aria-label="Security settings"><Link to="/settings/users" aria-current="page">Users</Link><Link to="/settings/sign-in-policy">Sign-in policy</Link><Link to="/settings/security-events">Security events</Link></nav>
+    <nav className="tabs subnav" aria-label="Sign-in settings"><Link to="/settings/users" aria-current="page">Users</Link><Link to="/settings/sign-in-policy">Sign-in policy</Link><Link to="/settings/security-events">Security events</Link></nav>
     {!permitted && <div className="note bad"><strong>Tenant administrator access is required.</strong></div>}
     {permitted && <div className="stack" style={{ marginTop: 20 }}>
       <ErrorNote error={error} onReload={() => void load()} />

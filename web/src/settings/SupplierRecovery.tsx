@@ -51,13 +51,12 @@ export function Component() {
     <PolicyError error={error} />
     {saved && <div className="note ok" style={{ marginBottom: 16 }}><strong>Supplier recovery policy saved.</strong>&nbsp;New claim approvals now use these rules.</div>}
     {loading && <p className="muted">Loading supplier recovery policy…</p>}
-    {policy && <div className="cols-3-2 top">
+    {policy && <div className="cols-2">
       <section className="card" aria-labelledby="whole-unit-lines"><div className="card-header"><h2 id="whole-unit-lines">Whole-unit claim lines</h2><span className="meta">when the line does not name a part</span></div><div className="card-body stack">
         <div className="field"><label className="radiorow"><input type="radio" name="whole-unit-lines" checked={policy.wholeUnitLines === "single_covered_part"} disabled={!permitted} onChange={() => updateRule("single_covered_part")} /><span><strong>Recover from the one covered part</strong><span className="help">When exactly one part inside the unit has a live vendor term, recover from that vendor. With several, raise nothing and list the claim with the reason.</span></span></label></div>
         <div className="field"><label className="radiorow"><input type="radio" name="whole-unit-lines" checked={policy.wholeUnitLines === "named_part_only"} disabled={!permitted} onChange={() => updateRule("named_part_only")} /><span><strong>Recover only when the line names the part</strong><span className="help">A whole-unit line raises no recovery from parts inside it. The claim line must identify the covered part.</span></span></label></div>
         <div className="note">{example}</div>
       </div></section>
-      <div className="stack">
         <section className="card" aria-labelledby="campaign-claims"><div className="card-header"><h2 id="campaign-claims">Claims under a campaign</h2></div><div className="card-body stack">
           <div className="field"><label className="radiorow"><input type="radio" name="campaign-claims" checked={policy.campaignClaims === "no_recovery"} disabled={!permitted} onChange={() => updateCampaignClaims("no_recovery")} /><span><strong>No supplier recovery (default)</strong><span className="help">Campaign claims are paid from the campaign reserve; nothing is claimed from suppliers.</span></span></label></div>
           <div className="field"><label className="radiorow"><input type="radio" name="campaign-claims" checked={policy.campaignClaims === "recover_like_warranty"} disabled={!permitted} onChange={() => updateCampaignClaims("recover_like_warranty")} /><span><strong>Recover like warranty claims</strong><span className="help">The rules above also apply to claims under a campaign when a supplier term is live on the part.</span></span></label></div>
@@ -67,7 +66,6 @@ export function Component() {
           {invalidKinds && <div className="form-error" role="alert">Choose at least one claim line kind.</div>}
         </div></section>
         <section className="card" aria-labelledby="vendor-answer-due"><div className="card-header"><h2 id="vendor-answer-due">Vendor answer due</h2><span className="meta">waiting threshold</span></div><div className="card-body stack"><div className="field"><label htmlFor="vendor-answer-days">Vendor answer due after N days</label><input id="vendor-answer-days" className="input" type="number" min="1" max="90" step="1" value={policy.vendorAnswerDueDays} disabled={!permitted} aria-invalid={invalidDays} onChange={(event) => setPolicy({ ...policy, vendorAnswerDueDays: Number(event.target.value) })} /><span className="help">From 1 to 90 days. An unanswered recovery claim changes from Raised to Waiting at this age.</span></div>{invalidDays && <div className="form-error" role="alert">Enter a whole number from 1 to 90 days.</div>}</div></section>
-      </div>
     </div>}
   </main>;
 }

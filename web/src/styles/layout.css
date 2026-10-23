@@ -97,7 +97,8 @@
 
 /* Flat cards and denser tables */
 .card { box-shadow: none; border-color: var(--border-strong); }
-.card-header { height: 48px; padding: 0 var(--card-pad); background: var(--surface-2); }
+/* At least one row high; a header whose filters wrap (narrow content beside the settings list) grows instead of spilling over the table. */
+.card-header { height: auto; min-height: 48px; padding: 6px var(--card-pad); background: var(--surface-2); }
 /* A child's square background paints over the card's rounded border, so the tinted header and any edge child
    take the inner radius (outer radius less the 1 px border); overflow: hidden on .card would also clip menus and
    popovers that open from inside a card. */
@@ -196,3 +197,18 @@
 @media (max-width: 1280px) { .frame { grid-template-columns: var(--nav-w) minmax(0, 1fr); grid-template-areas: "top top" "nav main"; } .rail { display: block; } .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 960px) { .cols-2-3 { grid-template-columns: 1fr; } .rail { width: 100vw; } }
 @media print { .findbar, .drawer-head { display: none !important; } }
+/* Two-column settings pages: each column keeps its own height instead of stretching to the taller one. */
+.policy-cols { align-items: start; }
+.policy-cols > .stack { align-content: start; }
+/* A number field with its unit beside it ("30 minutes"), not wrapped below. */
+.input-unit { display: inline-flex; align-items: center; gap: 8px; }
+.input-unit .input { width: 110px; }
+.input-unit .u { color: var(--text-2); white-space: nowrap; }
+/* An editable list row: fields, then its remove action on the same line, aligned with the inputs. */
+.override-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px; gap: 16px; align-items: start; }
+.override-row .row-remove { margin-top: 22px; color: var(--text-2); }
+.override-row .row-remove:hover { color: var(--danger); }
+@media (max-width: 960px) { .override-row { grid-template-columns: minmax(0, 1fr) 32px; } .override-row .field:nth-child(2) { grid-column: 1; } }
+/* Currencies: the working currency is one fact, so it takes a narrow column at its own height; the accepted list gets the width. */
+.currency-cols { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 3fr); gap: var(--gap); align-items: start; }
+@media (max-width: 960px) { .currency-cols { grid-template-columns: 1fr; } }
