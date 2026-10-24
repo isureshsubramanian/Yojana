@@ -15,7 +15,7 @@ import { useHandoff, useLegacyParam } from "../shell/handoff";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section, UnitLink } from "./common";
-import { fmtDate, fmtDateTime, humanise, sentence, statusLabel } from "./format";
+import { eventTitle, fmtDate, fmtDateTime, humanise, sentence, statusLabel } from "./format";
 import { EntitlementPanel, openAmendEntitlement, openAttachEntitlement, type EntitlementSummary } from "../entitlements/EntitlementPanel";
 import { CoverSinceSalePanel } from "../entitlements/CoverSinceSalePanel";
 import type { UnitEntitlementDetail } from "../entitlements/types";
@@ -267,12 +267,6 @@ export function Component() {
 }
 
 function lotDocument(id: string | null | undefined) { return id ? { type: "lot", id } : null; }
-
-function eventTitle(code: string): string {
-  const tail = code.split(".").pop() ?? code;
-  const h = tail.replace(/_/g, " ");
-  return h[0]!.toUpperCase() + h.slice(1);
-}
 
 function CorrectForm({ unitId, types, onDone }: { unitId: string; types: string[]; onDone: () => void }) {
   const [type, setType] = useState(types[0] ?? "internal_serial");

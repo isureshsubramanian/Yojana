@@ -221,6 +221,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             {
                 t.IsTemporal(h => h.UseHistoryTable("unit_history"));
                 t.HasCheckConstraint("ck_unit_overlay_flags_json", "ISJSON(overlay_flags) = 1");
+                t.HasCheckConstraint("ck_unit_lifecycle_status", "lifecycle_status IN ('pending_identifier','pre_release','void','released','dormant','scrapped_pre_release','scrapped','decommissioned','reversed','merged')");
             });
             b.HasKey(u => new { u.TenantId, u.UnitId });
             b.Property(u => u.LifecycleStatus).HasMaxLength(40);
@@ -510,6 +511,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
                 t.HasCheckConstraint("ck_unit_current_live_entitlement_ids_json", "ISJSON(live_entitlement_ids) = 1");
                 t.HasCheckConstraint("ck_unit_current_overlay_flags_json", "ISJSON(overlay_flags) = 1");
                 t.HasCheckConstraint("ck_unit_current_attributes_json", "attributes IS NULL OR ISJSON(attributes) = 1");
+                t.HasCheckConstraint("ck_unit_current_lifecycle_status", "lifecycle_status IN ('pending_identifier','pre_release','void','released','dormant','scrapped_pre_release','scrapped','decommissioned','reversed','merged')");
             });
             b.HasKey(c => new { c.TenantId, c.UnitId });
             b.Property(c => c.LifecycleStatus).HasMaxLength(40);

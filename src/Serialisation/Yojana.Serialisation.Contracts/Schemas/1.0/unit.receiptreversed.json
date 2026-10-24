@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yojana.local/serialisation/schemas/1.0/unit.receiptreversed.json",
+  "title": "Unit.ReceiptReversed",
+  "type": "object",
+  "required": [
+    "header",
+    "commissioned_event_id",
+    "closed_identifier_ids",
+    "closed_episode_ids"
+  ],
+  "properties": {
+    "header": {
+      "type": "object",
+      "required": [
+        "schema",
+        "version",
+        "event_id",
+        "unit_id",
+        "event_time",
+        "recorded_time",
+        "seq",
+        "legal_entity_id",
+        "actor_ref"
+      ],
+      "properties": {
+        "schema": { "type": "string" },
+        "version": { "type": "string" },
+        "event_id": { "type": "string", "format": "uuid" },
+        "unit_id": { "type": "string", "format": "uuid" },
+        "event_time": { "type": "string", "format": "date-time" },
+        "recorded_time": { "type": "string", "format": "date-time" },
+        "seq": { "type": "integer" },
+        "legal_entity_id": { "type": "string", "format": "uuid" },
+        "actor_ref": { "type": "string" },
+        "document": {
+          "type": ["object", "null"],
+          "properties": {
+            "type": { "type": "string" },
+            "id": { "type": "string", "format": "uuid" },
+            "line": { "type": ["integer", "null"] }
+          },
+          "required": ["type", "id"]
+        }
+      }
+    },
+    "commissioned_event_id": { "type": "string", "format": "uuid" },
+    "closed_identifier_ids": {
+      "type": "array",
+      "items": { "type": "string", "format": "uuid" }
+    },
+    "closed_episode_ids": {
+      "type": "array",
+      "items": { "type": "string", "format": "uuid" }
+    }
+  }
+}

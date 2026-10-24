@@ -8943,6 +8943,8 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.ToTable("unit", "serialisation", t =>
                         {
+                            t.HasCheckConstraint("ck_unit_lifecycle_status", "lifecycle_status IN ('pending_identifier','pre_release','void','released','dormant','scrapped_pre_release','scrapped','decommissioned','reversed','merged')");
+
                             t.HasCheckConstraint("ck_unit_overlay_flags_json", "ISJSON(overlay_flags) = 1");
                         });
 
@@ -9378,6 +9380,8 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("unit_current", "serialisation", t =>
                         {
                             t.HasCheckConstraint("ck_unit_current_attributes_json", "attributes IS NULL OR ISJSON(attributes) = 1");
+
+                            t.HasCheckConstraint("ck_unit_current_lifecycle_status", "lifecycle_status IN ('pending_identifier','pre_release','void','released','dormant','scrapped_pre_release','scrapped','decommissioned','reversed','merged')");
 
                             t.HasCheckConstraint("ck_unit_current_live_entitlement_ids_json", "ISJSON(live_entitlement_ids) = 1");
 

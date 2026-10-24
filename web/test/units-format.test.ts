@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { humanise, matchSpan, parseDocumentParam, sentence, serialFromScan, splitSerials, statusLabel, statusTone, documentLabel, fmtDateTime } from "../src/units/format.ts";
+import { eventTitle, humanise, matchSpan, parseDocumentParam, sentence, serialFromScan, splitSerials, statusLabel, statusTone, documentLabel, fmtDateTime } from "../src/units/format.ts";
 
 test("status labels and tones follow the lifecycle vocabulary", () => {
   assert.equal(statusLabel("pre_release"), "Pre-release");
@@ -8,6 +8,9 @@ test("status labels and tones follow the lifecycle vocabulary", () => {
   assert.equal(statusTone("released"), "ok");
   assert.equal(statusTone("scrapped_pre_release"), "bad");
   assert.equal(statusTone("pending_identifier"), "warn");
+  assert.equal(statusLabel("reversed"), "Reversed");
+  assert.equal(statusTone("reversed"), "bad");
+  assert.equal(eventTitle("unit.receipt_reversed"), "Receipt reversed (document cancelled)");
   assert.equal(humanise("custody.changed"), "custody changed");
 });
 

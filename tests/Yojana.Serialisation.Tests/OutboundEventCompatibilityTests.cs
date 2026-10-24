@@ -101,6 +101,35 @@ public sealed class OutboundEventMappingTests
     }
 
     [Fact]
+    public void Receipt_reversal_maps_to_its_catalogued_contract()
+    {
+        var commissioned = Guid.NewGuid();
+        var identifier = Guid.NewGuid();
+        var episode = Guid.NewGuid();
+        var mapped = Assert.IsType<UnitReceiptReversed>(Yojana.Serialisation.Ledger.PublishedEventMapper.Map(new()
+        {
+            EventType = UnitEventType.ReceiptReversed,
+            EventId = Guid.NewGuid(),
+            UnitId = Guid.NewGuid(),
+            ActorRef = "test",
+            IdempotencyKey = "test",
+            EventTime = new(2026, 9, 1),
+            RecordedTime = new(2026, 9, 1),
+            Attributes = JsonSerializer.Serialize(new
+            {
+                commissioned_event_id = commissioned,
+                closed_identifier_ids = new[] { identifier },
+                closed_episode_ids = new[] { episode },
+            }),
+        }));
+        Assert.Equal(commissioned, mapped.CommissionedEventId);
+        Assert.Equal(identifier, Assert.Single(mapped.ClosedIdentifierIds));
+        Assert.Equal(episode, Assert.Single(mapped.ClosedEpisodeIds));
+        using var schema = JsonDocument.Parse(PublishedEventSchemas.Read(mapped.Header.Schema, mapped.Header.Version));
+        Assert.Equal(UnitReceiptReversed.Schema, schema.RootElement.GetProperty("title").GetString());
+    }
+
+    [Fact]
     public void Ledger_publication_preserves_known_money_and_customer_facts()
     {
         var customer = Guid.NewGuid();

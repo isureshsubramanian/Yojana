@@ -109,6 +109,21 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
             return new(row.InboundMessageId, row.MessageType, true, 0, ["unsupported"]);
         }
 
+        // A re-read of an original applied before its cancellation is a normal later version, not this case.
+        if (row.MessageType != nameof(DocumentCancelled)
+            && await WasCancelledBeforeAppliedAsync(row, cancellationToken)
+            && DocumentReference(row) is { } cancelledOriginal
+            && !await OriginalWasAppliedAsync(row.ConnectionId, cancelledOriginal, cancellationToken))
+        {
+            await RaiseAsync(row, "cancelled_before_applied",
+                "The original document was not applied because its cancellation completed first.", cancellationToken);
+            row.TranslationStatus = InboundTranslationStatus.Completed;
+            row.TranslatedAt = clock.UtcNow;
+            row.TranslationStartedAt = null;
+            await db.SaveChangesAsync(cancellationToken);
+            return new(row.InboundMessageId, row.MessageType, true, 0, ["cancelled_before_applied"]);
+        }
+
         if (await ForeignAmountReasonAsync(row, cancellationToken) is { } foreignAmountReason)
         {
             // A connector may pass a local amount as the canonical price and home currency. If it only has the
@@ -122,7 +137,8 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
             return new(row.InboundMessageId, row.MessageType, false, 0, [foreignAmountReason]);
         }
 
-        var result = await IsSecondaryDocumentAsync(row, cancellationToken) ? Done(row, 0, []) : row.MessageType switch
+        var secondary = await IsSecondaryDocumentAsync(row, cancellationToken);
+        var result = secondary ? Done(row, 0, []) : row.MessageType switch
         {
             nameof(ItemUpserted) => await TranslateItemAsync(row, cancellationToken),
             nameof(PartyUpserted) => await TranslatePartyAsync(row, cancellationToken),
@@ -140,8 +156,7 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
                 (env, doc) => new InventoryAdjustmentPosted(env, doc), cancellationToken),
             nameof(WarrantyLineSold) => await TranslateDocumentAsync<WarrantyLineSold>(row, p => p.DocumentRef,
                 (env, doc) => new SalesInvoicePosted(env, doc), cancellationToken),
-            nameof(DocumentCancelled) => await TranslateDocumentAsync<DocumentCancelled>(row, p => p.DocumentRef,
-                (env, doc) => new DocumentCancellationPosted(env, doc), cancellationToken),
+            nameof(DocumentCancelled) => await TranslateCancellationAsync(row, wasReleasedLate, cancellationToken),
             _ => throw new InvalidOperationException($"canonical_message_unknown: {row.MessageType}"),
         };
         if (result.Translated)
@@ -157,6 +172,9 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
                     .SetProperty(x => x.TranslationStatus, InboundTranslationStatus.Completed)
                     .SetProperty(x => x.TranslatedAt, clock.UtcNow)
                     .SetProperty(x => x.TranslationStartedAt, (DateTime?)null), cancellationToken);
+            if (!secondary && row.MessageType != nameof(DocumentCancelled) && DocumentReference(row) is { } document)
+                await resequencer.ReleaseSatisfiedDocumentsAsync(row.ConnectionId,
+                    [BoundedWaitResequencer.DocumentDependencyKey(DocumentExternalId(document))], cancellationToken);
         }
         else if (result.Exceptions.Contains("bounded_wait"))
         {
@@ -281,6 +299,32 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
         return result;
     }
 
+    private async Task<GatewayTranslationResult> TranslateCancellationAsync(InboundMessage row, bool wasReleasedLate,
+        CancellationToken cancellationToken)
+    {
+        var message = Message<DocumentCancelled>(row);
+        if (!await OriginalWasAppliedAsync(row.ConnectionId, message.Payload.DocumentRef, cancellationToken))
+        {
+            var dependency = BoundedWaitResequencer.DocumentDependencyKey(
+                DocumentExternalId(message.Payload.DocumentRef));
+            if (!wasReleasedLate)
+            {
+                await resequencer.HoldAsync(row.InboundMessageId, row.ConnectionId, [dependency], row.OccurredAt,
+                    cancellationToken);
+                return new(row.InboundMessageId, row.MessageType, false, 0, ["bounded_wait"]);
+            }
+
+            await ProjectDocumentAsync(row, message.Payload.DocumentRef, message.Payload, cancellationToken);
+            await RaiseAsync(row, "cancellation_original_missing",
+                "The cancellation's original document did not arrive within the ordering window.", cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            return Done(row, 0, []);
+        }
+
+        return await TranslateDocumentAsync<DocumentCancelled>(row, payload => payload.DocumentRef,
+            (envelope, document) => new DocumentCancellationPosted(envelope, document), cancellationToken);
+    }
+
     private async Task<GatewayTranslationResult> TranslateDocumentAsync<TPayload>(InboundMessage row,
         Func<TPayload, ExternalDocumentRef> documentOf, Func<ThinEnvelope, SerialDocumentRef, object> consumed,
         CancellationToken cancellationToken, Func<TPayload, Task<TPayload>>? prepare = null)
@@ -293,6 +337,48 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
         var result = await InvokeAsync(consumed(await ThinAsync(row, message.Envelope, cancellationToken), document), cancellationToken);
         return Done(row, result.UnitsAffected, result.Exceptions);
     }
+
+    private async Task<bool> OriginalWasAppliedAsync(Guid connectionId, ExternalDocumentRef document,
+        CancellationToken cancellationToken)
+    {
+        var id = await references.FindAsync(connectionId, "document", DocumentExternalId(document), cancellationToken);
+        return id is not null && await db.CanonicalDocuments.AsNoTracking().AnyAsync(x =>
+            x.TenantId == tenant.TenantId && x.ConnectionId == connectionId && x.DocumentId == id
+            && x.MessageType != nameof(DocumentCancelled)
+            && db.InboundMessages.Any(message => message.TenantId == x.TenantId
+                && message.InboundMessageId == x.SourceInboundMessageId
+                && message.TranslatedAt != null), cancellationToken);
+    }
+
+    private async Task<bool> WasCancelledBeforeAppliedAsync(InboundMessage row, CancellationToken cancellationToken)
+    {
+        var document = DocumentReference(row);
+        if (document is null) return false;
+        var id = await references.FindAsync(row.ConnectionId, "document", DocumentExternalId(document),
+            cancellationToken);
+        return id is not null && await db.CanonicalDocuments.AsNoTracking().AnyAsync(x =>
+            x.TenantId == tenant.TenantId && x.ConnectionId == row.ConnectionId && x.DocumentId == id
+            && x.MessageType == nameof(DocumentCancelled)
+            && db.InboundMessages.Any(message => message.TenantId == x.TenantId
+                && message.InboundMessageId == x.SourceInboundMessageId
+                && message.TranslatedAt != null), cancellationToken);
+    }
+
+    private static ExternalDocumentRef? DocumentReference(InboundMessage row) => row.MessageType switch
+    {
+        nameof(GoodsReceiptPosted) => Message<GoodsReceiptPosted>(row).Payload.DocumentRef,
+        nameof(ProductionCompleted) => Message<ProductionCompleted>(row).Payload.DocumentRef,
+        nameof(DeliveryPosted) => Message<DeliveryPosted>(row).Payload.DocumentRef,
+        nameof(InvoicePosted) => Message<InvoicePosted>(row).Payload.DocumentRef,
+        nameof(ReturnReceived) => Message<ReturnReceived>(row).Payload.DocumentRef,
+        nameof(TransferPosted) => Message<TransferPosted>(row).Payload.DocumentRef,
+        nameof(InventoryAdjusted) => Message<InventoryAdjusted>(row).Payload.DocumentRef,
+        nameof(WarrantyLineSold) => Message<WarrantyLineSold>(row).Payload.DocumentRef,
+        nameof(DocumentCancelled) => Message<DocumentCancelled>(row).Payload.DocumentRef,
+        _ => null,
+    };
+
+    private static string DocumentExternalId(ExternalDocumentRef document) => document.ExternalId ?? document.Number;
 
     private async Task<GoodsReceiptPosted> DeduplicateReceiptAsync(InboundMessage row, GoodsReceiptPosted receipt,
         CancellationToken cancellationToken)

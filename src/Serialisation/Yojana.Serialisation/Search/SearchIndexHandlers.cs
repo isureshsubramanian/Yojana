@@ -13,7 +13,7 @@ public static class SearchProjectionRequestMapper
     // handler chain; omitting this call would leave only the nightly healer to make the index current.
     public static SearchProjectionRequested? Map(IPublishedUnitEvent message) => message switch
     {
-        UnitCommissioned or UnitReleased or UnitDispositionChanged or UnitIdentifierCorrected or OwnershipOpened or OwnershipClosed
+        UnitCommissioned or UnitReleased or UnitReceiptReversed or UnitDispositionChanged or UnitIdentifierCorrected or OwnershipOpened or OwnershipClosed
             or CustodyChanged or UnitIdentifiersSwapped or UnitItemCorrected or UnitAsBuiltCorrected
             or UnitVoided or UnitVoidReversed or UnitMerged =>
             new([message.Header.UnitId], message.Header.Document is { } document ? [document] : null,

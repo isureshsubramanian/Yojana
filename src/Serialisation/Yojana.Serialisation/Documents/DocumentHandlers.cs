@@ -157,7 +157,7 @@ public static class PurchasingReceiptPostedHandler
                     continue;
                 }
 
-                if (unit.LifecycleStatus is LifecycleStatus.Scrapped or LifecycleStatus.ScrappedPreRelease or LifecycleStatus.Void or LifecycleStatus.Decommissioned)
+                if (UnitLifecycle.IsTerminal(unit.LifecycleStatus))
                 {
                     exceptions.Add($"line {line.LineNo}: serial '{serial.Value}' belongs to a {unit.LifecycleStatus} unit");
                     continue;

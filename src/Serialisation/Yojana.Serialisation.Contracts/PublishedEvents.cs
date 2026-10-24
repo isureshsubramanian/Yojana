@@ -27,6 +27,14 @@ public sealed record UnitReleased(PublishedEventHeader Header, Guid ItemId, Guid
     public const string Version = "1.0";
 }
 
+/// <summary>A receipt-created unit was reversed because its source document was cancelled.</summary>
+public sealed record UnitReceiptReversed(PublishedEventHeader Header, Guid CommissionedEventId,
+    IReadOnlyList<Guid> ClosedIdentifierIds, IReadOnlyList<Guid> ClosedEpisodeIds) : IPublishedUnitEvent
+{
+    public const string Schema = "Unit.ReceiptReversed";
+    public const string Version = "1.0";
+}
+
 /// <summary>The unit's lifecycle value changed, independently of the workflow that caused the transition.</summary>
 public sealed record UnitLifecycleChanged(PublishedEventHeader Header, string LifecycleStatus, string Cause) : IPublishedUnitEvent
 {

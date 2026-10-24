@@ -8,6 +8,7 @@ using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Gateway;
 using Yojana.Integration.Inbox;
 using Yojana.Integration.Outbox;
+using Yojana.Integration.Ordering;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
@@ -57,6 +58,85 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
         var reversal = await db.Events.SingleAsync(x => x.UnitId == finalUnit && x.EventType == UnitEventType.ShipmentReversed);
         Assert.NotNull(reversal.ReversesEventId);
         Assert.Equal(LocationKind.Warehouse, (await db.Current.SingleAsync(x => x.UnitId == finalUnit)).LocationKind);
+    }
+
+    [DatabaseFact]
+    public async Task Cancellation_waits_for_its_original_then_reverses_the_receipt()
+    {
+        var tenant = await fixture.NewTenantAsync("cancelwait");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var itemExternal = "HW-SERVER-" + Guid.NewGuid().ToString("N")[..6];
+        var serial = "SRV-CANCEL-" + Guid.NewGuid().ToString("N")[..8];
+        var document = Doc("receipt", "GR-WAIT-1");
+        await AcceptAndTranslate(tenant, connection, "item", itemExternal, "001", new ItemUpserted(itemExternal,
+            "Fictional rack server", OpenEnum.Known("serial"), "EA", false));
+        var cancellation = await Accept(tenant, connection, "receipt-cancellation", "GR-CANCEL-1", "001",
+            new DocumentCancelled(document, OpenEnum.Known("cancelled")), At.AddHours(1));
+        using (var hold = fixture.ScopeFor(tenant))
+        {
+            var result = await hold.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<GatewayTranslationResult>(
+                new TranslateInboundMessage(cancellation.InboundMessageId),
+                new DeliveryOptions { TenantId = tenant.ToString() });
+            Assert.False(result.Translated);
+            Assert.Contains("bounded_wait", result.Exceptions);
+        }
+        await WaitForStatusAsync(tenant, cancellation.InboundMessageId, InboundTranslationStatus.Held);
+
+        await AcceptAndTranslate(tenant, connection, "receipt", "GR-WAIT-1", "001", new GoodsReceiptPosted(
+            document, "FIC-VENDOR-1", [Line(itemExternal, serial, "WH-1")]), At);
+        await WaitForStatusAsync(tenant, cancellation.InboundMessageId, InboundTranslationStatus.Completed);
+
+        using var check = fixture.ScopeFor(tenant);
+        var serialisation = check.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var unit = await serialisation.Identifiers.Where(x => x.RawValue == serial).Select(x => x.UnitId).SingleAsync();
+        Assert.Equal(LifecycleStatus.Reversed,
+            (await serialisation.Current.SingleAsync(x => x.UnitId == unit)).LifecycleStatus);
+        Assert.Equal(1, await serialisation.Events.CountAsync(x => x.UnitId == unit
+            && x.EventType == UnitEventType.ReceiptReversed));
+    }
+
+    [DatabaseFact]
+    public async Task Original_arriving_after_its_cancellation_expired_is_completed_without_application()
+    {
+        fixture.Clock.UtcNow = At.AddDays(5).UtcDateTime;
+        var tenant = await fixture.NewTenantAsync("cancelfirst");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var itemExternal = "HW-STORAGE-" + Guid.NewGuid().ToString("N")[..6];
+        var serial = "ARRAY-CANCEL-" + Guid.NewGuid().ToString("N")[..8];
+        var document = Doc("receipt", "GR-LATE-1");
+        await AcceptAndTranslate(tenant, connection, "item", itemExternal, "001", new ItemUpserted(itemExternal,
+            "Fictional storage array", OpenEnum.Known("serial"), "EA", false));
+        var cancellation = await Accept(tenant, connection, "receipt-cancellation", "GR-CANCEL-2", "001",
+            new DocumentCancelled(document, OpenEnum.Known("cancelled")), At.AddHours(1));
+        using (var hold = fixture.ScopeFor(tenant))
+            _ = await hold.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<GatewayTranslationResult>(
+                new TranslateInboundMessage(cancellation.InboundMessageId),
+                new DeliveryOptions { TenantId = tenant.ToString() });
+        await WaitForStatusAsync(tenant, cancellation.InboundMessageId, InboundTranslationStatus.Held);
+        using (var expire = fixture.ScopeFor(tenant))
+        {
+            var db = expire.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+            var wait = await db.ResequenceItems.SingleAsync(x => x.InboundMessageId == cancellation.InboundMessageId);
+            wait.HoldUntil = fixture.Clock.UtcNow.AddMinutes(-1);
+            await db.SaveChangesAsync();
+            Assert.Equal(1, await expire.ServiceProvider.GetRequiredService<BoundedWaitResequencer>()
+                .ReleaseExpiredAsync(CancellationToken.None));
+        }
+        await WaitForStatusAsync(tenant, cancellation.InboundMessageId, InboundTranslationStatus.Completed);
+
+        var original = await AcceptAndTranslate(tenant, connection, "receipt", "GR-LATE-1", "001",
+            new GoodsReceiptPosted(document, "FIC-VENDOR-2", [Line(itemExternal, serial, "WH-2")]), At.AddDays(2));
+        Assert.Contains("cancelled_before_applied", original.Exceptions);
+        using var check = fixture.ScopeFor(tenant);
+        Assert.False(await check.ServiceProvider.GetRequiredService<SerialisationDbContext>().Identifiers
+            .AnyAsync(x => x.RawValue == serial));
+        var integration = check.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        Assert.Equal(1, await integration.ExceptionTasks.CountAsync(x =>
+            x.InboundMessageId == cancellation.InboundMessageId && x.Kind == "cancellation_original_missing"));
+        var originalRow = await integration.InboundMessages.SingleAsync(x => x.ErpExternalId == "GR-LATE-1");
+        Assert.Equal(InboundTranslationStatus.Completed, originalRow.TranslationStatus);
+        Assert.Equal(1, await integration.ExceptionTasks.CountAsync(x =>
+            x.InboundMessageId == originalRow.InboundMessageId && x.Kind == "cancelled_before_applied"));
     }
 
     [DatabaseFact]

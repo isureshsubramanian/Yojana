@@ -15,6 +15,10 @@ public sealed class BoundedWaitResequencer(IntegrationDbContext db, ITenantConte
 {
     public const int DefaultWaitMinutes = 15;
 
+    public static string DocumentDependencyKey(string externalId) => "document:"
+        + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(externalId.Trim().ToUpperInvariant()))).ToLowerInvariant();
+
     public async Task<ResequenceDecision> HoldAsync(Guid inboundMessageId, Guid connectionId,
         IReadOnlyCollection<string> dependencyKeys, DateTime eventTime, CancellationToken cancellationToken)
     {
@@ -57,6 +61,18 @@ public sealed class BoundedWaitResequencer(IntegrationDbContext db, ITenantConte
                 new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, cancellationToken);
             if (known.Unknown.Count == 0) release.Add(row);
         }
+        return await ReleaseAsync(release, late: false, cancellationToken);
+    }
+
+    /// <summary>Releases document waits after the gateway has durably completed the original document.</summary>
+    public async Task<int> ReleaseSatisfiedDocumentsAsync(Guid connectionId,
+        IReadOnlyCollection<string> dependencyKeys, CancellationToken cancellationToken)
+    {
+        var set = dependencyKeys.ToHashSet(StringComparer.Ordinal);
+        var held = await db.ResequenceItems.Where(x => x.TenantId == tenant.TenantId
+            && x.ConnectionId == connectionId && x.Status == ResequenceStatus.Held)
+            .OrderBy(x => x.EventTime).ThenBy(x => x.ResequenceItemId).ToListAsync(cancellationToken);
+        var release = held.Where(x => x.DependencyKey.Split('|').Any(set.Contains)).ToList();
         return await ReleaseAsync(release, late: false, cancellationToken);
     }
 

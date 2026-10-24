@@ -77,8 +77,7 @@ public sealed class RefurbishmentService(
             return OpenResult(replay, true);
         var unit = await db.Units.FirstOrDefaultAsync(u => u.TenantId == tenantId && u.UnitId == command.TargetUnitId, cancellationToken)
             ?? throw new CommandRefusedException("unit_unknown", $"Unit {command.TargetUnitId} does not exist.");
-        if (unit.LifecycleStatus is LifecycleStatus.Void or LifecycleStatus.Scrapped or LifecycleStatus.ScrappedPreRelease
-            or LifecycleStatus.Decommissioned or LifecycleStatus.Merged)
+        if (UnitLifecycle.IsTerminal(unit.LifecycleStatus))
             throw new CommandRefusedException("unit_not_refurbishable", $"Unit {unit.UnitId} is {unit.LifecycleStatus}.");
         var owner = await episodes.OpenAsync(unit.UnitId, EpisodeKind.Ownership, cancellationToken);
         if (owner?.PartyType != PartyType.Us)
