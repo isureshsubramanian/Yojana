@@ -233,7 +233,7 @@ function LateSerializationForm({ lineage, initialDocument, corrects, onArguments
     <div className="form-grid">
       <ItemField id="wb-late-item" label="Item changing to serial-tracked" value={itemId} onChange={setItemId} {...(itemId ? { hint: `Current selection: ${names.item(itemId)}` } : {})} />
       <div className="field"><label htmlFor="wb-late-at">Tracking took effect</label><input id="wb-late-at" className="input" type="datetime-local" value={effectiveAt} max={datetimeInput()} onChange={(event) => setEffectiveAt(event.target.value)} /></div>
-      <DocumentField id="wb-late-source" label="Source document" types={["stocktake", "goods_receipt", "production_order", "adjustment"]} value={sourceDocument} onChange={setSourceDocument} {...(sourceDocument ? { hint: names.document(sourceDocument) } : {})} />
+      <DocumentField id="wb-late-source" label="Source document" types={["stocktake", "receipt", "production_order", "adjustment"]} value={sourceDocument} onChange={setSourceDocument} {...(sourceDocument ? { hint: names.document(sourceDocument) } : {})} />
       <div className="field"><label htmlFor="wb-late-type">Identifier type</label><select id="wb-late-type" className="select" value={identifierType} onChange={(event) => setIdentifierType(event.target.value)}><option value="internal_serial">Internal serial</option><option value="manufacturer_serial">Manufacturer serial</option><option value="vendor_serial">Vendor serial</option></select></div>
     </div>
 
