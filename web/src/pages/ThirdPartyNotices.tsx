@@ -37,8 +37,8 @@ export function Component() {
   return <BareFrame wide><div className="notices-page">
     <div className="page-header"><div><div className="eyebrow">Yojana · legal</div><h1>Third-party notices</h1>
       <p className="sub">Yojana includes the components below. Each is listed with its licence and the copyright its authors declared. Listing a licensor is a licence requirement, not an endorsement.</p></div>
-      <div className="actions"><Link className="btn ghost" to="/">Back to Yojana</Link><a className="btn" href="/notices" download="THIRD-PARTY-NOTICES.txt"><Icon name="down" />Download as text</a></div></div>
-    {failed && <div className="note warn" role="alert"><strong>The notices could not be loaded.</strong>&nbsp;<a href="/notices">Open the text file</a> instead.</div>}
+      <div className="actions"><Link className="btn ghost" to="/">Back to Yojana</Link><a className="btn" href="/notices?download" download="THIRD-PARTY-NOTICES.txt"><Icon name="down" />Download as text</a></div></div>
+    {failed && <div className="note warn" role="alert"><strong>The notices could not be loaded.</strong>&nbsp;<a href="/notices?download">Download the text file</a> instead.</div>}
     {!doc && !failed && <div className="note" role="status">Loading notices…</div>}
     {doc && <>
       <div className="toolbar notices-toolbar">

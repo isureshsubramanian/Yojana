@@ -139,10 +139,16 @@ app.MapGet("/api/platform/metrics/concurrency", () => Results.Ok(new
 // Third-party notices ship inside the artefact and are reachable from the running application (MOD-01).
 // The file is about 10 MB of text, so it goes out gzip-compressed (about 1.2 MB) to clients that accept it, with an
 // ETag so the notices page does not download it again. The bytes are the shipped file, unchanged.
+// A person who opens /notices in the browser (an old bookmark or tab) lands on the readable page; the page's own read,
+// "Download as text" (?download) and non-browser clients still get the file.
 app.MapGet("/notices", (HttpContext http) =>
 {
+    var download = http.Request.Query.ContainsKey("download");
+    if (!download && http.Request.Headers.Accept.ToString().Contains("text/html", StringComparison.OrdinalIgnoreCase))
+        return Results.Redirect("/third-party-notices");
     var path = Path.Combine(AppContext.BaseDirectory, "Notices", "THIRD-PARTY-NOTICES.txt");
     if (!File.Exists(path)) return Results.Problem("notices file missing from the artefact", statusCode: 500);
+    if (download) http.Response.Headers.ContentDisposition = "attachment; filename=THIRD-PARTY-NOTICES.txt";
     var notices = NoticesFile.For(path);
     http.Response.Headers.ETag = notices.ETag;
     http.Response.Headers.CacheControl = "public, max-age=3600";
